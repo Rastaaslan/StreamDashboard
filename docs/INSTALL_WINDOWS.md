@@ -1,21 +1,9 @@
 # Installation Windows
 
-## Démarrage en un double-clic
-
-1. Installer Git et Node.js 20 ou supérieur.
-2. Copier `.env.example` vers `.env` et définir notamment un `DEVICE_SECRET` robuste et le mot de passe OBS.
+1. Installer Node.js 20+ et OBS Studio.
+2. Activer le serveur WebSocket d'OBS et reporter si nécessaire `OBS_URL` et `OBS_PASSWORD` dans `.env`.
 3. Double-cliquer `Lancer_StreamDashboard.cmd`.
 
-Le launcher charge `.env`, conserve les variables déjà définies dans Windows, puis vérifie avant tout lancement : OBS, StreamTool (`/api/state`), damPlanner (`/api/calendar`) et StreamDashboard (`/api/state`). Il attend au maximum 25 secondes chaque service. Les processus sont lancés avec `Start-Process` et restent actifs après la fermeture de la fenêtre. À la fin, un tableau `OK`/`ECHEC` est affiché et le cockpit s'ouvre automatiquement si le Dashboard répond.
+Le launcher charge `.env`, détecte puis démarre OBS si nécessaire, installe les dépendances du seul StreamDashboard si elles manquent, attend l'API locale au maximum 25 secondes et ouvre le navigateur uniquement lorsqu'elle répond. Il ne cherche et ne lance ni StreamTool ni damPlanner.
 
-Le bootstrap partagé (`scripts/bootstrap.ts` et `data/repositories.json`) cherche un chemin configuré, le repo frère, l'ancien emplacement dans le profil utilisateur, puis clone le dépôt officiel dans `.dependencies`. Il détecte `pnpm-lock.yaml`, `yarn.lock` ou npm, et choisit le premier script disponible parmi `start`, `dev`, `serve`.
-
-## Configuration
-
-- `OBS_EXE_PATH` : chemin complet de `obs64.exe` (sinon les dossiers Program Files standards sont testés).
-- `OBS_URL` : URL WebSocket OBS consommée par le Dashboard.
-- `STREAMTOOL_URL` / `STREAMTOOL_PATH` : URL et dépôt local de StreamTool.
-- `DAMPLANNER_URL` / `DAMPLANNER_PATH` : URL et dépôt local de damPlanner.
-- `PUBLIC_URL` : URL publique du Dashboard, utilisée pour le contrôle de santé et l'ouverture du navigateur.
-
-Tout composant déjà actif est laissé intact. Si OBS ou un service échoue, le launcher continue les étapes suivantes en mode dégradé.
+Variables utiles : `OBS_EXE_PATH`, `OBS_URL`, `OBS_PASSWORD`, `PUBLIC_URL`, `PORT` et `DATA_FILE`.

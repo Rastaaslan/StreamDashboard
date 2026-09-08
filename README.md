@@ -1,17 +1,27 @@
-# StreamDashboard
+# StreamDashboard V1 Desktop
 
-Cockpit local Desktop et PWA mobile qui agrège **damPlanner** (planning), **StreamTool** (séquences/timer) et **OBS** (diffusion/audio/scènes), sans recopier leurs moteurs métier.
+Cockpit local et autonome pour piloter une session de streaming depuis une seule interface : préparation, OBS, diffusion, timer, planning, Control Deck, Fun Deck, réglages et diagnostics.
 
-## Démarrage
+## Démarrage quotidien (Windows)
 
-Node 20+ : `npm install`, puis `npm run dev`. Ouvrir <http://127.0.0.1:47832>. Sous Windows, **double-cliquer simplement `Lancer_StreamDashboard.cmd`** : le launcher vérifie OBS et les trois services, ne redémarre pas ceux qui répondent déjà, localise les repos annexes, puis ouvre le navigateur. Une panne isolée n'empêche pas le reste du setup de démarrer.
+Double-cliquez sur **`Lancer_StreamDashboard.cmd`**. Le launcher démarre OBS s'il le trouve, lance StreamDashboard puis ouvre le cockpit. StreamTool et damPlanner restent entièrement indépendants et ne sont ni lancés, ni modifiés, ni requis.
 
-Variables et ports figurent dans `.env.example`. Tests : `npm test`. Smoke contre un serveur lancé : `npm run smoke`.
+## Développement
 
-## Applications
+Node.js 20+ :
 
-- Desktop : Dashboard, Planning, Live, Deck, Diagnostics, Settings.
-- Mobile/PWA responsive : Accueil, Planning, Live, Deck, Réglages.
-- API d'orchestration et WebSocket authentifié : `apps/server`.
+```bash
+npm install
+npm run dev
+```
 
-Voir [l'architecture](docs/ARCHITECTURE.md), [le développement](docs/DEVELOPMENT.md) et [l'installation Windows](docs/INSTALL_WINDOWS.md).
+Ouvrez <http://127.0.0.1:47832>. Utilisez `npm run build`, `npm test` et `npm run smoke` pour les vérifications.
+
+## Architecture
+
+- `apps/server` : API locale, commandes partagées, événements WebSocket et stockage autonome dans `data/dashboard.json`.
+- `apps/web` : cockpit desktop (aucune navigation, PWA ou association mobile en V1).
+- `integrations/obs` : adaptateur OBS WebSocket avec reconnexion et état temps réel.
+- `packages/contracts` : contrats stables et réutilisables par de futurs clients, sans coupler le serveur à une interface.
+
+Les commandes passent toutes par `POST /api/commands`; les changements d'état sont publiés via l'événement `state.updated` sur `/ws`.

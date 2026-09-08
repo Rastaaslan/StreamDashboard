@@ -1,11 +1,93 @@
-import express from'express';import{createServer}from'node:http';import{WebSocketServer}from'ws';import QRCode from'qrcode';import{DamPlannerClient,nextLive}from'../../../integrations/damplanner/src/client.js';import{StreamToolClient,type StreamAction}from'../../../integrations/streamtool/src/client.js';import{ObsClient}from'../../../integrations/obs/src/client.js';import{PairingStore}from'../../../packages/auth/src/pairing.js';import type{DashboardState}from'../../../packages/contracts/src/index.js';import path from'node:path';
-const app=express(),server=createServer(app),wss=new WebSocketServer({noServer:true}),planner=new DamPlannerClient(),stream=new StreamToolClient(),obs=new ObsClient(),pairing=new PairingStore();const port=Number(process.env.PORT??47832);let state:DashboardState={at:new Date().toISOString(),streamTool:null,planning:null,obs:obs.state,nextLive:null,unscheduledLive:false,health:{dashboard:{ok:true,reconnects:0},streamTool:{ok:false,reconnects:0},damPlanner:{ok:false,reconnects:0},obs:{ok:false,reconnects:0},mobile:{ok:true,reconnects:0}}};let lastErrors:string[]=[];
-app.use(express.json({limit:'16kb'}));app.use(express.static(path.resolve('apps/web')));
-const attempts=new Map<string,{at:number,count:number}>();app.use('/api',(req,res,next)=>{const key=req.ip??'unknown',now=Date.now(),x=attempts.get(key);if(!x||now-x.at>60_000)attempts.set(key,{at:now,count:1});else if(++x.count>120)return res.status(429).json({error:'Trop de requêtes'});next()});
-function auth(req:express.Request,res:express.Response,next:express.NextFunction){const id=req.get('x-device-id')??'',token=req.get('authorization')?.replace(/^Bearer /,'')??'';if(req.ip==='127.0.0.1'||req.ip==='::1'||pairing.authenticate(id,token))return next();res.status(401).json({error:'Appareil non autorisé'})}
-async function aggregate(refresh=false){const results=await Promise.allSettled([stream.state(),planner.calendar(refresh),obs.refresh()]);const names=['streamTool','damPlanner','obs'];results.forEach((r,i)=>{const h=state.health[names[i]!]!;h.ok=r.status==='fulfilled';if(r.status==='rejected'){h.error=String(r.reason);lastErrors=[`${new Date().toISOString()} ${names[i]}: ${r.reason}`,...lastErrors].slice(0,20)}else delete h.error});if(results[0]?.status==='fulfilled')state.streamTool=results[0].value;if(results[1]?.status==='fulfilled')state.planning=results[1].value;state.obs=obs.state;state.health.obs!.reconnects=obs.reconnectCount;state.nextLive=nextLive(state.planning?.items??[]);state.unscheduledLive=Boolean((state.obs.streaming||state.streamTool?.obs.streaming)&&!state.nextLive);state.at=new Date().toISOString();broadcast();return state}
-function broadcast(){const data=JSON.stringify({type:'state',data:state});for(const ws of wss.clients)if(ws.readyState===1)ws.send(data)}
-app.get('/api/state',async(_q,r)=>r.json(await aggregate()));app.post('/api/planning/refresh',auth,async(_q,r)=>r.json(await aggregate(true)));app.post('/api/stream/:action',auth,async(req,r)=>{const action=req.params.action as StreamAction;const value=action==='cancelEnd'?await stream.cancelEnd():await stream.action(action);await aggregate();r.json(value)});app.post('/api/timer/:action',auth,async(req,r)=>{const value=await stream.timer(req.params.action as never,req.body?.seconds);await aggregate();r.json(value)});app.post('/api/obs/scene',auth,async(req,r)=>{await obs.scene(String(req.body.scene));await aggregate();r.json(state.obs)});app.post('/api/obs/mute',auth,async(req,r)=>{await obs.mute(String(req.body.input),Boolean(req.body.muted));await aggregate();r.json(state.obs)});app.post('/api/obs/volume',auth,async(req,r)=>{await obs.volume(String(req.body.input),Number(req.body.volume));r.json({ok:true})});app.post('/api/obs/stream',auth,async(req,r)=>{await obs.stream(Boolean(req.body.start));await aggregate();r.json(state.obs)});
-app.post('/api/pair/code',auth,async(_q,r)=>{const code=pairing.issueCode(),url=`${process.env.PUBLIC_URL??`http://127.0.0.1:${port}`}/?pair=${code}`;r.json({code,url,qr:await QRCode.toDataURL(url)})});app.post('/api/pair', (req,r)=>{try{r.json(pairing.pair(String(req.body.code),String(req.body.name??'Mobile')))}catch(e){r.status(401).json({error:String(e)})}});app.get('/api/devices',auth,(_q,r)=>r.json(pairing.list()));app.delete('/api/devices/:id',auth,(req,r)=>r.json({revoked:pairing.revoke(String(req.params.id))}));app.get('/api/diagnostics',auth,(_q,r)=>r.json({health:state.health,errors:lastErrors}));
-server.on('upgrade',(req,socket,head)=>{const u=new URL(req.url??'/',`http://${req.headers.host}`);if(u.pathname!='/ws'||(!['127.0.0.1','::1'].includes(req.socket.remoteAddress??'')&&!pairing.authenticate(u.searchParams.get('device')??'',u.searchParams.get('token')??'')))return socket.destroy();wss.handleUpgrade(req,socket,head,ws=>{wss.emit('connection',ws,req);ws.send(JSON.stringify({type:'state',data:state}))})});
-app.use((e:unknown,_q:express.Request,r:express.Response,_n:express.NextFunction)=>r.status(502).json({error:e instanceof Error?e.message:'Erreur'}));void obs.connect();setInterval(()=>void aggregate(),2000);server.listen(port,'0.0.0.0',()=>console.log(`StreamDashboard http://127.0.0.1:${port}`));
+import express from 'express';
+import { createServer } from 'node:http';
+import { mkdir, readFile, writeFile } from 'node:fs/promises';
+import path from 'node:path';
+import { randomUUID } from 'node:crypto';
+import { WebSocketServer } from 'ws';
+import { ObsClient } from '../../../integrations/obs/src/client.js';
+import type { CalendarItem, ChecklistItem, DashboardCommand, DashboardEvent, DashboardSettings, DashboardState, RunMode, TimerState } from '../../../packages/contracts/src/index.js';
+
+const port = Number(process.env.PORT ?? 47832);
+const app = express();
+const server = createServer(app);
+const wss = new WebSocketServer({ server, path: '/ws' });
+const obs = new ObsClient();
+const dataFile = path.resolve(process.env.DATA_FILE ?? 'data/dashboard.json');
+interface LocalData { mode: RunMode; timer: TimerState; planning: CalendarItem[]; checklist: ChecklistItem[]; settings: DashboardSettings }
+const defaults: LocalData = {
+  mode: 'idle' as const,
+  timer: { running: false, duration: 300, remaining: 300, deadline: null },
+  planning: [] as CalendarItem[],
+  checklist: [
+    { id: 'obs', label: 'OBS connecté et scènes vérifiées', done: false },
+    { id: 'audio', label: 'Micro, musique et alertes testés', done: false },
+    { id: 'title', label: 'Titre, catégorie et notification prêts', done: false },
+    { id: 'water', label: 'Eau et environnement prêts', done: false },
+  ],
+  settings: { streamerName: 'Streamer', accent: 'violet', confirmStop: true, obsUrl: process.env.OBS_URL ?? 'ws://127.0.0.1:4455' } as DashboardSettings,
+};
+let local: LocalData = structuredClone(defaults);
+let errors: Array<{ at: string; message: string }> = [];
+
+app.use(express.json({ limit: '32kb' }));
+app.use(express.static(path.resolve('apps/web')));
+
+async function load() {
+  try { local = { ...local, ...JSON.parse(await readFile(dataFile, 'utf8')) }; }
+  catch (error) { if ((error as NodeJS.ErrnoException).code !== 'ENOENT') logError(error); }
+}
+async function save() { await mkdir(path.dirname(dataFile), { recursive: true }); await writeFile(dataFile, JSON.stringify(local, null, 2)); }
+function logError(error: unknown) { errors = [{ at: new Date().toISOString(), message: error instanceof Error ? error.message : String(error) }, ...errors].slice(0, 30); }
+function remaining() { return local.timer.running && local.timer.deadline ? Math.max(0, Math.ceil((local.timer.deadline - Date.now()) / 1000)) : local.timer.remaining; }
+function snapshot(): DashboardState {
+  local.timer.remaining = remaining();
+  if (local.timer.running && local.timer.remaining === 0) { local.timer.running = false; local.timer.deadline = null; }
+  const nextLive = local.planning.filter(x => (x.category === 'live' || x.kind === 'LIVE') && Date.parse(x.endAtUtc) > Date.now()).sort((a, b) => Date.parse(a.startAtUtc) - Date.parse(b.startAtUtc))[0] ?? null;
+  return {
+    at: new Date().toISOString(), ...local, obs: obs.state, nextLive,
+    health: {
+      dashboard: { ok: true, detail: 'API locale opérationnelle', reconnects: 0 },
+      storage: { ok: true, detail: dataFile, reconnects: 0 },
+      obs: { ok: obs.state.connected, detail: obs.state.connected ? 'WebSocket connecté' : 'OBS hors ligne — cockpit disponible', reconnects: obs.reconnectCount },
+    },
+  };
+}
+function broadcast() { const event: DashboardEvent = { type: 'state.updated', data: snapshot() }; const body = JSON.stringify(event); for (const ws of wss.clients) if (ws.readyState === ws.OPEN) ws.send(body); }
+async function changed() { await save(); broadcast(); return snapshot(); }
+
+async function execute(command: DashboardCommand) {
+  switch (command.type) {
+    case 'mode.set': local.mode = command.mode; break;
+    case 'timer.start': { const seconds = command.seconds ?? local.timer.remaining; local.timer.duration = seconds; local.timer.remaining = seconds; local.timer.running = true; local.timer.deadline = Date.now() + seconds * 1000; break; }
+    case 'timer.pause': local.timer.remaining = remaining(); local.timer.running = false; local.timer.deadline = null; break;
+    case 'timer.reset': local.timer.running = false; local.timer.remaining = local.timer.duration; local.timer.deadline = null; break;
+    case 'timer.add': local.timer.remaining = remaining() + command.seconds; if (local.timer.running) local.timer.deadline = Date.now() + local.timer.remaining * 1000; break;
+    case 'checklist.toggle': { const item = local.checklist.find(x => x.id === command.id); if (item) item.done = !item.done; break; }
+    case 'checklist.reset': local.checklist.forEach(x => { x.done = false; }); break;
+    case 'obs.scene': await obs.scene(command.scene); break;
+    case 'obs.mute': await obs.mute(command.input, command.muted); break;
+    case 'obs.volume': await obs.volume(command.input, command.volume); break;
+    case 'obs.stream': await obs.stream(command.start); break;
+    case 'obs.record': await obs.record(command.start); break;
+  }
+  return changed();
+}
+
+app.get('/api/state', (_req, res) => res.json(snapshot()));
+app.post('/api/commands', async (req, res, next) => { try { res.json(await execute(req.body as DashboardCommand)); } catch (e) { next(e); } });
+app.post('/api/planning', async (req, res, next) => { try {
+  const input = req.body as Partial<CalendarItem>;
+  if (!input.title || !input.startAtUtc || !input.endAtUtc || Date.parse(input.endAtUtc) <= Date.parse(input.startAtUtc)) return res.status(400).json({ error: 'Titre et période valides requis.' });
+  local.planning.push({ id: randomUUID(), title: input.title, description: input.description ?? '', startAtUtc: input.startAtUtc, endAtUtc: input.endAtUtc, category: input.category ?? 'live' });
+  res.status(201).json(await changed());
+} catch (e) { next(e); } });
+app.delete('/api/planning/:id', async (req, res, next) => { try { local.planning = local.planning.filter(x => x.id !== req.params.id); res.json(await changed()); } catch (e) { next(e); } });
+app.put('/api/settings', async (req, res, next) => { try { local.settings = { ...local.settings, ...req.body }; res.json(await changed()); } catch (e) { next(e); } });
+app.get('/api/diagnostics', (_req, res) => res.json({ state: snapshot(), errors, runtime: { node: process.version, pid: process.pid, uptime: process.uptime() } }));
+app.use((error: unknown, _req: express.Request, res: express.Response, _next: express.NextFunction) => { logError(error); res.status(502).json({ error: error instanceof Error ? error.message : 'Erreur interne' }); });
+
+wss.on('connection', ws => ws.send(JSON.stringify({ type: 'state.updated', data: snapshot() } satisfies DashboardEvent)));
+await load();
+void obs.connect();
+setInterval(() => broadcast(), 1000).unref();
+server.listen(port, '127.0.0.1', () => console.log(`StreamDashboard http://127.0.0.1:${port}`));
