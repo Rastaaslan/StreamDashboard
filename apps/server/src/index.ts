@@ -13,7 +13,9 @@ const server = createServer(app);
 const wss = new WebSocketServer({ server, path: '/ws' });
 const obs = new ObsClient();
 const dataFile = path.resolve(process.env.DATA_FILE ?? 'data/dashboard.json');
-interface LocalData { mode: RunMode; timer: TimerState; planning: CalendarItem[]; checklist: ChecklistItem[]; settings: DashboardSettings }
+
+type PersistedSettings = Omit<DashboardSettings, 'obsPasswordSet'> & { obsPassword: string };
+interface LocalData { mode: RunMode; timer: TimerState; planning: CalendarItem[]; checklist: ChecklistItem[]; settings: PersistedSettings }
 const defaults: LocalData = {
   mode: 'idle' as const,
   timer: { running: false, duration: 300, remaining: 300, deadline: null },
@@ -24,7 +26,11 @@ const defaults: LocalData = {
     { id: 'title', label: 'Titre, catégorie et notification prêts', done: false },
     { id: 'water', label: 'Eau et environnement prêts', done: false },
   ],
-  settings: { streamerName: 'Streamer', accent: 'violet', confirmStop: true, obsUrl: process.env.OBS_URL ?? 'ws://127.0.0.1:4455' } as DashboardSettings,
+  settings: {
+    streamerName: 'Streamer', accent: 'violet', confirmStop: true,
+    obsUrl: process.env.OBS_URL ?? 'ws://127.0.0.1:4455',
+    obsPassword: process.env.OBS_PASSWORD ?? '',
+  },
 };
 let local: LocalData = structuredClone(defaults);
 let errors: Array<{ at: string; message: string }> = [];
@@ -33,22 +39,34 @@ app.use(express.json({ limit: '32kb' }));
 app.use(express.static(path.resolve('apps/web')));
 
 async function load() {
-  try { local = { ...local, ...JSON.parse(await readFile(dataFile, 'utf8')) }; }
-  catch (error) { if ((error as NodeJS.ErrnoException).code !== 'ENOENT') logError(error); }
+  try {
+    const parsed = JSON.parse(await readFile(dataFile, 'utf8')) as Partial<LocalData>;
+    local = { ...local, ...parsed, settings: { ...local.settings, ...(parsed.settings ?? {}) } };
+  } catch (error) { if ((error as NodeJS.ErrnoException).code !== 'ENOENT') logError(error); }
 }
 async function save() { await mkdir(path.dirname(dataFile), { recursive: true }); await writeFile(dataFile, JSON.stringify(local, null, 2)); }
 function logError(error: unknown) { errors = [{ at: new Date().toISOString(), message: error instanceof Error ? error.message : String(error) }, ...errors].slice(0, 30); }
 function remaining() { return local.timer.running && local.timer.deadline ? Math.max(0, Math.ceil((local.timer.deadline - Date.now()) / 1000)) : local.timer.remaining; }
+function publicSettings(): DashboardSettings {
+  return {
+    streamerName: local.settings.streamerName,
+    accent: local.settings.accent,
+    confirmStop: local.settings.confirmStop,
+    obsUrl: local.settings.obsUrl,
+    obsPasswordSet: Boolean(local.settings.obsPassword),
+  };
+}
 function snapshot(): DashboardState {
   local.timer.remaining = remaining();
   if (local.timer.running && local.timer.remaining === 0) { local.timer.running = false; local.timer.deadline = null; }
   const nextLive = local.planning.filter(x => (x.category === 'live' || x.kind === 'LIVE') && Date.parse(x.endAtUtc) > Date.now()).sort((a, b) => Date.parse(a.startAtUtc) - Date.parse(b.startAtUtc))[0] ?? null;
   return {
-    at: new Date().toISOString(), ...local, obs: obs.state, nextLive,
+    at: new Date().toISOString(), mode: local.mode, timer: local.timer, planning: local.planning, checklist: local.checklist,
+    settings: publicSettings(), obs: obs.state, nextLive,
     health: {
       dashboard: { ok: true, detail: 'API locale opérationnelle', reconnects: 0 },
       storage: { ok: true, detail: dataFile, reconnects: 0 },
-      obs: { ok: obs.state.connected, detail: obs.state.connected ? 'WebSocket connecté' : 'OBS hors ligne — cockpit disponible', reconnects: obs.reconnectCount },
+      obs: { ok: obs.state.connected, detail: obs.state.connected ? `WebSocket connecté${obs.state.obsVersion ? ` · OBS ${obs.state.obsVersion}` : ''}` : (obs.state.error ?? 'OBS hors ligne — cockpit disponible'), reconnects: obs.reconnectCount },
     },
   };
 }
@@ -82,12 +100,29 @@ app.post('/api/planning', async (req, res, next) => { try {
   res.status(201).json(await changed());
 } catch (e) { next(e); } });
 app.delete('/api/planning/:id', async (req, res, next) => { try { local.planning = local.planning.filter(x => x.id !== req.params.id); res.json(await changed()); } catch (e) { next(e); } });
-app.put('/api/settings', async (req, res, next) => { try { local.settings = { ...local.settings, ...req.body }; res.json(await changed()); } catch (e) { next(e); } });
+app.put('/api/settings', async (req, res, next) => { try {
+  const input = req.body as Partial<DashboardSettings> & { obsPassword?: string };
+  if (typeof input.streamerName === 'string') local.settings.streamerName = input.streamerName;
+  if (input.accent === 'violet' || input.accent === 'cyan' || input.accent === 'rose') local.settings.accent = input.accent;
+  if (typeof input.confirmStop === 'boolean') local.settings.confirmStop = input.confirmStop;
+  if (typeof input.obsUrl === 'string' && input.obsUrl.trim()) local.settings.obsUrl = input.obsUrl.trim();
+  if (typeof input.obsPassword === 'string' && input.obsPassword.length > 0) local.settings.obsPassword = input.obsPassword;
+  await save();
+  await obs.configure(local.settings.obsUrl, local.settings.obsPassword);
+  broadcast();
+  res.json(snapshot());
+} catch (e) { next(e); } });
+app.post('/api/obs/test', async (req, res, next) => { try {
+  const input = req.body as { obsUrl?: string; obsPassword?: string };
+  const url = input.obsUrl?.trim() || local.settings.obsUrl;
+  const password = input.obsPassword && input.obsPassword.length > 0 ? input.obsPassword : local.settings.obsPassword;
+  res.json(await obs.test(url, password));
+} catch (e) { next(e); } });
 app.get('/api/diagnostics', (_req, res) => res.json({ state: snapshot(), errors, runtime: { node: process.version, pid: process.pid, uptime: process.uptime() } }));
 app.use((error: unknown, _req: express.Request, res: express.Response, _next: express.NextFunction) => { logError(error); res.status(502).json({ error: error instanceof Error ? error.message : 'Erreur interne' }); });
 
 wss.on('connection', ws => ws.send(JSON.stringify({ type: 'state.updated', data: snapshot() } satisfies DashboardEvent)));
 await load();
-void obs.connect();
+void obs.configure(local.settings.obsUrl, local.settings.obsPassword).then(broadcast);
 setInterval(() => broadcast(), 1000).unref();
 server.listen(port, '127.0.0.1', () => console.log(`StreamDashboard http://127.0.0.1:${port}`));
