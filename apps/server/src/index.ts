@@ -82,11 +82,11 @@ async function execute(command: DashboardCommand) {
     case 'timer.add': local.timer.remaining = remaining() + command.seconds; if (local.timer.running) local.timer.deadline = Date.now() + local.timer.remaining * 1000; break;
     case 'checklist.toggle': { const item = local.checklist.find(x => x.id === command.id); if (item) item.done = !item.done; break; }
     case 'checklist.reset': local.checklist.forEach(x => { x.done = false; }); break;
-    case 'obs.scene': await obs.scene(command.scene); break;
-    case 'obs.mute': await obs.mute(command.input, command.muted); break;
-    case 'obs.volume': await obs.volume(command.input, command.volume); break;
-    case 'obs.stream': await obs.stream(command.start); break;
-    case 'obs.record': await obs.record(command.start); break;
+    case 'obs.scene': await obs.scene(command.scene); await obs.refresh(); break;
+    case 'obs.mute': await obs.mute(command.input, command.muted); await obs.refresh(); break;
+    case 'obs.volume': await obs.volume(command.input, command.volume); await obs.refresh(); break;
+    case 'obs.stream': await obs.stream(command.start); await obs.refresh(); break;
+    case 'obs.record': await obs.record(command.start); await obs.refresh(); break;
   }
   return changed();
 }
