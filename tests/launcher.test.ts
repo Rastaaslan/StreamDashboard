@@ -99,6 +99,12 @@ describe('contrat PowerShell', () => {
     expect(launcher).toContain("$File -in @('npm', 'pnpm', 'yarn', 'npx')");
     expect(launcher).toContain("Get-Command ($File + '.cmd')");
   });
+  it('installe automatiquement les dependances externes manquantes', () => {
+    expect(launcher).toContain('function Ensure-RepositoryDependencies');
+    expect(launcher).toContain("Join-Path $Directory 'node_modules'");
+    expect(launcher).toContain("Start-Process -FilePath $launchFile -ArgumentList @('install')");
+    expect(launcher).toContain('Ensure-RepositoryDependencies ([string]$json.manager) ([string]$json.dir)');
+  });
   it('valide la sortie bootstrap avant de lancer un service', () => {
     expect(launcher).toContain("le bootstrap n'a retourne aucune configuration JSON exploitable");
     expect(launcher).toContain('configuration bootstrap incomplete');
