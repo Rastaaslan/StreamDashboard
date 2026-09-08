@@ -39,8 +39,14 @@ function Start-Detached([string]$File, [string[]]$Arguments, [string]$Directory)
 function Start-Repository([string]$Name, [string]$HealthUrl) {
   if (Test-Endpoint $HealthUrl) { return $true }
   try {
-    $json = (& npm run --silent bootstrap -- --project $Name --json | Select-Object -Last 1) | ConvertFrom-Json
-    Start-Detached $json.manager ([string[]]$json.args) $json.dir
+    $bootstrapOutput = & npm run --silent bootstrap -- --project $Name --json
+    $jsonLine = $bootstrapOutput | Where-Object { $_ -and $_.TrimStart().StartsWith('{') } | Select-Object -Last 1
+    if (-not $jsonLine) { throw "$Name : le bootstrap n'a retourne aucune configuration JSON exploitable" }
+    $json = $jsonLine | ConvertFrom-Json
+    if (-not $json -or -not $json.manager -or -not $json.dir -or -not $json.args) {
+      throw "$Name : configuration bootstrap incomplete"
+    }
+    Start-Detached ([string]$json.manager) ([string[]]$json.args) ([string]$json.dir)
     return Wait-Endpoint $HealthUrl
   } catch { Write-Warning "$Name n'a pas pu demarrer: $_"; return $false }
 }

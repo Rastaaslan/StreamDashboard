@@ -35,6 +35,22 @@ describe('bootstrap du launcher', () => {
     expect(await locate(repositories[1], root)).toBe(sibling);
   });
 
+  it('reutilise un repository deja present dans .dependencies', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'dashboard-'));
+    const dependency = join(root, '.dependencies', 'StreamTool');
+    await packageRepo(dependency);
+    delete process.env.STREAMTOOL_PATH;
+    expect(await locate(repositories[0], root)).toBe(dependency);
+  });
+
+  it('signale clairement un dossier .dependencies incomplet', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'dashboard-'));
+    const dependency = join(root, '.dependencies', 'StreamTool');
+    await mkdir(dependency, { recursive: true });
+    delete process.env.STREAMTOOL_PATH;
+    await expect(locate(repositories[0], root)).rejects.toThrow('ne contient pas de package.json valide');
+  });
+
   it.each([
     ['package-lock.json', 'npm', ['run', 'start']],
     ['pnpm-lock.yaml', 'pnpm', ['start']],
@@ -63,6 +79,10 @@ describe('contrat PowerShell', () => {
     expect(launcher.match(/Start-Detached/g)?.length).toBeGreaterThanOrEqual(3);
     expect(launcher).toContain("Get-Process -Name 'obs64', 'obs32'");
     expect(launcher).toContain('Start-Process -FilePath');
+  });
+  it('valide la sortie bootstrap avant de lancer un service', () => {
+    expect(launcher).toContain("le bootstrap n'a retourne aucune configuration JSON exploitable");
+    expect(launcher).toContain('configuration bootstrap incomplete');
   });
   it('conserve le mode degrade et ouvre uniquement un dashboard disponible', () => {
     expect(launcher).toContain('catch { Write-Warning');
