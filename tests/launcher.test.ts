@@ -58,6 +58,7 @@ describe('bootstrap du launcher', () => {
   ])('detecte le gestionnaire pour %s', async (lockfile, manager, args) => {
     const dir = await mkdtemp(join(tmpdir(), 'service-'));
     await packageRepo(dir, { start: 'node app.js' }, lockfile);
+    await writeFile(join(dir, 'app.js'), '');
     expect(await command(dir)).toEqual({ manager, args });
   });
 
@@ -65,6 +66,20 @@ describe('bootstrap du launcher', () => {
     const dir = await mkdtemp(join(tmpdir(), 'service-'));
     await packageRepo(dir, { serve: 'vite', dev: 'tsx app.ts' });
     expect(await command(dir)).toEqual({ manager: 'npm', args: ['run', 'dev'] });
+  });
+
+  it('prefere dev quand start pointe vers un artefact node absent', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'streamtool-'));
+    await packageRepo(dir, { start: 'node dist/index.js', dev: 'tsx watch src/index.ts' }, 'package-lock.json');
+    expect(await command(dir)).toEqual({ manager: 'npm', args: ['run', 'dev'] });
+  });
+
+  it('conserve start quand son artefact node existe', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'streamtool-'));
+    await packageRepo(dir, { start: 'node dist/index.js', dev: 'tsx watch src/index.ts' }, 'package-lock.json');
+    await mkdir(join(dir, 'dist'), { recursive: true });
+    await writeFile(join(dir, 'dist', 'index.js'), '');
+    expect(await command(dir)).toEqual({ manager: 'npm', args: ['run', 'start'] });
   });
 });
 
@@ -79,6 +94,10 @@ describe('contrat PowerShell', () => {
     expect(launcher.match(/Start-Detached/g)?.length).toBeGreaterThanOrEqual(3);
     expect(launcher).toContain("Get-Process -Name 'obs64', 'obs32'");
     expect(launcher).toContain('Start-Process -FilePath');
+  });
+  it('resout les gestionnaires de paquets vers les shims cmd sous Windows', () => {
+    expect(launcher).toContain("$File -in @('npm', 'pnpm', 'yarn', 'npx')");
+    expect(launcher).toContain("Get-Command ($File + '.cmd')");
   });
   it('valide la sortie bootstrap avant de lancer un service', () => {
     expect(launcher).toContain("le bootstrap n'a retourne aucune configuration JSON exploitable");

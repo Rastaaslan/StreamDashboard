@@ -29,10 +29,24 @@ export async function locate(project: Repository, root = process.cwd()) {
   return target;
 }
 
+function startArtifactExists(dir: string, startScript: unknown) {
+  if (typeof startScript !== 'string') return true;
+  const match = startScript.trim().match(/^node\s+["']?([^"'\s]+)["']?/i);
+  if (!match) return true;
+  return existsSync(resolve(dir, match[1]));
+}
+
 export async function command(dir: string): Promise<RunCommand> {
   const pkg = JSON.parse(await readFile(resolve(dir, 'package.json'), 'utf8'));
-  const script = ['start', 'dev', 'serve'].find((candidate) => pkg.scripts?.[candidate]);
+  let script: string | undefined;
+
+  if (pkg.scripts?.start && startArtifactExists(dir, pkg.scripts.start)) script = 'start';
+  else if (pkg.scripts?.dev) script = 'dev';
+  else if (pkg.scripts?.serve) script = 'serve';
+  else if (pkg.scripts?.start) script = 'start';
+
   if (!script) throw Error(`Aucun script start/dev/serve dans ${dir}`);
+
   const manager = existsSync(resolve(dir, 'pnpm-lock.yaml'))
     ? 'pnpm'
     : existsSync(resolve(dir, 'yarn.lock')) ? 'yarn' : 'npm';
