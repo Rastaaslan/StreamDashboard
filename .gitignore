@@ -3,3 +3,6 @@ dist/
 .env
 .dependencies/
 *.log
+
+# Local runtime state
+data/dashboard.json

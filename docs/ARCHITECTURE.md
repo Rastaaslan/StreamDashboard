@@ -1,13 +1,11 @@
-# Architecture
+# Architecture V1 Desktop
 
-```text
-damPlanner ─HTTP lecture─┐
-StreamTool ─HTTP─────────┼→ API StreamDashboard → état agrégé → WebSocket → Desktop/PWA
-OBS ─obs-websocket───────┘
-```
+StreamDashboard est un monolithe local en trois frontières : le contrat partagé (`packages/contracts`), l'orchestrateur HTTP/WebSocket (`apps/server`) et les clients (`apps/web`). L'interface n'appelle jamais OBS directement. Elle émet une commande typée vers `/api/commands`, puis reçoit l'état canonique par `state.updated`.
 
-Les adapters isolent les pannes. L'agrégateur conserve le dernier planning valide, calcule le prochain LIVE non brouillon, signale un stream sans événement futur et publie chaque transition. StreamTool reste propriétaire des séquences et du timer; damPlanner du calendrier; OBS de son état. Le serveur n'en conserve qu'une projection.
+Le planning, la checklist, le timer et les préférences sont natifs et persistés dans `data/dashboard.json`. OBS est la seule intégration d'exécution. Son absence dégrade les contrôles OBS, sans empêcher planning, préparation ou diagnostics de fonctionner.
 
-La commande mobile aboutit à l'upstream, puis force une agrégation et un broadcast. Un polling de deux secondes couvre également les changements externes et complète la reconnexion OBS exponentielle.
+StreamTool et damPlanner ne font pas partie du graphe d'exécution V1. Leurs répertoires et processus ne sont jamais requis ou démarrés par le launcher.
 
-La confiance est locale par défaut. À distance, le WebSocket et les mutations HTTP exigent device id + token. Le token aléatoire n'est stocké que sous forme SHA-256.
+## Extension future
+
+Un futur client peut réutiliser `DashboardCommand`, `DashboardEvent` et `DashboardState`. La V1 ne contient volontairement aucun pairing, token device, QR code, manifest PWA ou navigation mobile.
