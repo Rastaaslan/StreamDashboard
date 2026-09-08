@@ -48,6 +48,17 @@ function Start-Detached([string]$File, [string[]]$Arguments, [string]$Directory)
   $launchFile = Resolve-LaunchCommand $File
   Start-Process -FilePath $launchFile -ArgumentList $Arguments -WorkingDirectory $Directory -WindowStyle Minimized | Out-Null
 }
+function Ensure-RepositoryDependencies([string]$Manager, [string]$Directory) {
+  $nodeModules = Join-Path $Directory 'node_modules'
+  if (Test-Path $nodeModules) { return }
+
+  $launchFile = Resolve-LaunchCommand $Manager
+  Write-Host "Installation des dependances dans $Directory..."
+  $install = Start-Process -FilePath $launchFile -ArgumentList @('install') -WorkingDirectory $Directory -Wait -PassThru -NoNewWindow
+  if ($install.ExitCode -ne 0) {
+    throw "Installation des dependances impossible dans $Directory (code $($install.ExitCode))"
+  }
+}
 function Start-Repository([string]$Name, [string]$HealthUrl) {
   if (Test-Endpoint $HealthUrl) { return $true }
   try {
@@ -58,6 +69,7 @@ function Start-Repository([string]$Name, [string]$HealthUrl) {
     if (-not $json -or -not $json.manager -or -not $json.dir -or -not $json.args) {
       throw "$Name : configuration bootstrap incomplete"
     }
+    Ensure-RepositoryDependencies ([string]$json.manager) ([string]$json.dir)
     Start-Detached ([string]$json.manager) ([string[]]$json.args) ([string]$json.dir)
     return Wait-Endpoint $HealthUrl
   } catch { Write-Warning "$Name n'a pas pu demarrer: $_"; return $false }
