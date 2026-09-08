@@ -32,6 +32,9 @@ export interface ObsState {
   scene: string | null;
   scenes: string[];
   inputs: Record<string, { muted: boolean; volume: number }>;
+  error: string | null;
+  obsVersion: string | null;
+  websocketVersion: string | null;
 }
 
 export interface DashboardSettings {
@@ -39,6 +42,7 @@ export interface DashboardSettings {
   accent: 'violet' | 'cyan' | 'rose';
   confirmStop: boolean;
   obsUrl: string;
+  obsPasswordSet: boolean;
 }
 
 export interface DashboardState {
