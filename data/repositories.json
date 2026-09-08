@@ -1,0 +1,4 @@
+[
+  { "name": "StreamTool", "env": "STREAMTOOL_PATH", "url": "https://github.com/Rastaaslan/StreamTool.git" },
+  { "name": "damPlanner", "env": "DAMPLANNER_PATH", "url": "https://github.com/Rastaaslan/damPlanner.git" }
+]

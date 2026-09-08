@@ -4,7 +4,7 @@ Cockpit local Desktop et PWA mobile qui agrège **damPlanner** (planning), **Str
 
 ## Démarrage
 
-Node 20+ : `npm install`, puis `npm run dev`. Ouvrir <http://127.0.0.1:47832>. Sous Windows, double-cliquer `Lancer_StreamDashboard.cmd` pour rechercher/démarrer les trois applications et ouvrir le navigateur.
+Node 20+ : `npm install`, puis `npm run dev`. Ouvrir <http://127.0.0.1:47832>. Sous Windows, **double-cliquer simplement `Lancer_StreamDashboard.cmd`** : le launcher vérifie OBS et les trois services, ne redémarre pas ceux qui répondent déjà, localise les repos annexes, puis ouvre le navigateur. Une panne isolée n'empêche pas le reste du setup de démarrer.
 
 Variables et ports figurent dans `.env.example`. Tests : `npm test`. Smoke contre un serveur lancé : `npm run smoke`.
 
