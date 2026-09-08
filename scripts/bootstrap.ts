@@ -18,6 +18,11 @@ export async function locate(project: Repository, root = process.cwd()) {
   if (found) return resolve(found);
 
   const target = resolve(root, '.dependencies', project.name);
+  if (existsSync(resolve(target, 'package.json'))) return target;
+  if (existsSync(target)) {
+    throw Error(`Le dossier ${target} existe mais ne contient pas de package.json valide`);
+  }
+
   await mkdir(dirname(target), { recursive: true });
   const clone = spawnSync('git', ['clone', project.url, target], { stdio: 'inherit' });
   if (clone.status) throw Error(`Clone ${project.name} impossible`);
