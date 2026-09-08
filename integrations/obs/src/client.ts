@@ -13,14 +13,14 @@ export class ObsClient {
   private reconnects = 0;
   private retry?: NodeJS.Timeout;
   private suppressReconnect = false;
-  state: ObsState = { connected: false, streaming: false, recording: false, scene: null, scenes: [], inputs: {}, error: null, obsVersion: null, websocketVersion: null };
+  state: ObsState = { connected: false, streaming: false, recording: false, scene: null, scenes: [], inputs: {}, activeAudioInputs: [], error: null, obsVersion: null, websocketVersion: null };
 
   constructor(private url = process.env.OBS_URL ?? 'ws://127.0.0.1:4455', private password = process.env.OBS_PASSWORD ?? '') {
     this.client.on('ConnectionClosed', () => {
       this.state.connected = false;
       if (!this.suppressReconnect) this.schedule();
     });
-    this.client.on('CurrentProgramSceneChanged', ({ sceneName }) => { this.state.scene = sceneName; });
+    this.client.on('CurrentProgramSceneChanged', ({ sceneName }) => { this.state.scene = sceneName; void this.refresh().catch(() => undefined); });
     this.client.on('StreamStateChanged', ({ outputActive }) => { this.state.streaming = outputActive; });
     this.client.on('RecordStateChanged', ({ outputActive }) => { this.state.recording = outputActive; });
     this.client.on('InputMuteStateChanged', ({ inputName, inputMuted }) => {
@@ -76,9 +76,9 @@ export class ObsClient {
 
   async refresh() {
     if (!this.state.connected) return;
-    const [version, scene, scenes, stream, record, inputs] = await Promise.all([
+    const [version, scene, scenes, stream, record, inputs, specialInputs] = await Promise.all([
       this.client.call('GetVersion'), this.client.call('GetCurrentProgramScene'), this.client.call('GetSceneList'), this.client.call('GetStreamStatus'),
-      this.client.call('GetRecordStatus'), this.client.call('GetInputList'),
+      this.client.call('GetRecordStatus'), this.client.call('GetInputList'), this.client.call('GetSpecialInputs'),
     ]);
     this.state.obsVersion = String(version.obsVersion ?? '');
     this.state.websocketVersion = String(version.obsWebSocketVersion ?? '');
@@ -94,6 +94,23 @@ export class ObsClient {
         this.state.inputs[name] = { muted: mute.inputMuted, volume: volume.inputVolumeMul };
       } catch { /* Inputs without audio capabilities are intentionally omitted. */ }
     }));
+    const active = await this.sceneSources(String(scene.currentProgramSceneName));
+    for (const value of Object.values(specialInputs)) if (typeof value === 'string') active.add(value);
+    this.state.activeAudioInputs = Object.keys(this.state.inputs).filter(name => active.has(name));
+  }
+  private async sceneSources(sceneName: string, visited = new Set<string>()): Promise<Set<string>> {
+    if (visited.has(sceneName)) return new Set();
+    visited.add(sceneName);
+    const result = await this.client.call('GetSceneItemList', { sceneName });
+    const names = new Set<string>();
+    await Promise.all(result.sceneItems.filter(item => item.sceneItemEnabled).map(async item => {
+      const name = String(item.sourceName);
+      if (item.isGroup) {
+        const group = await this.client.call('GetGroupSceneItemList', { sceneName: name });
+        for (const child of group.sceneItems.filter(x => x.sceneItemEnabled)) names.add(String(child.sourceName));
+      } else names.add(name);
+    }));
+    return names;
   }
   async scene(sceneName: string) { await this.client.call('SetCurrentProgramScene', { sceneName }); }
   async mute(inputName: string, inputMuted: boolean) { await this.client.call('SetInputMute', { inputName, inputMuted }); }

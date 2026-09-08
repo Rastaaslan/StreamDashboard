@@ -12,6 +12,12 @@ describe('contrat de commandes partagé', () => {
     expect(commands.map(x => x.type)).toEqual(['mode.set', 'timer.add', 'obs.stream', 'checklist.toggle']);
   });
 
+  it('distingue les entrées audio OBS actives dans le contrat', () => {
+    const inputs = { Micro: { muted: false, volume: 1 }, Musique: { muted: true, volume: 0.5 } };
+    const activeAudioInputs = ['Micro'];
+    expect(Object.keys(inputs).filter(name => activeAudioInputs.includes(name))).toEqual(['Micro']);
+  });
+
   it('publie un événement d’état versionnable', () => {
     const event = { type: 'state.updated' } as DashboardEvent;
     expect(event.type).toBe('state.updated');

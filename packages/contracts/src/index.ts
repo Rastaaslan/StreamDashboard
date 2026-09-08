@@ -19,6 +19,8 @@ export interface CalendarItem {
   editable?: boolean;
   kind?: 'LIVE' | 'PERSONAL';
   draft?: boolean;
+  twitchSegmentId?: string;
+  syncedAt?: string;
 }
 export interface CalendarPayload { rows: unknown[]; warnings: string[]; fetchedAt: number; fromCache: boolean; items: CalendarItem[] }
 export interface StreamState { mode: RunMode; running: boolean; startedAt: number | null; deadline: number | null; duration: number; remaining: number; timerVisible: boolean; previousObsScene: string | null; sequence: number; text: string; obs: { connected: boolean; currentScene: string | null; streaming: boolean } }
@@ -32,6 +34,8 @@ export interface ObsState {
   scene: string | null;
   scenes: string[];
   inputs: Record<string, { muted: boolean; volume: number }>;
+  /** Audio inputs which are audible in the current program scene (plus OBS global devices). */
+  activeAudioInputs: string[];
   error: string | null;
   obsVersion: string | null;
   websocketVersion: string | null;
@@ -43,6 +47,18 @@ export interface DashboardSettings {
   confirmStop: boolean;
   obsUrl: string;
   obsPasswordSet: boolean;
+  twitchClientId: string;
+  twitchConnected: boolean;
+  twitchUserName: string | null;
+}
+
+export interface TwitchState {
+  connected: boolean;
+  userName: string | null;
+  displayName: string | null;
+  error: string | null;
+  syncing: boolean;
+  lastSyncedAt: string | null;
 }
 
 export interface DashboardState {
@@ -55,6 +71,7 @@ export interface DashboardState {
   nextLive: CalendarItem | null;
   health: Record<string, { ok: boolean; detail: string; reconnects: number }>;
   settings: DashboardSettings;
+  twitch: TwitchState;
 }
 
 /** Stable command vocabulary intended for every client (desktop today, mobile later). */
