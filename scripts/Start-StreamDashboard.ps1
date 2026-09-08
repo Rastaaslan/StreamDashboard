@@ -5,8 +5,6 @@ $ErrorActionPreference = 'Stop'
 $Root = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
 Set-Location $Root
 
-# Import the simple KEY=VALUE launcher configuration without overwriting values
-# explicitly supplied by the calling shell.
 $envFile = Join-Path $Root '.env'
 if (Test-Path $envFile) {
   Get-Content $envFile | ForEach-Object {
@@ -51,13 +49,24 @@ function Start-Detached([string]$File, [string[]]$Arguments, [string]$Directory)
 function Ensure-RepositoryDependencies([string]$Manager, [string]$Directory) {
   $nodeModules = Join-Path $Directory 'node_modules'
   if (Test-Path $nodeModules) { return }
-
   $launchFile = Resolve-LaunchCommand $Manager
   Write-Host "Installation des dependances dans $Directory..."
   $install = Start-Process -FilePath $launchFile -ArgumentList @('install') -WorkingDirectory $Directory -Wait -PassThru -NoNewWindow
-  if ($install.ExitCode -ne 0) {
-    throw "Installation des dependances impossible dans $Directory (code $($install.ExitCode))"
-  }
+  if ($install.ExitCode -ne 0) { throw "Installation des dependances impossible dans $Directory (code $($install.ExitCode))" }
+}
+function Test-DamPlannerProcess([string]$Directory) {
+  try {
+    $normalized = [IO.Path]::GetFullPath($Directory)
+    $processes = Get-CimInstance Win32_Process -ErrorAction Stop | Where-Object {
+      $_.Name -in @('electron.exe','node.exe') -and $_.CommandLine -and $_.CommandLine.Contains($normalized)
+    }
+    return $null -ne ($processes | Select-Object -First 1)
+  } catch { return $false }
+}
+function Wait-DamPlannerProcess([string]$Directory) {
+  $deadline = (Get-Date).AddSeconds([Math]::Min($TimeoutSeconds, 15))
+  do { if (Test-DamPlannerProcess $Directory) { return $true }; Start-Sleep -Milliseconds 500 } while ((Get-Date) -lt $deadline)
+  return $false
 }
 function Start-Repository([string]$Name, [string]$HealthUrl) {
   if (Test-Endpoint $HealthUrl) { return $true }
@@ -66,16 +75,35 @@ function Start-Repository([string]$Name, [string]$HealthUrl) {
     $jsonLine = $bootstrapOutput | Where-Object { $_ -and $_.TrimStart().StartsWith('{') } | Select-Object -Last 1
     if (-not $jsonLine) { throw "$Name : le bootstrap n'a retourne aucune configuration JSON exploitable" }
     $json = $jsonLine | ConvertFrom-Json
-    if (-not $json -or -not $json.manager -or -not $json.dir -or -not $json.args) {
-      throw "$Name : configuration bootstrap incomplete"
-    }
+    if (-not $json -or -not $json.manager -or -not $json.dir -or -not $json.args) { throw "$Name : configuration bootstrap incomplete" }
+
     Ensure-RepositoryDependencies ([string]$json.manager) ([string]$json.dir)
+
+    if ($Name -eq 'StreamTool') {
+      $previousPort = $env:PORT
+      try {
+        $env:PORT = '47830'
+        Start-Detached ([string]$json.manager) ([string[]]$json.args) ([string]$json.dir)
+      } finally {
+        if ($null -eq $previousPort) { Remove-Item Env:PORT -ErrorAction SilentlyContinue } else { $env:PORT = $previousPort }
+      }
+      return Wait-Endpoint $HealthUrl
+    }
+
     Start-Detached ([string]$json.manager) ([string[]]$json.args) ([string]$json.dir)
+    if ($Name -eq 'damPlanner') {
+      if (Wait-Endpoint $HealthUrl) { return $true }
+      if (Wait-DamPlannerProcess ([string]$json.dir)) {
+        Write-Warning 'damPlanner est lance mais son API calendrier est indisponible; le live peut continuer en mode degrade.'
+        return $true
+      }
+      return $false
+    }
+
     return Wait-Endpoint $HealthUrl
   } catch { Write-Warning "$Name n'a pas pu demarrer: $_"; return $false }
 }
 
-# OBS is considered active by its Windows process. A launch failure is non-fatal.
 $status.OBS = $null -ne (Get-Process -Name 'obs64', 'obs32' -ErrorAction SilentlyContinue | Select-Object -First 1)
 if (-not $status.OBS) {
   $obsCandidates = @($env:OBS_EXE_PATH, "$env:ProgramFiles\obs-studio\bin\64bit\obs64.exe", "${env:ProgramFiles(x86)}\obs-studio\bin\32bit\obs32.exe") | Where-Object { $_ }
