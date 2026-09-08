@@ -33,8 +33,20 @@ function Wait-Endpoint([string]$Url) {
   do { if (Test-Endpoint $Url) { return $true }; Start-Sleep -Milliseconds 500 } while ((Get-Date) -lt $deadline)
   return $false
 }
+function Resolve-LaunchCommand([string]$File) {
+  if ($IsWindows -or $PSVersionTable.PSVersion.Major -lt 6) {
+    if ($File -in @('npm', 'pnpm', 'yarn', 'npx')) {
+      $cmd = Get-Command ($File + '.cmd') -ErrorAction SilentlyContinue
+      if ($cmd) { return $cmd.Source }
+    }
+  }
+  $resolved = Get-Command $File -ErrorAction SilentlyContinue
+  if ($resolved -and $resolved.CommandType -eq 'Application') { return $resolved.Source }
+  return $File
+}
 function Start-Detached([string]$File, [string[]]$Arguments, [string]$Directory) {
-  Start-Process -FilePath $File -ArgumentList $Arguments -WorkingDirectory $Directory -WindowStyle Minimized | Out-Null
+  $launchFile = Resolve-LaunchCommand $File
+  Start-Process -FilePath $launchFile -ArgumentList $Arguments -WorkingDirectory $Directory -WindowStyle Minimized | Out-Null
 }
 function Start-Repository([string]$Name, [string]$HealthUrl) {
   if (Test-Endpoint $HealthUrl) { return $true }
