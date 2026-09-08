@@ -1,0 +1,12 @@
+{
+  "id": "dam",
+  "name": "Le Feu de Camp de Dam",
+  "theme": "campfire",
+  "modes": {
+    "intro": { "text": "OUBLIEZ PAS DE PRENDRE PLACE, J'ARRIVE", "durationSeconds": 300, "timerVisible": true },
+    "pause": { "text": "GARDEZ MA PLACE AU CHAUD, JE REVIENS", "durationSeconds": 600, "timerVisible": true },
+    "end": { "text": "DERNIÈRES BRAISES AVANT LA NUIT", "durationSeconds": 90, "timerVisible": false }
+  },
+  "scenes": { "intro": "INTRO", "pause": "PAUSE", "end": "FIN", "afterIntro": "CHATTING" },
+  "options": { "autoStartStreaming": false, "autoSwitchAfterIntro": true, "autoReturnAfterPause": true }
+}

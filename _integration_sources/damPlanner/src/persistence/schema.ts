@@ -1,0 +1,11 @@
+import { sqliteTable, text, primaryKey } from 'drizzle-orm/sqlite-core';
+export const events=sqliteTable('planner_events',{id:text().primaryKey(),json:text().notNull(),deletedAt:text('deleted_at')});
+export const publications=sqliteTable('event_publications',{eventId:text('event_id').notNull(),provider:text().notNull(),json:text().notNull()},t=>[primaryKey({columns:[t.eventId,t.provider]})]);
+export const attempts=sqliteTable('sync_attempts',{id:text().primaryKey(),json:text().notNull()});
+export const templates=sqliteTable('event_templates',{id:text().primaryKey(),json:text().notNull()});
+export const notificationLog=sqliteTable('notification_log',{key:text().primaryKey(),notifiedAt:text('notified_at').notNull()});
+export const liveRoutines=sqliteTable('live_routines',{id:text().primaryKey(),json:text().notNull()});
+export const participants=sqliteTable('participants',{id:text().primaryKey(),json:text().notNull()});
+export const eventTags=sqliteTable('event_tags',{id:text().primaryKey(),json:text().notNull()});
+export const localActionTargets=sqliteTable('local_action_targets',{id:text().primaryKey(),json:text().notNull()});
+export const actionAudit=sqliteTable('action_audit',{id:text().primaryKey(),json:text().notNull()});

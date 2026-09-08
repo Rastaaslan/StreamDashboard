@@ -1,0 +1,2 @@
+import{describe,it,expect}from'vitest';import{LibsqlRepository}from'../../src/persistence/libsql-repository.js';import{event}from'../unit/availability.test.js';
+describe('migrations et CRUD SQLite',()=>{it('ouvre, écrit, lit et soft-delete',async()=>{const r=await LibsqlRepository.open(':memory:'),e=event();await r.save(e);expect(await r.list()).toHaveLength(1);await r.save({...e,deletedAt:new Date().toISOString()});expect(await r.list()).toHaveLength(0);expect(await r.get(e.id)).toBeDefined()})});

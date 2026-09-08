@@ -1,0 +1,7 @@
+const overlay = document.querySelector('#overlay'), phrase = document.querySelector('#phrase'), timer = document.querySelector('#timer'), timed = document.querySelector('#timed'), untimed = document.querySelector('#untimed'), embers = document.querySelector('.embers');
+for (let i=0;i<12;i++) { const e=document.createElement('i'); e.style.setProperty('--i',i); embers.append(e); }
+let state;
+let displayedSequence;
+function remaining() { if (!state) return 0; if (state.running && state.deadline) return Math.max(0, Math.ceil((state.deadline-Date.now())/1000)); return state.remaining; }
+function draw() { if (!state) return; const changed=displayedSequence!==state.sequence; displayedSequence=state.sequence; overlay.className=`overlay is-${state.mode}`; if(changed && state.mode!=='idle'){requestAnimationFrame(()=>overlay.classList.add('is-activating'));} phrase.textContent=state.text; const show=state.mode!=='idle' && state.timerVisible; overlay.dataset.layout=state.mode==='idle'?'idle':show?'timed':'untimed'; timed.hidden=!show; untimed.hidden=show || state.mode==='idle'; if(show){const n=remaining();timer.textContent=`${String(Math.floor(n/60)).padStart(2,'0')}:${String(n%60).padStart(2,'0')}`;} }
+const events=new EventSource('/api/events'); events.addEventListener('state',e=>{state=JSON.parse(e.data);draw();}); events.onerror=()=>overlay.dataset.connection='reconnecting'; events.onopen=()=>delete overlay.dataset.connection; setInterval(draw,250);

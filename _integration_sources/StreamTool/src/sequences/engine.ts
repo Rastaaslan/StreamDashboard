@@ -1,0 +1,22 @@
+import { EventEmitter } from 'node:events';
+import { DeadlineTimer } from '../timer/timer.js';
+import type { Mode, ObsGateway, Profile, PublicState } from '../types.js';
+
+export class SequenceEngine extends EventEmitter {
+  private mode: Mode = 'idle'; private previousObsScene: string | null = null; private sequence = 0;
+  private timer: DeadlineTimer; private expiry?: NodeJS.Timeout; private transition = Promise.resolve();
+  constructor(readonly profile: Profile, readonly obs: ObsGateway, now: () => number = Date.now) { super(); this.timer = new DeadlineTimer(now); }
+  state(): PublicState { const cfg = this.mode === 'idle' ? null : this.profile.modes[this.mode]; return { mode: this.mode, running: this.timer.running, startedAt: this.timer.startedAt, deadline: this.timer.deadline, duration: this.timer.duration, remaining: this.timer.remaining, timerVisible: cfg?.timerVisible ?? false, previousObsScene: this.previousObsScene, sequence: this.sequence, text: cfg?.text ?? '', obs: { connected: this.obs.connected, currentScene: this.obs.currentScene, streaming: this.obs.streaming } }; }
+  private publish() { this.emit('state', this.state()); }
+  private exclusive<T>(fn: () => Promise<T>): Promise<T> { const result = this.transition.then(fn, fn); this.transition = result.then(() => undefined, () => undefined); return result; }
+  start(mode: Exclude<Mode, 'idle'>) { return this.exclusive(async () => { if (this.mode === mode) return this.state(); if (!this.obs.connected) throw new Error('OBS WebSocket is unavailable'); this.neutralizeExpiry(); const prior = await this.obs.getCurrentScene(); const previous = mode === 'pause' || mode === 'end' ? prior : null; try { await this.obs.setSceneAndWait(this.profile.scenes[mode]); } catch (error) { this.schedule(); throw error; } if (mode === 'intro' && this.profile.options.autoStartStreaming) await this.obs.startStreaming(); this.previousObsScene = previous; this.mode = mode; this.sequence++; const seconds = this.profile.modes[mode].durationSeconds; this.timer.start(seconds); this.schedule(); this.publish(); console.log(`[sequence] ${mode} started (${seconds}s)`); return this.state(); }); }
+  returnFromPause() { return this.exclusive(async () => { if (this.mode !== 'pause') throw new Error('Pause is not active'); const scene = this.previousObsScene; this.neutralizeExpiry(); if (scene) await this.obs.setSceneAndWait(scene); this.stopToIdle(); this.publish(); return this.state(); }); }
+  cancelEnd() { return this.exclusive(async () => { if (this.mode !== 'end') throw new Error('End is not active'); const scene = this.previousObsScene; this.neutralizeExpiry(); if (scene && this.obs.connected) await this.obs.setSceneAndWait(scene); this.stopToIdle(); this.publish(); return this.state(); }); }
+  cancel() { return this.exclusive(async () => { this.stopToIdle(); this.publish(); return this.state(); }); }
+  timerAction(action: 'pause'|'resume'|'reset'|'add'|'set', seconds?: number) { if (this.mode === 'idle') throw new Error('No active sequence'); if (action === 'pause') this.timer.pause(); else if (action === 'resume') this.timer.resume(); else if (action === 'reset') this.timer.reset(); else if (action === 'add') this.timer.add(seconds!); else this.timer.set(seconds!); this.schedule(); this.publish(); return this.state(); }
+  private schedule() { clearTimeout(this.expiry); if (!this.timer.running || !this.timer.deadline) return; this.expiry = setTimeout(() => void this.expire(), Math.max(0, this.timer.deadline - Date.now())); this.expiry.unref(); }
+  private async expire() { await this.exclusive(async () => { if (this.timer.remaining > 0) return this.schedule(); const expired = this.mode; console.log(`[timer] ${expired} expired`); this.neutralizeExpiry(); if (expired === 'intro' && this.profile.options.autoSwitchAfterIntro && this.obs.connected) await this.obs.setSceneAndWait(this.profile.scenes.afterIntro); if (expired === 'pause' && this.profile.options.autoReturnAfterPause && this.previousObsScene && this.obs.connected) await this.obs.setSceneAndWait(this.previousObsScene); if (expired === 'end' && this.obs.connected) await this.obs.stopStreaming(); this.stopToIdle(); this.publish(); }); }
+  /** Stop the old automatic action without publishing a premature visual state. */
+  private neutralizeExpiry() { clearTimeout(this.expiry); this.expiry = undefined; }
+  private stopToIdle() { clearTimeout(this.expiry); this.timer.stop(); this.mode = 'idle'; this.previousObsScene = null; this.sequence++; }
+}

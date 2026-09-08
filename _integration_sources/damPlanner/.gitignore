@@ -1,0 +1,13 @@
+node_modules/
+dist/
+dist-electron/
+release/
+playwright-report/
+test-results/
+*.db
+*.sqlite
+.env
+oauth-credentials.json
+tokens.dat
+
+*.credentials.json
