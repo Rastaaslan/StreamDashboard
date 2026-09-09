@@ -1,11 +1,26 @@
-# Architecture V1 Desktop
+# Architecture StreamDashboard V1.x
 
-StreamDashboard est un monolithe local en trois frontières : le contrat partagé (`packages/contracts`), l'orchestrateur HTTP/WebSocket (`apps/server`) et les clients (`apps/web`). L'interface n'appelle jamais OBS directement. Elle émet une commande typée vers `/api/commands`, puis reçoit l'état canonique par `state.updated`.
+```text
+apps/web (desktop aujourd'hui, mobile demain)
+                    │ Command / PublicState / ServerEvent
+                    ▼
+apps/server ─ API v1 HTTP + WebSocket ─ CommandService / State bus
+                    │
+          packages/core (métier pur)
+                    │
+       integrations/obs + integrations/twitch
+                    │
+                 OBS / Twitch
 
-Le planning, la checklist, le timer et les préférences sont natifs et persistés dans `data/dashboard.json`. OBS est la seule intégration d'exécution. Son absence dégrade les contrôles OBS, sans empêcher planning, préparation ou diagnostics de fonctionner.
+apps/desktop = hôte Electron + lifecycle + safeStorage uniquement
+```
 
-StreamTool et damPlanner ne font pas partie du graphe d'exécution V1. Leurs répertoires et processus ne sont jamais requis ou démarrés par le launcher.
+`packages/contracts` est la source du protocole JSON (`protocolVersion = 1`). `packages/core` n'importe ni Electron, ni Express, ni DOM. Toutes les interfaces, y compris Electron et le futur mobile, passent par le même service de commandes et reçoivent le même état public.
 
-## Extension future
+Le serveur expose `/api/v1/health`, `/api/v1/state`, `/api/v1/capabilities`, `/api/v1/commands` et `/ws/v1`. Les routes V1 historiques restent des façades de compatibilité. Par défaut, l'écoute est strictement loopback (`desktop-local`) ; aucun secret ne figure dans l'état ou les événements.
 
-Un futur client peut réutiliser `DashboardCommand`, `DashboardEvent` et `DashboardState`. La V1 ne contient volontairement aucun pairing, token device, QR code, manifest PWA ou navigation mobile.
+Electron attend la Promise de readiness du serveur embarqué, puis ouvre le cockpit. Il fournit les chemins `userData`, le chiffrement OS, les logs, l'instance unique, l'updater et l'arrêt coordonné, sans logique métier et sans processus Node enfant.
+
+Le stockage JSON atomique contient `schemaVersion`, planning et préférences. `safeStorage` contient séparément tokens Twitch et mot de passe OBS. Twitch utilise Device Code Grant, rotation de refresh token et validation périodique. OBS reste externe, optionnel et reconnectable.
+
+StreamTool et damPlanner ne font pas partie du graphe d'exécution et leurs répertoires historiques restent inchangés.
