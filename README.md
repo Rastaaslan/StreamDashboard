@@ -1,6 +1,6 @@
 # StreamDashboard V1 Desktop
 
-Cockpit local et autonome pour piloter une session de streaming depuis une seule interface : préparation, OBS, diffusion, timer, planning, Control Deck, Fun Deck, réglages et diagnostics.
+Cockpit local et autonome pour piloter une session de streaming depuis une seule interface : préparation, OBS, diffusion, timer, planning synchronisé Twitch, Control Deck, Fun Deck, réglages et diagnostics.
 
 ## Démarrage quotidien (Windows)
 
@@ -25,3 +25,18 @@ Ouvrez <http://127.0.0.1:47832>. Utilisez `npm run build`, `npm test` et `npm ru
 - `packages/contracts` : contrats stables et réutilisables par de futurs clients, sans coupler le serveur à une interface.
 
 Les commandes passent toutes par `POST /api/commands`; les changements d'état sont publiés via l'événement `state.updated` sur `/ws`.
+
+## Connecter Twitch
+
+Le distributeur configure une fois le Client ID **public** de l'application avec `TWITCH_CLIENT_ID`. Aucun Client Secret ni URL de redirection n'est utilisé ou demandé aux utilisateurs.
+
+1. Dans **Réglages → Connexion Twitch**, cliquez sur **Connecter Twitch**.
+2. Ouvrez la page Twitch indiquée et saisissez le code affiché dans le cockpit.
+3. StreamDashboard détecte automatiquement la validation grâce au Device Code Grant.
+4. Dans **Planning**, cliquez sur **Synchroniser Twitch** pour importer les segments Twitch et publier les lives locaux.
+
+Chaque utilisateur obtient ses propres jetons. Ils restent dans son fichier local `data/dashboard.json` et ne sont jamais exposés par `/api/state`. Twitch est optionnel : le planning local et OBS continuent de fonctionner hors connexion. StreamTool et damPlanner ne sont pas requis.
+
+## Fun Deck OBS
+
+Le Fun Deck n'affiche plus de boutons de démonstration : il détecte les sources **Média**, **VLC** et **Diaporama** configurées dans OBS. Chaque bouton relance réellement la source correspondante via OBS WebSocket. Ajoutez ou renommez ces sources dans OBS puis rechargez l'état du cockpit pour adapter automatiquement le deck.
