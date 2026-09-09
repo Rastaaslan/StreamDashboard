@@ -9,7 +9,7 @@ jobs:
   desktop:
     runs-on: windows-latest
     env:
-      TWITCH_CLIENT_ID: ${{ vars.TWITCH_CLIENT_ID || '0vjzyt1xbcaopglvvduqnbbolsuafh' }}
+      TWITCH_CLIENT_ID: ${{ vars.TWITCH_CLIENT_ID || 'rksd5h9msic7t4kf1hgxygdv8lhbku' }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
