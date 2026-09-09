@@ -13,14 +13,14 @@
     "build": "tsc -p tsconfig.json",
     "test": "vitest run",
     "smoke": "tsx scripts/smoke.ts",
-    "desktop:dev": "npm run build && npx --yes --package electron@43.0.0 --package @electron-forge/cli@7.8.3 --package @electron-forge/maker-squirrel@7.8.3 electron-forge start",
-    "desktop:package": "npm run desktop:prepare && npm run desktop:icon && npm run build && npx --yes --package electron@43.0.0 --package @electron-forge/cli@7.8.3 --package @electron-forge/maker-squirrel@7.8.3 electron-forge package --platform=win32 --arch=x64",
-    "desktop:make": "npm run desktop:prepare && npm run desktop:icon && npm run build && npx --yes --package electron@43.0.0 --package @electron-forge/cli@7.8.3 --package @electron-forge/maker-squirrel@7.8.3 electron-forge make --platform=win32 --arch=x64",
+    "desktop:dev": "npm run build && electron-forge start",
+    "desktop:package": "npm run desktop:prepare && npm run desktop:icon && npm run build && electron-forge package --platform=win32 --arch=x64",
+    "desktop:make": "npm run desktop:prepare && npm run desktop:icon && npm run build && electron-forge make --platform=win32 --arch=x64",
     "release:check": "npm test && npm run build && npm run security:check && npm run desktop:prepare && npm run desktop:icon",
     "security:check": "tsx scripts/security-check.ts",
     "mobile:smoke": "tsx scripts/mobile-smoke.ts",
     "desktop:prepare": "tsx scripts/prepare-distribution.ts",
-    "desktop:smoke": "npm run desktop:icon && npm run build && npx --yes --package electron@43.0.0 --package @playwright/test@1.55.0 playwright test -c playwright.electron.config.ts",
+    "desktop:smoke": "npm run desktop:icon && npm run build && playwright test -c playwright.electron.config.ts",
     "desktop:icon": "tsx scripts/prepare-icon.ts"
   },
   "dependencies": {
@@ -29,9 +29,13 @@
     "ws": "^8.18.3"
   },
   "devDependencies": {
+    "@electron-forge/cli": "7.8.3",
+    "@electron-forge/maker-squirrel": "7.8.3",
+    "@playwright/test": "1.55.0",
     "@types/express": "^5.0.3",
     "@types/node": "^24.3.1",
     "@types/ws": "^8.18.1",
+    "electron": "43.0.0",
     "tsx": "^4.20.5",
     "typescript": "^5.9.2",
     "vitest": "^3.2.4"
