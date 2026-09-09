@@ -31,6 +31,11 @@ jobs:
         shell: pwsh
         run: throw 'Configure the repository variable TWITCH_CLIENT_ID before publishing a release.'
       - run: npm run desktop:package
+      - name: Upload packaged Windows app
+        uses: actions/upload-artifact@v4
+        with:
+          name: StreamDashboard-Windows-x64
+          path: out/**
       - run: npm run desktop:smoke
       - name: Prepare optional signing certificate
         if: startsWith(github.ref, 'refs/tags/v') && env.CERTIFICATE_BASE64 != ''
@@ -50,10 +55,6 @@ jobs:
         if: startsWith(github.ref, 'refs/tags/v')
         shell: pwsh
         run: Get-ChildItem out/make -Recurse -File | ForEach-Object { "$(Get-FileHash $_.FullName -Algorithm SHA256 | Select-Object -ExpandProperty Hash)  $($_.Name)" } | Set-Content out/make/checksums-SHA256.txt
-      - uses: actions/upload-artifact@v4
-        with:
-          name: StreamDashboard-Windows-x64
-          path: out/**
       - name: Publish GitHub Release assets
         if: startsWith(github.ref, 'refs/tags/v')
         shell: pwsh
