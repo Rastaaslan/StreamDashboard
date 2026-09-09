@@ -16,7 +16,8 @@ jobs:
         with:
           node-version: 22
           cache: npm
-      - run: npm ci
+      - name: Install dependencies including Electron toolchain
+        run: npm install
       - run: npm test
       - run: npm run build
       - run: npm run security:check
