@@ -17,8 +17,8 @@ const obs = new ObsClient();
 const dataFile = path.resolve(process.env.DATA_FILE ?? 'data/dashboard.json');
 
 type PersistedSettings = Omit<DashboardSettings, 'obsPasswordSet' | 'twitchConnected' | 'twitchUserName'> & { obsPassword: string };
-interface TwitchCredentials { clientId: string; accessToken: string; refreshToken: string; broadcasterId: string; userName: string; displayName: string }
-interface LocalData { mode: RunMode; timer: TimerState; planning: CalendarItem[]; checklist: ChecklistItem[]; settings: PersistedSettings; twitch: TwitchCredentials; twitchLastSyncedAt: string | null }
+interface TwitchTokens { accessToken: string; refreshToken: string; broadcasterId: string; userName: string; displayName: string }
+interface LocalData { mode: RunMode; timer: TimerState; planning: CalendarItem[]; checklist: ChecklistItem[]; settings: PersistedSettings; twitch: TwitchTokens; twitchLastSyncedAt: string | null }
 const defaults: LocalData = {
   mode: 'idle' as const,
   timer: { running: false, duration: 300, remaining: 300, deadline: null },
@@ -33,13 +33,12 @@ const defaults: LocalData = {
     streamerName: 'Streamer', accent: 'violet', confirmStop: true,
     obsUrl: process.env.OBS_URL ?? 'ws://127.0.0.1:4455',
     obsPassword: process.env.OBS_PASSWORD ?? '',
-    twitchClientId: process.env.TWITCH_CLIENT_ID ?? '',
   },
-  twitch: { clientId: process.env.TWITCH_CLIENT_ID ?? '', accessToken: '', refreshToken: '', broadcasterId: '', userName: '', displayName: '' },
+  twitch: { accessToken: '', refreshToken: '', broadcasterId: '', userName: '', displayName: '' },
   twitchLastSyncedAt: null,
 };
 let local: LocalData = structuredClone(defaults);
-let twitch = new TwitchClient(local.twitch);
+let twitch = new TwitchClient({ ...local.twitch, clientId: process.env.TWITCH_CLIENT_ID ?? '' });
 let errors: Array<{ at: string; message: string }> = [];
 
 app.use(express.json({ limit: '32kb' }));
@@ -61,7 +60,6 @@ function publicSettings(): DashboardSettings {
     confirmStop: local.settings.confirmStop,
     obsUrl: local.settings.obsUrl,
     obsPasswordSet: Boolean(local.settings.obsPassword),
-    twitchClientId: local.settings.twitchClientId,
     twitchConnected: twitch.state.connected,
     twitchUserName: twitch.state.displayName,
   };
@@ -105,29 +103,24 @@ app.put('/api/settings', async (req, res, next) => { try {
   if (typeof input.confirmStop === 'boolean') local.settings.confirmStop = input.confirmStop;
   if (typeof input.obsUrl === 'string' && input.obsUrl.trim()) local.settings.obsUrl = input.obsUrl.trim();
   if (typeof input.obsPassword === 'string' && input.obsPassword.length > 0) local.settings.obsPassword = input.obsPassword;
-  if (typeof input.twitchClientId === 'string') { local.settings.twitchClientId = input.twitchClientId.trim(); local.twitch.clientId = local.settings.twitchClientId; }
   await save();
   if (obsChanged) await obs.configure(local.settings.obsUrl, local.settings.obsPassword);
   broadcast();
   res.json(snapshot());
 } catch (e) { next(e); } });
-app.post('/api/twitch/connect', async (_req, res, next) => { try {
-  const redirectUri = process.env.TWITCH_REDIRECT_URI?.trim() || `http://localhost:${port}/api/twitch/callback`;
-  res.json({ url: twitch.startAuthorization(local.settings.twitchClientId, redirectUri) });
+app.post('/api/twitch/device', async (_req, res, next) => { try {
+  const alreadyPending = Boolean(twitch.state.deviceAuthorization);
+  const authorization = await twitch.startDeviceAuthorization();
+  broadcast(); res.status(201).json(authorization);
+  if (!alreadyPending) {
+    void twitch.waitForDeviceAuthorization().then(async () => { local.twitch = twitch.exportTokens(); await save(); broadcast(); })
+      .catch(error => { logError(error); broadcast(); });
+  }
 } catch (e) { next(e); } });
-app.get('/api/twitch/callback', async (req, res) => {
-  try {
-    if (typeof req.query.code !== 'string' || typeof req.query.state !== 'string') throw new Error(typeof req.query.error_description === 'string' ? req.query.error_description : 'Autorisation Twitch refusée.');
-    local.twitch = await twitch.finishAuthorization(req.query.code, req.query.state);
-    local.settings.twitchClientId = local.twitch.clientId;
-    await save(); broadcast();
-    res.type('html').send('<!doctype html><meta charset="utf-8"><title>Twitch connecté</title><body style="font:18px system-ui;background:#0b0d14;color:#fff;padding:3rem"><h1>Twitch est connecté ✓</h1><p>Vous pouvez fermer cet onglet et revenir à StreamDashboard.</p><script>setTimeout(()=>close(),1500)</script>');
-  } catch (e) { logError(e); res.status(400).type('text').send(`Connexion Twitch impossible : ${e instanceof Error ? e.message : String(e)}`); }
-});
-app.post('/api/twitch/disconnect', async (_req, res, next) => { try { twitch.disconnect(); local.twitch = twitch.exportCredentials(); await save(); broadcast(); res.json(snapshot()); } catch (e) { next(e); } });
+app.post('/api/twitch/disconnect', async (_req, res, next) => { try { twitch.disconnect(); local.twitch = twitch.exportTokens(); await save(); broadcast(); res.json(snapshot()); } catch (e) { next(e); } });
 app.post('/api/twitch/sync', async (_req, res, next) => { try {
   local.planning = await twitch.sync(local.planning);
-  local.twitch = twitch.exportCredentials(); local.twitchLastSyncedAt = new Date().toISOString();
+  local.twitch = twitch.exportTokens(); local.twitchLastSyncedAt = new Date().toISOString();
   res.json(await changed());
 } catch (e) { next(e); } });
 app.post('/api/obs/test', async (req, res, next) => { try {
@@ -141,7 +134,7 @@ app.use((error: unknown, _req: express.Request, res: express.Response, _next: ex
 
 wss.on('connection', ws => ws.send(JSON.stringify({ type: 'state.updated', data: snapshot() } satisfies DashboardEvent)));
 await load();
-twitch = new TwitchClient(local.twitch);
+twitch = new TwitchClient({ ...local.twitch, clientId: process.env.TWITCH_CLIENT_ID ?? '' });
 const commands = new DashboardCommandService(local, obs, changed);
 void obs.configure(local.settings.obsUrl, local.settings.obsPassword).then(broadcast);
 setInterval(() => broadcast(), 1000).unref();

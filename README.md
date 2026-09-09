@@ -28,13 +28,14 @@ Les commandes passent toutes par `POST /api/commands`; les changements d'état s
 
 ## Connecter Twitch
 
-1. Créez une application dans la console développeur Twitch et ajoutez comme URL de redirection OAuth
-   `http://localhost:47832/api/twitch/callback` (adaptez le port si `PORT` est modifié). L'adresse doit correspondre exactement dans Twitch et StreamDashboard.
-2. Dans **Réglages → Connexion Twitch**, collez le Client ID, puis cliquez sur **Connecter Twitch**.
-3. Autorisez l'accès au planning. StreamDashboard utilise OAuth Authorization Code avec PKCE : aucun secret client n'est demandé.
+Le distributeur configure une fois le Client ID **public** de l'application avec `TWITCH_CLIENT_ID`. Aucun Client Secret ni URL de redirection n'est utilisé ou demandé aux utilisateurs.
+
+1. Dans **Réglages → Connexion Twitch**, cliquez sur **Connecter Twitch**.
+2. Ouvrez la page Twitch indiquée et saisissez le code affiché dans le cockpit.
+3. StreamDashboard détecte automatiquement la validation grâce au Device Code Grant.
 4. Dans **Planning**, cliquez sur **Synchroniser Twitch** pour importer les segments Twitch et publier les lives locaux.
 
-Les jetons restent dans le fichier local `data/dashboard.json` et ne sont jamais exposés par `/api/state`. Twitch est optionnel : le planning local et OBS continuent de fonctionner hors connexion. StreamTool et damPlanner ne sont pas requis.
+Chaque utilisateur obtient ses propres jetons. Ils restent dans son fichier local `data/dashboard.json` et ne sont jamais exposés par `/api/state`. Twitch est optionnel : le planning local et OBS continuent de fonctionner hors connexion. StreamTool et damPlanner ne sont pas requis.
 
 ## Fun Deck OBS
 

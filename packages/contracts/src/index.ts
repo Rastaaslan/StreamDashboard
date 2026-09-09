@@ -49,7 +49,6 @@ export interface DashboardSettings {
   confirmStop: boolean;
   obsUrl: string;
   obsPasswordSet: boolean;
-  twitchClientId: string;
   twitchConnected: boolean;
   twitchUserName: string | null;
 }
@@ -61,6 +60,11 @@ export interface TwitchState {
   error: string | null;
   syncing: boolean;
   lastSyncedAt: string | null;
+  deviceAuthorization: {
+    userCode: string;
+    verificationUri: string;
+    expiresAt: string;
+  } | null;
 }
 
 export interface DashboardState {

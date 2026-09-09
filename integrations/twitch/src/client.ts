@@ -1,53 +1,70 @@
-import { createHash, randomBytes } from 'node:crypto';
 import type { CalendarItem, TwitchState } from '../../../packages/contracts/src/index.js';
 
 const API = 'https://api.twitch.tv/helix';
 const AUTH = 'https://id.twitch.tv/oauth2';
 
 type Credentials = { clientId: string; accessToken: string; refreshToken: string; broadcasterId: string; userName: string; displayName: string };
-type PendingAuth = { state: string; verifier: string; clientId: string; redirectUri: string; expiresAt: number };
+type PendingDeviceAuthorization = { deviceCode: string; userCode: string; verificationUri: string; expiresAt: number; interval: number };
 
 export class TwitchClient {
-  private pending?: PendingAuth;
+  private pending?: PendingDeviceAuthorization;
   private syncing = false;
   private error: string | null = null;
   constructor(private credentials: Credentials) {}
 
   get state(): TwitchState {
     return { connected: Boolean(this.credentials.accessToken && this.credentials.broadcasterId), userName: this.credentials.userName || null,
-      displayName: this.credentials.displayName || null, error: this.error, syncing: this.syncing, lastSyncedAt: null };
+      displayName: this.credentials.displayName || null, error: this.error, syncing: this.syncing, lastSyncedAt: null,
+      deviceAuthorization: this.pending ? { userCode: this.pending.userCode, verificationUri: this.pending.verificationUri, expiresAt: new Date(this.pending.expiresAt).toISOString() } : null };
   }
 
-  startAuthorization(clientId: string, redirectUri: string) {
-    if (!clientId.trim()) throw new Error('Renseignez l’identifiant client de votre application Twitch.');
-    const verifier = randomBytes(48).toString('base64url');
-    const state = randomBytes(24).toString('base64url');
-    this.pending = { state, verifier, clientId: clientId.trim(), redirectUri, expiresAt: Date.now() + 10 * 60_000 };
-    const challenge = createHash('sha256').update(verifier).digest('base64url');
-    const query = new URLSearchParams({ client_id: clientId.trim(), redirect_uri: redirectUri, response_type: 'code',
-      scope: 'channel:manage:schedule', state, code_challenge: challenge, code_challenge_method: 'S256' });
-    return `${AUTH}/authorize?${query}`;
-  }
-
-  async finishAuthorization(code: string, state: string) {
-    const pending = this.pending;
-    this.pending = undefined;
-    if (!pending || pending.expiresAt < Date.now() || state !== pending.state) throw new Error('Connexion Twitch expirée ou invalide. Recommencez.');
-    const response = await fetch(`${AUTH}/token`, { method: 'POST', headers: { 'content-type': 'application/x-www-form-urlencoded' }, body: new URLSearchParams({
-      client_id: pending.clientId, code, grant_type: 'authorization_code', redirect_uri: pending.redirectUri, code_verifier: pending.verifier,
+  async startDeviceAuthorization() {
+    if (this.pending && Date.now() < this.pending.expiresAt) return this.state.deviceAuthorization!;
+    if (!this.credentials.clientId.trim()) throw new Error('Renseignez l’identifiant client public de StreamDashboard.');
+    const response = await fetch(`${AUTH}/device`, { method: 'POST', headers: { 'content-type': 'application/x-www-form-urlencoded' }, body: new URLSearchParams({
+      client_id: this.credentials.clientId, scopes: 'channel:manage:schedule',
     }) });
-    const token = await this.json<{ access_token: string; refresh_token?: string }>(response);
-    this.credentials = { ...this.credentials, clientId: pending.clientId, accessToken: token.access_token, refreshToken: token.refresh_token ?? '' };
+    const authorization = await this.json<{ device_code: string; user_code: string; verification_uri: string; expires_in: number; interval: number }>(response);
+    this.pending = { deviceCode: authorization.device_code, userCode: authorization.user_code, verificationUri: authorization.verification_uri,
+      expiresAt: Date.now() + authorization.expires_in * 1000, interval: Math.max(1, authorization.interval) };
+    this.error = null;
+    return this.state.deviceAuthorization!;
+  }
+
+  async waitForDeviceAuthorization() {
+    while (this.pending && Date.now() < this.pending.expiresAt) {
+      const pending = this.pending;
+      await new Promise(resolve => setTimeout(resolve, pending.interval * 1000));
+      if (this.pending !== pending) throw new Error('Connexion Twitch annulée.');
+      const response = await fetch(`${AUTH}/token`, { method: 'POST', headers: { 'content-type': 'application/x-www-form-urlencoded' }, body: new URLSearchParams({
+        client_id: this.credentials.clientId, device_code: pending.deviceCode, scopes: 'channel:manage:schedule', grant_type: 'urn:ietf:params:oauth:grant-type:device_code',
+      }) });
+      const value = await response.json() as { access_token?: string; refresh_token?: string; message?: string };
+      if (!response.ok) {
+        const reason = value.message?.toLowerCase().replaceAll(' ', '_');
+        if (reason === 'authorization_pending') continue;
+        if (reason === 'slow_down') { pending.interval += 5; continue; }
+        this.pending = undefined; this.error = value.message ?? `Twitch HTTP ${response.status}`; throw new Error(this.error);
+      }
+      if (!value.access_token) throw new Error('Twitch n’a renvoyé aucun jeton utilisateur.');
+      this.pending = undefined;
+      this.credentials = { ...this.credentials, accessToken: value.access_token, refreshToken: value.refresh_token ?? '' };
+      await this.loadUser();
+      return this.credentials;
+    }
+    this.pending = undefined; this.error = 'Le code Twitch a expiré. Recommencez la connexion.'; throw new Error(this.error);
+  }
+
+  private async loadUser() {
     const users = await this.api<{ data: Array<{ id: string; login: string; display_name: string }> }>('/users');
     const user = users.data[0];
     if (!user) throw new Error('Twitch n’a renvoyé aucun compte.');
     Object.assign(this.credentials, { broadcasterId: user.id, userName: user.login, displayName: user.display_name });
     this.error = null;
-    return this.credentials;
   }
 
-  disconnect() { this.credentials = { clientId: this.credentials.clientId, accessToken: '', refreshToken: '', broadcasterId: '', userName: '', displayName: '' }; this.error = null; }
-  exportCredentials() { return { ...this.credentials }; }
+  disconnect() { this.pending = undefined; this.credentials = { clientId: this.credentials.clientId, accessToken: '', refreshToken: '', broadcasterId: '', userName: '', displayName: '' }; this.error = null; }
+  exportTokens() { const { clientId: _clientId, ...tokens } = this.credentials; return tokens; }
 
   async sync(items: CalendarItem[]) {
     if (!this.state.connected) throw new Error('Connectez Twitch avant de synchroniser le planning.');

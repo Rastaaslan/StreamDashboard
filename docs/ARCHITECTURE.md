@@ -6,7 +6,7 @@ Le flux des actions respecte quatre couches : l'UI desktop émet un `DashboardCo
 
 Le planning, la checklist, le timer et les préférences sont natifs et persistés dans `data/dashboard.json`. Les adaptateurs OBS et Twitch sont directement intégrés : leur absence dégrade uniquement leurs fonctions respectives, sans empêcher planning local, préparation ou diagnostics de fonctionner.
 
-L'adaptateur Twitch (`integrations/twitch`) réalise un OAuth générique Authorization Code + PKCE et appelle Helix directement. Les credentials sont privés côté serveur. La synchronisation fusionne les segments distants et publie les lives créés localement. L'adaptateur OBS calcule à chaque changement de scène les sources audio présentes dans la scène programme et les périphériques globaux ; le contrat transmet séparément la liste active afin que le mixeur masque le bruit des sources inactives.
+L'adaptateur Twitch (`integrations/twitch`) utilise le Device Code Grant avec un Client ID public et appelle Helix directement. Il ne contient ni Client Secret, ni callback, ni redirect URI. Seuls les jetons propres à l'utilisateur sont persistés côté serveur. La synchronisation fusionne les segments distants et publie les lives créés localement. L'adaptateur OBS calcule à chaque changement de scène les sources audio présentes dans la scène programme et les périphériques globaux ; le contrat transmet séparément la liste active afin que le mixeur masque le bruit des sources inactives.
 
 StreamTool et damPlanner ne font pas partie du graphe d'exécution V1. Leurs répertoires et processus ne sont jamais requis ou démarrés par le launcher.
 
