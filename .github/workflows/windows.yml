@@ -25,6 +25,8 @@ jobs:
         if: startsWith(github.ref, 'refs/tags/v') && vars.TWITCH_CLIENT_ID == ''
         shell: pwsh
         run: throw 'Configure the repository variable TWITCH_CLIENT_ID before publishing a release.'
+      - name: Expose Electron version to Forge
+        run: npm pkg set devDependencies.electron=43.0.0
       - run: npm run desktop:package
       - run: npm run desktop:smoke
       - name: Prepare optional signing certificate
