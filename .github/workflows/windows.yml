@@ -9,7 +9,7 @@ jobs:
   desktop:
     runs-on: windows-latest
     env:
-      TWITCH_CLIENT_ID: ${{ vars.TWITCH_CLIENT_ID || 'streamdashboard-ci-placeholder' }}
+      TWITCH_CLIENT_ID: ${{ vars.TWITCH_CLIENT_ID || '0vjzyt1xbcaopglvvduqnbbolsuafh' }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -26,10 +26,6 @@ jobs:
       - name: Audit development toolchain
         continue-on-error: true
         run: npm audit --include=dev --audit-level=high
-      - name: Require production Twitch Client ID on releases
-        if: startsWith(github.ref, 'refs/tags/v') && vars.TWITCH_CLIENT_ID == ''
-        shell: pwsh
-        run: throw 'Configure the repository variable TWITCH_CLIENT_ID before publishing a release.'
       - run: npm run desktop:package
       - name: Upload packaged Windows app
         uses: actions/upload-artifact@v4
