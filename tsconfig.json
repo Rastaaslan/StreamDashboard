@@ -17,6 +17,7 @@
   },
   "include": [
     "apps/**/*.ts",
+    "apps/**/*.cts",
     "integrations/**/*.ts",
     "packages/**/*.ts",
     "scripts/**/*.ts",
