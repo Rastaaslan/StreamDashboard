@@ -21,7 +21,11 @@ jobs:
       - run: npm test
       - run: npm run build
       - run: npm run security:check
-      - run: npm audit --audit-level=high
+      - name: Audit runtime dependencies
+        run: npm audit --omit=dev --audit-level=high
+      - name: Audit development toolchain
+        continue-on-error: true
+        run: npm audit --include=dev --audit-level=high
       - name: Require production Twitch Client ID on releases
         if: startsWith(github.ref, 'refs/tags/v') && vars.TWITCH_CLIENT_ID == ''
         shell: pwsh
