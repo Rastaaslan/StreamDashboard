@@ -35,3 +35,7 @@ Les commandes passent toutes par `POST /api/commands`; les changements d'état s
 4. Dans **Planning**, cliquez sur **Synchroniser Twitch** pour importer les segments Twitch et publier les lives locaux.
 
 Les jetons restent dans le fichier local `data/dashboard.json` et ne sont jamais exposés par `/api/state`. Twitch est optionnel : le planning local et OBS continuent de fonctionner hors connexion. StreamTool et damPlanner ne sont pas requis.
+
+## Fun Deck OBS
+
+Le Fun Deck n'affiche plus de boutons de démonstration : il détecte les sources **Média**, **VLC** et **Diaporama** configurées dans OBS. Chaque bouton relance réellement la source correspondante via OBS WebSocket. Ajoutez ou renommez ces sources dans OBS puis rechargez l'état du cockpit pour adapter automatiquement le deck.

@@ -97,6 +97,7 @@ async function execute(command: DashboardCommand) {
     case 'obs.volume': await obs.volume(command.input, command.volume); await obs.refresh(); break;
     case 'obs.stream': await obs.stream(command.start); await obs.refresh(); break;
     case 'obs.record': await obs.record(command.start); await obs.refresh(); break;
+    case 'obs.media.restart': await obs.restartMedia(command.input); break;
   }
   return changed();
 }
@@ -109,9 +110,14 @@ app.post('/api/planning', async (req, res, next) => { try {
   local.planning.push({ id: randomUUID(), title: input.title, description: input.description ?? '', startAtUtc: input.startAtUtc, endAtUtc: input.endAtUtc, category: input.category ?? 'live' });
   res.status(201).json(await changed());
 } catch (e) { next(e); } });
-app.delete('/api/planning/:id', async (req, res, next) => { try { local.planning = local.planning.filter(x => x.id !== req.params.id); res.json(await changed()); } catch (e) { next(e); } });
+app.delete('/api/planning/:id', async (req, res, next) => { try {
+  const item = local.planning.find(x => x.id === req.params.id);
+  if (item?.twitchSegmentId && twitch.state.connected) await twitch.deleteSegment(item.twitchSegmentId);
+  local.planning = local.planning.filter(x => x.id !== req.params.id); res.json(await changed());
+} catch (e) { next(e); } });
 app.put('/api/settings', async (req, res, next) => { try {
   const input = req.body as Partial<DashboardSettings> & { obsPassword?: string };
+  const obsChanged = (typeof input.obsUrl === 'string' && input.obsUrl.trim() !== local.settings.obsUrl) || (typeof input.obsPassword === 'string' && input.obsPassword.length > 0);
   if (typeof input.streamerName === 'string') local.settings.streamerName = input.streamerName;
   if (input.accent === 'violet' || input.accent === 'cyan' || input.accent === 'rose') local.settings.accent = input.accent;
   if (typeof input.confirmStop === 'boolean') local.settings.confirmStop = input.confirmStop;
@@ -119,7 +125,7 @@ app.put('/api/settings', async (req, res, next) => { try {
   if (typeof input.obsPassword === 'string' && input.obsPassword.length > 0) local.settings.obsPassword = input.obsPassword;
   if (typeof input.twitchClientId === 'string') { local.settings.twitchClientId = input.twitchClientId.trim(); local.twitch.clientId = local.settings.twitchClientId; }
   await save();
-  await obs.configure(local.settings.obsUrl, local.settings.obsPassword);
+  if (obsChanged) await obs.configure(local.settings.obsUrl, local.settings.obsPassword);
   broadcast();
   res.json(snapshot());
 } catch (e) { next(e); } });
@@ -134,7 +140,7 @@ app.get('/api/twitch/callback', async (req, res) => {
     local.settings.twitchClientId = local.twitch.clientId;
     await save(); broadcast();
     res.type('html').send('<!doctype html><meta charset="utf-8"><title>Twitch connecté</title><body style="font:18px system-ui;background:#0b0d14;color:#fff;padding:3rem"><h1>Twitch est connecté ✓</h1><p>Vous pouvez fermer cet onglet et revenir à StreamDashboard.</p><script>setTimeout(()=>close(),1500)</script>');
-  } catch (e) { logError(e); res.status(400).type('html').send(`<h1>Connexion impossible</h1><p>${String(e instanceof Error ? e.message : e)}</p>`); }
+  } catch (e) { logError(e); res.status(400).type('text').send(`Connexion Twitch impossible : ${e instanceof Error ? e.message : String(e)}`); }
 });
 app.post('/api/twitch/disconnect', async (_req, res, next) => { try { twitch.disconnect(); local.twitch = twitch.exportCredentials(); await save(); broadcast(); res.json(snapshot()); } catch (e) { next(e); } });
 app.post('/api/twitch/sync', async (_req, res, next) => { try {

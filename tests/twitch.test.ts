@@ -24,4 +24,12 @@ describe('intégration Twitch générique', () => {
     expect(result.map(x => x.twitchSegmentId).sort()).toEqual(['created', 'remote']);
     expect(calls.some(x => x.startsWith('POST '))).toBe(true);
   });
+
+  it('supprime un segment Twitch avec des paramètres encodés', async () => {
+    const fetch = vi.fn(async (_input: string | URL | Request) => new Response(null, { status: 204 }));
+    vi.stubGlobal('fetch', fetch);
+    const client = new TwitchClient({ ...empty, clientId: 'id', accessToken: 'token', broadcasterId: 'user/42' });
+    await client.deleteSegment('segment & one');
+    expect(String(fetch.mock.calls[0]?.[0])).toContain('broadcaster_id=user%2F42&id=segment%20%26%20one');
+  });
 });

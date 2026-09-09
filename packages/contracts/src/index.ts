@@ -36,6 +36,8 @@ export interface ObsState {
   inputs: Record<string, { muted: boolean; volume: number }>;
   /** Audio inputs which are audible in the current program scene (plus OBS global devices). */
   activeAudioInputs: string[];
+  /** OBS media sources that can be restarted from the Fun Deck. */
+  mediaInputs: string[];
   error: string | null;
   obsVersion: string | null;
   websocketVersion: string | null;
@@ -85,6 +87,7 @@ export type DashboardCommand =
   | { type: 'obs.volume'; input: string; volume: number }
   | { type: 'obs.stream'; start: boolean }
   | { type: 'obs.record'; start: boolean }
+  | { type: 'obs.media.restart'; input: string }
   | { type: 'checklist.toggle'; id: string }
   | { type: 'checklist.reset' };
 

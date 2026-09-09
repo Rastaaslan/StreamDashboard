@@ -8,8 +8,9 @@ describe('contrat de commandes partagé', () => {
       { type: 'timer.add', seconds: 60 },
       { type: 'obs.stream', start: true },
       { type: 'checklist.toggle', id: 'audio' },
+      { type: 'obs.media.restart', input: 'Jingle' },
     ];
-    expect(commands.map(x => x.type)).toEqual(['mode.set', 'timer.add', 'obs.stream', 'checklist.toggle']);
+    expect(commands.map(x => x.type)).toEqual(['mode.set', 'timer.add', 'obs.stream', 'checklist.toggle', 'obs.media.restart']);
   });
 
   it('distingue les entrées audio OBS actives dans le contrat', () => {

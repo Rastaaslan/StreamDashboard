@@ -13,7 +13,7 @@ export class ObsClient {
   private reconnects = 0;
   private retry?: NodeJS.Timeout;
   private suppressReconnect = false;
-  state: ObsState = { connected: false, streaming: false, recording: false, scene: null, scenes: [], inputs: {}, activeAudioInputs: [], error: null, obsVersion: null, websocketVersion: null };
+  state: ObsState = { connected: false, streaming: false, recording: false, scene: null, scenes: [], inputs: {}, activeAudioInputs: [], mediaInputs: [], error: null, obsVersion: null, websocketVersion: null };
 
   constructor(private url = process.env.OBS_URL ?? 'ws://127.0.0.1:4455', private password = process.env.OBS_PASSWORD ?? '') {
     this.client.on('ConnectionClosed', () => {
@@ -87,6 +87,9 @@ export class ObsClient {
     this.state.streaming = stream.outputActive;
     this.state.recording = record.outputActive;
     this.state.inputs = {};
+    this.state.mediaInputs = inputs.inputs
+      .filter(({ inputKind }) => ['ffmpeg_source', 'vlc_source', 'slideshow', 'slideshow_v2'].includes(String(inputKind)))
+      .map(({ inputName }) => String(inputName));
     await Promise.all(inputs.inputs.map(async ({ inputName }) => {
       const name = String(inputName);
       try {
@@ -101,15 +104,21 @@ export class ObsClient {
   private async sceneSources(sceneName: string, visited = new Set<string>()): Promise<Set<string>> {
     if (visited.has(sceneName)) return new Set();
     visited.add(sceneName);
-    const result = await this.client.call('GetSceneItemList', { sceneName });
     const names = new Set<string>();
-    await Promise.all(result.sceneItems.filter(item => item.sceneItemEnabled).map(async item => {
-      const name = String(item.sourceName);
-      if (item.isGroup) {
-        const group = await this.client.call('GetGroupSceneItemList', { sceneName: name });
-        for (const child of group.sceneItems.filter(x => x.sceneItemEnabled)) names.add(String(child.sourceName));
-      } else names.add(name);
+    const result = await this.client.call('GetSceneItemList', { sceneName });
+    const collect = async (items: typeof result.sceneItems) => Promise.all(items.filter(item => item.sceneItemEnabled).map(async item => {
+      const name = String(item.sourceName); names.add(name);
+      try {
+        if (item.isGroup) {
+          const group = await this.client.call('GetGroupSceneItemList', { sceneName: name });
+          await collect(group.sceneItems);
+        } else if (String(item.sourceType) === 'OBS_SOURCE_TYPE_SCENE') {
+          const nested = await this.sceneSources(name, visited);
+          for (const child of nested) names.add(child);
+        }
+      } catch { /* A removed nested source must not make the complete mixer unavailable. */ }
     }));
+    await collect(result.sceneItems);
     return names;
   }
   async scene(sceneName: string) { await this.client.call('SetCurrentProgramScene', { sceneName }); }
@@ -117,5 +126,6 @@ export class ObsClient {
   async volume(inputName: string, inputVolumeMul: number) { await this.client.call('SetInputVolume', { inputName, inputVolumeMul }); }
   async stream(start: boolean) { await this.client.call(start ? 'StartStream' : 'StopStream'); }
   async record(start: boolean) { await this.client.call(start ? 'StartRecord' : 'StopRecord'); }
+  async restartMedia(inputName: string) { await this.client.call('TriggerMediaInputAction', { inputName, mediaAction: 'OBS_WEBSOCKET_MEDIA_INPUT_ACTION_RESTART' }); }
   get reconnectCount() { return this.reconnects; }
 }

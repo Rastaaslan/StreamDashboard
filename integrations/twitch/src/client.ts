@@ -63,7 +63,7 @@ export class TwitchClient {
         if (existing) Object.assign(existing, value); else merged.push(value);
       }
       for (const item of merged.filter(x => (x.category === 'live' || x.kind === 'LIVE') && !x.twitchSegmentId && x.ownership !== 'EXTERNAL')) {
-        const duration = Math.max(30, Math.ceil((Date.parse(item.endAtUtc) - Date.parse(item.startAtUtc)) / 60000));
+        const duration = Math.min(1380, Math.max(30, Math.ceil((Date.parse(item.endAtUtc) - Date.parse(item.startAtUtc)) / 60000)));
         const result = await this.api<{ data: { segments: Array<{ id: string }> } }>('/schedule/segment', { method: 'POST', body: JSON.stringify({ start_time: item.startAtUtc, timezone: 'UTC', duration, title: item.title }) });
         item.twitchSegmentId = result.data.segments[0]?.id;
         item.source = 'TWITCH'; item.ownership = 'LOCAL'; item.syncedAt = new Date().toISOString();
@@ -74,9 +74,14 @@ export class TwitchClient {
     finally { this.syncing = false; }
   }
 
-  private async api<T>(path: string, init?: RequestInit): Promise<T> {
+  async deleteSegment(id: string) {
+    if (!this.state.connected) throw new Error('Connectez Twitch avant de modifier son planning.');
+    await this.api(`/schedule/segment?broadcaster_id=${encodeURIComponent(this.credentials.broadcasterId)}&id=${encodeURIComponent(id)}`, { method: 'DELETE' });
+  }
+
+  private async api<T>(path: string, init?: RequestInit, mayRefresh = true): Promise<T> {
     const response = await fetch(`${API}${path}`, { ...init, headers: { Authorization: `Bearer ${this.credentials.accessToken}`, 'Client-Id': this.credentials.clientId, 'content-type': 'application/json', ...init?.headers } });
-    if (response.status === 401 && this.credentials.refreshToken) { await this.refresh(); return this.api(path, init); }
+    if (response.status === 401 && mayRefresh && this.credentials.refreshToken) { await this.refresh(); return this.api(path, init, false); }
     return this.json<T>(response);
   }
   private async refresh() {
@@ -84,5 +89,10 @@ export class TwitchClient {
     const token = await this.json<{ access_token: string; refresh_token?: string }>(response);
     this.credentials.accessToken = token.access_token; this.credentials.refreshToken = token.refresh_token ?? this.credentials.refreshToken;
   }
-  private async json<T>(response: Response): Promise<T> { const value = await response.json() as T & { message?: string }; if (!response.ok) throw new Error(value.message ?? `Twitch HTTP ${response.status}`); return value; }
+  private async json<T>(response: Response): Promise<T> {
+    if (response.status === 204) return undefined as T;
+    const value = await response.json() as T & { message?: string };
+    if (!response.ok) throw new Error(value.message ?? `Twitch HTTP ${response.status}`);
+    return value;
+  }
 }
