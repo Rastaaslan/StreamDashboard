@@ -14,6 +14,17 @@ describe('module métier du cockpit', () => {
     expect(state.timer).toMatchObject({ running: false, remaining: 30, deadline: null });
   });
 
+  it('conserve la durée de référence lors d’une reprise et reset à la durée complète', () => {
+    const state = domain();
+    applyDashboardCommand(state, { type: 'timer.start' }, 1_000);
+    applyDashboardCommand(state, { type: 'timer.pause' }, 31_000);
+    expect(state.timer).toMatchObject({ duration: 300, remaining: 270, running: false });
+    applyDashboardCommand(state, { type: 'timer.start' }, 40_000);
+    expect(state.timer).toMatchObject({ duration: 300, remaining: 270, running: true, deadline: 310_000 });
+    applyDashboardCommand(state, { type: 'timer.reset' }, 45_000);
+    expect(state.timer).toMatchObject({ duration: 300, remaining: 300, running: false, deadline: null });
+  });
+
   it('refuse une entrée de checklist inconnue', () => {
     expect(() => applyDashboardCommand(domain(), { type: 'checklist.toggle', id: 'missing' })).toThrow(/inconnu/);
   });
