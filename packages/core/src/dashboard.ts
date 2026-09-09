@@ -15,8 +15,16 @@ export function applyDashboardCommand(state: DashboardDomainState, command: Dash
   switch (command.type) {
     case 'mode.set': state.mode = command.mode; return true;
     case 'timer.start': {
-      const seconds = Math.max(1, Math.floor(command.seconds ?? state.timer.remaining));
-      state.timer.duration = seconds; state.timer.remaining = seconds; state.timer.running = true; state.timer.deadline = now + seconds * 1000;
+      if (command.seconds !== undefined) {
+        const seconds = Math.max(1, Math.floor(command.seconds));
+        state.timer.duration = seconds;
+        state.timer.remaining = seconds;
+      } else if (state.timer.remaining <= 0) {
+        state.timer.remaining = state.timer.duration;
+      }
+      const seconds = Math.max(1, Math.floor(state.timer.remaining));
+      state.timer.running = true;
+      state.timer.deadline = now + seconds * 1000;
       return true;
     }
     case 'timer.pause': state.timer.remaining = remaining(); state.timer.running = false; state.timer.deadline = null; return true;
