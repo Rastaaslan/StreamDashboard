@@ -1,0 +1,59 @@
+name: Windows desktop
+on:
+  pull_request:
+  push:
+    tags: ['v*.*.*']
+permissions:
+  contents: write
+jobs:
+  desktop:
+    runs-on: windows-latest
+    env:
+      TWITCH_CLIENT_ID: ${{ vars.TWITCH_CLIENT_ID || 'streamdashboard-ci-placeholder' }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm test
+      - run: npm run build
+      - run: npm run security:check
+      - run: npm audit --audit-level=high
+      - name: Require production Twitch Client ID on releases
+        if: startsWith(github.ref, 'refs/tags/v') && vars.TWITCH_CLIENT_ID == ''
+        shell: pwsh
+        run: throw 'Configure the repository variable TWITCH_CLIENT_ID before publishing a release.'
+      - name: Expose Electron version to Forge
+        run: npm pkg set devDependencies.electron=43.0.0
+      - run: npm run desktop:package
+      - run: npm run desktop:smoke
+      - name: Prepare optional signing certificate
+        if: startsWith(github.ref, 'refs/tags/v') && env.CERTIFICATE_BASE64 != ''
+        shell: pwsh
+        env:
+          CERTIFICATE_BASE64: ${{ secrets.WINDOWS_CERTIFICATE_BASE64 }}
+        run: |
+          [IO.File]::WriteAllBytes("$env:RUNNER_TEMP\streamdashboard.pfx", [Convert]::FromBase64String($env:CERTIFICATE_BASE64))
+          "WINDOWS_CERTIFICATE_FILE=$env:RUNNER_TEMP\streamdashboard.pfx" | Out-File $env:GITHUB_ENV -Append
+      - name: Make Windows installer
+        if: startsWith(github.ref, 'refs/tags/v')
+        run: npm run desktop:make
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          WINDOWS_CERTIFICATE_PASSWORD: ${{ secrets.WINDOWS_CERTIFICATE_PASSWORD }}
+      - name: Checksums
+        if: startsWith(github.ref, 'refs/tags/v')
+        shell: pwsh
+        run: Get-ChildItem out/make -Recurse -File | ForEach-Object { "$(Get-FileHash $_.FullName -Algorithm SHA256 | Select-Object -ExpandProperty Hash)  $($_.Name)" } | Set-Content out/make/checksums-SHA256.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: StreamDashboard-Windows-x64
+          path: out/**
+      - name: Publish GitHub Release assets
+        if: startsWith(github.ref, 'refs/tags/v')
+        shell: pwsh
+        run: gh release create "${{ github.ref_name }}" --generate-notes (Get-ChildItem out/make -Recurse -File | ForEach-Object FullName)
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
