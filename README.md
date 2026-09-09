@@ -29,7 +29,7 @@ Les commandes passent toutes par `POST /api/commands`; les changements d'état s
 ## Connecter Twitch
 
 1. Créez une application dans la console développeur Twitch et ajoutez comme URL de redirection OAuth
-   `http://127.0.0.1:47832/api/twitch/callback` (adaptez le port si `PORT` est modifié).
+   `http://localhost:47832/api/twitch/callback` (adaptez le port si `PORT` est modifié). L'adresse doit correspondre exactement dans Twitch et StreamDashboard.
 2. Dans **Réglages → Connexion Twitch**, collez le Client ID, puis cliquez sur **Connecter Twitch**.
 3. Autorisez l'accès au planning. StreamDashboard utilise OAuth Authorization Code avec PKCE : aucun secret client n'est demandé.
 4. Dans **Planning**, cliquez sur **Synchroniser Twitch** pour importer les segments Twitch et publier les lives locaux.

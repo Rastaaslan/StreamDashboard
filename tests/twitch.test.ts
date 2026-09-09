@@ -6,7 +6,8 @@ afterEach(() => vi.unstubAllGlobals());
 
 describe('intégration Twitch générique', () => {
   it('génère une autorisation PKCE sans secret client', () => {
-    const url = new URL(new TwitchClient({ ...empty }).startAuthorization('client-public', 'http://127.0.0.1:47832/api/twitch/callback'));
+    const url = new URL(new TwitchClient({ ...empty }).startAuthorization('client-public', 'http://localhost:47832/api/twitch/callback'));
+    expect(url.searchParams.get('redirect_uri')).toBe('http://localhost:47832/api/twitch/callback');
     expect(url.searchParams.get('scope')).toBe('channel:manage:schedule');
     expect(url.searchParams.get('code_challenge_method')).toBe('S256');
     expect(url.searchParams.has('client_secret')).toBe(false);

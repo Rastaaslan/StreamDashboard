@@ -112,7 +112,7 @@ app.put('/api/settings', async (req, res, next) => { try {
   res.json(snapshot());
 } catch (e) { next(e); } });
 app.post('/api/twitch/connect', async (_req, res, next) => { try {
-  const redirectUri = `http://127.0.0.1:${port}/api/twitch/callback`;
+  const redirectUri = process.env.TWITCH_REDIRECT_URI?.trim() || `http://localhost:${port}/api/twitch/callback`;
   res.json({ url: twitch.startAuthorization(local.settings.twitchClientId, redirectUri) });
 } catch (e) { next(e); } });
 app.get('/api/twitch/callback', async (req, res) => {
