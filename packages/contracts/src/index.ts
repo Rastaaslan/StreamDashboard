@@ -130,15 +130,17 @@ export function parseCommand(value: unknown): Command {
   if (Object.keys(input).some(key => !allowed[input.type as string].includes(key))) throw new Error('La commande contient un champ non autorisé.');
   const text = (key: string) => { if (typeof input[key] !== 'string' || !(input[key] as string).trim() || (input[key] as string).length > 200) throw new Error(`Champ ${key} invalide.`); };
   const bool = (key: string) => { if (typeof input[key] !== 'boolean') throw new Error(`Champ ${key} invalide.`); };
-  const number = (key: string) => { if (typeof input[key] !== 'number' || !Number.isFinite(input[key])) throw new Error(`Champ ${key} invalide.`); };
+  const number = (key: string, min = -Infinity, max = Infinity) => {
+    if (typeof input[key] !== 'number' || !Number.isFinite(input[key]) || (input[key] as number) < min || (input[key] as number) > max) throw new Error(`Champ ${key} invalide.`);
+  };
   switch (input.type) {
     case 'session.start': if (input.force !== undefined) bool('force'); break;
     case 'mode.set': if (!['idle', 'intro', 'live', 'pause', 'end'].includes(String(input.mode))) throw new Error('Mode invalide.'); break;
-    case 'timer.start': if (input.seconds !== undefined) number('seconds'); break;
-    case 'timer.add': number('seconds'); break;
+    case 'timer.start': if (input.seconds !== undefined) number('seconds', 1, 86_400); break;
+    case 'timer.add': number('seconds', 1, 86_400); break;
     case 'obs.scene': text('scene'); break;
     case 'obs.mute': text('input'); bool('muted'); break;
-    case 'obs.volume': text('input'); number('volume'); break;
+    case 'obs.volume': text('input'); number('volume', 0, 1.5); break;
     case 'obs.stream': case 'obs.record': bool('start'); break;
     case 'obs.media.restart': text('input'); break;
     case 'checklist.toggle': text('id'); break;
