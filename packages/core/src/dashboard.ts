@@ -1,14 +1,19 @@
 import type { ChecklistItem, DashboardCommand, RunMode, TimerState } from '../../contracts/src/index.js';
 
+export const MAX_TIMER_SECONDS = 86_400;
+
 export interface DashboardDomainState {
   mode: RunMode;
   timer: TimerState;
   checklist: ChecklistItem[];
 }
 
+function boundedSeconds(value: number) { return Math.min(MAX_TIMER_SECONDS, Math.max(1, Math.floor(value))); }
+
 /** Starts a broadcast timer from its reference duration, never from a paused session. */
 export function startNewSessionTimer(state: DashboardDomainState, now = Date.now()): void {
-  state.timer.remaining = Math.max(1, Math.floor(state.timer.duration));
+  state.timer.duration = boundedSeconds(state.timer.duration);
+  state.timer.remaining = state.timer.duration;
   state.timer.running = true;
   state.timer.deadline = now + state.timer.remaining * 1000;
 }
@@ -23,21 +28,22 @@ export function applyDashboardCommand(state: DashboardDomainState, command: Dash
     case 'mode.set': state.mode = command.mode; return true;
     case 'timer.start': {
       if (command.seconds !== undefined) {
-        const seconds = Math.max(1, Math.floor(command.seconds));
+        const seconds = boundedSeconds(command.seconds);
         state.timer.duration = seconds;
         state.timer.remaining = seconds;
       } else if (state.timer.remaining <= 0) {
-        state.timer.remaining = state.timer.duration;
+        state.timer.remaining = boundedSeconds(state.timer.duration);
       }
-      const seconds = Math.max(1, Math.floor(state.timer.remaining));
+      const seconds = boundedSeconds(state.timer.remaining);
+      state.timer.remaining = seconds;
       state.timer.running = true;
       state.timer.deadline = now + seconds * 1000;
       return true;
     }
-    case 'timer.pause': state.timer.remaining = remaining(); state.timer.running = false; state.timer.deadline = null; return true;
-    case 'timer.reset': state.timer.running = false; state.timer.remaining = state.timer.duration; state.timer.deadline = null; return true;
+    case 'timer.pause': state.timer.remaining = Math.min(MAX_TIMER_SECONDS, remaining()); state.timer.running = false; state.timer.deadline = null; return true;
+    case 'timer.reset': state.timer.duration = boundedSeconds(state.timer.duration); state.timer.running = false; state.timer.remaining = state.timer.duration; state.timer.deadline = null; return true;
     case 'timer.add': {
-      state.timer.remaining = Math.max(0, remaining() + Math.floor(command.seconds));
+      state.timer.remaining = Math.min(MAX_TIMER_SECONDS, Math.max(0, remaining() + Math.floor(command.seconds)));
       if (state.timer.running) state.timer.deadline = now + state.timer.remaining * 1000;
       return true;
     }
