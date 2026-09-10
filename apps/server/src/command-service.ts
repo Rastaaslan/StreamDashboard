@@ -11,9 +11,18 @@ export interface ObsCommands {
 }
 export interface CommandContext { settings: Pick<DashboardSettings, 'modeScenes'>; logger?: Pick<Console, 'info'>; wait?: (milliseconds: number) => Promise<void> }
 
-/** Unique application command bus shared by the desktop UI and future remote clients. */
+/** Unique, serialized application command bus shared by every client. */
 export class DashboardCommandService {
+  private queue: Promise<void> = Promise.resolve();
+
   constructor(private domain: DashboardDomainState, private obs: ObsCommands, private commit: () => Promise<DashboardState>, private context: CommandContext = { settings: { modeScenes: {} } }) {}
+
+  execute(command: DashboardCommand) {
+    const operation = this.queue.then(() => this.executeNow(command));
+    // A rejected command must not poison the queue for all following commands.
+    this.queue = operation.then(() => undefined, () => undefined);
+    return operation;
+  }
 
   private async setMode(mode: RunMode) {
     if (mode !== 'idle') {
@@ -24,24 +33,40 @@ export class DashboardCommandService {
     this.domain.mode = mode;
   }
 
-  async execute(command: DashboardCommand) {
+  private async executeNow(command: DashboardCommand): Promise<DashboardState> {
     if (!command || typeof command.type !== 'string') throw new Error('Commande invalide.');
     this.context.logger?.info(`command ${command.type}`);
+
+    // Keep the legacy low-level stream command compatible without allowing it to
+    // bypass checklist, scene, timer and state semantics.
+    if (command.type === 'obs.stream') return this.executeNow(command.start ? { type: 'session.start' } : { type: 'session.stop' });
+
     if (command.type === 'session.prepare') { await this.obs.refresh(); return this.commit(); }
     if (command.type === 'session.start') {
       if (!this.obs.state.connected) throw new Error('Impossible de démarrer la diffusion : OBS n’est pas connecté.');
+      if (this.obs.state.streaming) throw new Error('La diffusion OBS est déjà active.');
       if (!command.force && this.domain.checklist.some(item => !item.done)) { const error = new Error('Certaines vérifications ne sont pas terminées.'); error.name = 'CHECKLIST_INCOMPLETE'; throw error; }
       const liveScene = this.context.settings.modeScenes.live;
       if (liveScene) await this.obs.scene(liveScene);
-      await this.obs.stream(true); await this.obs.waitForStreaming?.(true);
-      this.domain.mode = 'live'; startNewSessionTimer(this.domain); return this.commit();
+      await this.obs.stream(true);
+      await this.obs.waitForStreaming?.(true);
+      this.domain.mode = 'live';
+      startNewSessionTimer(this.domain);
+      return this.commit();
     }
     if (command.type === 'session.stop') {
       if (!this.obs.state.connected) throw new Error('Impossible d’arrêter la diffusion : OBS n’est pas connecté.');
+      if (!this.obs.state.streaming) throw new Error('La diffusion OBS est déjà arrêtée.');
       const endScene = this.context.settings.modeScenes.end;
-      if (endScene) { await this.obs.scene(endScene); await (this.context.wait ?? (ms => new Promise(resolve => setTimeout(resolve, ms))))(END_SCENE_VISIBILITY_MS); }
-      await this.obs.stream(false); await this.obs.waitForStreaming?.(false);
-      applyDashboardCommand(this.domain, { type: 'timer.pause' }); this.domain.mode = 'end'; return this.commit();
+      if (endScene) {
+        await this.obs.scene(endScene);
+        await (this.context.wait ?? (ms => new Promise(resolve => setTimeout(resolve, ms))))(END_SCENE_VISIBILITY_MS);
+      }
+      await this.obs.stream(false);
+      await this.obs.waitForStreaming?.(false);
+      applyDashboardCommand(this.domain, { type: 'timer.pause' });
+      this.domain.mode = 'end';
+      return this.commit();
     }
     if (command.type === 'mode.set') { await this.setMode(command.mode); await this.obs.refresh(); return this.commit(); }
     if (applyDashboardCommand(this.domain, command)) return this.commit();
@@ -49,7 +74,6 @@ export class DashboardCommandService {
       case 'obs.scene': if (!command.scene.trim()) throw new Error('Scène OBS invalide.'); await this.obs.scene(command.scene); break;
       case 'obs.mute': if (!command.input.trim()) throw new Error('Source OBS invalide.'); await this.obs.mute(command.input, command.muted); break;
       case 'obs.volume': if (!command.input.trim() || !Number.isFinite(command.volume)) throw new Error('Volume OBS invalide.'); await this.obs.volume(command.input, Math.min(1.5, Math.max(0, command.volume))); break;
-      case 'obs.stream': await this.obs.stream(command.start); break;
       case 'obs.record': await this.obs.record(command.start); break;
       case 'obs.media.restart': if (!command.input.trim()) throw new Error('Média OBS invalide.'); await this.obs.restartMedia(command.input); break;
       default: throw new Error(`Commande inconnue : ${(command as { type: string }).type}`);
