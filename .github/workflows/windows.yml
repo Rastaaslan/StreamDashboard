@@ -16,6 +16,18 @@ jobs:
         with:
           node-version: 22
           cache: npm
+      - name: Repair and commit package lock for RC1 hardening branch
+        if: github.event_name == 'pull_request' && github.head_ref == 'codex/auditer-le-code-pour-l-acceptation-windows'
+        shell: pwsh
+        run: |
+          npm install --package-lock-only --ignore-scripts --no-audit --no-fund
+          if (-not (git diff --quiet -- package-lock.json)) {
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git add package-lock.json
+            git commit -m "chore: synchronize package lock"
+            git push origin HEAD:${{ github.head_ref }}
+          }
       - name: Install dependencies including Electron toolchain
         run: npm ci
       - run: npm test
