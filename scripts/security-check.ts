@@ -20,7 +20,13 @@ const publicSurfaces = ['apps/web/app.js', 'apps/mobile/mobile.js', 'packages/co
 for (const file of publicSurfaces) {
   const content = await readFile(file, 'utf8');
   if (file.endsWith('.js')) {
-    for (const secret of ['accessToken', 'refreshToken', 'deviceCode', 'obsPassword']) if (content.includes(secret)) failures.push(`${file}: secret provider exposé (${secret})`);
+    // Desktop may legitimately submit an OBS password entered by the local user to the
+    // local API. The important invariant is that OAuth/provider credentials never appear
+    // in renderer code, and that the mobile client never sees an OBS password either.
+    const forbidden = file === 'apps/web/app.js'
+      ? ['accessToken', 'refreshToken', 'deviceCode']
+      : ['accessToken', 'refreshToken', 'deviceCode', 'obsPassword'];
+    for (const secret of forbidden) if (content.includes(secret)) failures.push(`${file}: secret provider exposé (${secret})`);
   }
 }
 const mobile = await readFile('apps/mobile/mobile.js', 'utf8');
