@@ -11,13 +11,13 @@ export interface ObsCommands {
   waitForStreaming?(expected: boolean, timeoutMs?: number): Promise<void>;
   waitForScene?(expected: string, timeoutMs?: number): Promise<void>;
 }
-export interface CommandContext { settings: Pick<DashboardSettings, 'modeScenes' | 'timerBrowserSource'>; logger?: Pick<Console, 'info' | 'warn'>; wait?: (milliseconds: number) => Promise<void> }
+export interface CommandContext { settings: Pick<DashboardSettings, 'modeScenes' | 'startMode' | 'timerBrowserSource'>; logger?: Pick<Console, 'info' | 'warn'>; wait?: (milliseconds: number) => Promise<void> }
 
 /** Unique, serialized application command bus shared by every client. */
 export class DashboardCommandService {
   private queue: Promise<void> = Promise.resolve();
 
-  constructor(private domain: DashboardDomainState, private obs: ObsCommands, private commit: () => Promise<DashboardState>, private context: CommandContext = { settings: { modeScenes: {} } }) {}
+  constructor(private domain: DashboardDomainState, private obs: ObsCommands, private commit: () => Promise<DashboardState>, private context: CommandContext = { settings: { modeScenes: {}, startMode: 'intro' } }) {}
 
   execute(command: DashboardCommand) {
     const operation = this.queue.then(() => this.executeNow(command));
@@ -82,14 +82,18 @@ export class DashboardCommandService {
       if (!this.obs.state.connected) throw new Error('Impossible de démarrer la diffusion : OBS n’est pas connecté.');
       if (this.obs.state.streaming) throw new Error('La diffusion OBS est déjà active.');
       if (!command.force && this.domain.checklist.some(item => !item.done)) { const error = new Error('Certaines vérifications ne sont pas terminées.'); error.name = 'CHECKLIST_INCOMPLETE'; throw error; }
-      const liveScene = this.context.settings.modeScenes.live;
-      if (liveScene) {
-        await this.obs.scene(liveScene);
-        await this.confirmScene(liveScene);
-      }
+
+      // Starting a broadcast and entering the gameplay/live scene are separate concepts.
+      // By default we start on Intro; the user can explicitly choose Live in settings.
+      const startMode = this.context.settings.startMode ?? 'intro';
+      const startScene = this.context.settings.modeScenes[startMode];
+      if (!startScene) throw new Error(`Aucune scène associée au mode de démarrage ${startMode}. Configurez-la dans Réglages.`);
+      await this.obs.scene(startScene);
+      await this.confirmScene(startScene);
+
       await this.refreshTimerBrowserSource();
       await this.applyStreamState(true);
-      this.domain.mode = 'live';
+      this.domain.mode = startMode;
       startNewSessionTimer(this.domain);
       return this.commit();
     }
