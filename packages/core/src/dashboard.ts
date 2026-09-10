@@ -1,5 +1,6 @@
 import type { ChecklistItem, DashboardCommand, RunMode, TimerState } from '../../contracts/src/index.js';
 
+export const DEFAULT_SESSION_TIMER_SECONDS = 300;
 export const MAX_TIMER_SECONDS = 86_400;
 
 export interface DashboardDomainState {
@@ -10,12 +11,12 @@ export interface DashboardDomainState {
 
 function boundedSeconds(value: number) { return Math.min(MAX_TIMER_SECONDS, Math.max(1, Math.floor(value))); }
 
-/** Starts a broadcast timer from its reference duration, never from a paused session. */
+/** Starts a new broadcast session from the product default, never from legacy/corrupt persisted duration. */
 export function startNewSessionTimer(state: DashboardDomainState, now = Date.now()): void {
-  state.timer.duration = boundedSeconds(state.timer.duration);
-  state.timer.remaining = state.timer.duration;
+  state.timer.duration = DEFAULT_SESSION_TIMER_SECONDS;
+  state.timer.remaining = DEFAULT_SESSION_TIMER_SECONDS;
   state.timer.running = true;
-  state.timer.deadline = now + state.timer.remaining * 1000;
+  state.timer.deadline = now + DEFAULT_SESSION_TIMER_SECONDS * 1000;
 }
 
 /** Applies commands that only affect the dashboard domain and returns whether it handled the command. */
@@ -41,7 +42,12 @@ export function applyDashboardCommand(state: DashboardDomainState, command: Dash
       return true;
     }
     case 'timer.pause': state.timer.remaining = Math.min(MAX_TIMER_SECONDS, remaining()); state.timer.running = false; state.timer.deadline = null; return true;
-    case 'timer.reset': state.timer.duration = boundedSeconds(state.timer.duration); state.timer.running = false; state.timer.remaining = state.timer.duration; state.timer.deadline = null; return true;
+    case 'timer.reset':
+      state.timer.duration = DEFAULT_SESSION_TIMER_SECONDS;
+      state.timer.running = false;
+      state.timer.remaining = DEFAULT_SESSION_TIMER_SECONDS;
+      state.timer.deadline = null;
+      return true;
     case 'timer.add': {
       state.timer.remaining = Math.min(MAX_TIMER_SECONDS, Math.max(0, remaining() + Math.floor(command.seconds)));
       if (state.timer.running) state.timer.deadline = now + state.timer.remaining * 1000;
