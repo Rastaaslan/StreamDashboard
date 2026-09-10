@@ -9,7 +9,7 @@ export interface ObsCommands {
   stream(start: boolean): Promise<void>; record(start: boolean): Promise<void>; restartMedia(input: string): Promise<void>; refresh(): Promise<void>;
   waitForStreaming?(expected: boolean, timeoutMs?: number): Promise<void>;
 }
-export interface CommandContext { settings: Pick<DashboardSettings, 'modeScenes'>; logger?: Pick<Console, 'info'>; wait?: (milliseconds: number) => Promise<void> }
+export interface CommandContext { settings: Pick<DashboardSettings, 'modeScenes'>; logger?: Pick<Console, 'info' | 'warn'>; wait?: (milliseconds: number) => Promise<void> }
 
 /** Unique, serialized application command bus shared by every client. */
 export class DashboardCommandService {
@@ -19,7 +19,6 @@ export class DashboardCommandService {
 
   execute(command: DashboardCommand) {
     const operation = this.queue.then(() => this.executeNow(command));
-    // A rejected command must not poison the queue for all following commands.
     this.queue = operation.then(() => undefined, () => undefined);
     return operation;
   }
@@ -33,12 +32,25 @@ export class DashboardCommandService {
     this.domain.mode = mode;
   }
 
+  private async applyStreamState(expected: boolean) {
+    try { await this.obs.stream(expected); }
+    catch (commandError) {
+      try { await this.obs.refresh(); } catch { /* keep the original command error */ }
+      if (this.obs.state.streaming !== expected) throw commandError;
+      return;
+    }
+    if (!this.obs.waitForStreaming) return;
+    try { await this.obs.waitForStreaming(expected); }
+    catch (confirmationError) {
+      try { await this.obs.refresh(); } catch { /* confirmation error remains authoritative */ }
+      if (this.obs.state.streaming !== expected) throw confirmationError;
+    }
+  }
+
   private async executeNow(command: DashboardCommand): Promise<DashboardState> {
     if (!command || typeof command.type !== 'string') throw new Error('Commande invalide.');
     this.context.logger?.info(`command ${command.type}`);
 
-    // Keep the legacy low-level stream command compatible without allowing it to
-    // bypass checklist, scene, timer and state semantics.
     if (command.type === 'obs.stream') return this.executeNow(command.start ? { type: 'session.start' } : { type: 'session.stop' });
 
     if (command.type === 'session.prepare') { await this.obs.refresh(); return this.commit(); }
@@ -48,8 +60,7 @@ export class DashboardCommandService {
       if (!command.force && this.domain.checklist.some(item => !item.done)) { const error = new Error('Certaines vérifications ne sont pas terminées.'); error.name = 'CHECKLIST_INCOMPLETE'; throw error; }
       const liveScene = this.context.settings.modeScenes.live;
       if (liveScene) await this.obs.scene(liveScene);
-      await this.obs.stream(true);
-      await this.obs.waitForStreaming?.(true);
+      await this.applyStreamState(true);
       this.domain.mode = 'live';
       startNewSessionTimer(this.domain);
       return this.commit();
@@ -59,11 +70,14 @@ export class DashboardCommandService {
       if (!this.obs.state.streaming) throw new Error('La diffusion OBS est déjà arrêtée.');
       const endScene = this.context.settings.modeScenes.end;
       if (endScene) {
-        await this.obs.scene(endScene);
-        await (this.context.wait ?? (ms => new Promise(resolve => setTimeout(resolve, ms))))(END_SCENE_VISIBILITY_MS);
+        try {
+          await this.obs.scene(endScene);
+          await (this.context.wait ?? (ms => new Promise(resolve => setTimeout(resolve, ms))))(END_SCENE_VISIBILITY_MS);
+        } catch (error) {
+          this.context.logger?.warn('Impossible d’afficher la scène End avant arrêt ; arrêt du stream poursuivi.', error);
+        }
       }
-      await this.obs.stream(false);
-      await this.obs.waitForStreaming?.(false);
+      await this.applyStreamState(false);
       applyDashboardCommand(this.domain, { type: 'timer.pause' });
       this.domain.mode = 'end';
       return this.commit();
