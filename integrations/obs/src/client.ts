@@ -15,7 +15,7 @@ export class ObsClient {
   private reconnects = 0;
   private retry?: NodeJS.Timeout;
   private suppressReconnect = false;
-  state: ObsState = { connected: false, streaming: false, recording: false, scene: null, scenes: [], inputs: {}, activeAudioInputs: [], mediaInputs: [], error: null, obsVersion: null, websocketVersion: null };
+  state: ObsState = { connected: false, streaming: false, recording: false, scene: null, scenes: [], inputs: {}, activeAudioInputs: [], mediaInputs: [], browserInputs: [], error: null, obsVersion: null, websocketVersion: null };
   private listeners = new Set<() => void>();
   private refreshTimer?: NodeJS.Timeout;
   private refreshPromise?: Promise<void>;
@@ -26,15 +26,15 @@ export class ObsClient {
       this.clearLiveState('Connexion OBS interrompue.');
       if (!this.suppressReconnect) this.schedule();
     });
-    this.client.on('CurrentProgramSceneChanged', ({ sceneName }) => { this.state.scene = sceneName; this.scheduleRefresh(); });
+    this.client.on('CurrentProgramSceneChanged', ({ sceneName }) => { this.state.scene = sceneName; this.notify(); this.scheduleRefresh(); });
     this.client.on('StreamStateChanged', ({ outputActive }) => { this.state.streaming = outputActive; this.notify(); });
     this.client.on('RecordStateChanged', ({ outputActive }) => { this.state.recording = outputActive; this.notify(); });
     this.client.on('InputMuteStateChanged', ({ inputName, inputMuted }) => {
-      this.state.inputs[inputName] = { ...(this.state.inputs[inputName] ?? { volume: 1 }), muted: inputMuted };
+      this.state.inputs[inputName] = { ...(this.state.inputs[inputName] ?? { volume: 1, volumeDb: 0 }), muted: inputMuted };
       this.notify();
     });
-    this.client.on('InputVolumeChanged', ({ inputName, inputVolumeMul }) => {
-      this.state.inputs[inputName] = { ...(this.state.inputs[inputName] ?? { muted: false }), volume: inputVolumeMul };
+    this.client.on('InputVolumeChanged', ({ inputName, inputVolumeMul, inputVolumeDb }) => {
+      this.state.inputs[inputName] = { ...(this.state.inputs[inputName] ?? { muted: false }), volume: inputVolumeMul, volumeDb: inputVolumeDb };
       this.notify();
     });
     for (const event of ['SceneCreated', 'SceneRemoved', 'SceneNameChanged', 'InputCreated', 'InputRemoved', 'InputNameChanged', 'SceneItemCreated', 'SceneItemRemoved', 'SceneItemEnableStateChanged'] as const) {
@@ -51,6 +51,7 @@ export class ObsClient {
     this.state.inputs = {};
     this.state.activeAudioInputs = [];
     this.state.mediaInputs = [];
+    this.state.browserInputs = [];
     this.state.error = error;
     this.notify();
   }
@@ -149,6 +150,7 @@ export class ObsClient {
       this.state.inputs = {};
       this.state.activeAudioInputs = [];
       this.state.mediaInputs = [];
+      this.state.browserInputs = [];
       this.state.error = null;
       this.notify();
       return;
@@ -159,13 +161,14 @@ export class ObsClient {
     this.state.mediaInputs = inputs.inputs
       .filter(({ inputKind }) => ['ffmpeg_source', 'vlc_source', 'slideshow', 'slideshow_v2'].includes(String(inputKind)))
       .map(({ inputName }) => String(inputName));
+    this.state.browserInputs = inputs.inputs.filter(({ inputKind }) => String(inputKind) === 'browser_source').map(({ inputName }) => String(inputName));
     await Promise.all(inputs.inputs.map(async ({ inputName }) => {
       const name = String(inputName);
       try {
         const [mute, volume] = await Promise.all([
           this.client.call('GetInputMute', { inputName: name }), this.client.call('GetInputVolume', { inputName: name }),
         ]);
-        this.state.inputs[name] = { muted: mute.inputMuted, volume: volume.inputVolumeMul };
+        this.state.inputs[name] = { muted: mute.inputMuted, volume: volume.inputVolumeMul, volumeDb: volume.inputVolumeDb };
       } catch { /* Inputs without audio capabilities are intentionally omitted. */ }
     }));
     const active = await this.sceneSources(String(scene.currentProgramSceneName)).catch(() => new Set<string>());
@@ -186,6 +189,18 @@ export class ObsClient {
       off = this.onStateChanged(() => {
         if (this.state.streaming === expected) { clearTimeout(timeout); off(); resolve(); }
         else if (!this.state.connected) { clearTimeout(timeout); off(); reject(new Error('OBS s’est déconnecté pendant le changement d’état de diffusion.')); }
+      });
+    });
+  }
+
+  async waitForScene(expected: string, timeoutMs = 5_000) {
+    if (this.state.scene === expected) return;
+    await new Promise<void>((resolve, reject) => {
+      let off: () => void = () => undefined;
+      const timeout = setTimeout(() => { off(); reject(new Error(`OBS n’a pas confirmé la scène « ${expected} ».`)); }, timeoutMs);
+      off = this.onStateChanged(() => {
+        if (this.state.scene === expected) { clearTimeout(timeout); off(); resolve(); }
+        else if (!this.state.connected) { clearTimeout(timeout); off(); reject(new Error('OBS s’est déconnecté pendant le changement de scène.')); }
       });
     });
   }
@@ -215,9 +230,15 @@ export class ObsClient {
   async scene(sceneName: string) { this.requireConnected(); await this.client.call('SetCurrentProgramScene', { sceneName }); }
   async mute(inputName: string, inputMuted: boolean) { this.requireConnected(); await this.client.call('SetInputMute', { inputName, inputMuted }); }
   async volume(inputName: string, inputVolumeMul: number) { this.requireConnected(); await this.client.call('SetInputVolume', { inputName, inputVolumeMul }); }
+  async volumeDb(inputName: string, inputVolumeDb: number) { this.requireConnected(); await this.client.call('SetInputVolume', { inputName, inputVolumeDb }); }
   async stream(start: boolean) { this.requireConnected(); await this.client.call(start ? 'StartStream' : 'StopStream'); }
   async record(start: boolean) { this.requireConnected(); await this.client.call(start ? 'StartRecord' : 'StopRecord'); }
   async restartMedia(inputName: string) { this.requireConnected(); await this.client.call('TriggerMediaInputAction', { inputName, mediaAction: 'OBS_WEBSOCKET_MEDIA_INPUT_ACTION_RESTART' }); }
+  async refreshBrowserSource(inputName: string) {
+    this.requireConnected();
+    if (!(this.state.browserInputs ?? []).includes(inputName)) throw new Error(`La source « ${inputName} » n’est pas une Browser Source OBS détectée.`);
+    await this.client.call('PressInputPropertiesButton', { inputName, propertyName: 'refreshnocache' });
+  }
 
   async close() {
     if (this.retry) clearTimeout(this.retry);

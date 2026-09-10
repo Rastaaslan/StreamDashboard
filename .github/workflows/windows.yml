@@ -10,6 +10,7 @@ jobs:
     runs-on: windows-latest
     env:
       TWITCH_CLIENT_ID: ${{ vars.TWITCH_CLIENT_ID || 'rksd5h9msic7t4kf1hgxygdv8lhbku' }}
+      GOOGLE_CLIENT_ID: ${{ vars.GOOGLE_CLIENT_ID || '' }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -21,6 +22,10 @@ jobs:
       - run: npm test
       - run: npm run build
       - run: npm run security:check
+      - name: Check mobile JavaScript syntax
+        run: node --check apps/mobile/mobile.js
+      - name: Smoke remote/mobile security flow
+        run: npm run mobile:smoke
       - name: Audit runtime dependencies
         run: npm audit --omit=dev --audit-level=high
       - name: Audit development toolchain

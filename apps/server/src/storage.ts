@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { mkdir, open, readFile, rename, unlink } from 'node:fs/promises';
 import path from 'node:path';
 
-export const DASHBOARD_SCHEMA_VERSION = 2;
+export const DASHBOARD_SCHEMA_VERSION = 3;
 
 export interface SecretStore {
   readonly persistent: boolean;
@@ -49,8 +49,6 @@ export class AtomicJsonStore<T extends object> {
   }
 
   write(value: T): Promise<void> {
-    // Freeze the state represented by this write. Mutating the live object while a
-    // previous disk write is pending must not retroactively change write ordering.
     const snapshot = structuredClone(value);
     const operation = this.writes.then(() => this.writeNow(snapshot));
     this.writes = operation.catch(() => undefined);
@@ -75,7 +73,7 @@ export class AtomicJsonStore<T extends object> {
   }
 }
 
-/** Migrates V1 plaintext OAuth fields only after the secure destination confirms its write. */
+/** Migrates legacy plaintext Twitch OAuth fields only after the secure destination confirms its write. */
 export async function migratePlaintextTwitchTokens<T extends { twitch?: object; schemaVersion?: number }>(data: T, secrets: SecretStore) {
   const twitch = data.twitch as Record<string, unknown> | undefined;
   const accessToken = typeof twitch?.accessToken === 'string' ? twitch.accessToken : '';

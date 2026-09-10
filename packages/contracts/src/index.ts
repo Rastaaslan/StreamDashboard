@@ -9,6 +9,17 @@ export interface TimerState {
   deadline: number | null;
 }
 
+export type ProviderSyncStatus = 'synced' | 'pending' | 'error' | 'not-published' | 'conflict';
+export interface ProviderLink {
+  status: ProviderSyncStatus;
+  remoteId?: string;
+  calendarId?: string;
+  remoteRevision?: string;
+  lastSyncedAt?: string;
+  lastError?: string;
+  deletedRemotely?: boolean;
+}
+
 export interface CalendarItem {
   id: string;
   /** Stable StreamDashboard identifier. `id` remains as a V1 compatibility alias. */
@@ -25,6 +36,8 @@ export interface CalendarItem {
   draft?: boolean;
   twitchSegmentId?: string;
   twitchRecurring?: boolean;
+  twitchCategoryId?: string;
+  twitchCategoryName?: string;
   syncError?: string;
   syncedAt?: string;
   desiredPublication?: { local: boolean; twitch: boolean; google: boolean };
@@ -32,37 +45,37 @@ export interface CalendarItem {
   external?: boolean;
   conflict?: { provider: 'twitch' | 'google'; detectedAt: string; remote?: Pick<CalendarItem, 'title' | 'description' | 'startAtUtc' | 'endAtUtc'> };
 }
-export type ProviderSyncStatus = 'synced' | 'pending' | 'error' | 'not-published';
-export interface ProviderLink {
-  status: ProviderSyncStatus;
-  remoteId?: string;
-  calendarId?: string;
-  remoteRevision?: string;
-  lastSyncedAt?: string;
-  lastError?: string;
-  deletedRemotely?: boolean;
-}
 
-export interface GoogleCalendarState { connected: boolean; targetCalendarId: string | null; calendars: Array<{ id: string; summary: string; writable: boolean }>; error: string | null }
+export interface GoogleCalendarState {
+  configured: boolean;
+  connected: boolean;
+  targetCalendarId: string | null;
+  calendars: Array<{ id: string; summary: string; writable: boolean }>;
+  error: string | null;
+  lastSyncedAt: string | null;
+}
 export interface PreflightState { eventId: string | null; status: 'idle' | 'preparing' | 'ready' | 'action-required' | 'error'; title: string | null; category: string | null; gameId: string | null; error: string | null; preparedAt: string | null }
 export interface RemoteDevice { id: string; name: string; createdAt: string; lastSeenAt: string; revokedAt?: string }
-export interface RemoteState { enabled: boolean; devices: RemoteDevice[] }
+export interface RemoteState { supported: boolean; enabled: boolean; devices: RemoteDevice[]; urls: string[] }
 export interface CalendarPayload { rows: unknown[]; warnings: string[]; fetchedAt: number; fromCache: boolean; items: CalendarItem[] }
 export interface StreamState { mode: RunMode; running: boolean; startedAt: number | null; deadline: number | null; duration: number; remaining: number; timerVisible: boolean; previousObsScene: string | null; sequence: number; text: string; obs: { connected: boolean; currentScene: string | null; streaming: boolean } }
 
 export interface ChecklistItem { id: string; label: string; done: boolean }
 
+export interface ObsInputState { muted: boolean; volume: number; volumeDb?: number }
 export interface ObsState {
   connected: boolean;
   streaming: boolean;
   recording: boolean;
   scene: string | null;
   scenes: string[];
-  inputs: Record<string, { muted: boolean; volume: number }>;
+  inputs: Record<string, ObsInputState>;
   /** Audio inputs which are audible in the current program scene (plus OBS global devices). */
   activeAudioInputs: string[];
   /** OBS media sources that can be restarted from the Fun Deck. */
   mediaInputs: string[];
+  /** OBS Browser Sources which may be targeted explicitly (for example the timer overlay). */
+  browserInputs?: string[];
   error: string | null;
   obsVersion: string | null;
   websocketVersion: string | null;
@@ -79,6 +92,10 @@ export interface DashboardSettings {
   launchObs: boolean;
   obsExecutablePath?: string;
   modeScenes: Partial<Record<Exclude<RunMode, 'idle'>, string>>;
+  /** Exact OBS browser source used for the visible session timer overlay. */
+  timerBrowserSource?: string;
+  /** Persisted preference. Binding to LAN is applied on next desktop startup. */
+  remoteEnabled?: boolean;
 }
 
 export interface TwitchState {
@@ -119,7 +136,7 @@ export interface ApiError { ok: false; error: { code: string; message: string; d
 export interface ClientCapabilities { protocolVersion: ApiVersion; clientName: string; features: string[] }
 export interface ServerCapabilities { protocolVersion: ApiVersion; serverVersion: string; features: string[]; accessMode: 'desktop-local' | 'remote-LAN' }
 
-/** Stable command vocabulary intended for every client (desktop today, mobile later). */
+/** Stable command vocabulary intended for every client. */
 export type DashboardCommand =
   | { type: 'session.prepare' }
   | { type: 'session.start'; force?: boolean }
@@ -131,6 +148,8 @@ export type DashboardCommand =
   | { type: 'obs.scene'; scene: string }
   | { type: 'obs.mute'; input: string; muted: boolean }
   | { type: 'obs.volume'; input: string; volume: number }
+  | { type: 'obs.volumeDb'; input: string; volumeDb: number }
+  | { type: 'obs.browser.refresh'; input: string }
   | { type: 'obs.stream'; start: boolean }
   | { type: 'obs.record'; start: boolean }
   | { type: 'obs.media.restart'; input: string }
@@ -140,7 +159,7 @@ export type DashboardCommand =
 export interface DashboardEvent { type: 'state.updated'; data: DashboardState }
 export type ServerEvent = DashboardEvent | { type: 'server.ready'; data: ServerCapabilities };
 
-const commandTypes = new Set<Command['type']>(['session.prepare', 'session.start', 'session.stop', 'mode.set', 'timer.start', 'timer.pause', 'timer.reset', 'timer.add', 'obs.scene', 'obs.mute', 'obs.volume', 'obs.stream', 'obs.record', 'obs.media.restart', 'checklist.toggle', 'checklist.reset']);
+const commandTypes = new Set<Command['type']>(['session.prepare', 'session.start', 'session.stop', 'mode.set', 'timer.start', 'timer.pause', 'timer.reset', 'timer.add', 'obs.scene', 'obs.mute', 'obs.volume', 'obs.volumeDb', 'obs.browser.refresh', 'obs.stream', 'obs.record', 'obs.media.restart', 'checklist.toggle', 'checklist.reset']);
 export function parseCommand(value: unknown): Command {
   if (!value || typeof value !== 'object') throw new Error('La commande doit être un objet JSON.');
   const input = value as Record<string, unknown>;
@@ -148,8 +167,9 @@ export function parseCommand(value: unknown): Command {
   const allowed: Record<string, string[]> = {
     'session.prepare': ['type'], 'session.start': ['type', 'force'], 'session.stop': ['type'],
     'mode.set': ['type', 'mode'], 'timer.start': ['type', 'seconds'], 'timer.pause': ['type'], 'timer.reset': ['type'], 'timer.add': ['type', 'seconds'],
-    'obs.scene': ['type', 'scene'], 'obs.mute': ['type', 'input', 'muted'], 'obs.volume': ['type', 'input', 'volume'], 'obs.stream': ['type', 'start'],
-    'obs.record': ['type', 'start'], 'obs.media.restart': ['type', 'input'], 'checklist.toggle': ['type', 'id'], 'checklist.reset': ['type'],
+    'obs.scene': ['type', 'scene'], 'obs.mute': ['type', 'input', 'muted'], 'obs.volume': ['type', 'input', 'volume'], 'obs.volumeDb': ['type', 'input', 'volumeDb'],
+    'obs.browser.refresh': ['type', 'input'], 'obs.stream': ['type', 'start'], 'obs.record': ['type', 'start'], 'obs.media.restart': ['type', 'input'],
+    'checklist.toggle': ['type', 'id'], 'checklist.reset': ['type'],
   };
   if (Object.keys(input).some(key => !allowed[input.type as string].includes(key))) throw new Error('La commande contient un champ non autorisé.');
   const text = (key: string) => { if (typeof input[key] !== 'string' || !(input[key] as string).trim() || (input[key] as string).length > 200) throw new Error(`Champ ${key} invalide.`); };
@@ -163,8 +183,10 @@ export function parseCommand(value: unknown): Command {
     case 'timer.start': if (input.seconds !== undefined) number('seconds', 1, 86_400); break;
     case 'timer.add': number('seconds', 1, 86_400); break;
     case 'obs.scene': text('scene'); break;
+    case 'obs.browser.refresh': text('input'); break;
     case 'obs.mute': text('input'); bool('muted'); break;
     case 'obs.volume': text('input'); number('volume', 0, 1.5); break;
+    case 'obs.volumeDb': text('input'); number('volumeDb', -100, 26); break;
     case 'obs.stream': case 'obs.record': bool('start'); break;
     case 'obs.media.restart': text('input'); break;
     case 'checklist.toggle': text('id'); break;

@@ -16,12 +16,19 @@ for (const file of sourceFiles) {
     if (pattern.test(content)) failures.push(`${file}: ${pattern}`);
   }
 }
-const publicSurfaces = ['apps/web/app.js', 'packages/contracts/src/index.ts'];
+const publicSurfaces = ['apps/web/app.js', 'apps/mobile/mobile.js', 'packages/contracts/src/index.ts'];
 for (const file of publicSurfaces) {
   const content = await readFile(file, 'utf8');
-  for (const secret of ['accessToken', 'refreshToken', 'deviceCode', 'obsPassword']) {
-    if (content.includes(secret) && file === 'apps/web/app.js' && secret !== 'obsPassword') failures.push(`${file}: secret OAuth exposé (${secret})`);
+  if (file.endsWith('.js')) {
+    for (const secret of ['accessToken', 'refreshToken', 'deviceCode', 'obsPassword']) if (content.includes(secret)) failures.push(`${file}: secret provider exposé (${secret})`);
   }
 }
+const mobile = await readFile('apps/mobile/mobile.js', 'utf8');
+if (/\.innerHTML\s*=/.test(mobile)) failures.push('apps/mobile/mobile.js: données distantes injectées via innerHTML');
+if (/ws\/v1\?device=|[?&]device=\$\{/.test(mobile)) failures.push('apps/mobile/mobile.js: credential device longue placée dans URL WebSocket');
+if (!mobile.includes('/api/v1/remote/ws-ticket')) failures.push('apps/mobile/mobile.js: ticket WebSocket court absent');
+const server = await readFile('apps/server/src/index.ts', 'utf8');
+if (server.includes("req.method === 'GET' || req.path === '/v1/remote/pair'")) failures.push('apps/server/src/index.ts: GET distants globalement exemptés d’authentification');
+if (!server.includes("['/v1/health', '/v1/capabilities']")) failures.push('apps/server/src/index.ts: allowlist GET public remote attendue absente');
 if (failures.length) { console.error(failures.join('\n')); process.exitCode = 1; }
-else console.log(`Security check OK (${sourceFiles.length} fichiers, règles Electron et surfaces publiques)`);
+else console.log(`Security check OK (${sourceFiles.length} fichiers, Electron + surfaces publiques + garde-fous remote/mobile)`);

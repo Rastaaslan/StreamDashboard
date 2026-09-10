@@ -1,6 +1,119 @@
-const $=id=>document.getElementById(id), credential=localStorage.getItem('streamdashboard.device');let state,busy=false,ws,retry=500;
-const headers=()=>({'content-type':'application/json','authorization':`Device ${credential||''}`});
-async function command(value){if(busy||!credential||!ws||ws.readyState!==WebSocket.OPEN)return note('Télécommande non connectée.');busy=true;try{const response=await fetch('/api/v1/commands',{method:'POST',headers:headers(),body:JSON.stringify(value)});const body=await response.json();if(!response.ok)throw new Error(body.error?.message||'Commande refusée');render(body.state);note('Commande confirmée par le PC.')}catch(e){note(e.message)}finally{busy=false}}
-function note(v){$('message').textContent=v}function render(s){if(!s)return;state=s;$('pc').textContent='Connecté';$('obs').textContent=s.obs.connected?'Prêt':'Déconnecté';$('scene').textContent=s.obs.scene||'—';$('live').textContent=s.obs.streaming?'LIVE':'OFFLINE';$('next').textContent=s.nextLive?`${s.nextLive.title} · ${new Date(s.nextLive.startAtUtc).toLocaleString()}`:'Aucun live planifié';const n=Math.max(0,s.timer.remaining),m=Math.floor(n/60),sec=n%60;$('timer').textContent=`${String(m).padStart(2,'0')}:${String(sec).padStart(2,'0')}`;$('stream').textContent=s.obs.streaming?'ARRÊTER LE LIVE':'DÉMARRER LE LIVE';$('audio').innerHTML=Object.entries(s.obs.inputs).map(([name,v])=>`<div class="row"><button data-mute="${name}">${v.muted?'Activer':'Couper'} ${name}</button><input data-volume="${name}" type="range" min="0" max="1.5" step=".05" value="${v.volume}"></div>`).join('');$('deck').innerHTML=s.obs.mediaInputs.map(x=>`<button data-media="${x}">${x}</button>`).join('');$('planning').innerHTML=s.planning.slice(0,6).map(x=>`<div class="row"><b>${x.title}</b><span>${new Date(x.startAtUtc).toLocaleString()}</span></div>`).join('')}
-function connect(){if(!credential)return note('Scannez le QR de pairing sur le PC.');$('connection').textContent='Connexion…';ws=new WebSocket(`${location.protocol==='https:'?'wss':'ws'}://${location.host}/ws/v1?device=${encodeURIComponent(credential)}`);ws.onopen=()=>{retry=500;$('connection').textContent='Connecté'};ws.onmessage=e=>{const value=JSON.parse(e.data);if(value.type==='state.updated')render(value.data)};ws.onclose=()=>{$('connection').textContent='Reconnexion…';$('pc').textContent='Hors ligne';setTimeout(connect,retry);retry=Math.min(10000,retry*2)};ws.onerror=()=>ws.close()}
-document.addEventListener('click',e=>{const b=e.target.closest('button');if(!b)return;if(b.dataset.command)command(JSON.parse(b.dataset.command));if(b.dataset.mode)command({type:'mode.set',mode:b.dataset.mode});if(b.dataset.media)command({type:'obs.media.restart',input:b.dataset.media});if(b.dataset.mute){const muted=state.obs.inputs[b.dataset.mute].muted;command({type:'obs.mute',input:b.dataset.mute,muted:!muted})}});document.addEventListener('change',e=>{if(e.target.dataset.volume)command({type:'obs.volume',input:e.target.dataset.volume,volume:Number(e.target.value)})});$('stream').onclick=()=>{if(!state||busy)return;const start=!state.obs.streaming;if(confirm(start?'Démarrer réellement le live ?':state.settings.confirmStop?'Arrêter réellement le live ?':'Arrêter le live ?'))command({type:start?'session.start':'session.stop',...(start?{force:false}:{})})};navigator.serviceWorker?.register('sw.js');connect();
+const $ = id => document.getElementById(id);
+let credential = localStorage.getItem('streamdashboard.device') || '';
+let state = null, busy = false, ws = null, retry = 500, reconnectTimer = null;
+
+const authHeaders = () => ({ 'content-type': 'application/json', authorization: `Device ${credential}` });
+const note = value => { $('message').textContent = String(value || ''); };
+const text = (tag, value, className) => { const node = document.createElement(tag); node.textContent = String(value ?? ''); if (className) node.className = className; return node; };
+const formatDuration = seconds => { const value = Math.max(0, Math.floor(seconds || 0)); return `${String(Math.floor(value / 60)).padStart(2, '0')}:${String(value % 60).padStart(2, '0')}`; };
+const remaining = () => !state ? 0 : state.timer.running && state.timer.deadline ? Math.max(0, Math.ceil((state.timer.deadline - Date.now()) / 1000)) : state.timer.remaining;
+const dbValue = input => Number.isFinite(input.volumeDb) ? input.volumeDb : input.volume > 0 ? 20 * Math.log10(input.volume) : -100;
+
+function showPairing(show) {
+  $('pairing').hidden = !show;
+  $('forget-device').hidden = show;
+  document.querySelectorAll('button[data-command],button[data-mode],#stream').forEach(button => { button.disabled = show; });
+}
+
+async function jsonRequest(url, init = {}) {
+  const response = await fetch(url, init);
+  const body = await response.json().catch(() => ({}));
+  if (!response.ok) throw new Error(body.error?.message || body.error || `HTTP ${response.status}`);
+  return body;
+}
+
+async function command(value) {
+  if (busy || !credential || !ws || ws.readyState !== WebSocket.OPEN) { note('Télécommande non connectée.'); return; }
+  busy = true;
+  try {
+    const body = await jsonRequest('/api/v1/commands', { method: 'POST', headers: authHeaders(), body: JSON.stringify(value) });
+    render(body.state); note('Commande confirmée par le PC.');
+  } catch (error) { note(error.message); }
+  finally { busy = false; }
+}
+
+function renderAudio(inputs) {
+  const container = $('audio'); container.replaceChildren();
+  for (const [name, input] of Object.entries(inputs || {})) {
+    const row = document.createElement('div'); row.className = 'row';
+    const wrap = document.createElement('div'); wrap.className = 'audio-control';
+    const mute = document.createElement('button'); mute.type = 'button'; mute.dataset.mute = name; mute.textContent = `${input.muted ? 'Activer' : 'Couper'} ${name}`;
+    const slider = document.createElement('input'); slider.type = 'range'; slider.min = '-60'; slider.max = '6'; slider.step = '1'; slider.value = String(Math.max(-60, Math.min(6, dbValue(input)))); slider.dataset.volume = name;
+    const db = text('span', `${Number(slider.value) <= -59.5 ? '-∞' : Number(slider.value).toFixed(1)} dB`, 'db'); slider.addEventListener('input', () => { db.textContent = `${Number(slider.value) <= -59.5 ? '-∞' : Number(slider.value).toFixed(1)} dB`; });
+    wrap.append(mute, slider, db); row.append(wrap); container.append(row);
+  }
+  if (!container.children.length) container.append(text('p', 'Aucune source audio détectée.', 'muted'));
+}
+function renderDeck(media) {
+  const container = $('deck'); container.replaceChildren();
+  for (const name of media || []) { const button = document.createElement('button'); button.type = 'button'; button.dataset.media = name; button.textContent = name; container.append(button); }
+  if (!container.children.length) container.append(text('p', 'Aucun média OBS détecté.', 'muted'));
+}
+function renderPlanning(items) {
+  const container = $('planning'); container.replaceChildren();
+  for (const item of (items || []).slice(0, 8)) { const row = document.createElement('div'); row.className = 'planning-row'; row.append(text('b', item.title), text('span', new Date(item.startAtUtc).toLocaleString('fr-FR'))); container.append(row); }
+  if (!container.children.length) container.append(text('p', 'Aucun rendez-vous.', 'muted'));
+}
+function render(next) {
+  if (!next) return; state = next;
+  $('pc').textContent = 'Connecté'; $('obs').textContent = next.obs.connected ? 'Prêt' : 'Déconnecté'; $('scene').textContent = next.obs.scene || '—';
+  $('live').textContent = next.obs.streaming ? 'LIVE' : 'OFFLINE'; $('live').className = next.obs.streaming ? 'ok' : '';
+  $('next').textContent = next.nextLive ? `${next.nextLive.title} · ${new Date(next.nextLive.startAtUtc).toLocaleString('fr-FR')}` : 'Aucun live planifié';
+  $('stream').textContent = next.obs.streaming ? 'ARRÊTER LE LIVE' : 'DÉMARRER LE LIVE';
+  renderAudio(next.obs.inputs); renderDeck(next.obs.mediaInputs); renderPlanning(next.planning);
+  $('timer').textContent = formatDuration(remaining()); showPairing(false);
+}
+function tickTimer() { if (state) $('timer').textContent = formatDuration(remaining()); }
+
+async function pair() {
+  if (busy) return; busy = true;
+  try {
+    const id = $('pair-id').value.trim(), code = $('pair-code').value.trim(), name = $('pair-name').value.trim() || 'Android';
+    if (!id || !code) throw new Error('ID et code de pairing requis.');
+    const result = await jsonRequest('/api/v1/remote/pair', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ id, code, name }) });
+    credential = result.credential; localStorage.setItem('streamdashboard.device', credential); history.replaceState(null, '', location.pathname); note('Télécommande appairée. Connexion…'); showPairing(false); connect();
+  } catch (error) { note(error.message); }
+  finally { busy = false; }
+}
+
+async function getWsTicket() {
+  const result = await jsonRequest('/api/v1/remote/ws-ticket', { method: 'POST', headers: authHeaders(), body: '{}' });
+  return result.ticket;
+}
+async function fetchState() { const next = await jsonRequest('/api/v1/state', { headers: { authorization: `Device ${credential}` } }); render(next); }
+async function connect() {
+  if (reconnectTimer) { clearTimeout(reconnectTimer); reconnectTimer = null; }
+  if (!credential) { $('connection').textContent = 'Appairage requis'; showPairing(true); return; }
+  try {
+    $('connection').textContent = 'Connexion…';
+    await fetchState();
+    const ticket = await getWsTicket();
+    ws = new WebSocket(`${location.protocol === 'https:' ? 'wss' : 'ws'}://${location.host}/ws/v1?ticket=${encodeURIComponent(ticket)}`);
+    ws.onopen = () => { retry = 500; $('connection').textContent = 'Connecté'; $('connection').className = 'ok'; };
+    ws.onmessage = event => { try { const value = JSON.parse(event.data); if (value.type === 'state.updated') render(value.data); } catch { note('Événement temps réel invalide.'); } };
+    ws.onclose = () => { $('connection').textContent = 'Reconnexion…'; $('connection').className = ''; $('pc').textContent = 'Hors ligne'; reconnectTimer = setTimeout(connect, retry); retry = Math.min(10_000, retry * 2); };
+    ws.onerror = () => ws.close();
+  } catch (error) {
+    $('connection').textContent = 'Connexion refusée'; $('pc').textContent = 'Hors ligne'; note(error.message);
+    if (/non autorisée|401|403/i.test(error.message)) { credential = ''; localStorage.removeItem('streamdashboard.device'); showPairing(true); return; }
+    reconnectTimer = setTimeout(connect, retry); retry = Math.min(10_000, retry * 2);
+  }
+}
+
+const params = new URLSearchParams(location.search); if (params.get('pair')) $('pair-id').value = params.get('pair'); if (params.get('code')) $('pair-code').value = params.get('code');
+$('pair-button').onclick = pair;
+$('forget-device').onclick = () => { if (confirm('Oublier cette télécommande sur ce téléphone ?')) { credential = ''; localStorage.removeItem('streamdashboard.device'); ws?.close(); showPairing(true); note('Credential local supprimé. Révoque aussi l’appareil depuis le PC si nécessaire.'); } };
+
+document.addEventListener('click', event => {
+  const button = event.target.closest('button'); if (!button || button.disabled) return;
+  if (button.dataset.command) { const value = { type: button.dataset.command }; if (button.dataset.seconds) value.seconds = Number(button.dataset.seconds); void command(value); }
+  else if (button.dataset.mode) void command({ type: 'mode.set', mode: button.dataset.mode });
+  else if (button.dataset.media) void command({ type: 'obs.media.restart', input: button.dataset.media });
+  else if (button.dataset.mute && state?.obs.inputs?.[button.dataset.mute]) void command({ type: 'obs.mute', input: button.dataset.mute, muted: !state.obs.inputs[button.dataset.mute].muted });
+});
+document.addEventListener('change', event => { const target = event.target; if (target?.dataset?.volume) void command({ type: 'obs.volumeDb', input: target.dataset.volume, volumeDb: Number(target.value) }); });
+$('stream').onclick = () => { if (!state || busy) return; const start = !state.obs.streaming; const question = start ? 'Démarrer réellement le live ?' : state.settings.confirmStop ? 'Arrêter réellement le live ?' : 'Arrêter le live ?'; if (confirm(question)) void command({ type: start ? 'session.start' : 'session.stop', ...(start ? { force: false } : {}) }); };
+
+if ('serviceWorker' in navigator && window.isSecureContext) navigator.serviceWorker.register('sw.js').catch(() => undefined);
+else if (!window.isSecureContext) note('Mode LAN HTTP : télécommande web disponible, installation PWA désactivée sans HTTPS.');
+setInterval(tickTimer, 250); connect();
