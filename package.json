@@ -21,6 +21,7 @@
     "mobile:smoke": "tsx scripts/mobile-smoke.ts",
     "desktop:prepare": "tsx scripts/prepare-distribution.ts",
     "desktop:smoke": "npm run desktop:icon && npm run build && playwright test -c playwright.electron.config.ts",
+    "desktop:package-smoke": "playwright test -c playwright.electron.config.ts",
     "desktop:icon": "tsx scripts/prepare-icon.ts"
   },
   "dependencies": {

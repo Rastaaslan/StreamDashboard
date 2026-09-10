@@ -12,6 +12,6 @@ declare module 'electron' {
     webContents: any;
     once(event: string, listener: (...args: any[]) => void): this;
     loadURL(url: string): Promise<void>;
-    show(): void; focus(): void; minimize(): void; isMinimized(): boolean; restore(): void; close(): void;
+    show(): void; focus(): void; minimize(): void; isMinimized(): boolean; isDestroyed(): boolean; restore(): void; close(): void; destroy(): void;
   }
 }

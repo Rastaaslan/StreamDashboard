@@ -86,6 +86,31 @@ describe('intégration Twitch générique', () => {
     expect(JSON.parse(String(publish?.init?.body))).toEqual({ start_time: '2030-01-02T10:00:00Z', timezone: 'UTC', duration: 60, title: 'Live local' });
   });
 
+  it('traite un premier planning 404 comme vide puis crée le segment local', async () => {
+    const fetch = vi.fn(async (_input: string | URL | Request, init?: RequestInit) => init?.method === 'POST'
+      ? new Response(JSON.stringify({ data: { segments: [{ id: 'first' }] } }))
+      : new Response(JSON.stringify({ message: 'schedule not found' }), { status: 404 }));
+    vi.stubGlobal('fetch', fetch);
+    const client = new TwitchClient({ ...empty, clientId: 'id', accessToken: 'token', broadcasterId: '42' });
+    const result = await client.sync([{ id: 'local', title: 'Premier live', startAtUtc: '2030-01-01T10:00:00Z', endAtUtc: '2030-01-01T11:00:00Z', category: 'live' }]);
+    expect(result[0]?.twitchSegmentId).toBe('first'); expect(fetch).toHaveBeenCalledTimes(2);
+  });
+
+  it('partage une synchronisation concurrente et ne crée pas de doublon', async () => {
+    let release!: () => void; const gate = new Promise<void>(resolve => { release = resolve; }); let posts = 0;
+    vi.stubGlobal('fetch', vi.fn(async (_input: string | URL | Request, init?: RequestInit) => { if (init?.method === 'POST') { posts++; await gate; return new Response(JSON.stringify({ data: { segments: [{ id: 'once' }] } })); } return new Response(JSON.stringify({ data: { segments: [] } })); }));
+    const client = new TwitchClient({ ...empty, clientId: 'id', accessToken: 'token', broadcasterId: '42' });
+    const items = [{ id: 'local', title: 'Live', startAtUtc: '2030-01-01T10:00:00Z', endAtUtc: '2030-01-01T11:00:00Z', category: 'live' as const }];
+    const first = client.sync(items), second = client.sync(items); await vi.waitFor(() => expect(posts).toBe(1)); release(); expect(await first).toBe(await second); expect(posts).toBe(1);
+  });
+
+  it('effectue un seul refresh OAuth pour deux réponses Helix 401 simultanées', async () => {
+    let tokenPosts = 0, validations = 0;
+    vi.stubGlobal('fetch', vi.fn(async (input: string | URL | Request) => { const url = String(input); if (url.includes('/oauth2/token')) { tokenPosts++; await new Promise(resolve => setTimeout(resolve, 5)); return new Response(JSON.stringify({ access_token: 'fresh', refresh_token: 'rotated' })); } validations++; return validations <= 2 ? new Response('{}', { status: 401 }) : new Response(JSON.stringify({ client_id: 'id', user_id: '42', login: 'streamer' })); }));
+    const client = new TwitchClient({ ...empty, clientId: 'id', accessToken: 'old', refreshToken: 'refresh', broadcasterId: '42' });
+    expect(await Promise.all([client.validateSession(), client.validateSession()])).toEqual([true, true]); expect(tokenPosts).toBe(1);
+  });
+
   it('refuse de publier sans broadcaster id', async () => {
     const client = new TwitchClient({ ...empty, clientId: 'id', accessToken: 'token' });
     await expect(client.sync([])).rejects.toThrow(/Connectez Twitch/);

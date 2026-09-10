@@ -2,7 +2,7 @@ import { readFile, readdir } from 'node:fs/promises';
 import path from 'node:path';
 
 async function files(root: string): Promise<string[]> { return (await readdir(root, { withFileTypes: true })).flatMap(entry => entry.name === '_integration_sources' || entry.name === 'node_modules' || entry.name === 'dist' ? [] : entry.isDirectory() ? [] : [path.join(root, entry.name)]).concat(...await Promise.all((await readdir(root, { withFileTypes: true })).filter(entry => entry.isDirectory() && !['_integration_sources', 'node_modules', 'dist', '.git'].includes(entry.name)).map(entry => files(path.join(root, entry.name))))); }
-const sourceFiles = (await files('.')).filter(file => /\.(?:ts|js|json|html)$/.test(file) && !file.includes('package-lock'));
+const sourceFiles = (await files('.')).filter(file => /\.(?:[cm]?ts|js|json|html)$/.test(file) && !file.includes('package-lock'));
 const failures: string[] = [];
 for (const file of sourceFiles) {
   const content = await readFile(file, 'utf8');

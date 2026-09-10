@@ -22,6 +22,8 @@ export interface CalendarItem {
   kind?: 'LIVE' | 'PERSONAL';
   draft?: boolean;
   twitchSegmentId?: string;
+  twitchRecurring?: boolean;
+  syncError?: string;
   syncedAt?: string;
 }
 export interface CalendarPayload { rows: unknown[]; warnings: string[]; fetchedAt: number; fromCache: boolean; items: CalendarItem[] }
@@ -54,6 +56,7 @@ export interface DashboardSettings {
   twitchConnected: boolean;
   twitchUserName: string | null;
   launchObs: boolean;
+  obsExecutablePath?: string;
   modeScenes: Partial<Record<Exclude<RunMode, 'idle'>, string>>;
 }
 
