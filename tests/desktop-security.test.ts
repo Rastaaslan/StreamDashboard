@@ -1,6 +1,6 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
-import { isAllowedTwitchUrl } from '../apps/desktop/src/security.js';
+import { isAllowedTwitchUrl, isSameOrigin } from '../apps/desktop/src/security.js';
 const windowSource = readFileSync(new URL('../apps/desktop/src/window.ts', import.meta.url), 'utf8');
 const mainSource = readFileSync(new URL('../apps/desktop/src/main.ts', import.meta.url), 'utf8');
 const html = readFileSync(new URL('../apps/web/index.html', import.meta.url), 'utf8');
@@ -18,4 +18,5 @@ describe('sécurité hôte Electron', () => {
     expect(isAllowedTwitchUrl('file:///C:/Windows/System32')).toBe(false);
   });
   it('prend un verrou d’instance unique', () => { expect(mainSource).toContain('requestSingleInstanceLock'); expect(mainSource).toContain("app.on('second-instance'"); });
+  it('compare exactement les origins de navigation', () => { expect(isSameOrigin('http://127.0.0.1:42/page', 'http://127.0.0.1:42')).toBe(true); expect(isSameOrigin('http://127.0.0.1:420/evil', 'http://127.0.0.1:42')).toBe(false); expect(isSameOrigin('https://127.0.0.1:42', 'http://127.0.0.1:42')).toBe(false); });
 });
