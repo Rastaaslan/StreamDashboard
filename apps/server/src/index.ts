@@ -163,7 +163,7 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
   const rawTwitch: Partial<TwitchIdentity> = object(local.twitch) ? local.twitch : {};
   local.twitch = { broadcasterId: typeof rawTwitch.broadcasterId === 'string' ? rawTwitch.broadcasterId : '', userName: typeof rawTwitch.userName === 'string' ? rawTwitch.userName : '', displayName: typeof rawTwitch.displayName === 'string' ? rawTwitch.displayName : '', ...(typeof rawTwitch.accessToken === 'string' ? { accessToken: rawTwitch.accessToken } : {}), ...(typeof rawTwitch.refreshToken === 'string' ? { refreshToken: rawTwitch.refreshToken } : {}) };
   local.twitchLastSyncedAt = typeof local.twitchLastSyncedAt === 'string' && Number.isFinite(Date.parse(local.twitchLastSyncedAt)) ? local.twitchLastSyncedAt : null;
-  const rawGoogle = object(local.google) ? local.google : {};
+  const rawGoogle: Record<string, unknown> = object(local.google) ? local.google as unknown as Record<string, unknown> : {};
   local.google = { targetCalendarId: typeof rawGoogle.targetCalendarId === 'string' && rawGoogle.targetCalendarId ? rawGoogle.targetCalendarId : null, lastSyncedAt: typeof rawGoogle.lastSyncedAt === 'string' && Number.isFinite(Date.parse(rawGoogle.lastSyncedAt)) ? rawGoogle.lastSyncedAt : null };
   local.remoteDevices = Array.isArray(local.remoteDevices) ? local.remoteDevices.filter(device => object(device) && typeof device.id === 'string' && typeof device.name === 'string' && typeof device.credentialHash === 'string').map(device => ({ id: String(device.id), name: String(device.name).slice(0, 80), createdAt: String(device.createdAt ?? ''), lastSeenAt: String(device.lastSeenAt ?? ''), ...(typeof device.revokedAt === 'string' ? { revokedAt: device.revokedAt } : {}), credentialHash: String(device.credentialHash) })) : [];
 
@@ -289,7 +289,7 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
     if (!twitch.state.connected) { preflightState.status = 'action-required'; preflightState.error = 'Connectez Twitch pour préparer le titre et la catégorie.'; const item = local.checklist.find(x => x.id === 'title'); if (item) item.done = false; return changed(); }
     try {
       const result = await twitchPreflight.prepare({ eventId: event.id, title: event.title, category: category ?? undefined });
-      preflightState = { eventId: event.id, status: result.status, title: event.title, category, gameId: 'gameId' in result ? result.gameId : null, error: 'error' in result ? result.error : null, preparedAt: result.status === 'ready' ? new Date().toISOString() : null };
+      preflightState = { eventId: event.id, status: result.status, title: event.title, category, gameId: 'gameId' in result ? result.gameId : null, error: result.status === 'ready' ? null : result.error ?? null, preparedAt: result.status === 'ready' ? new Date().toISOString() : null };
       const item = local.checklist.find(x => x.id === 'title'); if (item) item.done = result.status === 'ready';
       return changed();
     } catch (error) {
@@ -352,7 +352,7 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
       invalidatePreflight(); res.json(await changed());
     } catch (error) { next(error); }
   };
-  const planningRetry: express.RequestHandler = async (req, res, next) => { try { const provider = req.params.provider; if (!['twitch', 'google'].includes(provider)) throw new Error('Provider invalide.'); await plan(async () => planning().retry(req.params.id, provider as 'twitch' | 'google')); res.json(await changed()); } catch (error) { next(error); } };
+  const planningRetry: express.RequestHandler = async (req, res, next) => { try { const provider = String(req.params.provider), id = String(req.params.id); if (!['twitch', 'google'].includes(provider)) throw new Error('Provider invalide.'); await plan(async () => planning().retry(id, provider as 'twitch' | 'google')); res.json(await changed()); } catch (error) { next(error); } };
   const planningDelete: express.RequestHandler = async (req, res, next) => {
     try {
       const item = local.planning.find(x => x.id === req.params.id); if (!item) { const error = new Error('Événement introuvable.'); error.name = 'NOT_FOUND'; throw error; }
