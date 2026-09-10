@@ -7,7 +7,7 @@ export function startUpdater(
   logger: Pick<Console, 'info' | 'error'> = console,
   beforeInstall: () => Promise<void> = async () => undefined,
 ) {
-  if (!app.isPackaged || process.platform !== 'win32') return () => undefined;
+  if (!app.isPackaged || process.platform !== 'win32' || process.env.NODE_ENV === 'test') return () => undefined;
   const feed = `https://update.electronjs.org/Rastaaslan/StreamDashboard/${process.platform}-${process.arch}/${app.getVersion()}`;
   autoUpdater.setFeedURL({ url: feed });
   let ready = false;
