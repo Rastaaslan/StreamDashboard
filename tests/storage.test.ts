@@ -14,11 +14,29 @@ describe('persistance applicative', () => {
     expect(JSON.parse(await readFile(file, 'utf8'))).toMatchObject({ value: 'ok' });
     expect((await readdir(path.dirname(file))).filter(name => name.endsWith('.tmp'))).toEqual([]);
   });
+
+  it('sérialise les écritures concurrentes dans leur ordre d’appel', async () => {
+    const file = await location(); const store = new AtomicJsonStore<{ sequence: number }>(file);
+    await Promise.all([store.write({ sequence: 1 }), store.write({ sequence: 2 }), store.write({ sequence: 3 })]);
+    expect(JSON.parse(await readFile(file, 'utf8'))).toEqual({ sequence: 3 });
+    expect((await readdir(path.dirname(file))).filter(name => name.endsWith('.tmp'))).toEqual([]);
+  });
+
+  it('capture la valeur au moment où write est demandé', async () => {
+    const file = await location(); const store = new AtomicJsonStore<{ nested: { value: number } }>(file);
+    const state = { nested: { value: 1 } };
+    const write = store.write(state);
+    state.nested.value = 99;
+    await write;
+    expect(JSON.parse(await readFile(file, 'utf8'))).toEqual({ nested: { value: 1 } });
+  });
+
   it('met en quarantaine une configuration corrompue', async () => {
     const file = await location(); await writeFile(file, '{cassé', { encoding: 'utf8', flag: 'w' }).catch(async () => { const store = new AtomicJsonStore(file); await store.write({ value: 'seed' }); await writeFile(file, '{cassé'); });
     const result = await new AtomicJsonStore<{ value: string }>(file).read({ value: 'fallback' });
     expect(result.value).toBe('fallback'); expect((await readdir(path.dirname(file))).some(name => name.includes('.corrupt-'))).toBe(true);
   });
+
   it('migre les tokens en stockage secret puis nettoie le JSON de façon idempotente', async () => {
     const memory = new MemorySecretStore(); const retained = { schemaVersion: 1, twitch: { accessToken: 'a', refreshToken: 'r', displayName: 'Public' } };
     expect(await migratePlaintextTwitchTokens(retained, memory)).toBe(false);
