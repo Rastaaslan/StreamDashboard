@@ -12,6 +12,24 @@ function setup() {
 }
 
 describe('service de commandes', () => {
+  it('réinitialise le timer lors de la préparation d’un nouveau live hors diffusion', async () => {
+    const { domain, service, obs, commit } = setup();
+    domain.timer.running = false; domain.timer.remaining = 17; domain.timer.duration = 300; domain.timer.deadline = null;
+    await service.execute({ type: 'session.prepare' });
+    expect(obs.refresh).toHaveBeenCalledOnce();
+    expect(domain.timer).toMatchObject({ running: false, duration: 300, remaining: 300, deadline: null });
+    expect(commit).toHaveBeenCalledOnce();
+  });
+
+  it('ne réinitialise pas le timer si Préparer est ouvert pendant un live actif', async () => {
+    const domain = { mode: 'live' as const, timer: { running: true, duration: 300, remaining: 200, deadline: Date.now() + 200_000 }, checklist: [] };
+    const obs: ObsCommands = { state: { connected: true, streaming: true }, scene: vi.fn(), mute: vi.fn(), volume: vi.fn(), stream: vi.fn(), record: vi.fn(), restartMedia: vi.fn(), refresh: vi.fn() };
+    const before = { ...domain.timer };
+    const service = new DashboardCommandService(domain, obs, vi.fn(async () => ({}) as never));
+    await service.execute({ type: 'session.prepare' });
+    expect(domain.timer).toEqual(before);
+  });
+
   it('sélectionne la scène live avant StartStream et recrée le timer', async () => {
     const domain = { mode: 'end' as const, timer: { running: false, duration: 300, remaining: 17, deadline: null }, checklist: [] };
     const order: string[] = [];
