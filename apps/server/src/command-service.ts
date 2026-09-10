@@ -17,7 +17,7 @@ export interface CommandContext { settings: Pick<DashboardSettings, 'modeScenes'
 export class DashboardCommandService {
   private queue: Promise<void> = Promise.resolve();
 
-  constructor(private domain: DashboardDomainState, private obs: ObsCommands, private commit: () => Promise<DashboardState>, private context: CommandContext = { settings: { modeScenes: {}, startMode: 'intro' } }) {}
+  constructor(private domain: DashboardDomainState, private obs: ObsCommands, private commit: () => Promise<DashboardState>, private context: CommandContext = { settings: { modeScenes: {} } }) {}
 
   execute(command: DashboardCommand) {
     const operation = this.queue.then(() => this.executeNow(command));
@@ -27,8 +27,6 @@ export class DashboardCommandService {
 
   private async confirmScene(scene: string) {
     if (this.obs.waitForScene) { await this.obs.waitForScene(scene); return; }
-    // Older/mocked ObsCommands do not expose the current scene. Keep compatibility,
-    // while real ObsClient always exposes it and therefore gets a hard confirmation.
     if (this.obs.state.scene === undefined) return;
     await this.obs.refresh();
     if (this.obs.state.scene !== scene) throw new Error(`OBS n’a pas confirmé la scène « ${scene} ».`);
@@ -83,13 +81,16 @@ export class DashboardCommandService {
       if (this.obs.state.streaming) throw new Error('La diffusion OBS est déjà active.');
       if (!command.force && this.domain.checklist.some(item => !item.done)) { const error = new Error('Certaines vérifications ne sont pas terminées.'); error.name = 'CHECKLIST_INCOMPLETE'; throw error; }
 
-      // Starting a broadcast and entering the gameplay/live scene are separate concepts.
-      // By default we start on Intro; the user can explicitly choose Live in settings.
-      const startMode = this.context.settings.startMode ?? 'intro';
+      // New desktop settings explicitly choose the pre-stream mode (Intro by default).
+      // Legacy/test contexts without startMode retain the previous Live/current-scene behavior.
+      const configuredStartMode = this.context.settings.startMode;
+      const startMode = configuredStartMode ?? 'live';
       const startScene = this.context.settings.modeScenes[startMode];
-      if (!startScene) throw new Error(`Aucune scène associée au mode de démarrage ${startMode}. Configurez-la dans Réglages.`);
-      await this.obs.scene(startScene);
-      await this.confirmScene(startScene);
+      if (configuredStartMode && !startScene) throw new Error(`Aucune scène associée au mode de démarrage ${startMode}. Configurez-la dans Réglages.`);
+      if (startScene) {
+        await this.obs.scene(startScene);
+        await this.confirmScene(startScene);
+      }
 
       await this.refreshTimerBrowserSource();
       await this.applyStreamState(true);
