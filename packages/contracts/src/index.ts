@@ -11,6 +11,8 @@ export interface TimerState {
 
 export interface CalendarItem {
   id: string;
+  /** Stable StreamDashboard identifier. `id` remains as a V1 compatibility alias. */
+  localId?: string;
   title: string;
   description?: string;
   startAtUtc: string;
@@ -25,7 +27,26 @@ export interface CalendarItem {
   twitchRecurring?: boolean;
   syncError?: string;
   syncedAt?: string;
+  desiredPublication?: { local: boolean; twitch: boolean; google: boolean };
+  providers?: Partial<Record<'twitch' | 'google', ProviderLink>>;
+  external?: boolean;
+  conflict?: { provider: 'twitch' | 'google'; detectedAt: string; remote?: Pick<CalendarItem, 'title' | 'description' | 'startAtUtc' | 'endAtUtc'> };
 }
+export type ProviderSyncStatus = 'synced' | 'pending' | 'error' | 'not-published';
+export interface ProviderLink {
+  status: ProviderSyncStatus;
+  remoteId?: string;
+  calendarId?: string;
+  remoteRevision?: string;
+  lastSyncedAt?: string;
+  lastError?: string;
+  deletedRemotely?: boolean;
+}
+
+export interface GoogleCalendarState { connected: boolean; targetCalendarId: string | null; calendars: Array<{ id: string; summary: string; writable: boolean }>; error: string | null }
+export interface PreflightState { eventId: string | null; status: 'idle' | 'preparing' | 'ready' | 'action-required' | 'error'; title: string | null; category: string | null; gameId: string | null; error: string | null; preparedAt: string | null }
+export interface RemoteDevice { id: string; name: string; createdAt: string; lastSeenAt: string; revokedAt?: string }
+export interface RemoteState { enabled: boolean; devices: RemoteDevice[] }
 export interface CalendarPayload { rows: unknown[]; warnings: string[]; fetchedAt: number; fromCache: boolean; items: CalendarItem[] }
 export interface StreamState { mode: RunMode; running: boolean; startedAt: number | null; deadline: number | null; duration: number; remaining: number; timerVisible: boolean; previousObsScene: string | null; sequence: number; text: string; obs: { connected: boolean; currentScene: string | null; streaming: boolean } }
 
@@ -85,6 +106,9 @@ export interface DashboardState {
   health: Record<string, { ok: boolean; detail: string; reconnects: number }>;
   settings: DashboardSettings;
   twitch: TwitchState;
+  google?: GoogleCalendarState;
+  preflight?: PreflightState;
+  remote?: RemoteState;
   runtime: { serverVersion: string; nodeVersion: string; electronVersion: string | null; platform: string; port: number; logsPath: string | null };
 }
 

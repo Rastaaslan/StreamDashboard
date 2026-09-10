@@ -1,0 +1,8 @@
+<!doctype html><html lang="fr"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><meta name="theme-color" content="#111124"><link rel="manifest" href="manifest.webmanifest"><link rel="stylesheet" href="mobile.css"><title>StreamDashboard Remote</title></head><body>
+<header><div><small>STREAMDASHBOARD REMOTE</small><h1 id="connection">Hors ligne</h1></div><b id="live">OFFLINE</b></header>
+<main><section class="status"><span>PC <b id="pc">—</b></span><span>OBS <b id="obs">—</b></span><span>SCÈNE <b id="scene">—</b></span></section>
+<section><small>PROCHAIN LIVE</small><h2 id="next">Aucun live planifié</h2><button data-command='{"type":"session.prepare"}'>PRÉPARER</button></section>
+<section class="modes"><button data-mode="intro">INTRO</button><button data-mode="live">LIVE</button><button data-mode="pause">PAUSE</button><button data-mode="end">END</button></section>
+<section class="timer"><strong id="timer">05:00</strong><div><button data-command='{"type":"timer.start"}'>▶</button><button data-command='{"type":"timer.pause"}'>Ⅱ</button><button data-command='{"type":"timer.reset"}'>↺</button><button data-command='{"type":"timer.add","seconds":300}'>+5</button></div></section>
+<section><h2>Audio</h2><div id="audio"></div></section><section><h2>Fun Deck</h2><div id="deck"></div></section><section><h2>Planning</h2><div id="planning"></div></section>
+<button class="critical" id="stream">DÉMARRER LE LIVE</button><p id="message" role="status"></p></main><script type="module" src="mobile.js"></script></body></html>

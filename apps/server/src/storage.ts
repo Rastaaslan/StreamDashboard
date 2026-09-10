@@ -11,17 +11,24 @@ export interface SecretStore {
   clearTwitchTokens(): Promise<void>;
   getObsPassword(): Promise<string>;
   setObsPassword(password: string): Promise<void>;
+  getGoogleTokens?(): Promise<Record<string, string> | null>;
+  setGoogleTokens?(tokens: Record<string, string>): Promise<void>;
+  clearGoogleTokens?(): Promise<void>;
 }
 
 export class MemorySecretStore implements SecretStore {
   readonly persistent: boolean = false;
   private tokens: Record<string, string> | null = null;
   private obsPassword = '';
+  private google: Record<string, string> | null = null;
   async getTwitchTokens() { return this.tokens ? { ...this.tokens } : null; }
   async setTwitchTokens(tokens: Record<string, string>) { this.tokens = { ...tokens }; }
   async clearTwitchTokens() { this.tokens = null; }
   async getObsPassword() { return this.obsPassword; }
   async setObsPassword(password: string) { this.obsPassword = password; }
+  async getGoogleTokens() { return this.google ? { ...this.google } : null; }
+  async setGoogleTokens(tokens: Record<string, string>) { this.google = { ...tokens }; }
+  async clearGoogleTokens() { this.google = null; }
 }
 
 /** JSON configuration store using serialized temp + fsync + rename writes. */

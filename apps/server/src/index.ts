@@ -8,12 +8,13 @@ import { ObsClient } from '../../../integrations/obs/src/client.js';
 import { TwitchClient } from '../../../integrations/twitch/src/client.js';
 import { parseCommand, protocolVersion, type CalendarItem, type ChecklistItem, type DashboardEvent, type DashboardSettings, type DashboardState, type RunMode, type ServerCapabilities, type TimerState } from '../../../packages/contracts/src/index.js';
 import { DashboardCommandService } from './command-service.js';
+import { RemoteAuth } from './remote-auth.js';
 import { AtomicJsonStore, DASHBOARD_SCHEMA_VERSION, MemorySecretStore, migratePlaintextTwitchTokens, type SecretStore } from './storage.js';
 
 interface PersistedSettings extends Omit<DashboardSettings, 'obsPasswordSet' | 'twitchConnected' | 'twitchUserName'> { launchObs: boolean }
 interface TwitchIdentity { broadcasterId: string; userName: string; displayName: string; accessToken?: string; refreshToken?: string }
 interface LocalData { schemaVersion: number; mode: RunMode; timer: TimerState; planning: CalendarItem[]; checklist: ChecklistItem[]; settings: PersistedSettings & { obsPassword?: string }; twitch: TwitchIdentity; twitchLastSyncedAt: string | null }
-export interface DashboardServerOptions { port?: number; host?: string; dataDir?: string; webDir?: string; secretStore?: SecretStore; version?: string; twitchClientId?: string; electronVersion?: string; logsPath?: string; logger?: Pick<Console, 'info' | 'warn' | 'error'> }
+export interface DashboardServerOptions { port?: number; host?: string; remoteEnabled?: boolean; dataDir?: string; webDir?: string; mobileDir?: string; secretStore?: SecretStore; version?: string; twitchClientId?: string; electronVersion?: string; logsPath?: string; logger?: Pick<Console, 'info' | 'warn' | 'error'> }
 export interface DashboardServerHandle { port: number; url: string; state(): DashboardState; stop(): Promise<void>; server: Server }
 
 const RUN_MODES: RunMode[] = ['idle', 'intro', 'live', 'pause', 'end'];
@@ -61,7 +62,8 @@ function sanitizeCalendarItem(value: unknown): CalendarItem | null {
 export async function startDashboardServer(options: DashboardServerOptions = {}): Promise<DashboardServerHandle> {
   const requestedPort = options.port ?? Number(process.env.PORT ?? 47832);
   const host = options.host ?? '127.0.0.1';
-  if (!LOOPBACK_HOSTS.has(host)) throw new Error('Le mode remote-LAN est désactivé tant que le pairing authentifié n’est pas configuré.');
+  if (!LOOPBACK_HOSTS.has(host) && !options.remoteEnabled) throw new Error('Le mode remote-LAN est désactivé tant que le pairing authentifié n’est pas configuré.');
+  if (!LOOPBACK_HOSTS.has(host) && host !== '0.0.0.0') throw new Error('Adresse d’écoute LAN invalide.');
   const dataDir = path.resolve(options.dataDir ?? process.env.DATA_DIR ?? path.dirname(process.env.DATA_FILE ?? 'data/dashboard.json'));
   const dataFile = path.resolve(process.env.DATA_FILE ?? path.join(dataDir, 'dashboard.json'));
   const store = new AtomicJsonStore<LocalData>(dataFile);
@@ -146,20 +148,23 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
   });
 
   const app = express();
+  const remoteAuth = new RemoteAuth();
   const server = createServer(app);
   const sockets = new WebSocketServer({ noServer: true });
   server.on('upgrade', (request, socket, head) => {
     const pathname = new URL(request.url ?? '/', 'http://local').pathname;
     const origin = request.headers.origin;
     const requestHost = request.headers.host;
+    const credential = new URL(request.url ?? '/', 'http://local').searchParams.get('device') ?? '';
     const acceptedOrigin = (() => {
       if (!origin) return true;
       try {
         const parsed = new URL(origin);
-        return LOOPBACK_HOSTS.has(parsed.hostname) && Boolean(requestHost) && parsed.host === requestHost;
+        return Boolean(requestHost) && parsed.host === requestHost && (LOOPBACK_HOSTS.has(parsed.hostname) || options.remoteEnabled === true);
       } catch { return false; }
     })();
-    if ((pathname !== '/ws' && pathname !== '/ws/v1') || !acceptedOrigin) { socket.write('HTTP/1.1 403 Forbidden\r\n\r\n'); socket.destroy(); return; }
+    const remoteRequest = request.socket.remoteAddress ? !['127.0.0.1', '::1', '::ffff:127.0.0.1'].includes(request.socket.remoteAddress) : true;
+    if ((pathname !== '/ws' && pathname !== '/ws/v1') || !acceptedOrigin || (remoteRequest && !remoteAuth.authenticate(credential))) { socket.write('HTTP/1.1 403 Forbidden\r\n\r\n'); socket.destroy(); return; }
     sockets.handleUpgrade(request, socket, head, ws => sockets.emit('connection', ws, request));
   });
   app.use((_req, res, next) => {
@@ -170,7 +175,26 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
     next();
   });
   app.use(express.json({ limit: '32kb' }));
+  app.use((req, res, next) => {
+    const origin = req.headers.origin;
+    if (!origin) { next(); return; }
+    try { if (new URL(origin).host === req.headers.host) { next(); return; } } catch { /* rejected below */ }
+    res.status(403).json({ ok: false, error: { code: 'ORIGIN_REJECTED', message: 'Origine non autorisée.' } });
+  });
   app.use(express.static(path.resolve(options.webDir ?? 'apps/web'), { index: 'index.html' }));
+  app.use('/mobile', express.static(path.resolve(options.mobileDir ?? 'apps/mobile'), { index: 'index.html' }));
+  const isLocalRequest = (req: express.Request) => ['127.0.0.1', '::1', '::ffff:127.0.0.1'].includes(req.socket.remoteAddress ?? '');
+  app.post('/api/v1/remote/pairing', (req, res) => { if (!isLocalRequest(req)) { res.status(403).json({ error: 'Pairing uniquement depuis le PC.' }); return; } res.status(201).json(remoteAuth.createPairing()); });
+  app.post('/api/v1/remote/pair', (req, res, next) => { try { res.status(201).json(remoteAuth.pair(String(req.body.id ?? ''), String(req.body.code ?? ''), String(req.body.name ?? ''), req.ip)); } catch (error) { next(error); } });
+  app.get('/api/v1/remote/devices', (req, res) => { if (!isLocalRequest(req)) { res.sendStatus(403); return; } res.json(remoteAuth.list()); });
+  app.delete('/api/v1/remote/devices/:id', (req, res) => { if (!isLocalRequest(req)) { res.sendStatus(403); return; } remoteAuth.revoke(req.params.id); res.sendStatus(204); });
+  app.use('/api', (req, res, next) => {
+    const remoteRequest = req.socket.remoteAddress ? !['127.0.0.1', '::1', '::ffff:127.0.0.1'].includes(req.socket.remoteAddress) : true;
+    if (!remoteRequest || req.method === 'GET' || req.path === '/v1/remote/pair') { next(); return; }
+    const credential = req.headers.authorization?.match(/^Device (\S+)$/)?.[1];
+    if (!credential || !remoteAuth.authenticate(credential)) { res.status(401).json({ ok: false, error: { code: 'DEVICE_AUTH_REQUIRED', message: 'Télécommande non autorisée.' } }); return; }
+    next();
+  });
 
   let planningQueue: Promise<void> = Promise.resolve();
   const plan = <T>(operation: () => Promise<T>): Promise<T> => {
@@ -198,7 +222,7 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
     obsExecutablePath: local.settings.obsExecutablePath,
     modeScenes: local.settings.modeScenes ?? {},
   });
-  const capabilities: ServerCapabilities = { protocolVersion, serverVersion: options.version ?? '1.1.0', features: ['obs', 'twitch', 'timer', 'planning', 'checklist', 'deck'], accessMode: 'desktop-local' };
+  const capabilities: ServerCapabilities = { protocolVersion, serverVersion: options.version ?? '1.1.0', features: ['obs', 'twitch', 'google-calendar', 'preflight', 'timer', 'planning', 'checklist', 'deck', 'mobile-remote'], accessMode: options.remoteEnabled ? 'remote-LAN' : 'desktop-local' };
   let runtimePort = requestedPort;
   const snapshot = (): DashboardState => {
     const currentRemaining = remaining();

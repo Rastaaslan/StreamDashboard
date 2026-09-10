@@ -3,7 +3,7 @@ import { mkdir, readFile, rename, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import type { SecretStore } from '../../server/src/storage.js';
 
-interface SecurePayload { twitch?: Record<string, string>; obsPassword?: string }
+interface SecurePayload { twitch?: Record<string, string>; google?: Record<string, string>; obsPassword?: string }
 export class ElectronSecretStore implements SecretStore {
   readonly persistent: boolean = true;
   private file: string;
@@ -26,4 +26,7 @@ export class ElectronSecretStore implements SecretStore {
   async clearTwitchTokens() { await this.update(value => { delete value.twitch; }); }
   async getObsPassword() { return (await this.read()).obsPassword ?? ''; }
   async setObsPassword(obsPassword: string) { await this.update(value => { value.obsPassword = obsPassword; }); }
+  async getGoogleTokens() { return (await this.read()).google ?? null; }
+  async setGoogleTokens(google: Record<string, string>) { await this.update(value => { value.google = google; }); }
+  async clearGoogleTokens() { await this.update(value => { delete value.google; }); }
 }
