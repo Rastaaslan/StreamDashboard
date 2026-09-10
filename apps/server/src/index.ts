@@ -105,7 +105,7 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
       .filter(item => { if (seen.has(item.id)) return false; seen.add(item.id); return true; });
     if (!local.checklist.length) local.checklist = structuredClone(defaults.checklist);
   }
-  const rawSettings = object(local.settings) ? local.settings : {};
+  const rawSettings: Partial<PersistedSettings & { obsPassword?: string }> = object(local.settings) ? local.settings : {};
   local.settings = {
     streamerName: typeof rawSettings.streamerName === 'string' && rawSettings.streamerName.trim() ? rawSettings.streamerName.trim().slice(0, 80) : defaults.settings.streamerName,
     accent: ACCENTS.includes(rawSettings.accent as DashboardSettings['accent']) ? rawSettings.accent as DashboardSettings['accent'] : defaults.settings.accent,
@@ -116,7 +116,7 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
     modeScenes: modeScenes(rawSettings.modeScenes),
     ...(typeof rawSettings.obsPassword === 'string' && rawSettings.obsPassword.length <= 500 ? { obsPassword: rawSettings.obsPassword } : {}),
   };
-  const rawTwitch = object(local.twitch) ? local.twitch : {};
+  const rawTwitch: Partial<TwitchIdentity> = object(local.twitch) ? local.twitch : {};
   local.twitch = {
     broadcasterId: typeof rawTwitch.broadcasterId === 'string' ? rawTwitch.broadcasterId : '',
     userName: typeof rawTwitch.userName === 'string' ? rawTwitch.userName : '',
@@ -381,7 +381,7 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
   let stopPromise: Promise<void> | undefined;
   scheduleTimerExpiry();
   const stop = () => stopPromise ??= (async () => {
-    unsubscribeObs(); clearInterval(validator); if (timerExpiry) clearTimeout(timerExpiry); twitch.cancelDeviceAuthorization();
+    unsubscribeObs(); clearInterval(validator); if (timerExpiry) clearTimeout(timerExpiry); twitch.close();
     for (const ws of sockets.clients) ws.terminate(); sockets.close();
     await obs.close(); await save();
     await new Promise<void>((resolve, reject) => server.close(error => error ? reject(error) : resolve()));
