@@ -53,6 +53,35 @@ describe('service de commandes', () => {
     expect(domain.mode).toBe('end'); expect(domain.timer.running).toBe(false);
   });
 
+  it('arrête quand même le live si la scène End est absente', async () => {
+    const domain = { mode: 'live' as const, timer: { running: true, duration: 300, remaining: 200, deadline: Date.now() + 200_000 }, checklist: [] };
+    const warnings: unknown[][] = [];
+    const obs: ObsCommands = {
+      state: { connected: true, streaming: true },
+      scene: vi.fn(async () => { throw new Error('end scene missing'); }), mute: vi.fn(), volume: vi.fn(),
+      stream: vi.fn(async () => undefined), record: vi.fn(), restartMedia: vi.fn(), refresh: vi.fn(),
+      waitForStreaming: vi.fn(async expected => { obs.state.streaming = expected; }),
+    };
+    const service = new DashboardCommandService(domain, obs, vi.fn(async () => ({}) as never), { settings: { modeScenes: { end: 'Missing' } }, logger: { info() {}, warn(...args) { warnings.push(args); } } });
+    await service.execute({ type: 'session.stop' });
+    expect(obs.stream).toHaveBeenCalledWith(false);
+    expect(domain.mode).toBe('end'); expect(domain.timer.running).toBe(false);
+    expect(warnings).toHaveLength(1);
+  });
+
+  it('retombe sur un refresh si l’événement de confirmation OBS est perdu', async () => {
+    const domain = { mode: 'live' as const, timer: { running: true, duration: 300, remaining: 200, deadline: Date.now() + 200_000 }, checklist: [] };
+    const obs: ObsCommands = {
+      state: { connected: true, streaming: true }, scene: vi.fn(), mute: vi.fn(), volume: vi.fn(), stream: vi.fn(), record: vi.fn(), restartMedia: vi.fn(),
+      waitForStreaming: vi.fn(async () => { throw new Error('event missed'); }),
+      refresh: vi.fn(async () => { obs.state.streaming = false; }),
+    };
+    const service = new DashboardCommandService(domain, obs, vi.fn(async () => ({}) as never));
+    await service.execute({ type: 'session.stop' });
+    expect(obs.refresh).toHaveBeenCalledOnce();
+    expect(domain.mode).toBe('end'); expect(domain.timer.running).toBe(false);
+  });
+
   it('ne prétend pas être arrêté si StopStream échoue', async () => {
     const domain = { mode: 'live' as const, timer: { running: true, duration: 300, remaining: 200, deadline: Date.now() + 200_000 }, checklist: [] };
     const obs: ObsCommands = { state: { connected: true, streaming: true }, scene: vi.fn(), mute: vi.fn(), volume: vi.fn(), stream: vi.fn(async () => { throw new Error('stop failed'); }), record: vi.fn(), restartMedia: vi.fn(), refresh: vi.fn() };
@@ -84,7 +113,7 @@ describe('service de commandes', () => {
 
   it('borne le volume avant de déléguer à OBS', async () => {
     const { service, obs, commit } = setup();
-    await service.execute({ type: 'obs.volume', input: 'Micro', volume: 9 });
+    await service.execute({ type: 'obs.volume', input: 'Micro', volume: 1.5 });
     expect(obs.volume).toHaveBeenCalledWith('Micro', 1.5);
     expect(obs.refresh).toHaveBeenCalledOnce();
     expect(commit).toHaveBeenCalledOnce();
