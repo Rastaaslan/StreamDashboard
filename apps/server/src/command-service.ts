@@ -111,7 +111,7 @@ export class DashboardCommandService {
       this.domain.mode = 'end';
       return this.commit();
     }
-    if (command.type === 'mode.set') { await this.setMode(command.mode); return this.commit(); }
+    if (command.type === 'mode.set') { await this.setMode(command.mode); await this.obs.refresh(); return this.commit(); }
     if (applyDashboardCommand(this.domain, command)) return this.commit();
     switch (command.type) {
       case 'obs.scene': if (!command.scene.trim()) throw new Error('Scène OBS invalide.'); await this.obs.scene(command.scene); await this.confirmScene(command.scene); break;
