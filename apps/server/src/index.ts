@@ -126,7 +126,7 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
       { id: 'title', label: 'Titre, catégorie et notification prêts', done: false },
       { id: 'water', label: 'Eau et environnement prêts', done: false },
     ],
-    settings: { streamerName: 'Streamer', accent: 'violet', confirmStop: true, obsUrl: defaultObsUrl, launchObs: false, modeScenes: {}, remoteEnabled: false },
+    settings: { streamerName: 'Streamer', accent: 'violet', confirmStop: true, obsUrl: defaultObsUrl, launchObs: false, modeScenes: {}, startMode: 'intro', remoteEnabled: false },
     twitch: { broadcasterId: '', userName: '', displayName: '' }, twitchLastSyncedAt: null,
     google: { targetCalendarId: null, lastSyncedAt: null }, remoteDevices: [],
   };
@@ -156,6 +156,7 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
     obsUrl: safeObsUrl(rawSettings.obsUrl, defaults.settings.obsUrl), launchObs: rawSettings.launchObs === true,
     obsExecutablePath: typeof rawSettings.obsExecutablePath === 'string' && rawSettings.obsExecutablePath.trim().length <= 500 ? rawSettings.obsExecutablePath.trim() || undefined : undefined,
     modeScenes: modeScenes(rawSettings.modeScenes),
+    startMode: rawSettings.startMode === 'live' ? 'live' : 'intro',
     timerBrowserSource: typeof rawSettings.timerBrowserSource === 'string' && rawSettings.timerBrowserSource.trim().length <= 200 ? rawSettings.timerBrowserSource.trim() || undefined : undefined,
     remoteEnabled: rawSettings.remoteEnabled === true,
     ...(typeof rawSettings.obsPassword === 'string' && rawSettings.obsPassword.length <= 500 ? { obsPassword: rawSettings.obsPassword } : {}),
@@ -222,7 +223,7 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
   const configure = <T>(operation: () => Promise<T>): Promise<T> => { const result = settingsQueue.then(operation); settingsQueue = result.then(() => undefined, () => undefined); return result; };
 
   const remaining = () => local.timer.running && local.timer.deadline ? Math.max(0, Math.ceil((local.timer.deadline - Date.now()) / 1000)) : local.timer.remaining;
-  const publicSettings = (): DashboardSettings => ({ streamerName: local.settings.streamerName, accent: local.settings.accent, confirmStop: local.settings.confirmStop, obsUrl: local.settings.obsUrl, obsPasswordSet: Boolean(currentObsPassword), twitchConnected: twitch.state.connected, twitchUserName: twitch.state.displayName, launchObs: local.settings.launchObs, obsExecutablePath: local.settings.obsExecutablePath, modeScenes: local.settings.modeScenes ?? {}, timerBrowserSource: local.settings.timerBrowserSource, remoteEnabled: local.settings.remoteEnabled === true });
+  const publicSettings = (): DashboardSettings => ({ streamerName: local.settings.streamerName, accent: local.settings.accent, confirmStop: local.settings.confirmStop, obsUrl: local.settings.obsUrl, obsPasswordSet: Boolean(currentObsPassword), twitchConnected: twitch.state.connected, twitchUserName: twitch.state.displayName, launchObs: local.settings.launchObs, obsExecutablePath: local.settings.obsExecutablePath, modeScenes: local.settings.modeScenes ?? {}, startMode: local.settings.startMode ?? 'intro', timerBrowserSource: local.settings.timerBrowserSource, remoteEnabled: local.settings.remoteEnabled === true });
   const features = ['obs', 'twitch', 'preflight', 'timer', 'planning', 'checklist', 'deck', 'mobile-remote']; if (googleClientId) features.push('google-calendar');
   const capabilities: ServerCapabilities = { protocolVersion, serverVersion: options.version ?? '1.1.0', features, accessMode: remoteRuntimeEnabled ? 'remote-LAN' : 'desktop-local' };
   let runtimePort = requestedPort;
@@ -353,6 +354,14 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
     } catch (error) { next(error); }
   };
   const planningRetry: express.RequestHandler = async (req, res, next) => { try { const provider = String(req.params.provider), id = String(req.params.id); if (!['twitch', 'google'].includes(provider)) throw new Error('Provider invalide.'); await plan(async () => planning().retry(id, provider as 'twitch' | 'google')); res.json(await changed()); } catch (error) { next(error); } };
+  const planningResolveConflict: express.RequestHandler = async (req, res, next) => {
+    try {
+      const provider = String(req.params.provider), id = String(req.params.id), strategy = String(req.body?.strategy ?? '');
+      if (!['twitch', 'google'].includes(provider) || !['local', 'remote'].includes(strategy)) throw new Error('Résolution de conflit invalide.');
+      await plan(async () => planning().resolveConflict(id, provider as 'twitch' | 'google', strategy as 'local' | 'remote'));
+      invalidatePreflight(); res.json(await changed());
+    } catch (error) { next(error); }
+  };
   const planningDelete: express.RequestHandler = async (req, res, next) => {
     try {
       const item = local.planning.find(x => x.id === req.params.id); if (!item) { const error = new Error('Événement introuvable.'); error.name = 'NOT_FOUND'; throw error; }
@@ -372,6 +381,7 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
         if (input.accent !== undefined) { if (!ACCENTS.includes(input.accent)) throw new Error('Couleur d’accent invalide.'); local.settings.accent = input.accent; }
         if (typeof input.confirmStop === 'boolean') local.settings.confirmStop = input.confirmStop;
         if (typeof input.launchObs === 'boolean') local.settings.launchObs = input.launchObs;
+        if (input.startMode !== undefined) { if (!['intro', 'live'].includes(String(input.startMode))) throw new Error('Mode de démarrage invalide.'); local.settings.startMode = input.startMode; }
         if (typeof input.remoteEnabled === 'boolean') local.settings.remoteEnabled = input.remoteEnabled;
         if (input.timerBrowserSource !== undefined) { if (typeof input.timerBrowserSource !== 'string' || input.timerBrowserSource.length > 200) throw new Error('Source timer OBS invalide.'); local.settings.timerBrowserSource = input.timerBrowserSource.trim() || undefined; }
         if (input.obsExecutablePath !== undefined) { if (typeof input.obsExecutablePath !== 'string' || input.obsExecutablePath.length > 500) throw new Error('Chemin OBS invalide.'); local.settings.obsExecutablePath = input.obsExecutablePath.trim() || undefined; }
@@ -383,7 +393,14 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
       res.json(state);
     } catch (error) { next(error); }
   };
-  for (const prefix of ['/api', '/api/v1']) { app.post(`${prefix}/planning`, planningCreate); app.put(`${prefix}/planning/:id`, planningUpdate); app.delete(`${prefix}/planning/:id`, planningDelete); app.post(`${prefix}/planning/:id/retry/:provider`, planningRetry); app.put(`${prefix}/settings`, settingsUpdate); }
+  for (const prefix of ['/api', '/api/v1']) {
+    app.post(`${prefix}/planning`, planningCreate);
+    app.put(`${prefix}/planning/:id`, planningUpdate);
+    app.delete(`${prefix}/planning/:id`, planningDelete);
+    app.post(`${prefix}/planning/:id/retry/:provider`, planningRetry);
+    app.post(`${prefix}/planning/:id/conflict/:provider`, planningResolveConflict);
+    app.put(`${prefix}/settings`, settingsUpdate);
+  }
 
   app.post(['/api/twitch/device', '/api/v1/twitch/device'], async (_req, res, next) => {
     try { const alreadyPending = Boolean(twitch.state.deviceAuthorization), authorization = await twitch.startDeviceAuthorization(); broadcast(); res.status(201).json(authorization); if (!alreadyPending) void twitch.waitForDeviceAuthorization().then(async () => { Object.assign(local.twitch, twitch.publicIdentity()); await save(); broadcast(); }).catch(error => { logError(error); broadcast(); }); } catch (error) { next(error); }
@@ -415,8 +432,11 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
           const link = item.providers?.google; if (!link?.remoteId) continue;
           const event = remoteById.get(link.remoteId);
           if (!event || event.deleted) { link.deletedRemotely = true; link.status = 'error'; link.lastError = 'Événement supprimé sur Google Calendar — action utilisateur requise.'; continue; }
-          if (link.remoteRevision && event.etag && link.remoteRevision !== event.etag && !sameCalendarData(item, event)) { item.conflict = { provider: 'google', detectedAt: new Date().toISOString(), remote: { title: event.title, description: event.description, startAtUtc: event.startAtUtc, endAtUtc: event.endAtUtc } }; link.status = 'conflict'; link.lastError = 'Conflit avec une modification Google distante.'; continue; }
-          link.remoteRevision = event.etag; link.status = 'synced'; link.deletedRemotely = false; link.lastSyncedAt = new Date().toISOString(); delete link.lastError;
+          if (link.remoteRevision && event.etag && link.remoteRevision !== event.etag && !sameCalendarData(item, event)) {
+            item.conflict = { provider: 'google', detectedAt: new Date().toISOString(), remote: { title: event.title, description: event.description, startAtUtc: event.startAtUtc, endAtUtc: event.endAtUtc } };
+            link.status = 'conflict'; link.remoteRevision = event.etag; link.lastError = 'Conflit avec une modification Google distante.'; continue;
+          }
+          link.remoteRevision = event.etag; link.status = 'synced'; link.deletedRemotely = false; link.lastSyncedAt = new Date().toISOString(); delete link.lastError; if (item.conflict?.provider === 'google') delete item.conflict;
         }
         for (const event of remote) {
           if (event.deleted) continue;
