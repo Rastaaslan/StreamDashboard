@@ -35,7 +35,24 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
     twitch: { broadcasterId: '', userName: '', displayName: '' }, twitchLastSyncedAt: null,
   };
   let local = await store.read(defaults);
+  const object = (value: unknown): value is Record<string, unknown> => Boolean(value && typeof value === 'object' && !Array.isArray(value));
+  if (!object(local)) local = structuredClone(defaults);
+  if (!object(local.timer)) local.timer = structuredClone(defaults.timer);
+  else {
+    const duration = Number(local.timer.duration), remainingValue = Number(local.timer.remaining);
+    local.timer.duration = Number.isFinite(duration) && duration >= 1 && duration <= 86_400 ? Math.floor(duration) : defaults.timer.duration;
+    local.timer.remaining = Number.isFinite(remainingValue) && remainingValue >= 0 ? Math.min(Math.floor(remainingValue), 86_400) : local.timer.duration;
+    local.timer.running = local.timer.running === true && typeof local.timer.deadline === 'number' && Number.isFinite(local.timer.deadline);
+    local.timer.deadline = local.timer.running ? local.timer.deadline : null;
+  }
+  if (!Array.isArray(local.planning)) local.planning = [];
+  local.planning = local.planning.filter(item => object(item) && typeof item.id === 'string' && typeof item.title === 'string' && Number.isFinite(Date.parse(String(item.startAtUtc))) && Number.isFinite(Date.parse(String(item.endAtUtc))));
+  if (!Array.isArray(local.checklist)) local.checklist = structuredClone(defaults.checklist);
+  else local.checklist = local.checklist.filter(item => object(item) && typeof item.id === 'string' && typeof item.label === 'string').map(item => ({ id: item.id, label: item.label, done: item.done === true }));
+  if (!object(local.settings)) local.settings = structuredClone(defaults.settings);
   local.settings = { ...defaults.settings, ...(local.settings ?? {}) };
+  if (!['violet', 'cyan', 'rose'].includes(local.settings.accent)) local.settings.accent = defaults.settings.accent;
+  if (!object(local.settings.modeScenes)) local.settings.modeScenes = {};
   local.twitch = { ...defaults.twitch, ...(local.twitch ?? {}) };
   const requiresSchemaMigration = local.schemaVersion !== DASHBOARD_SCHEMA_VERSION;
   const migratedTokens = await migratePlaintextTwitchTokens(local, secrets);
@@ -81,8 +98,16 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
       } };
   };
   const broadcast = () => { const body = JSON.stringify({ type: 'state.updated', data: snapshot() } satisfies DashboardEvent); for (const ws of sockets.clients) if (ws.readyState === ws.OPEN) ws.send(body); };
+  let timerExpiry: NodeJS.Timeout | undefined;
+  const scheduleTimerExpiry = () => {
+    if (timerExpiry) clearTimeout(timerExpiry);
+    timerExpiry = undefined;
+    if (!local.timer.running || !local.timer.deadline) return;
+    timerExpiry = setTimeout(() => { timerExpiry = undefined; local.timer.running = false; local.timer.remaining = 0; local.timer.deadline = null; void save().then(broadcast).catch(logError); }, Math.max(0, local.timer.deadline - Date.now()));
+    timerExpiry.unref();
+  };
   const save = async () => { await store.write(local); };
-  const changed = async () => { await save(); broadcast(); return snapshot(); };
+  const changed = async () => { scheduleTimerExpiry(); await save(); broadcast(); return snapshot(); };
   const commands = new DashboardCommandService(local, obs, changed, { settings: local.settings, logger });
   const execute = async (body: unknown) => commands.execute(parseCommand(body));
   const validateTwitch = async () => {
@@ -95,13 +120,15 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
   app.get('/api/v1/health', health); app.get('/api/v1/state', (_req, res) => res.json(snapshot())); app.get('/api/v1/capabilities', (_req, res) => res.json(capabilities));
   app.post('/api/v1/commands', async (req, res, next) => { try { const command = parseCommand(req.body); res.json({ ok: true, state: await commands.execute(command), commandType: command.type }); } catch (error) { next(error); } });
   app.get('/api/state', (_req, res) => res.json(snapshot())); app.post('/api/commands', async (req, res, next) => { try { res.json(await execute(req.body)); } catch (error) { next(error); } });
-  app.post('/api/planning', async (req, res, next) => { try { const input = req.body as Partial<CalendarItem>; if (!input.title || !input.startAtUtc || !input.endAtUtc || Date.parse(input.endAtUtc) <= Date.parse(input.startAtUtc)) return res.status(400).json({ error: 'Titre et période valides requis.' }); local.planning.push({ id: randomUUID(), title: input.title, description: input.description ?? '', startAtUtc: input.startAtUtc, endAtUtc: input.endAtUtc, category: input.category ?? 'live' }); res.status(201).json(await changed()); } catch (error) { next(error); } });
-  app.delete('/api/planning/:id', async (req, res, next) => { try { const item = local.planning.find(x => x.id === req.params.id); if (item?.twitchSegmentId && twitch.state.connected) await twitch.deleteSegment(item.twitchSegmentId); local.planning = local.planning.filter(x => x.id !== req.params.id); res.json(await changed()); } catch (error) { next(error); } });
-  app.put('/api/settings', async (req, res, next) => { try { const input = req.body as Partial<DashboardSettings> & { obsPassword?: string }; const newUrl = typeof input.obsUrl === 'string' && input.obsUrl.trim() ? input.obsUrl.trim() : local.settings.obsUrl; const newPassword = typeof input.obsPassword === 'string' && input.obsPassword ? input.obsPassword : currentObsPassword; const obsChanged = newUrl !== local.settings.obsUrl || newPassword !== currentObsPassword; if (typeof input.streamerName === 'string') local.settings.streamerName = input.streamerName; if (['violet', 'cyan', 'rose'].includes(String(input.accent))) local.settings.accent = input.accent!; if (typeof input.confirmStop === 'boolean') local.settings.confirmStop = input.confirmStop; if (typeof input.launchObs === 'boolean') local.settings.launchObs = input.launchObs; if (input.modeScenes && typeof input.modeScenes === 'object') local.settings.modeScenes = Object.fromEntries(Object.entries(input.modeScenes).filter(([mode, scene]) => ['intro', 'live', 'pause', 'end'].includes(mode) && typeof scene === 'string' && scene.length <= 200)); local.settings.obsUrl = newUrl; if (newPassword !== currentObsPassword) { if (secrets.persistent) await secrets.setObsPassword(newPassword); else local.settings.obsPassword = newPassword; currentObsPassword = newPassword; } await save(); if (obsChanged) await obs.configure(newUrl, newPassword); broadcast(); res.json(snapshot()); } catch (error) { next(error); } });
-  app.post('/api/twitch/device', async (_req, res, next) => { try { const alreadyPending = Boolean(twitch.state.deviceAuthorization); const authorization = await twitch.startDeviceAuthorization(); broadcast(); res.status(201).json(authorization); if (!alreadyPending) void twitch.waitForDeviceAuthorization().then(async () => { Object.assign(local.twitch, twitch.publicIdentity()); await save(); broadcast(); }).catch(error => { logError(error); broadcast(); }); } catch (error) { next(error); } });
-  app.post('/api/twitch/disconnect', async (_req, res, next) => { try { await twitch.disconnect(); local.twitch = { broadcasterId: '', userName: '', displayName: '' }; await changed(); res.json(snapshot()); } catch (error) { next(error); } });
-  app.post('/api/twitch/sync', async (_req, res, next) => { try { local.planning = await twitch.sync(local.planning); local.twitchLastSyncedAt = new Date().toISOString(); res.json(await changed()); } catch (error) { next(error); } });
+  const planningCreate: express.RequestHandler = async (req, res, next) => { try { const input = req.body as Partial<CalendarItem>; if (!input.title || input.title.length > 140 || !input.startAtUtc || !input.endAtUtc || Date.parse(input.endAtUtc) <= Date.parse(input.startAtUtc)) { res.status(400).json({ error: 'Titre (140 caractères maximum) et période valides requis.' }); return; } local.planning.push({ id: randomUUID(), title: input.title, description: input.description ?? '', startAtUtc: input.startAtUtc, endAtUtc: input.endAtUtc, category: input.category ?? 'live' }); res.status(201).json(await changed()); } catch (error) { next(error); } };
+  const planningDelete: express.RequestHandler = async (req, res, next) => { try { const item = local.planning.find(x => x.id === req.params.id); if (item?.twitchRecurring && req.query.confirmRecurring !== 'true') { res.status(409).json({ error: 'Ce segment appartient à une série récurrente Twitch. Confirmez la suppression de toute la série.' }); return; } if (item?.twitchSegmentId && twitch.state.connected) await twitch.deleteSegment(item.twitchSegmentId, Boolean(item.twitchRecurring)); local.planning = local.planning.filter(x => x.id !== req.params.id); res.json(await changed()); } catch (error) { next(error); } };
+  const settingsUpdate: express.RequestHandler = async (req, res, next) => { try { const input = req.body as Partial<DashboardSettings> & { obsPassword?: string }; const newUrl = typeof input.obsUrl === 'string' && input.obsUrl.trim() ? input.obsUrl.trim() : local.settings.obsUrl; const newPassword = typeof input.obsPassword === 'string' && input.obsPassword ? input.obsPassword : currentObsPassword; const obsChanged = newUrl !== local.settings.obsUrl || newPassword !== currentObsPassword; if (typeof input.streamerName === 'string') local.settings.streamerName = input.streamerName; if (['violet', 'cyan', 'rose'].includes(String(input.accent))) local.settings.accent = input.accent!; if (typeof input.confirmStop === 'boolean') local.settings.confirmStop = input.confirmStop; if (typeof input.launchObs === 'boolean') local.settings.launchObs = input.launchObs; if (typeof input.obsExecutablePath === 'string' && input.obsExecutablePath.length <= 500) local.settings.obsExecutablePath = input.obsExecutablePath; if (input.modeScenes && typeof input.modeScenes === 'object') local.settings.modeScenes = Object.fromEntries(Object.entries(input.modeScenes).filter(([mode, scene]) => ['intro', 'live', 'pause', 'end'].includes(mode) && typeof scene === 'string' && scene.length <= 200)); local.settings.obsUrl = newUrl; if (newPassword !== currentObsPassword) { if (secrets.persistent) await secrets.setObsPassword(newPassword); else local.settings.obsPassword = newPassword; currentObsPassword = newPassword; } await save(); if (obsChanged) await obs.configure(newUrl, newPassword); broadcast(); res.json(snapshot()); } catch (error) { next(error); } };
+  for (const prefix of ['/api', '/api/v1']) { app.post(`${prefix}/planning`, planningCreate); app.delete(`${prefix}/planning/:id`, planningDelete); app.put(`${prefix}/settings`, settingsUpdate); }
+  app.post(['/api/twitch/device', '/api/v1/twitch/device'], async (_req, res, next) => { try { const alreadyPending = Boolean(twitch.state.deviceAuthorization); const authorization = await twitch.startDeviceAuthorization(); broadcast(); res.status(201).json(authorization); if (!alreadyPending) void twitch.waitForDeviceAuthorization().then(async () => { Object.assign(local.twitch, twitch.publicIdentity()); await save(); broadcast(); }).catch(error => { logError(error); broadcast(); }); } catch (error) { next(error); } });
+  app.post(['/api/twitch/disconnect', '/api/v1/twitch/disconnect'], async (_req, res, next) => { try { await twitch.disconnect(); local.twitch = { broadcasterId: '', userName: '', displayName: '' }; await changed(); res.json(snapshot()); } catch (error) { next(error); } });
+  app.post(['/api/twitch/sync', '/api/v1/twitch/sync'], async (_req, res, next) => { try { local.planning = await twitch.sync(local.planning); local.twitchLastSyncedAt = new Date().toISOString(); res.json(await changed()); } catch (error) { next(error); } });
   app.post('/api/obs/test', async (req, res, next) => { try { res.json(await obs.test(req.body.obsUrl?.trim() || local.settings.obsUrl, req.body.obsPassword || await secrets.getObsPassword())); } catch (error) { next(error); } });
+  app.post('/api/v1/obs/test', async (req, res, next) => { try { res.json(await obs.test(req.body.obsUrl?.trim() || local.settings.obsUrl, req.body.obsPassword || await secrets.getObsPassword())); } catch (error) { next(error); } });
   app.get('/api/diagnostics', (_req, res) => res.json({ state: snapshot(), errors, runtime: { node: process.version, pid: process.pid, uptime: process.uptime(), version: capabilities.serverVersion, port: requestedPort, dataDir } }));
   app.use((error: unknown, _req: express.Request, res: express.Response, _next: express.NextFunction) => { logError(error); res.status(400).json({ ok: false, error: { code: error instanceof Error && error.name === 'CHECKLIST_INCOMPLETE' ? 'CHECKLIST_INCOMPLETE' : 'INVALID_REQUEST', message: error instanceof Error ? error.message : 'Erreur interne' } }); });
   sockets.on('connection', ws => { ws.send(JSON.stringify({ type: 'server.ready', data: capabilities })); ws.send(JSON.stringify({ type: 'state.updated', data: snapshot() } satisfies DashboardEvent)); });
@@ -116,8 +143,9 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
   void obs.configure(local.settings.obsUrl, currentObsPassword).then(broadcast);
   logger.info(`StreamDashboard ready on ${host}:${actualPort}`);
   let stopPromise: Promise<void> | undefined;
+  scheduleTimerExpiry();
   const stop = () => stopPromise ??= (async () => {
-    unsubscribeObs(); clearInterval(validator); twitch.cancelDeviceAuthorization(); for (const ws of sockets.clients) ws.terminate(); sockets.close(); await obs.close(); await save(); await new Promise<void>((resolve, reject) => server.close(error => error ? reject(error) : resolve()));
+    unsubscribeObs(); clearInterval(validator); if (timerExpiry) clearTimeout(timerExpiry); twitch.cancelDeviceAuthorization(); for (const ws of sockets.clients) ws.terminate(); sockets.close(); await obs.close(); await save(); await new Promise<void>((resolve, reject) => server.close(error => error ? reject(error) : resolve()));
   })();
   return { port: actualPort, url: `http://${host}:${actualPort}`, state: snapshot, server, stop };
 }

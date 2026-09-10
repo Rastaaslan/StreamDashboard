@@ -6,6 +6,13 @@ export interface DashboardDomainState {
   checklist: ChecklistItem[];
 }
 
+/** Starts a broadcast timer from its reference duration, never from a paused session. */
+export function startNewSessionTimer(state: DashboardDomainState, now = Date.now()): void {
+  state.timer.remaining = Math.max(1, Math.floor(state.timer.duration));
+  state.timer.running = true;
+  state.timer.deadline = now + state.timer.remaining * 1000;
+}
+
 /** Applies commands that only affect the dashboard domain and returns whether it handled the command. */
 export function applyDashboardCommand(state: DashboardDomainState, command: DashboardCommand, now = Date.now()): boolean {
   const remaining = () => state.timer.running && state.timer.deadline

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { applyDashboardCommand } from '../packages/core/src/dashboard.js';
+import { applyDashboardCommand, startNewSessionTimer } from '../packages/core/src/dashboard.js';
 
 function domain() {
   return { mode: 'idle' as const, timer: { running: false, duration: 300, remaining: 300, deadline: null }, checklist: [{ id: 'obs', label: 'OBS', done: false }] };
@@ -27,5 +27,12 @@ describe('module métier du cockpit', () => {
 
   it('refuse une entrée de checklist inconnue', () => {
     expect(() => applyDashboardCommand(domain(), { type: 'checklist.toggle', id: 'missing' })).toThrow(/inconnu/);
+  });
+
+  it('ajoute cinq minutes avant, pendant et après une pause et démarre une nouvelle session complète', () => {
+    const state = domain(); applyDashboardCommand(state, { type: 'timer.add', seconds: 300 }, 0); expect(state.timer.remaining).toBe(600);
+    applyDashboardCommand(state, { type: 'timer.start' }, 1_000); applyDashboardCommand(state, { type: 'timer.add', seconds: 300 }, 2_000); expect(state.timer.remaining).toBe(899);
+    applyDashboardCommand(state, { type: 'timer.pause' }, 3_000); applyDashboardCommand(state, { type: 'timer.add', seconds: 300 }, 3_000); expect(state.timer.remaining).toBe(1198);
+    state.timer.duration = 300; startNewSessionTimer(state, 5_000); expect(state.timer).toMatchObject({ running: true, remaining: 300, deadline: 305_000 });
   });
 });

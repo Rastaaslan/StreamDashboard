@@ -1,5 +1,7 @@
 import type { DashboardCommand, DashboardSettings, DashboardState, ObsState, RunMode } from '../../../packages/contracts/src/index.js';
-import { applyDashboardCommand, type DashboardDomainState } from '../../../packages/core/src/dashboard.js';
+import { applyDashboardCommand, startNewSessionTimer, type DashboardDomainState } from '../../../packages/core/src/dashboard.js';
+
+export const END_SCENE_VISIBILITY_MS = 1_500;
 
 export interface ObsCommands {
   readonly state: Pick<ObsState, 'connected' | 'streaming'>;
@@ -7,7 +9,7 @@ export interface ObsCommands {
   stream(start: boolean): Promise<void>; record(start: boolean): Promise<void>; restartMedia(input: string): Promise<void>; refresh(): Promise<void>;
   waitForStreaming?(expected: boolean, timeoutMs?: number): Promise<void>;
 }
-export interface CommandContext { settings: Pick<DashboardSettings, 'modeScenes'>; logger?: Pick<Console, 'info'> }
+export interface CommandContext { settings: Pick<DashboardSettings, 'modeScenes'>; logger?: Pick<Console, 'info'>; wait?: (milliseconds: number) => Promise<void> }
 
 /** Unique application command bus shared by the desktop UI and future remote clients. */
 export class DashboardCommandService {
@@ -29,12 +31,17 @@ export class DashboardCommandService {
     if (command.type === 'session.start') {
       if (!this.obs.state.connected) throw new Error('Impossible de démarrer la diffusion : OBS n’est pas connecté.');
       if (!command.force && this.domain.checklist.some(item => !item.done)) { const error = new Error('Certaines vérifications ne sont pas terminées.'); error.name = 'CHECKLIST_INCOMPLETE'; throw error; }
-      await this.obs.stream(true); await this.obs.waitForStreaming?.(true); const liveScene = this.context.settings.modeScenes.live; if (liveScene) await this.obs.scene(liveScene); this.domain.mode = 'live';
-      applyDashboardCommand(this.domain, { type: 'timer.start' }); return this.commit();
+      const liveScene = this.context.settings.modeScenes.live;
+      if (liveScene) await this.obs.scene(liveScene);
+      await this.obs.stream(true); await this.obs.waitForStreaming?.(true);
+      this.domain.mode = 'live'; startNewSessionTimer(this.domain); return this.commit();
     }
     if (command.type === 'session.stop') {
       if (!this.obs.state.connected) throw new Error('Impossible d’arrêter la diffusion : OBS n’est pas connecté.');
-      await this.obs.stream(false); await this.obs.waitForStreaming?.(false); const endScene = this.context.settings.modeScenes.end; if (endScene) await this.obs.scene(endScene); applyDashboardCommand(this.domain, { type: 'timer.pause' }); this.domain.mode = 'end'; return this.commit();
+      const endScene = this.context.settings.modeScenes.end;
+      if (endScene) { await this.obs.scene(endScene); await (this.context.wait ?? (ms => new Promise(resolve => setTimeout(resolve, ms))))(END_SCENE_VISIBILITY_MS); }
+      await this.obs.stream(false); await this.obs.waitForStreaming?.(false);
+      applyDashboardCommand(this.domain, { type: 'timer.pause' }); this.domain.mode = 'end'; return this.commit();
     }
     if (command.type === 'mode.set') { await this.setMode(command.mode); await this.obs.refresh(); return this.commit(); }
     if (applyDashboardCommand(this.domain, command)) return this.commit();
