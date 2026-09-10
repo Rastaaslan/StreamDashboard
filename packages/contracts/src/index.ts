@@ -92,6 +92,8 @@ export interface DashboardSettings {
   launchObs: boolean;
   obsExecutablePath?: string;
   modeScenes: Partial<Record<Exclude<RunMode, 'idle'>, string>>;
+  /** Mode/scene selected and confirmed immediately before OBS starts streaming. */
+  startMode?: 'intro' | 'live';
   /** Exact OBS browser source used for the visible session timer overlay. */
   timerBrowserSource?: string;
   /** Persisted preference. Binding to LAN is applied on next desktop startup. */
