@@ -3,6 +3,7 @@ import { readFileSync } from 'node:fs';
 import { TwitchClient } from '../integrations/twitch/src/client.js';
 
 const empty = { clientId: '', accessToken: '', refreshToken: '', broadcasterId: '', userName: '', displayName: '' };
+const validSession = { client_id: 'id', user_id: '42', login: 'streamer', scopes: ['channel:manage:schedule'] };
 afterEach(() => { vi.unstubAllGlobals(); vi.useRealTimers(); });
 
 describe('intégration Twitch générique', () => {
@@ -25,6 +26,19 @@ describe('intégration Twitch générique', () => {
     expect(body).toContain('client_id=client-public');
     expect(body).not.toMatch(/client_secret|redirect_uri|code_challenge/);
     expect(JSON.stringify(result)).not.toContain('device-secret');
+  });
+
+  it('partage aussi la création concurrente du Device Code', async () => {
+    let release!: () => void;
+    const gate = new Promise<void>(resolve => { release = resolve; });
+    const fetch = vi.fn(async () => { await gate; return new Response(JSON.stringify({ device_code: 'device', user_code: 'CODE', verification_uri: 'https://www.twitch.tv/activate', expires_in: 600, interval: 1 })); });
+    vi.stubGlobal('fetch', fetch);
+    const client = new TwitchClient({ ...empty, clientId: 'id' });
+    const first = client.startDeviceAuthorization(); const second = client.startDeviceAuthorization();
+    await vi.waitFor(() => expect(fetch).toHaveBeenCalledTimes(1));
+    release();
+    expect(await first).toEqual(await second);
+    expect(fetch).toHaveBeenCalledTimes(1);
   });
 
   it('attend la validation puis charge le compte utilisateur', async () => {
@@ -104,9 +118,28 @@ describe('intégration Twitch générique', () => {
     const first = client.sync(items), second = client.sync(items); await vi.waitFor(() => expect(posts).toBe(1)); release(); expect(await first).toBe(await second); expect(posts).toBe(1);
   });
 
+  it('ne recrée pas immédiatement un segment LOCAL supprimé sur Twitch', async () => {
+    const fetch = vi.fn(async (_input: string | URL | Request, init?: RequestInit) => {
+      if (init?.method === 'POST') throw new Error('ne doit pas republier');
+      return new Response(JSON.stringify({ data: { segments: [] } }));
+    });
+    vi.stubGlobal('fetch', fetch);
+    const client = new TwitchClient({ ...empty, clientId: 'id', accessToken: 'token', broadcasterId: '42' });
+    const result = await client.sync([{ id: 'local', title: 'Live supprimé', startAtUtc: '2030-01-01T10:00:00Z', endAtUtc: '2030-01-01T11:00:00Z', category: 'live', ownership: 'LOCAL', twitchSegmentId: 'gone' }]);
+    expect(result).toHaveLength(1);
+    expect(result[0]).not.toHaveProperty('twitchSegmentId');
+    expect(result[0]?.syncError).toMatch(/absent du planning Twitch/i);
+    expect(fetch).toHaveBeenCalledTimes(1);
+  });
+
   it('effectue un seul refresh OAuth pour deux réponses Helix 401 simultanées', async () => {
     let tokenPosts = 0, validations = 0;
-    vi.stubGlobal('fetch', vi.fn(async (input: string | URL | Request) => { const url = String(input); if (url.includes('/oauth2/token')) { tokenPosts++; await new Promise(resolve => setTimeout(resolve, 5)); return new Response(JSON.stringify({ access_token: 'fresh', refresh_token: 'rotated' })); } validations++; return validations <= 2 ? new Response('{}', { status: 401 }) : new Response(JSON.stringify({ client_id: 'id', user_id: '42', login: 'streamer' })); }));
+    vi.stubGlobal('fetch', vi.fn(async (input: string | URL | Request) => {
+      const url = String(input);
+      if (url.includes('/oauth2/token')) { tokenPosts++; await new Promise(resolve => setTimeout(resolve, 5)); return new Response(JSON.stringify({ access_token: 'fresh', refresh_token: 'rotated' })); }
+      validations++;
+      return validations <= 2 ? new Response('{}', { status: 401 }) : new Response(JSON.stringify(validSession));
+    }));
     const client = new TwitchClient({ ...empty, clientId: 'id', accessToken: 'old', refreshToken: 'refresh', broadcasterId: '42' });
     expect(await Promise.all([client.validateSession(), client.validateSession()])).toEqual([true, true]); expect(tokenPosts).toBe(1);
   });
@@ -145,11 +178,41 @@ describe('intégration Twitch générique', () => {
 
   it('rafraîchit puis revalide une session restaurée expirée', async () => {
     const persisted: Array<Record<string, string> | null> = [];
-    const responses = [new Response('{}', { status: 401 }), new Response(JSON.stringify({ access_token: 'fresh-access', refresh_token: 'fresh-refresh' })), new Response(JSON.stringify({ client_id: 'id', user_id: '42', login: 'streamer' }))];
+    const responses = [new Response('{}', { status: 401 }), new Response(JSON.stringify({ access_token: 'fresh-access', refresh_token: 'fresh-refresh' })), new Response(JSON.stringify(validSession))];
     vi.stubGlobal('fetch', vi.fn(async () => responses.shift()!));
     const client = new TwitchClient({ ...empty, clientId: 'id', accessToken: 'expired', refreshToken: 'old-refresh', broadcasterId: '42' }, async tokens => { persisted.push(tokens); });
     expect(await client.validateSession()).toBe(true);
     expect(persisted).toEqual([{ accessToken: 'fresh-access', refreshToken: 'fresh-refresh' }]);
+  });
+
+  it('déconnecte une session qui a perdu le scope de planning', async () => {
+    const persisted: Array<Record<string, string> | null> = [];
+    vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify({ client_id: 'id', user_id: '42', login: 'streamer', scopes: [] }))));
+    const client = new TwitchClient({ ...empty, clientId: 'id', accessToken: 'token', broadcasterId: '42' }, async tokens => { persisted.push(tokens); });
+    expect(await client.validateSession()).toBe(false);
+    expect(client.state.connected).toBe(false);
+    expect(persisted).toEqual([null]);
+  });
+
+  it('ne réinjecte pas un token si l’utilisateur se déconnecte pendant un refresh', async () => {
+    let release!: (response: Response) => void;
+    const refreshGate = new Promise<Response>(resolve => { release = resolve; });
+    const persisted: Array<Record<string, string> | null> = [];
+    let calls = 0;
+    vi.stubGlobal('fetch', vi.fn(async () => {
+      calls++;
+      if (calls === 1) return new Response('{}', { status: 401 });
+      return refreshGate;
+    }));
+    const client = new TwitchClient({ ...empty, clientId: 'id', accessToken: 'expired', refreshToken: 'old-refresh', broadcasterId: '42' }, async tokens => { persisted.push(tokens); });
+    const validation = client.validateSession();
+    await vi.waitFor(() => expect(calls).toBe(2));
+    await client.disconnect();
+    release(new Response(JSON.stringify({ access_token: 'should-not-stick', refresh_token: 'rotated' })));
+    expect(await validation).toBe(false);
+    expect(client.state.connected).toBe(false);
+    expect(persisted.at(-1)).toBeNull();
+    expect(persisted.some(value => value?.accessToken === 'should-not-stick')).toBe(false);
   });
 
   it('déconnecte après un unique refresh si le replay Helix reste en 401', async () => {
