@@ -7,13 +7,7 @@
     "esModuleInterop": true,
     "outDir": "dist",
     "rootDir": ".",
-    "skipLibCheck": true,
-    "baseUrl": ".",
-    "paths": {
-      "electron": [
-        "types/electron/index.d.ts"
-      ]
-    }
+    "skipLibCheck": true
   },
   "include": [
     "apps/**/*.ts",
@@ -21,8 +15,7 @@
     "integrations/**/*.ts",
     "packages/**/*.ts",
     "scripts/**/*.ts",
-    "tests/**/*.ts",
-    "types/**/*.d.ts"
+    "tests/**/*.ts"
   ],
   "exclude": [
     "tests/electron.smoke.spec.ts",
