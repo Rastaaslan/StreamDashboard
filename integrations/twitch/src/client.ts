@@ -3,6 +3,7 @@ import type { CalendarItem, TwitchState } from '../../../packages/contracts/src/
 const API = 'https://api.twitch.tv/helix';
 const AUTH = 'https://id.twitch.tv/oauth2';
 const REQUIRED_SCOPE = 'channel:manage:schedule';
+const REQUEST_TIMEOUT_MS = 15_000;
 
 type Credentials = { clientId: string; accessToken: string; refreshToken: string; broadcasterId: string; userName: string; displayName: string };
 type PendingDeviceAuthorization = { deviceCode: string; userCode: string; verificationUri: string; expiresAt: number; interval: number };
@@ -19,6 +20,7 @@ export class TwitchClient {
   private deviceStartPromise?: Promise<PublicDeviceAuthorization>;
   private generation = 0;
   private error: string | null = null;
+  private networkAbort = new AbortController();
 
   constructor(private credentials: Credentials, private onTokensChanged: (tokens: Record<string, string> | null) => Promise<void> = async () => undefined) {}
 
@@ -34,13 +36,23 @@ export class TwitchClient {
     };
   }
 
+  private async request(url: string, init: RequestInit = {}) {
+    const signal = init.signal ?? AbortSignal.any([this.networkAbort.signal, AbortSignal.timeout(REQUEST_TIMEOUT_MS)]);
+    try { return await fetch(url, { ...init, signal }); }
+    catch (error) {
+      if (error instanceof Error && (error.name === 'TimeoutError' || /timed?\s*out/i.test(error.message))) throw new Error('Twitch ne répond pas dans le délai attendu. Réessayez.');
+      if (this.networkAbort.signal.aborted) throw new Error('Opération Twitch annulée.');
+      throw error;
+    }
+  }
+
   async startDeviceAuthorization() {
     if (this.pending && Date.now() < this.pending.expiresAt) return this.state.deviceAuthorization!;
     if (this.deviceStartPromise) return this.deviceStartPromise;
     if (!this.credentials.clientId.trim()) throw new Error('Renseignez l’identifiant client public de StreamDashboard.');
     const generation = this.generation;
     this.deviceStartPromise = (async () => {
-      const response = await fetch(`${AUTH}/device`, {
+      const response = await this.request(`${AUTH}/device`, {
         method: 'POST', headers: { 'content-type': 'application/x-www-form-urlencoded' },
         body: new URLSearchParams({ client_id: this.credentials.clientId, scopes: REQUIRED_SCOPE }),
       });
@@ -74,11 +86,11 @@ export class TwitchClient {
         this.pollTimer = undefined; this.pollWake = undefined;
         if (generation !== this.generation || this.pending !== pending) throw new Error('Connexion Twitch annulée.');
         if (Date.now() >= pending.expiresAt) { this.pending = undefined; this.error = 'Le code Twitch a expiré. Recommencez la connexion.'; throw new Error(this.error); }
-        const response = await fetch(`${AUTH}/token`, {
+        const response = await this.request(`${AUTH}/token`, {
           method: 'POST', headers: { 'content-type': 'application/x-www-form-urlencoded' },
           body: new URLSearchParams({ client_id: this.credentials.clientId, device_code: pending.deviceCode, scopes: REQUIRED_SCOPE, grant_type: 'urn:ietf:params:oauth:grant-type:device_code' }),
         });
-        const value = await response.json() as { access_token?: string; refresh_token?: string; message?: string };
+        const value = await response.json().catch(() => ({})) as { access_token?: string; refresh_token?: string; message?: string };
         if (!response.ok) {
           const reason = value.message?.toLowerCase().replaceAll(' ', '_');
           if (reason === 'authorization_pending') continue;
@@ -116,10 +128,16 @@ export class TwitchClient {
 
   async disconnect() {
     this.generation++;
+    this.networkAbort.abort(); this.networkAbort = new AbortController();
     this.cancelDeviceAuthorization();
     this.credentials = { clientId: this.credentials.clientId, accessToken: '', refreshToken: '', broadcasterId: '', userName: '', displayName: '' };
     this.error = null;
     await this.onTokensChanged(null);
+  }
+  close() {
+    this.generation++;
+    this.networkAbort.abort();
+    this.cancelDeviceAuthorization();
   }
   cancelDeviceAuthorization() { this.pending = undefined; if (this.pollTimer) clearTimeout(this.pollTimer); this.pollTimer = undefined; this.pollWake?.(); this.pollWake = undefined; }
   exportTokens() { const { clientId: _clientId, ...tokens } = this.credentials; return tokens; }
@@ -128,13 +146,13 @@ export class TwitchClient {
   async validateSession() {
     const generation = this.generation;
     if (!this.credentials.accessToken) return false;
-    let response = await fetch(`${AUTH}/validate`, { headers: { Authorization: `OAuth ${this.credentials.accessToken}` } });
+    let response = await this.request(`${AUTH}/validate`, { headers: { Authorization: `OAuth ${this.credentials.accessToken}` } });
     if (generation !== this.generation) return false;
     if (!response.ok && this.credentials.refreshToken) {
       try {
         await this.refreshSingleFlight();
         if (generation !== this.generation) return false;
-        response = await fetch(`${AUTH}/validate`, { headers: { Authorization: `OAuth ${this.credentials.accessToken}` } });
+        response = await this.request(`${AUTH}/validate`, { headers: { Authorization: `OAuth ${this.credentials.accessToken}` } });
       } catch {
         if (generation === this.generation) { await this.disconnect(); this.error = 'La session Twitch ne peut pas être renouvelée.'; }
         return false;
@@ -185,13 +203,14 @@ export class TwitchClient {
         }
       }
       for (const segment of segments) {
-        const existing = byId.get(segment.id);
+        const existingById = byId.get(segment.id);
+        const recoveredLocal = existingById ?? merged.find(item => !item.twitchSegmentId && item.ownership !== 'EXTERNAL' && !item.syncError && item.title === segment.title && Date.parse(item.startAtUtc) === Date.parse(segment.start_time) && Date.parse(item.endAtUtc) === Date.parse(segment.end_time));
         const value: CalendarItem = {
-          id: existing?.id ?? `twitch:${segment.id}`, twitchSegmentId: segment.id, title: segment.title,
-          startAtUtc: segment.start_time, endAtUtc: segment.end_time, category: 'live', source: 'TWITCH', ownership: existing?.ownership ?? 'EXTERNAL', editable: true, kind: 'LIVE',
+          id: recoveredLocal?.id ?? `twitch:${segment.id}`, twitchSegmentId: segment.id, title: segment.title,
+          startAtUtc: segment.start_time, endAtUtc: segment.end_time, category: 'live', source: 'TWITCH', ownership: recoveredLocal ? 'LOCAL' : 'EXTERNAL', editable: true, kind: 'LIVE',
           twitchRecurring: Boolean(segment.is_recurring), syncedAt: new Date().toISOString(),
         };
-        if (existing) { delete existing.syncError; Object.assign(existing, value); }
+        if (recoveredLocal) { delete recoveredLocal.syncError; Object.assign(recoveredLocal, value); }
         else merged.push(value);
       }
       for (const item of merged.filter(x => (x.category === 'live' || x.kind === 'LIVE') && !x.twitchSegmentId && x.ownership !== 'EXTERNAL' && !missingLocalIds.has(x.id) && !x.syncError)) {
@@ -205,7 +224,9 @@ export class TwitchClient {
           throw error;
         }
         if (generation !== this.generation) throw new Error('Synchronisation Twitch annulée.');
-        item.twitchSegmentId = result.data.segments[0]?.id;
+        const createdId = result.data.segments[0]?.id;
+        if (!createdId) throw new Error('Twitch a accepté la création mais n’a renvoyé aucun identifiant de segment. Une nouvelle synchronisation vérifiera le planning avant toute nouvelle création.');
+        item.twitchSegmentId = createdId;
         item.source = 'TWITCH'; item.ownership = 'LOCAL'; item.syncedAt = new Date().toISOString(); delete item.syncError;
       }
       if (generation !== this.generation) throw new Error('Synchronisation Twitch annulée.');
@@ -224,14 +245,14 @@ export class TwitchClient {
 
   private async api<T>(path: string, init?: RequestInit): Promise<T> {
     const generation = this.generation;
-    let response = await fetch(`${API}${path}`, { ...init, headers: { Authorization: `Bearer ${this.credentials.accessToken}`, 'Client-Id': this.credentials.clientId, 'content-type': 'application/json', ...init?.headers } });
+    let response = await this.request(`${API}${path}`, { ...init, headers: { Authorization: `Bearer ${this.credentials.accessToken}`, 'Client-Id': this.credentials.clientId, 'content-type': 'application/json', ...init?.headers } });
     if (generation !== this.generation) throw new Error('Opération Twitch annulée.');
     if (response.status === 401) {
       if (!this.credentials.refreshToken) { await this.disconnect(); throw new Error('Session Twitch expirée. Reconnectez votre compte.'); }
       try { await this.refreshSingleFlight(); }
       catch (error) { if (generation === this.generation) await this.disconnect(); throw error; }
       if (generation !== this.generation) throw new Error('Opération Twitch annulée.');
-      response = await fetch(`${API}${path}`, { ...init, headers: { Authorization: `Bearer ${this.credentials.accessToken}`, 'Client-Id': this.credentials.clientId, 'content-type': 'application/json', ...init?.headers } });
+      response = await this.request(`${API}${path}`, { ...init, headers: { Authorization: `Bearer ${this.credentials.accessToken}`, 'Client-Id': this.credentials.clientId, 'content-type': 'application/json', ...init?.headers } });
       if (generation !== this.generation) throw new Error('Opération Twitch annulée.');
       if (response.status === 401) { await this.disconnect(); throw new Error('Session Twitch expirée. Reconnectez votre compte.'); }
     }
@@ -247,7 +268,7 @@ export class TwitchClient {
     const generation = this.generation;
     const refreshToken = this.credentials.refreshToken;
     if (!refreshToken) throw new Error('Aucun refresh token Twitch disponible.');
-    const response = await fetch(`${AUTH}/token`, {
+    const response = await this.request(`${AUTH}/token`, {
       method: 'POST', headers: { 'content-type': 'application/x-www-form-urlencoded' },
       body: new URLSearchParams({ grant_type: 'refresh_token', refresh_token: refreshToken, client_id: this.credentials.clientId }),
     });
