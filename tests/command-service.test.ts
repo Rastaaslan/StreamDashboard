@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { DashboardCommandService, type ObsCommands } from '../apps/server/src/command-service.js';
+import { DashboardCommandService, END_SCENE_VISIBILITY_MS, type ObsCommands } from '../apps/server/src/command-service.js';
 
 function setup() {
   const domain = { mode: 'idle' as const, timer: { running: false, duration: 300, remaining: 300, deadline: null }, checklist: [] };
@@ -8,14 +8,14 @@ function setup() {
     scene: vi.fn(), mute: vi.fn(), volume: vi.fn(), stream: vi.fn(), record: vi.fn(), restartMedia: vi.fn(), refresh: vi.fn(),
   };
   const commit = vi.fn(async () => ({ ok: true }) as never);
-  return { service: new DashboardCommandService(domain, obs, commit), obs, commit };
+  return { domain, service: new DashboardCommandService(domain, obs, commit), obs, commit };
 }
 
 describe('service de commandes', () => {
   it('sélectionne la scène live avant StartStream et recrée le timer', async () => {
     const domain = { mode: 'end' as const, timer: { running: false, duration: 300, remaining: 17, deadline: null }, checklist: [] };
     const order: string[] = [];
-    const obs: ObsCommands = { state: { connected: true, streaming: false }, scene: vi.fn(async () => { order.push('scene'); }), mute: vi.fn(), volume: vi.fn(), stream: vi.fn(async () => { order.push('stream'); }), record: vi.fn(), restartMedia: vi.fn(), refresh: vi.fn(), waitForStreaming: vi.fn(async () => { order.push('confirmed'); }) };
+    const obs: ObsCommands = { state: { connected: true, streaming: false }, scene: vi.fn(async () => { order.push('scene'); }), mute: vi.fn(), volume: vi.fn(), stream: vi.fn(async () => { order.push('stream'); }), record: vi.fn(), restartMedia: vi.fn(), refresh: vi.fn(), waitForStreaming: vi.fn(async expected => { order.push('confirmed'); obs.state.streaming = expected; }) };
     const service = new DashboardCommandService(domain, obs, vi.fn(async () => ({}) as never), { settings: { modeScenes: { live: 'Live' } } });
     await service.execute({ type: 'session.start' });
     expect(order).toEqual(['scene', 'stream', 'confirmed']);
@@ -23,8 +23,8 @@ describe('service de commandes', () => {
   });
 
   it('ne démarre pas le stream si le changement de scène échoue', async () => {
-    const { service, obs, commit } = setup();
-    const configured = new DashboardCommandService((service as never)['domain'], obs, commit, { settings: { modeScenes: { live: 'Missing' } } });
+    const { domain, obs, commit } = setup();
+    const configured = new DashboardCommandService(domain, obs, commit, { settings: { modeScenes: { live: 'Missing' } } });
     vi.mocked(obs.scene).mockRejectedValueOnce(new Error('scene missing'));
     await expect(configured.execute({ type: 'session.start' })).rejects.toThrow(/scene missing/);
     expect(obs.stream).not.toHaveBeenCalled(); expect(commit).not.toHaveBeenCalled();
@@ -35,6 +35,53 @@ describe('service de commandes', () => {
     await expect(service.execute({ type: 'session.start' })).rejects.toThrow(/start failed/);
     expect(commit).not.toHaveBeenCalled();
   });
+
+  it('affiche la scène de fin avant StopStream puis ne change le domaine qu’après confirmation', async () => {
+    const domain = { mode: 'live' as const, timer: { running: true, duration: 300, remaining: 200, deadline: Date.now() + 200_000 }, checklist: [] };
+    const order: string[] = [];
+    const obs: ObsCommands = {
+      state: { connected: true, streaming: true },
+      scene: vi.fn(async () => { order.push('scene'); }), mute: vi.fn(), volume: vi.fn(),
+      stream: vi.fn(async () => { order.push('stream'); }), record: vi.fn(), restartMedia: vi.fn(), refresh: vi.fn(),
+      waitForStreaming: vi.fn(async expected => { order.push('confirmed'); obs.state.streaming = expected; }),
+    };
+    const wait = vi.fn(async milliseconds => { expect(milliseconds).toBe(END_SCENE_VISIBILITY_MS); order.push('wait'); });
+    const service = new DashboardCommandService(domain, obs, vi.fn(async () => ({}) as never), { settings: { modeScenes: { end: 'Outro' } }, wait });
+    await service.execute({ type: 'session.stop' });
+    expect(order).toEqual(['scene', 'wait', 'stream', 'confirmed']);
+    expect(obs.scene).toHaveBeenCalledWith('Outro'); expect(obs.stream).toHaveBeenCalledWith(false);
+    expect(domain.mode).toBe('end'); expect(domain.timer.running).toBe(false);
+  });
+
+  it('ne prétend pas être arrêté si StopStream échoue', async () => {
+    const domain = { mode: 'live' as const, timer: { running: true, duration: 300, remaining: 200, deadline: Date.now() + 200_000 }, checklist: [] };
+    const obs: ObsCommands = { state: { connected: true, streaming: true }, scene: vi.fn(), mute: vi.fn(), volume: vi.fn(), stream: vi.fn(async () => { throw new Error('stop failed'); }), record: vi.fn(), restartMedia: vi.fn(), refresh: vi.fn() };
+    const commit = vi.fn(async () => ({}) as never);
+    const service = new DashboardCommandService(domain, obs, commit, { settings: { modeScenes: {} } });
+    await expect(service.execute({ type: 'session.stop' })).rejects.toThrow(/stop failed/);
+    expect(domain.mode).toBe('live'); expect(domain.timer.running).toBe(true); expect(commit).not.toHaveBeenCalled();
+  });
+
+  it('sérialise les effets OBS de commandes concurrentes', async () => {
+    const domain = { mode: 'idle' as const, timer: { running: false, duration: 300, remaining: 300, deadline: null }, checklist: [] };
+    let release!: () => void; const gate = new Promise<void>(resolve => { release = resolve; });
+    const order: string[] = [];
+    const obs: ObsCommands = {
+      state: { connected: true, streaming: false },
+      scene: vi.fn(async name => { order.push(`scene:${name}`); if (name === 'Live') await gate; }), mute: vi.fn(), volume: vi.fn(),
+      stream: vi.fn(async () => { order.push('stream'); }), record: vi.fn(), restartMedia: vi.fn(), refresh: vi.fn(async () => { order.push('refresh'); }),
+      waitForStreaming: vi.fn(async expected => { obs.state.streaming = expected; order.push('confirmed'); }),
+    };
+    const service = new DashboardCommandService(domain, obs, vi.fn(async () => ({}) as never), { settings: { modeScenes: { live: 'Live', pause: 'Pause' } } });
+    const start = service.execute({ type: 'session.start' });
+    await vi.waitFor(() => expect(obs.scene).toHaveBeenCalledWith('Live'));
+    const pause = service.execute({ type: 'mode.set', mode: 'pause' });
+    expect(obs.scene).not.toHaveBeenCalledWith('Pause');
+    release(); await Promise.all([start, pause]);
+    expect(order).toEqual(['scene:Live', 'stream', 'confirmed', 'scene:Pause', 'refresh']);
+    expect(domain.mode).toBe('pause');
+  });
+
   it('borne le volume avant de déléguer à OBS', async () => {
     const { service, obs, commit } = setup();
     await service.execute({ type: 'obs.volume', input: 'Micro', volume: 9 });
@@ -57,5 +104,13 @@ describe('service de commandes', () => {
     expect(obs.stream).not.toHaveBeenCalled();
     await service.execute({ type: 'session.start', force: true });
     expect(obs.stream).toHaveBeenCalledWith(true); expect(obs.waitForStreaming).toHaveBeenCalledWith(true); expect(domain.mode).toBe('live'); expect(domain.timer.running).toBe(true);
+  });
+
+  it('ne permet pas à obs.stream de contourner le workflow session', async () => {
+    const domain = { mode: 'idle' as const, timer: { running: false, duration: 300, remaining: 300, deadline: null }, checklist: [{ id: 'obs', label: 'OBS', done: false }] };
+    const obs: ObsCommands = { state: { connected: true, streaming: false }, scene: vi.fn(), mute: vi.fn(), volume: vi.fn(), stream: vi.fn(), record: vi.fn(), restartMedia: vi.fn(), refresh: vi.fn() };
+    const service = new DashboardCommandService(domain, obs, vi.fn(async () => ({}) as never));
+    await expect(service.execute({ type: 'obs.stream', start: true })).rejects.toMatchObject({ name: 'CHECKLIST_INCOMPLETE' });
+    expect(obs.stream).not.toHaveBeenCalled();
   });
 });
