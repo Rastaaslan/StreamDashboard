@@ -159,7 +159,13 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
     if ((pathname !== '/ws' && pathname !== '/ws/v1') || !acceptedOrigin) { socket.write('HTTP/1.1 403 Forbidden\r\n\r\n'); socket.destroy(); return; }
     sockets.handleUpgrade(request, socket, head, ws => sockets.emit('connection', ws, request));
   });
-  app.use((_req, res, next) => { res.set({ 'Content-Security-Policy': "default-src 'self'; connect-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; object-src 'none'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'", 'X-Content-Type-Options': 'nosniff', 'X-Frame-Options': 'DENY', 'Referrer-Policy': 'no-referrer' }); next(); });
+  app.use((_req, res, next) => {
+    res.set({
+      'Content-Security-Policy': "default-src 'self'; connect-src 'self' ws://127.0.0.1:* ws://localhost:* ws://[::1]:*; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; object-src 'none'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'",
+      'X-Content-Type-Options': 'nosniff', 'X-Frame-Options': 'DENY', 'Referrer-Policy': 'no-referrer',
+    });
+    next();
+  });
   app.use(express.json({ limit: '32kb' }));
   app.use(express.static(path.resolve(options.webDir ?? 'apps/web'), { index: 'index.html' }));
 
