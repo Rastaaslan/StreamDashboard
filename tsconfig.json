@@ -1,1 +1,27 @@
-{"compilerOptions":{"target":"ES2022","module":"NodeNext","moduleResolution":"NodeNext","strict":true,"esModuleInterop":true,"outDir":"dist","rootDir":".","skipLibCheck":true},"include":["apps/**/*.ts","integrations/**/*.ts","packages/**/*.ts","scripts/**/*.ts","tests/**/*.ts"]}
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
+    "strict": true,
+    "esModuleInterop": true,
+    "outDir": "dist",
+    "rootDir": ".",
+    "skipLibCheck": true
+  },
+  "include": [
+    "apps/**/*.ts",
+    "apps/**/*.cts",
+    "integrations/**/*.ts",
+    "packages/**/*.ts",
+    "scripts/**/*.ts",
+    "tests/**/*.ts"
+  ],
+  "exclude": [
+    "tests/electron.smoke.spec.ts",
+    "playwright.electron.config.ts",
+    "_integration_sources/**",
+    "node_modules/**",
+    "dist/**"
+  ]
+}

@@ -1,13 +1,28 @@
 {
   "name": "stream-dashboard",
+  "productName": "StreamDashboard",
+  "version": "1.1.0",
+  "description": "Cockpit desktop Windows pour OBS et Twitch",
+  "author": "Rastaaslan",
+  "repository": "https://github.com/Rastaaslan/StreamDashboard",
   "private": true,
   "type": "module",
   "scripts": {
     "dev": "tsx watch apps/server/src/index.ts",
-    "start": "tsx apps/server/src/index.ts",
+    "start": "tsx apps/server/src/run.ts",
     "build": "tsc -p tsconfig.json",
     "test": "vitest run",
-    "smoke": "tsx scripts/smoke.ts"
+    "smoke": "tsx scripts/smoke.ts",
+    "desktop:dev": "npm run build && electron-forge start",
+    "desktop:package": "npm run desktop:prepare && npm run desktop:icon && npm run build && electron-forge package --platform=win32 --arch=x64",
+    "desktop:make": "npm run desktop:prepare && npm run desktop:icon && npm run build && electron-forge make --platform=win32 --arch=x64",
+    "release:check": "npm test && npm run build && npm run security:check && npm run desktop:prepare && npm run desktop:icon",
+    "security:check": "tsx scripts/security-check.ts",
+    "mobile:smoke": "tsx scripts/mobile-smoke.ts",
+    "desktop:prepare": "tsx scripts/prepare-distribution.ts",
+    "desktop:smoke": "npm run desktop:icon && npm run build && playwright test -c playwright.electron.config.ts",
+    "desktop:package-smoke": "playwright test -c playwright.electron.config.ts",
+    "desktop:icon": "tsx scripts/prepare-icon.ts"
   },
   "dependencies": {
     "express": "^5.1.0",
@@ -15,14 +30,19 @@
     "ws": "^8.18.3"
   },
   "devDependencies": {
+    "@electron-forge/cli": "7.8.3",
+    "@electron-forge/maker-squirrel": "7.8.3",
+    "@playwright/test": "1.55.0",
     "@types/express": "^5.0.3",
     "@types/node": "^24.3.1",
     "@types/ws": "^8.18.1",
+    "electron": "43.0.0",
     "tsx": "^4.20.5",
     "typescript": "^5.9.2",
     "vitest": "^3.2.4"
   },
   "engines": {
     "node": ">=20"
-  }
+  },
+  "main": "dist/apps/desktop/src/main.js"
 }
