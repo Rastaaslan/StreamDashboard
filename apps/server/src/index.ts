@@ -99,7 +99,10 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
   if (!Array.isArray(local.checklist)) local.checklist = structuredClone(defaults.checklist);
   else {
     const seen = new Set<string>();
-    local.checklist = local.checklist.filter(item => object(item) && typeof item.id === 'string' && item.id && typeof item.label === 'string' && item.label.trim()).map(item => ({ id: String(item.id), label: String(item.label).slice(0, 200), done: item.done === true })).filter(item => !seen.has(item.id) && Boolean(seen.add(item.id)));
+    local.checklist = local.checklist
+      .filter(item => object(item) && typeof item.id === 'string' && item.id && typeof item.label === 'string' && item.label.trim())
+      .map(item => ({ id: String(item.id), label: String(item.label).slice(0, 200), done: item.done === true }))
+      .filter(item => { if (seen.has(item.id)) return false; seen.add(item.id); return true; });
     if (!local.checklist.length) local.checklist = structuredClone(defaults.checklist);
   }
   const rawSettings = object(local.settings) ? local.settings : {};
@@ -150,7 +153,7 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
     const origin = request.headers.origin;
     const requestHost = request.headers.host;
     const acceptedOrigin = (() => {
-      if (!origin) return true; // Native/local clients do not necessarily send Origin.
+      if (!origin) return true;
       try {
         const parsed = new URL(origin);
         return LOOPBACK_HOSTS.has(parsed.hostname) && Boolean(requestHost) && parsed.host === requestHost;
@@ -169,12 +172,19 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
   app.use(express.json({ limit: '32kb' }));
   app.use(express.static(path.resolve(options.webDir ?? 'apps/web'), { index: 'index.html' }));
 
-  let mutationQueue: Promise<void> = Promise.resolve();
-  const mutate = <T>(operation: () => Promise<T>): Promise<T> => {
-    const result = mutationQueue.then(operation);
-    mutationQueue = result.then(() => undefined, () => undefined);
+  let planningQueue: Promise<void> = Promise.resolve();
+  const plan = <T>(operation: () => Promise<T>): Promise<T> => {
+    const result = planningQueue.then(operation);
+    planningQueue = result.then(() => undefined, () => undefined);
     return result;
   };
+  let settingsQueue: Promise<void> = Promise.resolve();
+  const configure = <T>(operation: () => Promise<T>): Promise<T> => {
+    const result = settingsQueue.then(operation);
+    settingsQueue = result.then(() => undefined, () => undefined);
+    return result;
+  };
+
   const remaining = () => local.timer.running && local.timer.deadline ? Math.max(0, Math.ceil((local.timer.deadline - Date.now()) / 1000)) : local.timer.remaining;
   const publicSettings = (): DashboardSettings => ({
     streamerName: local.settings.streamerName,
@@ -191,11 +201,12 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
   const capabilities: ServerCapabilities = { protocolVersion, serverVersion: options.version ?? '1.1.0', features: ['obs', 'twitch', 'timer', 'planning', 'checklist', 'deck'], accessMode: 'desktop-local' };
   let runtimePort = requestedPort;
   const snapshot = (): DashboardState => {
-    local.timer.remaining = remaining();
-    if (local.timer.running && !local.timer.remaining) { local.timer.running = false; local.timer.deadline = null; }
+    const currentRemaining = remaining();
+    const timer: TimerState = { ...local.timer, remaining: currentRemaining };
+    if (timer.running && currentRemaining <= 0) { timer.running = false; timer.deadline = null; }
     const nextLive = local.planning.filter(x => (x.category === 'live' || x.kind === 'LIVE') && Date.parse(x.endAtUtc) > Date.now()).sort((a, b) => Date.parse(a.startAtUtc) - Date.parse(b.startAtUtc))[0] ?? null;
     return {
-      at: new Date().toISOString(), mode: local.mode, timer: local.timer, planning: local.planning, checklist: local.checklist, settings: publicSettings(), obs: obs.state,
+      at: new Date().toISOString(), mode: local.mode, timer, planning: local.planning, checklist: local.checklist, settings: publicSettings(), obs: obs.state,
       runtime: { serverVersion: capabilities.serverVersion, nodeVersion: process.version, electronVersion: options.electronVersion ?? null, platform: `${process.platform} ${process.arch}`, port: runtimePort, logsPath: options.logsPath ?? null },
       twitch: { ...twitch.state, lastSyncedAt: local.twitchLastSyncedAt }, nextLive,
       health: {
@@ -216,28 +227,28 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
     const expectedDeadline = local.timer.deadline;
     timerExpiry = setTimeout(() => {
       timerExpiry = undefined;
-      void mutate(async () => {
+      void (async () => {
         if (!local.timer.running || local.timer.deadline !== expectedDeadline) return;
         local.timer.running = false; local.timer.remaining = 0; local.timer.deadline = null;
         await save(); broadcast();
-      }).catch(logError);
+      })().catch(logError);
     }, Math.max(0, expectedDeadline - Date.now()));
     timerExpiry.unref();
   };
   const changed = async () => { scheduleTimerExpiry(); await save(); broadcast(); return snapshot(); };
   const commands = new DashboardCommandService(local, obs, changed, { settings: local.settings, logger });
-  const execute = async (body: unknown) => mutate(() => commands.execute(parseCommand(body)));
-  const validateTwitch = async () => mutate(async () => {
+  const execute = async (body: unknown) => commands.execute(parseCommand(body));
+  const validateTwitch = async () => {
     if (!twitch.state.connected) return;
     if (!await twitch.validateSession()) { local.twitch = { broadcasterId: '', userName: '', displayName: '' }; await save(); }
     broadcast();
-  });
+  };
 
   const health = (_req: express.Request, res: express.Response) => res.json({ ok: true, status: 'ready', protocolVersion, version: capabilities.serverVersion });
   app.get('/api/v1/health', health);
   app.get('/api/v1/state', (_req, res) => res.json(snapshot()));
   app.get('/api/v1/capabilities', (_req, res) => res.json(capabilities));
-  app.post('/api/v1/commands', async (req, res, next) => { try { const command = parseCommand(req.body); res.json({ ok: true, state: await mutate(() => commands.execute(command)), commandType: command.type }); } catch (error) { next(error); } });
+  app.post('/api/v1/commands', async (req, res, next) => { try { const command = parseCommand(req.body); res.json({ ok: true, state: await commands.execute(command), commandType: command.type }); } catch (error) { next(error); } });
   app.get('/api/state', (_req, res) => res.json(snapshot()));
   app.post('/api/commands', async (req, res, next) => { try { res.json(await execute(req.body)); } catch (error) { next(error); } });
 
@@ -252,7 +263,7 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
       if (!title || title.length > 140 || !Number.isFinite(start) || !Number.isFinite(end) || end <= start || !['live', 'production', 'personal'].includes(category)) {
         res.status(400).json({ error: 'Titre (140 caractères maximum), type et période valides requis.' }); return;
       }
-      const state = await mutate(async () => {
+      const state = await plan(async () => {
         local.planning.push({ id: randomUUID(), title, description: typeof input.description === 'string' ? input.description.slice(0, 4000) : '', startAtUtc, endAtUtc, category });
         return changed();
       });
@@ -261,7 +272,7 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
   };
   const planningDelete: express.RequestHandler = async (req, res, next) => {
     try {
-      const state = await mutate(async () => {
+      const state = await plan(async () => {
         const item = local.planning.find(x => x.id === req.params.id);
         if (!item) { const error = new Error('Événement introuvable.'); error.name = 'NOT_FOUND'; throw error; }
         if (item.twitchRecurring && req.query.confirmRecurring !== 'true') { const error = new Error('Ce segment appartient à une série récurrente Twitch. Confirmez la suppression de toute la série.'); error.name = 'CONFIRM_REQUIRED'; throw error; }
@@ -278,7 +289,7 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
   const settingsUpdate: express.RequestHandler = async (req, res, next) => {
     try {
       const input = req.body as Partial<DashboardSettings> & { obsPassword?: string; clearObsPassword?: boolean };
-      const state = await mutate(async () => {
+      const state = await configure(async () => {
         const newUrl = input.obsUrl !== undefined ? normalizeObsUrl(String(input.obsUrl).trim()) : local.settings.obsUrl;
         const clearPassword = input.clearObsPassword === true;
         const suppliedPassword = typeof input.obsPassword === 'string' && input.obsPassword.length ? input.obsPassword : undefined;
@@ -314,16 +325,22 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
       const authorization = await twitch.startDeviceAuthorization();
       broadcast();
       res.status(201).json(authorization);
-      if (!alreadyPending) void twitch.waitForDeviceAuthorization().then(() => mutate(async () => { Object.assign(local.twitch, twitch.publicIdentity()); await save(); broadcast(); })).catch(error => { logError(error); broadcast(); });
+      if (!alreadyPending) void twitch.waitForDeviceAuthorization().then(async () => {
+        Object.assign(local.twitch, twitch.publicIdentity()); await save(); broadcast();
+      }).catch(error => { logError(error); broadcast(); });
     } catch (error) { next(error); }
   });
   app.post(['/api/twitch/disconnect', '/api/v1/twitch/disconnect'], async (_req, res, next) => {
-    try { res.json(await mutate(async () => { await twitch.disconnect(); local.twitch = { broadcasterId: '', userName: '', displayName: '' }; return changed(); })); }
-    catch (error) { next(error); }
+    try {
+      await twitch.disconnect();
+      local.twitch = { broadcasterId: '', userName: '', displayName: '' };
+      local.twitchLastSyncedAt = null;
+      res.json(await changed());
+    } catch (error) { next(error); }
   });
   app.post(['/api/twitch/sync', '/api/v1/twitch/sync'], async (_req, res, next) => {
     try {
-      res.json(await mutate(async () => {
+      res.json(await plan(async () => {
         const synced = await twitch.sync(structuredClone(local.planning));
         local.planning = synced;
         local.twitchLastSyncedAt = new Date().toISOString();
@@ -366,9 +383,9 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
   const stop = () => stopPromise ??= (async () => {
     unsubscribeObs(); clearInterval(validator); if (timerExpiry) clearTimeout(timerExpiry); twitch.cancelDeviceAuthorization();
     for (const ws of sockets.clients) ws.terminate(); sockets.close();
-    await mutationQueue;
     await obs.close(); await save();
     await new Promise<void>((resolve, reject) => server.close(error => error ? reject(error) : resolve()));
   })();
-  return { port: actualPort, url: `http://${host}:${actualPort}`, state: snapshot, server, stop };
+  const urlHost = host === '::1' ? '[::1]' : host;
+  return { port: actualPort, url: `http://${urlHost}:${actualPort}`, state: snapshot, server, stop };
 }
