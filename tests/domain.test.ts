@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { applyDashboardCommand, MAX_TIMER_SECONDS, startNewSessionTimer } from '../packages/core/src/dashboard.js';
+import { applyDashboardCommand, DEFAULT_SESSION_TIMER_SECONDS, MAX_TIMER_SECONDS, startNewSessionTimer } from '../packages/core/src/dashboard.js';
 
 function domain() {
   return { mode: 'idle' as const, timer: { running: false, duration: 300, remaining: 300, deadline: null }, checklist: [{ id: 'obs', label: 'OBS', done: false }] };
@@ -14,7 +14,7 @@ describe('module métier du cockpit', () => {
     expect(state.timer).toMatchObject({ running: false, remaining: 30, deadline: null });
   });
 
-  it('conserve la durée de référence lors d’une reprise et reset à la durée complète', () => {
+  it('reprend une pause manuelle mais Reset revient toujours au défaut de session 05:00', () => {
     const state = domain();
     applyDashboardCommand(state, { type: 'timer.start' }, 1_000);
     applyDashboardCommand(state, { type: 'timer.pause' }, 31_000);
@@ -22,7 +22,20 @@ describe('module métier du cockpit', () => {
     applyDashboardCommand(state, { type: 'timer.start' }, 40_000);
     expect(state.timer).toMatchObject({ duration: 300, remaining: 270, running: true, deadline: 310_000 });
     applyDashboardCommand(state, { type: 'timer.reset' }, 45_000);
+    expect(state.timer).toMatchObject({ duration: DEFAULT_SESSION_TIMER_SECONDS, remaining: DEFAULT_SESSION_TIMER_SECONDS, running: false, deadline: null });
+  });
+
+  it('répare une ancienne durée persistée incorrecte lors de Reset et au début d’une nouvelle session', () => {
+    const state = domain();
+    state.timer.duration = 137;
+    state.timer.remaining = 137;
+    applyDashboardCommand(state, { type: 'timer.reset' });
     expect(state.timer).toMatchObject({ duration: 300, remaining: 300, running: false, deadline: null });
+
+    state.timer.duration = 91;
+    state.timer.remaining = 12;
+    startNewSessionTimer(state, 5_000);
+    expect(state.timer).toMatchObject({ duration: 300, remaining: 300, running: true, deadline: 305_000 });
   });
 
   it('refuse une entrée de checklist inconnue', () => {
