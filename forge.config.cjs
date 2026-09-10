@@ -1,3 +1,6 @@
+const certificateFile = process.env.WINDOWS_CERTIFICATE_FILE || undefined;
+const certificatePassword = process.env.WINDOWS_CERTIFICATE_PASSWORD || undefined;
+
 module.exports = {
   packagerConfig: {
     name: 'StreamDashboard',
@@ -8,6 +11,12 @@ module.exports = {
     asar: true,
     prune: true,
     ignore: [/^\/(?:_integration_sources|tests|docs|scripts\/smoke|data)(?:\/|$)/],
+    windowsSign: certificateFile ? {
+      certificateFile,
+      certificatePassword,
+      description: 'StreamDashboard',
+      continueOnError: false,
+    } : undefined,
   },
   rebuildConfig: {},
   makers: [{
@@ -18,8 +27,8 @@ module.exports = {
       setupIcon: './resources/streamdashboard.ico',
       authors: 'Rastaaslan',
       description: 'Cockpit desktop Windows pour OBS et Twitch',
-      certificateFile: process.env.WINDOWS_CERTIFICATE_FILE || undefined,
-      certificatePassword: process.env.WINDOWS_CERTIFICATE_PASSWORD || undefined,
+      certificateFile,
+      certificatePassword,
     },
   }],
 };
