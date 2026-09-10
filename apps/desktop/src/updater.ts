@@ -1,7 +1,12 @@
 import { app, autoUpdater, dialog, type BrowserWindow } from 'electron';
 import type { DashboardServerHandle } from '../../server/src/index.js';
 
-export function startUpdater(window: BrowserWindow, dashboard: DashboardServerHandle, logger: Pick<Console, 'info' | 'error'> = console) {
+export function startUpdater(
+  window: BrowserWindow,
+  dashboard: DashboardServerHandle,
+  logger: Pick<Console, 'info' | 'error'> = console,
+  beforeInstall: () => Promise<void> = async () => undefined,
+) {
   if (!app.isPackaged || process.platform !== 'win32') return () => undefined;
   const feed = `https://update.electronjs.org/Rastaaslan/StreamDashboard/${process.platform}-${process.arch}/${app.getVersion()}`;
   autoUpdater.setFeedURL({ url: feed });
@@ -21,9 +26,10 @@ export function startUpdater(window: BrowserWindow, dashboard: DashboardServerHa
       });
       if (choice.response === 1) {
         ready = false;
+        try { await beforeInstall(); }
+        catch (error) { ready = true; logError('Préparation de la mise à jour impossible', error); return; }
         autoUpdater.quitAndInstall();
       } else {
-        // “Plus tard” really means later during this run, not silently never again.
         deferredUntil = Date.now() + 15 * 60_000;
       }
     } catch (error) { logError('Erreur dialogue updater', error); }
