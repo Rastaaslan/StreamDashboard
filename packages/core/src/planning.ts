@@ -26,10 +26,12 @@ export class PlanningOrchestrator {
     return this.serial(async () => {
       const item = this.required(id);
       Object.assign(item, changes);
-      delete item.conflict;
       for (const name of ['twitch', 'google'] as const) {
         const link = item.providers?.[name];
         if (!link?.remoteId || link.deletedRemotely) continue;
+        // Never turn an unresolved remote conflict into a silent overwrite merely
+        // because the local form was edited. Conflict resolution is an explicit action.
+        if (item.conflict?.provider === name) { link.status = 'conflict'; link.lastError = 'Conflit distant non résolu — choisissez la version à conserver.'; continue; }
         link.status = 'pending';
         await this.persist(this.items);
         await this.attempt(item, name, async provider => {
@@ -37,6 +39,7 @@ export class PlanningOrchestrator {
           link.remoteRevision = result.revision;
         });
       }
+      await this.persist(this.items);
       return structuredClone(item);
     });
   }
@@ -62,6 +65,7 @@ export class PlanningOrchestrator {
           delete providerLink.remoteId;
           delete providerLink.remoteRevision;
           if (name === 'twitch') delete item.twitchSegmentId;
+          if (item.conflict?.provider === name) delete item.conflict;
         } else failed.push(name);
       }
       if (failed.length && destinations.local) {
@@ -73,7 +77,37 @@ export class PlanningOrchestrator {
       return this.all();
     });
   }
-  retry(id: string, provider: ProviderName) { return this.serial(async () => { const item = this.required(id); await this.publishOne(item, provider, true); return structuredClone(item); }); }
+  retry(id: string, provider: ProviderName) {
+    return this.serial(async () => {
+      const item = this.required(id);
+      if (item.conflict?.provider === provider) throw new Error(`Conflit ${provider} non résolu — choisissez d’abord la version locale ou distante.`);
+      await this.publishOne(item, provider, true);
+      return structuredClone(item);
+    });
+  }
+  resolveConflict(id: string, provider: ProviderName, strategy: 'local' | 'remote') {
+    return this.serial(async () => {
+      const item = this.required(id), conflict = item.conflict;
+      if (!conflict || conflict.provider !== provider) throw new Error(`Aucun conflit ${provider} à résoudre.`);
+      item.providers ??= {};
+      const link = item.providers[provider] ??= { status: 'conflict' };
+      if (strategy === 'remote') {
+        if (!conflict.remote) throw new Error('Version distante indisponible pour résoudre ce conflit.');
+        Object.assign(item, conflict.remote);
+        delete item.conflict;
+        link.status = 'synced'; link.deletedRemotely = false; link.lastSyncedAt = new Date().toISOString(); delete link.lastError;
+        await this.persist(this.items);
+        return structuredClone(item);
+      }
+      // The user explicitly chose the local version. Dropping the stored revision is
+      // intentional here: Google If-Match would otherwise keep rejecting the stale ETag.
+      delete item.conflict; delete link.remoteRevision; link.deletedRemotely = false; link.status = 'pending';
+      await this.persist(this.items);
+      await this.publishOne(item, provider, true);
+      if (link.status !== 'synced') throw new Error(link.lastError ?? `Impossible d’appliquer la version locale sur ${provider}.`);
+      return structuredClone(item);
+    });
+  }
   markRemoteDeleted(id: string, provider: ProviderName) {
     return this.serial(async () => {
       const item = this.required(id); item.providers ??= {};
