@@ -53,7 +53,13 @@ export class DashboardCommandService {
 
     if (command.type === 'obs.stream') return this.executeNow(command.start ? { type: 'session.start' } : { type: 'session.stop' });
 
-    if (command.type === 'session.prepare') { await this.obs.refresh(); return this.commit(); }
+    if (command.type === 'session.prepare') {
+      await this.obs.refresh();
+      // Preparing a future live must not inherit the remaining time of a previous session.
+      // Never reset an active broadcast timer if Prepare is opened while already live.
+      if (!this.obs.state.streaming) applyDashboardCommand(this.domain, { type: 'timer.reset' });
+      return this.commit();
+    }
     if (command.type === 'session.start') {
       if (!this.obs.state.connected) throw new Error('Impossible de démarrer la diffusion : OBS n’est pas connecté.');
       if (this.obs.state.streaming) throw new Error('La diffusion OBS est déjà active.');
