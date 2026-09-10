@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import { mkdir, open, readFile, rename, unlink } from 'node:fs/promises';
 import path from 'node:path';
 
@@ -23,11 +24,13 @@ export class MemorySecretStore implements SecretStore {
   async setObsPassword(password: string) { this.obsPassword = password; }
 }
 
-/** JSON configuration store using temp + fsync + rename so an interrupted write cannot truncate the live file. */
+/** JSON configuration store using serialized temp + fsync + rename writes. */
 export class AtomicJsonStore<T extends object> {
+  private writes: Promise<void> = Promise.resolve();
   constructor(readonly file: string) {}
 
   async read(fallback: T): Promise<T> {
+    await this.writes;
     try {
       const value = JSON.parse(await readFile(this.file, 'utf8')) as Partial<T>;
       return { ...fallback, ...value };
@@ -38,9 +41,18 @@ export class AtomicJsonStore<T extends object> {
     }
   }
 
-  async write(value: T): Promise<void> {
+  write(value: T): Promise<void> {
+    // Freeze the state represented by this write. Mutating the live object while a
+    // previous disk write is pending must not retroactively change write ordering.
+    const snapshot = structuredClone(value);
+    const operation = this.writes.then(() => this.writeNow(snapshot));
+    this.writes = operation.catch(() => undefined);
+    return operation;
+  }
+
+  private async writeNow(value: T): Promise<void> {
     await mkdir(path.dirname(this.file), { recursive: true });
-    const temporary = `${this.file}.${process.pid}.${Date.now()}.tmp`;
+    const temporary = `${this.file}.${process.pid}.${Date.now()}.${randomUUID()}.tmp`;
     const handle = await open(temporary, 'wx');
     try {
       await handle.writeFile(JSON.stringify(value, null, 2), 'utf8');
