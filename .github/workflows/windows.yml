@@ -36,7 +36,9 @@ jobs:
       - name: Static security invariants
         run: npm run security:check
       - name: Check mobile JavaScript syntax
-        run: node --check apps/mobile/mobile.js
+        run: |
+          node --check apps/mobile/mobile.js
+          node --check apps/mobile/planning-export.js
       - name: Smoke remote/mobile security flow
         run: npm run mobile:smoke
       - name: Audit runtime dependencies
