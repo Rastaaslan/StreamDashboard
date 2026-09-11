@@ -184,24 +184,45 @@ export class ObsClient {
   async waitForStreaming(expected: boolean, timeoutMs = 10_000) {
     if (this.state.streaming === expected) return;
     await new Promise<void>((resolve, reject) => {
+      let settled = false;
       let off: () => void = () => undefined;
-      const timeout = setTimeout(() => { off(); reject(new Error(`OBS n’a pas confirmé ${expected ? 'le démarrage' : 'l’arrêt'} de la diffusion.`)); }, timeoutMs);
-      off = this.onStateChanged(() => {
-        if (this.state.streaming === expected) { clearTimeout(timeout); off(); resolve(); }
-        else if (!this.state.connected) { clearTimeout(timeout); off(); reject(new Error('OBS s’est déconnecté pendant le changement d’état de diffusion.')); }
-      });
+      const finish = (error?: Error) => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timeout);
+        off();
+        if (error) reject(error); else resolve();
+      };
+      const check = () => {
+        if (this.state.streaming === expected) finish();
+        else if (!this.state.connected) finish(new Error('OBS s’est déconnecté pendant le changement d’état de diffusion.'));
+      };
+      const timeout = setTimeout(() => finish(new Error(`OBS n’a pas confirmé ${expected ? 'le démarrage' : 'l’arrêt'} de la diffusion.`)), timeoutMs);
+      off = this.onStateChanged(check);
+      // Close the gap between the initial fast-path and listener registration.
+      check();
     });
   }
 
   async waitForScene(expected: string, timeoutMs = 5_000) {
     if (this.state.scene === expected) return;
     await new Promise<void>((resolve, reject) => {
+      let settled = false;
       let off: () => void = () => undefined;
-      const timeout = setTimeout(() => { off(); reject(new Error(`OBS n’a pas confirmé la scène « ${expected} ».`)); }, timeoutMs);
-      off = this.onStateChanged(() => {
-        if (this.state.scene === expected) { clearTimeout(timeout); off(); resolve(); }
-        else if (!this.state.connected) { clearTimeout(timeout); off(); reject(new Error('OBS s’est déconnecté pendant le changement de scène.')); }
-      });
+      const finish = (error?: Error) => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timeout);
+        off();
+        if (error) reject(error); else resolve();
+      };
+      const check = () => {
+        if (this.state.scene === expected) finish();
+        else if (!this.state.connected) finish(new Error('OBS s’est déconnecté pendant le changement de scène.'));
+      };
+      const timeout = setTimeout(() => finish(new Error(`OBS n’a pas confirmé la scène « ${expected} ».`)), timeoutMs);
+      off = this.onStateChanged(check);
+      check();
     });
   }
 
@@ -211,7 +232,8 @@ export class ObsClient {
     const names = new Set<string>();
     const result = await this.client.call('GetSceneItemList', { sceneName });
     const collect = async (items: typeof result.sceneItems) => Promise.all(items.filter(item => item.sceneItemEnabled).map(async item => {
-      const name = String(item.sourceName); names.add(name);
+      const name = String(item.sourceName);
+      names.add(name);
       try {
         if (item.isGroup) {
           const group = await this.client.call('GetGroupSceneItemList', { sceneName: name });
@@ -243,10 +265,13 @@ export class ObsClient {
   async close() {
     if (this.retry) clearTimeout(this.retry);
     if (this.refreshTimer) clearTimeout(this.refreshTimer);
-    this.retry = undefined; this.refreshTimer = undefined; this.refreshRequested = false;
+    this.retry = undefined;
+    this.refreshTimer = undefined;
+    this.refreshRequested = false;
     this.suppressReconnect = true;
     try { await this.client.disconnect(); } catch { /* already closed */ }
     this.clearLiveState(null);
   }
+
   get reconnectCount() { return this.reconnects; }
 }
