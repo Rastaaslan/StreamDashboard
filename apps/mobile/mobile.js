@@ -33,7 +33,7 @@ const formatPlanningDate = item => item.allDay
   : new Date(item.startAtUtc).toLocaleString('fr-FR');
 
 function remoteButtons(disabled) {
-  document.querySelectorAll('button[data-command],button[data-mode],button[data-media],button[data-mute],#stream')
+  document.querySelectorAll('button[data-command],button[data-mode],button[data-media],button[data-mute],#stream,#export-planning')
     .forEach(button => { button.disabled = disabled; });
 }
 
@@ -258,6 +258,16 @@ if (params.get('code')) $('pair-code').value = params.get('code');
 if (params.has('pair') || params.has('code')) history.replaceState(null, '', location.pathname);
 
 $('pair-button').onclick = pair;
+$('export-planning').onclick = async () => {
+  if (!state) return;
+  try {
+    const { exportPlanningImage } = await import('./planning-export.js');
+    const count = await exportPlanningImage(state.planning, state.settings.streamerName);
+    note(`Image du planning prête · ${count} live${count > 1 ? 's' : ''}.`);
+  } catch (error) {
+    if (error?.name !== 'AbortError') note(error.message);
+  }
+};
 $('forget-device').onclick = () => {
   if (!confirm('Oublier cette télécommande sur ce téléphone ?')) return;
   credential = '';
