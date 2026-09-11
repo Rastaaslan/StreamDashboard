@@ -496,6 +496,10 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
     if (req.path === '/') { res.redirect('/mobile/'); return; }
     res.status(403).type('text/plain').send('Ressource réservée au PC.');
   });
+  app.use('/overlay/timer', (_req, res, next) => {
+    res.set({ 'Cache-Control': 'no-store, no-cache, must-revalidate, max-age=0', Pragma: 'no-cache', Expires: '0' });
+    next();
+  });
   app.use('/mobile', express.static(path.resolve(options.mobileDir ?? 'apps/mobile'), { index: 'index.html' }));
   app.use(express.static(path.resolve(options.webDir ?? 'apps/web'), { index: 'index.html' }));
 
@@ -783,6 +787,7 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
   let observedObsStreaming = false;
   let obsConnectionObserved = false;
   let streamTrackingQueue: Promise<void> = Promise.resolve();
+  let unplannedMetadataQueue: Promise<void> = Promise.resolve();
   let unplannedGoogleQueue: Promise<void> = Promise.resolve();
 
   const findTrackedDraft = () => findUnplannedDraft(local.planning, trackedUnplannedLiveId);
@@ -831,17 +836,18 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
         if (link.remoteId && link.remoteId !== event.id) {
           link.status = 'conflict';
           link.lastError = 'Le lien Google a changé pendant la synchronisation automatique.';
-          return;
+          googleError = link.lastError;
+        } else {
+          link.status = 'synced';
+          link.remoteId = event.id;
+          link.calendarId = calendarId;
+          link.remoteRevision = event.etag;
+          link.lastSyncedAt = new Date().toISOString();
+          link.deletedRemotely = false;
+          delete link.lastError;
+          local.google.lastSyncedAt = link.lastSyncedAt;
+          googleError = null;
         }
-        link.status = 'synced';
-        link.remoteId = event.id;
-        link.calendarId = calendarId;
-        link.remoteRevision = event.etag;
-        link.lastSyncedAt = new Date().toISOString();
-        link.deletedRemotely = false;
-        delete link.lastError;
-        local.google.lastSyncedAt = link.lastSyncedAt;
-        googleError = null;
         await save();
         broadcast();
       });
@@ -860,58 +866,77 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
     unplannedGoogleQueue = operation.catch(logError);
   };
 
-  const startUnplannedLive = async () => {
-    let googleSyncId: string | null = null;
+  const enrichUnplannedFromTwitch = async (id: string) => {
+    if (!twitch.state.connected) return;
+    try {
+      const metadata = await twitch.getChannelMetadata();
+      let changedMetadata = false;
+      let shouldResyncGoogle = false;
+      await plan(async () => {
+        const current = local.planning.find(item => item.id === id);
+        if (!current) return;
+        if (current.title === 'Live non programmé' && metadata.title.trim()) {
+          current.title = metadata.title.trim().slice(0, 140);
+          changedMetadata = true;
+        }
+        if (!current.twitchCategoryId && metadata.gameId && metadata.gameId !== '0') {
+          current.twitchCategoryId = metadata.gameId;
+          changedMetadata = true;
+        }
+        if (!changedMetadata) return;
+        shouldResyncGoogle = current.desiredPublication?.google === true;
+        await save();
+        broadcast();
+      });
+      if (shouldResyncGoogle) queueUnplannedGoogleSync(id);
+    } catch (error) {
+      void Promise.resolve(logger.warn('Impossible de récupérer les métadonnées Twitch pour le live non programmé.', error)).catch(() => undefined);
+    }
+  };
+
+  const queueUnplannedMetadata = (id: string) => {
+    const operation = unplannedMetadataQueue.then(() => enrichUnplannedFromTwitch(id));
+    unplannedMetadataQueue = operation.catch(logError);
+  };
+
+  const startUnplannedLive = async (observedAt: number) => {
+    let backgroundId: string | null = null;
     await plan(async () => {
-      const now = Date.now();
       const existingDraft = findTrackedDraft();
       if (existingDraft) {
         trackedUnplannedLiveId = existingDraft.id;
-        if (existingDraft.desiredPublication?.google === true) googleSyncId = existingDraft.id;
+        backgroundId = existingDraft.id;
         return;
       }
-      if (findScheduledLiveForStart(local.planning, now)) {
+      if (findScheduledLiveForStart(local.planning, observedAt)) {
         trackedUnplannedLiveId = null;
         return;
-      }
-
-      let title = 'Live non programmé';
-      let twitchCategoryId: string | undefined;
-      if (twitch.state.connected) {
-        try {
-          const metadata = await twitch.getChannelMetadata();
-          if (metadata.title.trim()) title = metadata.title.trim().slice(0, 140);
-          if (metadata.gameId && metadata.gameId !== '0') twitchCategoryId = metadata.gameId;
-        } catch (error) {
-          void Promise.resolve(logger.warn('Impossible de récupérer les métadonnées Twitch pour le live non programmé.', error)).catch(() => undefined);
-        }
       }
       const id = randomUUID();
       const item = createUnplannedLiveItem({
         id,
-        now,
-        title,
-        twitchCategoryId,
+        now: observedAt,
         publishGoogle: shouldPublishUnplannedToGoogle(),
       });
       local.planning.push(item);
       trackedUnplannedLiveId = id;
-      if (item.desiredPublication?.google === true) googleSyncId = id;
+      backgroundId = id;
       invalidatePreflight();
       await save();
       broadcast();
     });
-    if (googleSyncId) queueUnplannedGoogleSync(googleSyncId);
+    if (!backgroundId) return;
+    queueUnplannedMetadata(backgroundId);
+    if (local.planning.find(item => item.id === backgroundId)?.desiredPublication?.google === true) queueUnplannedGoogleSync(backgroundId);
   };
 
-  const stopUnplannedLive = async () => {
+  const stopUnplannedLive = async (observedAt: number) => {
     let googleSyncId: string | null = null;
-    const stoppedAt = Date.now();
     await plan(async () => {
       const item = findTrackedDraft();
       trackedUnplannedLiveId = null;
       if (!item) return;
-      finalizeUnplannedLive(item, stoppedAt);
+      finalizeUnplannedLive(item, observedAt);
       if (item.desiredPublication?.google === true) googleSyncId = item.id;
       await save();
       broadcast();
@@ -1499,11 +1524,13 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
       if (!obsConnectionObserved) {
         obsConnectionObserved = true;
         observedObsStreaming = currentStreaming;
-        if (currentStreaming) queueStreamTracking(startUnplannedLive);
-        else if (trackedUnplannedLiveId) queueStreamTracking(stopUnplannedLive);
+        const observedAt = Date.now();
+        if (currentStreaming) queueStreamTracking(() => startUnplannedLive(observedAt));
+        else if (trackedUnplannedLiveId) queueStreamTracking(() => stopUnplannedLive(observedAt));
       } else if (currentStreaming !== observedObsStreaming) {
         observedObsStreaming = currentStreaming;
-        queueStreamTracking(currentStreaming ? startUnplannedLive : stopUnplannedLive);
+        const observedAt = Date.now();
+        queueStreamTracking(() => currentStreaming ? startUnplannedLive(observedAt) : stopUnplannedLive(observedAt));
       }
     }
     broadcast();
@@ -1523,6 +1550,7 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
     if (timerExpiry) clearTimeout(timerExpiry);
     if (remoteActivitySaveTimer) clearTimeout(remoteActivitySaveTimer);
     await streamTrackingQueue.catch(() => undefined);
+    await unplannedMetadataQueue.catch(() => undefined);
     await unplannedGoogleQueue.catch(() => undefined);
     twitch.close();
     for (const ws of sockets.clients) ws.terminate();
