@@ -22,9 +22,9 @@ L'overlay timer StreamDashboard est disponible sur :
 
 Le planning orchestre indépendamment les destinations **local**, **Twitch** et **Google Calendar**, avec statuts par provider, retry ciblé, suppression explicite et résolution de conflits.
 
-Si OBS passe réellement en streaming alors qu'aucun live planifié correspondant n'est actif ou imminent, StreamDashboard crée automatiquement un événement **local uniquement** `Live non programmé`. Il ne publie rien par surprise sur Twitch ou Google. À l'arrêt réel d'OBS, l'heure de fin est enregistrée dans le planning.
+Si OBS passe réellement en streaming alors qu'aucun live planifié correspondant n'est actif ou imminent, StreamDashboard crée automatiquement un événement `Live non programmé` avec l'heure réelle de départ. Aucun segment Twitch n'est créé automatiquement. Si Google Calendar est déjà connecté avec un calendrier cible modifiable, le même événement est publié sur Google **en arrière-plan**, sans pouvoir bloquer le Start/Stop OBS. À l'arrêt réel d'OBS, l'heure de fin locale est enregistrée et l'événement Google existant est mis à jour plutôt que recréé. En cas d'échec Google, le planning local reste intact et le provider reste retentable.
 
-La page **Planning** peut aussi générer localement une image PNG verticale **1080 × 1350** des prochains lives via **Image réseaux**. Les événements personnels ne sont jamais inclus dans cet export.
+La page **Planning** peut aussi générer localement une image PNG verticale **1080 × 1350** des prochains lives via **Image réseaux**. Les événements personnels ne sont jamais inclus dans cet export. La télécommande Android propose le même export avec partage natif lorsque le navigateur le permet et fallback téléchargement PNG.
 
 ### Connexion Twitch
 
@@ -40,7 +40,7 @@ Les scopes sont limités à la gestion des événements et à la lecture de la l
 
 ### Télécommande Android / LAN
 
-Le mode LAN est **désactivé par défaut**. Une fois activé dans Réglages et StreamDashboard redémarré, le PC peut générer un code de pairing éphémère. Le téléphone reçoit sa propre credential ; Twitch, Google, le mot de passe OBS, les chemins locaux et les diagnostics desktop ne lui sont jamais envoyés.
+Le mode LAN est **désactivé par défaut**. Une fois activé dans Réglages et StreamDashboard redémarré, le PC peut générer un code de pairing éphémère. Le téléphone reçoit sa propre credential ; Twitch, Google, le mot de passe OBS, les chemins locaux et les diagnostics desktop ne lui sont jamais envoyés. Seul le nom public du streamer est ajouté au snapshot utile pour générer localement l'image planning.
 
 La télécommande web fonctionne sur un LAN privé en HTTP. L'installation PWA nécessite un contexte HTTPS sécurisé ; en HTTP LAN, elle reste volontairement une télécommande web.
 
