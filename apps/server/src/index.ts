@@ -3,6 +3,7 @@ import { createServer, type Server } from 'node:http';
 import { mkdir } from 'node:fs/promises';
 import { networkInterfaces } from 'node:os';
 import path from 'node:path';
+import { randomUUID } from 'node:crypto';
 import { WebSocketServer, type WebSocket } from 'ws';
 import { ObsClient } from '../../../integrations/obs/src/client.js';
 import { TwitchClient } from '../../../integrations/twitch/src/client.js';
@@ -92,6 +93,9 @@ const LOOPBACK_HOSTS = new Set(['127.0.0.1', 'localhost', '::1', '[::1]']);
 const LOCAL_ADDRESSES = new Set(['127.0.0.1', '::1', '::ffff:127.0.0.1']);
 const PROVIDER_STATUSES = new Set(['synced', 'pending', 'error', 'not-published', 'conflict']);
 const DAY_MS = 86_400_000;
+const UNPLANNED_LIVE_WINDOW_MS = 30 * 60_000;
+const UNPLANNED_LIVE_PROVISIONAL_MS = 12 * 60 * 60_000;
+const REMOTE_ACTIVITY_PERSIST_MS = 30_000;
 
 function object(value: unknown): value is Record<string, unknown> {
   return Boolean(value && typeof value === 'object' && !Array.isArray(value));
@@ -472,8 +476,6 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
     res.status(403).json({ ok: false, error: { code: 'ORIGIN_REJECTED', message: 'Origine non autorisée.' } });
   });
 
-  // LAN clients get only the mobile UI. Desktop assets, diagnostics and overlays are
-  // not an unauthenticated secondary surface on the local network.
   app.use((req, res, next) => {
     if (isLocalRequest(req) || req.path.startsWith('/api') || req.path.startsWith('/mobile')) { next(); return; }
     if (req.path === '/') { res.redirect('/mobile/'); return; }
@@ -513,7 +515,7 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
     timerBrowserSource: local.settings.timerBrowserSource,
     remoteEnabled: local.settings.remoteEnabled === true,
   });
-  const features = ['obs', 'twitch', 'preflight', 'timer', 'planning', 'checklist', 'deck', 'mobile-remote'];
+  const features = ['obs', 'twitch', 'preflight', 'timer', 'planning', 'checklist', 'deck', 'mobile-remote', 'unplanned-live-tracking'];
   if (googleClientId) features.push('google-calendar');
   const capabilities: ServerCapabilities = {
     protocolVersion,
@@ -598,6 +600,16 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
     local.remoteDevices = remoteAuth.serialize();
     local.schemaVersion = DASHBOARD_SCHEMA_VERSION;
     await store.write(local);
+  };
+
+  let remoteActivitySaveTimer: NodeJS.Timeout | undefined;
+  const scheduleRemoteActivitySave = () => {
+    if (remoteActivitySaveTimer) return;
+    remoteActivitySaveTimer = setTimeout(() => {
+      remoteActivitySaveTimer = undefined;
+      void save().catch(logError);
+    }, REMOTE_ACTIVITY_PERSIST_MS);
+    remoteActivitySaveTimer.unref();
   };
 
   let timerExpiry: NodeJS.Timeout | undefined;
@@ -712,7 +724,12 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
       return changed();
     }
     try {
-      const result = await twitchPreflight.prepare({ eventId: event.id, title: event.title, category: category ?? undefined });
+      const result = await twitchPreflight.prepare({
+        eventId: event.id,
+        title: event.title,
+        category: category ?? undefined,
+        categoryId: event.twitchCategoryId ?? undefined,
+      });
       preflightState = {
         eventId: event.id,
         status: result.status,
@@ -753,6 +770,89 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
       await save();
     }
     broadcast();
+  };
+
+  let trackedUnplannedLiveId = local.planning.find(item =>
+    item.draft === true
+    && item.ownership === 'LOCAL'
+    && (item.category === 'live' || item.kind === 'LIVE')
+    && item.desiredPublication?.twitch !== true
+    && item.desiredPublication?.google !== true)?.id ?? null;
+  let observedObsStreaming = false;
+  let obsConnectionObserved = false;
+  let streamTrackingQueue: Promise<void> = Promise.resolve();
+
+  const findScheduledLiveForStart = (now: number) => local.planning.find(item =>
+    !item.allDay
+    && item.draft !== true
+    && (item.category === 'live' || item.kind === 'LIVE')
+    && Date.parse(item.startAtUtc) <= now + UNPLANNED_LIVE_WINDOW_MS
+    && Date.parse(item.endAtUtc) > now);
+  const findTrackedDraft = () => trackedUnplannedLiveId
+    ? local.planning.find(item => item.id === trackedUnplannedLiveId)
+    : local.planning.find(item => item.draft === true
+      && item.ownership === 'LOCAL'
+      && (item.category === 'live' || item.kind === 'LIVE')
+      && item.desiredPublication?.twitch !== true
+      && item.desiredPublication?.google !== true);
+
+  const startUnplannedLive = async () => plan(async () => {
+    const now = Date.now();
+    const existingDraft = findTrackedDraft();
+    if (existingDraft) { trackedUnplannedLiveId = existingDraft.id; return; }
+    if (findScheduledLiveForStart(now)) { trackedUnplannedLiveId = null; return; }
+
+    let title = 'Live non programmé';
+    let twitchCategoryId: string | undefined;
+    if (twitch.state.connected) {
+      try {
+        const metadata = await twitch.getChannelMetadata();
+        if (metadata.title.trim()) title = metadata.title.trim().slice(0, 140);
+        if (metadata.gameId && metadata.gameId !== '0') twitchCategoryId = metadata.gameId;
+      } catch (error) {
+        void Promise.resolve(logger.warn('Impossible de récupérer les métadonnées Twitch pour le live non programmé.', error)).catch(() => undefined);
+      }
+    }
+    const id = randomUUID();
+    local.planning.push({
+      id,
+      localId: id,
+      title,
+      description: 'Créé automatiquement lors du démarrage d’un live non programmé.',
+      startAtUtc: new Date(now).toISOString(),
+      endAtUtc: new Date(now + UNPLANNED_LIVE_PROVISIONAL_MS).toISOString(),
+      category: 'live',
+      kind: 'LIVE',
+      ownership: 'LOCAL',
+      editable: true,
+      draft: true,
+      twitchCategoryId,
+      desiredPublication: { local: true, twitch: false, google: false },
+      providers: {
+        twitch: { status: 'not-published' },
+        google: { status: 'not-published' },
+      },
+    });
+    trackedUnplannedLiveId = id;
+    invalidatePreflight();
+    await save();
+    broadcast();
+  });
+
+  const stopUnplannedLive = async () => plan(async () => {
+    const item = findTrackedDraft();
+    trackedUnplannedLiveId = null;
+    if (!item) return;
+    const minimumEnd = Date.parse(item.startAtUtc) + 1000;
+    item.endAtUtc = new Date(Math.max(Date.now(), minimumEnd)).toISOString();
+    item.draft = false;
+    item.syncedAt = new Date().toISOString();
+    await save();
+    broadcast();
+  });
+
+  const queueStreamTracking = (operation: () => Promise<void>) => {
+    streamTrackingQueue = streamTrackingQueue.then(operation).catch(logError);
   };
 
   // Local administration and unauthenticated one-time pairing are registered before
@@ -814,10 +914,12 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
     const pathName = req.path;
     if (req.method === 'GET' && ['/v1/health', '/v1/capabilities'].includes(pathName)) { next(); return; }
     const credential = req.headers.authorization?.match(/^Device (\S+)$/)?.[1];
-    if (!credential || !remoteAuth.authenticate(credential)) {
+    const deviceId = credential ? remoteAuth.authenticate(credential) : null;
+    if (!deviceId) {
       res.status(401).json({ ok: false, error: { code: 'DEVICE_AUTH_REQUIRED', message: 'Télécommande non autorisée.' } });
       return;
     }
+    scheduleRemoteActivitySave();
     const allowed = (req.method === 'GET' && pathName === '/v1/state')
       || (req.method === 'POST' && ['/v1/commands', '/v1/remote/ws-ticket'].includes(pathName));
     if (!allowed) {
@@ -1193,7 +1295,7 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
             managedLocal.providers ??= {};
             const existingLink = managedLocal.providers.google;
             if (managedLocal.conflict?.provider === 'google') continue;
-            if (!sameCalendarData(managedLocal, event) && existingLink?.remoteId) {
+            if (!sameCalendarData(managedLocal, event)) {
               managedLocal.conflict = {
                 provider: 'google',
                 detectedAt: new Date().toISOString(),
@@ -1319,7 +1421,21 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
   const address = server.address();
   const actualPort = typeof address === 'object' && address ? address.port : requestedPort;
   runtimePort = actualPort;
-  const unsubscribeObs = obs.onStateChanged(broadcast);
+  const unsubscribeObs = obs.onStateChanged(() => {
+    const currentStreaming = obs.state.streaming;
+    if (obs.state.connected) {
+      if (!obsConnectionObserved) {
+        obsConnectionObserved = true;
+        observedObsStreaming = currentStreaming;
+        if (currentStreaming) queueStreamTracking(startUnplannedLive);
+        else if (trackedUnplannedLiveId) queueStreamTracking(stopUnplannedLive);
+      } else if (currentStreaming !== observedObsStreaming) {
+        observedObsStreaming = currentStreaming;
+        queueStreamTracking(currentStreaming ? startUnplannedLive : stopUnplannedLive);
+      }
+    }
+    broadcast();
+  });
   const validator = setInterval(() => { void validateTwitch().catch(logError); }, 60 * 60_000);
   validator.unref();
   await validateTwitch().catch(logError);
@@ -1333,6 +1449,8 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
     unsubscribeObs();
     clearInterval(validator);
     if (timerExpiry) clearTimeout(timerExpiry);
+    if (remoteActivitySaveTimer) clearTimeout(remoteActivitySaveTimer);
+    await streamTrackingQueue.catch(() => undefined);
     twitch.close();
     for (const ws of sockets.clients) ws.terminate();
     sockets.close();
