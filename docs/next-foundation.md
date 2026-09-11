@@ -25,14 +25,17 @@ Le bouton **Préparer** ne démarre jamais la diffusion. Il prépare OBS, remet 
 
 StreamDashboard observe l’état réel `streaming` d’OBS. Lorsqu’un live démarre sans événement Live correspondant dans la fenêtre de démarrage :
 
-- un événement **local uniquement** est créé automatiquement dans le planning ;
+- un événement local est créé automatiquement dans le planning avec l’heure réelle de départ ;
 - le titre Twitch courant est repris si disponible, sinon `Live non programmé` ;
-- aucune publication Twitch ou Google n’est déclenchée automatiquement ;
+- **aucune création de segment Twitch n’est déclenchée automatiquement** ;
+- si Google Calendar est connecté **et** qu’un calendrier cible modifiable est déjà sélectionné, le brouillon est publié automatiquement dans ce calendrier ;
+- la synchro Google est exécutée dans la file de suivi du stream, séparée du chemin critique Start/Stop : une erreur ou un timeout Google ne bloque jamais OBS ;
 - l’événement reste en brouillon pendant la diffusion avec une fin provisoire ;
-- au vrai passage d’OBS à `streaming=false`, la fin est remplacée par l’heure réelle et le brouillon devient un événement historique normal ;
-- une reconnexion OBS ou un redémarrage du dashboard retrouve le brouillon local au lieu d’en créer un second.
+- au vrai passage d’OBS à `streaming=false`, la fin est remplacée par l’heure réelle et le même événement Google est mis à jour via son lien/ETag, sans seconde création ;
+- si la synchro Google échoue, l’événement local est conservé avec son état provider en erreur afin qu’un retry reste possible ;
+- une reconnexion OBS ou un redémarrage du dashboard retrouve le brouillon local, y compris s’il est déjà lié à Google, au lieu d’en créer un second.
 
-Si un live planifié est déjà actif ou commence dans la fenêtre prévue, aucun doublon local n’est créé. Les règles de détection/création/finalisation vivent dans `packages/core/src/live-planning.ts` et sont testées indépendamment du serveur.
+Si un live planifié est déjà actif ou commence dans la fenêtre prévue, aucun doublon local n’est créé. La sélection est déterministe : un live déjà actif est prioritaire sur un live à venir, puis le plus récemment démarré / le prochain le plus proche est choisi. Les règles de détection/création/finalisation vivent dans `packages/core/src/live-planning.ts` et sont testées indépendamment du serveur.
 
 ## Export image du planning
 
@@ -42,7 +45,8 @@ La page **Planning** contient **Image réseaux**. L’export :
 - sélectionne uniquement les prochains événements `Live` futurs (jamais les événements personnels Google) ;
 - affiche jusqu’à sept rendez-vous, leur date/heure, titre et catégorie Twitch si connue ;
 - utilise le nom de streamer configuré et une décoration simple cohérente avec le cockpit ;
-- est généré entièrement en local par Canvas, sans upload de données.
+- est généré entièrement en local par Canvas, sans upload de données ;
+- est aussi disponible depuis la télécommande Android, avec partage natif quand le navigateur le permet et fallback téléchargement PNG sinon.
 
 ## Timer OBS natif StreamDashboard
 
@@ -66,7 +70,7 @@ Dans OBS, créer une nouvelle **Source navigateur** pour StreamDashboard pointan
 8. Couper/rétablir le Wi-Fi et vérifier la reconnexion + **snapshot mobile redacted** (état utile uniquement, sans chemins/configuration desktop).
 9. Révoquer le téléphone depuis le PC : la socket existante doit être coupée immédiatement et la reconnexion refusée.
 
-Les appels HTTP du mobile ont un timeout borné : un PC qui ne répond plus ne doit pas laisser la télécommande bloquée indéfiniment. La date de dernière activité d’un device est persistée de façon groupée afin d’éviter une écriture JSON à chaque requête.
+Les appels HTTP du mobile ont un timeout borné compatible avec les confirmations OBS longues : un PC qui ne répond plus ne doit pas laisser la télécommande bloquée indéfiniment, sans afficher prématurément un faux échec pendant un Start normal. La date de dernière activité d’un device est persistée de façon groupée afin d’éviter une écriture JSON à chaque requête.
 
 ### HTTP, PWA et modèle de menace
 
@@ -80,17 +84,17 @@ La page mobile fonctionne comme télécommande web en HTTP LAN, mais un Service 
 
 - seules `/api/v1/health` et `/api/v1/capabilities` sont lisibles à distance sans credential ;
 - `/api/v1/state`, `/api/v1/commands` et la génération de ticket WS exigent une credential device ;
-- l’état mobile est une projection explicitement nettoyée : pas de chemins locaux, identifiants Google, liste de devices ni configuration desktop ;
+- l’état mobile est une projection explicitement nettoyée : pas de chemins locaux, identifiants Google, liste de devices ni configuration desktop ; seul le nom public du streamer est exposé en plus des données utiles au pilotage/export ;
 - les commandes mobiles passent une allowlist dédiée : pas de `force:true`, enregistrement OBS, scène arbitraire, Browser Source arbitraire ni checklist admin ;
 - settings, diagnostics, planning CRUD, OAuth et administration devices restent PC-only ;
 - les codes de pairing expirent, sont à usage unique et limités en tentatives ; les compteurs de rate-limit expirés sont nettoyés ;
 - les hashes de credentials devices sont persistés, jamais les credentials bruts ;
-- la révocation coupe les WebSockets déjà ouverts du device.
+- la révocation coupe les WebSockets déjà ouverts du device et invalide immédiatement son credential.
 
 ## Validation avant merge
 
-Automatique sur chaque HEAD : `npm test`, `npm run build`, `npm run security:check`, `node --check apps/mobile/mobile.js`, `npm run mobile:smoke`, audit runtime, package Windows + smoke Electron packagé.
+Automatique sur chaque HEAD : `npm test`, `npm run build`, `npm run security:check`, `node --check apps/mobile/mobile.js`, `node --check apps/mobile/planning-export.js`, `npm run mobile:smoke`, audit runtime, package Windows + smoke Electron packagé.
 
-Manuel obligatoire : scène réellement sélectionnée avant Start, Start/Stop OBS réel, timer 05:00 + nouvel overlay visible, audio cohérent en dB, détection d’un live non programmé, export image du planning, Google OAuth/CRUD/sync/conflit/journée entière, Android pairing/reconnexion/révocation.
+Manuel obligatoire : scène réellement sélectionnée avant Start, Start/Stop OBS réel, timer 05:00 + nouvel overlay visible, audio cohérent en dB, détection d’un live non programmé + création/mise à jour Google automatique, export image du planning, Google OAuth/CRUD/sync/conflit/journée entière, Android pairing/reconnexion/révocation.
 
 L’audit des **dépendances runtime** doit rester propre. L’audit des dépendances de développement est suivi séparément dans l’issue #23 : ne jamais masquer son résultat dans un compte-rendu même si la CI le marque non bloquant.
