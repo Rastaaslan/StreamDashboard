@@ -50,7 +50,7 @@ export class PlanningOrchestrator {
 
   update(
     id: string,
-    changes: Pick<CalendarItem, 'title' | 'description' | 'startAtUtc' | 'endAtUtc' | 'allDay' | 'twitchCategoryId' | 'twitchCategoryName'>,
+    changes: Pick<CalendarItem, 'title' | 'description' | 'startAtUtc' | 'endAtUtc' | 'allDay' | 'category' | 'kind' | 'twitchCategoryId' | 'twitchCategoryName'>,
     options: PlanningUpdateOptions = {},
   ) {
     return this.serial(async () => {
