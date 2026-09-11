@@ -782,6 +782,21 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
   let streamTrackingQueue: Promise<void> = Promise.resolve();
 
   const findTrackedDraft = () => findUnplannedDraft(local.planning, trackedUnplannedLiveId);
+  const shouldPublishUnplannedToGoogle = () => google.connected && Boolean(local.google.targetCalendarId);
+  const syncUnplannedWithGoogle = async (item: CalendarItem) => {
+    if (item.desiredPublication?.google !== true) return;
+    try {
+      await planning().retry(item.id, 'google');
+      local.google.lastSyncedAt = new Date().toISOString();
+      googleError = null;
+    } catch (error) {
+      googleError = error instanceof Error ? error.message : String(error);
+      void Promise.resolve(logger.warn(`Impossible de synchroniser le live non programmé « ${item.title} » vers Google Calendar.`, error)).catch(() => undefined);
+    } finally {
+      await save();
+      broadcast();
+    }
+  };
 
   const startUnplannedLive = async () => plan(async () => {
     const now = Date.now();
@@ -801,11 +816,19 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
       }
     }
     const id = randomUUID();
-    local.planning.push(createUnplannedLiveItem({ id, now, title, twitchCategoryId }));
+    const item = createUnplannedLiveItem({
+      id,
+      now,
+      title,
+      twitchCategoryId,
+      publishGoogle: shouldPublishUnplannedToGoogle(),
+    });
+    local.planning.push(item);
     trackedUnplannedLiveId = id;
     invalidatePreflight();
     await save();
     broadcast();
+    await syncUnplannedWithGoogle(item);
   });
 
   const stopUnplannedLive = async () => plan(async () => {
@@ -815,6 +838,7 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
     finalizeUnplannedLive(item, Date.now());
     await save();
     broadcast();
+    await syncUnplannedWithGoogle(item);
   });
 
   const queueStreamTracking = (operation: () => Promise<void>) => {
