@@ -85,8 +85,14 @@ export async function exportPlanningImage(items, streamerName = 'StreamDashboard
   const blob = await new Promise((resolve, reject) => canvas.toBlob(value => value ? resolve(value) : reject(new Error('Export PNG impossible.')), 'image/png'));
   const file = new File([blob], `planning-${safeName(streamerName)}.png`, { type: 'image/png' });
   if (navigator.share && navigator.canShare?.({ files: [file] })) {
-    await navigator.share({ files: [file], title: 'Planning des lives' });
-    return events.length;
+    try {
+      await navigator.share({ files: [file], title: 'Planning des lives' });
+      return events.length;
+    } catch (error) {
+      if (error?.name === 'AbortError') throw error;
+      // Some Android browsers expose Web Share but reject files after async canvas
+      // work. Fall through to the ordinary PNG download instead of losing the export.
+    }
   }
 
   const url = URL.createObjectURL(blob);
