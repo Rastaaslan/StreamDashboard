@@ -48,6 +48,17 @@ function clearPendingOAuthAttempt(clientId: string, redirectUri?: string, expect
   pendingOAuthAttempts.delete(key);
 }
 
+function isPendingOAuthAttempt(clientId: string, attempt: GoogleOAuthAttempt) {
+  const key = oauthAttemptKey(clientId, attempt.redirectUri);
+  const current = pendingOAuthAttempts.get(key);
+  if (!current) return false;
+  if (current.expiresAt <= Date.now()) {
+    pendingOAuthAttempts.delete(key);
+    return false;
+  }
+  return current.attempt.state === attempt.state && current.attempt.verifier === attempt.verifier;
+}
+
 export function createGoogleOAuthAttempt(clientId: string, redirectUri: string): GoogleOAuthAttempt {
   if (!clientId.trim()) throw new Error('Identifiant client Google Calendar manquant.');
   const key = oauthAttemptKey(clientId, redirectUri);
@@ -90,6 +101,7 @@ export class GoogleCalendarClient {
 
   async exchangeCode(code: string, returnedState: string, attempt: GoogleOAuthAttempt) {
     const generation = this.generation;
+    if (!isPendingOAuthAttempt(this.clientId, attempt)) throw new Error('Tentative OAuth Google expirée ou annulée.');
     const actual = Buffer.from(returnedState);
     const expected = Buffer.from(attempt.state);
     if (actual.length !== expected.length || !timingSafeEqual(actual, expected)) throw new Error('État OAuth Google invalide.');
