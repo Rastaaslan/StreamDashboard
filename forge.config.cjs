@@ -34,7 +34,7 @@ module.exports = {
       setupExe: 'StreamDashboardSetup.exe',
       setupIcon: './resources/streamdashboard.ico',
       authors: 'Rastaaslan',
-      description: 'Cockpit desktop Windows pour OBS et Twitch',
+      description: 'Cockpit Windows pour OBS, Twitch, Google Calendar et télécommande LAN',
       certificateFile,
       certificatePassword,
     },
