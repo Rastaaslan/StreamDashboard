@@ -15,6 +15,12 @@ import {
   type GoogleOAuthAttempt,
   type GoogleTokens,
 } from '../../../integrations/google-calendar/src/client.js';
+import {
+  createUnplannedLiveItem,
+  finalizeUnplannedLive,
+  findScheduledLiveForStart,
+  findUnplannedDraft,
+} from '../../../packages/core/src/live-planning.js';
 import { PlanningOrchestrator, type PlanningProvider } from '../../../packages/core/src/planning.js';
 import {
   parseCommand,
@@ -93,8 +99,6 @@ const LOOPBACK_HOSTS = new Set(['127.0.0.1', 'localhost', '::1', '[::1]']);
 const LOCAL_ADDRESSES = new Set(['127.0.0.1', '::1', '::ffff:127.0.0.1']);
 const PROVIDER_STATUSES = new Set(['synced', 'pending', 'error', 'not-published', 'conflict']);
 const DAY_MS = 86_400_000;
-const UNPLANNED_LIVE_WINDOW_MS = 30 * 60_000;
-const UNPLANNED_LIVE_PROVISIONAL_MS = 12 * 60 * 60_000;
 const REMOTE_ACTIVITY_PERSIST_MS = 30_000;
 
 function object(value: unknown): value is Record<string, unknown> {
@@ -772,35 +776,18 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
     broadcast();
   };
 
-  let trackedUnplannedLiveId = local.planning.find(item =>
-    item.draft === true
-    && item.ownership === 'LOCAL'
-    && (item.category === 'live' || item.kind === 'LIVE')
-    && item.desiredPublication?.twitch !== true
-    && item.desiredPublication?.google !== true)?.id ?? null;
+  let trackedUnplannedLiveId = findUnplannedDraft(local.planning)?.id ?? null;
   let observedObsStreaming = false;
   let obsConnectionObserved = false;
   let streamTrackingQueue: Promise<void> = Promise.resolve();
 
-  const findScheduledLiveForStart = (now: number) => local.planning.find(item =>
-    !item.allDay
-    && item.draft !== true
-    && (item.category === 'live' || item.kind === 'LIVE')
-    && Date.parse(item.startAtUtc) <= now + UNPLANNED_LIVE_WINDOW_MS
-    && Date.parse(item.endAtUtc) > now);
-  const findTrackedDraft = () => trackedUnplannedLiveId
-    ? local.planning.find(item => item.id === trackedUnplannedLiveId)
-    : local.planning.find(item => item.draft === true
-      && item.ownership === 'LOCAL'
-      && (item.category === 'live' || item.kind === 'LIVE')
-      && item.desiredPublication?.twitch !== true
-      && item.desiredPublication?.google !== true);
+  const findTrackedDraft = () => findUnplannedDraft(local.planning, trackedUnplannedLiveId);
 
   const startUnplannedLive = async () => plan(async () => {
     const now = Date.now();
     const existingDraft = findTrackedDraft();
     if (existingDraft) { trackedUnplannedLiveId = existingDraft.id; return; }
-    if (findScheduledLiveForStart(now)) { trackedUnplannedLiveId = null; return; }
+    if (findScheduledLiveForStart(local.planning, now)) { trackedUnplannedLiveId = null; return; }
 
     let title = 'Live non programmé';
     let twitchCategoryId: string | undefined;
@@ -814,25 +801,7 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
       }
     }
     const id = randomUUID();
-    local.planning.push({
-      id,
-      localId: id,
-      title,
-      description: 'Créé automatiquement lors du démarrage d’un live non programmé.',
-      startAtUtc: new Date(now).toISOString(),
-      endAtUtc: new Date(now + UNPLANNED_LIVE_PROVISIONAL_MS).toISOString(),
-      category: 'live',
-      kind: 'LIVE',
-      ownership: 'LOCAL',
-      editable: true,
-      draft: true,
-      twitchCategoryId,
-      desiredPublication: { local: true, twitch: false, google: false },
-      providers: {
-        twitch: { status: 'not-published' },
-        google: { status: 'not-published' },
-      },
-    });
+    local.planning.push(createUnplannedLiveItem({ id, now, title, twitchCategoryId }));
     trackedUnplannedLiveId = id;
     invalidatePreflight();
     await save();
@@ -843,10 +812,7 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
     const item = findTrackedDraft();
     trackedUnplannedLiveId = null;
     if (!item) return;
-    const minimumEnd = Date.parse(item.startAtUtc) + 1000;
-    item.endAtUtc = new Date(Math.max(Date.now(), minimumEnd)).toISOString();
-    item.draft = false;
-    item.syncedAt = new Date().toISOString();
+    finalizeUnplannedLive(item, Date.now());
     await save();
     broadcast();
   });
