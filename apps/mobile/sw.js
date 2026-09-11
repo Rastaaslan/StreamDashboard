@@ -1,12 +1,14 @@
-const CACHE = 'streamdashboard-mobile-v3';
+const CACHE = 'streamdashboard-mobile-v4';
 const PATHS = new Set([
   '/mobile/',
   '/mobile/index.html',
   '/mobile/mobile.css',
   '/mobile/mobile.js',
   '/mobile/manifest.webmanifest',
+  '/mobile/icon-192.png',
+  '/mobile/icon-512.png',
 ]);
-const ASSETS = ['./', 'mobile.css', 'mobile.js', 'manifest.webmanifest'];
+const ASSETS = ['./', 'mobile.css', 'mobile.js', 'manifest.webmanifest', 'icon-192.png', 'icon-512.png'];
 
 self.addEventListener('install', event => {
   event.waitUntil(caches.open(CACHE).then(cache => cache.addAll(ASSETS)).then(() => self.skipWaiting()));
