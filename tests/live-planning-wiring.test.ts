@@ -9,16 +9,24 @@ describe('câblage live non programmé', () => {
     expect(server).toContain('publishGoogle: shouldPublishUnplannedToGoogle()');
   });
 
-  it('persiste et diffuse d’abord le brouillon local avant toute attente Google', () => {
-    expect(server).toMatch(/local\.planning\.push\(item\);[\s\S]*?await save\(\);\s*broadcast\(\);\s*await syncUnplannedWithGoogle\(item\);/);
+  it('persiste et diffuse le brouillon local avant de seulement mettre Google en file de fond', () => {
+    expect(server).toMatch(/local\.planning\.push\(item\);[\s\S]*?await save\(\);\s*broadcast\(\);[\s\S]*?if \(googleSyncId\) queueUnplannedGoogleSync\(googleSyncId\);/);
+    expect(server).not.toContain('await syncUnplannedWithGoogle');
   });
 
-  it('finalise la vraie heure locale avant de mettre à jour Google', () => {
-    expect(server).toMatch(/finalizeUnplannedLive\(item, Date\.now\(\)\);\s*await save\(\);\s*broadcast\(\);\s*await syncUnplannedWithGoogle\(item\);/);
+  it('capture la vraie heure d’arrêt avant toute attente réseau', () => {
+    expect(server).toMatch(/const stoppedAt = Date\.now\(\);[\s\S]*?finalizeUnplannedLive\(item, stoppedAt\);[\s\S]*?await save\(\);\s*broadcast\(\);[\s\S]*?queueUnplannedGoogleSync/);
   });
 
-  it('isole les erreurs Google au lieu de les transformer en échec Start\/Stop', () => {
-    expect(server).toMatch(/const syncUnplannedWithGoogle = async \(item: CalendarItem\) => \{[\s\S]*?try \{[\s\S]*?planning\(\)\.retry\(item\.id, 'google'\)[\s\S]*?catch \(error\)/);
+  it('sérialise Google séparément du suivi OBS et isole ses erreurs', () => {
+    expect(server).toContain('let streamTrackingQueue: Promise<void> = Promise.resolve()');
+    expect(server).toContain('let unplannedGoogleQueue: Promise<void> = Promise.resolve()');
     expect(server).toContain('streamTrackingQueue = streamTrackingQueue.then(operation).catch(logError)');
+    expect(server).toContain('unplannedGoogleQueue.then(() => syncUnplannedGoogleNow(id))');
+    expect(server).toContain('await recordUnplannedGoogleFailure(id, error)');
+  });
+
+  it('attend proprement les deux files uniquement à la fermeture de l’application', () => {
+    expect(server).toMatch(/await streamTrackingQueue\.catch\(\(\) => undefined\);\s*await unplannedGoogleQueue\.catch\(\(\) => undefined\);/);
   });
 });
