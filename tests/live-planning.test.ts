@@ -1,10 +1,11 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import {
   createUnplannedLiveItem,
   finalizeUnplannedLive,
   findScheduledLiveForStart,
   findUnplannedDraft,
 } from '../packages/core/src/live-planning.js';
+import { PlanningOrchestrator } from '../packages/core/src/planning.js';
 import type { CalendarItem } from '../packages/contracts/src/index.js';
 
 const now = Date.parse('2030-01-01T20:00:00.000Z');
@@ -46,6 +47,32 @@ describe('suivi des lives non programmés', () => {
     expect(draft.desiredPublication).toEqual({ local: true, twitch: false, google: true });
     expect(draft.providers?.google?.status).toBe('pending');
     expect(findUnplannedDraft([draft])?.id).toBe('adhoc-google');
+  });
+
+  it('crée une seule entrée Google au départ puis met à jour sa vraie fin', async () => {
+    const create = vi.fn(async () => ({ id: 'google-live-1', revision: 'etag-start', calendarId: 'primary' }));
+    const update = vi.fn(async () => ({ revision: 'etag-end' }));
+    const items = [createUnplannedLiveItem({ id: 'adhoc-google', now, title: 'Live surprise', publishGoogle: true })];
+    const orchestrator = new PlanningOrchestrator(items, {
+      google: { create, update, delete: vi.fn(async () => undefined) },
+    }, async () => undefined);
+
+    await orchestrator.retry('adhoc-google', 'google');
+    expect(create).toHaveBeenCalledOnce();
+    expect(orchestrator.all()[0].providers?.google).toMatchObject({
+      status: 'synced', remoteId: 'google-live-1', remoteRevision: 'etag-start', calendarId: 'primary',
+    });
+
+    finalizeUnplannedLive(items[0], now + 95 * 60_000);
+    await orchestrator.retry('adhoc-google', 'google');
+    expect(create).toHaveBeenCalledOnce();
+    expect(update).toHaveBeenCalledOnce();
+    expect(update).toHaveBeenCalledWith(
+      'google-live-1',
+      expect.objectContaining({ endAtUtc: new Date(now + 95 * 60_000).toISOString(), draft: false }),
+      'etag-start',
+    );
+    expect(orchestrator.all()[0].providers?.google?.remoteRevision).toBe('etag-end');
   });
 
   it('retrouve le brouillon après redémarrage sans capturer un événement Twitch publié', () => {
