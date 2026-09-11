@@ -28,6 +28,8 @@ export interface CalendarItem {
   description?: string;
   startAtUtc: string;
   endAtUtc: string;
+  /** True when the calendar item is an all-day range instead of an instant range. */
+  allDay?: boolean;
   category?: 'live' | 'production' | 'personal';
   source?: 'DAMPLANNER' | 'GOOGLE' | 'TWITCH';
   ownership?: 'LOCAL' | 'EXTERNAL';
@@ -43,7 +45,11 @@ export interface CalendarItem {
   desiredPublication?: { local: boolean; twitch: boolean; google: boolean };
   providers?: Partial<Record<'twitch' | 'google', ProviderLink>>;
   external?: boolean;
-  conflict?: { provider: 'twitch' | 'google'; detectedAt: string; remote?: Pick<CalendarItem, 'title' | 'description' | 'startAtUtc' | 'endAtUtc'> };
+  conflict?: {
+    provider: 'twitch' | 'google';
+    detectedAt: string;
+    remote?: Pick<CalendarItem, 'title' | 'description' | 'startAtUtc' | 'endAtUtc' | 'allDay' | 'twitchCategoryId' | 'twitchCategoryName'>;
+  };
 }
 
 export interface GoogleCalendarState {
@@ -54,7 +60,17 @@ export interface GoogleCalendarState {
   error: string | null;
   lastSyncedAt: string | null;
 }
-export interface PreflightState { eventId: string | null; status: 'idle' | 'preparing' | 'ready' | 'action-required' | 'error'; title: string | null; category: string | null; gameId: string | null; error: string | null; preparedAt: string | null }
+
+export interface PreflightState {
+  eventId: string | null;
+  status: 'idle' | 'preparing' | 'ready' | 'action-required' | 'error';
+  title: string | null;
+  category: string | null;
+  gameId: string | null;
+  error: string | null;
+  preparedAt: string | null;
+}
+
 export interface RemoteDevice { id: string; name: string; createdAt: string; lastSeenAt: string; revokedAt?: string }
 export interface RemoteState { supported: boolean; enabled: boolean; devices: RemoteDevice[]; urls: string[] }
 export interface CalendarPayload { rows: unknown[]; warnings: string[]; fetchedAt: number; fromCache: boolean; items: CalendarItem[] }
@@ -131,6 +147,18 @@ export interface DashboardState {
   runtime: { serverVersion: string; nodeVersion: string; electronVersion: string | null; platform: string; port: number; logsPath: string | null };
 }
 
+/** Minimal, explicitly redacted state exposed to a paired LAN remote. */
+export interface RemoteDashboardState {
+  at: string;
+  mode: RunMode;
+  timer: TimerState;
+  planning: Array<Pick<CalendarItem, 'id' | 'title' | 'startAtUtc' | 'endAtUtc' | 'allDay' | 'category' | 'kind'>>;
+  nextLive: Pick<CalendarItem, 'id' | 'title' | 'startAtUtc' | 'endAtUtc' | 'allDay' | 'category' | 'kind'> | null;
+  obs: Pick<ObsState, 'connected' | 'streaming' | 'scene' | 'inputs' | 'activeAudioInputs' | 'mediaInputs'>;
+  settings: Pick<DashboardSettings, 'confirmStop'>;
+  preflight?: PreflightState;
+}
+
 export type PublicState = DashboardState;
 export type Command = DashboardCommand;
 export interface CommandResult { ok: true; state: PublicState; commandType: Command['type'] }
@@ -161,11 +189,17 @@ export type DashboardCommand =
 export interface DashboardEvent { type: 'state.updated'; data: DashboardState }
 export type ServerEvent = DashboardEvent | { type: 'server.ready'; data: ServerCapabilities };
 
-const commandTypes = new Set<Command['type']>(['session.prepare', 'session.start', 'session.stop', 'mode.set', 'timer.start', 'timer.pause', 'timer.reset', 'timer.add', 'obs.scene', 'obs.mute', 'obs.volume', 'obs.volumeDb', 'obs.browser.refresh', 'obs.stream', 'obs.record', 'obs.media.restart', 'checklist.toggle', 'checklist.reset']);
+const commandTypes = new Set<Command['type']>([
+  'session.prepare', 'session.start', 'session.stop', 'mode.set', 'timer.start', 'timer.pause', 'timer.reset', 'timer.add',
+  'obs.scene', 'obs.mute', 'obs.volume', 'obs.volumeDb', 'obs.browser.refresh', 'obs.stream', 'obs.record', 'obs.media.restart',
+  'checklist.toggle', 'checklist.reset',
+]);
+
 export function parseCommand(value: unknown): Command {
   if (!value || typeof value !== 'object') throw new Error('La commande doit être un objet JSON.');
   const input = value as Record<string, unknown>;
   if (typeof input.type !== 'string' || !commandTypes.has(input.type as Command['type'])) throw new Error('Type de commande inconnu.');
+
   const allowed: Record<string, string[]> = {
     'session.prepare': ['type'], 'session.start': ['type', 'force'], 'session.stop': ['type'],
     'mode.set': ['type', 'mode'], 'timer.start': ['type', 'seconds'], 'timer.pause': ['type'], 'timer.reset': ['type'], 'timer.add': ['type', 'seconds'],
@@ -174,11 +208,15 @@ export function parseCommand(value: unknown): Command {
     'checklist.toggle': ['type', 'id'], 'checklist.reset': ['type'],
   };
   if (Object.keys(input).some(key => !allowed[input.type as string].includes(key))) throw new Error('La commande contient un champ non autorisé.');
-  const text = (key: string) => { if (typeof input[key] !== 'string' || !(input[key] as string).trim() || (input[key] as string).length > 200) throw new Error(`Champ ${key} invalide.`); };
+
+  const text = (key: string) => {
+    if (typeof input[key] !== 'string' || !(input[key] as string).trim() || (input[key] as string).length > 200) throw new Error(`Champ ${key} invalide.`);
+  };
   const bool = (key: string) => { if (typeof input[key] !== 'boolean') throw new Error(`Champ ${key} invalide.`); };
   const number = (key: string, min = -Infinity, max = Infinity) => {
     if (typeof input[key] !== 'number' || !Number.isFinite(input[key]) || (input[key] as number) < min || (input[key] as number) > max) throw new Error(`Champ ${key} invalide.`);
   };
+
   switch (input.type) {
     case 'session.start': if (input.force !== undefined) bool('force'); break;
     case 'mode.set': if (!['idle', 'intro', 'live', 'pause', 'end'].includes(String(input.mode))) throw new Error('Mode invalide.'); break;
