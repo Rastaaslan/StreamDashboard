@@ -14,22 +14,33 @@ let state;
 let remotePairing = null;
 let editingEventId = null;
 const pending = new Set();
+const REQUEST_TIMEOUT_MS = 30_000;
 const $ = selector => document.querySelector(selector);
 const esc = value => String(value ?? '').replace(/[&<>"']/g, character => ({
   '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;',
 }[character]));
 
 async function request(url, method = 'GET', body) {
-  const response = await fetch(url, {
-    method,
-    headers: { 'content-type': 'application/json' },
-    body: body === undefined ? undefined : JSON.stringify(body),
-  });
-  let value;
-  try { value = await response.json(); }
-  catch { throw Error(`HTTP ${response.status}`); }
-  if (!response.ok) throw Error(value.error?.message || value.error || `HTTP ${response.status}`);
-  return value;
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+  try {
+    const response = await fetch(url, {
+      method,
+      headers: { 'content-type': 'application/json' },
+      body: body === undefined ? undefined : JSON.stringify(body),
+      signal: controller.signal,
+    });
+    let value;
+    try { value = await response.json(); }
+    catch { throw Error(`HTTP ${response.status}`); }
+    if (!response.ok) throw Error(value.error?.message || value.error || `HTTP ${response.status}`);
+    return value;
+  } catch (error) {
+    if (error?.name === 'AbortError') throw Error('StreamDashboard ne répond pas dans le délai attendu.');
+    throw error;
+  } finally {
+    clearTimeout(timeout);
+  }
 }
 
 const messages = {
@@ -189,7 +200,7 @@ function planning() {
     : state.google.connected
       ? `Google connecté${state.google.lastSyncedAt ? ` · synchro ${date(state.google.lastSyncedAt)}` : ''}`
       : 'Google non connecté';
-  return `<div class="section-head"><div><span class="label">PLANNING SYNCHRONISÉ</span><h3>Prochains rendez-vous</h3><small class="muted">${state.twitch.connected ? `Twitch · ${esc(state.twitch.displayName)}` : 'Twitch non connecté'} · ${esc(googleText)}</small></div><div class="button-row">${state.twitch.connected ? `<button class="ghost compact" ${state.twitch.syncing ? 'disabled' : ''} data-action="sync-twitch">↻ Twitch</button>` : ''}${state.google?.connected && state.google.targetCalendarId ? '<button class="ghost compact" data-action="sync-google">↻ Google</button>' : ''}<button class="primary compact" data-action="open-event">+ Ajouter</button></div></div><div class="schedule">${rows.map(item => `<article><time><b>${new Date(item.startAtUtc).toLocaleDateString('fr-FR', { day: '2-digit', timeZone: item.allDay ? 'UTC' : undefined })}</b>${new Date(item.startAtUtc).toLocaleDateString('fr-FR', { month: 'short', timeZone: item.allDay ? 'UTC' : undefined })}</time><div><div>${providerBadge(item, 'twitch')} ${providerBadge(item, 'google')}</div><h3>${esc(item.title)}</h3><p>${eventRange(item)}</p>${item.editable === false ? '<p class="muted">Lecture seule</p>' : ''}${item.twitchCategoryName ? `<p class="muted">Twitch : ${esc(item.twitchCategoryName)}</p>` : ''}${item.conflict ? `<p class="muted">⚠ Conflit ${esc(item.conflict.provider)} : choisis explicitement la version à garder.</p>` : ''}${item.syncError ? `<p class="muted">⚠ ${esc(item.syncError)}</p>` : ''}${item.providers?.twitch?.lastError ? `<p class="muted">Twitch : ${esc(item.providers.twitch.lastError)}</p>` : ''}${item.providers?.google?.lastError ? `<p class="muted">Google : ${esc(item.providers.google.lastError)}</p>` : ''}</div><div class="button-row">${planningActions(item)}</div></article>`).join('') || '<div class="empty"><b>Aucun événement planifié</b><p>Votre planning est prêt à accueillir un premier live.</p></div>'}</div><dialog id="event-dialog"><form id="event-form" data-dirty="false"><div class="section-head"><h3 id="event-dialog-title">Nouveau rendez-vous</h3><button type="button" class="icon-btn" data-action="close-dialog">×</button></div><label>Titre<input name="title" maxlength="140" required></label><label class="switch"><span><b>Toute la journée</b><small>Google conserve alors un vrai événement journée entière.</small></span><input name="allDay" type="checkbox"></label><div class="form-grid"><label>Début<input name="start" type="datetime-local" required></label><label>Fin<input name="end" type="datetime-local" required></label></div><label>Type<select name="category"><option value="live">Live</option><option value="production">Production</option><option value="personal">Personnel</option></select></label><label>Catégorie/jeu Twitch<input name="twitchCategoryName" maxlength="140" placeholder="Ex. Counter-Strike 2"></label><div id="publication-options" class="form-grid"><label class="switch"><span><b>Publier sur Twitch</b></span><input name="publishTwitch" type="checkbox"></label><label class="switch"><span><b>Publier sur Google</b></span><input name="publishGoogle" type="checkbox"></label></div><small class="muted">Les destinations sont modifiables ensuite. Désactiver une destination retire la publication distante sans perdre l’événement local.</small><button class="primary" type="submit">Enregistrer</button></form></dialog>`;
+  return `<div class="section-head"><div><span class="label">PLANNING SYNCHRONISÉ</span><h3>Prochains rendez-vous</h3><small class="muted">${state.twitch.connected ? `Twitch · ${esc(state.twitch.displayName)}` : 'Twitch non connecté'} · ${esc(googleText)}</small></div><div class="button-row">${state.twitch.connected ? `<button class="ghost compact" ${state.twitch.syncing ? 'disabled' : ''} data-action="sync-twitch">↻ Twitch</button>` : ''}${state.google?.connected && state.google.targetCalendarId ? '<button class="ghost compact" data-action="sync-google">↻ Google</button>' : ''}<button class="ghost compact" data-action="export-planning">Image réseaux</button><button class="primary compact" data-action="open-event">+ Ajouter</button></div></div><div class="schedule">${rows.map(item => `<article><time><b>${new Date(item.startAtUtc).toLocaleDateString('fr-FR', { day: '2-digit', timeZone: item.allDay ? 'UTC' : undefined })}</b>${new Date(item.startAtUtc).toLocaleDateString('fr-FR', { month: 'short', timeZone: item.allDay ? 'UTC' : undefined })}</time><div><div>${providerBadge(item, 'twitch')} ${providerBadge(item, 'google')}</div><h3>${esc(item.title)}</h3><p>${eventRange(item)}</p>${item.draft ? '<p class="muted">● Live non programmé en cours · fin provisoire jusqu’à l’arrêt OBS.</p>' : ''}${item.editable === false ? '<p class="muted">Lecture seule</p>' : ''}${item.twitchCategoryName ? `<p class="muted">Twitch : ${esc(item.twitchCategoryName)}</p>` : ''}${item.conflict ? `<p class="muted">⚠ Conflit ${esc(item.conflict.provider)} : choisis explicitement la version à garder.</p>` : ''}${item.syncError ? `<p class="muted">⚠ ${esc(item.syncError)}</p>` : ''}${item.providers?.twitch?.lastError ? `<p class="muted">Twitch : ${esc(item.providers.twitch.lastError)}</p>` : ''}${item.providers?.google?.lastError ? `<p class="muted">Google : ${esc(item.providers.google.lastError)}</p>` : ''}</div><div class="button-row">${planningActions(item)}</div></article>`).join('') || '<div class="empty"><b>Aucun événement planifié</b><p>Votre planning est prêt à accueillir un premier live.</p></div>'}</div><dialog id="event-dialog"><form id="event-form" data-dirty="false"><div class="section-head"><h3 id="event-dialog-title">Nouveau rendez-vous</h3><button type="button" class="icon-btn" data-action="close-dialog">×</button></div><label>Titre<input name="title" maxlength="140" required></label><label class="switch"><span><b>Toute la journée</b><small>Google conserve alors un vrai événement journée entière.</small></span><input name="allDay" type="checkbox"></label><div class="form-grid"><label>Début<input name="start" type="datetime-local" required></label><label>Fin<input name="end" type="datetime-local" required></label></div><label>Type<select name="category"><option value="live">Live</option><option value="production">Production</option><option value="personal">Personnel</option></select></label><label>Catégorie/jeu Twitch<input name="twitchCategoryName" maxlength="140" placeholder="Ex. Counter-Strike 2"></label><div id="publication-options" class="form-grid"><label class="switch"><span><b>Publier sur Twitch</b></span><input name="publishTwitch" type="checkbox"></label><label class="switch"><span><b>Publier sur Google</b></span><input name="publishGoogle" type="checkbox"></label></div><small class="muted">Les destinations sont modifiables ensuite. Désactiver une destination retire la publication distante sans perdre l’événement local.</small><button class="primary" type="submit">Enregistrer</button></form></dialog>`;
 }
 
 function deck() {
@@ -530,6 +541,15 @@ window.resolveConflict = async (id, provider, strategy) => {
     toast(error.message, true);
   }
 };
+window.exportPlanning = async () => {
+  try {
+    const { exportPlanningImage } = await import('./planning-export.js');
+    const count = await exportPlanningImage(state.planning, state.settings.streamerName);
+    toast(`Image du planning générée · ${count} live${count > 1 ? 's' : ''}`);
+  } catch (error) {
+    toast(error.message, true);
+  }
+};
 window.stopStream = () => {
   if (state.obs.streaming && (!state.settings.confirmStop || confirm('Arrêter réellement la diffusion ?'))) void command('session.stop');
 };
@@ -637,6 +657,7 @@ document.addEventListener('click', event => {
     'stop-stream': window.stopStream,
     'sync-twitch': window.syncTwitch,
     'sync-google': window.syncGoogle,
+    'export-planning': window.exportPlanning,
     'open-event': window.openEvent,
     'edit-event': () => window.editEvent(value),
     'retry-provider': () => window.retryProvider(value, element.dataset.provider),
@@ -684,4 +705,4 @@ function socket() {
 nav();
 await refresh(true);
 socket();
-setInterval(updateTimer, 250);
+setInterval(updateTimer, 1000);
