@@ -85,7 +85,7 @@ describe('intégration Twitch générique', () => {
     expect(fetch).toHaveBeenCalledTimes(1);
   });
 
-  it('importe les segments et publie les lives locaux', async () => {
+  it('importe les segments et publie les lives locaux explicitement destinés à Twitch', async () => {
     const calls: Array<{ url: string; init?: RequestInit }> = [];
     vi.stubGlobal('fetch', vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
       const url = String(input); calls.push({ url, init });
@@ -93,20 +93,20 @@ describe('intégration Twitch générique', () => {
       return new Response(JSON.stringify({ data: { segments: [{ id: 'created' }] } }));
     }));
     const client = new TwitchClient({ ...empty, clientId: 'id', accessToken: 'token', broadcasterId: '42' });
-    const result = await client.sync([{ id: 'local', title: 'Live local', startAtUtc: '2030-01-02T10:00:00Z', endAtUtc: '2030-01-02T11:00:00Z', category: 'live' }]);
+    const result = await client.sync([{ id: 'local', title: 'Live local', startAtUtc: '2030-01-02T10:00:00Z', endAtUtc: '2030-01-02T11:00:00Z', category: 'live', desiredPublication: { local: true, twitch: true, google: false } }]);
     expect(result.map(x => x.twitchSegmentId).sort()).toEqual(['created', 'remote']);
     const publish = calls.find(call => call.init?.method === 'POST');
     expect(publish?.url).toBe('https://api.twitch.tv/helix/schedule/segment?broadcaster_id=42');
     expect(JSON.parse(String(publish?.init?.body))).toEqual({ start_time: '2030-01-02T10:00:00Z', timezone: 'UTC', duration: 60, title: 'Live local' });
   });
 
-  it('traite un premier planning 404 comme vide puis crée le segment local', async () => {
+  it('traite un premier planning 404 comme vide puis crée le segment explicitement demandé', async () => {
     const fetch = vi.fn(async (_input: string | URL | Request, init?: RequestInit) => init?.method === 'POST'
       ? new Response(JSON.stringify({ data: { segments: [{ id: 'first' }] } }))
       : new Response(JSON.stringify({ message: 'schedule not found' }), { status: 404 }));
     vi.stubGlobal('fetch', fetch);
     const client = new TwitchClient({ ...empty, clientId: 'id', accessToken: 'token', broadcasterId: '42' });
-    const result = await client.sync([{ id: 'local', title: 'Premier live', startAtUtc: '2030-01-01T10:00:00Z', endAtUtc: '2030-01-01T11:00:00Z', category: 'live' }]);
+    const result = await client.sync([{ id: 'local', title: 'Premier live', startAtUtc: '2030-01-01T10:00:00Z', endAtUtc: '2030-01-01T11:00:00Z', category: 'live', desiredPublication: { local: true, twitch: true, google: false } }]);
     expect(result[0]?.twitchSegmentId).toBe('first'); expect(fetch).toHaveBeenCalledTimes(2);
   });
 
@@ -114,7 +114,7 @@ describe('intégration Twitch générique', () => {
     let release!: () => void; const gate = new Promise<void>(resolve => { release = resolve; }); let posts = 0;
     vi.stubGlobal('fetch', vi.fn(async (_input: string | URL | Request, init?: RequestInit) => { if (init?.method === 'POST') { posts++; await gate; return new Response(JSON.stringify({ data: { segments: [{ id: 'once' }] } })); } return new Response(JSON.stringify({ data: { segments: [] } })); }));
     const client = new TwitchClient({ ...empty, clientId: 'id', accessToken: 'token', broadcasterId: '42' });
-    const items = [{ id: 'local', title: 'Live', startAtUtc: '2030-01-01T10:00:00Z', endAtUtc: '2030-01-01T11:00:00Z', category: 'live' as const }];
+    const items = [{ id: 'local', title: 'Live', startAtUtc: '2030-01-01T10:00:00Z', endAtUtc: '2030-01-01T11:00:00Z', category: 'live' as const, desiredPublication: { local: true, twitch: true, google: false } }];
     const first = client.sync(items), second = client.sync(items); await vi.waitFor(() => expect(posts).toBe(1)); release(); expect(await first).toBe(await second); expect(posts).toBe(1);
   });
 
@@ -125,7 +125,7 @@ describe('intégration Twitch générique', () => {
     });
     vi.stubGlobal('fetch', fetch);
     const client = new TwitchClient({ ...empty, clientId: 'id', accessToken: 'token', broadcasterId: '42' });
-    const result = await client.sync([{ id: 'local', title: 'Live supprimé', startAtUtc: '2030-01-01T10:00:00Z', endAtUtc: '2030-01-01T11:00:00Z', category: 'live', ownership: 'LOCAL', twitchSegmentId: 'gone' }]);
+    const result = await client.sync([{ id: 'local', title: 'Live supprimé', startAtUtc: '2030-01-01T10:00:00Z', endAtUtc: '2030-01-01T11:00:00Z', category: 'live', ownership: 'LOCAL', twitchSegmentId: 'gone', desiredPublication: { local: true, twitch: true, google: false } }]);
     expect(result).toHaveLength(1);
     expect(result[0]).not.toHaveProperty('twitchSegmentId');
     expect(result[0]?.syncError).toMatch(/absent du planning Twitch/i);
