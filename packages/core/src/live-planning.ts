@@ -12,11 +12,21 @@ export function findScheduledLiveForStart(
   now: number,
   windowMs = DEFAULT_UNPLANNED_START_WINDOW_MS,
 ) {
-  return items.find(item =>
-    isLive(item)
-    && item.draft !== true
-    && Date.parse(item.startAtUtc) <= now + windowMs
-    && Date.parse(item.endAtUtc) > now);
+  return items
+    .filter(item =>
+      isLive(item)
+      && item.draft !== true
+      && Date.parse(item.startAtUtc) <= now + windowMs
+      && Date.parse(item.endAtUtc) > now)
+    .sort((left, right) => {
+      const leftStart = Date.parse(left.startAtUtc);
+      const rightStart = Date.parse(right.startAtUtc);
+      const leftStarted = leftStart <= now;
+      const rightStarted = rightStart <= now;
+      if (leftStarted !== rightStarted) return leftStarted ? -1 : 1;
+      if (leftStarted) return rightStart - leftStart; // most recently started active live first
+      return leftStart - rightStart; // otherwise nearest upcoming live first
+    })[0];
 }
 
 export function findUnplannedDraft(items: CalendarItem[], trackedId?: string | null) {
@@ -28,8 +38,7 @@ export function findUnplannedDraft(items: CalendarItem[], trackedId?: string | n
     isLive(item)
     && item.draft === true
     && item.ownership === 'LOCAL'
-    && item.desiredPublication?.twitch !== true
-    && item.desiredPublication?.google !== true);
+    && item.desiredPublication?.twitch !== true);
 }
 
 export function createUnplannedLiveItem(input: {
@@ -38,9 +47,11 @@ export function createUnplannedLiveItem(input: {
   title?: string;
   twitchCategoryId?: string;
   provisionalMs?: number;
+  publishGoogle?: boolean;
 }): CalendarItem {
   const title = input.title?.trim().slice(0, 140) || 'Live non programmé';
   const provisionalMs = Math.max(60_000, input.provisionalMs ?? DEFAULT_UNPLANNED_PROVISIONAL_MS);
+  const publishGoogle = input.publishGoogle === true;
   return {
     id: input.id,
     localId: input.id,
@@ -54,10 +65,10 @@ export function createUnplannedLiveItem(input: {
     editable: true,
     draft: true,
     twitchCategoryId: input.twitchCategoryId,
-    desiredPublication: { local: true, twitch: false, google: false },
+    desiredPublication: { local: true, twitch: false, google: publishGoogle },
     providers: {
       twitch: { status: 'not-published' },
-      google: { status: 'not-published' },
+      google: { status: publishGoogle ? 'pending' : 'not-published' },
     },
   };
 }
