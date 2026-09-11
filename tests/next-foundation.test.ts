@@ -53,6 +53,27 @@ describe('Google Calendar OAuth et synchronisation', () => {
     await expect(client.exchangeCode('code', 'bad', attempt)).rejects.toThrow('invalide'); expect(persist).not.toHaveBeenCalled();
   });
 
+  it('réutilise le même PKCE pendant une autorisation en attente puis le renouvelle après succès', async () => {
+    const clientId = 'client-idempotent';
+    const redirect = 'http://127.0.0.1:47832/api/v1/google/oauth/callback';
+    const first = createGoogleOAuthAttempt(clientId, redirect);
+    const second = createGoogleOAuthAttempt(clientId, redirect);
+    expect(second).toEqual(first);
+
+    const request = vi.fn(async () => new Response(JSON.stringify({ access_token: 'ok', refresh_token: 'refresh', expires_in: 3600 }), {
+      status: 200, headers: { 'content-type': 'application/json' },
+    }));
+    const client = new GoogleCalendarClient(clientId, null, async () => undefined, request as typeof fetch);
+    await client.exchangeCode('code', first.state, first);
+
+    const afterSuccess = createGoogleOAuthAttempt(clientId, redirect);
+    expect(afterSuccess.state).not.toBe(first.state);
+    expect(afterSuccess.verifier).not.toBe(first.verifier);
+    await client.disconnect();
+    const afterDisconnect = createGoogleOAuthAttempt(clientId, redirect);
+    expect(afterDisconnect.state).not.toBe(afterSuccess.state);
+  });
+
   it('n’autorise pas une réponse OAuth tardive à ressusciter des credentials après déconnexion', async () => {
     const attempt = createGoogleOAuthAttempt('client', 'http://127.0.0.1/callback');
     let release!: (response: Response) => void; const pending = new Promise<Response>(resolve => { release = resolve; });
