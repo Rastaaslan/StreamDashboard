@@ -150,15 +150,36 @@ export class PlanningOrchestrator {
         return structuredClone(item);
       }
 
-      delete item.conflict;
-      delete link.remoteRevision;
+      const remoteId = this.remoteId(item, provider);
+      const remoteProvider = this.providers[provider];
+      if (!remoteId) throw new Error(`Objet distant ${provider} introuvable pour appliquer la version locale.`);
+      if (!remoteProvider) {
+        link.status = 'conflict';
+        link.lastError = `${provider} non connecté. Le conflit reste ouvert.`;
+        await this.persist(this.items);
+        throw new Error(link.lastError);
+      }
+
+      // Keep the latest remote revision/ETag and the conflict itself until the
+      // provider confirms the write. This prevents a blind overwrite and ensures a
+      // failed If-Match/update cannot make the UI believe the conflict was resolved.
       link.deletedRemotely = false;
       link.status = 'pending';
       await this.persist(this.items);
-      await this.publishOne(item, provider, true);
-      const currentLink = item.providers?.[provider];
-      if (currentLink?.status !== 'synced') {
-        throw new Error(currentLink?.lastError ?? `Impossible d’appliquer la version locale sur ${provider}.`);
+      try {
+        const result = await remoteProvider.update(remoteId, item, link.remoteRevision);
+        if (result.revision) link.remoteRevision = result.revision;
+        link.status = 'synced';
+        link.lastSyncedAt = new Date().toISOString();
+        link.deletedRemotely = false;
+        delete link.lastError;
+        delete item.conflict;
+        await this.persist(this.items);
+      } catch (error) {
+        link.status = 'conflict';
+        link.lastError = error instanceof Error ? error.message : String(error);
+        await this.persist(this.items);
+        throw error;
       }
       return structuredClone(item);
     });
@@ -230,11 +251,11 @@ export class PlanningOrchestrator {
         await this.publishOne(item, name, true);
         continue;
       }
-      if (updateLinked) await this.publishOne(item, name, false, true);
+      if (updateLinked) await this.publishOne(item, name);
     }
   }
 
-  private async publishOne(item: CalendarItem, name: ProviderName, explicitRetry = false, forceUpdate = false) {
+  private async publishOne(item: CalendarItem, name: ProviderName, explicitRetry = false) {
     const desired = item.desiredPublication?.[name] ?? false;
     item.providers ??= {};
     const existingRemoteId = this.remoteId(item, name);
@@ -253,13 +274,13 @@ export class PlanningOrchestrator {
 
     link.status = 'pending';
     await this.persist(this.items);
-    await this.attempt(item, name, async provider => {
+    await this.attempt(item, name, async remoteProvider => {
       const remoteId = this.remoteId(item, name);
       if (remoteId) {
-        const result = await provider.update(remoteId, item, link.remoteRevision);
+        const result = await remoteProvider.update(remoteId, item, link.remoteRevision);
         link.remoteRevision = result.revision;
       } else {
-        const result = await provider.create(item);
+        const result = await remoteProvider.create(item);
         link.remoteId = result.id;
         link.remoteRevision = result.revision;
         link.calendarId = result.calendarId ?? link.calendarId;
@@ -274,7 +295,7 @@ export class PlanningOrchestrator {
     const link = this.ensureLink(item, name, remoteId);
     link.status = 'pending';
     await this.persist(this.items);
-    const ok = await this.attempt(item, name, provider => provider.delete(remoteId, item, link.remoteRevision));
+    const ok = await this.attempt(item, name, remoteProvider => remoteProvider.delete(remoteId, item, link.remoteRevision));
     if (ok) {
       this.clearRemoteIdentity(item, name);
       link.status = 'not-published';
