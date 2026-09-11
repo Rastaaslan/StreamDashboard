@@ -14,7 +14,6 @@ export interface PlanningUpdateOptions {
 
 /**
  * Coordinates durable local intent with independent remote providers.
- *
  * Provider failures never discard the local item. `desiredPublication` records what
  * the user wants, while each ProviderLink records what actually happened remotely.
  */
@@ -101,18 +100,31 @@ export class PlanningOrchestrator {
       if (item.conflict?.provider === provider && desired) {
         throw new Error(`Conflit ${provider} non résolu — choisissez d’abord la version locale ou distante.`);
       }
-      if (!desired && this.remoteId(item, provider)) {
+
+      if (!desired) {
+        const remoteId = this.remoteId(item, provider);
+        if (!remoteId) {
+          item.providers ??= {};
+          const link = item.providers[provider] ??= { status: 'not-published' };
+          link.status = 'not-published';
+          link.deletedRemotely = false;
+          delete link.lastError;
+          await this.persist(this.items);
+          return structuredClone(item);
+        }
         if (provider === 'twitch' && item.twitchRecurring && !options.confirmRecurring) {
           throw new Error('Suppression explicite de la série Twitch récurrente requise.');
         }
         if (!await this.unpublishOne(item, provider)) {
           throw new Error(item.providers?.[provider]?.lastError ?? `Impossible de retirer la publication ${provider}.`);
         }
-      } else {
-        await this.publishOne(item, provider, true);
-        if (item.providers?.[provider]?.status !== 'synced') {
-          throw new Error(item.providers?.[provider]?.lastError ?? `Impossible de republier sur ${provider}.`);
-        }
+        return structuredClone(item);
+      }
+
+      await this.publishOne(item, provider, true);
+      const currentLink = item.providers?.[provider];
+      if (currentLink?.status !== 'synced') {
+        throw new Error(currentLink?.lastError ?? `Impossible de republier sur ${provider}.`);
       }
       return structuredClone(item);
     });
@@ -138,15 +150,16 @@ export class PlanningOrchestrator {
         return structuredClone(item);
       }
 
-      // The user explicitly chose the local version. Removing the stale revision is
-      // intentional: optimistic concurrency must no longer reject that explicit choice.
       delete item.conflict;
       delete link.remoteRevision;
       link.deletedRemotely = false;
       link.status = 'pending';
       await this.persist(this.items);
       await this.publishOne(item, provider, true);
-      if (link.status !== 'synced') throw new Error(link.lastError ?? `Impossible d’appliquer la version locale sur ${provider}.`);
+      const currentLink = item.providers?.[provider];
+      if (currentLink?.status !== 'synced') {
+        throw new Error(currentLink?.lastError ?? `Impossible d’appliquer la version locale sur ${provider}.`);
+      }
       return structuredClone(item);
     });
   }
@@ -224,10 +237,12 @@ export class PlanningOrchestrator {
   private async publishOne(item: CalendarItem, name: ProviderName, explicitRetry = false, forceUpdate = false) {
     const desired = item.desiredPublication?.[name] ?? false;
     item.providers ??= {};
+    const existingRemoteId = this.remoteId(item, name);
     const link = item.providers[name] ??= { status: desired ? 'pending' : 'not-published' };
+    if (existingRemoteId && !link.remoteId) link.remoteId = existingRemoteId;
 
     if (!desired) {
-      if (!this.remoteId(item, name)) link.status = 'not-published';
+      if (!existingRemoteId) link.status = 'not-published';
       return;
     }
     if (link.deletedRemotely && !explicitRetry) return;
@@ -240,7 +255,7 @@ export class PlanningOrchestrator {
     await this.persist(this.items);
     await this.attempt(item, name, async provider => {
       const remoteId = this.remoteId(item, name);
-      if (remoteId && (forceUpdate || link.remoteId)) {
+      if (remoteId) {
         const result = await provider.update(remoteId, item, link.remoteRevision);
         link.remoteRevision = result.revision;
       } else {
