@@ -65,7 +65,7 @@ export function toRemoteDashboardState(state: DashboardState): RemoteDashboardSt
       activeAudioInputs: [...state.obs.activeAudioInputs],
       mediaInputs: [...state.obs.mediaInputs],
     },
-    settings: { confirmStop: state.settings.confirmStop },
+    settings: { confirmStop: state.settings.confirmStop, streamerName: state.settings.streamerName },
     ...(state.preflight ? { preflight: { ...state.preflight } } : {}),
   };
 }
