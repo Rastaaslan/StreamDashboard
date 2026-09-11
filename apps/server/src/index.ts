@@ -12,6 +12,7 @@ import {
   createGoogleOAuthAttempt,
   GoogleCalendarClient,
   type GoogleEvent,
+  type GoogleEventInput,
   type GoogleOAuthAttempt,
   type GoogleTokens,
 } from '../../../integrations/google-calendar/src/client.js';
@@ -27,7 +28,6 @@ import {
   protocolVersion,
   type CalendarItem,
   type ChecklistItem,
-  type DashboardEvent,
   type DashboardSettings,
   type DashboardState,
   type PreflightState,
@@ -228,6 +228,17 @@ function sameCalendarData(local: CalendarItem, remote: GoogleEvent) {
     && Boolean(local.allDay) === Boolean(remote.allDay)
     && Date.parse(local.startAtUtc) === Date.parse(remote.startAtUtc)
     && Date.parse(local.endAtUtc) === Date.parse(remote.endAtUtc);
+}
+
+function googleEventInput(item: CalendarItem): GoogleEventInput {
+  return {
+    localId: item.localId ?? item.id,
+    title: item.title,
+    description: item.description,
+    startAtUtc: item.startAtUtc,
+    endAtUtc: item.endAtUtc,
+    allDay: item.allDay,
+  };
 }
 
 function overlapsWindow(item: CalendarItem, timeMin: string, timeMax: string) {
@@ -520,7 +531,7 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
     remoteEnabled: local.settings.remoteEnabled === true,
   });
   const features = ['obs', 'twitch', 'preflight', 'timer', 'planning', 'checklist', 'deck', 'mobile-remote', 'unplanned-live-tracking'];
-  if (googleClientId) features.push('google-calendar');
+  if (googleClientId) features.push('google-calendar', 'unplanned-live-google-sync');
   const capabilities: ServerCapabilities = {
     protocolVersion,
     serverVersion: options.version ?? '1.1.0',
@@ -582,8 +593,14 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
           reconnects: 0,
         },
         google: {
-          ok: !googleClientId || google.connected,
-          detail: !googleClientId ? 'Google Calendar optionnel · non configuré' : google.connected ? `Google Calendar connecté${local.google.targetCalendarId ? ' · calendrier sélectionné' : ''}` : (googleError ?? 'Google Calendar non connecté'),
+          ok: !googleClientId || (google.connected && !googleError),
+          detail: !googleClientId
+            ? 'Google Calendar optionnel · non configuré'
+            : googleError
+              ? googleError
+              : google.connected
+                ? `Google Calendar connecté${local.google.targetCalendarId ? ' · calendrier sélectionné' : ''}`
+                : 'Google Calendar non connecté',
           reconnects: 0,
         },
       },
@@ -664,27 +681,13 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
       create: async item => {
         const calendarId = item.providers?.google?.calendarId ?? local.google.targetCalendarId;
         if (!calendarId) throw new Error('Choisissez un calendrier Google cible.');
-        const event = await google.create(calendarId, {
-          localId: item.localId ?? item.id,
-          title: item.title,
-          description: item.description,
-          startAtUtc: item.startAtUtc,
-          endAtUtc: item.endAtUtc,
-          allDay: item.allDay,
-        });
+        const event = await google.create(calendarId, googleEventInput(item));
         return { id: event.id, revision: event.etag, calendarId };
       },
       update: async (id, item, revision) => {
         const calendarId = item.providers?.google?.calendarId ?? local.google.targetCalendarId;
         if (!calendarId) throw new Error('Calendrier Google lié introuvable.');
-        const event = await google.update(calendarId, id, {
-          localId: item.localId ?? item.id,
-          title: item.title,
-          description: item.description,
-          startAtUtc: item.startAtUtc,
-          endAtUtc: item.endAtUtc,
-          allDay: item.allDay,
-        }, revision);
+        const event = await google.update(calendarId, id, googleEventInput(item), revision);
         return { revision: event.etag };
       },
       delete: async (id, item, revision) => {
@@ -780,66 +783,141 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
   let observedObsStreaming = false;
   let obsConnectionObserved = false;
   let streamTrackingQueue: Promise<void> = Promise.resolve();
+  let unplannedGoogleQueue: Promise<void> = Promise.resolve();
 
   const findTrackedDraft = () => findUnplannedDraft(local.planning, trackedUnplannedLiveId);
   const shouldPublishUnplannedToGoogle = () => google.connected && Boolean(local.google.targetCalendarId);
-  const syncUnplannedWithGoogle = async (item: CalendarItem) => {
-    if (item.desiredPublication?.google !== true) return;
-    try {
-      await planning().retry(item.id, 'google');
-      local.google.lastSyncedAt = new Date().toISOString();
-      googleError = null;
-    } catch (error) {
-      googleError = error instanceof Error ? error.message : String(error);
-      void Promise.resolve(logger.warn(`Impossible de synchroniser le live non programmé « ${item.title} » vers Google Calendar.`, error)).catch(() => undefined);
-    } finally {
+
+  const recordUnplannedGoogleFailure = async (id: string, error: unknown) => {
+    const message = error instanceof Error ? error.message : String(error);
+    await plan(async () => {
+      const current = local.planning.find(item => item.id === id);
+      if (!current || current.desiredPublication?.google !== true) return;
+      current.providers ??= {};
+      const link = current.providers.google ??= { status: 'error' };
+      link.status = 'error';
+      link.lastError = message;
+      googleError = message;
       await save();
       broadcast();
+    });
+    void Promise.resolve(logger.warn(`Impossible de synchroniser le live non programmé vers Google Calendar : ${message}`)).catch(() => undefined);
+  };
+
+  const syncUnplannedGoogleNow = async (id: string) => {
+    const snapshotItem = local.planning.find(item => item.id === id);
+    if (!snapshotItem || snapshotItem.desiredPublication?.google !== true) return;
+    const item = structuredClone(snapshotItem);
+    const calendarId = item.providers?.google?.calendarId ?? local.google.targetCalendarId;
+    if (!google.connected || !calendarId) {
+      await recordUnplannedGoogleFailure(id, new Error('Google Calendar non connecté ou calendrier cible indisponible.'));
+      return;
+    }
+
+    try {
+      const linkedId = item.providers?.google?.remoteId;
+      const event = linkedId
+        ? await google.update(calendarId, linkedId, googleEventInput(item), item.providers?.google?.remoteRevision)
+        : await google.create(calendarId, googleEventInput(item));
+      let shouldRemoveUnexpectedCreate = false;
+      await plan(async () => {
+        const current = local.planning.find(value => value.id === id);
+        if (!current || current.desiredPublication?.google !== true) {
+          shouldRemoveUnexpectedCreate = !linkedId;
+          return;
+        }
+        current.providers ??= {};
+        const link = current.providers.google ??= { status: 'pending' };
+        if (link.remoteId && link.remoteId !== event.id) {
+          link.status = 'conflict';
+          link.lastError = 'Le lien Google a changé pendant la synchronisation automatique.';
+          return;
+        }
+        link.status = 'synced';
+        link.remoteId = event.id;
+        link.calendarId = calendarId;
+        link.remoteRevision = event.etag;
+        link.lastSyncedAt = new Date().toISOString();
+        link.deletedRemotely = false;
+        delete link.lastError;
+        local.google.lastSyncedAt = link.lastSyncedAt;
+        googleError = null;
+        await save();
+        broadcast();
+      });
+      if (shouldRemoveUnexpectedCreate) {
+        await google.delete(calendarId, event.id, event.etag).catch(error => {
+          void Promise.resolve(logger.warn('Nettoyage d’un événement Google créé pendant une dépublication concurrente impossible.', error)).catch(() => undefined);
+        });
+      }
+    } catch (error) {
+      await recordUnplannedGoogleFailure(id, error);
     }
   };
 
-  const startUnplannedLive = async () => plan(async () => {
-    const now = Date.now();
-    const existingDraft = findTrackedDraft();
-    if (existingDraft) { trackedUnplannedLiveId = existingDraft.id; return; }
-    if (findScheduledLiveForStart(local.planning, now)) { trackedUnplannedLiveId = null; return; }
+  const queueUnplannedGoogleSync = (id: string) => {
+    const operation = unplannedGoogleQueue.then(() => syncUnplannedGoogleNow(id));
+    unplannedGoogleQueue = operation.catch(logError);
+  };
 
-    let title = 'Live non programmé';
-    let twitchCategoryId: string | undefined;
-    if (twitch.state.connected) {
-      try {
-        const metadata = await twitch.getChannelMetadata();
-        if (metadata.title.trim()) title = metadata.title.trim().slice(0, 140);
-        if (metadata.gameId && metadata.gameId !== '0') twitchCategoryId = metadata.gameId;
-      } catch (error) {
-        void Promise.resolve(logger.warn('Impossible de récupérer les métadonnées Twitch pour le live non programmé.', error)).catch(() => undefined);
+  const startUnplannedLive = async () => {
+    let googleSyncId: string | null = null;
+    await plan(async () => {
+      const now = Date.now();
+      const existingDraft = findTrackedDraft();
+      if (existingDraft) {
+        trackedUnplannedLiveId = existingDraft.id;
+        if (existingDraft.desiredPublication?.google === true) googleSyncId = existingDraft.id;
+        return;
       }
-    }
-    const id = randomUUID();
-    const item = createUnplannedLiveItem({
-      id,
-      now,
-      title,
-      twitchCategoryId,
-      publishGoogle: shouldPublishUnplannedToGoogle(),
-    });
-    local.planning.push(item);
-    trackedUnplannedLiveId = id;
-    invalidatePreflight();
-    await save();
-    broadcast();
-    await syncUnplannedWithGoogle(item);
-  });
+      if (findScheduledLiveForStart(local.planning, now)) {
+        trackedUnplannedLiveId = null;
+        return;
+      }
 
-  const stopUnplannedLive = async () => plan(async () => {
-    const item = findTrackedDraft();
-    trackedUnplannedLiveId = null;
-    if (!item) return;
-    finalizeUnplannedLive(item, Date.now());
-    await save();
-    broadcast();
-    await syncUnplannedWithGoogle(item);
-  });
+      let title = 'Live non programmé';
+      let twitchCategoryId: string | undefined;
+      if (twitch.state.connected) {
+        try {
+          const metadata = await twitch.getChannelMetadata();
+          if (metadata.title.trim()) title = metadata.title.trim().slice(0, 140);
+          if (metadata.gameId && metadata.gameId !== '0') twitchCategoryId = metadata.gameId;
+        } catch (error) {
+          void Promise.resolve(logger.warn('Impossible de récupérer les métadonnées Twitch pour le live non programmé.', error)).catch(() => undefined);
+        }
+      }
+      const id = randomUUID();
+      const item = createUnplannedLiveItem({
+        id,
+        now,
+        title,
+        twitchCategoryId,
+        publishGoogle: shouldPublishUnplannedToGoogle(),
+      });
+      local.planning.push(item);
+      trackedUnplannedLiveId = id;
+      if (item.desiredPublication?.google === true) googleSyncId = id;
+      invalidatePreflight();
+      await save();
+      broadcast();
+    });
+    if (googleSyncId) queueUnplannedGoogleSync(googleSyncId);
+  };
+
+  const stopUnplannedLive = async () => {
+    let googleSyncId: string | null = null;
+    const stoppedAt = Date.now();
+    await plan(async () => {
+      const item = findTrackedDraft();
+      trackedUnplannedLiveId = null;
+      if (!item) return;
+      finalizeUnplannedLive(item, stoppedAt);
+      if (item.desiredPublication?.google === true) googleSyncId = item.id;
+      await save();
+      broadcast();
+    });
+    if (googleSyncId) queueUnplannedGoogleSync(googleSyncId);
+  };
 
   const queueStreamTracking = (operation: () => Promise<void>) => {
     streamTrackingQueue = streamTrackingQueue.then(operation).catch(logError);
@@ -1036,6 +1114,7 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
       const id = String(req.params.id);
       if (!['twitch', 'google'].includes(provider)) throw new Error('Provider invalide.');
       await plan(async () => planning().retry(id, provider as 'twitch' | 'google', { confirmRecurring: req.body?.confirmRecurring === true }));
+      if (provider === 'google') googleError = null;
       res.json(await changed());
     } catch (error) { next(error); }
   };
@@ -1047,6 +1126,7 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
       const strategy = String(req.body?.strategy ?? '');
       if (!['twitch', 'google'].includes(provider) || !['local', 'remote'].includes(strategy)) throw new Error('Résolution de conflit invalide.');
       await plan(async () => planning().resolveConflict(id, provider as 'twitch' | 'google', strategy as 'local' | 'remote'));
+      if (provider === 'google') googleError = null;
       invalidatePreflight();
       res.json(await changed());
     } catch (error) { next(error); }
@@ -1209,12 +1289,14 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
       const calendar = googleCalendars.find(value => value.id === id);
       if (!calendar?.writable) throw new Error('Choisissez un calendrier Google modifiable.');
       local.google.targetCalendarId = id;
+      googleError = null;
       res.json(await changed());
     } catch (error) { next(error); }
   });
   app.post('/api/v1/google/disconnect', async (req, res, next) => {
     try {
       if (!requireLocal(req, res)) return;
+      googleOAuthAttempt = null;
       await google.disconnect();
       googleCalendars = [];
       googleError = null;
@@ -1441,6 +1523,7 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
     if (timerExpiry) clearTimeout(timerExpiry);
     if (remoteActivitySaveTimer) clearTimeout(remoteActivitySaveTimer);
     await streamTrackingQueue.catch(() => undefined);
+    await unplannedGoogleQueue.catch(() => undefined);
     twitch.close();
     for (const ws of sockets.clients) ws.terminate();
     sockets.close();
