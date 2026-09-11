@@ -15,7 +15,8 @@ describe('câblage live non programmé', () => {
   });
 
   it('capture la vraie heure d’arrêt avant toute attente réseau', () => {
-    expect(server).toMatch(/const stoppedAt = Date\.now\(\);[\s\S]*?finalizeUnplannedLive\(item, stoppedAt\);[\s\S]*?await save\(\);\s*broadcast\(\);[\s\S]*?queueUnplannedGoogleSync/);
+    expect(server).toMatch(/const observedAt = Date\.now\(\);[\s\S]*?queueStreamTracking\(\(\) => currentStreaming \? startUnplannedLive\(observedAt\) : stopUnplannedLive\(observedAt\)\);/);
+    expect(server).toContain('finalizeUnplannedLive(item, observedAt);');
   });
 
   it('sérialise Google séparément du suivi OBS et isole ses erreurs', () => {
@@ -26,7 +27,7 @@ describe('câblage live non programmé', () => {
     expect(server).toContain('await recordUnplannedGoogleFailure(id, error)');
   });
 
-  it('attend proprement les deux files uniquement à la fermeture de l’application', () => {
-    expect(server).toMatch(/await streamTrackingQueue\.catch\(\(\) => undefined\);\s*await unplannedGoogleQueue\.catch\(\(\) => undefined\);/);
+  it('attend proprement les files de fond uniquement à la fermeture de l’application', () => {
+    expect(server).toMatch(/await streamTrackingQueue\.catch\(\(\) => undefined\);\s*await unplannedMetadataQueue\.catch\(\(\) => undefined\);\s*await unplannedGoogleQueue\.catch\(\(\) => undefined\);/);
   });
 });
