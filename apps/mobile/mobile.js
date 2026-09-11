@@ -7,7 +7,7 @@ let ws = null;
 let retry = 500;
 let reconnectTimer = null;
 
-const REQUEST_TIMEOUT_MS = 12_000;
+const REQUEST_TIMEOUT_MS = 30_000;
 const authHeaders = () => ({ 'content-type': 'application/json', authorization: `Device ${credential}` });
 const note = value => { $('message').textContent = String(value || ''); };
 const text = (tag, value, className) => {
