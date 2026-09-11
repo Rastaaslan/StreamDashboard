@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { GoogleCalendarClient } from '../integrations/google-calendar/src/client.js';
+import { createGoogleOAuthAttempt, GoogleCalendarClient } from '../integrations/google-calendar/src/client.js';
 import { TwitchClient } from '../integrations/twitch/src/client.js';
 import { PlanningOrchestrator, type PlanningProvider } from '../packages/core/src/planning.js';
 import { parseRemoteCommand, toRemoteDashboardState } from '../apps/server/src/remote-policy.js';
@@ -84,10 +84,9 @@ describe('audit Google Calendar', () => {
     const request = vi.fn(async () => new Response(JSON.stringify({ access_token: 'late', refresh_token: 'late-r', expires_in: 3600 }), {
       status: 200, headers: { 'content-type': 'application/json' },
     }));
-    const state = 'state-value';
-    const attempt = { authorizationUrl: '', state, verifier: 'verifier', redirectUri: 'http://127.0.0.1/callback' };
-    const client = new GoogleCalendarClient('client', null, persist, request as typeof fetch);
-    const exchange = client.exchangeCode('code', state, attempt);
+    const attempt = createGoogleOAuthAttempt('client-race', 'http://127.0.0.1/callback');
+    const client = new GoogleCalendarClient('client-race', null, persist, request as typeof fetch);
+    const exchange = client.exchangeCode('code', attempt.state, attempt);
     await started;
     await client.disconnect();
     release();
