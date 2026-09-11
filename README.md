@@ -18,6 +18,14 @@ L'overlay timer StreamDashboard est disponible sur :
 
 `http://127.0.0.1:47832/overlay/timer/`
 
+### Planning et lives non programmés
+
+Le planning orchestre indépendamment les destinations **local**, **Twitch** et **Google Calendar**, avec statuts par provider, retry ciblé, suppression explicite et résolution de conflits.
+
+Si OBS passe réellement en streaming alors qu'aucun live planifié correspondant n'est actif ou imminent, StreamDashboard crée automatiquement un événement **local uniquement** `Live non programmé`. Il ne publie rien par surprise sur Twitch ou Google. À l'arrêt réel d'OBS, l'heure de fin est enregistrée dans le planning.
+
+La page **Planning** peut aussi générer localement une image PNG verticale **1080 × 1350** des prochains lives via **Image réseaux**. Les événements personnels ne sont jamais inclus dans cet export.
+
 ### Connexion Twitch
 
 Le package officiel contient uniquement le Client ID public de StreamDashboard, sans Client Secret. Dans **Réglages**, cliquez sur **Connecter Twitch**, ouvrez la page Twitch proposée et saisissez le code affiché. Le Device Code Grant détecte la validation automatiquement.
@@ -74,13 +82,13 @@ npm run desktop:make
 
 ## Architecture
 
-- `packages/core` : règles métier indépendantes de toute plateforme ;
+- `packages/core` : règles métier indépendantes de toute plateforme, dont orchestration planning et suivi des lives non programmés ;
 - `packages/contracts` : protocole JSON officiel version 1 et projection mobile ;
 - `integrations/obs` : OBS WebSocket, reconnexion et confirmations ;
 - `integrations/twitch` : OAuth Device Code, planning et préflight chaîne ;
 - `integrations/google-calendar` : OAuth PKCE et CRUD/synchronisation Calendar ;
 - `apps/server` : API HTTP/WebSocket, command/state bus, orchestration et persistance ;
-- `apps/web` : cockpit renderer sans accès Node ;
+- `apps/web` : cockpit renderer sans accès Node, dont export local de l'image planning ;
 - `apps/mobile` : télécommande LAN à privilèges réduits ;
 - `apps/desktop` : hôte Electron Windows, cycle de vie et stockage sécurisé.
 
