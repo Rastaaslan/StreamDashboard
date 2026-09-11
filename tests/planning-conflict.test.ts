@@ -21,7 +21,7 @@ describe('résolution explicite des conflits planning', () => {
     expect(google.update).not.toHaveBeenCalled();
   });
 
-  it('le choix local est une action explicite et force une nouvelle révision distante', async () => {
+  it('le choix local reste protégé par la dernière révision distante', async () => {
     const google = provider();
     const planning = new PlanningOrchestrator([], { google }, async () => undefined);
     const item = await planning.create({ ...event, desiredPublication: { local: true, twitch: false, google: true } });
@@ -30,7 +30,8 @@ describe('résolution explicite des conflits planning', () => {
     expect(resolved.title).toBe('Local');
     expect(resolved.conflict).toBeUndefined();
     expect(resolved.providers?.google?.status).toBe('synced');
-    expect(google.update).toHaveBeenCalledWith('remote-1', expect.objectContaining({ title: 'Local' }), undefined);
+    expect(resolved.providers?.google?.remoteRevision).toBe('etag-new');
+    expect(google.update).toHaveBeenCalledWith('remote-1', expect.objectContaining({ title: 'Local' }), 'etag-old');
   });
 
   it('un retry générique refuse de choisir implicitement une version en conflit', async () => {
