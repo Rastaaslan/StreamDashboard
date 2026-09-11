@@ -19,7 +19,30 @@ Cette version branche réellement le planning multi-provider, Google Calendar, l
 
 Les nouvelles connexions Twitch demandent `channel:manage:schedule` pour le planning et `channel:manage:broadcast` pour appliquer titre/catégorie avant le live. Une ancienne session ne possédant que le scope planning reste utilisable pour le planning ; le préflight demandera explicitement une reconnexion Twitch si le scope broadcast manque.
 
-Le bouton **Préparer** ne démarre jamais la diffusion. Il prépare OBS, remet le timer à 05:00 hors live, rafraîchit la Browser Source timer configurée et prépare les métadonnées du prochain live sur Twitch si sa catégorie est connue.
+Le bouton **Préparer** ne démarre jamais la diffusion. Il prépare OBS, remet le timer à 05:00 hors live, rafraîchit la Browser Source timer configurée et prépare les métadonnées du prochain live sur Twitch si sa catégorie est connue. Si le planning possède déjà le `game_id` Twitch exact, le préflight le réutilise sans recherche de catégorie supplémentaire.
+
+## Live lancé sans programmation
+
+StreamDashboard observe l’état réel `streaming` d’OBS. Lorsqu’un live démarre sans événement Live correspondant dans la fenêtre de démarrage :
+
+- un événement **local uniquement** est créé automatiquement dans le planning ;
+- le titre Twitch courant est repris si disponible, sinon `Live non programmé` ;
+- aucune publication Twitch ou Google n’est déclenchée automatiquement ;
+- l’événement reste en brouillon pendant la diffusion avec une fin provisoire ;
+- au vrai passage d’OBS à `streaming=false`, la fin est remplacée par l’heure réelle et le brouillon devient un événement historique normal ;
+- une reconnexion OBS ou un redémarrage du dashboard retrouve le brouillon local au lieu d’en créer un second.
+
+Si un live planifié est déjà actif ou commence dans la fenêtre prévue, aucun doublon local n’est créé. Les règles de détection/création/finalisation vivent dans `packages/core/src/live-planning.ts` et sont testées indépendamment du serveur.
+
+## Export image du planning
+
+La page **Planning** contient **Image réseaux**. L’export :
+
+- produit un PNG vertical **1080 × 1350** sans dépendance externe ;
+- sélectionne uniquement les prochains événements `Live` futurs (jamais les événements personnels Google) ;
+- affiche jusqu’à sept rendez-vous, leur date/heure, titre et catégorie Twitch si connue ;
+- utilise le nom de streamer configuré et une décoration simple cohérente avec le cockpit ;
+- est généré entièrement en local par Canvas, sans upload de données.
 
 ## Timer OBS natif StreamDashboard
 
@@ -42,6 +65,8 @@ Dans OBS, créer une nouvelle **Source navigateur** pour StreamDashboard pointan
 7. Tester modes/scènes préconfigurés, timer, audio dB, médias, Préparer, puis START/STOP avec confirmations.
 8. Couper/rétablir le Wi-Fi et vérifier la reconnexion + **snapshot mobile redacted** (état utile uniquement, sans chemins/configuration desktop).
 9. Révoquer le téléphone depuis le PC : la socket existante doit être coupée immédiatement et la reconnexion refusée.
+
+Les appels HTTP du mobile ont un timeout borné : un PC qui ne répond plus ne doit pas laisser la télécommande bloquée indéfiniment. La date de dernière activité d’un device est persistée de façon groupée afin d’éviter une écriture JSON à chaque requête.
 
 ### HTTP, PWA et modèle de menace
 
@@ -66,6 +91,6 @@ La page mobile fonctionne comme télécommande web en HTTP LAN, mais un Service 
 
 Automatique sur chaque HEAD : `npm test`, `npm run build`, `npm run security:check`, `node --check apps/mobile/mobile.js`, `npm run mobile:smoke`, audit runtime, package Windows + smoke Electron packagé.
 
-Manuel obligatoire : scène réellement sélectionnée avant Start, Start/Stop OBS réel, timer 05:00 + nouvel overlay visible, audio cohérent en dB, Google OAuth/CRUD/sync/conflit/journée entière, Android pairing/reconnexion/révocation.
+Manuel obligatoire : scène réellement sélectionnée avant Start, Start/Stop OBS réel, timer 05:00 + nouvel overlay visible, audio cohérent en dB, détection d’un live non programmé, export image du planning, Google OAuth/CRUD/sync/conflit/journée entière, Android pairing/reconnexion/révocation.
 
 L’audit des **dépendances runtime** doit rester propre. L’audit des dépendances de développement est suivi séparément dans l’issue #23 : ne jamais masquer son résultat dans un compte-rendu même si la CI le marque non bloquant.
