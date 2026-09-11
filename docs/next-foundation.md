@@ -11,9 +11,9 @@ Cette version branche réellement le planning multi-provider, Google Calendar, l
 3. Créer un client OAuth **Application de bureau**. Aucun secret client n’est embarqué : seul le Client ID public est requis.
 4. Configurer ce Client ID avec `GOOGLE_CLIENT_ID` lors de la préparation de la distribution (ou `resources/distribution.json` en développement), puis reconstruire l’application.
 5. StreamDashboard utilise Authorization Code + PKCE, `state` aléatoire et callback loopback `127.0.0.1`.
-6. Le scope utilisé est `https://www.googleapis.com/auth/calendar`. Les tokens sont stockés via le SecretStore Electron et ne sont jamais renvoyés dans l’état public.
+6. Les scopes demandés sont volontairement limités à `https://www.googleapis.com/auth/calendar.events` pour les événements et `https://www.googleapis.com/auth/calendar.calendarlist.readonly` pour lister les calendriers. Les tokens sont stockés via le SecretStore Electron et ne sont jamais renvoyés dans l’état public/mobile.
 7. Dans Réglages, connecter Google, puis choisir un calendrier avec rôle `owner` ou `writer`.
-8. Tester import, create, update, delete, conflit, suppression distante puis redémarrage de StreamDashboard.
+8. Tester import, événements horaires **et journée entière**, create, update, delete, conflit, suppression distante puis redémarrage de StreamDashboard.
 
 ## Twitch / préflight
 
@@ -23,7 +23,7 @@ Le bouton **Préparer** ne démarre jamais la diffusion. Il prépare OBS, remet 
 
 ## Timer OBS natif StreamDashboard
 
-StreamDashboard expose maintenant un overlay timer indépendant de StreamTool :
+StreamDashboard expose un overlay timer indépendant de StreamTool :
 
 `http://127.0.0.1:47832/overlay/timer/`
 
@@ -39,8 +39,8 @@ Dans OBS, créer une nouvelle **Source navigateur** pour StreamDashboard pointan
 4. Sur Android, ouvrir l’URL `/mobile/`. L’ID/code peuvent être préremplis si le lien de pairing a été utilisé ; sinon les saisir manuellement.
 5. Le téléphone échange le code éphémère contre une credential dédiée. Cette credential est stockée localement sur le téléphone ; Twitch/Google/OBS ne sont jamais exposés au mobile.
 6. Les WebSockets n’utilisent pas la credential longue dans l’URL : le mobile obtient d’abord un ticket WS court, à usage unique.
-7. Tester scènes, timer, audio dB, médias, Préparer, puis START/STOP avec confirmations.
-8. Couper/rétablir le Wi-Fi et vérifier la reconnexion + snapshot complet.
+7. Tester modes/scènes préconfigurés, timer, audio dB, médias, Préparer, puis START/STOP avec confirmations.
+8. Couper/rétablir le Wi-Fi et vérifier la reconnexion + **snapshot mobile redacted** (état utile uniquement, sans chemins/configuration desktop).
 9. Révoquer le téléphone depuis le PC : la socket existante doit être coupée immédiatement et la reconnexion refusée.
 
 ### HTTP, PWA et modèle de menace
@@ -55,15 +55,17 @@ La page mobile fonctionne comme télécommande web en HTTP LAN, mais un Service 
 
 - seules `/api/v1/health` et `/api/v1/capabilities` sont lisibles à distance sans credential ;
 - `/api/v1/state`, `/api/v1/commands` et la génération de ticket WS exigent une credential device ;
+- l’état mobile est une projection explicitement nettoyée : pas de chemins locaux, identifiants Google, liste de devices ni configuration desktop ;
+- les commandes mobiles passent une allowlist dédiée : pas de `force:true`, enregistrement OBS, scène arbitraire, Browser Source arbitraire ni checklist admin ;
 - settings, diagnostics, planning CRUD, OAuth et administration devices restent PC-only ;
-- les codes de pairing expirent, sont à usage unique et limités en tentatives ;
+- les codes de pairing expirent, sont à usage unique et limités en tentatives ; les compteurs de rate-limit expirés sont nettoyés ;
 - les hashes de credentials devices sont persistés, jamais les credentials bruts ;
 - la révocation coupe les WebSockets déjà ouverts du device.
 
 ## Validation avant merge
 
-Automatique : `npm test`, `npm run build`, `npm run security:check`, `npm run smoke`, `npm run mobile:smoke`, package Windows + smoke Electron.
+Automatique sur chaque HEAD : `npm test`, `npm run build`, `npm run security:check`, `node --check apps/mobile/mobile.js`, `npm run mobile:smoke`, audit runtime, package Windows + smoke Electron packagé.
 
-Manuel obligatoire : scène réellement sélectionnée avant Start, Start/Stop OBS réel, timer 05:00 + nouvel overlay visible, audio cohérent en dB, Google OAuth/CRUD/sync/conflit, Android pairing/reconnexion/révocation.
+Manuel obligatoire : scène réellement sélectionnée avant Start, Start/Stop OBS réel, timer 05:00 + nouvel overlay visible, audio cohérent en dB, Google OAuth/CRUD/sync/conflit/journée entière, Android pairing/reconnexion/révocation.
 
-L’audit des **dépendances runtime** doit rester propre. L’audit des dépendances de développement est suivi séparément : ne jamais masquer son résultat dans un compte-rendu même si la CI le marque non bloquant.
+L’audit des **dépendances runtime** doit rester propre. L’audit des dépendances de développement est suivi séparément dans l’issue #23 : ne jamais masquer son résultat dans un compte-rendu même si la CI le marque non bloquant.
