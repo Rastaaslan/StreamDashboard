@@ -1,28 +1,66 @@
-# Architecture du futur client mobile
+# Architecture de la télécommande mobile
 
 ## Principe
 
-Le PC reste le hub maître : Android/iOS → protocole StreamDashboard → API PC → core → OBS/Twitch. Le téléphone ne contacte jamais OBS ou Twitch et ne reçoit jamais leurs credentials. `packages/contracts` reste sérialisable JSON et pourra être partagé en TypeScript ou exporté ultérieurement en JSON Schema/OpenAPI.
+Le PC reste le hub maître : **Android/iOS → protocole StreamDashboard → API PC → core → OBS/Twitch/Google**. Le téléphone ne contacte jamais OBS, Twitch ou Google et ne reçoit jamais leurs credentials.
+
+`packages/contracts` reste la source des structures partagées. Le mobile reçoit toutefois une **projection réduite** (`RemoteDashboardState`) : il n'a pas besoin de connaître les chemins Windows, la configuration OAuth, les calendriers Google, les appareils appairés ou les diagnostics internes.
 
 ## Transport et mode LAN
 
-L'API v1 (`/api/v1/*`, `/ws/v1`) ne contient aucune notion Electron ou localhost. Un client reçoit une `serverUrl` et peut utiliser HTTP(S)/WS(S). Le serveur distingue `desktop-local` de `remote-LAN`; aujourd'hui il écoute exclusivement en loopback par défaut. L'activation LAN future devra être explicite et pourra ajouter TLS avec certificate pinning sans modifier le core.
+Le serveur reste lié au loopback par défaut. L'activation **Télécommande LAN** est explicite et nécessite un redémarrage afin que le bind réseau soit clair et auditable.
 
-La découverte pourra utiliser mDNS/Bonjour ou un QR contenant une adresse candidate. L'identité logique du serveur et le pairing ne dépendront pas de l'IP, donc un changement DHCP ne nécessitera pas de réassociation complète.
+Le mode actuel utilise HTTP/WS sur réseau local privé. Il ne configure ni UPnP, ni port Internet, ni reverse proxy. Un futur HTTPS devra être conçu explicitement avant support, notamment parce que la distinction local/distant repose actuellement sur l'adresse de la socket et ne fait confiance à aucun header proxy.
 
-## Pairing prévu
+La télécommande web est servie sous `/mobile/`. En HTTP LAN elle fonctionne comme application web. L'installation PWA et le Service Worker ne sont activés qu'en contexte sécurisé HTTPS.
 
-1. Le desktop crée un challenge court, temporaire et à usage unique.
-2. Le QR/code transporte l'adresse, l'identifiant du challenge et une empreinte de confiance, jamais un token Twitch.
-3. Le mobile demande l'association ; le PC exige une validation visible.
-4. Le PC délivre un credential aléatoire propre à l'appareil.
+## Pairing implémenté
 
-Un appareil associé comportera `deviceId`, `deviceName`, `pairedAt`, `lastSeenAt`, `permissions` et `revoked`. Chaque credential sera révocable et rotatif indépendamment. Les routes LAN appliqueront authentification, expiration de session, limitation brute force, validation runtime et autorisation par commande. Aucun CORS `*` ne sera utilisé.
+1. Le desktop crée un challenge aléatoire court, temporaire et à usage unique.
+2. Le PC affiche ID/code et les URL LAN candidates.
+3. Le téléphone échange le challenge contre une credential aléatoire propre à l'appareil.
+4. Seul le hash SHA-256 de cette credential est persisté sur le PC.
+5. Pour ouvrir un WebSocket, le téléphone échange d'abord sa credential contre un ticket court à usage unique.
+6. La révocation d'un appareil invalide ses tickets et ferme immédiatement ses sockets existantes.
 
-## Bus uniques
+Les tentatives de pairing sont limitées ; les compteurs expirés sont nettoyés pour ne pas croître indéfiniment.
 
-Desktop et mobile utilisent le même `DashboardCommandService`. OBS, Twitch, timer et planning alimentent un état canonique distribué par `state.updated`; aucun client ne reconstruit l'état depuis une série d'endpoints. Les contrats couvrent déjà scènes, stream, audio, timer, planning et deck et restent indépendants de React Native, Expo, Capacitor, Kotlin ou Swift.
+## Autorisation par commande
 
-## Preuve actuelle
+Le mobile ne bénéficie pas des mêmes privilèges que le renderer desktop. L'allowlist serveur autorise uniquement les usages nécessaires :
 
-`scripts/mobile-smoke.ts` joue un client externe loopback : health, capabilities, state, commande et abonnement WebSocket v1, sans importer Electron.
+- Préparer ;
+- Start sans `force:true` ;
+- Stop ;
+- modes Intro/Live/Pause/End configurés ;
+- timer start/pause/reset/+temps ;
+- mute et volume dB de sources OBS réellement détectées ;
+- redémarrage de médias OBS réellement détectés.
+
+Sont notamment refusés : scène arbitraire, enregistrement OBS, Browser Source arbitraire, bypass de checklist et administration de la checklist.
+
+## État temps réel
+
+Le desktop et le mobile utilisent le même `DashboardCommandService`, mais pas le même niveau d'information. Les sockets distantes reçoivent uniquement :
+
+- état connexion/stream/scène OBS ;
+- inputs audio utiles et médias ;
+- timer ;
+- modes ;
+- prochain live + planning minimal ;
+- confirmation Stop ;
+- préflight utile.
+
+Les chemins locaux, secrets, comptes OAuth, providers détaillés, devices et runtime ne sont pas sérialisés dans la projection mobile.
+
+## Cache/PWA
+
+Le Service Worker, lorsqu'il est autorisé par un contexte sécurisé, ne met en cache qu'une allowlist fixe d'assets statiques. Les URL avec query string ne sont jamais interceptées afin qu'un lien de pairing contenant un ID/code ne soit pas conservé dans le cache.
+
+Le manifest fournit les icônes 192/512, le scope `/mobile/` relatif et le mode `standalone`.
+
+## Validation
+
+`scripts/mobile-smoke.ts` exerce réellement le serveur sur `0.0.0.0` et vérifie : auth, pairing, redaction de state, allowlist de commandes, refus des settings distants, ticket WS à usage unique et refus du replay.
+
+Ce smoke ne remplace pas le test réel sur Android : pairing, Wi-Fi coupé/rétabli, reconnexion, commandes OBS et révocation doivent encore être validés sur un téléphone avant merge.

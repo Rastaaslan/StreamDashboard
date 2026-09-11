@@ -1,3 +1,24 @@
 <!doctype html>
-<html lang="fr"><head><meta charset="utf-8"><meta http-equiv="Content-Security-Policy" content="default-src 'self'; connect-src 'self' ws: wss:; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; object-src 'none'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="theme-color" content="#080a10"><link rel="stylesheet" href="/style.css"><title>StreamDashboard · Cockpit</title></head>
-<body><aside><div class="brand"><span class="logo">S</span><div><b>StreamDashboard</b><small>DESKTOP COCKPIT</small></div></div><nav></nav><div class="connection" id="socket"><i></i> Connexion…</div></aside><main><header><div><p id="eyebrow">CENTRE DE CONTRÔLE</p><h1 id="title">Vue d'ensemble</h1></div><div class="header-actions"><span class="obs-pill" id="obs-pill">OBS —</span><span class="live-pill" id="live-pill">HORS LIGNE</span></div></header><section id="view"></section></main><div id="toast"></div><script type="module" src="/app.js"></script></body></html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; connect-src 'self' ws: wss:; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; object-src 'none'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="theme-color" content="#080a10">
+  <link rel="stylesheet" href="/style.css">
+  <title>StreamDashboard · Cockpit</title>
+</head>
+<body>
+  <aside aria-label="Navigation principale">
+    <div class="brand"><span class="logo" aria-hidden="true">S</span><div><b>StreamDashboard</b><small>DESKTOP COCKPIT</small></div></div>
+    <nav aria-label="Sections du cockpit"></nav>
+    <div class="connection" id="socket" role="status" aria-live="polite"><i aria-hidden="true"></i> Connexion…</div>
+  </aside>
+  <main>
+    <header><div><p id="eyebrow">CENTRE DE CONTRÔLE</p><h1 id="title">Vue d'ensemble</h1></div><div class="header-actions"><span class="obs-pill" id="obs-pill">OBS —</span><span class="live-pill" id="live-pill">HORS LIGNE</span></div></header>
+    <section id="view" aria-live="polite"></section>
+  </main>
+  <div id="toast" role="status" aria-live="polite" aria-atomic="true"></div>
+  <script type="module" src="/app.js"></script>
+</body>
+</html>

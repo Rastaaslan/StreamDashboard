@@ -10,21 +10,27 @@ describe('rafraîchissement temps réel de l’UI', () => {
     expect(app).not.toContain('Element.prototype');
   });
 
-  it('applique les snapshots WebSocket et maintient le timer local', () => {
+  it('applique les snapshots WebSocket et maintient le timer local à la seconde', () => {
     expect(app).toMatch(/message\.type\s*===\s*['"]state\.updated['"]/);
     expect(app).toContain('applyStateUpdate(message.data)');
-    expect(app).toMatch(/setInterval\(updateTimer,\s*250\)/);
+    expect(app).toMatch(/setInterval\(updateTimer,\s*1000\)/);
+  });
+
+  it('borne les requêtes UI pour ne pas laisser les commandes bloquées indéfiniment', () => {
+    expect(app).toContain('const REQUEST_TIMEOUT_MS = 30_000');
+    expect(app).toContain('new AbortController()');
+    expect(app).toContain('signal: controller.signal');
   });
 
   it('protège un formulaire modifié contre les snapshots temps réel', () => {
     expect(app).toContain('data-dirty="true"');
-    expect(app).toContain("if (dirtyForm())");
+    expect(app).toContain('if (dirtyForm())');
     expect(app).toContain('updateSettingsRuntime()');
   });
 
   it('désactive les contrôles de diffusion lorsque OBS est hors ligne', () => {
-    expect(app).toContain("const offline = !state.obs.connected");
+    expect(app).toContain('const offline = !state.obs.connected');
     expect(app).toContain("offline ? 'disabled' : ''");
-    expect(app).toContain("if (!obs.connected)");
+    expect(app).toContain('if (!obs.connected)');
   });
 });
