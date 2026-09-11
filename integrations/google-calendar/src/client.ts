@@ -8,6 +8,7 @@ const SCOPES = [
   'https://www.googleapis.com/auth/calendar.calendarlist.readonly',
 ] as const;
 const TIMEOUT_MS = 15_000;
+const OAUTH_ATTEMPT_TTL_MS = 10 * 60_000;
 
 export interface GoogleTokens { accessToken: string; refreshToken: string; expiresAt: number }
 export interface GoogleOAuthAttempt { authorizationUrl: string; state: string; verifier: string; redirectUri: string }
@@ -30,9 +31,31 @@ export interface GoogleEvent extends GoogleEventInput {
 const base64url = (value: Buffer) => value.toString('base64url');
 const allDayUtc = (value: string) => `${value}T00:00:00.000Z`;
 const dateOnly = (value: string) => value.slice(0, 10);
+const pendingOAuthAttempts = new Map<string, { attempt: GoogleOAuthAttempt; expiresAt: number }>();
+
+function oauthAttemptKey(clientId: string, redirectUri: string) {
+  return `${clientId}\n${redirectUri}`;
+}
+
+function clearPendingOAuthAttempt(clientId: string, redirectUri?: string, expectedState?: string) {
+  if (!redirectUri) {
+    for (const key of pendingOAuthAttempts.keys()) if (key.startsWith(`${clientId}\n`)) pendingOAuthAttempts.delete(key);
+    return;
+  }
+  const key = oauthAttemptKey(clientId, redirectUri);
+  const current = pendingOAuthAttempts.get(key);
+  if (!current || (expectedState && current.attempt.state !== expectedState)) return;
+  pendingOAuthAttempts.delete(key);
+}
 
 export function createGoogleOAuthAttempt(clientId: string, redirectUri: string): GoogleOAuthAttempt {
   if (!clientId.trim()) throw new Error('Identifiant client Google Calendar manquant.');
+  const key = oauthAttemptKey(clientId, redirectUri);
+  const now = Date.now();
+  const pending = pendingOAuthAttempts.get(key);
+  if (pending && pending.expiresAt > now) return pending.attempt;
+  if (pending) pendingOAuthAttempts.delete(key);
+
   const state = base64url(randomBytes(32));
   const verifier = base64url(randomBytes(48));
   const challenge = base64url(createHash('sha256').update(verifier).digest());
@@ -47,7 +70,9 @@ export function createGoogleOAuthAttempt(clientId: string, redirectUri: string):
     code_challenge: challenge,
     code_challenge_method: 'S256',
   });
-  return { authorizationUrl: `${AUTH}?${query}`, state, verifier, redirectUri };
+  const attempt = { authorizationUrl: `${AUTH}?${query}`, state, verifier, redirectUri };
+  pendingOAuthAttempts.set(key, { attempt, expiresAt: now + OAUTH_ATTEMPT_TTL_MS });
+  return attempt;
 }
 
 export class GoogleCalendarClient {
@@ -88,11 +113,13 @@ export class GoogleCalendarClient {
       expiresAt: Date.now() + value.expires_in * 1000,
     };
     await this.commitTokens(generation, next, 'Connexion Google annulée.');
+    clearPendingOAuthAttempt(this.clientId, attempt.redirectUri, attempt.state);
   }
 
   async disconnect() {
     this.generation++;
     this.tokens = null;
+    clearPendingOAuthAttempt(this.clientId);
     await this.persist(null);
   }
 
@@ -272,6 +299,7 @@ export class GoogleCalendarClient {
   private async invalidateSession() {
     this.generation++;
     this.tokens = null;
+    clearPendingOAuthAttempt(this.clientId);
     await this.persist(null);
   }
 
