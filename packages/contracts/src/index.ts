@@ -155,7 +155,7 @@ export interface RemoteDashboardState {
   planning: Array<Pick<CalendarItem, 'id' | 'title' | 'startAtUtc' | 'endAtUtc' | 'allDay' | 'category' | 'kind'>>;
   nextLive: Pick<CalendarItem, 'id' | 'title' | 'startAtUtc' | 'endAtUtc' | 'allDay' | 'category' | 'kind'> | null;
   obs: Pick<ObsState, 'connected' | 'streaming' | 'scene' | 'inputs' | 'activeAudioInputs' | 'mediaInputs'>;
-  settings: Pick<DashboardSettings, 'confirmStop'>;
+  settings: Pick<DashboardSettings, 'confirmStop' | 'streamerName'>;
   preflight?: PreflightState;
 }
 
@@ -219,14 +219,14 @@ export function parseCommand(value: unknown): Command {
 
   switch (input.type) {
     case 'session.start': if (input.force !== undefined) bool('force'); break;
-    case 'mode.set': if (!['idle', 'intro', 'live', 'pause', 'end'].includes(String(input.mode))) throw new Error('Mode invalide.'); break;
+    case 'mode.set': text('mode'); if (!['idle', 'intro', 'live', 'pause', 'end'].includes(String(input.mode))) throw new Error('Mode invalide.'); break;
     case 'timer.start': if (input.seconds !== undefined) number('seconds', 1, 86_400); break;
-    case 'timer.add': number('seconds', 1, 86_400); break;
+    case 'timer.add': number('seconds', -86_400, 86_400); break;
     case 'obs.scene': text('scene'); break;
-    case 'obs.browser.refresh': text('input'); break;
     case 'obs.mute': text('input'); bool('muted'); break;
     case 'obs.volume': text('input'); number('volume', 0, 1.5); break;
     case 'obs.volumeDb': text('input'); number('volumeDb', -100, 26); break;
+    case 'obs.browser.refresh': text('input'); break;
     case 'obs.stream': case 'obs.record': bool('start'); break;
     case 'obs.media.restart': text('input'); break;
     case 'checklist.toggle': text('id'); break;
