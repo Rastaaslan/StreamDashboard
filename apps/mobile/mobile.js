@@ -7,6 +7,7 @@ let ws = null;
 let retry = 500;
 let reconnectTimer = null;
 
+const REQUEST_TIMEOUT_MS = 12_000;
 const authHeaders = () => ({ 'content-type': 'application/json', authorization: `Device ${credential}` });
 const note = value => { $('message').textContent = String(value || ''); };
 const text = (tag, value, className) => {
@@ -31,17 +32,31 @@ const formatPlanningDate = item => item.allDay
   ? `${new Date(item.startAtUtc).toLocaleDateString('fr-FR', { dateStyle: 'medium', timeZone: 'UTC' })} · toute la journée`
   : new Date(item.startAtUtc).toLocaleString('fr-FR');
 
+function remoteButtons(disabled) {
+  document.querySelectorAll('button[data-command],button[data-mode],button[data-media],button[data-mute],#stream')
+    .forEach(button => { button.disabled = disabled; });
+}
+
 function showPairing(show) {
   $('pairing').hidden = !show;
   $('forget-device').hidden = show;
-  document.querySelectorAll('button[data-command],button[data-mode],#stream').forEach(button => { button.disabled = show; });
+  if (show) remoteButtons(true);
 }
 
 async function jsonRequest(url, init = {}) {
-  const response = await fetch(url, init);
-  const body = await response.json().catch(() => ({}));
-  if (!response.ok) throw new Error(body.error?.message || body.error || `HTTP ${response.status}`);
-  return body;
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+  try {
+    const response = await fetch(url, { ...init, signal: controller.signal });
+    const body = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(body.error?.message || body.error || `HTTP ${response.status}`);
+    return body;
+  } catch (error) {
+    if (error?.name === 'AbortError') throw new Error('Le PC ne répond pas dans le délai attendu.');
+    throw error;
+  } finally {
+    clearTimeout(timeout);
+  }
 }
 
 async function command(value) {
@@ -134,6 +149,7 @@ function render(next) {
   renderPlanning(next.planning);
   $('timer').textContent = formatDuration(remaining());
   showPairing(false);
+  remoteButtons(false);
   $('stream').disabled = !next.obs.connected;
   document.querySelectorAll('[data-mode]').forEach(button => {
     button.disabled = !next.obs.connected;
@@ -194,13 +210,16 @@ async function connect() {
   }
   try {
     $('connection').textContent = 'Connexion…';
+    remoteButtons(true);
     await fetchState();
+    remoteButtons(true);
     const ticket = await getWsTicket();
     ws = new WebSocket(`${location.protocol === 'https:' ? 'wss' : 'ws'}://${location.host}/ws/v1?ticket=${encodeURIComponent(ticket)}`);
     ws.onopen = () => {
       retry = 500;
       $('connection').textContent = 'Connecté';
       $('connection').className = 'ok';
+      render(state);
     };
     ws.onmessage = event => {
       try {
@@ -212,6 +231,7 @@ async function connect() {
       $('connection').textContent = 'Reconnexion…';
       $('connection').className = '';
       $('pc').textContent = 'Hors ligne';
+      remoteButtons(true);
       reconnectTimer = setTimeout(connect, retry);
       retry = Math.min(10_000, retry * 2);
     };
@@ -219,6 +239,7 @@ async function connect() {
   } catch (error) {
     $('connection').textContent = 'Connexion refusée';
     $('pc').textContent = 'Hors ligne';
+    remoteButtons(true);
     note(error.message);
     if (/non autorisée|401|403/i.test(error.message)) {
       credential = '';
@@ -283,5 +304,5 @@ if ('serviceWorker' in navigator && window.isSecureContext) {
 } else if (!window.isSecureContext) {
   note('Mode LAN HTTP : télécommande web disponible, installation PWA désactivée sans HTTPS.');
 }
-setInterval(tickTimer, 250);
+setInterval(tickTimer, 1000);
 connect();
