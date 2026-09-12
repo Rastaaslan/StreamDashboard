@@ -30,7 +30,7 @@ export function parseRemoteCommand(value: unknown, state: DashboardState): Dashb
       return command;
     case 'obs.mute':
     case 'obs.volumeDb':
-      if (!Object.prototype.hasOwnProperty.call(state.obs.inputs, command.input)) throw denied('Source audio OBS inconnue.');
+      if (!state.obs.activeAudioInputs.includes(command.input)) throw denied('Source audio OBS inactive dans la scène courante.');
       return command;
     case 'obs.media.restart':
       if (!state.obs.mediaInputs.includes(command.input)) throw denied('Source média OBS inconnue.');
@@ -66,6 +66,13 @@ export function toRemoteDashboardState(state: DashboardState): RemoteDashboardSt
       mediaInputs: [...state.obs.mediaInputs],
     },
     settings: { confirmStop: state.settings.confirmStop, streamerName: state.settings.streamerName },
+    twitch: {
+      connected: state.twitch.connected,
+      channelTitle: state.twitch.channelTitle,
+      gameId: state.twitch.gameId,
+      gameName: state.twitch.gameName,
+      error: state.twitch.error,
+    },
     ...(state.preflight ? { preflight: { ...state.preflight } } : {}),
   };
 }
