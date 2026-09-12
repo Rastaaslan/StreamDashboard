@@ -123,6 +123,9 @@ export interface TwitchState {
   error: string | null;
   syncing: boolean;
   lastSyncedAt: string | null;
+  channelTitle?: string | null;
+  gameId?: string | null;
+  gameName?: string | null;
   deviceAuthorization: {
     userCode: string;
     verificationUri: string;
@@ -156,6 +159,7 @@ export interface RemoteDashboardState {
   nextLive: Pick<CalendarItem, 'id' | 'title' | 'startAtUtc' | 'endAtUtc' | 'allDay' | 'category' | 'kind'> | null;
   obs: Pick<ObsState, 'connected' | 'streaming' | 'scene' | 'inputs' | 'activeAudioInputs' | 'mediaInputs'>;
   settings: Pick<DashboardSettings, 'confirmStop' | 'streamerName'>;
+  twitch: Pick<TwitchState, 'connected' | 'channelTitle' | 'gameId' | 'gameName' | 'error'>;
   preflight?: PreflightState;
 }
 

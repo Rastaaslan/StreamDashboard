@@ -12,6 +12,31 @@ function setup() {
 }
 
 describe('service de commandes', () => {
+  it('confirme une scène via waitForScene en un seul mode.set', async () => {
+    const { domain, obs, commit } = setup();
+    obs.waitForScene = vi.fn(async scene => { obs.state.scene = scene; });
+    const service = new DashboardCommandService(domain, obs, commit, { settings: { modeScenes: { intro: 'Intro' } } });
+    await service.execute({ type: 'mode.set', mode: 'intro' });
+    expect(obs.waitForScene).toHaveBeenCalledWith('Intro'); expect(domain.mode).toBe('intro'); expect(commit).toHaveBeenCalledOnce();
+  });
+
+  it('accepte le refresh de secours quand l’événement de scène est perdu', async () => {
+    const { domain, obs, commit } = setup();
+    obs.waitForScene = vi.fn(async () => { throw new Error('event missed'); });
+    vi.mocked(obs.refresh).mockImplementation(async () => { obs.state.scene = 'Pause'; });
+    const service = new DashboardCommandService(domain, obs, commit, { settings: { modeScenes: { pause: 'Pause' } } });
+    await service.execute({ type: 'mode.set', mode: 'pause' });
+    expect(domain.mode).toBe('pause'); expect(obs.refresh).toHaveBeenCalled();
+  });
+
+  it('conserve l’erreur si le refresh de secours révèle une autre scène', async () => {
+    const { domain, obs, commit } = setup();
+    obs.waitForScene = vi.fn(async () => { throw new Error('OBS n’a pas confirmé la scène'); });
+    vi.mocked(obs.refresh).mockImplementation(async () => { obs.state.scene = 'Autre'; });
+    const service = new DashboardCommandService(domain, obs, commit, { settings: { modeScenes: { pause: 'Pause' } } });
+    await expect(service.execute({ type: 'mode.set', mode: 'pause' })).rejects.toThrow(/confirmé/);
+    expect(domain.mode).toBe('idle'); expect(commit).not.toHaveBeenCalled();
+  });
   it('réinitialise le timer lors de la préparation d’un nouveau live hors diffusion', async () => {
     const { domain, service, obs, commit } = setup();
     domain.timer.running = false; domain.timer.remaining = 17; domain.timer.duration = 300; domain.timer.deadline = null;
