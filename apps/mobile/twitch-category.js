@@ -1,0 +1,3 @@
+export const normalizeCategoryQuery=value=>String(value||'').normalize('NFKD').replace(/[\u0300-\u036f]/g,'').trim().replace(/\s+/g,' ').toLowerCase();
+export function rankCategories(results,recent,query){const q=normalizeCategoryQuery(query),seen=new Set();return [...recent,...results].filter(item=>item?.id&&item?.name&&!seen.has(item.id)&&seen.add(item.id)).sort((a,b)=>{const score=x=>{const n=normalizeCategoryQuery(x.name);return n===q?0:recent.some(r=>r.id===x.id)?1:n.startsWith(q)?2:3};return score(a)-score(b)});}
+export function rememberCategory(recent,item,limit=8){return [item,...recent.filter(value=>value.id!==item.id)].slice(0,limit);}

@@ -2,6 +2,7 @@ import { isAndroidRuntime, nextRetry, normalizeServer, parsePairing } from './ru
 import { credentialStorage, settingsStorage } from './storage.js';
 import { createTransport, HttpError } from './transport.js';
 import { DEFAULT_FILTERS, filterPlanning } from './planning-model.js';
+import { normalizeCategoryQuery, rankCategories, rememberCategory } from './twitch-category.js';
 
 const $ = id => document.getElementById(id);
 
@@ -299,34 +300,24 @@ $('slot-form').onsubmit = async event => {
   event.preventDefault(); const form = new FormData(event.currentTarget);
   const date = form.get('date'); const startAtUtc = new Date(`${date}T${form.get('start')}`).toISOString(); const endAtUtc = new Date(`${date}T${form.get('end')}`).toISOString();
   try {
-    const next = await transport.createPlanning({ title: form.get('title'), startAtUtc, endAtUtc, category: form.get('category'), desiredPublication: { local: true, twitch: form.get('twitch') === 'on', google: form.get('google') === 'on' }, twitchCategoryId: form.get('twitch') === 'on' ? state.twitch?.gameId : undefined, twitchCategoryName: form.get('twitch') === 'on' ? state.twitch?.gameName : undefined });
+    if (form.get('twitch') === 'on' && !$('slot-twitch-game-id').value) throw new Error('Sélectionnez une catégorie Twitch officielle.');
+    const next = await transport.createPlanning({ title: form.get('title'), startAtUtc, endAtUtc, category: form.get('category'), desiredPublication: { local: true, twitch: form.get('twitch') === 'on', google: form.get('google') === 'on' }, twitchCategoryId: form.get('twitch') === 'on' ? $('slot-twitch-game-id').value : undefined, twitchCategoryName: form.get('twitch') === 'on' ? $('slot-twitch-category').value : undefined });
     render(next); $('slot-dialog').close(); event.currentTarget.reset(); note('Créneau créé.');
   } catch (error) { note(error.message); }
 };
 
-let categoryTimer;
-$('twitch-category').oninput = () => {
-  $('twitch-game-id').value = '';
-  clearTimeout(categoryTimer);
-  categoryTimer = setTimeout(async () => {
-    const query = $('twitch-category').value.trim();
-    if (query.length < 2) { $('twitch-results').replaceChildren(); return; }
-    try {
-      const results = await transport.searchTwitch(query);
-      $('twitch-results').replaceChildren(...results.map(item => {
-        const button = text('button', item.name);
-        button.type = 'button'; button.dataset.gameId = item.id; button.dataset.gameName = item.name;
-        return button;
-      }));
-      if (!results.length) $('twitch-results').append(text('p', 'Aucune catégorie trouvée.', 'muted'));
-    } catch (error) { note(error.message); }
-  }, 300);
-};
-$('twitch-results').onclick = event => {
-  const button = event.target.closest('[data-game-id]'); if (!button) return;
-  $('twitch-game-id').value = button.dataset.gameId; $('twitch-category').value = button.dataset.gameName;
-  $('twitch-results').replaceChildren();
-};
+const recentKey = 'streamdashboard.recentTwitchCategories';
+let recentCategories = [];
+try { recentCategories = JSON.parse(localStorage.getItem(recentKey) || '[]').slice(0, 8); } catch { /* reset invalid history */ }
+function attachCategoryPicker(inputId, gameIdId, resultsId) {
+  const input = $(inputId), gameId = $(gameIdId), results = $(resultsId); let timer; let generation = 0;
+  const show = items => { results.replaceChildren(...items.map(item => { const button = text('button', item.name); button.type='button'; button.dataset.gameId=item.id; button.dataset.gameName=item.name; return button; })); };
+  input.onfocus = () => { if (!input.value.trim()) show(recentCategories); };
+  input.oninput = () => { gameId.value=''; clearTimeout(timer); const query=normalizeCategoryQuery(input.value); const request=++generation; if(query.length<2){show(query?[]:recentCategories);return;} results.replaceChildren(text('p','Recherche…','muted')); timer=setTimeout(async()=>{try{const found=await transport.searchTwitch(query);if(request!==generation)return;const ranked=rankCategories(found,recentCategories,query);show(ranked);if(!ranked.length)results.append(text('p','Aucune catégorie trouvée.','muted'));}catch(error){if(request===generation)results.replaceChildren(text('p',error.message,'danger'));}},300); };
+  results.onclick = event => { const button=event.target.closest('[data-game-id]');if(!button)return;gameId.value=button.dataset.gameId;input.value=button.dataset.gameName;recentCategories=rememberCategory(recentCategories,{id:button.dataset.gameId,name:button.dataset.gameName});localStorage.setItem(recentKey,JSON.stringify(recentCategories));results.replaceChildren(); };
+}
+attachCategoryPicker('twitch-category','twitch-game-id','twitch-results');
+attachCategoryPicker('slot-twitch-category','slot-twitch-game-id','slot-twitch-results');
 $('save-twitch').onclick = async () => {
   try {
     const next = await transport.updateTwitch({ title: $('twitch-title').value, gameId: $('twitch-game-id').value, gameName: $('twitch-category').value });

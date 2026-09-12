@@ -33,6 +33,14 @@ describe('Android remote runtime', () => {
     expect(mobileIndex).toContain('id="export-note-text"');
     expect(mobileScript).toContain("streamdashboard.exportNote");
   });
+  it('branche le créneau sur un sélecteur Twitch officiel debounced et anti-réponse obsolète', () => {
+    expect(mobileIndex).toContain('id="slot-twitch-category"');
+    expect(mobileIndex).toContain('id="slot-twitch-game-id"');
+    expect(mobileScript).toContain("query.length<2");
+    expect(mobileScript).toContain('request!==generation');
+    expect(mobileScript).toContain("attachCategoryPicker('slot-twitch-category','slot-twitch-game-id','slot-twitch-results')");
+    expect(mobileScript).toContain("Sélectionnez une catégorie Twitch officielle.");
+  });
   it.each([
     ['192.168.1.10', 'http://192.168.1.10:47832'],
     ['192.168.1.10:47832', 'http://192.168.1.10:47832'],

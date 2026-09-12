@@ -52,3 +52,20 @@ Le mixer Desktop et Android utilise exclusivement `obs.activeAudioInputs`, calcu
 Le téléphone peut rechercher une catégorie puis enregistrer le titre et la catégorie Twitch. Toutes les opérations passent par l'API StreamDashboard authentifiée ; aucun token Twitch n'est projeté vers le mobile.
 
 Les interfaces Desktop et Android proposent +1, +2, +5 et +10 minutes sur l'unique timer serveur. Celui-ci reste pilotable en mode End, mais l'overlay Campfire masque explicitement le chrono pour les viewers dans ce mode.
+
+## Signature stable et mise à jour Android
+
+L'historique du projet, Gradle et du workflow ne contient aucun keystore stable : les APK déjà distribués ont été signés par le keystore debug propre au runner. Cette ancienne clé privée n'est donc pas récupérable depuis le dépôt. Il ne faut pas désinstaller l'application actuelle pendant ce chantier. Après validation du candidat, une migration unique (désinstallation/réinstallation) pourra être inévitable ; toutes les versions suivantes seront update-compatibles grâce à la même identité stable.
+
+Configurer dans GitHub `ANDROID_KEYSTORE_BASE64`, `ANDROID_KEYSTORE_PASSWORD`, `ANDROID_KEY_ALIAS` et `ANDROID_KEY_PASSWORD`. Le workflow recrée le keystore seulement dans le répertoire temporaire du runner et produit un APK RC signé. Sans ces quatre secrets, il produit explicitement un APK debug de développement, qui n'est pas garanti compatible avec la signature stable.
+
+Le candidat utilise `versionName` `0.9.0-rc.<run>` et un `versionCode` strictement croissant `900000 + github.run_number`. La CI vérifie avec `apksigner` et `aapt` la signature, le package `com.rastaaslan.streamdashboard.remote` et les versions annoncées.
+
+## Checklist avant décision de gel
+
+- [ ] Desktop : launcher `.cmd`, OBS, Twitch, Google, Intro/Live/Chatting/Pause/End, timer, planning et exports.
+- [ ] Android : pairing/reconnexion, quatre onglets sans reconnexion, scènes, timer, audio actif et éditeur Twitch.
+- [ ] Planning Android : recherche officielle, récentes, création Local/Twitch/Google, filtres, deux exports, note et Share Sheet.
+- [ ] Mise à jour : installer un premier APK signé stable puis le RC suivant par-dessus ; vérifier appairage et préférences conservés.
+
+La décision `FREEZE APPROVED` ou `FIX REQUIRED`, tout tag et toute release restent exclusivement manuels.

@@ -206,7 +206,7 @@ export class TwitchClient {
   }
 
   async searchGames(query: string) {
-    const value = await this.api<{ data: Array<{ id: string; name: string }> }>(`/search/categories?query=${encodeURIComponent(query)}&first=20`);
+    const value = await this.api<{ data: Array<{ id: string; name: string; box_art_url?: string }> }>(`/search/categories?query=${encodeURIComponent(query)}&first=20`);
     return value.data ?? [];
   }
 
