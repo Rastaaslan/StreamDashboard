@@ -167,9 +167,9 @@ describe('audit Twitch reconciliation', () => {
 describe('audit politique télécommande', () => {
   const state = {
     at: new Date().toISOString(), mode: 'idle', timer: { running: false, duration: 300, remaining: 300, deadline: null }, planning: [], checklist: [],
-    obs: { connected: true, streaming: false, recording: false, scene: 'Intro', scenes: ['Intro'], inputs: { Micro: { muted: false, volume: 1, volumeDb: 0 } }, activeAudioInputs: ['Micro'], mediaInputs: ['Jingle'], error: null, obsVersion: '32', websocketVersion: '5' },
+    obs: { connected: true, streaming: false, recording: false, scene: 'Intro', scenes: ['Intro'], inputs: { Micro: { muted: false, volume: 1, volumeDb: 0 }, Musique: { muted: false, volume: 1, volumeDb: 0 } }, activeAudioInputs: ['Micro'], mediaInputs: ['Jingle'], error: null, obsVersion: '32', websocketVersion: '5' },
     nextLive: null, health: { storage: { ok: true, detail: 'C:/secret/path', reconnects: 0 } },
-    settings: { streamerName: 'Dam', accent: 'violet', confirmStop: true, obsUrl: 'ws://127.0.0.1:4455', obsPasswordSet: true, twitchConnected: true, twitchUserName: 'dam', launchObs: true, obsExecutablePath: 'C:/OBS/obs64.exe', modeScenes: {}, startMode: 'intro', remoteEnabled: true },
+    settings: { streamerName: 'Dam', accent: 'violet', confirmStop: true, obsUrl: 'ws://127.0.0.1:4455', obsPasswordSet: true, twitchConnected: true, twitchUserName: 'dam', launchObs: true, obsExecutablePath: 'C:/OBS/obs64.exe', modeScenes: { live: 'Live' }, chattingScene: 'Just Chatting', startMode: 'intro', remoteEnabled: true },
     twitch: { connected: true, userName: 'dam', displayName: 'Dam', error: null, syncing: false, lastSyncedAt: null, deviceAuthorization: null },
     google: { configured: true, connected: true, targetCalendarId: 'private-calendar', calendars: [{ id: 'private-calendar', summary: 'Perso', writable: true }], error: null, lastSyncedAt: null },
     remote: { supported: true, enabled: true, devices: [{ id: 'd', name: 'phone', createdAt: '', lastSeenAt: '' }], urls: ['http://192.168.1.2'] },
@@ -180,7 +180,9 @@ describe('audit politique télécommande', () => {
     expect(() => parseRemoteCommand({ type: 'session.start', force: true }, state)).toThrow(/checklist/i);
     expect(() => parseRemoteCommand({ type: 'obs.record', start: true }, state)).toThrow(/réservée au PC/i);
     expect(() => parseRemoteCommand({ type: 'obs.scene', scene: 'Secret' }, state)).toThrow(/réservée au PC/i);
+    expect(parseRemoteCommand({ type: 'scene.chatting' }, state)).toEqual({ type: 'scene.chatting' });
     expect(parseRemoteCommand({ type: 'obs.mute', input: 'Micro', muted: true }, state)).toMatchObject({ type: 'obs.mute' });
+    expect(() => parseRemoteCommand({ type: 'obs.mute', input: 'Musique', muted: true }, state)).toThrow(/inactive/i);
     expect(parseRemoteCommand({ type: 'obs.media.restart', input: 'Jingle' }, state)).toMatchObject({ type: 'obs.media.restart' });
   });
 
@@ -188,6 +190,6 @@ describe('audit politique télécommande', () => {
     const remote = toRemoteDashboardState(state);
     const text = JSON.stringify(remote);
     expect(text).not.toMatch(/obsUrl|obsExecutablePath|logsPath|private-calendar|twitchUserName|devices|health|runtime/);
-    expect(remote).toMatchObject({ settings: { confirmStop: true }, obs: { scene: 'Intro' } });
+    expect(remote).toMatchObject({ settings: { confirmStop: true, chattingScene: 'Just Chatting', modeScenes: { live: 'Live' } }, obs: { scene: 'Intro' } });
   });
 });

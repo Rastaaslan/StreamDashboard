@@ -28,9 +28,12 @@ export function parseRemoteCommand(value: unknown, state: DashboardState): Dashb
     case 'mode.set':
       if (!REMOTE_MODES.has(command.mode)) throw denied('Ce mode n’est pas pilotable depuis la télécommande.');
       return command;
+    case 'scene.chatting':
+      if (!state.settings.chattingScene) throw denied('Aucune scène Chatting configurée.');
+      return command;
     case 'obs.mute':
     case 'obs.volumeDb':
-      if (!Object.prototype.hasOwnProperty.call(state.obs.inputs, command.input)) throw denied('Source audio OBS inconnue.');
+      if (!state.obs.activeAudioInputs.includes(command.input)) throw denied('Source audio OBS inactive dans la scène courante.');
       return command;
     case 'obs.media.restart':
       if (!state.obs.mediaInputs.includes(command.input)) throw denied('Source média OBS inconnue.');
@@ -65,7 +68,14 @@ export function toRemoteDashboardState(state: DashboardState): RemoteDashboardSt
       activeAudioInputs: [...state.obs.activeAudioInputs],
       mediaInputs: [...state.obs.mediaInputs],
     },
-    settings: { confirmStop: state.settings.confirmStop, streamerName: state.settings.streamerName },
+    settings: { confirmStop: state.settings.confirmStop, streamerName: state.settings.streamerName, modeScenes: { live: state.settings.modeScenes.live }, chattingScene: state.settings.chattingScene },
+    twitch: {
+      connected: state.twitch.connected,
+      channelTitle: state.twitch.channelTitle,
+      gameId: state.twitch.gameId,
+      gameName: state.twitch.gameName,
+      error: state.twitch.error,
+    },
     ...(state.preflight ? { preflight: { ...state.preflight } } : {}),
   };
 }
