@@ -1,108 +1,15 @@
-const WIDTH = 1080;
-const HEIGHT = 1350;
-
-function rows(items) {
-  const now = Date.now();
-  return [...(items || [])]
-    .filter(item => !item.allDay && (item.category === 'live' || item.kind === 'LIVE') && Date.parse(item.endAtUtc) > now)
-    .sort((left, right) => Date.parse(left.startAtUtc) - Date.parse(right.startAtUtc))
-    .slice(0, 7);
-}
-
-function label(item) {
-  const start = new Date(item.startAtUtc);
-  return `${start.toLocaleDateString('fr-FR', { weekday: 'short', day: '2-digit', month: 'short' })} · ${start.toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })}`.toUpperCase();
-}
-
-function rounded(ctx, x, y, width, height, radius) {
-  const r = Math.min(radius, width / 2, height / 2);
-  ctx.beginPath();
-  ctx.moveTo(x + r, y);
-  ctx.arcTo(x + width, y, x + width, y + height, r);
-  ctx.arcTo(x + width, y + height, x, y + height, r);
-  ctx.arcTo(x, y + height, x, y, r);
-  ctx.arcTo(x, y, x + width, y, r);
-  ctx.closePath();
-}
-
-function safeName(value) {
-  return String(value || 'streamer').normalize('NFKD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9_-]+/gi, '-').replace(/^-+|-+$/g, '').toLowerCase() || 'streamer';
-}
-
-export async function exportPlanningImage(items, streamerName = 'StreamDashboard') {
-  const events = rows(items);
-  if (!events.length) throw new Error('Aucun live futur à exporter.');
-
-  const canvas = document.createElement('canvas');
-  canvas.width = WIDTH;
-  canvas.height = HEIGHT;
-  const ctx = canvas.getContext('2d');
-  if (!ctx) throw new Error('Canvas indisponible.');
-
-  const gradient = ctx.createLinearGradient(0, 0, WIDTH, HEIGHT);
-  gradient.addColorStop(0, '#090914');
-  gradient.addColorStop(0.55, '#151128');
-  gradient.addColorStop(1, '#25123a');
-  ctx.fillStyle = gradient;
-  ctx.fillRect(0, 0, WIDTH, HEIGHT);
-
-  ctx.fillStyle = '#bca8ff';
-  ctx.font = '700 28px system-ui, sans-serif';
-  ctx.fillText('LE FEU DE CAMP', 78, 92);
-  ctx.fillStyle = '#ffffff';
-  ctx.font = '800 68px system-ui, sans-serif';
-  ctx.fillText('PLANNING DES LIVES', 78, 168);
-  ctx.fillStyle = '#b6afc8';
-  ctx.font = '500 28px system-ui, sans-serif';
-  ctx.fillText(streamerName, 80, 215);
-
-  const top = 275;
-  const gap = 18;
-  const rowHeight = Math.min(142, Math.floor((930 - gap * (events.length - 1)) / events.length));
-
-  events.forEach((item, index) => {
-    const y = top + index * (rowHeight + gap);
-    rounded(ctx, 70, y, 940, rowHeight, 28);
-    ctx.fillStyle = 'rgba(255,255,255,0.07)';
-    ctx.fill();
-    ctx.strokeStyle = 'rgba(188,168,255,0.24)';
-    ctx.lineWidth = 2;
-    ctx.stroke();
-
-    ctx.fillStyle = '#bca8ff';
-    ctx.font = '800 27px system-ui, sans-serif';
-    ctx.fillText(label(item), 105, y + 42);
-    ctx.fillStyle = '#ffffff';
-    ctx.font = '750 35px system-ui, sans-serif';
-    const title = String(item.title || 'Live');
-    ctx.fillText(title.length > 36 ? `${title.slice(0, 35)}…` : title, 105, y + 88);
-  });
-
-  ctx.fillStyle = '#7e7693';
-  ctx.font = '500 22px system-ui, sans-serif';
-  ctx.fillText('Planning généré avec StreamDashboard', 78, 1288);
-
-  const blob = await new Promise((resolve, reject) => canvas.toBlob(value => value ? resolve(value) : reject(new Error('Export PNG impossible.')), 'image/png'));
-  const file = new File([blob], `planning-${safeName(streamerName)}.png`, { type: 'image/png' });
-  if (navigator.share && navigator.canShare?.({ files: [file] })) {
-    try {
-      await navigator.share({ files: [file], title: 'Planning des lives' });
-      return events.length;
-    } catch (error) {
-      if (error?.name === 'AbortError') throw error;
-      // Some Android browsers expose Web Share but reject files after async canvas
-      // work. Fall through to the ordinary PNG download instead of losing the export.
-    }
-  }
-
-  const url = URL.createObjectURL(blob);
-  try {
-    const anchor = document.createElement('a');
-    anchor.href = url;
-    anchor.download = file.name;
-    anchor.click();
-  } finally {
-    setTimeout(() => URL.revokeObjectURL(url), 1000);
-  }
-  return events.length;
-}
+import { filterPlanning, weekAgenda } from './planning-model.js';
+const WIDTH=1080,HEIGHT=1350;
+function rounded(ctx,x,y,w,h,r){ctx.beginPath();ctx.roundRect(x,y,w,h,r);}
+function header(ctx,streamer,weekly){const g=ctx.createLinearGradient(0,0,WIDTH,HEIGHT);g.addColorStop(0,'#090914');g.addColorStop(.6,'#18112c');g.addColorStop(1,'#321827');ctx.fillStyle=g;ctx.fillRect(0,0,WIDTH,HEIGHT);ctx.fillStyle='#bca8ff';ctx.font='700 26px system-ui';ctx.fillText('LE FEU DE CAMP',70,72);ctx.fillStyle='#fff';ctx.font='800 58px system-ui';ctx.fillText(weekly?'AGENDA DE LA SEMAINE':'AUJOURD’HUI EN LIVE',70,142);ctx.fillStyle='#aaa2bb';ctx.font='500 24px system-ui';ctx.fillText(streamer,72,184);}
+function eventLine(ctx,item,y){const time=new Date(item.startAtUtc).toLocaleTimeString('fr-FR',{hour:'2-digit',minute:'2-digit'});ctx.fillStyle='#ffbd85';ctx.font='900 35px system-ui';ctx.fillText(time,95,y);ctx.fillStyle='#fff';ctx.font='750 27px system-ui';ctx.fillText(String(item.title||'Live').slice(0,34),260,y);ctx.fillStyle='#bca8ff';ctx.font='600 20px system-ui';ctx.textAlign='right';ctx.fillText(String(item.twitchCategoryName||'').slice(0,25),970,y);ctx.textAlign='left';}
+function note(ctx,value){if(!value)return;ctx.fillStyle='#aaa2bb';ctx.font='italic 22px system-ui';ctx.fillText(String(value).slice(0,78),70,1290);}
+export const planningFileName=period=>`planning-${period==='next-week'?'semaine':'aujourdhui'}.png`;
+async function blobBase64(blob){const bytes=new Uint8Array(await blob.arrayBuffer());let binary='';for(let offset=0;offset<bytes.length;offset+=0x8000)binary+=String.fromCharCode(...bytes.subarray(offset,offset+0x8000));return btoa(binary);}
+export async function sharePlanningPng(blob,fileName,nativeBridge=globalThis.StreamDashboardNative,navigatorApi=globalThis.navigator,documentApi=globalThis.document,urlApi=globalThis.URL){
+if(nativeBridge?.shareImage){const error=nativeBridge.shareImage(await blobBase64(blob),fileName,'image/png');if(error)throw new Error(error);return 'android';}
+const file=new File([blob],fileName,{type:'image/png'});if(navigatorApi?.share&&navigatorApi.canShare?.({files:[file]})){await navigatorApi.share({files:[file],title:'Planning des lives'});return 'web-share';}
+const url=urlApi.createObjectURL(blob);const a=documentApi.createElement('a');a.href=url;a.download=file.name;a.click();setTimeout(()=>urlApi.revokeObjectURL(url),1000);return 'download';}
+export async function exportPlanningImage(items,streamerName='StreamDashboard',options={}){const weekly=options.period==='next-week';const canvas=document.createElement('canvas');canvas.width=WIDTH;canvas.height=HEIGHT;const ctx=canvas.getContext('2d');if(!ctx)throw new Error('Canvas indisponible.');header(ctx,streamerName,weekly);let count=0;
+if(weekly){const days=weekAgenda(items,options.filters);days.forEach((day,index)=>{const y=220+index*143;rounded(ctx,60,y,960,125,22);ctx.fillStyle=index%2?'rgba(255,255,255,.055)':'rgba(150,105,235,.09)';ctx.fill();ctx.fillStyle='#cdbaff';ctx.font='800 25px system-ui';ctx.fillText(day.date.toLocaleDateString('fr-FR',{weekday:'long',day:'2-digit',month:'long'}).toUpperCase(),85,y+34);if(!day.events.length){ctx.fillStyle='#797286';ctx.font='500 24px system-ui';ctx.fillText('Pas de live',85,y+82);}else{day.events.slice(0,2).forEach((item,i)=>eventLine(ctx,item,y+76+i*34));count+=day.events.length;}});}else{const events=filterPlanning(items,options.filters,'today');if(!events.length)throw new Error('Aucun live aujourd’hui à exporter.');events.slice(0,5).forEach((item,index)=>{const y=245+index*175;rounded(ctx,60,y,960,150,25);ctx.fillStyle='rgba(255,255,255,.07)';ctx.fill();eventLine(ctx,item,y+62);ctx.fillStyle='#ddd7e7';ctx.font='500 23px system-ui';ctx.fillText(new Date(item.startAtUtc).toLocaleDateString('fr-FR',{weekday:'long',day:'numeric',month:'long'}),95,y+112);});count=events.length;}
+note(ctx,options.noteEnabled?options.noteText:'');ctx.fillStyle='#6f687e';ctx.font='500 18px system-ui';ctx.fillText('Planning prévisionnel · StreamDashboard',70,1325);const blob=await new Promise((resolve,reject)=>canvas.toBlob(v=>v?resolve(v):reject(new Error('Export PNG impossible.')),'image/png'));await sharePlanningPng(blob,planningFileName(options.period));return count;}
