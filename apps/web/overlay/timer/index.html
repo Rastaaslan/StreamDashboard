@@ -1,5 +1,38 @@
 <!doctype html>
 <html lang="fr">
-<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><link rel="stylesheet" href="timer.css"><title>StreamDashboard Timer</title></head>
-<body><main id="timer" aria-live="off">05:00</main><script type="module" src="timer.js"></script></body>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <link rel="stylesheet" href="timer.css">
+  <title>StreamDashboard Campfire Overlay</title>
+</head>
+<body>
+  <main id="overlay" class="overlay is-idle" aria-live="polite">
+    <div id="kicker" class="kicker"></div>
+
+    <div class="camp-mark" aria-hidden="true">
+      <span class="spark spark-a">✦</span>
+      <span id="ornament" class="ornament">✦</span>
+      <span class="spark spark-b">✦</span>
+    </div>
+
+    <div id="title" class="title"></div>
+    <div id="subtitle" class="subtitle"></div>
+    <div id="subtitle2" class="subtitle subtitle-2"></div>
+
+    <div class="divider">
+      <span></span>
+      <b id="divider-symbol">◇</b>
+      <span></span>
+    </div>
+
+    <div id="label" class="label"></div>
+    <time id="timer">05:00</time>
+
+    <div id="farewell" class="farewell"></div>
+    <div id="embers" class="embers" aria-hidden="true"></div>
+  </main>
+
+  <script type="module" src="timer.js"></script>
+</body>
 </html>
