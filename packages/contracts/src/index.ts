@@ -108,6 +108,8 @@ export interface DashboardSettings {
   launchObs: boolean;
   obsExecutablePath?: string;
   modeScenes: Partial<Record<Exclude<RunMode, 'idle'>, string>>;
+  /** Optional, configured OBS content scene which remains part of the Live business mode. */
+  chattingScene?: string;
   /** Mode/scene selected and confirmed immediately before OBS starts streaming. */
   startMode?: 'intro' | 'live';
   /** Exact OBS browser source used for the visible session timer overlay. */
@@ -123,6 +125,9 @@ export interface TwitchState {
   error: string | null;
   syncing: boolean;
   lastSyncedAt: string | null;
+  channelTitle?: string | null;
+  gameId?: string | null;
+  gameName?: string | null;
   deviceAuthorization: {
     userCode: string;
     verificationUri: string;
@@ -152,10 +157,12 @@ export interface RemoteDashboardState {
   at: string;
   mode: RunMode;
   timer: TimerState;
-  planning: Array<Pick<CalendarItem, 'id' | 'title' | 'startAtUtc' | 'endAtUtc' | 'allDay' | 'category' | 'kind'>>;
-  nextLive: Pick<CalendarItem, 'id' | 'title' | 'startAtUtc' | 'endAtUtc' | 'allDay' | 'category' | 'kind'> | null;
+  planning: Array<Pick<CalendarItem, 'id' | 'title' | 'startAtUtc' | 'endAtUtc' | 'allDay' | 'category' | 'kind' | 'source' | 'twitchCategoryId' | 'twitchCategoryName' | 'desiredPublication'>>;
+  nextLive: Pick<CalendarItem, 'id' | 'title' | 'startAtUtc' | 'endAtUtc' | 'allDay' | 'category' | 'kind' | 'source' | 'twitchCategoryId' | 'twitchCategoryName' | 'desiredPublication'> | null;
   obs: Pick<ObsState, 'connected' | 'streaming' | 'scene' | 'inputs' | 'activeAudioInputs' | 'mediaInputs'>;
-  settings: Pick<DashboardSettings, 'confirmStop' | 'streamerName'>;
+  settings: Pick<DashboardSettings, 'confirmStop' | 'streamerName' | 'modeScenes' | 'chattingScene'>;
+  twitch: Pick<TwitchState, 'connected' | 'channelTitle' | 'gameId' | 'gameName' | 'error'>;
+  google?: Pick<GoogleCalendarState, 'configured' | 'connected'>;
   preflight?: PreflightState;
 }
 
@@ -172,6 +179,7 @@ export type DashboardCommand =
   | { type: 'session.start'; force?: boolean }
   | { type: 'session.stop' }
   | { type: 'mode.set'; mode: RunMode }
+  | { type: 'scene.chatting' }
   | { type: 'timer.start'; seconds?: number }
   | { type: 'timer.pause' | 'timer.reset' }
   | { type: 'timer.add'; seconds: number }
@@ -190,7 +198,7 @@ export interface DashboardEvent { type: 'state.updated'; data: DashboardState }
 export type ServerEvent = DashboardEvent | { type: 'server.ready'; data: ServerCapabilities };
 
 const commandTypes = new Set<Command['type']>([
-  'session.prepare', 'session.start', 'session.stop', 'mode.set', 'timer.start', 'timer.pause', 'timer.reset', 'timer.add',
+  'session.prepare', 'session.start', 'session.stop', 'mode.set', 'scene.chatting', 'timer.start', 'timer.pause', 'timer.reset', 'timer.add',
   'obs.scene', 'obs.mute', 'obs.volume', 'obs.volumeDb', 'obs.browser.refresh', 'obs.stream', 'obs.record', 'obs.media.restart',
   'checklist.toggle', 'checklist.reset',
 ]);
@@ -202,7 +210,7 @@ export function parseCommand(value: unknown): Command {
 
   const allowed: Record<string, string[]> = {
     'session.prepare': ['type'], 'session.start': ['type', 'force'], 'session.stop': ['type'],
-    'mode.set': ['type', 'mode'], 'timer.start': ['type', 'seconds'], 'timer.pause': ['type'], 'timer.reset': ['type'], 'timer.add': ['type', 'seconds'],
+    'mode.set': ['type', 'mode'], 'scene.chatting': ['type'], 'timer.start': ['type', 'seconds'], 'timer.pause': ['type'], 'timer.reset': ['type'], 'timer.add': ['type', 'seconds'],
     'obs.scene': ['type', 'scene'], 'obs.mute': ['type', 'input', 'muted'], 'obs.volume': ['type', 'input', 'volume'], 'obs.volumeDb': ['type', 'input', 'volumeDb'],
     'obs.browser.refresh': ['type', 'input'], 'obs.stream': ['type', 'start'], 'obs.record': ['type', 'start'], 'obs.media.restart': ['type', 'input'],
     'checklist.toggle': ['type', 'id'], 'checklist.reset': ['type'],

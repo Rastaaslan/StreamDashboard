@@ -95,6 +95,7 @@ export class GoogleCalendarClient {
     private tokens: GoogleTokens | null,
     private readonly persist: (tokens: GoogleTokens | null) => Promise<void>,
     private readonly request: typeof fetch = fetch,
+    private readonly clientSecret: string = process.env.GOOGLE_CLIENT_SECRET ?? '',
   ) {}
 
   get connected() { return Boolean(this.tokens?.accessToken || this.tokens?.refreshToken); }
@@ -112,6 +113,7 @@ export class GoogleCalendarClient {
       headers: { 'content-type': 'application/x-www-form-urlencoded' },
       body: new URLSearchParams({
         client_id: this.clientId,
+        ...(this.clientSecret ? { client_secret: this.clientSecret } : {}),
         code,
         code_verifier: attempt.verifier,
         redirect_uri: attempt.redirectUri,
@@ -278,7 +280,7 @@ export class GoogleCalendarClient {
       const response = await this.fetchWithTimeout(TOKEN, {
         method: 'POST',
         headers: { 'content-type': 'application/x-www-form-urlencoded' },
-        body: new URLSearchParams({ client_id: this.clientId, refresh_token: refreshToken, grant_type: 'refresh_token' }),
+        body: new URLSearchParams({ client_id: this.clientId, ...(this.clientSecret ? { client_secret: this.clientSecret } : {}), refresh_token: refreshToken, grant_type: 'refresh_token' }),
       });
       const value = await this.json<{ access_token: string; expires_in: number; refresh_token?: string }>(response);
       const next = {
@@ -330,8 +332,9 @@ export class GoogleCalendarClient {
 
   private async json<T>(response: Response): Promise<T> {
     if (response.status === 204) return undefined as T;
-    const value = await response.json().catch(() => ({})) as T & { error?: { message?: string } };
-    if (!response.ok) throw new GoogleCalendarError(response.status, value.error?.message ?? `Google Calendar HTTP ${response.status}`);
+    const value = await response.json().catch(() => ({})) as T & { error?: string | { message?: string }; error_description?: string };
+    const oauthError = typeof value.error === 'string' ? [value.error, value.error_description].filter(Boolean).join(': ') : value.error?.message;
+    if (!response.ok) throw new GoogleCalendarError(response.status, oauthError ?? `Google Calendar HTTP ${response.status}`);
     return value;
   }
 }
