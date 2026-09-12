@@ -70,12 +70,17 @@ jobs:
             cp android/app/build/outputs/apk/debug/app-debug.apk StreamDashboard-Remote-debug.apk
           fi
       - name: Verify APK identity, version and signature
+        shell: bash
         run: |
           APK=$(find . -maxdepth 1 -name 'StreamDashboard-Remote-*.apk' -print -quit)
           test -s "$APK"
-          apksigner verify --verbose "$APK"
-          aapt dump badging "$APK" | grep "package: name='com.rastaaslan.streamdashboard.remote'"
-          aapt dump badging "$APK" | grep "versionCode='$ANDROID_VERSION_CODE' versionName='$ANDROID_VERSION_NAME'"
+          APKSIGNER=$(find "$ANDROID_HOME/build-tools" -type f -name apksigner -print | sort -V | tail -n 1)
+          AAPT=$(find "$ANDROID_HOME/build-tools" -type f -name aapt -print | sort -V | tail -n 1)
+          test -n "$APKSIGNER" && test -x "$APKSIGNER"
+          test -n "$AAPT" && test -x "$AAPT"
+          "$APKSIGNER" verify --verbose "$APK"
+          "$AAPT" dump badging "$APK" | grep "package: name='com.rastaaslan.streamdashboard.remote'"
+          "$AAPT" dump badging "$APK" | grep "versionCode='$ANDROID_VERSION_CODE' versionName='$ANDROID_VERSION_NAME'"
       - name: Upload Android APK
         uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
         with:
