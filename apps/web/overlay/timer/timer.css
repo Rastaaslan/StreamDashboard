@@ -1,1 +1,305 @@
-html,body{margin:0;width:100%;height:100%;overflow:hidden;background:transparent!important}body{display:grid;place-items:center}main{font-family:Inter,Segoe UI,Arial,sans-serif;font-size:clamp(72px,14vw,220px);font-weight:900;line-height:1;color:#fff;font-variant-numeric:tabular-nums;text-shadow:0 3px 10px #000,0 0 26px rgba(122,87,232,.85);opacity:0;transition:opacity .15s ease}main.visible{opacity:1}@media(prefers-reduced-motion:reduce){main{transition:none}}
+:root{
+  --violet:#c792ff;
+  --violet-strong:#a85cff;
+  --violet-soft:#eadbff;
+  --white:#fffdfd;
+  --warm:#ffd6a3;
+  --ember:#ffb36b;
+  --ember-soft:#ffd6a3;
+}
+
+html,body{
+  width:100%;height:100%;margin:0;overflow:hidden;
+  background:transparent!important;
+}
+body{font-family:"Segoe UI",Arial,sans-serif}
+
+.overlay{
+  position:absolute;
+  left:50%;
+  width:min(1040px,90vw);
+  transform:translateX(-50%);
+  text-align:center;
+  color:var(--white);
+  filter:drop-shadow(0 4px 16px rgba(10,2,20,.92));
+  transition:top .25s ease,opacity .25s ease;
+}
+.overlay.is-idle{display:none}
+.overlay.is-activating{animation:fadeIn .48s ease-out both}
+
+.title{
+  font-family:"Bookman Old Style","URW Bookman","Georgia",serif;
+  font-size:clamp(44px,4.7vw,74px);
+  font-weight:700;
+  letter-spacing:.055em;
+  line-height:1;
+  text-transform:uppercase;
+  color:var(--white);
+  text-shadow:
+    0 0 14px rgba(255,214,163,.14),
+    0 0 24px rgba(199,146,255,.30),
+    0 3px 18px rgba(0,0,0,.88);
+}
+
+time{
+  display:block;
+  margin-top:8px;
+  font-family:"Bookman Old Style","URW Bookman","Georgia",serif;
+  font-size:clamp(68px,6.8vw,108px);
+  line-height:1;
+  font-weight:700;
+  font-variant-numeric:tabular-nums;
+  letter-spacing:.025em;
+}
+
+.kicker{
+  font-family:"Trebuchet MS","Segoe UI",Arial,sans-serif;
+  font-size:clamp(14px,1.12vw,18px);
+  font-weight:800;
+  letter-spacing:.24em;
+  text-transform:uppercase;
+  margin-bottom:7px;
+}
+
+.subtitle{
+  margin-top:12px;
+  font-family:"Trebuchet MS","Segoe UI",Arial,sans-serif;
+  font-size:clamp(21px,2vw,30px);
+  font-weight:650;
+  letter-spacing:.02em;
+  line-height:1.32;
+  color:rgba(255,250,253,.99);
+  text-shadow:
+    0 0 8px rgba(199,146,255,.18),
+    0 2px 12px rgba(0,0,0,.92);
+}
+.subtitle-2{
+  margin-top:4px;
+  font-size:clamp(16px,1.35vw,21px);
+  font-weight:500;
+  opacity:.92;
+}
+
+.camp-mark{
+  display:flex;
+  justify-content:center;
+  align-items:center;
+  gap:12px;
+  height:30px;
+  margin-bottom:7px;
+}
+.camp-mark .spark,
+.camp-mark .ornament{
+  display:inline-flex;
+  align-items:center;
+  justify-content:center;
+  line-height:1!important;
+  vertical-align:middle;
+  transform-origin:center center;
+  position:relative;
+}
+.camp-mark .spark{
+  width:18px;
+  height:18px;
+  font-size:11px;
+  top:1px;
+  opacity:.72;
+  animation:twinkle 3.8s ease-in-out infinite;
+}
+.camp-mark .ornament{
+  width:30px;
+  height:30px;
+  font-size:22px;
+  top:0;
+}
+.spark-b{animation-delay:-1.9s}
+
+.divider{
+  margin:19px auto 14px;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  gap:14px;
+  width:min(600px,74vw);
+}
+.divider span{
+  height:2px;
+  flex:1;
+  border-radius:999px;
+}
+.divider b{
+  font-size:21px;
+  line-height:1;
+  font-weight:700;
+}
+
+.label{
+  font-family:"Trebuchet MS","Segoe UI",Arial,sans-serif;
+  font-size:clamp(16px,1.4vw,22px);
+  font-weight:850;
+  letter-spacing:.18em;
+  text-transform:uppercase;
+  text-shadow:0 0 8px rgba(184,140,255,.30),0 2px 10px rgba(0,0,0,.88);
+}
+
+.farewell{
+  margin-top:19px;
+  font-family:"Trebuchet MS","Segoe UI",Arial,sans-serif;
+  font-size:clamp(15px,1.2vw,19px);
+  font-weight:700;
+  letter-spacing:.18em;
+  text-transform:uppercase;
+  opacity:.96;
+}
+
+/* Intro : violet froid, arrivée au camp. */
+.overlay[data-mode="intro"]{top:5.8%}
+.overlay[data-mode="intro"] .kicker{color:var(--violet-soft)}
+.overlay[data-mode="intro"] .ornament,
+.overlay[data-mode="intro"] .spark{
+  color:#efe3ff;
+  text-shadow:0 0 12px rgba(184,140,255,.9);
+}
+.overlay[data-mode="intro"] .divider span{
+  background:linear-gradient(90deg,transparent,#eadbff,#a85cff);
+  box-shadow:0 0 8px rgba(231,205,255,.9),0 0 18px rgba(168,92,255,.65);
+}
+.overlay[data-mode="intro"] .divider span:last-child{
+  background:linear-gradient(90deg,#a85cff,#eadbff,transparent);
+}
+.overlay[data-mode="intro"] .divider b{
+  color:#efe3ff;
+  text-shadow:0 0 12px rgba(184,140,255,.92);
+}
+.overlay[data-mode="intro"] .label{color:#f0dcff}
+.overlay[data-mode="intro"] time{
+  color:#fffdfd;
+  text-shadow:
+    0 0 17px rgba(215,183,255,.76),
+    0 0 38px rgba(126,65,207,.45),
+    0 4px 18px rgba(0,0,0,.88);
+}
+
+/* Pause : violet + braise chaude. */
+.overlay[data-mode="pause"]{top:7.9%}
+.overlay[data-mode="pause"] .kicker{
+  color:var(--warm);
+  text-shadow:0 0 10px rgba(255,179,107,.40);
+}
+.overlay[data-mode="pause"] .ornament,
+.overlay[data-mode="pause"] .spark{
+  color:#ffd8af;
+  text-shadow:0 0 12px rgba(255,179,107,.82);
+}
+.overlay[data-mode="pause"] .title{color:#fff7ef}
+.overlay[data-mode="pause"] .subtitle{color:#fff4e9}
+.overlay[data-mode="pause"] .divider span{
+  background:linear-gradient(90deg,transparent,#ffd6a3,#a85cff);
+  box-shadow:0 0 9px rgba(255,188,125,.78),0 0 18px rgba(168,92,255,.58);
+}
+.overlay[data-mode="pause"] .divider span:last-child{
+  background:linear-gradient(90deg,#a85cff,#ffd6a3,transparent);
+}
+.overlay[data-mode="pause"] .divider b{
+  color:#ffd7ae;
+  text-shadow:0 0 10px rgba(255,179,107,.95);
+}
+.overlay[data-mode="pause"] .label{color:#ffe0bd}
+.overlay[data-mode="pause"] time{
+  color:#fffaf5;
+  text-shadow:
+    0 0 16px rgba(255,201,148,.58),
+    0 0 36px rgba(168,92,255,.36),
+    0 4px 18px rgba(0,0,0,.9);
+}
+
+/* Fin : feu qui baisse, sans timer, avec braises. */
+.overlay[data-mode="end"]{
+  top:10%;
+  width:min(1100px,92vw);
+}
+.overlay[data-mode="end"] .kicker{
+  color:#d9b9ff;
+  opacity:.95;
+}
+.overlay[data-mode="end"] .camp-mark{margin-bottom:10px}
+.overlay[data-mode="end"] .ornament{
+  color:#ffca91;
+  font-size:26px;
+  text-shadow:0 0 11px rgba(255,180,100,.95),0 0 26px rgba(168,92,255,.65);
+}
+.overlay[data-mode="end"] .spark{color:#e0c2ff}
+.overlay[data-mode="end"] .title{
+  font-size:clamp(50px,5.3vw,82px);
+  color:#fff3e6;
+  text-shadow:
+    0 0 12px rgba(255,180,100,.30),
+    0 0 34px rgba(168,92,255,.30),
+    0 4px 19px rgba(0,0,0,.92);
+}
+.overlay[data-mode="end"] .subtitle{
+  font-size:clamp(22px,2.1vw,31px);
+  color:#fff7ef;
+}
+.overlay[data-mode="end"] .subtitle-2{color:#e8d7f7}
+.overlay[data-mode="end"] .divider{margin-top:22px}
+.overlay[data-mode="end"] .divider span{
+  background:linear-gradient(90deg,transparent,rgba(255,190,125,.95),rgba(168,92,255,.88));
+  box-shadow:0 0 9px rgba(255,179,107,.65),0 0 17px rgba(168,92,255,.48);
+}
+.overlay[data-mode="end"] .divider span:last-child{
+  background:linear-gradient(90deg,rgba(168,92,255,.88),rgba(255,190,125,.95),transparent);
+}
+.overlay[data-mode="end"] .divider b{
+  color:#ffc98e;
+  text-shadow:0 0 12px rgba(255,179,107,.92);
+}
+.overlay[data-mode="end"] .label,
+.overlay[data-mode="end"] time{display:none}
+.overlay[data-mode="end"] .farewell{
+  color:#e7cfff;
+  text-shadow:0 0 9px rgba(168,92,255,.38),0 2px 10px rgba(0,0,0,.9);
+}
+
+.embers{
+  position:relative;
+  width:380px;
+  height:66px;
+  margin:10px auto 0;
+  display:none;
+}
+.overlay[data-mode="end"] .embers{display:block}
+.embers i{
+  position:absolute;
+  bottom:2px;
+  left:calc(5% + var(--i) * 7.3%);
+  width:3px;
+  height:3px;
+  border-radius:50%;
+  background:var(--ember);
+  box-shadow:0 0 7px var(--ember-soft);
+  opacity:0;
+  animation:rise calc(4.8s + var(--i) * .23s) ease-in infinite;
+  animation-delay:calc(var(--i) * -.47s);
+}
+.embers i:nth-child(3n){width:2px;height:2px;background:#d7afff}
+.embers i:nth-child(4n){width:4px;height:4px}
+
+@keyframes fadeIn{
+  from{opacity:0;transform:translate(-50%,-9px)}
+  to{opacity:1;transform:translate(-50%,0)}
+}
+@keyframes twinkle{
+  50%{opacity:.35;transform:scale(.82)}
+}
+@keyframes rise{
+  0%{opacity:0;transform:translate(0,10px) scale(.6)}
+  24%{opacity:.85}
+  70%{opacity:.48}
+  100%{opacity:0;transform:translate(calc((var(--i) - 6) * 2px),-53px) scale(.2)}
+}
+
+@media(prefers-reduced-motion:reduce){
+  .overlay.is-activating,.spark,.embers i{animation:none!important}
+  .embers i{opacity:.22;transform:translateY(-12px)}
+}
