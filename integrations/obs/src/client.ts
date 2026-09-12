@@ -9,6 +9,17 @@ function friendlyError(error: unknown) {
 }
 
 interface ObsClientOptions { logger?: Pick<Console, 'warn' | 'error'> }
+interface SceneNode { sourceName: unknown; sceneItemEnabled: boolean; isGroup?: boolean; sourceType?: unknown }
+export async function collectActiveSceneSources(sceneName: string, sceneItems: (name: string) => Promise<SceneNode[]>, groupItems: (name: string) => Promise<SceneNode[]>, visited = new Set<string>()): Promise<Set<string>> {
+  if (visited.has(sceneName)) return new Set(); visited.add(sceneName);
+  const names = new Set<string>();
+  const collect = async (items: SceneNode[]) => Promise.all(items.filter(item => item.sceneItemEnabled).map(async item => {
+    const name = String(item.sourceName); names.add(name);
+    if (item.isGroup) await collect(await groupItems(name));
+    else if (String(item.sourceType) === 'OBS_SOURCE_TYPE_SCENE') for (const child of await collectActiveSceneSources(name, sceneItems, groupItems, visited)) names.add(child);
+  }));
+  await collect(await sceneItems(sceneName)); return names;
+}
 
 export class ObsClient {
   private client = new OBSWebSocket();
@@ -137,8 +148,8 @@ export class ObsClient {
       this.client.call('GetSceneList'),
       this.client.call('GetStreamStatus'),
     ]);
-    const [recordResult, inputsResult, specialResult] = await Promise.allSettled([
-      this.client.call('GetRecordStatus'), this.client.call('GetInputList'), this.client.call('GetSpecialInputs'),
+    const [recordResult, inputsResult] = await Promise.allSettled([
+      this.client.call('GetRecordStatus'), this.client.call('GetInputList'),
     ]);
     this.state.obsVersion = String(version.obsVersion ?? '');
     this.state.websocketVersion = String(version.obsWebSocketVersion ?? '');
@@ -156,7 +167,6 @@ export class ObsClient {
       return;
     }
     const inputs = inputsResult.value;
-    const specialInputs = specialResult.status === 'fulfilled' ? specialResult.value : {};
     this.state.inputs = {};
     this.state.mediaInputs = inputs.inputs
       .filter(({ inputKind }) => ['ffmpeg_source', 'vlc_source', 'slideshow', 'slideshow_v2'].includes(String(inputKind)))
@@ -172,7 +182,6 @@ export class ObsClient {
       } catch { /* Inputs without audio capabilities are intentionally omitted. */ }
     }));
     const active = await this.sceneSources(String(scene.currentProgramSceneName)).catch(() => new Set<string>());
-    for (const value of Object.values(specialInputs)) if (typeof value === 'string') active.add(value);
     this.state.activeAudioInputs = Object.keys(this.state.inputs).filter(name => active.has(name));
     this.state.error = null;
     this.notify();
@@ -227,25 +236,10 @@ export class ObsClient {
   }
 
   private async sceneSources(sceneName: string, visited = new Set<string>()): Promise<Set<string>> {
-    if (visited.has(sceneName)) return new Set();
-    visited.add(sceneName);
-    const names = new Set<string>();
-    const result = await this.client.call('GetSceneItemList', { sceneName });
-    const collect = async (items: typeof result.sceneItems) => Promise.all(items.filter(item => item.sceneItemEnabled).map(async item => {
-      const name = String(item.sourceName);
-      names.add(name);
-      try {
-        if (item.isGroup) {
-          const group = await this.client.call('GetGroupSceneItemList', { sceneName: name });
-          await collect(group.sceneItems);
-        } else if (String(item.sourceType) === 'OBS_SOURCE_TYPE_SCENE') {
-          const nested = await this.sceneSources(name, visited);
-          for (const child of nested) names.add(child);
-        }
-      } catch { /* A removed nested source must not make the complete mixer unavailable. */ }
-    }));
-    await collect(result.sceneItems);
-    return names;
+    return collectActiveSceneSources(sceneName,
+      async name => (await this.client.call('GetSceneItemList', { sceneName: name })).sceneItems as unknown as SceneNode[],
+      async name => (await this.client.call('GetGroupSceneItemList', { sceneName: name })).sceneItems as unknown as SceneNode[],
+      visited).catch(() => new Set());
   }
 
   private requireConnected() { if (!this.state.connected) throw new Error('OBS n’est pas connecté.'); }

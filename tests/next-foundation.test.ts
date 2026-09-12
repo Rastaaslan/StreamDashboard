@@ -46,6 +46,36 @@ describe('planning multi-provider', () => {
 });
 
 describe('Google Calendar OAuth et synchronisation', () => {
+  it('envoie le client secret Desktop au token exchange et conserve PKCE sans secret', async () => {
+    const calls: RequestInit[] = [];
+    const request = vi.fn(async (_url: string | URL | Request, init?: RequestInit) => { calls.push(init ?? {}); return new Response(JSON.stringify({ access_token: 'ok', refresh_token: 'r', expires_in: 3600 }), { status: 200 }); });
+    const secretAttempt = createGoogleOAuthAttempt('desktop-secret', 'http://127.0.0.1/callback');
+    await new GoogleCalendarClient('desktop-secret', null, async () => undefined, request as typeof fetch, 'private-value').exchangeCode('code', secretAttempt.state, secretAttempt);
+    expect(String(calls[0].body)).toContain('client_secret=private-value');
+    const pkceAttempt = createGoogleOAuthAttempt('desktop-pkce', 'http://127.0.0.1/callback');
+    await new GoogleCalendarClient('desktop-pkce', null, async () => undefined, request as typeof fetch, '').exchangeCode('code', pkceAttempt.state, pkceAttempt);
+    expect(String(calls[1].body)).not.toContain('client_secret');
+  });
+
+  it('affiche les détails d’erreur OAuth Google', async () => {
+    const attempt = createGoogleOAuthAttempt('oauth-error', 'http://127.0.0.1/callback');
+    const request = vi.fn(async () => new Response(JSON.stringify({ error: 'invalid_request', error_description: 'client_secret is missing.' }), { status: 400 }));
+    const client = new GoogleCalendarClient('oauth-error', null, async () => undefined, request as typeof fetch);
+    await expect(client.exchangeCode('code', attempt.state, attempt)).rejects.toThrow('invalid_request: client_secret is missing.');
+  });
+
+  it('envoie le client secret Desktop au renouvellement refresh_token', async () => {
+    const calls: RequestInit[] = [];
+    const request = vi.fn(async (url: string | URL | Request, init?: RequestInit) => {
+      calls.push(init ?? {});
+      if (String(url).includes('/token')) return new Response(JSON.stringify({ access_token: 'fresh', expires_in: 3600 }), { status: 200 });
+      return new Response(JSON.stringify({ items: [] }), { status: 200 });
+    });
+    const client = new GoogleCalendarClient('refresh-secret', { accessToken: 'old', refreshToken: 'refresh', expiresAt: 0 }, async () => undefined, request as typeof fetch, 'desktop-value');
+    await client.calendars();
+    expect(String(calls[0].body)).toContain('client_secret=desktop-value');
+    expect(String(calls[0].body)).toContain('grant_type=refresh_token');
+  });
   it('produit PKCE et refuse un state invalide sans persister de token', async () => {
     const attempt = createGoogleOAuthAttempt('client', 'http://127.0.0.1/callback');
     expect(new URL(attempt.authorizationUrl).searchParams.get('code_challenge_method')).toBe('S256');
