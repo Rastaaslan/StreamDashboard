@@ -208,6 +208,7 @@ async function connect() {
       retry = 500;
       $('connection').textContent = 'Connecté';
       $('connection').className = 'ok';
+      note('Télécommande connectée au PC.');
       render(state);
     };
     ws.onmessage = event => {
