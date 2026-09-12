@@ -89,6 +89,7 @@ export function createGoogleOAuthAttempt(clientId: string, redirectUri: string):
 export class GoogleCalendarClient {
   private generation = 0;
   private refreshFlight?: Promise<void>;
+  private readonly clientSecret = process.env.GOOGLE_CLIENT_SECRET?.trim() ?? '';
 
   constructor(
     private readonly clientId: string,
@@ -107,16 +108,19 @@ export class GoogleCalendarClient {
     if (actual.length !== expected.length || !timingSafeEqual(actual, expected)) throw new Error('État OAuth Google invalide.');
     if (!code.trim()) throw new Error('Code OAuth Google manquant.');
 
+    const body = new URLSearchParams({
+      client_id: this.clientId,
+      code,
+      code_verifier: attempt.verifier,
+      redirect_uri: attempt.redirectUri,
+      grant_type: 'authorization_code',
+    });
+    if (this.clientSecret) body.set('client_secret', this.clientSecret);
+
     const response = await this.fetchWithTimeout(TOKEN, {
       method: 'POST',
       headers: { 'content-type': 'application/x-www-form-urlencoded' },
-      body: new URLSearchParams({
-        client_id: this.clientId,
-        code,
-        code_verifier: attempt.verifier,
-        redirect_uri: attempt.redirectUri,
-        grant_type: 'authorization_code',
-      }),
+      body,
     });
     const value = await this.json<{ access_token: string; refresh_token?: string; expires_in: number }>(response);
     const next = {
@@ -275,10 +279,16 @@ export class GoogleCalendarClient {
       throw new Error('Reconnectez Google Calendar.');
     }
     try {
+      const body = new URLSearchParams({
+        client_id: this.clientId,
+        refresh_token: refreshToken,
+        grant_type: 'refresh_token',
+      });
+      if (this.clientSecret) body.set('client_secret', this.clientSecret);
       const response = await this.fetchWithTimeout(TOKEN, {
         method: 'POST',
         headers: { 'content-type': 'application/x-www-form-urlencoded' },
-        body: new URLSearchParams({ client_id: this.clientId, refresh_token: refreshToken, grant_type: 'refresh_token' }),
+        body,
       });
       const value = await this.json<{ access_token: string; expires_in: number; refresh_token?: string }>(response);
       const next = {
@@ -330,8 +340,16 @@ export class GoogleCalendarClient {
 
   private async json<T>(response: Response): Promise<T> {
     if (response.status === 204) return undefined as T;
-    const value = await response.json().catch(() => ({})) as T & { error?: { message?: string } };
-    if (!response.ok) throw new GoogleCalendarError(response.status, value.error?.message ?? `Google Calendar HTTP ${response.status}`);
+    const value = await response.json().catch(() => ({})) as T & {
+      error?: string | { message?: string };
+      error_description?: string;
+    };
+    if (!response.ok) {
+      const detail = typeof value.error === 'string'
+        ? [value.error, value.error_description].filter(Boolean).join(': ')
+        : value.error?.message ?? value.error_description ?? `Google Calendar HTTP ${response.status}`;
+      throw new GoogleCalendarError(response.status, detail || `Google Calendar HTTP ${response.status}`);
+    }
     return value;
   }
 }
