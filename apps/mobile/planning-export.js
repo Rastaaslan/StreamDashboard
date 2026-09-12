@@ -1,9 +1,10 @@
+import { filterPlanning } from './planning-model.js';
 const WIDTH = 1080;
 const HEIGHT = 1350;
 
-function rows(items) {
+function rows(items, options = {}) {
   const now = Date.now();
-  return [...(items || [])]
+  return filterPlanning(items, options.filters, options.period)
     .filter(item => !item.allDay && (item.category === 'live' || item.kind === 'LIVE') && Date.parse(item.endAtUtc) > now)
     .sort((left, right) => Date.parse(left.startAtUtc) - Date.parse(right.startAtUtc))
     .slice(0, 7);
@@ -29,8 +30,8 @@ function safeName(value) {
   return String(value || 'streamer').normalize('NFKD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9_-]+/gi, '-').replace(/^-+|-+$/g, '').toLowerCase() || 'streamer';
 }
 
-export async function exportPlanningImage(items, streamerName = 'StreamDashboard') {
-  const events = rows(items);
+export async function exportPlanningImage(items, streamerName = 'StreamDashboard', options = {}) {
+  const events = rows(items, options);
   if (!events.length) throw new Error('Aucun live futur à exporter.');
 
   const canvas = document.createElement('canvas');
