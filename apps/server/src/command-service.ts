@@ -26,7 +26,18 @@ export class DashboardCommandService {
   }
 
   private async confirmScene(scene: string) {
-    if (this.obs.waitForScene) { await this.obs.waitForScene(scene); return; }
+    if (this.obs.waitForScene) {
+      try {
+        await this.obs.waitForScene(scene, 3_000);
+        return;
+      } catch (confirmationError) {
+        // OBS peut avoir appliqué la scène même si l'événement websocket de confirmation
+        // a été retardé ou perdu. Relire l'état réel une fois avant de signaler un faux échec.
+        try { await this.obs.refresh(); } catch { /* confirmation error remains authoritative */ }
+        if (this.obs.state.scene === scene) return;
+        throw confirmationError;
+      }
+    }
     if (this.obs.state.scene === undefined) return;
     await this.obs.refresh();
     if (this.obs.state.scene !== scene) throw new Error(`OBS n’a pas confirmé la scène « ${scene} ».`);

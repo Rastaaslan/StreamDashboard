@@ -23,6 +23,10 @@
     "desktop:smoke": "npm run desktop:icon && npm run build && playwright test -c playwright.electron.config.ts",
     "desktop:package-smoke": "playwright test -c playwright.electron.config.ts",
     "desktop:icon": "tsx scripts/prepare-icon.ts"
+    ,"android:sync": "tsx scripts/android-sync.ts"
+    ,"android:build": "npm run android:sync && gradle -p android assembleRelease"
+    ,"android:build:debug": "npm run android:sync && gradle -p android assembleDebug && node -e \"require('fs').copyFileSync('android/app/build/outputs/apk/debug/app-debug.apk','android/app/build/outputs/apk/debug/StreamDashboard-Remote-debug.apk')\""
+    ,"android:check": "npm run android:sync && node --check apps/mobile/runtime.js && node --check apps/mobile/storage.js && node --check apps/mobile/transport.js && gradle -p android lintDebug testDebugUnitTest assembleDebug"
   },
   "dependencies": {
     "express": "^5.1.0",

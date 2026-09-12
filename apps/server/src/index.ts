@@ -100,6 +100,7 @@ const LOCAL_ADDRESSES = new Set(['127.0.0.1', '::1', '::ffff:127.0.0.1']);
 const PROVIDER_STATUSES = new Set(['synced', 'pending', 'error', 'not-published', 'conflict']);
 const DAY_MS = 86_400_000;
 const REMOTE_ACTIVITY_PERSIST_MS = 30_000;
+const ANDROID_NATIVE_ORIGIN = 'http://localhost';
 
 function object(value: unknown): value is Record<string, unknown> {
   return Boolean(value && typeof value === 'object' && !Array.isArray(value));
@@ -455,7 +456,7 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
     const requestHost = request.headers.host;
     const acceptedOrigin = (() => {
       if (!origin) return true;
-      try { return Boolean(requestHost) && new URL(origin).host === requestHost; }
+      try { return origin === ANDROID_NATIVE_ORIGIN || (Boolean(requestHost) && new URL(origin).host === requestHost); }
       catch { return false; }
     })();
     const remoteRequest = !isLocalAddress(request.socket.remoteAddress);
@@ -485,6 +486,17 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
   app.use((req, res, next) => {
     const origin = req.headers.origin;
     if (!origin) { next(); return; }
+    if (origin === ANDROID_NATIVE_ORIGIN) {
+      res.set({
+        'Access-Control-Allow-Origin': ANDROID_NATIVE_ORIGIN,
+        'Access-Control-Allow-Headers': 'Authorization, Content-Type',
+        'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
+        Vary: 'Origin',
+      });
+      if (req.method === 'OPTIONS') { res.sendStatus(204); return; }
+      next();
+      return;
+    }
     try {
       if (new URL(origin).host === req.headers.host) { next(); return; }
     } catch { /* rejected below */ }
@@ -964,6 +976,10 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
         ...pairing,
         urls,
         links: urls.map(url => `${url}?pair=${encodeURIComponent(pairing.id)}&code=${encodeURIComponent(pairing.code)}`),
+        androidLinks: urls.map(url => {
+          const serverUrl = new URL(url);
+          return `streamdashboard://pair?v=1&server=${encodeURIComponent(serverUrl.origin)}&id=${encodeURIComponent(pairing.id)}&code=${encodeURIComponent(pairing.code)}`;
+        }),
       });
     } catch (error) { next(error); }
   });
