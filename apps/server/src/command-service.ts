@@ -11,7 +11,7 @@ export interface ObsCommands {
   waitForStreaming?(expected: boolean, timeoutMs?: number): Promise<void>;
   waitForScene?(expected: string, timeoutMs?: number): Promise<void>;
 }
-export interface CommandContext { settings: Pick<DashboardSettings, 'modeScenes' | 'startMode' | 'timerBrowserSource'>; logger?: Pick<Console, 'info' | 'warn'>; wait?: (milliseconds: number) => Promise<void> }
+export interface CommandContext { settings: Pick<DashboardSettings, 'modeScenes' | 'chattingScene' | 'startMode' | 'timerBrowserSource'>; logger?: Pick<Console, 'info' | 'warn'>; wait?: (milliseconds: number) => Promise<void> }
 
 /** Unique, serialized application command bus shared by every client. */
 export class DashboardCommandService {
@@ -26,7 +26,14 @@ export class DashboardCommandService {
   }
 
   private async confirmScene(scene: string) {
-    if (this.obs.waitForScene) { await this.obs.waitForScene(scene); return; }
+    if (this.obs.waitForScene) {
+      try { await this.obs.waitForScene(scene); return; }
+      catch (confirmationError) {
+        try { await this.obs.refresh(); } catch { /* confirmation error remains authoritative */ }
+        if (this.obs.state.scene === scene) return;
+        throw confirmationError;
+      }
+    }
     if (this.obs.state.scene === undefined) return;
     await this.obs.refresh();
     if (this.obs.state.scene !== scene) throw new Error(`OBS n’a pas confirmé la scène « ${scene} ».`);
@@ -117,6 +124,15 @@ export class DashboardCommandService {
       return this.commit();
     }
     if (command.type === 'mode.set') { await this.setMode(command.mode); await this.obs.refresh(); return this.commit(); }
+    if (command.type === 'scene.chatting') {
+      const scene = this.context.settings.chattingScene;
+      if (!scene) throw new Error('Aucune scène Chatting configurée.');
+      await this.obs.scene(scene);
+      await this.confirmScene(scene);
+      this.domain.mode = 'live';
+      await this.obs.refresh();
+      return this.commit();
+    }
     if (applyDashboardCommand(this.domain, command)) return this.commit();
     switch (command.type) {
       case 'obs.scene': if (!command.scene.trim()) throw new Error('Scène OBS invalide.'); await this.obs.scene(command.scene); await this.confirmScene(command.scene); break;

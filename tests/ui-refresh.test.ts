@@ -3,6 +3,10 @@ import { describe, expect, it } from 'vitest';
 
 const index = readFileSync(new URL('../apps/web/index.html', import.meta.url), 'utf8');
 const app = readFileSync(new URL('../apps/web/app.js', import.meta.url), 'utf8');
+const mobile = readFileSync(new URL('../apps/mobile/mobile.js', import.meta.url), 'utf8');
+const mobileIndex = readFileSync(new URL('../apps/mobile/index.html', import.meta.url), 'utf8');
+const overlay = readFileSync(new URL('../apps/web/overlay/timer/timer.js', import.meta.url), 'utf8');
+const overlayCss = readFileSync(new URL('../apps/web/overlay/timer/timer.css', import.meta.url), 'utf8');
 
 describe('rafraîchissement temps réel de l’UI', () => {
   it('ne modifie plus globalement innerHTML et ne charge aucun guard', () => {
@@ -32,5 +36,24 @@ describe('rafraîchissement temps réel de l’UI', () => {
     expect(app).toContain('const offline = !state.obs.connected');
     expect(app).toContain("offline ? 'disabled' : ''");
     expect(app).toContain('if (!obs.connected)');
+  });
+
+  it('filtre aussi le mixer mobile avec la liste audio active canonique', () => {
+    expect(mobile).toContain('renderAudio(next.obs.inputs, next.obs.activeAudioInputs)');
+    expect(mobile).toContain('activeInputs.includes(name)');
+    expect(mobile).toContain('Télécommande connectée au PC.');
+  });
+
+  it('offre les quatre presets timer sur Desktop et Android', () => {
+    for (const seconds of [60, 120, 300, 600]) {
+      expect(app).toContain(`data-seconds="${seconds}"`);
+      expect(mobileIndex).toContain(`data-seconds="${seconds}"`);
+    }
+  });
+
+  it('conserve le timer canonique mais masque explicitement le chrono en End', () => {
+    expect(overlay).toContain("end:{kicker:'LE FEU DE CAMP DE DAM'");
+    expect(overlayCss).toContain('main.end #timer-wrap{display:none}');
+    expect(overlayCss).toContain('background:transparent!important');
   });
 });

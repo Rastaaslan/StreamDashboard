@@ -199,10 +199,10 @@ export class TwitchClient {
 
   async getChannelMetadata() {
     if (!this.state.connected) throw new Error('Connectez Twitch avant de préparer le live.');
-    const value = await this.api<{ data: Array<{ title: string; game_id: string }> }>(`/channels?broadcaster_id=${encodeURIComponent(this.credentials.broadcasterId)}`);
+    const value = await this.api<{ data: Array<{ title: string; game_id: string; game_name?: string }> }>(`/channels?broadcaster_id=${encodeURIComponent(this.credentials.broadcasterId)}`);
     const channel = value.data[0];
     if (!channel) throw new Error('Twitch n’a renvoyé aucune information de chaîne.');
-    return { title: channel.title, gameId: channel.game_id };
+    return { title: channel.title, gameId: channel.game_id, gameName: channel.game_name ?? '' };
   }
 
   async searchGames(query: string) {
