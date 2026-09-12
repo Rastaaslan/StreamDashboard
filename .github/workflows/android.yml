@@ -66,13 +66,18 @@ jobs:
             gradle -p android assembleRelease
             cp android/app/build/outputs/apk/release/app-release.apk StreamDashboard-Remote-rc.apk
           else
-            gradle -p android assembleDebug
+            gradle -p android assembleDebug assembleRelease
             cp android/app/build/outputs/apk/debug/app-debug.apk StreamDashboard-Remote-debug.apk
+            cp android/app/build/outputs/apk/release/app-release-unsigned.apk StreamDashboard-Remote-unsigned.apk
           fi
       - name: Verify APK identity, version and signature
         shell: bash
         run: |
-          APK=$(find . -maxdepth 1 -name 'StreamDashboard-Remote-*.apk' -print -quit)
+          if [[ "${{ steps.signing.outputs.configured }}" == "true" ]]; then
+            APK=StreamDashboard-Remote-rc.apk
+          else
+            APK=StreamDashboard-Remote-debug.apk
+          fi
           test -s "$APK"
           APKSIGNER=$(find "$ANDROID_HOME/build-tools" -type f -name apksigner -print | sort -V | tail -n 1)
           AAPT=$(find "$ANDROID_HOME/build-tools" -type f -name aapt -print | sort -V | tail -n 1)
@@ -81,6 +86,10 @@ jobs:
           "$APKSIGNER" verify --verbose "$APK"
           "$AAPT" dump badging "$APK" | grep "package: name='com.rastaaslan.streamdashboard.remote'"
           "$AAPT" dump badging "$APK" | grep "versionCode='$ANDROID_VERSION_CODE' versionName='$ANDROID_VERSION_NAME'"
+          if [[ -f StreamDashboard-Remote-unsigned.apk ]]; then
+            "$AAPT" dump badging StreamDashboard-Remote-unsigned.apk | grep "package: name='com.rastaaslan.streamdashboard.remote'"
+            "$AAPT" dump badging StreamDashboard-Remote-unsigned.apk | grep "versionCode='$ANDROID_VERSION_CODE' versionName='$ANDROID_VERSION_NAME'"
+          fi
       - name: Upload Android APK
         uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
         with:
