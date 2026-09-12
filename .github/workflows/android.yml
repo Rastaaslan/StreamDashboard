@@ -1,0 +1,84 @@
+name: Android remote
+
+on:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: android-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  android-remote:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Setup Node
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 22
+          cache: npm
+      - name: Setup Java
+        uses: actions/setup-java@f0d6e9d30b3c3b1c2b5a1dce0f2fae6d7c51a430 # v5.0.0
+        with:
+          distribution: temurin
+          java-version: '17'
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@07976c6290703d34c16d382cb36445f98bb43b1f # v3.2.2
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@748248ddd2a24f49513d8f472f81c3a07d4d50e1 # v4.4.4
+        with:
+          gradle-version: '8.11.1'
+      - name: Install dependencies
+        run: npm ci
+      - name: Validate shared remote
+        run: npm test && npm run build && npm run security:check && npm run mobile:smoke
+      - name: Synchronize Android assets
+        run: npm run android:sync
+      - name: Prepare stable signing identity when configured
+        id: signing
+        shell: bash
+        env:
+          KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+        run: |
+          if [[ -n "$KEYSTORE_BASE64" && -n "${{ secrets.ANDROID_KEYSTORE_PASSWORD }}" && -n "${{ secrets.ANDROID_KEY_ALIAS }}" && -n "${{ secrets.ANDROID_KEY_PASSWORD }}" ]]; then
+            printf '%s' "$KEYSTORE_BASE64" | base64 --decode > "$RUNNER_TEMP/streamdashboard-remote.jks"
+            echo "configured=true" >> "$GITHUB_OUTPUT"
+            echo "ANDROID_KEYSTORE_PATH=$RUNNER_TEMP/streamdashboard-remote.jks" >> "$GITHUB_ENV"
+          else
+            echo "configured=false" >> "$GITHUB_OUTPUT"
+          fi
+          echo "ANDROID_VERSION_CODE=$((900000 + GITHUB_RUN_NUMBER))" >> "$GITHUB_ENV"
+          echo "ANDROID_VERSION_NAME=0.9.0-rc.${GITHUB_RUN_NUMBER}" >> "$GITHUB_ENV"
+      - name: Lint and build installable APK
+        env:
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: |
+          gradle -p android lintDebug
+          if [[ "${{ steps.signing.outputs.configured }}" == "true" ]]; then
+            gradle -p android assembleRelease
+            cp android/app/build/outputs/apk/release/app-release.apk StreamDashboard-Remote-rc.apk
+          else
+            gradle -p android assembleDebug
+            cp android/app/build/outputs/apk/debug/app-debug.apk StreamDashboard-Remote-debug.apk
+          fi
+      - name: Verify APK identity, version and signature
+        run: |
+          APK=$(find . -maxdepth 1 -name 'StreamDashboard-Remote-*.apk' -print -quit)
+          test -s "$APK"
+          apksigner verify --verbose "$APK"
+          aapt dump badging "$APK" | grep "package: name='com.rastaaslan.streamdashboard.remote'"
+          aapt dump badging "$APK" | grep "versionCode='$ANDROID_VERSION_CODE' versionName='$ANDROID_VERSION_NAME'"
+      - name: Upload Android APK
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
+        with:
+          name: StreamDashboard-Remote
+          path: StreamDashboard-Remote-*.apk
+          if-no-files-found: error
