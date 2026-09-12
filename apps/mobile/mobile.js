@@ -3,6 +3,7 @@ import { credentialStorage, settingsStorage } from './storage.js';
 import { createTransport, HttpError } from './transport.js';
 import { DEFAULT_FILTERS, filterPlanning } from './planning-model.js';
 import { normalizeCategoryQuery, rankCategories, rememberCategory } from './twitch-category.js';
+import { CompanionMode, createCompanionStore, resolveMode } from './companion-store.js';
 
 const $ = id => document.getElementById(id);
 
@@ -13,6 +14,8 @@ let busy = false;
 let ws = null;
 let retry = 500;
 let reconnectTimer = null;
+let companionMode = CompanionMode.OFFLINE;
+const companion = createCompanionStore();
 let planningFilters = { ...DEFAULT_FILTERS };
 const exportNoteKey = 'streamdashboard.exportNote';
 try { planningFilters = { ...planningFilters, ...JSON.parse(localStorage.getItem('streamdashboard.planningFilters') || '{}') }; } catch { /* corrupted preferences reset safely */ }
@@ -42,8 +45,23 @@ const formatPlanningDate = item => item.allDay
   : new Date(item.startAtUtc).toLocaleString('fr-FR');
 
 function remoteButtons(disabled) {
-  document.querySelectorAll('button[data-command],button[data-mode],button[data-chatting],button[data-media],button[data-mute],#stream,#export-planning')
+  document.querySelectorAll('button[data-command],button[data-mode],button[data-chatting],button[data-media],button[data-mute],#stream')
     .forEach(button => { button.disabled = disabled; });
+}
+
+function offlineState() {
+  const cache = companion.snapshot();
+  return { at: cache.lastServerSyncAt || new Date().toISOString(), mode: 'idle', timer: { running: false, remaining: 300, deadline: null }, planning: cache.planning, checklist: cache.checklist, nextLive: null, obs: { connected: false, streaming: false, scene: null, inputs: {}, activeAudioInputs: [], mediaInputs: [] }, settings: { confirmStop: true, streamerName: cache.streamerName, modeScenes: {} }, twitch: { connected: false }, google: { connected: false } };
+}
+
+function setConnectionMode(mode) {
+  companionMode = mode;
+  const online = mode === CompanionMode.ONLINE_PC;
+  $('pc').textContent = online ? 'Connecté' : 'Hors ligne';
+  $('connection').textContent = online ? 'PC connecté' : 'PC hors ligne';
+  $('connection').className = online ? 'ok' : '';
+  $('last-sync').textContent = companion.snapshot().lastServerSyncAt ? `Dernière synchro PC : ${new Date(companion.snapshot().lastServerSyncAt).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })}` : 'Aucune synchronisation PC';
+  remoteButtons(!online);
 }
 
 function showPairing(show) {
@@ -121,6 +139,12 @@ function renderPlanning(items) {
     const row = document.createElement('div');
     row.className = 'planning-row';
     row.append(text('b', item.title), text('span', formatPlanningDate(item)));
+    if (companionMode !== CompanionMode.ONLINE_PC) {
+      const status = text('small', '⏳ À synchroniser', 'pending');
+      const edit = text('button', 'Modifier'); edit.type = 'button'; edit.onclick = () => { const title = prompt('Titre du live', item.title); if (!title || title === item.title) return; const result = companion.updateEvent(item.id, { title }, item.revision); if (result.conflict) note('Ce live a été modifié sur un autre appareil.'); else { render(offlineState()); note('Modification enregistrée · À synchroniser.'); } };
+      const remove = text('button', 'Supprimer'); remove.type = 'button'; remove.onclick = () => { if (!confirm(`Supprimer « ${item.title} » ?`)) return; const result = companion.deleteEvent(item.id, item.revision); if (result.conflict) note('Ce live a été modifié sur un autre appareil.'); else { render(offlineState()); note('Suppression enregistrée · À synchroniser.'); } };
+      row.append(status, edit, remove);
+    }
     container.append(row);
   }
   if (!container.children.length) container.append(text('p', 'Aucun rendez-vous.', 'muted'));
@@ -129,7 +153,7 @@ function renderPlanning(items) {
 function render(next) {
   if (!next) return;
   state = next;
-  $('pc').textContent = 'Connecté';
+  if (companionMode === CompanionMode.ONLINE_PC) $('pc').textContent = 'Connecté';
   $('obs').textContent = next.obs.connected ? 'Prêt' : 'Déconnecté';
   $('scene').textContent = next.obs.scene || '—';
   $('live').textContent = next.obs.streaming ? 'LIVE' : 'OFFLINE';
@@ -141,13 +165,11 @@ function render(next) {
   if (document.activeElement !== $('twitch-category')) $('twitch-category').value = next.twitch?.gameName || '';
   $('twitch-game-id').value = next.twitch?.gameId || '';
   $('twitch-editor').hidden = !next.twitch?.connected;
-  $('slot-form').elements.twitch.disabled = !next.twitch?.connected;
-  $('slot-form').elements.google.disabled = !next.google?.connected;
   renderDeck(next.obs.mediaInputs);
   renderPlanning(next.planning);
   $('timer').textContent = formatDuration(remaining());
-  showPairing(false);
-  remoteButtons(false);
+  if (companionMode === CompanionMode.ONLINE_PC) showPairing(false);
+  remoteButtons(companionMode !== CompanionMode.ONLINE_PC);
   $('stream').disabled = !next.obs.connected;
   const chattingActive = next.mode === 'live' && Boolean(next.settings.chattingScene) && next.obs.scene === next.settings.chattingScene;
   document.querySelectorAll('[data-mode]').forEach(button => {
@@ -198,6 +220,8 @@ async function getWsTicket() {
 
 async function fetchState() {
   const next = await transport.state();
+  companion.replaceServerSnapshot(next);
+  companionMode = CompanionMode.ONLINE_PC;
   render(next);
 }
 
@@ -223,6 +247,7 @@ async function connect() {
       $('connection').textContent = 'Connecté';
       $('connection').className = 'ok';
       render(state);
+      setConnectionMode(CompanionMode.ONLINE_PC);
       note('Télécommande connectée au PC.');
     };
     ws.onmessage = event => {
@@ -234,17 +259,15 @@ async function connect() {
     ws.onclose = () => {
       $('connection').textContent = 'Reconnexion…';
       $('connection').className = '';
-      $('pc').textContent = 'Hors ligne';
-      remoteButtons(true);
+      setConnectionMode(resolveMode({ pcAvailable: false, internetAvailable: navigator.onLine }));
+      render(offlineState());
       reconnectTimer = setTimeout(connect, retry);
       retry = nextRetry(retry);
     };
     ws.onerror = () => ws.close();
   } catch (error) {
-    $('connection').textContent = 'Connexion refusée';
-    $('pc').textContent = 'Hors ligne';
-    remoteButtons(true);
-    note(isAndroidRuntime() ? 'StreamDashboard est introuvable sur le réseau. Vérifie que Remote LAN est activé sur le PC.' : error.message);
+    setConnectionMode(resolveMode({ pcAvailable: false, internetAvailable: navigator.onLine }));
+    render(offlineState());
     if (error instanceof HttpError && [401, 403].includes(error.status)) {
       credential = '';
       await credentialStorage.clear();
@@ -301,8 +324,10 @@ $('slot-form').onsubmit = async event => {
   const date = form.get('date'); const startAtUtc = new Date(`${date}T${form.get('start')}`).toISOString(); const endAtUtc = new Date(`${date}T${form.get('end')}`).toISOString();
   try {
     if (form.get('twitch') === 'on' && !$('slot-twitch-game-id').value) throw new Error('Sélectionnez une catégorie Twitch officielle.');
-    const next = await transport.createPlanning({ title: form.get('title'), startAtUtc, endAtUtc, category: form.get('category'), desiredPublication: { local: true, twitch: form.get('twitch') === 'on', google: form.get('google') === 'on' }, twitchCategoryId: form.get('twitch') === 'on' ? $('slot-twitch-game-id').value : undefined, twitchCategoryName: form.get('twitch') === 'on' ? $('slot-twitch-category').value : undefined });
-    render(next); $('slot-dialog').close(); event.currentTarget.reset(); note('Créneau créé.');
+    const value = { title: form.get('title'), startAtUtc, endAtUtc, category: form.get('category'), description: form.get('description') || '', desiredPublication: { local: false, twitch: form.get('twitch') === 'on', google: form.get('google') === 'on' }, twitchCategoryId: form.get('twitch') === 'on' ? $('slot-twitch-game-id').value : undefined, twitchCategoryName: form.get('twitch') === 'on' ? $('slot-twitch-category').value : undefined };
+    if (companionMode === CompanionMode.ONLINE_PC) { const next = await transport.createPlanning(value); companion.replaceServerSnapshot(next); render(next); }
+    else { companion.createEvent(value); render(offlineState()); }
+    $('slot-dialog').close(); event.currentTarget.reset(); note(companionMode === CompanionMode.ONLINE_PC ? 'Créneau créé.' : 'Créneau enregistré · À synchroniser.');
   } catch (error) { note(error.message); }
 };
 
@@ -384,7 +409,7 @@ async function start() {
   if (isAndroidRuntime()) {
     $('android-options').hidden = false;
     $('pair-server').value = server;
-    if (!server) { showPairing(true); $('connection').textContent = 'Aucun PC configuré'; return; }
+    if (!server) { showPairing(true); setConnectionMode(resolveMode({ pcAvailable: false, internetAvailable: navigator.onLine })); render(offlineState()); return; }
     document.addEventListener('visibilitychange', () => { if (!document.hidden) { ws?.close(); void connect(); } });
   } else {
     $('server-label').hidden = true;
@@ -392,4 +417,14 @@ async function start() {
   }
   await connect();
 }
+window.addEventListener('online', () => { if (companionMode !== CompanionMode.ONLINE_PC) setConnectionMode(CompanionMode.ONLINE_STANDALONE); void connect(); });
+window.addEventListener('offline', () => setConnectionMode(CompanionMode.OFFLINE));
+
+function renderCompanion() {
+  const cache = companion.snapshot();
+  const draw = (id, values, label) => { const root = $(id); root.replaceChildren(...values.map(item => { const row = document.createElement('div'); row.className = 'companion-row'; row.append(text('span', label(item))); const remove = text('button', 'Supprimer'); remove.type = 'button'; remove.onclick = () => { companion.removeCollection(id, item.id); renderCompanion(); }; row.append(remove); return row; })); };
+  draw('notes', cache.notes, item => item.text); draw('templates', cache.templates, item => item.title); draw('checklist', cache.checklist, item => `${item.done ? '✓' : '○'} ${item.label}`);
+}
+for (const [buttonId, kind, inputId, property] of [['add-note','notes','note-text','text'],['add-template','templates','template-title','title'],['add-check','checklist','check-label','label']]) $(buttonId).onclick = () => { const input = $(inputId); if (!input.value.trim()) return; companion.upsertCollection(kind, { [property]: input.value.trim(), ...(kind === 'checklist' ? { done: false } : {}) }); input.value = ''; renderCompanion(); note('Enregistré localement · À synchroniser.'); };
+renderCompanion();
 void start();

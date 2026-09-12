@@ -2,6 +2,8 @@
 
 ## Principe
 
+> Le socle compagnon autonome et ses limites de publication provider sont décrits dans [ANDROID_AUTONOMOUS_COMPANION.md](ANDROID_AUTONOMOUS_COMPANION.md).
+
 Le PC reste le hub maître : **Android/iOS → protocole StreamDashboard → API PC → core → OBS/Twitch/Google**. Le téléphone ne contacte jamais OBS, Twitch ou Google et ne reçoit jamais leurs credentials.
 
 `packages/contracts` reste la source des structures partagées. Le mobile reçoit toutefois une **projection réduite** (`RemoteDashboardState`) : il n'a pas besoin de connaître les chemins Windows, la configuration OAuth, les calendriers Google, les appareils appairés ou les diagnostics internes.
