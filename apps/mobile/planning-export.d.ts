@@ -4,9 +4,21 @@ export function sharePlanningPng(
   blob: Blob,
   fileName: string,
   nativeBridge?: { shareImage?: (encodedPng: string, requestedName: string, mimeType: string) => string },
-  navigatorApi?: { share?: (data: ShareData) => Promise<void>; canShare?: (data?: ShareData) => boolean },
-  documentApi?: Pick<Document, 'createElement'>,
-  urlApi?: Pick<typeof URL, 'createObjectURL' | 'revokeObjectURL'>,
+  navigatorApi?: {
+    share?: (data: unknown) => unknown;
+    canShare?: (data?: unknown) => boolean;
+  },
+  documentApi?: {
+    createElement: (tagName: string) => {
+      href?: string;
+      download?: string;
+      click: () => void;
+    };
+  },
+  urlApi?: {
+    createObjectURL: (blob: Blob) => string;
+    revokeObjectURL: (url: string) => void;
+  },
 ): Promise<'android' | 'web-share' | 'download'>;
 
 export function exportPlanningImage(
