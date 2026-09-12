@@ -11,3 +11,13 @@ data/dashboard.json
 
 # Generated Windows packaging asset
 resources/streamdashboard.ico
+
+# Android build output and local Gradle state
+android/.gradle/
+android/local.properties
+android/**/build/
+android/app/src/main/assets/public/
+android/app/src/main/res/mipmap-*/
+*.apk
+*.jks
+*.keystore
