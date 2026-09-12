@@ -1,7 +1,18 @@
 import { describe, expect, it } from 'vitest';
+import { readFileSync } from 'node:fs';
 import { apiUrl, nextRetry, normalizeServer, parsePairing, websocketUrl } from '../apps/mobile/runtime.js';
 
+const mobileIndex = readFileSync(new URL('../apps/mobile/index.html', import.meta.url), 'utf8');
+const mobileScript = readFileSync(new URL('../apps/mobile/mobile.js', import.meta.url), 'utf8');
+const remotePolicy = readFileSync(new URL('../apps/server/src/remote-policy.ts', import.meta.url), 'utf8');
+
 describe('Android remote runtime', () => {
+  it('expose Pause avec les quatre modes et conserve le flux mode.set partagé', () => {
+    for (const mode of ['intro', 'live', 'pause', 'end']) expect(mobileIndex).toContain(`data-mode="${mode}"`);
+    expect(mobileScript).toContain("command({ type: 'mode.set', mode: button.dataset.mode })");
+    expect(mobileScript).toContain("button.classList.toggle('active', button.dataset.mode === next.mode)");
+    expect(remotePolicy).toContain("new Set(['intro', 'live', 'pause', 'end'])");
+  });
   it.each([
     ['192.168.1.10', 'http://192.168.1.10:47832'],
     ['192.168.1.10:47832', 'http://192.168.1.10:47832'],
