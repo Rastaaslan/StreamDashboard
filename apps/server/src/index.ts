@@ -37,6 +37,7 @@ import {
   type TimerState,
 } from '../../../packages/contracts/src/index.js';
 import { DashboardCommandService } from './command-service.js';
+import { companionSnapshot, emptyCompanionState, reconcileCompanionBatch, resolveCompanionConflict, type CompanionState, type SyncOperation } from './companion-sync.js';
 import { RemoteAuth, type PersistedRemoteDevice } from './remote-auth.js';
 import { parseRemoteCommand, toRemoteDashboardState } from './remote-policy.js';
 import {
@@ -69,6 +70,7 @@ interface LocalData {
   twitchLastSyncedAt: string | null;
   google: GoogleLocalState;
   remoteDevices: PersistedRemoteDevice[];
+  companion: CompanionState;
 }
 export interface DashboardServerOptions {
   port?: number;
@@ -298,6 +300,7 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
     twitchLastSyncedAt: null,
     google: { targetCalendarId: null, lastSyncedAt: null },
     remoteDevices: [],
+    companion: emptyCompanionState(),
   };
 
   let local = await store.read(defaults);
@@ -316,6 +319,9 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
   local.planning = Array.isArray(local.planning)
     ? local.planning.map(sanitizeCalendarItem).filter((item): item is CalendarItem => Boolean(item))
     : [];
+  local.companion = object(local.companion)
+    ? { ...emptyCompanionState(), ...local.companion } as CompanionState
+    : emptyCompanionState();
   if (!Array.isArray(local.checklist)) local.checklist = structuredClone(defaults.checklist);
   else {
     const seen = new Set<string>();
@@ -1038,7 +1044,7 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
     }
     scheduleRemoteActivitySave();
     const allowed = (req.method === 'GET' && (pathName === '/v1/state' || pathName === '/v1/twitch/categories'))
-      || (req.method === 'POST' && ['/v1/commands', '/v1/remote/ws-ticket', '/v1/twitch/channel', '/v1/planning'].includes(pathName));
+      || (req.method === 'POST' && (['/v1/commands', '/v1/remote/ws-ticket', '/v1/twitch/channel', '/v1/planning', '/v1/companion/sync'].includes(pathName) || /^\/v1\/companion\/conflicts\/[^/]+\/resolve$/.test(pathName)));
     if (!allowed) {
       res.status(403).json({ ok: false, error: { code: 'REMOTE_SCOPE_DENIED', message: 'Cette action n’est pas autorisée depuis la télécommande.' } });
       return;
@@ -1061,6 +1067,35 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
   app.get('/api/v1/health', health);
   app.get('/api/v1/state', (req, res) => res.json(isRemoteRequest(req) ? toRemoteDashboardState(snapshot()) : snapshot()));
   app.get('/api/v1/capabilities', (_req, res) => res.json(capabilities));
+  app.post('/api/v1/companion/sync', async (req, res, next) => {
+    try {
+      // Unlike ordinary desktop API calls, sync always requires a paired credential:
+      // accidental localhost access must not expose the durable companion journal.
+      const credential = req.headers.authorization?.match(/^Device (\S+)$/)?.[1] ?? '';
+      const deviceId = remoteAuth.authenticate(credential);
+      if (!deviceId) { res.status(401).json({ ok: false, error: { code: 'DEVICE_AUTH_REQUIRED', message: 'Compagnon non autorisé.' } }); return; }
+      if (req.body?.schemaVersion !== 2) { res.status(409).json({ ok: false, error: { code: 'COMPANION_SCHEMA_INCOMPATIBLE', message: 'Version du cache compagnon incompatible. Les opérations locales sont conservées.' } }); return; }
+      if (req.body?.deviceId !== deviceId) { res.status(400).json({ ok: false, error: { code: 'COMPANION_PAYLOAD_INVALID', message: 'Identité compagnon invalide.' } }); return; }
+      const result = await plan(async () => {
+        const reconciled = reconcileCompanionBatch(local.planning, local.checklist, local.companion, req.body.operations as SyncOperation[]);
+        local.planning = reconciled.planning; local.checklist = reconciled.checklist; local.companion = reconciled.companion;
+        // Persistence is the transaction boundary: ACKs are emitted only after this resolves.
+        await save(); broadcast();
+        return { acknowledged: reconciled.acknowledged, conflicts: reconciled.conflicts, snapshot: companionSnapshot(local.planning, local.companion) };
+      });
+      res.json({ ok: true, ...result });
+    } catch (error) { next(error); }
+  });
+  app.post('/api/v1/companion/conflicts/:operationId/resolve', async (req, res, next) => {
+    try {
+      const credential = req.headers.authorization?.match(/^Device (\S+)$/)?.[1] ?? '';
+      if (!remoteAuth.authenticate(credential)) { res.status(401).json({ ok: false, error: { code: 'DEVICE_AUTH_REQUIRED', message: 'Compagnon non autorisé.' } }); return; }
+      const strategy = req.body?.strategy;
+      if (!['pc', 'android'].includes(strategy)) { res.status(400).json({ ok: false, error: { code: 'COMPANION_PAYLOAD_INVALID', message: 'Résolution invalide.' } }); return; }
+      const result = await plan(async () => { const resolved = resolveCompanionConflict(local.planning, local.companion, req.params.operationId, strategy); local.planning = resolved.planning; local.companion = resolved.companion; await save(); broadcast(); return resolved; });
+      res.json({ ok: true, acknowledged: result.acknowledged, snapshot: companionSnapshot(local.planning, local.companion), conflicts: Object.values(local.companion.conflicts) });
+    } catch (error) { next(error); }
+  });
   app.get('/api/v1/twitch/categories', async (req, res, next) => {
     try {
       const query = String(req.query.q ?? '').trim();
@@ -1119,6 +1154,7 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
         google: input.desiredPublication.google === true,
       } : { local: true, twitch: false, google: false };
       if (desired.twitch && (category !== 'live' || allDay)) throw new Error('La publication Twitch nécessite un événement Live avec des horaires précis.');
+      const beforeIds = new Set(local.planning.map(item => item.id));
       await plan(async () => planning().create({
         title,
         description: typeof input.description === 'string' ? input.description.slice(0, 4000) : '',
@@ -1131,6 +1167,11 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
         twitchCategoryId: typeof input.twitchCategoryId === 'string' ? input.twitchCategoryId : undefined,
         twitchCategoryName: typeof input.twitchCategoryName === 'string' ? input.twitchCategoryName : undefined,
       }));
+      for (const created of local.planning.filter(item => !beforeIds.has(item.id))) {
+        local.companion.eventRevisions[created.id] = 1;
+        local.companion.eventHistory[created.id] = structuredClone(created) as unknown as Record<string, unknown>;
+        local.companion.serverRevision++;
+      }
       invalidatePreflight();
       const next = await changed();
       res.status(201).json(isRemoteRequest(req) ? toRemoteDashboardState(next) : next);
@@ -1160,6 +1201,7 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
       const effectiveTwitch = desiredPublication?.twitch ?? item.desiredPublication?.twitch ?? false;
       if (effectiveTwitch && (category !== 'live' || allDay)) throw new Error('La publication Twitch nécessite un événement Live avec des horaires précis.');
       const kind = category === 'live' ? 'LIVE' : category === 'personal' ? 'PERSONAL' : undefined;
+      local.companion.eventHistory[id] = structuredClone(item) as unknown as Record<string, unknown>;
       await plan(async () => planning().update(id, {
         title,
         description: typeof req.body.description === 'string' ? req.body.description.slice(0, 4000) : item.description,
@@ -1174,6 +1216,8 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
         desiredPublication,
         confirmRecurring: req.body.confirmRecurring === true,
       }));
+      local.companion.eventRevisions[id] = (local.companion.eventRevisions[id] ?? 1) + 1;
+      local.companion.serverRevision++;
       invalidatePreflight();
       res.json(await changed());
     } catch (error) { next(error); }
@@ -1220,7 +1264,11 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
         google: Boolean(item.providers?.google?.remoteId),
         confirmRecurring: req.query.confirmRecurring === 'true',
       };
+      const oldRevision = local.companion.eventRevisions[id] ?? 1;
       await plan(async () => planning().remove(id, destinations));
+      local.companion.eventRevisions[id] = oldRevision + 1;
+      local.companion.tombstones[id] = { id, revision: oldRevision + 1, updatedAt: new Date().toISOString() };
+      delete local.companion.eventHistory[id]; local.companion.serverRevision++;
       invalidatePreflight();
       res.json(await changed());
     } catch (error) { next(error); }

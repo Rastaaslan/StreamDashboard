@@ -38,6 +38,7 @@
   <div class="view" data-view="settings">
   <button class="secondary" id="forget-device" hidden>Oublier cette télécommande</button>
   <section id="android-options" hidden><label class="toggle"><input type="checkbox" id="keep-awake"> Garder l’écran allumé pendant le live</label><button class="secondary" id="edit-server">Modifier l’adresse du PC</button></section>
+  <dialog id="sync-conflict"><h2>⚠️ Conflit de synchronisation</h2><p id="sync-conflict-fields"></p><div class="conflict-actions"><button id="keep-pc">GARDER PC</button><button id="keep-phone">GARDER TÉLÉPHONE</button></div></dialog>
   <p id="message" role="status" aria-live="polite"></p></div>
 </main><nav class="bottom-nav"><button data-tab="live">●<small>LIVE</small></button><button data-tab="regie">◆<small>RÉGIE</small></button><button data-tab="planning">▦<small>PLANNING</small></button><button data-tab="prepare">✓<small>PRÉPA</small></button><button data-tab="settings">⚙<small>RÉGLAGES</small></button></nav>
 <script type="module" src="mobile.js"></script>

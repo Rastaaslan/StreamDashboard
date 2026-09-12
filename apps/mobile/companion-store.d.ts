@@ -13,4 +13,6 @@ export function createCompanionStore(storage?: Storage, clock?: () => string): {
   upsertCollection(kind: 'notes' | 'checklist' | 'templates', input: any): any;
   removeCollection(kind: 'notes' | 'checklist' | 'templates', id: string): void;
   acknowledge(ids: string[]): void;
+  applySyncResponse(response: { acknowledged: string[]; conflicts?: any[]; snapshot?: any }): any;
+  conflicts(): any[];
 };
