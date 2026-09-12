@@ -32,6 +32,8 @@ export function createTransport(getServer, getCredential) {
     searchTwitch: query => request(`/api/v1/twitch/categories?q=${encodeURIComponent(query)}`, { headers: { authorization: `Device ${getCredential()}` } }),
     updateTwitch: value => request('/api/v1/twitch/channel', { method: 'POST', headers: authHeaders(), body: JSON.stringify(value) }),
     createPlanning: value => request('/api/v1/planning', { method: 'POST', headers: authHeaders(), body: JSON.stringify(value) }),
+    syncCompanion: value => request('/api/v1/companion/sync', { method: 'POST', headers: authHeaders(), body: JSON.stringify(value) }),
+    resolveCompanionConflict: (operationId, strategy) => request(`/api/v1/companion/conflicts/${encodeURIComponent(operationId)}/resolve`, { method: 'POST', headers: authHeaders(), body: JSON.stringify({ strategy }) }),
     websocket: ticket => new WebSocket(isAndroidRuntime() ? websocketUrl(getServer(), ticket) : `${location.protocol === 'https:' ? 'wss' : 'ws'}://${location.host}/ws/v1?ticket=${encodeURIComponent(ticket)}`),
   };
 }

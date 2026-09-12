@@ -16,6 +16,8 @@ let retry = 500;
 let reconnectTimer = null;
 let companionMode = CompanionMode.OFFLINE;
 const companion = createCompanionStore();
+let companionSyncFlight = null;
+let deviceId = localStorage.getItem('streamdashboard.deviceId') || '';
 let planningFilters = { ...DEFAULT_FILTERS };
 const exportNoteKey = 'streamdashboard.exportNote';
 try { planningFilters = { ...planningFilters, ...JSON.parse(localStorage.getItem('streamdashboard.planningFilters') || '{}') }; } catch { /* corrupted preferences reset safely */ }
@@ -200,6 +202,8 @@ async function pair() {
     if (!id || !code) throw new Error('ID et code de pairing requis.');
     const result = await transport.pair({ id, code, name });
     credential = result.credential;
+    deviceId = result.deviceId;
+    localStorage.setItem('streamdashboard.deviceId', deviceId);
     await credentialStorage.set(credential);
     $('pair-code').value = '';
     $('pair-link').value = '';
@@ -219,11 +223,38 @@ async function getWsTicket() {
 }
 
 async function fetchState() {
+  if (credential && deviceId) await syncCompanion();
   const next = await transport.state();
-  companion.replaceServerSnapshot(next);
+  if (!companion.snapshot().pending.length) companion.replaceServerSnapshot(next);
   companionMode = CompanionMode.ONLINE_PC;
   render(next);
 }
+
+async function syncCompanion() {
+  if (companionSyncFlight) return companionSyncFlight;
+  companionSyncFlight = (async () => {
+    const cache = companion.snapshot();
+    const response = await transport.syncCompanion({ schemaVersion: cache.schemaVersion, deviceId, lastKnownServerRevision: cache.serverRevision || 0, operations: cache.pending });
+    companion.applySyncResponse(response);
+    showSyncConflict();
+    return response;
+  })();
+  try { return await companionSyncFlight; } finally { companionSyncFlight = null; }
+}
+
+function showSyncConflict() {
+  const conflict = companion.conflicts()[0];
+  if (!conflict) return;
+  $('sync-conflict-fields').textContent = `${conflict.fields.join(', ')} · PC et Téléphone contiennent des valeurs différentes.`;
+  $('sync-conflict').showModal();
+}
+async function resolveSyncConflict(strategy) {
+  const conflict = companion.conflicts()[0]; if (!conflict) return;
+  try { const response = await transport.resolveCompanionConflict(conflict.operationId, strategy); companion.applySyncResponse(response); $('sync-conflict').close(); render(offlineState()); showSyncConflict(); }
+  catch (error) { note(error.message); }
+}
+$('keep-pc').onclick = () => void resolveSyncConflict('pc');
+$('keep-phone').onclick = () => void resolveSyncConflict('android');
 
 async function connect() {
   if (reconnectTimer) {

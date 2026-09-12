@@ -53,6 +53,14 @@ describe('compagnon Android autonome', () => {
     expect(store.snapshot().planning.map((item: { id: string }) => item.id)).not.toContain('pc-old');
   });
 
+  it('applique une tombstone PC sans ressusciter la copie Android', () => {
+    const store = createCompanionStore(storage as unknown as Storage);
+    store.replaceServerSnapshot({ planning: [{ id: 'deleted-on-pc', title: 'Ancien live' }], settings: {} });
+    store.replaceServerSnapshot({ planning: [], tombstones: [{ id: 'deleted-on-pc', revision: 2, updatedAt: '2026-09-12T22:00:00.000Z' }] });
+    expect(store.snapshot().planning).toEqual([]);
+    expect(store.snapshot().tombstones).toContainEqual(expect.objectContaining({ eventId: 'deleted-on-pc', revision: 2 }));
+  });
+
   it('fusionne les champs disjoints et expose les vrais conflits', () => {
     const base = { id: '1', title: 'A', startAtUtc: '20:00', description: '', revision: 1 };
     expect(reconcileEvent(base, { ...base, startAtUtc: '21:00', revision: 2 }, { ...base, description: 'live chill', revision: 2 })).toMatchObject({ conflict: false, value: { startAtUtc: '21:00', description: 'live chill', revision: 3 } });

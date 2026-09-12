@@ -1,5 +1,20 @@
 # Compagnon Android autonome
 
+## Synchronisation transactionnelle (phase 2)
+
+```text
+Cache Android -> opérations pending -> Companion Sync API
+                                      -> réconciliation -> planning canonique
+                                                            |-> Twitch (PC)
+                                                            `-> Google (PC)
+```
+
+Chaque mutation conserve un `operationId` durable, l'identifiant canonique, sa `baseRevision`, un patch borné et sa base de fusion. Le PC enregistre atomiquement planning, révisions, tombstones, conflits et journal d'idempotence avant de renvoyer `acknowledged`. Android ne retire que ces identifiants de sa queue. Une réponse perdue peut donc être rejouée sans recréation ni nouvelle révision; le journal survit au redémarrage et reste borné à 5 000 entrées.
+
+Les champs disjoints sont fusionnés. Un même champ modifié depuis la base commune reste pending et apparaît en `⚠️ Conflit`; l'utilisateur choisit **GARDER PC** ou **GARDER TÉLÉPHONE**. Delete contre update est également explicite et les tombstones empêchent la résurrection par un ancien snapshot.
+
+Le retour en `ONLINE_PC` déclenche un flush single-flight avant le nouvel état canonique. Timeout, Wi-Fi perdu, réponse perdue, arrêt et 503 conservent la queue; la reconnexion fournit le backoff. `COMPANION_SCHEMA_INCOMPATIBLE` n'efface jamais le cache. Le endpoint exige toujours le credential Remote, même depuis localhost, valide types, identifiants, dates, tailles et clés, et n'expose aucun secret provider ou desktop.
+
 ## Modèle de fonctionnement
 
 Le runtime mobile distingue `ONLINE_PC`, `ONLINE_STANDALONE` et `OFFLINE`. Une coupure du WebSocket ne bloque plus le planning : le dernier snapshot versionné est rendu immédiatement, les commandes OBS restent désactivées, et la reconnexion conserve le backoff existant. Le retour du socket replace le PC comme coordinateur et renouvelle le snapshot.

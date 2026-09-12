@@ -1,5 +1,13 @@
 # Architecture de la télécommande mobile
 
+## Boucle de réplication compagnon
+
+Android n'est pas un second backend. Son cache est une vue durable optimiste du planning canonique PC et les créations gardent le même `eventId`. `serverRevision` est le curseur global; chaque événement et élément Notes, Checklist ou Templates porte une révision.
+
+La requête unique `POST /api/v1/companion/sync` transporte device, `schemaVersion`, curseur et queue ordonnée. Sous la file planning, le serveur déduplique, réconcilie puis effectue l'écriture JSON atomique avant tout ACK. `providerLinks`/`providers` et `desiredPublication` traversent les patches sans exposer les credentials Twitch ou Google; ces intégrations restent PC-only.
+
+Les tombstones appartiennent au snapshot. Les conflits ne sont jamais ACK avant décision. Le client limite les flushs à un seul vol, garde ses opérations lors d'erreurs transitoires, applique les ACK explicites puis le snapshot réconcilié: Android et PC peuvent ainsi redémarrer sans rollback.
+
 ## Principe
 
 > Le socle compagnon autonome et ses limites de publication provider sont décrits dans [ANDROID_AUTONOMOUS_COMPANION.md](ANDROID_AUTONOMOUS_COMPANION.md).
