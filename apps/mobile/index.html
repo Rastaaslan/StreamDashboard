@@ -18,6 +18,8 @@
   <section id="pairing" class="pairing" hidden>
     <small>APPAIRAGE</small><h2>Connecter ce téléphone</h2>
     <p>Génère un code depuis StreamDashboard sur le PC, puis saisis-le ici.</p>
+    <label id="server-label">Adresse du PC Stream<input id="pair-server" inputmode="url" placeholder="192.168.1.42:47832" autocomplete="url"></label>
+    <label id="link-label">Lien d’appairage (facultatif)<input id="pair-link" inputmode="url" placeholder="streamdashboard://pair?v=1&amp;…" autocomplete="off"></label>
     <label>ID de pairing<input id="pair-id" autocomplete="off"></label>
     <label>Code<input id="pair-code" autocomplete="one-time-code"></label>
     <label>Nom du téléphone<input id="pair-name" maxlength="80" value="Android"></label>
@@ -32,6 +34,7 @@
   <section><h2>Planning</h2><div id="planning"></div><button class="secondary" id="export-planning">IMAGE DU PLANNING</button></section>
   <button class="critical" id="stream">DÉMARRER LE LIVE</button>
   <button class="secondary" id="forget-device" hidden>Oublier cette télécommande</button>
+  <section id="android-options" hidden><label class="toggle"><input type="checkbox" id="keep-awake"> Garder l’écran allumé pendant le live</label><button class="secondary" id="edit-server">Modifier l’adresse du PC</button></section>
   <p id="message" role="status" aria-live="polite"></p>
 </main>
 <script type="module" src="mobile.js"></script>

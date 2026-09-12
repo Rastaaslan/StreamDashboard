@@ -29,7 +29,7 @@ for (const file of sourceFiles) {
   }
 }
 
-const publicSurfaces = ['apps/web/app.js', 'apps/mobile/mobile.js', 'packages/contracts/src/index.ts'];
+const publicSurfaces = ['apps/web/app.js', 'apps/mobile/mobile.js', 'apps/mobile/transport.js', 'apps/mobile/storage.js', 'packages/contracts/src/index.ts'];
 for (const file of publicSurfaces) {
   const content = await readFile(file, 'utf8');
   if (!file.endsWith('.js')) continue;
@@ -42,10 +42,11 @@ for (const file of publicSurfaces) {
   for (const secret of forbidden) if (content.includes(secret)) failures.push(`${file}: secret provider exposé (${secret})`);
 }
 
-const mobile = await readFile('apps/mobile/mobile.js', 'utf8');
+const mobile = `${await readFile('apps/mobile/mobile.js', 'utf8')}\n${await readFile('apps/mobile/transport.js', 'utf8')}`;
 if (/\.innerHTML\s*=/.test(mobile)) failures.push('apps/mobile/mobile.js: données distantes injectées via innerHTML');
 if (/ws\/v1\?device=|[?&]device=\$\{/.test(mobile)) failures.push('apps/mobile/mobile.js: credential device longue placée dans URL WebSocket');
-if (!mobile.includes('/api/v1/remote/ws-ticket')) failures.push('apps/mobile/mobile.js: ticket WebSocket court absent');
+if (!mobile.includes('/api/v1/remote/ws-ticket')) failures.push('apps/mobile: ticket WebSocket court absent');
+if (mobile.includes('Access-Control-Allow-Origin: *')) failures.push('apps/mobile: origine CORS globale interdite');
 
 const server = await readFile('apps/server/src/index.ts', 'utf8');
 if (server.includes("req.method === 'GET' || req.path === '/v1/remote/pair'")) failures.push('apps/server/src/index.ts: GET distants globalement exemptés d’authentification');

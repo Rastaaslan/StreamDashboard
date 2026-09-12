@@ -1,14 +1,18 @@
+import { isAndroidRuntime, nextRetry, normalizeServer, parsePairing } from './runtime.js';
+import { credentialStorage, settingsStorage } from './storage.js';
+import { createTransport, HttpError } from './transport.js';
+
 const $ = id => document.getElementById(id);
 
-let credential = localStorage.getItem('streamdashboard.device') || '';
+let credential = '';
+let server = settingsStorage.getServer();
 let state = null;
 let busy = false;
 let ws = null;
 let retry = 500;
 let reconnectTimer = null;
 
-const REQUEST_TIMEOUT_MS = 30_000;
-const authHeaders = () => ({ 'content-type': 'application/json', authorization: `Device ${credential}` });
+const transport = createTransport(() => server, () => credential);
 const note = value => { $('message').textContent = String(value || ''); };
 const text = (tag, value, className) => {
   const node = document.createElement(tag);
@@ -43,22 +47,6 @@ function showPairing(show) {
   if (show) remoteButtons(true);
 }
 
-async function jsonRequest(url, init = {}) {
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
-  try {
-    const response = await fetch(url, { ...init, signal: controller.signal });
-    const body = await response.json().catch(() => ({}));
-    if (!response.ok) throw new Error(body.error?.message || body.error || `HTTP ${response.status}`);
-    return body;
-  } catch (error) {
-    if (error?.name === 'AbortError') throw new Error('Le PC ne répond pas dans le délai attendu.');
-    throw error;
-  } finally {
-    clearTimeout(timeout);
-  }
-}
-
 async function command(value) {
   if (busy || !credential || !ws || ws.readyState !== WebSocket.OPEN) {
     note('Télécommande non connectée.');
@@ -66,10 +54,9 @@ async function command(value) {
   }
   busy = true;
   try {
-    const body = await jsonRequest('/api/v1/commands', {
-      method: 'POST', headers: authHeaders(), body: JSON.stringify(value),
-    });
+    const body = await transport.command(value);
     render(body.state);
+    globalThis.StreamDashboardNative?.haptic?.(['session.start', 'session.stop'].includes(value.type) ? 'strong' : 'light');
     note('Commande confirmée par le PC.');
   } catch (error) {
     note(error.message);
@@ -165,17 +152,21 @@ async function pair() {
   if (busy) return;
   busy = true;
   try {
+    if (isAndroidRuntime()) {
+      const parsed = $('pair-link').value.trim() ? parsePairing($('pair-link').value) : null;
+      server = parsed?.server || normalizeServer($('pair-server').value);
+      settingsStorage.setServer(server);
+      if (parsed) { $('pair-id').value = parsed.id; $('pair-code').value = parsed.code; }
+    }
     const id = $('pair-id').value.trim();
     const code = $('pair-code').value.trim();
     const name = $('pair-name').value.trim() || 'Android';
     if (!id || !code) throw new Error('ID et code de pairing requis.');
-    const result = await jsonRequest('/api/v1/remote/pair', {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ id, code, name }),
-    });
+    const result = await transport.pair({ id, code, name });
     credential = result.credential;
-    localStorage.setItem('streamdashboard.device', credential);
+    await credentialStorage.set(credential);
+    $('pair-code').value = '';
+    $('pair-link').value = '';
     note('Télécommande appairée. Connexion…');
     showPairing(false);
     connect();
@@ -187,14 +178,12 @@ async function pair() {
 }
 
 async function getWsTicket() {
-  const result = await jsonRequest('/api/v1/remote/ws-ticket', {
-    method: 'POST', headers: authHeaders(), body: '{}',
-  });
+  const result = await transport.ticket();
   return result.ticket;
 }
 
 async function fetchState() {
-  const next = await jsonRequest('/api/v1/state', { headers: { authorization: `Device ${credential}` } });
+  const next = await transport.state();
   render(next);
 }
 
@@ -214,7 +203,7 @@ async function connect() {
     await fetchState();
     remoteButtons(true);
     const ticket = await getWsTicket();
-    ws = new WebSocket(`${location.protocol === 'https:' ? 'wss' : 'ws'}://${location.host}/ws/v1?ticket=${encodeURIComponent(ticket)}`);
+    ws = transport.websocket(ticket);
     ws.onopen = () => {
       retry = 500;
       $('connection').textContent = 'Connecté';
@@ -233,22 +222,23 @@ async function connect() {
       $('pc').textContent = 'Hors ligne';
       remoteButtons(true);
       reconnectTimer = setTimeout(connect, retry);
-      retry = Math.min(10_000, retry * 2);
+      retry = nextRetry(retry);
     };
     ws.onerror = () => ws.close();
   } catch (error) {
     $('connection').textContent = 'Connexion refusée';
     $('pc').textContent = 'Hors ligne';
     remoteButtons(true);
-    note(error.message);
-    if (/non autorisée|401|403/i.test(error.message)) {
+    note(isAndroidRuntime() ? 'StreamDashboard est introuvable sur le réseau. Vérifie que Remote LAN est activé sur le PC.' : error.message);
+    if (error instanceof HttpError && [401, 403].includes(error.status)) {
       credential = '';
-      localStorage.removeItem('streamdashboard.device');
+      await credentialStorage.clear();
+      note('Cette télécommande a été révoquée depuis le PC.');
       showPairing(true);
       return;
     }
     reconnectTimer = setTimeout(connect, retry);
-    retry = Math.min(10_000, retry * 2);
+    retry = nextRetry(retry);
   }
 }
 
@@ -268,10 +258,13 @@ $('export-planning').onclick = async () => {
     if (error?.name !== 'AbortError') note(error.message);
   }
 };
+$('edit-server').onclick = () => { showPairing(true); $('pair-server').focus(); };
+$('keep-awake').onchange = () => globalThis.StreamDashboardNative?.setKeepAwake?.($('keep-awake').checked);
+
 $('forget-device').onclick = () => {
   if (!confirm('Oublier cette télécommande sur ce téléphone ?')) return;
   credential = '';
-  localStorage.removeItem('streamdashboard.device');
+  void credentialStorage.clear();
   ws?.close();
   showPairing(true);
   note('Credential local supprimé. Révoque aussi l’appareil depuis le PC si nécessaire.');
@@ -315,4 +308,22 @@ if ('serviceWorker' in navigator && window.isSecureContext) {
   note('Mode LAN HTTP : télécommande web disponible, installation PWA désactivée sans HTTPS.');
 }
 setInterval(tickTimer, 1000);
-connect();
+window.addEventListener('native-pairing', event => {
+  $('pair-link').value = String(event.detail || '');
+  showPairing(true);
+  void pair();
+});
+async function start() {
+  credential = await credentialStorage.get();
+  if (isAndroidRuntime()) {
+    $('android-options').hidden = false;
+    $('pair-server').value = server;
+    if (!server) { showPairing(true); $('connection').textContent = 'Aucun PC configuré'; return; }
+    document.addEventListener('visibilitychange', () => { if (!document.hidden) { ws?.close(); void connect(); } });
+  } else {
+    $('server-label').hidden = true;
+    $('link-label').hidden = true;
+  }
+  await connect();
+}
+void start();
