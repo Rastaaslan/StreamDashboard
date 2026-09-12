@@ -18,6 +18,8 @@
   <section id="pairing" class="pairing" hidden>
     <small>APPAIRAGE</small><h2>Connecter ce téléphone</h2>
     <p>Génère un code depuis StreamDashboard sur le PC, puis saisis-le ici.</p>
+    <label id="server-label">Adresse du PC Stream<input id="pair-server" inputmode="url" placeholder="192.168.1.42:47832" autocomplete="url"></label>
+    <label id="link-label">Lien d’appairage (facultatif)<input id="pair-link" inputmode="url" placeholder="streamdashboard://pair?v=1&amp;…" autocomplete="off"></label>
     <label>ID de pairing<input id="pair-id" autocomplete="off"></label>
     <label>Code<input id="pair-code" autocomplete="one-time-code"></label>
     <label>Nom du téléphone<input id="pair-name" maxlength="80" value="Android"></label>
@@ -25,13 +27,15 @@
   </section>
   <section class="status"><span>PC <b id="pc">—</b></span><span>OBS <b id="obs">—</b></span><span>SCÈNE <b id="scene">—</b></span></section>
   <section><small>PROCHAIN LIVE</small><h2 id="next">Aucun live planifié</h2><button data-command="session.prepare">PRÉPARER</button></section>
-  <section class="modes"><button data-mode="intro">INTRO</button><button data-mode="live">LIVE</button><button data-mode="pause">PAUSE</button><button data-mode="end">END</button></section>
-  <section class="timer"><strong id="timer">05:00</strong><div><button data-command="timer.start">▶</button><button data-command="timer.pause">Ⅱ</button><button data-command="timer.reset">↺</button><button data-command="timer.add" data-seconds="300">+5</button></div></section>
+  <section class="modes"><button data-mode="intro">INTRO</button><button data-mode="live">LIVE</button><button data-chatting>CHATTING</button><button data-mode="pause">PAUSE</button><button data-mode="end">END</button></section>
+  <section class="timer"><strong id="timer">05:00</strong><div class="timer-actions"><button data-command="timer.start">▶</button><button data-command="timer.pause">Ⅱ</button><button data-command="timer.reset">↺</button></div><div class="timer-presets"><button data-command="timer.add" data-seconds="60">+1 min</button><button data-command="timer.add" data-seconds="120">+2 min</button><button data-command="timer.add" data-seconds="300">+5 min</button><button data-command="timer.add" data-seconds="600">+10 min</button></div></section>
+  <section id="twitch-editor"><h2>Informations Twitch</h2><label>Titre du live<input id="twitch-title" maxlength="140"></label><label>Catégorie<input id="twitch-category" maxlength="80" autocomplete="off"><input id="twitch-game-id" type="hidden"></label><div id="twitch-results" class="category-results"></div><button id="save-twitch">ENREGISTRER</button></section>
   <section><h2>Audio</h2><div id="audio"></div></section>
   <section><h2>Fun Deck</h2><div id="deck"></div></section>
   <section><h2>Planning</h2><div id="planning"></div><button class="secondary" id="export-planning">IMAGE DU PLANNING</button></section>
   <button class="critical" id="stream">DÉMARRER LE LIVE</button>
   <button class="secondary" id="forget-device" hidden>Oublier cette télécommande</button>
+  <section id="android-options" hidden><label class="toggle"><input type="checkbox" id="keep-awake"> Garder l’écran allumé pendant le live</label><button class="secondary" id="edit-server">Modifier l’adresse du PC</button></section>
   <p id="message" role="status" aria-live="polite"></p>
 </main>
 <script type="module" src="mobile.js"></script>

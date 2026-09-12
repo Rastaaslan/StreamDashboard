@@ -100,6 +100,7 @@ const LOCAL_ADDRESSES = new Set(['127.0.0.1', '::1', '::ffff:127.0.0.1']);
 const PROVIDER_STATUSES = new Set(['synced', 'pending', 'error', 'not-published', 'conflict']);
 const DAY_MS = 86_400_000;
 const REMOTE_ACTIVITY_PERSIST_MS = 30_000;
+const ANDROID_NATIVE_ORIGIN = 'http://localhost';
 
 function object(value: unknown): value is Record<string, unknown> {
   return Boolean(value && typeof value === 'object' && !Array.isArray(value));
@@ -289,6 +290,7 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
       obsUrl: defaultObsUrl,
       launchObs: false,
       modeScenes: {},
+      chattingScene: undefined,
       startMode: 'intro',
       remoteEnabled: false,
     },
@@ -338,6 +340,8 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
     obsExecutablePath: typeof rawSettings.obsExecutablePath === 'string' && rawSettings.obsExecutablePath.trim().length <= 500
       ? rawSettings.obsExecutablePath.trim() || undefined : undefined,
     modeScenes: modeScenes(rawSettings.modeScenes),
+    chattingScene: typeof rawSettings.chattingScene === 'string' && rawSettings.chattingScene.trim().length <= 200
+      ? rawSettings.chattingScene.trim() || undefined : undefined,
     startMode: rawSettings.startMode === 'live' ? 'live' : 'intro',
     timerBrowserSource: typeof rawSettings.timerBrowserSource === 'string' && rawSettings.timerBrowserSource.trim().length <= 200
       ? rawSettings.timerBrowserSource.trim() || undefined : undefined,
@@ -416,6 +420,7 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
     },
   );
   let googleCalendars: Array<{ id: string; summary: string; writable: boolean }> = [];
+  let twitchChannel: { title: string; gameId: string; gameName: string } = { title: '', gameId: '', gameName: '' };
   let googleError: string | null = null;
   let googleOAuthAttempt: GoogleOAuthAttempt | null = null;
   let preflightState: PreflightState = {
@@ -455,7 +460,7 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
     const requestHost = request.headers.host;
     const acceptedOrigin = (() => {
       if (!origin) return true;
-      try { return Boolean(requestHost) && new URL(origin).host === requestHost; }
+      try { return origin === ANDROID_NATIVE_ORIGIN || (Boolean(requestHost) && new URL(origin).host === requestHost); }
       catch { return false; }
     })();
     const remoteRequest = !isLocalAddress(request.socket.remoteAddress);
@@ -485,6 +490,17 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
   app.use((req, res, next) => {
     const origin = req.headers.origin;
     if (!origin) { next(); return; }
+    if (origin === ANDROID_NATIVE_ORIGIN) {
+      res.set({
+        'Access-Control-Allow-Origin': ANDROID_NATIVE_ORIGIN,
+        'Access-Control-Allow-Headers': 'Authorization, Content-Type',
+        'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
+        Vary: 'Origin',
+      });
+      if (req.method === 'OPTIONS') { res.sendStatus(204); return; }
+      next();
+      return;
+    }
     try {
       if (new URL(origin).host === req.headers.host) { next(); return; }
     } catch { /* rejected below */ }
@@ -530,6 +546,7 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
     launchObs: local.settings.launchObs,
     obsExecutablePath: local.settings.obsExecutablePath,
     modeScenes: local.settings.modeScenes ?? {},
+    chattingScene: local.settings.chattingScene,
     startMode: local.settings.startMode ?? 'intro',
     timerBrowserSource: local.settings.timerBrowserSource,
     remoteEnabled: local.settings.remoteEnabled === true,
@@ -566,7 +583,7 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
         port: runtimePort,
         logsPath: options.logsPath ?? null,
       },
-      twitch: { ...twitch.state, lastSyncedAt: local.twitchLastSyncedAt },
+      twitch: { ...twitch.state, lastSyncedAt: local.twitchLastSyncedAt, channelTitle: twitchChannel.title || null, gameId: twitchChannel.gameId || null, gameName: twitchChannel.gameName || null },
       nextLive: nextLive(),
       google: {
         configured: Boolean(googleClientId),
@@ -779,6 +796,9 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
     if (!await twitch.validateSession()) {
       local.twitch = { broadcasterId: '', userName: '', displayName: '' };
       await save();
+    } else {
+      const metadata = await twitch.getChannelMetadata();
+      twitchChannel = { title: metadata.title, gameId: metadata.gameId, gameName: metadata.gameName };
     }
     broadcast();
   };
@@ -964,6 +984,10 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
         ...pairing,
         urls,
         links: urls.map(url => `${url}?pair=${encodeURIComponent(pairing.id)}&code=${encodeURIComponent(pairing.code)}`),
+        androidLinks: urls.map(url => {
+          const serverUrl = new URL(url);
+          return `streamdashboard://pair?v=1&server=${encodeURIComponent(serverUrl.origin)}&id=${encodeURIComponent(pairing.id)}&code=${encodeURIComponent(pairing.code)}`;
+        }),
       });
     } catch (error) { next(error); }
   });
@@ -1013,8 +1037,8 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
       return;
     }
     scheduleRemoteActivitySave();
-    const allowed = (req.method === 'GET' && pathName === '/v1/state')
-      || (req.method === 'POST' && ['/v1/commands', '/v1/remote/ws-ticket'].includes(pathName));
+    const allowed = (req.method === 'GET' && (pathName === '/v1/state' || pathName === '/v1/twitch/categories'))
+      || (req.method === 'POST' && ['/v1/commands', '/v1/remote/ws-ticket', '/v1/twitch/channel'].includes(pathName));
     if (!allowed) {
       res.status(403).json({ ok: false, error: { code: 'REMOTE_SCOPE_DENIED', message: 'Cette action n’est pas autorisée depuis la télécommande.' } });
       return;
@@ -1037,6 +1061,27 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
   app.get('/api/v1/health', health);
   app.get('/api/v1/state', (req, res) => res.json(isRemoteRequest(req) ? toRemoteDashboardState(snapshot()) : snapshot()));
   app.get('/api/v1/capabilities', (_req, res) => res.json(capabilities));
+  app.get('/api/v1/twitch/categories', async (req, res, next) => {
+    try {
+      const query = String(req.query.q ?? '').trim();
+      if (!query || query.length > 80) { res.json([]); return; }
+      res.json(await twitch.searchGames(query));
+    } catch (error) { next(error); }
+  });
+  app.post('/api/v1/twitch/channel', async (req, res, next) => {
+    try {
+      if (!twitch.state.connected) throw new Error('Twitch non connecté.');
+      const title = String(req.body.title ?? twitchChannel.title).trim();
+      const gameId = String(req.body.gameId ?? twitchChannel.gameId).trim();
+      const gameName = String(req.body.gameName ?? twitchChannel.gameName).trim();
+      if (!title || title.length > 140) throw new Error('Le titre Twitch doit contenir entre 1 et 140 caractères.');
+      if (!/^\d{1,30}$/.test(gameId) || !gameName || gameName.length > 140) throw new Error('Sélectionnez une catégorie Twitch valide.');
+      await twitch.updateChannelMetadata({ title, gameId });
+      twitchChannel = { title, gameId, gameName };
+      broadcast();
+      res.json(isRemoteRequest(req) ? toRemoteDashboardState(snapshot()) : snapshot());
+    } catch (error) { next(error); }
+  });
   app.post('/api/v1/commands', async (req, res, next) => {
     try {
       const remote = isRemoteRequest(req);
@@ -1216,6 +1261,12 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
           local.settings.obsExecutablePath = input.obsExecutablePath.trim() || undefined;
         }
         if (input.modeScenes !== undefined) local.settings.modeScenes = modeScenes(input.modeScenes);
+        if (input.chattingScene !== undefined) {
+          if (typeof input.chattingScene !== 'string' || input.chattingScene.length > 200) throw new Error('Scène Chatting invalide.');
+          const scene = input.chattingScene.trim();
+          if (scene && obs.state.connected && !obs.state.scenes.includes(scene)) throw new Error('La scène Chatting doit être sélectionnée parmi les scènes OBS disponibles.');
+          local.settings.chattingScene = scene || undefined;
+        }
         local.settings.obsUrl = newUrl;
         if (newPassword !== currentObsPassword) {
           if (secrets.persistent) await secrets.setObsPassword(newPassword);
