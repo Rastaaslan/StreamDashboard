@@ -12,6 +12,9 @@ def googleAndroidClientId = System.getenv('GOOGLE_ANDROID_CLIENT_ID') ?: ''
 android {
     namespace 'com.rastaaslan.streamdashboard.remote'
     compileSdk 35
+    buildFeatures {
+        buildConfig true
+    }
     defaultConfig {
         applicationId 'com.rastaaslan.streamdashboard.remote'
         minSdk 26
