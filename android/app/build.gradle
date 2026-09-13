@@ -35,13 +35,6 @@ android {
         }
     }
     buildTypes {
-        debug {
-            // Debug/PR builds must NEVER replace the user's installed app. GitHub-hosted
-            // runners use ephemeral debug keys, so give previews a separate identity.
-            applicationIdSuffix '.preview'
-            versionNameSuffix '-preview'
-            resValue 'string', 'app_name', 'StreamDashboard Preview'
-        }
         release {
             minifyEnabled false
             proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
