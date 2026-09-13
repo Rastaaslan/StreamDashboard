@@ -42,3 +42,18 @@ En l'absence de cette configuration, les choix Twitch/Google et les mutations so
 Cette étape livre le socle offline, l'interface de préparation locale, les tombstones et la détection/merge de conflits. Le transfert transactionnel de la queue au serveur, la lecture provider avant écriture, les flows OAuth natifs et les écrans complets de résolution de conflit restent à implémenter avant de considérer la publication autonome Twitch/Google prête pour production.
 
 La signature stable dépend toujours des variables CI `ANDROID_KEYSTORE_PATH`, `ANDROID_KEYSTORE_PASSWORD`, `ANDROID_KEY_ALIAS` et `ANDROID_KEY_PASSWORD`. Sans elles, un APK local n'établit pas la compatibilité de mise à jour in-place.
+
+## Providers autonomes (Android)
+
+Le routage est strict : `ONLINE_PC` confie toutes les écritures au `PlanningOrchestrator` du PC, `ONLINE_STANDALONE` utilise le bridge Android, et `OFFLINE` ne fait aucun appel externe. La queue compagnon et l'`eventId` canonique restent inchangés dans les trois modes. Chaque succès/erreur est persisté séparément dans `providerLinks`; un retry ciblé ne rejoue donc pas un provider déjà réussi. Au retour du PC, les opérations demeurent dans la queue transactionnelle et les IDs/révisions provider accompagnent l'événement pour que la réconciliation reconnaisse l'écriture déjà publiée.
+
+### OAuth et isolation
+
+Les deux associations sont indépendantes du credential Remote. Le bridge utilise Authorization Code + PKCE (`S256`) dans le navigateur système, sans `client_secret`, puis chiffre access/refresh tokens avec AES-GCM sous une clé non exportable Android Keystore. Le JavaScript ne reçoit qu'un état connecté/non connecté et les résultats métier; aucun token ne rejoint localStorage, le snapshot, la queue, les logs ou l'export PNG.
+
+* Twitch requiert `TWITCH_ANDROID_CLIENT_ID` et les scopes `channel:manage:schedule channel:read:schedule`. Le redirect URI public/native à enregistrer est `streamdashboard://oauth?provider=twitch`. Twitch ne fournissant pas d'ETag de segment, l'adapter relit le segment et compare un SHA-256 stable sur titre, début, fin et catégorie avant update.
+* Google requiert un OAuth Client ID d'application Android configuré dans `GOOGLE_ANDROID_CLIENT_ID`, pour le package `com.rastaaslan.streamdashboard.remote`, avec les empreintes SHA-1/SHA-256 de la clé qui signe réellement l'APK. Autoriser le redirect `streamdashboard://oauth?provider=google` et Calendar API. Sans valeur, l'app compile et affiche **Google autonome non configuré**. Les scopes sont `calendar.events` et `calendar.readonly`; les updates/deletes transmettent `If-Match` avec l'ETag connu et transforment 409/412 en conflit.
+
+Configuration CI/build : fournir les variables d'environnement au build Gradle (`TWITCH_ANDROID_CLIENT_ID`, `GOOGLE_ANDROID_CLIENT_ID`). Ne jamais réutiliser ni embarquer le secret du client Desktop. Les créations Google portent `extendedProperties.private.streamDashboardEventId`; ceci permet l'identification métier après une réponse perdue, mais une panne exactement entre création Twitch et réception de son ID ne peut pas être rendue parfaitement idempotente par l'API Twitch.
+
+Les bascules conservent les sessions chiffrées. Les mutations par événement/provider, refresh OAuth et sync compagnon utilisent des single-flights. Une tombstone est conservée même si une suppression provider échoue.
