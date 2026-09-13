@@ -61,6 +61,7 @@ describe('retours à chaud mobile', () => {
     expect(transport).toContain('deletePlanning:');
     expect(transport).toContain('planningFallback');
     expect(transport).toContain('shouldFallbackPlanning');
+    expect(transport).toContain('transactional companion POST');
   });
 
   it('seed la checklist desktop dans le cache compagnon avec une révision', () => {
