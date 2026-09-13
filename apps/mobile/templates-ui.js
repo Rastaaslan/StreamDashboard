@@ -29,6 +29,7 @@ const notify = value => {
   const target = $('message');
   if (target) target.textContent = String(value || '');
 };
+const emitMutation = () => window.dispatchEvent(new CustomEvent('companion-mutated', { detail: { kind: 'templates' } }));
 
 const currentMode = () => {
   if ($('pc')?.textContent === 'Connecté') return CompanionMode.ONLINE_PC;
@@ -132,7 +133,8 @@ function renderTemplates() {
       if (!confirm(`Supprimer le template « ${template.title} » ?`)) return;
       companion.removeCollection('templates', template.id);
       renderTemplates();
-      notify('Template supprimé · À synchroniser.');
+      emitMutation();
+      notify('Template supprimé · synchronisation en cours.');
     };
     actions.append(use, edit, remove);
     row.append(summary, actions);
@@ -218,9 +220,11 @@ $('template-form').onsubmit = event => {
   });
   closeTemplateDialog();
   renderTemplates();
-  notify(existing ? 'Template modifié · À synchroniser.' : 'Template créé · À synchroniser.');
+  emitMutation();
+  notify(existing ? 'Template modifié · synchronisation en cours.' : 'Template créé · synchronisation en cours.');
 };
 
 attachTemplateCategoryPicker();
 observer = new MutationObserver(() => queueMicrotask(renderTemplates));
+window.addEventListener('companion-refreshed', renderTemplates);
 renderTemplates();
