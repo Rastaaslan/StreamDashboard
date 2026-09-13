@@ -26,9 +26,13 @@ const state = {
 } as DashboardState;
 
 describe('retours à chaud mobile', () => {
+  it('charge le contrôleur correctif après le runtime mobile historique', () => {
+    expect(index.indexOf('src="mobile.js"')).toBeGreaterThan(-1);
+    expect(index.indexOf('src="mobile-live-feedback.js"')).toBeGreaterThan(index.indexOf('src="mobile.js"'));
+  });
+
   it('Préparer ouvre la prépa et permet de piloter la checklist depuis le remote', () => {
     expect(index).toContain('Checklist pré-live');
-    expect(index).toContain('src="mobile-live-feedback.js"');
     expect(feedback).toContain("transport.command({ type: 'session.prepare' })");
     expect(feedback).toContain("document.querySelector('[data-tab=\"prepare\"]')?.click()");
     expect(parseRemoteCommand({ type: 'checklist.toggle', id: 'audio' }, state)).toEqual({ type: 'checklist.toggle', id: 'audio' });
