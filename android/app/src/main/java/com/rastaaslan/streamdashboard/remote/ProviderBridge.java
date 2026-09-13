@@ -112,9 +112,16 @@ public final class ProviderBridge {
     HttpURLConnection c=(HttpURLConnection)new URL(address).openConnection(); c.setRequestMethod(method); c.setConnectTimeout(10000); c.setReadTimeout(15000); c.setRequestProperty("Accept","application/json");
     if(headers!=null)for(Map.Entry<String,String> h:headers.entrySet())c.setRequestProperty(h.getKey(),h.getValue()); String outgoing=json!=null?json:form;
     if(outgoing!=null){c.setDoOutput(true);c.setRequestProperty("Content-Type",json!=null?"application/json":"application/x-www-form-urlencoded");try(OutputStream o=c.getOutputStream()){o.write(outgoing.getBytes(StandardCharsets.UTF_8));}}
-    int status=c.getResponseCode(); InputStream stream=status>=400?c.getErrorStream():c.getInputStream(); String value=stream==null?"":new String(stream.readAllBytes(),StandardCharsets.UTF_8);
+    int status=c.getResponseCode(); InputStream stream=status>=400?c.getErrorStream():c.getInputStream(); String value=stream==null?"":readStream(stream);
     if(status==401)throw new ProviderException("REAUTH_REQUIRED","Session provider expirée."); if(status==409||status==412)throw new ProviderException("CONFLICT","Le provider a changé ailleurs.",value.isEmpty()?null:new JSONObject(value)); if(status>=400)throw new ProviderException("HTTP_"+status,"Le provider a refusé l’opération.");
     return value.isEmpty()?new JSONObject():new JSONObject(value);
+  }
+  private static String readStream(InputStream stream) throws IOException {
+    ByteArrayOutputStream out = new ByteArrayOutputStream();
+    byte[] buffer = new byte[4096];
+    int read;
+    while ((read = stream.read(buffer)) != -1) out.write(buffer, 0, read);
+    return new String(out.toByteArray(), StandardCharsets.UTF_8);
   }
   private interface Work { JSONObject run()throws Exception; }
   private String guarded(Work work){try{return work.run().put("ok",true).toString();}catch(ProviderException e){return failure(e.code,e.getMessage(),e.current);}catch(Exception e){return failure("NETWORK","Provider temporairement indisponible.");}}
@@ -126,7 +133,7 @@ public final class ProviderBridge {
   private static String twitchFingerprint(JSONObject s)throws Exception{return base64(MessageDigest.getInstance("SHA-256").digest((s.optString("title")+'\u001f'+s.optString("start_time")+'\u001f'+s.optString("end_time")+'\u001f'+(s.optJSONObject("category")==null?"":s.optJSONObject("category").optString("id"))).getBytes(StandardCharsets.UTF_8)));}
   private static String random(int bytes){byte[] b=new byte[bytes];new SecureRandom().nextBytes(b);return base64(b);}
   private static String base64(byte[] value){return Base64.getUrlEncoder().withoutPadding().encodeToString(value);}
-  private static String enc(String value)throws Exception{return URLEncoder.encode(value,StandardCharsets.UTF_8);}
+  private static String enc(String value)throws Exception{return URLEncoder.encode(value,"UTF-8");}
   private static String form(Map<String,String> values)throws Exception{StringJoiner j=new StringJoiner("&");for(Map.Entry<String,String> e:values.entrySet())j.add(enc(e.getKey())+'='+enc(e.getValue()));return j.toString();}
   private static JSONObject ok(){
     try { return new JSONObject().put("ok",true); }
