@@ -46,6 +46,8 @@ export function createTransport(getServer, getCredential) {
     return state();
   }
 
+  const shouldFallbackPlanning = error => !(error instanceof HttpError) || error.status === 403;
+
   return {
     request,
     authHeaders,
@@ -58,11 +60,11 @@ export function createTransport(getServer, getCredential) {
     createPlanning: value => request('/api/v1/planning', { method: 'POST', headers: authHeaders(), body: JSON.stringify(value) }),
     updatePlanning: async (id, value) => {
       try { return await request(`/api/v1/planning/${encodeURIComponent(id)}`, { method: 'PUT', headers: authHeaders(), body: JSON.stringify(value) }); }
-      catch (error) { if (!(error instanceof HttpError) || error.status !== 403) throw error; return planningFallback(id, value, false); }
+      catch (error) { if (!shouldFallbackPlanning(error)) throw error; return planningFallback(id, value, false); }
     },
     deletePlanning: async (id, value = {}) => {
       try { return await request(`/api/v1/planning/${encodeURIComponent(id)}`, { method: 'DELETE', headers: authHeaders(), body: JSON.stringify(value) }); }
-      catch (error) { if (!(error instanceof HttpError) || error.status !== 403) throw error; return planningFallback(id, {}, true); }
+      catch (error) { if (!shouldFallbackPlanning(error)) throw error; return planningFallback(id, {}, true); }
     },
     syncCompanion,
     resolveCompanionConflict: (operationId, strategy) => request(`/api/v1/companion/conflicts/${encodeURIComponent(operationId)}/resolve`, { method: 'POST', headers: authHeaders(), body: JSON.stringify({ strategy }) }),
