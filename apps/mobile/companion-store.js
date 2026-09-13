@@ -69,7 +69,17 @@ export function createCompanionStore(storage = localStorage, clock = now) {
       target.providerLinks = { ...(target.providerLinks || {}), [provider]: { ...(target.providerLinks?.[provider] || {}), ...clone(metadata), lastProviderSyncAt: clock() } };
       persist(); return clone(target.providerLinks[provider]);
     },
-    upsertCollection(kind, input) { if (!['notes', 'checklist', 'templates'].includes(kind)) throw new Error('Collection compagnon inconnue.'); const item = { revision: 1, updatedAt: clock(), ...clone(input), id: input.id || uid(kind.slice(0, -1)), revision: (input.revision || 0) + 1 }; const index = data[kind].findIndex(value => value.id === item.id); if (index < 0) data[kind].push(item); else data[kind][index] = item; data.pending.push(operation(`${kind}.upsert`, item.id, input.revision || 0, item)); persist(); return clone(item); },
+    upsertCollection(kind, input) {
+      if (!['notes', 'checklist', 'templates'].includes(kind)) throw new Error('Collection compagnon inconnue.');
+      const baseRevision = input.revision || 0;
+      const item = { revision: 1, updatedAt: clock(), ...clone(input), id: input.id || uid(kind.slice(0, -1)), revision: baseRevision + 1 };
+      const index = data[kind].findIndex(value => value.id === item.id);
+      if (index < 0) data[kind].push(item); else data[kind][index] = item;
+      const patch = Object.fromEntries(Object.entries(item).filter(([key]) => !['id', 'revision', 'updatedAt'].includes(key)));
+      data.pending.push(operation(`${kind}.upsert`, item.id, baseRevision, patch));
+      persist();
+      return clone(item);
+    },
     removeCollection(kind, id) {
       if (!['notes', 'checklist', 'templates'].includes(kind)) throw new Error('Collection compagnon inconnue.');
       const current = data[kind].find(item => item.id === id);
