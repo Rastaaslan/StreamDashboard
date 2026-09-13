@@ -6,10 +6,11 @@ const workflow = readFileSync(new URL('../.github/workflows/android.yml', import
 const gitignore = readFileSync(new URL('../.gitignore', import.meta.url), 'utf8');
 
 describe('signature Android permanente', () => {
-  it('génère un keystore local sans le versionner', () => {
+  it('génère un keystore local sans le versionner ni écraser une identité existante', () => {
     expect(script).toContain('keytool');
     expect(script).toContain('streamdashboard-remote.jks');
-    expect(script).toContain("throw \"Le keystore existe déjà");
+    expect(script).toContain('if (Test-Path $KeystorePath)');
+    expect(script).toContain('Ne le remplace pas');
     expect(gitignore).toContain('*.jks');
     expect(gitignore).toContain('*.keystore');
   });
