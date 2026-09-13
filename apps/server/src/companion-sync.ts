@@ -58,11 +58,32 @@ function acknowledge(state: CompanionState, id: string) {
   while (state.journalOrder.length > MAX_JOURNAL) delete state.journal[state.journalOrder.shift()!];
 }
 
+function syncDesktopChecklist(state: CompanionState, desktopChecklist: ChecklistItem[]) {
+  const currentById = new Map(state.checklist.map(item => [item.id, item]));
+  const updatedAt = new Date().toISOString();
+  let changed = state.checklist.length !== desktopChecklist.length;
+  const next = desktopChecklist.map(item => {
+    const current = currentById.get(item.id);
+    if (!current) {
+      changed = true;
+      return { id: item.id, label: item.label, done: item.done, revision: 1, updatedAt };
+    }
+    if (String(current.label ?? '') !== item.label || current.done === true !== item.done) {
+      changed = true;
+      return { ...current, label: item.label, done: item.done, revision: (current.revision ?? 0) + 1, updatedAt };
+    }
+    return current;
+  });
+  if (changed) state.serverRevision++;
+  state.checklist = next;
+}
+
 /** Applies a complete companion batch in memory. The caller persists the returned state before returning ACKs. */
 export function reconcileCompanionBatch(planning: CalendarItem[], desktopChecklist: ChecklistItem[], state: CompanionState, operations: SyncOperation[]) {
   if (!Array.isArray(operations) || operations.length > 500) throw Object.assign(new Error('Lot compagnon invalide.'), { code: 'COMPANION_PAYLOAD_INVALID' });
   const nextPlanning = clone(planning); const nextState = clone(state); const acknowledged: string[] = []; const conflicts: CompanionConflict[] = [];
   if (!nextState.serverRevision) nextState.serverRevision = 0;
+  syncDesktopChecklist(nextState, desktopChecklist);
   for (const raw of operations) {
     if (!plain(raw)) throw Object.assign(new Error('Opération compagnon invalide.'), { code: 'COMPANION_PAYLOAD_INVALID' });
     const operationIdValue = raw.operationId ?? raw.id; const type = String(raw.type ?? ''); const entityIdValue = raw.eventId ?? raw.entityId;
@@ -123,7 +144,7 @@ export function reconcileCompanionBatch(planning: CalendarItem[], desktopCheckli
     }
     nextState.serverRevision++; acknowledge(nextState, operationId); acknowledged.push(operationId);
   }
-  return { planning: nextPlanning, checklist: nextState.checklist.length ? nextState.checklist.map(item => ({ id: item.id, label: String(item.label ?? ''), done: item.done === true })) : desktopChecklist, companion: nextState, acknowledged, conflicts };
+  return { planning: nextPlanning, checklist: nextState.checklist.map(item => ({ id: item.id, label: String(item.label ?? ''), done: item.done === true })), companion: nextState, acknowledged, conflicts };
 }
 
 export function companionSnapshot(planning: CalendarItem[], state: CompanionState) {

@@ -1,12 +1,22 @@
 import {
   parseCommand,
   type CalendarItem,
+  type ChecklistItem,
   type DashboardCommand,
   type DashboardState,
   type RemoteDashboardState,
 } from '../../../packages/contracts/src/index.js';
 
 const REMOTE_MODES = new Set(['intro', 'live', 'pause', 'end']);
+
+type RemotePlanningItem = Pick<CalendarItem,
+  'id' | 'title' | 'description' | 'startAtUtc' | 'endAtUtc' | 'allDay' | 'category' | 'kind' | 'source' | 'editable' | 'twitchCategoryId' | 'twitchCategoryName' | 'desiredPublication'
+>;
+type ExtendedRemoteDashboardState = Omit<RemoteDashboardState, 'planning' | 'nextLive'> & {
+  planning: RemotePlanningItem[];
+  nextLive: RemotePlanningItem | null;
+  checklist: ChecklistItem[];
+};
 
 /**
  * A paired phone is a deliberately lower-trust client than the desktop renderer.
@@ -21,6 +31,7 @@ export function parseRemoteCommand(value: unknown, state: DashboardState): Dashb
     case 'timer.pause':
     case 'timer.reset':
     case 'timer.add':
+    case 'checklist.toggle':
       return command;
     case 'session.start':
       if (command.force === true) throw denied('Le contournement de checklist est réservé au PC.');
@@ -43,16 +54,18 @@ export function parseRemoteCommand(value: unknown, state: DashboardState): Dashb
   }
 }
 
-export function toRemoteDashboardState(state: DashboardState): RemoteDashboardState {
-  const projectItem = (item: CalendarItem): RemoteDashboardState['planning'][number] => ({
+export function toRemoteDashboardState(state: DashboardState): ExtendedRemoteDashboardState {
+  const projectItem = (item: CalendarItem): RemotePlanningItem => ({
     id: item.id,
     title: item.title,
+    ...(item.description !== undefined ? { description: item.description } : {}),
     startAtUtc: item.startAtUtc,
     endAtUtc: item.endAtUtc,
     ...(item.allDay !== undefined ? { allDay: item.allDay } : {}),
     ...(item.category !== undefined ? { category: item.category } : {}),
     ...(item.kind !== undefined ? { kind: item.kind } : {}),
     ...(item.source !== undefined ? { source: item.source } : {}),
+    ...(item.editable !== undefined ? { editable: item.editable } : {}),
     ...(item.twitchCategoryId !== undefined ? { twitchCategoryId: item.twitchCategoryId } : {}),
     ...(item.twitchCategoryName !== undefined ? { twitchCategoryName: item.twitchCategoryName } : {}),
     ...(item.desiredPublication !== undefined ? { desiredPublication: { ...item.desiredPublication } } : {}),
@@ -63,6 +76,7 @@ export function toRemoteDashboardState(state: DashboardState): RemoteDashboardSt
     mode: state.mode,
     timer: { ...state.timer },
     planning: state.planning.map(projectItem),
+    checklist: state.checklist.map(item => ({ ...item })),
     nextLive: state.nextLive ? projectItem(state.nextLive) : null,
     obs: {
       connected: state.obs.connected,

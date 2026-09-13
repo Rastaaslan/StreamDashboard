@@ -54,6 +54,10 @@ describe('Android remote runtime', () => {
     expect(androidActivity).toContain('"image/png".equals(mimeType)');
     for (const permission of ['READ_MEDIA_IMAGES', 'READ_EXTERNAL_STORAGE', 'WRITE_EXTERNAL_STORAGE', 'MANAGE_EXTERNAL_STORAGE']) expect(androidManifest).not.toContain(permission);
   });
+  it('active les dialogues JavaScript Android utilisés par les confirmations du planning', () => {
+    expect(androidActivity).toContain('import android.webkit.WebChromeClient;');
+    expect(androidActivity).toContain('webView.setWebChromeClient(new WebChromeClient());');
+  });
   it.each([
     ['192.168.1.10', 'http://192.168.1.10:47832'],
     ['192.168.1.10:47832', 'http://192.168.1.10:47832'],

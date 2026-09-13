@@ -10,6 +10,7 @@ import android.os.VibrationEffect;
 import android.os.Vibrator;
 import android.view.WindowManager;
 import android.webkit.JavascriptInterface;
+import android.webkit.WebChromeClient;
 import android.webkit.WebResourceRequest;
 import android.webkit.WebResourceResponse;
 import android.webkit.WebSettings;
@@ -50,6 +51,7 @@ public class MainActivity extends Activity {
     webView.addJavascriptInterface(new NativeBridge(), "StreamDashboardNative");
     providerBridge = new ProviderBridge(this);
     webView.addJavascriptInterface(providerBridge, "StreamDashboardProviders");
+    webView.setWebChromeClient(new WebChromeClient());
     webView.setWebViewClient(new LocalOnlyClient());
     setContentView(webView);
     webView.loadUrl(ORIGIN + "/mobile/index.html");

@@ -1,3 +1,4 @@
+import { createCompanionStore } from './companion-store.js';
 import { apiUrl, isAndroidRuntime, websocketUrl } from './runtime.js';
 
 export const REQUEST_TIMEOUT_MS = 15_000;
@@ -22,17 +23,52 @@ export function createTransport(getServer, getCredential) {
     } finally { clearTimeout(timeout); }
   };
   const authHeaders = () => ({ 'content-type': 'application/json', authorization: `Device ${getCredential()}` });
+  const state = () => request('/api/v1/state', { headers: { authorization: `Device ${getCredential()}` } });
+  const syncCompanion = value => request('/api/v1/companion/sync', { method: 'POST', headers: authHeaders(), body: JSON.stringify(value) });
+
+  async function syncStore(store) {
+    const deviceId = localStorage.getItem('streamdashboard.deviceId') || '';
+    if (!deviceId) throw new Error('Identité de télécommande introuvable.');
+    const cache = store.snapshot();
+    const response = await syncCompanion({ schemaVersion: cache.schemaVersion, deviceId, lastKnownServerRevision: cache.serverRevision || 0, operations: cache.pending });
+    store.applySyncResponse(response);
+    return response;
+  }
+
+  async function planningFallback(id, value, remove = false) {
+    const store = createCompanionStore();
+    await syncStore(store);
+    const current = store.snapshot().planning.find(item => item.id === id);
+    if (!current) throw new Error('Créneau introuvable dans le cache synchronisé.');
+    const result = remove ? store.deleteEvent(id, current.revision) : store.updateEvent(id, value, current.revision);
+    if (result.conflict) throw new Error('Ce créneau a changé sur un autre appareil.');
+    await syncStore(store);
+    return state();
+  }
+
+  // The current server may reject PUT/DELETE remotely or the Android WebView may stop them at CORS.
+  // In both cases the transactional companion POST remains authenticated and preserves revisions.
+  const shouldFallbackPlanning = error => !(error instanceof HttpError) || error.status === 403;
+
   return {
     request,
     authHeaders,
-    state: () => request('/api/v1/state', { headers: { authorization: `Device ${getCredential()}` } }),
+    state,
     pair: payload => request('/api/v1/remote/pair', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(payload) }),
     ticket: () => request('/api/v1/remote/ws-ticket', { method: 'POST', headers: authHeaders(), body: '{}' }),
     command: value => request('/api/v1/commands', { method: 'POST', headers: authHeaders(), body: JSON.stringify(value) }),
     searchTwitch: query => request(`/api/v1/twitch/categories?q=${encodeURIComponent(query)}`, { headers: { authorization: `Device ${getCredential()}` } }),
     updateTwitch: value => request('/api/v1/twitch/channel', { method: 'POST', headers: authHeaders(), body: JSON.stringify(value) }),
     createPlanning: value => request('/api/v1/planning', { method: 'POST', headers: authHeaders(), body: JSON.stringify(value) }),
-    syncCompanion: value => request('/api/v1/companion/sync', { method: 'POST', headers: authHeaders(), body: JSON.stringify(value) }),
+    updatePlanning: async (id, value) => {
+      try { return await request(`/api/v1/planning/${encodeURIComponent(id)}`, { method: 'PUT', headers: authHeaders(), body: JSON.stringify(value) }); }
+      catch (error) { if (!shouldFallbackPlanning(error)) throw error; return planningFallback(id, value, false); }
+    },
+    deletePlanning: async (id, value = {}) => {
+      try { return await request(`/api/v1/planning/${encodeURIComponent(id)}`, { method: 'DELETE', headers: authHeaders(), body: JSON.stringify(value) }); }
+      catch (error) { if (!shouldFallbackPlanning(error)) throw error; return planningFallback(id, {}, true); }
+    },
+    syncCompanion,
     resolveCompanionConflict: (operationId, strategy) => request(`/api/v1/companion/conflicts/${encodeURIComponent(operationId)}/resolve`, { method: 'POST', headers: authHeaders(), body: JSON.stringify({ strategy }) }),
     websocket: ticket => new WebSocket(isAndroidRuntime() ? websocketUrl(getServer(), ticket) : `${location.protocol === 'https:' ? 'wss' : 'ws'}://${location.host}/ws/v1?ticket=${encodeURIComponent(ticket)}`),
   };
