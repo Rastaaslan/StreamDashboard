@@ -391,10 +391,10 @@ function bindForms() {
     const categoryId = eventForm.elements.twitchCategoryId;
     const results = $('#desktop-twitch-results');
     let categoryTimer; let categoryGeneration = 0;
-    const showCategories = items => { results.replaceChildren(...items.map(item => { const button = document.createElement('button'); button.type = 'button'; button.className = 'ghost'; button.textContent = item.name; button.dataset.gameId = item.id; button.dataset.gameName = item.name; return button; })); };
+    const showCategories = items => { results.replaceChildren(...items.map(item => { const button = document.createElement('button'); button.type = 'button'; button.className = 'ghost'; button.textContent = item.name; button.dataset.gameId = item.id; button.dataset.gameName = item.name; button.dataset.boxArtUrl = item.box_art_url || ''; return button; })); };
     categoryInput.onfocus = () => { if (!categoryInput.value.trim()) showCategories(recentCategories); };
     categoryInput.oninput = () => { categoryId.value = ''; clearTimeout(categoryTimer); const query = normalizeCategoryQuery(categoryInput.value); const generation = ++categoryGeneration; if (query.length < 2) { showCategories(query ? [] : recentCategories); return; } results.textContent = 'Recherche…'; categoryTimer = setTimeout(async () => { try { const found = await request(`/api/v1/twitch/categories?q=${encodeURIComponent(query)}`); if (generation !== categoryGeneration) return; const ranked = rankCategories(found, recentCategories, query); showCategories(ranked); if (!ranked.length) results.textContent = 'Aucune catégorie trouvée.'; } catch (error) { if (generation === categoryGeneration) results.textContent = error.message; } }, 300); };
-    results.onclick = event => { const button = event.target.closest('[data-game-id]'); if (!button) return; categoryId.value = button.dataset.gameId; categoryInput.value = button.dataset.gameName; recentCategories = rememberCategory(recentCategories, { id: button.dataset.gameId, name: button.dataset.gameName }); localStorage.setItem(recentCategoriesKey, JSON.stringify(recentCategories)); results.replaceChildren(); };
+    results.onclick = event => { const button = event.target.closest('[data-game-id]'); if (!button) return; categoryId.value = button.dataset.gameId; categoryInput.value = button.dataset.gameName; recentCategories = rememberCategory(recentCategories, { id: button.dataset.gameId, name: button.dataset.gameName, box_art_url: button.dataset.boxArtUrl || undefined }); localStorage.setItem(recentCategoriesKey, JSON.stringify(recentCategories)); results.replaceChildren(); };
     eventForm.dataset.dirty ||= 'false';
     eventForm.onsubmit = async event => {
       event.preventDefault();
@@ -577,7 +577,13 @@ window.exportPlanning = async () => {
     planningExportPreferences = { period: options.querySelector('[name="exportPeriod"]').value, filters: Object.fromEntries(['twitch','google','allDay','live','personal','production'].map(key => [key, options.querySelector(`[name="filter-${key}"]`).checked])), noteEnabled: options.querySelector('[name="exportNoteEnabled"]').checked, noteText: options.querySelector('[name="exportNoteText"]').value };
     localStorage.setItem(planningPreferencesKey, JSON.stringify(planningExportPreferences));
     const { exportPlanningImage } = await import('../mobile/planning-export.js');
-    const count = await exportPlanningImage(state.planning, state.settings.streamerName, planningExportPreferences);
+    const resolveArtwork = async item => {
+      const cached = recentCategories.find(category => category.id === item.twitchCategoryId)?.box_art_url;
+      if (cached) return cached;
+      const found = await request(`/api/v1/twitch/categories?q=${encodeURIComponent(item.twitchCategoryName || '')}`);
+      return found.find(category => category.id === item.twitchCategoryId)?.box_art_url;
+    };
+    const count = await exportPlanningImage(state.planning, state.settings.streamerName, { ...planningExportPreferences, resolveArtwork });
     toast(`Image du planning générée · ${count} live${count > 1 ? 's' : ''}`);
   } catch (error) {
     toast(error.message, true);
