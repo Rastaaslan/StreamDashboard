@@ -19,10 +19,25 @@ export function filterPlanning(items, filters = DEFAULT_FILTERS, period = null, 
   }).sort((a, b) => Date.parse(a.startAtUtc) - Date.parse(b.startAtUtc));
 }
 
+function localDateKey(value) {
+  const year = value.getFullYear();
+  const month = String(value.getMonth() + 1).padStart(2, '0');
+  const day = String(value.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}
+
 export function filterPlanningTemporal(items, temporal = TEMPORAL_FILTERS.UPCOMING, now = new Date()) {
   const at = +now;
+  const today = localDateKey(now);
   const values = [...(items || [])];
   const isPast = item => {
+    if (item.allDay) {
+      // Les événements journée entière utilisent une date de fin exclusive
+      // (Google Calendar et StreamDashboard). Leur temporalité doit donc être
+      // comparée comme une date civile locale, pas comme un instant UTC.
+      const exclusiveEndDate = typeof item.endAtUtc === 'string' ? item.endAtUtc.slice(0, 10) : '';
+      if (/^\d{4}-\d{2}-\d{2}$/.test(exclusiveEndDate)) return exclusiveEndDate <= today;
+    }
     const end = Date.parse(item.endAtUtc);
     return Number.isFinite(end) && end <= at;
   };

@@ -23,6 +23,23 @@ describe('planning temporal filters and pagination', () => {
     expect(filterPlanningTemporal(items, TEMPORAL_FILTERS.ALL, now).map(item => item.id)).toEqual(['ongoing', 'next', 'recent', 'old']);
   });
 
+  it('uses the exclusive calendar end date for all-day events', () => {
+    // Simule 00:30 le 13/09 en UTC+2 : en UTC il est encore 22:30 le 12/09.
+    // Une journée entière du 12/09 (fin exclusive le 13/09) doit déjà être passée.
+    const localAfterMidnight = {
+      valueOf: () => Date.parse('2026-09-12T22:30:00.000Z'),
+      getFullYear: () => 2026,
+      getMonth: () => 8,
+      getDate: () => 13,
+    } as unknown as Date;
+    const allDayItems = [
+      { ...event('yesterday-all-day', '2026-09-12T00:00:00.000Z', '2026-09-13T00:00:00.000Z'), allDay: true },
+      { ...event('today-all-day', '2026-09-13T00:00:00.000Z', '2026-09-14T00:00:00.000Z'), allDay: true },
+    ];
+    expect(filterPlanningTemporal(allDayItems, TEMPORAL_FILTERS.UPCOMING, localAfterMidnight).map(item => item.id)).toEqual(['today-all-day']);
+    expect(filterPlanningTemporal(allDayItems, TEMPORAL_FILTERS.PAST, localAfterMidnight).map(item => item.id)).toEqual(['yesterday-all-day']);
+  });
+
   it('paginates and clamps an out-of-range page', () => {
     const ten = Array.from({ length: 10 }, (_, index) => ({ id: String(index) }));
     expect(paginatePlanning(ten, 1, 8)).toMatchObject({ page: 1, totalPages: 2, total: 10 });
