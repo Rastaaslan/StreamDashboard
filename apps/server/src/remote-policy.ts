@@ -32,7 +32,6 @@ export function parseRemoteCommand(value: unknown, state: DashboardState): Dashb
     case 'timer.reset':
     case 'timer.add':
     case 'checklist.toggle':
-    case 'checklist.reset':
       return command;
     case 'session.start':
       if (command.force === true) throw denied('Le contournement de checklist est réservé au PC.');
