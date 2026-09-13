@@ -37,6 +37,7 @@ describe('retours à chaud mobile', () => {
   });
 
   it('arrête le live par HTTP sans dépendre de l’état du WebSocket', () => {
+    expect(parseRemoteCommand({ type: 'session.stop' }, state)).toEqual({ type: 'session.stop' });
     expect(feedback).toContain("transport.command({ type: start ? 'session.start' : 'session.stop'");
     expect(feedback).toContain("OBS indique que le live est toujours actif après la commande d’arrêt.");
     expect(feedback).not.toContain('ws.readyState');
