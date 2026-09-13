@@ -46,6 +46,8 @@ export function createTransport(getServer, getCredential) {
     return state();
   }
 
+  // The current server may reject PUT/DELETE remotely or the Android WebView may stop them at CORS.
+  // In both cases the transactional companion POST remains authenticated and preserves revisions.
   const shouldFallbackPlanning = error => !(error instanceof HttpError) || error.status === 403;
 
   return {
