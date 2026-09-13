@@ -40,19 +40,24 @@ jobs:
         run: npm test && npm run build && npm run security:check && npm run mobile:smoke
       - name: Synchronize Android assets
         run: npm run android:sync
-      - name: Prepare stable signing identity when configured
-        id: signing
+      - name: Require stable Android signing identity
         shell: bash
         env:
           KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+          ANDROID_CERT_SHA256: ${{ secrets.ANDROID_CERT_SHA256 }}
         run: |
-          if [[ -n "$KEYSTORE_BASE64" && -n "${{ secrets.ANDROID_KEYSTORE_PASSWORD }}" && -n "${{ secrets.ANDROID_KEY_ALIAS }}" && -n "${{ secrets.ANDROID_KEY_PASSWORD }}" ]]; then
-            printf '%s' "$KEYSTORE_BASE64" | base64 --decode > "$RUNNER_TEMP/streamdashboard-remote.jks"
-            echo "configured=true" >> "$GITHUB_OUTPUT"
-            echo "ANDROID_KEYSTORE_PATH=$RUNNER_TEMP/streamdashboard-remote.jks" >> "$GITHUB_ENV"
-          else
-            echo "configured=false" >> "$GITHUB_OUTPUT"
+          if [[ -z "$KEYSTORE_BASE64" || -z "$ANDROID_KEYSTORE_PASSWORD" || -z "$ANDROID_KEY_ALIAS" || -z "$ANDROID_KEY_PASSWORD" || -z "$ANDROID_CERT_SHA256" ]]; then
+            echo "Stable Android signing is not configured. Refusing to publish an ephemeral debug-signed APK." >&2
+            exit 1
           fi
+          KEYSTORE_PATH="$RUNNER_TEMP/streamdashboard-remote.jks"
+          printf '%s' "$KEYSTORE_BASE64" | base64 --decode > "$KEYSTORE_PATH"
+          test -s "$KEYSTORE_PATH"
+          chmod 600 "$KEYSTORE_PATH"
+          echo "ANDROID_KEYSTORE_PATH=$KEYSTORE_PATH" >> "$GITHUB_ENV"
           echo "ANDROID_VERSION_CODE=$((900000 + GITHUB_RUN_NUMBER))" >> "$GITHUB_ENV"
           echo "ANDROID_VERSION_NAME=0.9.0-rc.${GITHUB_RUN_NUMBER}" >> "$GITHUB_ENV"
       - name: Lint and build installable APK
@@ -62,37 +67,32 @@ jobs:
           ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
         run: |
           gradle -p android lintDebug
-          if [[ "${{ steps.signing.outputs.configured }}" == "true" ]]; then
-            gradle -p android assembleRelease
-            cp android/app/build/outputs/apk/release/app-release.apk StreamDashboard-Remote-rc.apk
-          else
-            gradle -p android assembleDebug assembleRelease
-            cp android/app/build/outputs/apk/debug/app-debug.apk StreamDashboard-Remote-debug.apk
-            cp android/app/build/outputs/apk/release/app-release-unsigned.apk StreamDashboard-Remote-unsigned.apk
-          fi
+          gradle -p android assembleRelease
+          cp android/app/build/outputs/apk/release/app-release.apk StreamDashboard-Remote-rc.apk
       - name: Verify APK identity, version and signature
         shell: bash
+        env:
+          ANDROID_CERT_SHA256: ${{ secrets.ANDROID_CERT_SHA256 }}
         run: |
-          if [[ "${{ steps.signing.outputs.configured }}" == "true" ]]; then
-            APK=StreamDashboard-Remote-rc.apk
-          else
-            APK=StreamDashboard-Remote-debug.apk
-          fi
+          APK=StreamDashboard-Remote-rc.apk
           test -s "$APK"
           APKSIGNER=$(find "$ANDROID_HOME/build-tools" -type f -name apksigner -print | sort -V | tail -n 1)
           AAPT=$(find "$ANDROID_HOME/build-tools" -type f -name aapt -print | sort -V | tail -n 1)
           test -n "$APKSIGNER" && test -x "$APKSIGNER"
           test -n "$AAPT" && test -x "$AAPT"
-          "$APKSIGNER" verify --verbose "$APK"
+          CERTS=$("$APKSIGNER" verify --verbose --print-certs "$APK")
+          printf '%s\n' "$CERTS"
+          ACTUAL_CERT_SHA256=$(printf '%s\n' "$CERTS" | sed -n 's/^Signer #1 certificate SHA-256 digest: //p' | head -n 1 | tr -d '[:space:]:' | tr '[:lower:]' '[:upper:]')
+          EXPECTED_CERT_SHA256=$(printf '%s' "$ANDROID_CERT_SHA256" | tr -d '[:space:]:' | tr '[:lower:]' '[:upper:]')
+          if [[ -z "$ACTUAL_CERT_SHA256" || "$ACTUAL_CERT_SHA256" != "$EXPECTED_CERT_SHA256" ]]; then
+            echo "Stable Android signing certificate SHA-256 mismatch." >&2
+            exit 1
+          fi
           "$AAPT" dump badging "$APK" | grep "package: name='com.rastaaslan.streamdashboard.remote'"
           "$AAPT" dump badging "$APK" | grep "versionCode='$ANDROID_VERSION_CODE' versionName='$ANDROID_VERSION_NAME'"
-          if [[ -f StreamDashboard-Remote-unsigned.apk ]]; then
-            "$AAPT" dump badging StreamDashboard-Remote-unsigned.apk | grep "package: name='com.rastaaslan.streamdashboard.remote'"
-            "$AAPT" dump badging StreamDashboard-Remote-unsigned.apk | grep "versionCode='$ANDROID_VERSION_CODE' versionName='$ANDROID_VERSION_NAME'"
-          fi
       - name: Upload Android APK
         uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
         with:
           name: StreamDashboard-Remote
-          path: StreamDashboard-Remote-*.apk
+          path: StreamDashboard-Remote-rc.apk
           if-no-files-found: error
