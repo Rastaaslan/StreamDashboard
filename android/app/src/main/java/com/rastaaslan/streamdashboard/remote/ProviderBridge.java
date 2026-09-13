@@ -97,16 +97,6 @@ public final class ProviderBridge {
   }
   private JSONObject googleMutate(String action, JSONObject input) throws Exception {
     JSONObject event=input.getJSONObject("event"), link=input.optJSONObject("link"); if(link==null)link=new JSONObject();
-    String calendar=limited(link.optString("calendarId", "primary"), 200), id=limited(link.optString("remoteId"), 200);
-    String url="https://www.googleapis.com/calendar/v3/calendars/"+enc(calendar)+"/events"+(id.isEmpty()?"":"/"+enc(id));
-    if(action.equals("delete")){ requireId(id); google("DELETE",url,null,link.optString("revision")); return ok().put("remoteId",id).put("calendarId",calendar); }
-    JSONObject payload=new JSONObject().put("summary",limited(event.optString("title"),140)).put("description",limited(event.optString("description"),500)).put("start",new JSONObject().put("dateTime",iso(event.getString("startAtUtc")))).put("end",new JSONObject().put("dateTime",iso(event.getString("endAtUtc"))));
-    if(action.equals("create")){ String stable=event.getString("id").replaceAll("[^a-v0-9]","").toLowerCase(Locale.ROOT); if(stable.length()>=5) payload.put("id",stable.substring(0,Math.min(64,stable.length()))); }
-    JSONObject response=google(action.equals("create")?"POST":"PUT",url,payload.toString(),action.equals("update")?link.optString("revision"):null);
-    return ok().put("remoteId",response.getString("id")).put("calendarId",calendar).put("revision",response.optString("etag")).put("remoteSnapshot",response);
-  }
-  private JSONObject googleMutate(String action, JSONObject input) throws Exception {
-    JSONObject event=input.getJSONObject("event"), link=input.optJSONObject("link"); if(link==null)link=new JSONObject();
     String calendar=limited(link.optString("calendarId","primary"),200), remoteId=limited(link.optString("remoteId"),200);
     String base="https://www.googleapis.com/calendar/v3/calendars/"+enc(calendar)+"/events";
     if(action.equals("delete")){requireId(remoteId);google("DELETE",base+"/"+enc(remoteId),null,link.optString("revision"));return ok().put("remoteId",remoteId).put("calendarId",calendar);}
