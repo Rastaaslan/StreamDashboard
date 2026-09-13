@@ -128,8 +128,19 @@ public final class ProviderBridge {
   private static String base64(byte[] value){return Base64.getUrlEncoder().withoutPadding().encodeToString(value);}
   private static String enc(String value)throws Exception{return URLEncoder.encode(value,StandardCharsets.UTF_8);}
   private static String form(Map<String,String> values)throws Exception{StringJoiner j=new StringJoiner("&");for(Map.Entry<String,String> e:values.entrySet())j.add(enc(e.getKey())+'='+enc(e.getValue()));return j.toString();}
-  private static JSONObject ok(){return new JSONObject().put("ok",true);}
+  private static JSONObject ok(){
+    try { return new JSONObject().put("ok",true); }
+    catch (JSONException e) { throw new IllegalStateException(e); }
+  }
   private static String failure(String code,String message){return failure(code,message,null);}
-  private static String failure(String code,String message,JSONObject current){JSONObject o=new JSONObject().put("ok",false).put("code",code).put("message",message);if(current!=null)o.put("current",current);return o.toString();}
+  private static String failure(String code,String message,JSONObject current){
+    try {
+      JSONObject o=new JSONObject().put("ok",false).put("code",code).put("message",message);
+      if(current!=null)o.put("current",current);
+      return o.toString();
+    } catch (JSONException e) {
+      return "{\"ok\":false,\"code\":\"INTERNAL\",\"message\":\"Erreur interne.\"}";
+    }
+  }
   private static final class ProviderException extends Exception { final String code; final JSONObject current; ProviderException(String c,String m){this(c,m,null);} ProviderException(String c,String m,JSONObject v){super(m);code=c;current=v;} }
 }
