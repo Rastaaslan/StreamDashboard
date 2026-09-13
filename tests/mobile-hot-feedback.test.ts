@@ -33,7 +33,7 @@ describe('retours à chaud mobile', () => {
     expect(feedback).toContain("document.querySelector('[data-tab=\"prepare\"]')?.click()");
     expect(parseRemoteCommand({ type: 'checklist.toggle', id: 'audio' }, state)).toEqual({ type: 'checklist.toggle', id: 'audio' });
     expect(parseRemoteCommand({ type: 'checklist.reset' }, state)).toEqual({ type: 'checklist.reset' });
-    expect((toRemoteDashboardState(state) as typeof state).checklist).toEqual(state.checklist);
+    expect((toRemoteDashboardState(state) as unknown as { checklist: typeof state.checklist }).checklist).toEqual(state.checklist);
   });
 
   it('arrête le live par HTTP sans dépendre de l’état du WebSocket', () => {
@@ -48,12 +48,14 @@ describe('retours à chaud mobile', () => {
     expect(feedback).toContain('await syncCompanionNow()');
   });
 
-  it('ajoute une vraie édition et suppression des événements du planning', () => {
+  it('ajoute une vraie édition et suppression des événements du planning avec fallback compagnon', () => {
     expect(feedback).toContain('openPlanningEdit(item)');
     expect(feedback).toContain('submitPlanningEdit(event)');
     expect(feedback).toContain('deletePlanningItem(item)');
     expect(transport).toContain('updatePlanning:');
     expect(transport).toContain('deletePlanning:');
+    expect(transport).toContain('planningFallback');
+    expect(transport).toContain('shouldFallbackPlanning');
   });
 
   it('seed la checklist desktop dans le cache compagnon avec une révision', () => {
