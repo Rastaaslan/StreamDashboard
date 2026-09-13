@@ -31,12 +31,12 @@ describe('retours à chaud mobile', () => {
     expect(index.indexOf('src="mobile-live-feedback.js"')).toBeGreaterThan(index.indexOf('src="mobile.js"'));
   });
 
-  it('Préparer ouvre la prépa et permet de piloter la checklist depuis le remote', () => {
+  it('Préparer ouvre la prépa et permet de cocher la checklist depuis le remote', () => {
     expect(index).toContain('Checklist pré-live');
     expect(feedback).toContain("transport.command({ type: 'session.prepare' })");
     expect(feedback).toContain("document.querySelector('[data-tab=\"prepare\"]')?.click()");
     expect(parseRemoteCommand({ type: 'checklist.toggle', id: 'audio' }, state)).toEqual({ type: 'checklist.toggle', id: 'audio' });
-    expect(parseRemoteCommand({ type: 'checklist.reset' }, state)).toEqual({ type: 'checklist.reset' });
+    expect(() => parseRemoteCommand({ type: 'checklist.reset' }, state)).toThrow('réservée au PC');
     expect((toRemoteDashboardState(state) as unknown as { checklist: typeof state.checklist }).checklist).toEqual(state.checklist);
   });
 
