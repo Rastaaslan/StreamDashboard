@@ -1,7 +1,7 @@
 import { isAndroidRuntime, nextRetry, normalizeServer, parsePairing } from './runtime.js';
 import { credentialStorage, settingsStorage } from './storage.js';
 import { createTransport, HttpError } from './transport.js';
-import { DEFAULT_FILTERS, filterPlanning } from './planning-model.js';
+import { DEFAULT_FILTERS, filterPlanning, filterPlanningTemporal, paginatePlanning, TEMPORAL_FILTERS } from './planning-model.js';
 import { normalizeCategoryQuery, rankCategories, rememberCategory } from './twitch-category.js';
 import { CompanionMode, createCompanionStore, resolveMode } from './companion-store.js';
 import { createNativeProviderAdapter, createStandaloneProviderSync } from './provider-sync.js';
@@ -21,8 +21,13 @@ let companionSyncFlight = null;
 const providerSync = createStandaloneProviderSync({ store: companion, adapter: createNativeProviderAdapter() });
 let deviceId = localStorage.getItem('streamdashboard.deviceId') || '';
 let planningFilters = { ...DEFAULT_FILTERS };
+const planningTemporalKey = 'streamdashboard.planningTemporal';
+const planningPageSize = 8;
+let planningTemporal = localStorage.getItem(planningTemporalKey) || TEMPORAL_FILTERS.UPCOMING;
+let planningPage = 1;
 const exportNoteKey = 'streamdashboard.exportNote';
 try { planningFilters = { ...planningFilters, ...JSON.parse(localStorage.getItem('streamdashboard.planningFilters') || '{}') }; } catch { /* corrupted preferences reset safely */ }
+if (!Object.values(TEMPORAL_FILTERS).includes(planningTemporal)) planningTemporal = TEMPORAL_FILTERS.UPCOMING;
 
 const transport = createTransport(() => server, () => credential);
 const note = value => { $('message').textContent = String(value || ''); };
@@ -138,22 +143,36 @@ function renderDeck(media) {
 function renderPlanning(items) {
   const container = $('planning');
   container.replaceChildren();
-  const sorted = filterPlanning(items, planningFilters);
-  for (const item of sorted.slice(0, 8)) {
+  const filtered = filterPlanning(items, planningFilters);
+  const temporal = filterPlanningTemporal(filtered, planningTemporal, new Date());
+  const pagination = paginatePlanning(temporal, planningPage, planningPageSize);
+  planningPage = pagination.page;
+  for (const item of pagination.items) {
     const row = document.createElement('div');
     row.className = 'planning-row';
     row.append(text('b', item.title), text('span', formatPlanningDate(item)));
     if (companionMode !== CompanionMode.ONLINE_PC) {
       const statuses = Object.entries(item.desiredPublication || {}).filter(([provider, enabled]) => enabled && ['twitch','google'].includes(provider)).map(([provider]) => `${provider === 'twitch' ? 'Twitch' : 'Google'} · ${(item.providerLinks?.[provider]?.status || 'pending').toUpperCase()}`).join('  ');
       const status = text('small', statuses || '⏳ À synchroniser', 'pending');
-      const retry = text('button', 'Retry'); retry.type='button'; retry.hidden=!Object.values(item.providerLinks||{}).some(link=>['error','conflict'].includes(link.status)); retry.onclick=()=>void syncEventProviders(item);
+      const retryButton = text('button', 'Retry'); retryButton.type='button'; retryButton.hidden=!Object.values(item.providerLinks||{}).some(link=>['error','conflict'].includes(link.status)); retryButton.onclick=()=>void syncEventProviders(item);
       const edit = text('button', 'Modifier'); edit.type = 'button'; edit.onclick = () => { const title = prompt('Titre du live', item.title); if (!title || title === item.title) return; const result = companion.updateEvent(item.id, { title }, item.revision); if (result.conflict) note('Ce live a été modifié sur un autre appareil.'); else { render(offlineState()); void syncEventProviders(result.item); } };
       const remove = text('button', 'Supprimer'); remove.type = 'button'; remove.onclick = () => { if (!confirm(`Supprimer « ${item.title} » ?`)) return; const result = companion.deleteEvent(item.id, item.revision); if (result.conflict) note('Ce live a été modifié sur un autre appareil.'); else { render(offlineState()); void syncEventProviders(item, 'delete'); } };
-      row.append(status, retry, edit, remove);
+      row.append(status, retryButton, edit, remove);
     }
     container.append(row);
   }
-  if (!container.children.length) container.append(text('p', 'Aucun rendez-vous.', 'muted'));
+  if (!pagination.total) container.append(text('p', 'Aucun rendez-vous.', 'muted'));
+  if (pagination.totalPages > 1) {
+    const nav = document.createElement('div');
+    nav.className = 'companion-row planning-pagination';
+    const previous = text('button', '←'); previous.type = 'button'; previous.disabled = pagination.page <= 1;
+    const label = text('span', `Page ${pagination.page}/${pagination.totalPages} · ${pagination.total} événements`, 'muted');
+    const next = text('button', '→'); next.type = 'button'; next.disabled = pagination.page >= pagination.totalPages;
+    previous.onclick = () => { planningPage -= 1; renderPlanning(state?.planning); };
+    next.onclick = () => { planningPage += 1; renderPlanning(state?.planning); };
+    nav.append(previous, label, next);
+    container.append(nav);
+  }
 }
 
 async function syncEventProviders(event, action) {
@@ -353,9 +372,18 @@ $('export-note-enabled').onchange = saveExportNote; $('export-note-text').onchan
 
 const filterNames = { twitch: 'Twitch', google: 'Google', allDay: 'Journée entière', live: 'Live', personal: 'Personnel', production: 'Production' };
 $('planning-filters').className = 'filters';
+const temporalLabel = document.createElement('label');
+const temporalSelect = document.createElement('select');
+for (const [value, label] of [[TEMPORAL_FILTERS.UPCOMING, 'À venir'], [TEMPORAL_FILTERS.PAST, 'Passés'], [TEMPORAL_FILTERS.ALL, 'Tous']]) {
+  const option = document.createElement('option'); option.value = value; option.textContent = label; temporalSelect.append(option);
+}
+temporalSelect.value = planningTemporal;
+temporalSelect.onchange = () => { planningTemporal = temporalSelect.value; planningPage = 1; localStorage.setItem(planningTemporalKey, planningTemporal); renderPlanning(state?.planning); };
+temporalLabel.append(text('span', 'Temporalité'), temporalSelect);
+$('planning-filters').append(temporalLabel);
 for (const [key, label] of Object.entries(filterNames)) {
   const input = document.createElement('input'); input.type = 'checkbox'; input.checked = planningFilters[key];
-  input.onchange = () => { planningFilters[key] = input.checked; localStorage.setItem('streamdashboard.planningFilters', JSON.stringify(planningFilters)); renderPlanning(state?.planning); };
+  input.onchange = () => { planningFilters[key] = input.checked; planningPage = 1; localStorage.setItem('streamdashboard.planningFilters', JSON.stringify(planningFilters)); renderPlanning(state?.planning); };
   const row = document.createElement('label'); row.append(input, text('span', label)); $('planning-filters').append(row);
 }
 $('add-slot').onclick = () => $('slot-dialog').showModal();
@@ -366,6 +394,7 @@ $('slot-form').onsubmit = async event => {
   try {
     if (form.get('twitch') === 'on' && !$('slot-twitch-game-id').value) throw new Error('Sélectionnez une catégorie Twitch officielle.');
     const value = { title: form.get('title'), startAtUtc, endAtUtc, category: form.get('category'), description: form.get('description') || '', desiredPublication: { local: false, twitch: form.get('twitch') === 'on', google: form.get('google') === 'on' }, twitchCategoryId: form.get('twitch') === 'on' ? $('slot-twitch-game-id').value : undefined, twitchCategoryName: form.get('twitch') === 'on' ? $('slot-twitch-category').value : undefined };
+    planningPage = 1;
     if (companionMode === CompanionMode.ONLINE_PC) { const next = await transport.createPlanning(value); companion.replaceServerSnapshot(next); render(next); }
     else { const created=companion.createEvent(value).item; render(offlineState()); if(companionMode===CompanionMode.ONLINE_STANDALONE) void syncEventProviders(created,'create'); }
     $('slot-dialog').close(); event.currentTarget.reset(); note(companionMode === CompanionMode.ONLINE_PC ? 'Créneau créé.' : 'Créneau enregistré · À synchroniser.');
