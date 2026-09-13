@@ -68,6 +68,7 @@ function applyCurrentState() {
     article.dataset.planningId = item.id;
     byId.set(item.id, article);
     article.hidden = true;
+    article.style.display = 'none';
     article.style.order = '9999';
   });
 
@@ -78,6 +79,7 @@ function applyCurrentState() {
     const article = byId.get(item.id);
     if (!article) return;
     article.hidden = false;
+    article.style.removeProperty('display');
     article.style.order = String(index);
   });
 
@@ -90,7 +92,12 @@ function applyCurrentState() {
   prev.disabled = pagination.page <= 1;
   next.disabled = pagination.page >= pagination.totalPages;
   const title = view.querySelector('.section-head h3');
-  if (title) title.textContent = preferences.temporal === TEMPORAL_FILTERS.PAST ? 'Historique' : preferences.temporal === TEMPORAL_FILTERS.ALL ? 'Tous les rendez-vous' : 'Prochains rendez-vous';
+  const nextTitle = preferences.temporal === TEMPORAL_FILTERS.PAST
+    ? 'Historique'
+    : preferences.temporal === TEMPORAL_FILTERS.ALL
+      ? 'Tous les rendez-vous'
+      : 'Prochains rendez-vous';
+  if (title && title.textContent !== nextTitle) title.textContent = nextTitle;
 }
 
 async function refresh() {
@@ -114,5 +121,8 @@ function scheduleRefresh() {
   queueMicrotask(() => void refresh());
 }
 
-new MutationObserver(scheduleRefresh).observe(view, { childList: true, subtree: true });
+// StreamDashboard remplace directement le contenu de #view à chaque rendu.
+// Observer uniquement ses enfants directs évite qu'une modification interne
+// (titre, pagination, masquage des lignes) relance une boucle de refresh.
+new MutationObserver(scheduleRefresh).observe(view, { childList: true });
 scheduleRefresh();
