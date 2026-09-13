@@ -8,7 +8,8 @@ $ErrorActionPreference = 'Stop'
 
 function New-Secret([int]$Bytes = 32) {
   $buffer = New-Object byte[] $Bytes
-  [System.Security.Cryptography.RandomNumberGenerator]::Fill($buffer)
+  $rng = [System.Security.Cryptography.RandomNumberGenerator]::Create()
+  try { $rng.GetBytes($buffer) } finally { $rng.Dispose() }
   return [Convert]::ToBase64String($buffer).TrimEnd('=').Replace('+','A').Replace('/','B')
 }
 
@@ -61,6 +62,7 @@ if ($ConfigureGitHub) {
   if ($LASTEXITCODE -ne 0) { throw 'Configuration des secrets GitHub incomplète.' }
 
   Write-Host 'Les 4 secrets GitHub de signature Android sont configurés.' -ForegroundColor Green
+  Write-Host 'Les prochains APK release/RC utiliseront tous cette même identité.' -ForegroundColor Green
 } else {
   Write-Host ''
   Write-Host 'Secrets GitHub à créer :'
