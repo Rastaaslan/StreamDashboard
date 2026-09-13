@@ -11,6 +11,7 @@ let hotState = null;
 let editingPlanningId = null;
 let companionSyncFlight = null;
 let planningEnhanceQueued = false;
+let planningObserver = null;
 const server = settingsStorage.getServer();
 const transport = createTransport(() => server, () => credential);
 const providerSync = createStandaloneProviderSync({ store: companion, adapter: createNativeProviderAdapter() });
@@ -157,9 +158,11 @@ function renderChecklist() {
     remove.title = 'Supprimer';
     remove.onclick = async () => {
       if (!confirm(`Supprimer « ${item.label} » de la checklist ?`)) return;
-      companion.removeCollection('checklist', item.id);
-      renderChecklist();
       try {
+        if (onlinePc()) await syncCompanionNow();
+        const removed = companion.removeCollection('checklist', item.id);
+        if (!removed.deleted) throw new Error('Cet élément doit d’abord être synchronisé avant suppression.');
+        renderChecklist();
         await syncCompanionNow();
         if (onlinePc()) await refreshRemoteState();
       } catch (error) { notify(error.message); }
@@ -230,6 +233,7 @@ async function toggleStreamFromPhone(button) {
   try {
     await ensureCredential();
     const current = await transport.state();
+    applyCriticalState(current);
     const start = !current.obs?.streaming;
     const question = start
       ? 'Démarrer réellement le live ?'
@@ -304,8 +308,9 @@ async function submitPlanningEdit(event) {
   event.preventDefault();
   event.stopImmediatePropagation();
   const id = editingPlanningId;
+  const formElement = event.currentTarget;
   try {
-    const payload = planningPayload(event.currentTarget);
+    const payload = planningPayload(formElement);
     if (onlinePc()) {
       await ensureCredential();
       const next = await transport.updatePlanning(id, payload);
@@ -320,7 +325,7 @@ async function submitPlanningEdit(event) {
       notify('Créneau modifié · À synchroniser.');
     }
     $('slot-dialog').close();
-    event.currentTarget.reset();
+    formElement.reset();
     clearPlanningEdit();
     if (onlinePc()) await refreshRemoteState();
     else queuePlanningEnhance();
@@ -364,29 +369,34 @@ function enhancePlanningRows() {
   planningEnhanceQueued = false;
   const root = $('planning');
   if (!root) return;
-  const rows = [...root.children].filter(node => node.classList?.contains('planning-row'));
-  const items = planningItemsForVisibleRows();
-  rows.forEach((row, index) => {
-    const item = items[index];
-    if (!item) return;
-    for (const button of [...row.querySelectorAll('button')]) {
-      if (['Modifier', 'Supprimer'].includes(button.textContent?.trim())) button.remove();
-    }
-    row.querySelector('.mobile-event-actions')?.remove();
-    const actions = document.createElement('div');
-    actions.className = 'mobile-event-actions';
-    const edit = text('button', 'MODIFIER');
-    edit.type = 'button';
-    edit.disabled = item.editable === false;
-    edit.onclick = () => openPlanningEdit(item);
-    const remove = text('button', 'SUPPRIMER');
-    remove.type = 'button';
-    remove.className = 'secondary danger-button';
-    remove.disabled = item.editable === false;
-    remove.onclick = () => void deletePlanningItem(item);
-    actions.append(edit, remove);
-    row.append(actions);
-  });
+  planningObserver?.disconnect();
+  try {
+    const rows = [...root.children].filter(node => node.classList?.contains('planning-row'));
+    const items = planningItemsForVisibleRows();
+    rows.forEach((row, index) => {
+      const item = items[index];
+      if (!item) return;
+      for (const button of [...row.querySelectorAll('button')]) {
+        if (['Modifier', 'Supprimer'].includes(button.textContent?.trim())) button.remove();
+      }
+      row.querySelector('.mobile-event-actions')?.remove();
+      const actions = document.createElement('div');
+      actions.className = 'mobile-event-actions';
+      const edit = text('button', 'MODIFIER');
+      edit.type = 'button';
+      edit.disabled = item.editable === false;
+      edit.onclick = () => openPlanningEdit(item);
+      const remove = text('button', 'SUPPRIMER');
+      remove.type = 'button';
+      remove.className = 'secondary danger-button';
+      remove.disabled = item.editable === false;
+      remove.onclick = () => void deletePlanningItem(item);
+      actions.append(edit, remove);
+      row.append(actions);
+    });
+  } finally {
+    planningObserver?.observe(root, { childList: true, subtree: true });
+  }
 }
 
 function queuePlanningEnhance() {
@@ -441,7 +451,7 @@ document.addEventListener('click', event => {
 $('slot-form')?.addEventListener('submit', event => void submitPlanningEdit(event), true);
 $('slot-dialog')?.addEventListener('cancel', clearPlanningEdit);
 
-const planningObserver = new MutationObserver(queuePlanningEnhance);
+planningObserver = new MutationObserver(queuePlanningEnhance);
 if ($('planning')) planningObserver.observe($('planning'), { childList: true, subtree: true });
 
 const connectionObserver = new MutationObserver(() => void refreshAll());
