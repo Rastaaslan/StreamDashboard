@@ -5,6 +5,7 @@ export const CompanionMode = Object.freeze({ ONLINE_PC: 'ONLINE_PC', ONLINE_STAN
 const clone = value => JSON.parse(JSON.stringify(value));
 const now = () => new Date().toISOString();
 let uidSequence = 0;
+let defaultStore = null;
 const uid = prefix => `${prefix}-${Date.now().toString(36)}-${crypto.randomUUID?.() || Math.random().toString(36).slice(2)}-${++uidSequence}`;
 const empty = () => ({ schemaVersion: COMPANION_SCHEMA_VERSION, serverRevision: 0, planning: [], tombstones: [], pending: [], conflicts: [], notes: [], checklist: [], templates: [], recentTwitchCategories: [], streamerName: '', preferences: {}, lastServerSyncToken: null, lastServerSyncAt: null });
 
@@ -17,6 +18,9 @@ function migrate(value) {
 }
 
 export function createCompanionStore(storage = localStorage, clock = now) {
+  const sharedDefault = typeof localStorage !== 'undefined' && storage === localStorage && clock === now;
+  if (sharedDefault && defaultStore) return defaultStore;
+
   let data;
   try { data = migrate(JSON.parse(storage.getItem(COMPANION_KEY) || 'null')); } catch { data = empty(); }
   const persist = () => storage.setItem(COMPANION_KEY, JSON.stringify(data));
@@ -31,7 +35,7 @@ export function createCompanionStore(storage = localStorage, clock = now) {
     data.pending.push(operation(current ? 'update' : 'create', item.id, current?.revision || 0, patch, item.desiredPublication, current));
     persist(); return { item: clone(item) };
   };
-  return {
+  const store = {
     snapshot: () => clone(data),
     replaceServerSnapshot(snapshot) {
       const serverItems = (snapshot.planning || []).map(item => ({ revision: item.revision || 1, updatedAt: item.updatedAt || snapshot.at || clock(), origin: 'PC', providerLinks: item.providerLinks || {}, ...item }));
@@ -66,7 +70,15 @@ export function createCompanionStore(storage = localStorage, clock = now) {
       persist(); return clone(target.providerLinks[provider]);
     },
     upsertCollection(kind, input) { if (!['notes', 'checklist', 'templates'].includes(kind)) throw new Error('Collection compagnon inconnue.'); const item = { revision: 1, updatedAt: clock(), ...clone(input), id: input.id || uid(kind.slice(0, -1)), revision: (input.revision || 0) + 1 }; const index = data[kind].findIndex(value => value.id === item.id); if (index < 0) data[kind].push(item); else data[kind][index] = item; data.pending.push(operation(`${kind}.upsert`, item.id, input.revision || 0, item)); persist(); return clone(item); },
-    removeCollection(kind, id) { if (!['notes', 'checklist', 'templates'].includes(kind)) throw new Error('Collection compagnon inconnue.'); data[kind] = data[kind].filter(item => item.id !== id); data.pending.push(operation(`${kind}.delete`, id, 0, {})); persist(); },
+    removeCollection(kind, id) {
+      if (!['notes', 'checklist', 'templates'].includes(kind)) throw new Error('Collection compagnon inconnue.');
+      const current = data[kind].find(item => item.id === id);
+      if (!current) return { deleted: false };
+      data[kind] = data[kind].filter(item => item.id !== id);
+      data.pending.push(operation(`${kind}.delete`, id, current.revision || 0, {}));
+      persist();
+      return { deleted: true };
+    },
     acknowledge(ids) { const accepted = new Set(ids); data.pending = data.pending.filter(item => !accepted.has(item.id)); persist(); },
     applySyncResponse(response) {
       this.acknowledge(response.acknowledged || []); data.conflicts = clone(response.conflicts || []);
@@ -75,6 +87,8 @@ export function createCompanionStore(storage = localStorage, clock = now) {
     },
     conflicts: () => clone(data.conflicts),
   };
+  if (sharedDefault) defaultStore = store;
+  return store;
 }
 
 export function resolveMode({ pcAvailable, internetAvailable }) { return pcAvailable ? CompanionMode.ONLINE_PC : internetAvailable ? CompanionMode.ONLINE_STANDALONE : CompanionMode.OFFLINE; }
