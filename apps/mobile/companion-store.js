@@ -56,6 +56,15 @@ export function createCompanionStore(storage = localStorage, clock = now) {
       data.planning = data.planning.filter(item => item.id !== id); data.tombstones.push({ eventId: id, revision: current.revision + 1, deletedAt: clock(), providerLinks: clone(current.providerLinks || {}) });
       data.pending.push(operation('delete', id, current.revision, {}, current.desiredPublication)); persist(); return { deleted: true };
     },
+    updateProvider(eventId, provider, metadata) {
+      if (!['twitch', 'google'].includes(provider)) throw new Error('Provider inconnu.');
+      const item = data.planning.find(value => value.id === eventId);
+      const tombstone = data.tombstones.find(value => (value.eventId || value.id) === eventId);
+      const target = item || tombstone;
+      if (!target) throw new Error('Live introuvable.');
+      target.providerLinks = { ...(target.providerLinks || {}), [provider]: { ...(target.providerLinks?.[provider] || {}), ...clone(metadata), lastProviderSyncAt: clock() } };
+      persist(); return clone(target.providerLinks[provider]);
+    },
     upsertCollection(kind, input) { if (!['notes', 'checklist', 'templates'].includes(kind)) throw new Error('Collection compagnon inconnue.'); const item = { revision: 1, updatedAt: clock(), ...clone(input), id: input.id || uid(kind.slice(0, -1)), revision: (input.revision || 0) + 1 }; const index = data[kind].findIndex(value => value.id === item.id); if (index < 0) data[kind].push(item); else data[kind][index] = item; data.pending.push(operation(`${kind}.upsert`, item.id, input.revision || 0, item)); persist(); return clone(item); },
     removeCollection(kind, id) { if (!['notes', 'checklist', 'templates'].includes(kind)) throw new Error('Collection compagnon inconnue.'); data[kind] = data[kind].filter(item => item.id !== id); data.pending.push(operation(`${kind}.delete`, id, 0, {})); persist(); },
     acknowledge(ids) { const accepted = new Set(ids); data.pending = data.pending.filter(item => !accepted.has(item.id)); persist(); },

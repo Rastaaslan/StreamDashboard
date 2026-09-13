@@ -1,0 +1,4 @@
+export function twitchFingerprint(value: Record<string, unknown>): string;
+export interface NativeProviderAdapter { mutate(provider: string, action: string, event: Record<string, any>, link: Record<string, any>): Promise<Record<string, any>>; searchTwitch(query: string): Promise<Array<Record<string, any>>>; status?(provider: string): Promise<Record<string, any>>; authorize?(provider: string): Promise<Record<string, any>>; logout?(provider: string): Promise<Record<string, any>>; }
+export function createNativeProviderAdapter(bridge?: unknown): NativeProviderAdapter;
+export function createStandaloneProviderSync(options: { store: any; adapter: NativeProviderAdapter }): { apply(mode: string, event: Record<string, any>, action?: string, onlyProvider?: string): Promise<any[]>; searchCategories(mode: string, query: string, recent: Array<Record<string, any>>, pcSearch: (query: string) => Promise<Array<Record<string, any>>>): Promise<Array<Record<string, any>>>; };

@@ -34,6 +34,7 @@ import java.util.concurrent.atomic.AtomicReference;
 public class MainActivity extends Activity {
   private static final String ORIGIN = "http://localhost";
   private WebView webView;
+  private ProviderBridge providerBridge;
 
   @Override public void onCreate(Bundle state) {
     super.onCreate(state);
@@ -47,13 +48,15 @@ public class MainActivity extends Activity {
     settings.setMixedContentMode(WebSettings.MIXED_CONTENT_ALWAYS_ALLOW);
     settings.setSupportMultipleWindows(false);
     webView.addJavascriptInterface(new NativeBridge(), "StreamDashboardNative");
+    providerBridge = new ProviderBridge(this);
+    webView.addJavascriptInterface(providerBridge, "StreamDashboardProviders");
     webView.setWebViewClient(new LocalOnlyClient());
     setContentView(webView);
     webView.loadUrl(ORIGIN + "/mobile/index.html");
   }
 
-  @Override protected void onNewIntent(Intent intent) { super.onNewIntent(intent); setIntent(intent); deliverPairingLink(); }
-  @Override protected void onResume() { super.onResume(); deliverPairingLink(); webView.evaluateJavascript("document.dispatchEvent(new Event('visibilitychange'))", null); }
+  @Override protected void onNewIntent(Intent intent) { super.onNewIntent(intent); setIntent(intent); deliverPairingLink(); deliverOAuthLink(); }
+  @Override protected void onResume() { super.onResume(); deliverPairingLink(); deliverOAuthLink(); webView.evaluateJavascript("document.dispatchEvent(new Event('visibilitychange'))", null); }
   @Override public void onBackPressed() { if (webView.canGoBack()) webView.goBack(); else super.onBackPressed(); }
 
   private void deliverPairingLink() {
@@ -64,6 +67,8 @@ public class MainActivity extends Activity {
       getIntent().setData(null);
     }
   }
+  private void deliverOAuthLink() { Uri data=getIntent().getData(); if(data!=null&&"streamdashboard".equals(data.getScheme())&&"oauth".equals(data.getHost())){providerBridge.acceptOAuthCallback(data);getIntent().setData(null);} }
+  void dispatchProviderAuth(String provider, boolean connected) { webView.evaluateJavascript("window.dispatchEvent(new CustomEvent('provider-auth',{detail:{provider:"+org.json.JSONObject.quote(provider)+",connected:"+connected+"}}))",null); }
 
   private final class LocalOnlyClient extends WebViewClient {
     @Override public void onPageFinished(WebView view, String url) { deliverPairingLink(); }

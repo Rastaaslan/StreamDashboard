@@ -74,3 +74,9 @@ Le manifest fournit les icônes 192/512, le scope `/mobile/` relatif et le mode 
 `scripts/mobile-smoke.ts` exerce réellement le serveur sur `0.0.0.0` et vérifie : auth, pairing, redaction de state, allowlist de commandes, refus des settings distants, ticket WS à usage unique et refus du replay.
 
 Ce smoke ne remplace pas le test réel sur Android : pairing, Wi-Fi coupé/rétabli, reconnexion, commandes OBS et révocation doivent encore être validés sur un téléphone avant merge.
+
+## Routage provider direct
+
+`provider-sync.js` est l'unique coordinateur WebView des providers autonomes. Il refuse tout appel direct en `ONLINE_PC` et `OFFLINE`, applique les résultats partiels dans `providerLinks`, et sérialise chaque couple événement/provider. `ProviderBridge.java` expose seulement les opérations Twitch/Google bornées (status/auth/logout, catégories, create/update/delete); il n'expose ni token ni fetch URL arbitraire. Le WebView reste servi exclusivement depuis `http://localhost/mobile/` et bloque les navigations externes, tandis que l'OAuth s'ouvre dans le navigateur système.
+
+Au rétablissement de `ONLINE_PC`, la queue compagnon conserve la modification canonique et ses liens provider. Le serveur effectue son pull provider avant les nouvelles écritures, puis `companion/sync` fusionne les champs disjoints ou produit le conflit explicite existant. Une égalité de remote ID/révision/fingerprint signifie que l'écriture Android est déjà publiée et ne doit pas être répétée. Notes, checklist, templates et export image ne traversent jamais le bridge provider.

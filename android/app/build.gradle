@@ -6,16 +6,23 @@ def stableKeystore = System.getenv('ANDROID_KEYSTORE_PATH')
 def hasStableSigning = stableKeystore && System.getenv('ANDROID_KEYSTORE_PASSWORD') && System.getenv('ANDROID_KEY_ALIAS') && System.getenv('ANDROID_KEY_PASSWORD')
 def buildVersionCode = (System.getenv('ANDROID_VERSION_CODE') ?: '900001') as Integer
 def buildVersionName = System.getenv('ANDROID_VERSION_NAME') ?: '0.9.0-rc.1'
+def twitchAndroidClientId = System.getenv('TWITCH_ANDROID_CLIENT_ID') ?: ''
+def googleAndroidClientId = System.getenv('GOOGLE_ANDROID_CLIENT_ID') ?: ''
 
 android {
     namespace 'com.rastaaslan.streamdashboard.remote'
     compileSdk 35
+    buildFeatures {
+        buildConfig true
+    }
     defaultConfig {
         applicationId 'com.rastaaslan.streamdashboard.remote'
         minSdk 26
         targetSdk 35
         versionCode buildVersionCode
         versionName buildVersionName
+        buildConfigField 'String', 'TWITCH_ANDROID_CLIENT_ID', '"' + twitchAndroidClientId.replace('"', '\\"') + '"'
+        buildConfigField 'String', 'GOOGLE_ANDROID_CLIENT_ID', '"' + googleAndroidClientId.replace('"', '\\"') + '"'
     }
     signingConfigs {
         if (hasStableSigning) {
