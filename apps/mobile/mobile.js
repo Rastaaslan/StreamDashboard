@@ -350,7 +350,14 @@ $('export-planning').onclick = async () => {
   if (!state) return;
   try {
     const { exportPlanningImage } = await import('./planning-export.js');
-    const count = await exportPlanningImage(state.planning, state.settings.streamerName, { filters: planningFilters, period: $('export-period').value, noteEnabled: $('export-note-enabled').checked, noteText: $('export-note-text').value });
+    const resolveArtwork = async item => {
+      const cached = recentCategories.find(category => category.id === item.twitchCategoryId)?.box_art_url;
+      if (cached) return cached;
+      const response = await providerSync.searchCategories(companionMode, item.twitchCategoryName || '', recentCategories, value => transport.searchTwitch(value));
+      const found = response.items || response;
+      return found.find(category => category.id === item.twitchCategoryId)?.box_art_url;
+    };
+    const count = await exportPlanningImage(state.planning, state.settings.streamerName, { filters: planningFilters, period: $('export-period').value, noteEnabled: $('export-note-enabled').checked, noteText: $('export-note-text').value, resolveArtwork });
     note(`Image du planning prête · ${count} live${count > 1 ? 's' : ''}.`);
   } catch (error) {
     if (error?.name !== 'AbortError') note(error.message);
@@ -406,10 +413,10 @@ let recentCategories = [];
 try { recentCategories = JSON.parse(localStorage.getItem(recentKey) || '[]').slice(0, 8); } catch { /* reset invalid history */ }
 function attachCategoryPicker(inputId, gameIdId, resultsId) {
   const input = $(inputId), gameId = $(gameIdId), results = $(resultsId); let timer; let generation = 0;
-  const show = items => { results.replaceChildren(...items.map(item => { const button = text('button', item.name); button.type='button'; button.dataset.gameId=item.id; button.dataset.gameName=item.name; return button; })); };
+  const show = items => { results.replaceChildren(...items.map(item => { const button = text('button', item.name); button.type='button'; button.dataset.gameId=item.id; button.dataset.gameName=item.name; button.dataset.boxArtUrl=item.box_art_url || ''; return button; })); };
   input.onfocus = () => { if (!input.value.trim()) show(recentCategories); };
   input.oninput = () => { gameId.value=''; clearTimeout(timer); const query=normalizeCategoryQuery(input.value); const request=++generation; if(query.length<2){show(query?[]:recentCategories);return;} results.replaceChildren(text('p','Recherche…','muted')); timer=setTimeout(async()=>{try{const response=await providerSync.searchCategories(companionMode,query,recentCategories,value=>transport.searchTwitch(value));const found=response.items||response;if(request!==generation)return;const ranked=rankCategories(found,recentCategories,query);show(ranked);if(!ranked.length)results.append(text('p','Aucune catégorie trouvée.','muted'));}catch(error){if(request===generation)results.replaceChildren(text('p',error.message,'danger'));}},300); };
-  results.onclick = event => { const button=event.target.closest('[data-game-id]');if(!button)return;gameId.value=button.dataset.gameId;input.value=button.dataset.gameName;recentCategories=rememberCategory(recentCategories,{id:button.dataset.gameId,name:button.dataset.gameName});localStorage.setItem(recentKey,JSON.stringify(recentCategories));results.replaceChildren(); };
+  results.onclick = event => { const button=event.target.closest('[data-game-id]');if(!button)return;gameId.value=button.dataset.gameId;input.value=button.dataset.gameName;recentCategories=rememberCategory(recentCategories,{id:button.dataset.gameId,name:button.dataset.gameName,box_art_url:button.dataset.boxArtUrl || undefined});localStorage.setItem(recentKey,JSON.stringify(recentCategories));results.replaceChildren(); };
 }
 attachCategoryPicker('twitch-category','twitch-game-id','twitch-results');
 attachCategoryPicker('slot-twitch-category','slot-twitch-game-id','slot-twitch-results');

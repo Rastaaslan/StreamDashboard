@@ -157,6 +157,7 @@ function attachTemplateCategoryPicker() {
       button.type = 'button';
       button.dataset.gameId = item.id;
       button.dataset.gameName = item.name;
+      button.dataset.boxArtUrl = item.box_art_url || '';
       return button;
     }));
   };
@@ -189,7 +190,7 @@ function attachTemplateCategoryPicker() {
     if (!button) return;
     gameId.value = button.dataset.gameId;
     input.value = button.dataset.gameName;
-    recentCategories = rememberCategory(recentCategories, { id: button.dataset.gameId, name: button.dataset.gameName });
+    recentCategories = rememberCategory(recentCategories, { id: button.dataset.gameId, name: button.dataset.gameName, box_art_url: button.dataset.boxArtUrl || undefined });
     localStorage.setItem(recentKey, JSON.stringify(recentCategories));
     results.replaceChildren();
   };
