@@ -57,7 +57,7 @@
 
   <div class="view" data-view="prepare">
     <section><h2>Idées / Notes</h2><div id="notes"></div><label>Nouvelle idée<input id="note-text" maxlength="300" placeholder="Finir Road 96"></label><button id="add-note">AJOUTER L’IDÉE</button></section>
-    <section><h2>Checklist autonome</h2><div id="checklist"></div><label>Nouvel élément<input id="check-label" maxlength="120" placeholder="Micro chargé"></label><button id="add-check">AJOUTER</button></section>
+    <section><h2>Checklist pré-live</h2><p class="muted">Le bouton Préparer t’amène ici : coche chaque point avant de lancer le live.</p><div id="checklist"></div><label>Nouvel élément<input id="check-label" maxlength="120" placeholder="Micro chargé"></label><button id="add-check">AJOUTER</button></section>
     <section class="templates-section">
       <div class="section-heading"><div><h2>Templates de live</h2><p class="muted">Prépare une fois le titre, la catégorie et les publications, puis réutilise-les dans le planning.</p></div><button id="add-template">+ TEMPLATE</button></div>
       <div id="templates"></div>
@@ -88,5 +88,6 @@
 <nav class="bottom-nav"><button data-tab="live">●<small>LIVE</small></button><button data-tab="regie">◆<small>RÉGIE</small></button><button data-tab="planning">▦<small>PLANNING</small></button><button data-tab="prepare">✓<small>PRÉPA</small></button><button data-tab="settings">⚙<small>RÉGLAGES</small></button></nav>
 <script type="module" src="mobile.js"></script>
 <script type="module" src="templates-ui.js"></script>
+<script type="module" src="mobile-live-feedback.js"></script>
 </body>
 </html>
