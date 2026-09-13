@@ -24,8 +24,8 @@ describe('templates de live mobile', () => {
   it('permet créer, modifier, supprimer et appliquer un template au planning', () => {
     expect(templatesUi).toContain("companion.upsertCollection('templates'");
     expect(templatesUi).toContain("companion.removeCollection('templates'");
-    expect(templatesUi).toContain("openTemplateDialog(template)");
-    expect(templatesUi).toContain("applyTemplate(template)");
+    expect(templatesUi).toContain('openTemplateDialog(template)');
+    expect(templatesUi).toContain('applyTemplate(template)');
     expect(templatesUi).toContain("form.elements.namedItem('title').value = template.title");
     expect(templatesUi).toContain("$('slot-twitch-game-id').value = template.twitchCategoryId");
     expect(templatesUi).toContain("document.querySelector('[data-tab=\"planning\"]')?.click()");
@@ -37,6 +37,23 @@ describe('templates de live mobile', () => {
     expect(templatesUi).toContain('rememberCategory(recentCategories');
     expect(templatesUi).toContain("twitchCategoryId: twitch ? $('template-twitch-game-id').value : ''");
     expect(templatesUi).toContain("twitchCategoryName: twitch ? $('template-twitch-category').value.trim() : ''");
+  });
+
+  it('génère un patch de collection accepté par le serveur', () => {
+    const storage = new MemoryStorage();
+    const store = createCompanionStore(storage as unknown as Storage, () => '2026-09-13T17:30:00.000Z');
+    store.upsertCollection('templates', {
+      title: 'FC26',
+      description: 'Clubs chill',
+      twitchCategoryId: '1743359147',
+      twitchCategoryName: 'EA SPORTS FC 26',
+      desiredPublication: { twitch: true, google: true, local: false },
+    });
+    const operation = store.snapshot().pending.at(-1);
+    expect(operation).toMatchObject({ type: 'templates.upsert', baseRevision: 0, patch: { title: 'FC26', twitchCategoryId: '1743359147' } });
+    expect(operation.patch).not.toHaveProperty('id');
+    expect(operation.patch).not.toHaveProperty('revision');
+    expect(operation.patch).not.toHaveProperty('updatedAt');
   });
 
   it('supprime une collection synchronisée avec sa révision courante', () => {
