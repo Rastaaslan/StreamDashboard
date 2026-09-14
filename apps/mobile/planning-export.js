@@ -59,6 +59,12 @@ function twitchArtworkUrl(value, width = 285, height = 380) {
   return String(value || '').replace('{width}', String(width)).replace('{height}', String(height));
 }
 
+function fallbackTwitchArtworkUrl(item) {
+  const categoryId = String(item?.twitchCategoryId || '').trim();
+  if (!/^\d+$/.test(categoryId)) return '';
+  return `https://static-cdn.jtvnw.net/ttv-boxart/${categoryId}-{width}x{height}.jpg`;
+}
+
 /** Loads remote artwork through a blob URL, so a permissive remote response cannot taint the canvas. */
 export async function loadArtwork(url, { timeoutMs = 3500, fetchApi = globalThis.fetch, imageFactory = () => new Image(), urlApi = globalThis.URL } = {}) {
   if (!url || !fetchApi || !urlApi?.createObjectURL) return null;
@@ -170,6 +176,7 @@ async function resolveImages(items, options) {
     if (!url && item.twitchCategoryId && options.resolveArtwork) {
       try { url = await options.resolveArtwork(item); } catch { /* fallback is intentional */ }
     }
+    if (!url) url = fallbackTwitchArtworkUrl(item);
     try { return await loader(url, options.artworkOptions); } catch { return null; }
   }));
 }
