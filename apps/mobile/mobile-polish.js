@@ -1,10 +1,12 @@
 import { createCompanionStore } from './companion-store.js';
 import { credentialStorage, settingsStorage } from './storage.js';
 import { createTransport } from './transport.js';
+import { expandRecurringItems } from './shared/recurrence.js';
 
 const $ = id => document.getElementById(id);
 const companion = createCompanionStore();
 const note = value => { const target = $('message'); if (target) target.textContent = String(value || ''); };
+const DAY_MS = 86_400_000;
 
 function planningForm() { return $('slot-form'); }
 
@@ -71,6 +73,8 @@ function openPlanningFromTemplate(templateId) {
   const template = companion.snapshot().templates.find(item => item.id === templateId);
   if (!template) { note('Template introuvable.'); return; }
   document.querySelector('[data-tab="planning"]')?.click();
+  const dialog = $('slot-dialog');
+  if (dialog) dialog.dataset.mode = 'create';
   // Reuse the canonical "new event" entry point so mobile.js clears any previous
   // occurrence/series editing scope before we apply the template.
   $('add-slot')?.click();
@@ -79,6 +83,7 @@ function openPlanningFromTemplate(templateId) {
     if (!form) return;
     form.elements.namedItem('recurrence').disabled = false;
     form.elements.namedItem('recurrenceUntil').disabled = false;
+    $('event-template').disabled = false;
     $('event-template').value = template.id;
     applyTemplate(template);
     ensureScheduleDefaults();
@@ -118,15 +123,46 @@ function harmonizePlanningCopy() {
   }
 }
 
+function editedItemFromForm() {
+  const form = planningForm();
+  if (!form) return null;
+  const date = String(form.elements.namedItem('date')?.value || '');
+  const start = String(form.elements.namedItem('start')?.value || '');
+  const title = String(form.elements.namedItem('title')?.value || '').trim();
+  if (!date || !start || !title) return null;
+  const at = Date.parse(new Date(`${date}T${start}`).toISOString());
+  if (!Number.isFinite(at)) return null;
+  const items = expandRecurringItems(companion.snapshot().planning, { from: at - DAY_MS, to: at + DAY_MS });
+  return items.find(item => item.title === title && Math.abs(Date.parse(item.startAtUtc) - at) < 60_000) || null;
+}
+
+function hydrateEditingFields() {
+  const dialog = $('slot-dialog');
+  const form = planningForm();
+  if (!dialog?.open || dialog.dataset.mode !== 'edit' || !form) return;
+  const item = editedItemFromForm();
+  if (!item) return;
+  form.elements.namedItem('twitch').checked = item.desiredPublication?.twitch === true;
+  form.elements.namedItem('google').checked = item.desiredPublication?.google === true;
+  $('slot-twitch-category').value = item.twitchCategoryName || '';
+  $('slot-twitch-game-id').value = item.twitchCategoryId || '';
+  $('slot-twitch-results').replaceChildren();
+  // An existing event is independent from the template that may originally have
+  // created it. Keep templates as a creation aid instead of a hidden dependency.
+  $('event-template').value = '';
+  $('event-template').disabled = true;
+}
+
 function updateDialogTitle() {
   const dialog = $('slot-dialog');
   const form = planningForm();
   if (!dialog?.open || !form) return;
   const title = $('slot-dialog-title');
   if (!title) return;
-  if (form.elements.namedItem('recurrence')?.disabled) title.textContent = 'Modifier cette occurrence';
-  else if (form.elements.namedItem('title')?.value?.trim()) title.textContent = 'Modifier l’événement';
+  if (dialog.dataset.mode === 'edit' && form.elements.namedItem('recurrence')?.disabled) title.textContent = 'Modifier cette occurrence';
+  else if (dialog.dataset.mode === 'edit') title.textContent = 'Modifier l’événement';
   else title.textContent = 'Nouvel événement';
+  hydrateEditingFields();
 }
 
 async function remoteTransport() {
@@ -201,11 +237,24 @@ if (templateSelect) {
 }
 
 $('add-slot')?.addEventListener('click', () => {
+  const dialog = $('slot-dialog');
+  if (dialog) dialog.dataset.mode = 'create';
   queueMicrotask(() => {
-    if ($('event-template')) $('event-template').value = '';
+    if ($('event-template')) { $('event-template').disabled = false; $('event-template').value = ''; }
     $('slot-dialog-title').textContent = 'Nouvel événement';
     ensureScheduleDefaults();
   });
+});
+
+$('planning')?.addEventListener('click', event => {
+  const button = event.target.closest('button');
+  if (!button || !/^Modifier/.test(button.textContent || '')) return;
+  const dialog = $('slot-dialog');
+  if (dialog) dialog.dataset.mode = 'edit';
+}, true);
+$('slot-dialog')?.addEventListener('close', () => {
+  delete $('slot-dialog').dataset.mode;
+  if ($('event-template')) $('event-template').disabled = false;
 });
 
 const streamButton = $('stream');
