@@ -5,6 +5,7 @@ import { DEFAULT_FILTERS, filterPlanning, filterPlanningTemporal, paginatePlanni
 import { normalizeCategoryQuery, rankCategories, rememberCategory } from './twitch-category.js';
 import { CompanionMode, createCompanionStore, resolveMode } from './companion-store.js';
 import { createNativeProviderAdapter, createStandaloneProviderSync } from './provider-sync.js';
+import { recurrenceSummary } from './shared/recurrence.js';
 
 const $ = id => document.getElementById(id);
 
@@ -25,6 +26,7 @@ const planningTemporalKey = 'streamdashboard.planningTemporal';
 const planningPageSize = 8;
 let planningTemporal = localStorage.getItem(planningTemporalKey) || TEMPORAL_FILTERS.UPCOMING;
 let planningPage = 1;
+let mobileEditing = null;
 const exportNoteKey = 'streamdashboard.exportNote';
 try { planningFilters = { ...planningFilters, ...JSON.parse(localStorage.getItem('streamdashboard.planningFilters') || '{}') }; } catch { /* corrupted preferences reset safely */ }
 if (!Object.values(TEMPORAL_FILTERS).includes(planningTemporal)) planningTemporal = TEMPORAL_FILTERS.UPCOMING;
@@ -151,7 +153,15 @@ function renderPlanning(items) {
     const row = document.createElement('div');
     row.className = 'planning-row';
     row.append(text('b', item.title), text('span', formatPlanningDate(item)));
-    if (companionMode !== CompanionMode.ONLINE_PC) {
+    if (item.recurrence) row.append(text('small', recurrenceSummary(item), 'muted'));
+    if (item.occurrenceKey) {
+      const editOne = text('button', 'Modifier cette occurrence'); editOne.type = 'button'; editOne.onclick = () => openMobileEditor(item, 'occurrence');
+      const editSeries = text('button', 'Modifier toute la série'); editSeries.type = 'button'; editSeries.onclick = () => openMobileEditor(item, 'series');
+      const deleteOne = text('button', 'Supprimer cette occurrence'); deleteOne.type = 'button'; deleteOne.onclick = () => void removeMobileOccurrence(item);
+      const deleteSeries = text('button', 'Supprimer toute la série'); deleteSeries.type = 'button'; deleteSeries.onclick = () => void removeMobileSeries(item);
+      row.append(editOne, editSeries, deleteOne, deleteSeries);
+    }
+    if (companionMode !== CompanionMode.ONLINE_PC && !item.occurrenceKey) {
       const statuses = Object.entries(item.desiredPublication || {}).filter(([provider, enabled]) => enabled && ['twitch','google'].includes(provider)).map(([provider]) => `${provider === 'twitch' ? 'Twitch' : 'Google'} · ${(item.providerLinks?.[provider]?.status || 'pending').toUpperCase()}`).join('  ');
       const status = text('small', statuses || '⏳ À synchroniser', 'pending');
       const retryButton = text('button', 'Retry'); retryButton.type='button'; retryButton.hidden=!Object.values(item.providerLinks||{}).some(link=>['error','conflict'].includes(link.status)); retryButton.onclick=()=>void syncEventProviders(item);
@@ -174,6 +184,17 @@ function renderPlanning(items) {
     container.append(nav);
   }
 }
+
+function openMobileEditor(item, scope) {
+  mobileEditing = { item, scope }; const form = $('slot-form'); const start = new Date(item.startAtUtc); const end = new Date(item.endAtUtc);
+  form.elements.title.value = item.title; form.elements.date.value = start.toISOString().slice(0, 10); form.elements.start.value = start.toTimeString().slice(0, 5); form.elements.end.value = end.toTimeString().slice(0, 5); form.elements.category.value = item.category || 'live'; form.elements.description.value = item.description || '';
+  form.elements.recurrence.value = item.recurrence ? `${item.recurrence.frequency}-${item.recurrence.interval}` : ''; form.elements.recurrenceUntil.value = item.recurrence?.until?.slice(0, 10) || ''; form.elements.recurrence.disabled = scope === 'occurrence'; form.elements.recurrenceUntil.disabled = scope === 'occurrence'; $('slot-dialog').showModal();
+}
+async function removeMobileOccurrence(item) {
+  if (!confirm(`Supprimer uniquement cette occurrence de « ${item.title} » ?`)) return;
+  try { if (companionMode === CompanionMode.ONLINE_PC) render(await transport.deleteOccurrence(item.seriesId, item.occurrenceKey)); else { const canonical = companion.snapshot().planning.find(value => value.id === item.seriesId); const recurrence = structuredClone(canonical.recurrence); recurrence.exceptions ||= {}; recurrence.exceptions[item.occurrenceKey] = { cancelled: true }; companion.updateEvent(canonical.id, { recurrence }, canonical.revision); render(offlineState()); } note('Occurrence supprimée.'); } catch (error) { note(error.message); }
+}
+async function removeMobileSeries(item) { if (!confirm(`Supprimer toute la série « ${item.title} » ?`)) return; try { if (companionMode === CompanionMode.ONLINE_PC) render(await transport.deletePlanning(item.seriesId)); else { const canonical = companion.snapshot().planning.find(value => value.id === item.seriesId); companion.deleteEvent(canonical.id, canonical.revision); render(offlineState()); } note('Série supprimée.'); } catch (error) { note(error.message); } }
 
 async function syncEventProviders(event, action) {
   if (companionMode !== CompanionMode.ONLINE_STANDALONE || !globalThis.StreamDashboardProviders) return;
@@ -198,6 +219,8 @@ function render(next) {
   $('twitch-editor').hidden = !next.twitch?.connected;
   renderDeck(next.obs.mediaInputs);
   renderPlanning(next.planning);
+  $('discord-destination').textContent = companionMode === CompanionMode.ONLINE_PC ? `Discord · ${next.discord?.channelName ? `#${next.discord.channelName}` : 'à configurer'}` : 'Connexion PC requise pour publier sur Discord.';
+  $('publish-discord').disabled = companionMode !== CompanionMode.ONLINE_PC || !next.discord?.configured;
   $('timer').textContent = formatDuration(remaining());
   if (companionMode === CompanionMode.ONLINE_PC) showPairing(false);
   remoteButtons(companionMode !== CompanionMode.ONLINE_PC);
@@ -350,11 +373,36 @@ $('export-planning').onclick = async () => {
   if (!state) return;
   try {
     const { exportPlanningImage } = await import('./planning-export.js');
-    const count = await exportPlanningImage(state.planning, state.settings.streamerName, { filters: planningFilters, period: $('export-period').value, noteEnabled: $('export-note-enabled').checked, noteText: $('export-note-text').value });
+    const resolveArtwork = async item => {
+      const cached = recentCategories.find(category => category.id === item.twitchCategoryId)?.box_art_url;
+      if (cached) return cached;
+      const response = await providerSync.searchCategories(companionMode, item.twitchCategoryName || '', recentCategories, value => transport.searchTwitch(value));
+      const found = response.items || response;
+      return found.find(category => category.id === item.twitchCategoryId)?.box_art_url;
+    };
+    const count = await exportPlanningImage(state.planning, state.settings.streamerName, { filters: planningFilters, period: $('export-period').value, noteEnabled: $('export-note-enabled').checked, noteText: $('export-note-text').value, resolveArtwork });
     note(`Image du planning prête · ${count} live${count > 1 ? 's' : ''}.`);
   } catch (error) {
     if (error?.name !== 'AbortError') note(error.message);
   }
+};
+const blobBase64 = async blob => { const bytes = new Uint8Array(await blob.arrayBuffer()); let binary = ''; for (let i = 0; i < bytes.length; i += 0x8000) binary += String.fromCharCode(...bytes.subarray(i, i + 0x8000)); return btoa(binary); };
+async function loadDiscordGuilds() {
+  if (companionMode !== CompanionMode.ONLINE_PC) { note('Connexion PC requise pour publier sur Discord.'); return; }
+  try { const guilds = await transport.discordGuilds(); $('discord-guild').replaceChildren(new Option('Choisir…', ''), ...guilds.map(value => new Option(value.name, value.id))); if (state.discord?.guildId) $('discord-guild').value = state.discord.guildId; $('discord-guild').dispatchEvent(new Event('change')); } catch (error) { note(error.message); }
+}
+$('discord-guild').onfocus = () => { if ($('discord-guild').options.length < 2) void loadDiscordGuilds(); };
+$('discord-guild').onchange = async () => { const guildId = $('discord-guild').value; if (!guildId) return; try { const channels = await transport.discordChannels(guildId); $('discord-channel').replaceChildren(new Option('Choisir…', ''), ...channels.map(value => new Option(`#${value.name}`, value.id))); if (state.discord?.channelId) $('discord-channel').value = state.discord.channelId; } catch (error) { note(error.message); } };
+$('discord-channel').onchange = async () => { try { await transport.discordSettings({ guildId: $('discord-guild').value, channelId: $('discord-channel').value, defaultMessage: $('discord-message').value }); note('Destination Discord enregistrée.'); } catch (error) { note(error.message); } };
+$('publish-discord').onclick = async () => {
+  if (companionMode !== CompanionMode.ONLINE_PC) { note('Connexion PC requise pour publier sur Discord.'); return; }
+  try {
+    note('Génération du planning…'); const { buildPlanningPng } = await import('./planning-export.js');
+    const resolveArtwork = async item => { const cached = recentCategories.find(category => category.id === item.twitchCategoryId)?.box_art_url; if (cached) return cached; const response = await providerSync.searchCategories(companionMode, item.twitchCategoryName || '', recentCategories, value => transport.searchTwitch(value)); return (response.items || response).find(category => category.id === item.twitchCategoryId)?.box_art_url; };
+    const result = await buildPlanningPng(state.planning, state.settings.streamerName, { filters: planningFilters, period: $('export-period').value, noteEnabled: $('export-note-enabled').checked, noteText: $('export-note-text').value, resolveArtwork });
+    note('Publication Discord…'); const posted = await transport.publishDiscord({ imageBase64: await blobBase64(result.blob), filename: result.fileName, message: $('discord-message').value || undefined, channelId: $('discord-channel').value || undefined });
+    note(`Planning publié dans #${posted.channelName || 'planning'}.`);
+  } catch (error) { note(error.message); }
 };
 $('edit-server').onclick = () => { showPairing(true); $('pair-server').focus(); };
 $('keep-awake').onchange = () => globalThis.StreamDashboardNative?.setKeepAwake?.($('keep-awake').checked);
@@ -386,18 +434,26 @@ for (const [key, label] of Object.entries(filterNames)) {
   input.onchange = () => { planningFilters[key] = input.checked; planningPage = 1; localStorage.setItem('streamdashboard.planningFilters', JSON.stringify(planningFilters)); renderPlanning(state?.planning); };
   const row = document.createElement('label'); row.append(input, text('span', label)); $('planning-filters').append(row);
 }
-$('add-slot').onclick = () => $('slot-dialog').showModal();
-$('close-slot').onclick = () => $('slot-dialog').close();
+$('add-slot').onclick = () => { mobileEditing = null; $('slot-form').elements.recurrence.disabled = false; $('slot-form').elements.recurrenceUntil.disabled = false; $('slot-form').reset(); $('slot-dialog').showModal(); };
+$('close-slot').onclick = () => { mobileEditing = null; $('slot-form').elements.recurrence.disabled = false; $('slot-form').elements.recurrenceUntil.disabled = false; $('slot-dialog').close(); };
 $('slot-form').onsubmit = async event => {
   event.preventDefault(); const form = new FormData(event.currentTarget);
   const date = form.get('date'); const startAtUtc = new Date(`${date}T${form.get('start')}`).toISOString(); const endAtUtc = new Date(`${date}T${form.get('end')}`).toISOString();
   try {
     if (form.get('twitch') === 'on' && !$('slot-twitch-game-id').value) throw new Error('Sélectionnez une catégorie Twitch officielle.');
-    const value = { title: form.get('title'), startAtUtc, endAtUtc, category: form.get('category'), description: form.get('description') || '', desiredPublication: { local: false, twitch: form.get('twitch') === 'on', google: form.get('google') === 'on' }, twitchCategoryId: form.get('twitch') === 'on' ? $('slot-twitch-game-id').value : undefined, twitchCategoryName: form.get('twitch') === 'on' ? $('slot-twitch-category').value : undefined };
+    const recurrenceValue = String(form.get('recurrence') || ''); const [frequency, interval] = recurrenceValue.split('-'); const untilDate = String(form.get('recurrenceUntil') || '');
+    const recurrence = recurrenceValue ? { frequency, interval: Number(interval), timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone || 'Europe/Paris', until: untilDate ? new Date(`${untilDate}T23:59:59`).toISOString() : null, exceptions: {} } : undefined;
+    const value = { title: form.get('title'), startAtUtc, endAtUtc, category: form.get('category'), description: form.get('description') || '', recurrence, desiredPublication: { local: false, twitch: form.get('twitch') === 'on', google: form.get('google') === 'on' }, twitchCategoryId: form.get('twitch') === 'on' ? $('slot-twitch-game-id').value : undefined, twitchCategoryName: form.get('twitch') === 'on' ? $('slot-twitch-category').value : undefined };
     planningPage = 1;
-    if (companionMode === CompanionMode.ONLINE_PC) { const next = await transport.createPlanning(value); companion.replaceServerSnapshot(next); render(next); }
+    if (mobileEditing?.scope === 'occurrence') {
+      const patch = { title: value.title, startAtUtc, endAtUtc, category: value.category, twitchCategoryId: value.twitchCategoryId, twitchCategoryName: value.twitchCategoryName, desiredPublication: value.desiredPublication };
+      if (companionMode === CompanionMode.ONLINE_PC) render(await transport.updateOccurrence(mobileEditing.item.seriesId, mobileEditing.item.occurrenceKey, patch));
+      else { const canonical = companion.snapshot().planning.find(item => item.id === mobileEditing.item.seriesId); const nextRecurrence = structuredClone(canonical.recurrence); nextRecurrence.exceptions ||= {}; nextRecurrence.exceptions[mobileEditing.item.occurrenceKey] = { patch }; companion.updateEvent(canonical.id, { recurrence: nextRecurrence }, canonical.revision); render(offlineState()); }
+    } else if (mobileEditing?.scope === 'series') {
+      const seriesId = mobileEditing.item.seriesId; if (companionMode === CompanionMode.ONLINE_PC) render(await transport.updatePlanning(seriesId, value)); else { const canonical = companion.snapshot().planning.find(item => item.id === seriesId); companion.updateEvent(seriesId, value, canonical.revision); render(offlineState()); }
+    } else if (companionMode === CompanionMode.ONLINE_PC) { const next = await transport.createPlanning(value); companion.replaceServerSnapshot(next); render(next); }
     else { const created=companion.createEvent(value).item; render(offlineState()); if(companionMode===CompanionMode.ONLINE_STANDALONE) void syncEventProviders(created,'create'); }
-    $('slot-dialog').close(); event.currentTarget.reset(); note(companionMode === CompanionMode.ONLINE_PC ? 'Créneau créé.' : 'Créneau enregistré · À synchroniser.');
+    mobileEditing = null; event.currentTarget.elements.recurrence.disabled = false; event.currentTarget.elements.recurrenceUntil.disabled = false; $('slot-dialog').close(); event.currentTarget.reset(); note(companionMode === CompanionMode.ONLINE_PC ? 'Planning enregistré.' : 'Créneau enregistré · À synchroniser.');
   } catch (error) { note(error.message); }
 };
 
@@ -406,10 +462,10 @@ let recentCategories = [];
 try { recentCategories = JSON.parse(localStorage.getItem(recentKey) || '[]').slice(0, 8); } catch { /* reset invalid history */ }
 function attachCategoryPicker(inputId, gameIdId, resultsId) {
   const input = $(inputId), gameId = $(gameIdId), results = $(resultsId); let timer; let generation = 0;
-  const show = items => { results.replaceChildren(...items.map(item => { const button = text('button', item.name); button.type='button'; button.dataset.gameId=item.id; button.dataset.gameName=item.name; return button; })); };
+  const show = items => { results.replaceChildren(...items.map(item => { const button = text('button', item.name); button.type='button'; button.dataset.gameId=item.id; button.dataset.gameName=item.name; button.dataset.boxArtUrl=item.box_art_url || ''; return button; })); };
   input.onfocus = () => { if (!input.value.trim()) show(recentCategories); };
   input.oninput = () => { gameId.value=''; clearTimeout(timer); const query=normalizeCategoryQuery(input.value); const request=++generation; if(query.length<2){show(query?[]:recentCategories);return;} results.replaceChildren(text('p','Recherche…','muted')); timer=setTimeout(async()=>{try{const response=await providerSync.searchCategories(companionMode,query,recentCategories,value=>transport.searchTwitch(value));const found=response.items||response;if(request!==generation)return;const ranked=rankCategories(found,recentCategories,query);show(ranked);if(!ranked.length)results.append(text('p','Aucune catégorie trouvée.','muted'));}catch(error){if(request===generation)results.replaceChildren(text('p',error.message,'danger'));}},300); };
-  results.onclick = event => { const button=event.target.closest('[data-game-id]');if(!button)return;gameId.value=button.dataset.gameId;input.value=button.dataset.gameName;recentCategories=rememberCategory(recentCategories,{id:button.dataset.gameId,name:button.dataset.gameName});localStorage.setItem(recentKey,JSON.stringify(recentCategories));results.replaceChildren(); };
+  results.onclick = event => { const button=event.target.closest('[data-game-id]');if(!button)return;gameId.value=button.dataset.gameId;input.value=button.dataset.gameName;recentCategories=rememberCategory(recentCategories,{id:button.dataset.gameId,name:button.dataset.gameName,box_art_url:button.dataset.boxArtUrl || undefined});localStorage.setItem(recentKey,JSON.stringify(recentCategories));results.replaceChildren(); };
 }
 attachCategoryPicker('twitch-category','twitch-game-id','twitch-results');
 attachCategoryPicker('slot-twitch-category','slot-twitch-game-id','slot-twitch-results');

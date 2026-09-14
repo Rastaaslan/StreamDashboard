@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { mkdir, open, readFile, rename, unlink } from 'node:fs/promises';
 import path from 'node:path';
 
-export const DASHBOARD_SCHEMA_VERSION = 4;
+export const DASHBOARD_SCHEMA_VERSION = 5;
 
 export interface SecretStore {
   readonly persistent: boolean;
@@ -14,6 +14,9 @@ export interface SecretStore {
   getGoogleTokens?(): Promise<Record<string, string> | null>;
   setGoogleTokens?(tokens: Record<string, string>): Promise<void>;
   clearGoogleTokens?(): Promise<void>;
+  getDiscordToken(): Promise<string>;
+  setDiscordToken(token: string): Promise<void>;
+  clearDiscordToken(): Promise<void>;
 }
 
 export class MemorySecretStore implements SecretStore {
@@ -21,6 +24,7 @@ export class MemorySecretStore implements SecretStore {
   private tokens: Record<string, string> | null = null;
   private obsPassword = '';
   private google: Record<string, string> | null = null;
+  private discord = '';
 
   async getTwitchTokens() { return this.tokens ? { ...this.tokens } : null; }
   async setTwitchTokens(tokens: Record<string, string>) { this.tokens = { ...tokens }; }
@@ -30,6 +34,9 @@ export class MemorySecretStore implements SecretStore {
   async getGoogleTokens() { return this.google ? { ...this.google } : null; }
   async setGoogleTokens(tokens: Record<string, string>) { this.google = { ...tokens }; }
   async clearGoogleTokens() { this.google = null; }
+  async getDiscordToken() { return this.discord; }
+  async setDiscordToken(token: string) { this.discord = token; }
+  async clearDiscordToken() { this.discord = ''; }
 }
 
 /** JSON configuration store using serialized temp + fsync + rename writes. */

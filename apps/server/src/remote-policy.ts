@@ -10,7 +10,7 @@ import {
 const REMOTE_MODES = new Set(['intro', 'live', 'pause', 'end']);
 
 type RemotePlanningItem = Pick<CalendarItem,
-  'id' | 'title' | 'description' | 'startAtUtc' | 'endAtUtc' | 'allDay' | 'category' | 'kind' | 'source' | 'editable' | 'twitchCategoryId' | 'twitchCategoryName' | 'desiredPublication'
+  'id' | 'title' | 'description' | 'startAtUtc' | 'endAtUtc' | 'allDay' | 'category' | 'kind' | 'source' | 'editable' | 'twitchCategoryId' | 'twitchCategoryName' | 'desiredPublication' | 'recurrence' | 'seriesId' | 'occurrenceKey'
 >;
 type ExtendedRemoteDashboardState = Omit<RemoteDashboardState, 'planning' | 'nextLive'> & {
   planning: RemotePlanningItem[];
@@ -69,6 +69,9 @@ export function toRemoteDashboardState(state: DashboardState): ExtendedRemoteDas
     ...(item.twitchCategoryId !== undefined ? { twitchCategoryId: item.twitchCategoryId } : {}),
     ...(item.twitchCategoryName !== undefined ? { twitchCategoryName: item.twitchCategoryName } : {}),
     ...(item.desiredPublication !== undefined ? { desiredPublication: { ...item.desiredPublication } } : {}),
+    ...(item.recurrence !== undefined ? { recurrence: structuredClone(item.recurrence) } : {}),
+    ...(item.seriesId !== undefined ? { seriesId: item.seriesId } : {}),
+    ...(item.occurrenceKey !== undefined ? { occurrenceKey: item.occurrenceKey } : {}),
   });
 
   return {
@@ -95,6 +98,7 @@ export function toRemoteDashboardState(state: DashboardState): ExtendedRemoteDas
       error: state.twitch.error,
     },
     ...(state.google ? { google: { configured: state.google.configured, connected: state.google.connected } } : {}),
+    ...(state.discord ? { discord: structuredClone(state.discord) } : {}),
     ...(state.preflight ? { preflight: { ...state.preflight } } : {}),
   };
 }

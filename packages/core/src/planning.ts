@@ -49,7 +49,7 @@ export class PlanningOrchestrator {
 
   update(
     id: string,
-    changes: Pick<CalendarItem, 'title' | 'description' | 'startAtUtc' | 'endAtUtc' | 'allDay' | 'category' | 'kind' | 'twitchCategoryId' | 'twitchCategoryName'>,
+    changes: Pick<CalendarItem, 'title' | 'description' | 'startAtUtc' | 'endAtUtc' | 'allDay' | 'category' | 'kind' | 'twitchCategoryId' | 'twitchCategoryName'> & { recurrence?: CalendarItem['recurrence'] },
     options: PlanningUpdateOptions = {},
   ) {
     return this.serial(async () => {
@@ -97,6 +97,11 @@ export class PlanningOrchestrator {
     return this.serial(async () => {
       const item = this.required(id);
       const desired = item.desiredPublication?.[provider] ?? false;
+      if (desired && item.recurrence) {
+        item.providers ??= {}; const link = item.providers[provider] ??= { status: 'error' };
+        link.status = 'error'; link.lastError = `La récurrence locale ne peut pas encore être représentée fidèlement sur ${provider}. L’événement local est conservé.`;
+        await this.persist(this.items); throw new Error(link.lastError);
+      }
       if (item.conflict?.provider === provider && desired) {
         throw new Error(`Conflit ${provider} non résolu — choisissez d’abord la version locale ou distante.`);
       }
@@ -215,6 +220,17 @@ export class PlanningOrchestrator {
     for (const name of ['twitch', 'google'] as const) {
       const desired = item.desiredPublication?.[name] ?? false;
       const remoteId = this.remoteId(item, name);
+
+      // V1 provider APIs do not expose a reliable exception-aware recurring model.
+      // Refuse rather than silently publishing only the anchor or duplicating retries.
+      if (desired && item.recurrence) {
+        item.providers ??= {};
+        const link = item.providers[name] ??= { status: 'error' };
+        link.status = 'error';
+        link.lastError = `La récurrence locale ne peut pas encore être représentée fidèlement sur ${name}. L’événement local est conservé.`;
+        await this.persist(this.items);
+        continue;
+      }
 
       if (!desired) {
         if (!remoteId) {

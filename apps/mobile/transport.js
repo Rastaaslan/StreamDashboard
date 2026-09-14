@@ -68,6 +68,13 @@ export function createTransport(getServer, getCredential) {
       try { return await request(`/api/v1/planning/${encodeURIComponent(id)}`, { method: 'DELETE', headers: authHeaders(), body: JSON.stringify(value) }); }
       catch (error) { if (!shouldFallbackPlanning(error)) throw error; return planningFallback(id, {}, true); }
     },
+    updateOccurrence: (seriesId, occurrenceKey, patch) => request(`/api/v1/planning/${encodeURIComponent(seriesId)}/occurrence`, { method: 'PUT', headers: authHeaders(), body: JSON.stringify({ occurrenceKey, patch }) }),
+    deleteOccurrence: (seriesId, occurrenceKey) => request(`/api/v1/planning/${encodeURIComponent(seriesId)}/occurrence`, { method: 'DELETE', headers: authHeaders(), body: JSON.stringify({ occurrenceKey }) }),
+    discordStatus: () => request('/api/v1/discord/status', { headers: { authorization: `Device ${getCredential()}` } }),
+    discordGuilds: () => request('/api/v1/discord/guilds', { headers: { authorization: `Device ${getCredential()}` } }),
+    discordChannels: guildId => request(`/api/v1/discord/guilds/${encodeURIComponent(guildId)}/channels`, { headers: { authorization: `Device ${getCredential()}` } }),
+    discordSettings: value => request('/api/v1/discord/settings', { method: 'PUT', headers: authHeaders(), body: JSON.stringify(value) }),
+    publishDiscord: value => request('/api/v1/discord/planning', { method: 'POST', headers: authHeaders(), body: JSON.stringify(value) }),
     syncCompanion,
     resolveCompanionConflict: (operationId, strategy) => request(`/api/v1/companion/conflicts/${encodeURIComponent(operationId)}/resolve`, { method: 'POST', headers: authHeaders(), body: JSON.stringify({ strategy }) }),
     websocket: ticket => new WebSocket(isAndroidRuntime() ? websocketUrl(getServer(), ticket) : `${location.protocol === 'https:' ? 'wss' : 'ws'}://${location.host}/ws/v1?ticket=${encodeURIComponent(ticket)}`),
