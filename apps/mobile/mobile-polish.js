@@ -96,8 +96,8 @@ function decorateTemplateCards() {
     const template = templates[index];
     const use = card.querySelector('.template-actions button');
     if (!template || !use) return;
-    use.textContent = 'CRÉER UN ÉVÉNEMENT';
-    use.dataset.templateId = template.id;
+    if (use.textContent !== 'CRÉER UN ÉVÉNEMENT') use.textContent = 'CRÉER UN ÉVÉNEMENT';
+    if (use.dataset.templateId !== template.id) use.dataset.templateId = template.id;
     use.onclick = event => {
       event.preventDefault();
       event.stopImmediatePropagation();
@@ -105,7 +105,9 @@ function decorateTemplateCards() {
     };
   });
   const empty = root.querySelector('p.muted');
-  if (empty?.textContent?.startsWith('Aucun template')) empty.textContent = 'Aucun template d’événement pour le moment.';
+  if (empty?.textContent?.startsWith('Aucun template') && empty.textContent !== 'Aucun template d’événement pour le moment.') {
+    empty.textContent = 'Aucun template d’événement pour le moment.';
+  }
 }
 
 function harmonizePlanningCopy() {
