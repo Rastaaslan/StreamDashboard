@@ -79,8 +79,9 @@ export function recurrenceSummary(item, locale = 'fr-FR') {
   if (!item?.recurrence) return '';
   const rule = item.recurrence; const zone = validZone(rule.timeZone || DEFAULT_ZONE);
   const date = new Date(item.startAtUtc);
+  const local = parts(date, zone);
   const weekday = new Intl.DateTimeFormat(locale, { timeZone: zone, weekday: 'long' }).format(date);
   const time = new Intl.DateTimeFormat(locale, { timeZone: zone, hour: '2-digit', minute: '2-digit' }).format(date);
-  if (rule.frequency === 'monthly') return `↻ Chaque mois · ${weekday} ${time}`;
+  if (rule.frequency === 'monthly') return `↻ Chaque mois · le ${local.day} à ${time}`;
   return rule.interval === 2 ? `↻ Toutes les 2 semaines · ${weekday} ${time}` : `↻ Chaque ${weekday} à ${time}`;
 }
