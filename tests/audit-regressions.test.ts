@@ -176,8 +176,8 @@ describe('audit politique télécommande', () => {
     runtime: { serverVersion: '1', nodeVersion: '22', electronVersion: '43', platform: 'win32', port: 47832, logsPath: 'C:/secret/logs' },
   } as DashboardState;
 
-  it('refuse force, enregistrement, scène arbitraire et accepte les contrôles nécessaires', () => {
-    expect(() => parseRemoteCommand({ type: 'session.start', force: true }, state)).toThrow(/checklist/i);
+  it('autorise force pour le démarrage appairé, refuse enregistrement/scène arbitraire et accepte les contrôles nécessaires', () => {
+    expect(parseRemoteCommand({ type: 'session.start', force: true }, state)).toEqual({ type: 'session.start', force: true });
     expect(() => parseRemoteCommand({ type: 'obs.record', start: true }, state)).toThrow(/réservée au PC/i);
     expect(() => parseRemoteCommand({ type: 'obs.scene', scene: 'Secret' }, state)).toThrow(/réservée au PC/i);
     expect(parseRemoteCommand({ type: 'scene.chatting' }, state)).toEqual({ type: 'scene.chatting' });
