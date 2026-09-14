@@ -70,17 +70,21 @@ function refreshTemplateSelect() {
 function openPlanningFromTemplate(templateId) {
   const template = companion.snapshot().templates.find(item => item.id === templateId);
   if (!template) { note('Template introuvable.'); return; }
-  const form = planningForm();
-  form.reset();
-  form.elements.namedItem('recurrence').disabled = false;
-  form.elements.namedItem('recurrenceUntil').disabled = false;
-  $('event-template').value = template.id;
-  applyTemplate(template);
-  ensureScheduleDefaults();
-  $('slot-dialog-title').textContent = 'Nouvel événement';
   document.querySelector('[data-tab="planning"]')?.click();
-  if (!$('slot-dialog').open) $('slot-dialog').showModal();
-  note(`Template « ${template.title} » appliqué. Choisis maintenant la périodicité et ajuste l’événement si besoin.`);
+  // Reuse the canonical "new event" entry point so mobile.js clears any previous
+  // occurrence/series editing scope before we apply the template.
+  $('add-slot')?.click();
+  queueMicrotask(() => {
+    const form = planningForm();
+    if (!form) return;
+    form.elements.namedItem('recurrence').disabled = false;
+    form.elements.namedItem('recurrenceUntil').disabled = false;
+    $('event-template').value = template.id;
+    applyTemplate(template);
+    ensureScheduleDefaults();
+    $('slot-dialog-title').textContent = 'Nouvel événement';
+    note(`Template « ${template.title} » appliqué. Choisis maintenant la périodicité et ajuste l’événement si besoin.`);
+  });
 }
 
 function decorateTemplateCards() {
