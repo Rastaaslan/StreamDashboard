@@ -34,8 +34,11 @@ export function parseRemoteCommand(value: unknown, state: DashboardState): Dashb
     case 'checklist.toggle':
       return command;
     case 'session.start':
-      if (command.force === true) throw denied('Le contournement de checklist est réservé au PC.');
-      return { type: 'session.start', force: false };
+      // A paired/authenticated remote is already allowed to start the stream. `force`
+      // only bypasses the local checklist after an explicit confirmation on the phone.
+      // Keeping this flag lets Android mirror the desktop recovery flow instead of
+      // leaving the primary Start button permanently blocked by one unchecked item.
+      return { type: 'session.start', force: command.force === true };
     case 'mode.set':
       if (!REMOTE_MODES.has(command.mode)) throw denied('Ce mode n’est pas pilotable depuis la télécommande.');
       return command;
@@ -89,7 +92,7 @@ export function toRemoteDashboardState(state: DashboardState): ExtendedRemoteDas
       activeAudioInputs: [...state.obs.activeAudioInputs],
       mediaInputs: [...state.obs.mediaInputs],
     },
-    settings: { confirmStop: state.settings.confirmStop, streamerName: state.settings.streamerName, modeScenes: { live: state.settings.modeScenes.live }, chattingScene: state.settings.chattingScene },
+    settings: { confirmStop: state.settings.confirmStop, streamerName: state.settings.streamerName, modeScenes: { ...state.settings.modeScenes }, chattingScene: state.settings.chattingScene },
     twitch: {
       connected: state.twitch.connected,
       channelTitle: state.twitch.channelTitle,
