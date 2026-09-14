@@ -4,13 +4,15 @@ export const TEMPORAL_FILTERS = Object.freeze({ UPCOMING: 'upcoming', PAST: 'pas
 export function periodBounds(period, now = new Date()) {
   const start = new Date(now); start.setHours(0, 0, 0, 0);
   if (period === 'today') { const end = new Date(start); end.setDate(end.getDate() + 1); return { start: +start, end: +end }; }
+  if (period === 'this-week') { const day = (start.getDay() + 6) % 7; start.setDate(start.getDate() - day); const end = new Date(start); end.setDate(end.getDate() + 7); return { start: +start, end: +end }; }
   const day = (start.getDay() + 6) % 7; start.setDate(start.getDate() - day + 7);
   const end = new Date(start); end.setDate(end.getDate() + 7); return { start: +start, end: +end };
 }
 
 export function filterPlanning(items, filters = DEFAULT_FILTERS, period = null, now = new Date()) {
   const bounds = period ? periodBounds(period, now) : null;
-  return [...(items || [])].filter(item => {
+  const expansion = bounds || { start: +now - 366 * 86_400_000, end: +now + 730 * 86_400_000 };
+  return expandRecurringItems(items || [], { from: expansion.start, to: expansion.end }).filter(item => {
     const providerOk = (filters.twitch && (item.source === 'TWITCH' || item.desiredPublication?.twitch))
       || (filters.google && (item.source === 'GOOGLE' || item.desiredPublication?.google))
       || (item.source !== 'TWITCH' && item.source !== 'GOOGLE' && !item.desiredPublication?.twitch && !item.desiredPublication?.google);
@@ -63,11 +65,12 @@ export function paginatePlanning(items, page = 1, pageSize = 8) {
   return { items: values.slice(start, start + size), page: currentPage, pageSize: size, total, totalPages };
 }
 
-export function weekAgenda(items, filters = DEFAULT_FILTERS, now = new Date()) {
-  const { start } = periodBounds('next-week', now); const events = filterPlanning(items, filters, 'next-week', now);
+export function weekAgenda(items, filters = DEFAULT_FILTERS, now = new Date(), period = 'next-week') {
+  const { start } = periodBounds(period, now); const events = filterPlanning(items, filters, period, now);
   return Array.from({ length: 7 }, (_, index) => {
     const date = new Date(start); date.setDate(date.getDate() + index);
     const next = new Date(date); next.setDate(next.getDate() + 1);
     return { date, events: events.filter(item => Date.parse(item.startAtUtc) >= +date && Date.parse(item.startAtUtc) < +next) };
   });
 }
+import { expandRecurringItems } from './shared/recurrence.js';

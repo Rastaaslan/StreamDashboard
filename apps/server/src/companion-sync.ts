@@ -1,8 +1,8 @@
 import type { CalendarItem, ChecklistItem } from '../../../packages/contracts/src/index.js';
 
-export const COMPANION_SYNC_SCHEMA_VERSION = 2;
+export const COMPANION_SYNC_SCHEMA_VERSION = 3;
 const MAX_JOURNAL = 5_000;
-const EVENT_FIELDS = new Set(['id', 'localId', 'title', 'description', 'startAtUtc', 'endAtUtc', 'allDay', 'category', 'kind', 'draft', 'twitchCategoryId', 'twitchCategoryName', 'desiredPublication', 'providerLinks', 'providers']);
+const EVENT_FIELDS = new Set(['id', 'localId', 'title', 'description', 'startAtUtc', 'endAtUtc', 'allDay', 'category', 'kind', 'draft', 'twitchCategoryId', 'twitchCategoryName', 'desiredPublication', 'providerLinks', 'providers', 'recurrence']);
 
 export interface CompanionEntity { id: string; revision: number; updatedAt: string; [key: string]: unknown }
 export interface CompanionConflict { operationId: string; entityType: string; entityId: string; fields: string[]; pc: unknown; android: unknown; baseRevision: number }
@@ -40,9 +40,22 @@ function validatePatch(patch: unknown, allowed: Set<string>) {
   for (const [key, value] of Object.entries(patch)) {
     if (!allowed.has(key) || ['__proto__', 'prototype', 'constructor'].includes(key)) throw Object.assign(new Error(`Champ compagnon interdit: ${key}`), { code: 'COMPANION_PAYLOAD_INVALID' });
     if (typeof value === 'string' && value.length > (key === 'description' ? 4_000 : 500)) throw Object.assign(new Error('Champ compagnon trop long.'), { code: 'COMPANION_PAYLOAD_INVALID' });
-    output[key] = clone(value);
+    output[key] = key === 'recurrence' ? validateRecurrence(value) : clone(value);
   }
   return output;
+}
+
+function validateRecurrence(value: unknown) {
+  if (value === null) return null;
+  if (!plain(value) || Object.keys(value).some(key => !['frequency', 'interval', 'timeZone', 'until', 'exceptions'].includes(key))) throw Object.assign(new Error('Récurrence compagnon invalide.'), { code: 'COMPANION_PAYLOAD_INVALID' });
+  if (!['weekly', 'monthly'].includes(String(value.frequency)) || ![1, 2].includes(Number(value.interval)) || (value.frequency === 'monthly' && value.interval !== 1)) throw Object.assign(new Error('Règle compagnon invalide.'), { code: 'COMPANION_PAYLOAD_INVALID' });
+  const timeZone = String(value.timeZone ?? ''); try { new Intl.DateTimeFormat('fr-FR', { timeZone }).format(); } catch { throw Object.assign(new Error('Fuseau compagnon invalide.'), { code: 'COMPANION_PAYLOAD_INVALID' }); }
+  if (value.until != null && !Number.isFinite(Date.parse(String(value.until)))) throw Object.assign(new Error('Fin de série invalide.'), { code: 'COMPANION_PAYLOAD_INVALID' });
+  if (value.exceptions !== undefined && (!plain(value.exceptions) || Object.keys(value.exceptions).length > 500)) throw Object.assign(new Error('Exceptions compagnon invalides.'), { code: 'COMPANION_PAYLOAD_INVALID' });
+  for (const [key, exception] of Object.entries(value.exceptions || {})) {
+    if (key.length > 180 || !plain(exception) || Object.keys(exception).some(field => !['cancelled', 'patch'].includes(field)) || (exception.patch !== undefined && (!plain(exception.patch) || Object.keys(exception.patch).some(field => !['title', 'description', 'startAtUtc', 'endAtUtc', 'category', 'kind', 'twitchCategoryId', 'twitchCategoryName', 'desiredPublication'].includes(field))))) throw Object.assign(new Error('Exception compagnon invalide.'), { code: 'COMPANION_PAYLOAD_INVALID' });
+  }
+  return clone(value);
 }
 
 function validateEvent(value: Record<string, unknown>) {

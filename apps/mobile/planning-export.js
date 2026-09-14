@@ -59,12 +59,6 @@ function twitchArtworkUrl(value, width = 285, height = 380) {
   return String(value || '').replace('{width}', String(width)).replace('{height}', String(height));
 }
 
-function fallbackTwitchArtworkUrl(item) {
-  const categoryId = String(item?.twitchCategoryId || '').trim();
-  if (!/^\d+$/.test(categoryId)) return '';
-  return `https://static-cdn.jtvnw.net/ttv-boxart/${categoryId}-{width}x{height}.jpg`;
-}
-
 /** Loads remote artwork through a blob URL, so a permissive remote response cannot taint the canvas. */
 export async function loadArtwork(url, { timeoutMs = 3500, fetchApi = globalThis.fetch, imageFactory = () => new Image(), urlApi = globalThis.URL } = {}) {
   if (!url || !fetchApi || !urlApi?.createObjectURL) return null;
@@ -124,24 +118,6 @@ export function calculateWeeklyCards(eventCount, rowY) {
   }));
 }
 
-function currentWeekAgenda(items, filters, now = new Date()) {
-  const start = new Date(now);
-  start.setHours(0, 0, 0, 0);
-  const day = (start.getDay() + 6) % 7;
-  start.setDate(start.getDate() - day);
-  const end = new Date(start);
-  end.setDate(end.getDate() + 7);
-  const events = filterPlanning(items, filters, null, now).filter(item => {
-    const at = Date.parse(item.startAtUtc);
-    return at >= +start && at < +end;
-  });
-  return Array.from({ length: 7 }, (_, index) => {
-    const date = new Date(start); date.setDate(date.getDate() + index);
-    const next = new Date(date); next.setDate(next.getDate() + 1);
-    return { date, events: events.filter(item => Date.parse(item.startAtUtc) >= +date && Date.parse(item.startAtUtc) < +next) };
-  });
-}
-
 export function drawEventCard(ctx, item, card, image, compact = false) {
   const { x, y, width, height } = card;
   rounded(ctx, x, y, width, height, compact ? 18 : 24);
@@ -194,7 +170,6 @@ async function resolveImages(items, options) {
     if (!url && item.twitchCategoryId && options.resolveArtwork) {
       try { url = await options.resolveArtwork(item); } catch { /* fallback is intentional */ }
     }
-    if (!url) url = fallbackTwitchArtworkUrl(item);
     try { return await loader(url, options.artworkOptions); } catch { return null; }
   }));
 }
@@ -207,7 +182,7 @@ export async function renderPlanningCanvas(items, streamerName = 'StreamDashboar
   drawHeader(ctx, streamerName, weekly);
   let count = 0;
   if (weekly) {
-    const days = options.period === 'this-week' ? currentWeekAgenda(items, options.filters, options.now) : weekAgenda(items, options.filters, options.now);
+    const days = weekAgenda(items, options.filters, options.now, options.period);
     const visible = days.flatMap(day => day.events.slice(0, 2));
     const images = await resolveImages(visible, options); let imageIndex = 0;
     days.forEach((day, index) => {
@@ -232,7 +207,7 @@ export async function renderPlanningCanvas(items, streamerName = 'StreamDashboar
   return { canvas, count };
 }
 
-export const planningFileName = period => `planning-${period === 'this-week' ? 'cette-semaine' : period === 'next-week' ? 'semaine' : 'aujourdhui'}.png`;
+export const planningFileName = period => `planning-${period === 'next-week' ? 'semaine' : period === 'this-week' ? 'cette-semaine' : 'aujourdhui'}.png`;
 async function blobBase64(blob) { const bytes = new Uint8Array(await blob.arrayBuffer()); let binary = ''; for (let offset = 0; offset < bytes.length; offset += 0x8000) binary += String.fromCharCode(...bytes.subarray(offset, offset + 0x8000)); return btoa(binary); }
 export async function sharePlanningPng(blob, fileName, nativeBridge = globalThis.StreamDashboardNative, navigatorApi = globalThis.navigator, documentApi = globalThis.document, urlApi = globalThis.URL) {
   if (nativeBridge?.shareImage) { const error = nativeBridge.shareImage(await blobBase64(blob), fileName, 'image/png'); if (error) throw new Error(error); return 'android'; }
@@ -241,8 +216,13 @@ export async function sharePlanningPng(blob, fileName, nativeBridge = globalThis
 }
 
 export async function exportPlanningImage(items, streamerName = 'StreamDashboard', options = {}) {
+  const { blob, fileName, count } = await buildPlanningPng(items, streamerName, options);
+  await sharePlanningPng(blob, fileName);
+  return count;
+}
+
+export async function buildPlanningPng(items, streamerName = 'StreamDashboard', options = {}) {
   const { canvas, count } = await renderPlanningCanvas(items, streamerName, options);
   const blob = await new Promise((resolve, reject) => canvas.toBlob(value => value ? resolve(value) : reject(new Error('Export PNG impossible.')), 'image/png'));
-  await sharePlanningPng(blob, planningFileName(options.period));
-  return count;
+  return { blob, fileName: planningFileName(options.period), count };
 }

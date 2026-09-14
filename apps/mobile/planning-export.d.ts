@@ -6,6 +6,7 @@ export function loadArtwork(url?: string, options?: Record<string, unknown>): Pr
 export function calculateTodayCards(count: number): Array<{ x: number; y: number; width: number; height: number }>;
 export function calculateWeeklyCards(eventCount: number, rowY: number): Array<{ x: number; y: number; width: number; height: number }>;
 export function renderPlanningCanvas(items: unknown[], streamerName?: string, options?: Record<string, unknown>): Promise<{ canvas: HTMLCanvasElement; count: number }>;
+export function buildPlanningPng(items: unknown[], streamerName?: string, options?: Record<string, unknown>): Promise<{ blob: Blob; fileName: string; count: number }>;
 
 export function sharePlanningPng(
   blob: Blob,

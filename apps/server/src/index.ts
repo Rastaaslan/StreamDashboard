@@ -3,11 +3,13 @@ import { createServer, type Server } from 'node:http';
 import { mkdir } from 'node:fs/promises';
 import { networkInterfaces } from 'node:os';
 import path from 'node:path';
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import { WebSocketServer, type WebSocket } from 'ws';
 import { ObsClient } from '../../../integrations/obs/src/client.js';
 import { TwitchClient } from '../../../integrations/twitch/src/client.js';
 import { TwitchPreflight } from '../../../integrations/twitch/src/preflight.js';
+import { DiscordClient } from '../../../integrations/discord/src/client.js';
+import { expandRecurringItems } from '../../../packages/core/src/recurrence.js';
 import {
   createGoogleOAuthAttempt,
   GoogleCalendarClient,
@@ -30,6 +32,7 @@ import {
   type ChecklistItem,
   type DashboardSettings,
   type DashboardState,
+  type DiscordSettings,
   type PreflightState,
   type ProviderLink,
   type RunMode,
@@ -71,6 +74,7 @@ interface LocalData {
   google: GoogleLocalState;
   remoteDevices: PersistedRemoteDevice[];
   companion: CompanionState;
+  discord: DiscordSettings;
 }
 export interface DashboardServerOptions {
   port?: number;
@@ -86,6 +90,7 @@ export interface DashboardServerOptions {
   electronVersion?: string;
   logsPath?: string;
   logger?: Pick<Console, 'info' | 'warn' | 'error'>;
+  discordFetch?: typeof fetch;
 }
 export interface DashboardServerHandle {
   port: number;
@@ -193,6 +198,7 @@ function sanitizeCalendarItem(value: unknown): CalendarItem | null {
   if (typeof value.twitchCategoryName === 'string' && value.twitchCategoryName) item.twitchCategoryName = value.twitchCategoryName.slice(0, 140);
   if (typeof value.syncError === 'string') item.syncError = value.syncError.slice(0, 500);
   if (typeof value.syncedAt === 'string' && Number.isFinite(Date.parse(value.syncedAt))) item.syncedAt = value.syncedAt;
+  if (object(value.recurrence)) item.recurrence = validateRecurrence(value.recurrence);
 
   if (object(value.providers)) {
     const twitch = sanitizeProviderLink(value.providers.twitch);
@@ -213,6 +219,26 @@ function sanitizeCalendarItem(value: unknown): CalendarItem | null {
     item.conflict = { provider: value.conflict.provider as 'twitch' | 'google', detectedAt: value.conflict.detectedAt, remote };
   }
   return item;
+}
+
+function validateRecurrence(value: unknown): CalendarItem['recurrence'] {
+  if (!object(value) || !['weekly', 'monthly'].includes(String(value.frequency)) || ![1, 2].includes(Number(value.interval))) throw new Error('Récurrence invalide.');
+  if (value.frequency === 'monthly' && Number(value.interval) !== 1) throw new Error('Intervalle mensuel invalide.');
+  const timeZone = typeof value.timeZone === 'string' ? value.timeZone : '';
+  try { new Intl.DateTimeFormat('fr-FR', { timeZone }).format(); } catch { throw new Error('Fuseau horaire invalide.'); }
+  const until = value.until == null ? null : String(value.until);
+  if (until && !Number.isFinite(Date.parse(until))) throw new Error('Fin de récurrence invalide.');
+  const exceptions: NonNullable<CalendarItem['recurrence']>['exceptions'] = {};
+  if (value.exceptions !== undefined) {
+    if (!object(value.exceptions) || Object.keys(value.exceptions).length > 500) throw new Error('Exceptions de récurrence invalides.');
+    for (const [key, exception] of Object.entries(value.exceptions)) {
+      if (!/^[A-Za-z0-9._:-]{1,128}:\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}$/.test(key) || !object(exception) || Object.keys(exception).some(field => !['cancelled', 'patch'].includes(field))) throw new Error('Exception de récurrence invalide.');
+      const patch = exception.patch;
+      if (patch !== undefined && (!object(patch) || Object.keys(patch).length > 11 || Object.keys(patch).some(field => !['title', 'description', 'startAtUtc', 'endAtUtc', 'category', 'kind', 'twitchCategoryId', 'twitchCategoryName', 'desiredPublication'].includes(field)))) throw new Error('Patch de récurrence invalide.');
+      exceptions[key] = { ...(exception.cancelled === true ? { cancelled: true } : {}), ...(patch ? { patch: structuredClone(patch) } : {}) };
+    }
+  }
+  return { frequency: value.frequency as 'weekly' | 'monthly', interval: Number(value.interval) as 1 | 2, timeZone, until, exceptions };
 }
 
 function parseGoogleTokens(value: Record<string, string> | null): GoogleTokens | null {
@@ -301,6 +327,7 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
     google: { targetCalendarId: null, lastSyncedAt: null },
     remoteDevices: [],
     companion: emptyCompanionState(),
+    discord: { guildId: null, channelId: null, defaultMessage: '' },
   };
 
   let local = await store.read(defaults);
@@ -322,6 +349,12 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
   local.companion = object(local.companion)
     ? { ...emptyCompanionState(), ...local.companion } as CompanionState
     : emptyCompanionState();
+  const rawDiscord: Record<string, unknown> = object(local.discord) ? local.discord : {};
+  local.discord = {
+    guildId: typeof rawDiscord.guildId === 'string' && /^\d{1,24}$/.test(rawDiscord.guildId) ? rawDiscord.guildId : null,
+    channelId: typeof rawDiscord.channelId === 'string' && /^\d{1,24}$/.test(rawDiscord.channelId) ? rawDiscord.channelId : null,
+    defaultMessage: typeof rawDiscord.defaultMessage === 'string' ? rawDiscord.defaultMessage.slice(0, 2000) : '',
+  };
   if (!Array.isArray(local.checklist)) local.checklist = structuredClone(defaults.checklist);
   else {
     const seen = new Set<string>();
@@ -401,6 +434,9 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
   };
 
   let currentObsPassword = await secrets.getObsPassword() || local.settings.obsPassword || '';
+  let discordToken = await secrets.getDiscordToken() || process.env.DISCORD_BOT_TOKEN || '';
+  let discordPublic = { configured: Boolean(discordToken), connected: false, guildName: null as string | null, channelName: null as string | null, error: null as string | null };
+  const discordClient = () => new DiscordClient(discordToken, options.discordFetch ?? fetch);
   const obs = new ObsClient(local.settings.obsUrl, currentObsPassword, { logger });
   const savedTokens = await secrets.getTwitchTokens() ?? {};
   const twitch = new TwitchClient({
@@ -492,6 +528,7 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
     });
     next();
   });
+  app.use('/api/v1/discord/planning', express.json({ limit: '14mb' }));
   app.use(express.json({ limit: '32kb' }));
   app.use((req, res, next) => {
     const origin = req.headers.origin;
@@ -500,7 +537,7 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
       res.set({
         'Access-Control-Allow-Origin': ANDROID_NATIVE_ORIGIN,
         'Access-Control-Allow-Headers': 'Authorization, Content-Type',
-        'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
+        'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
         Vary: 'Origin',
       });
       if (req.method === 'OPTIONS') { res.sendStatus(204); return; }
@@ -523,6 +560,7 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
     next();
   });
   app.use('/mobile', express.static(path.resolve(options.mobileDir ?? 'apps/mobile'), { index: 'index.html' }));
+  app.use('/packages', express.static(path.resolve('packages')));
   app.use(express.static(path.resolve(options.webDir ?? 'apps/web'), { index: 'index.html' }));
 
   let planningQueue: Promise<void> = Promise.resolve();
@@ -557,7 +595,7 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
     timerBrowserSource: local.settings.timerBrowserSource,
     remoteEnabled: local.settings.remoteEnabled === true,
   });
-  const features = ['obs', 'twitch', 'preflight', 'timer', 'planning', 'checklist', 'deck', 'mobile-remote', 'unplanned-live-tracking'];
+  const features = ['obs', 'twitch', 'preflight', 'timer', 'planning', 'planning-recurrence', 'discord-planning', 'checklist', 'deck', 'mobile-remote', 'unplanned-live-tracking'];
   if (googleClientId) features.push('google-calendar', 'unplanned-live-google-sync');
   const capabilities: ServerCapabilities = {
     protocolVersion,
@@ -566,7 +604,8 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
     accessMode: remoteRuntimeEnabled ? 'remote-LAN' : 'desktop-local',
   };
   let runtimePort = requestedPort;
-  const nextLive = () => local.planning
+  const temporalPlanning = (from = Date.now() - DAY_MS, to = Date.now() + 730 * DAY_MS) => expandRecurringItems(local.planning, { from, to });
+  const nextLive = () => temporalPlanning()
     .filter(item => !item.allDay && (item.category === 'live' || item.kind === 'LIVE') && Date.parse(item.endAtUtc) > Date.now())
     .sort((left, right) => Date.parse(left.startAtUtc) - Date.parse(right.startAtUtc))[0] ?? null;
   const snapshot = (): DashboardState => {
@@ -599,6 +638,7 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
         error: googleError,
         lastSyncedAt: local.google.lastSyncedAt,
       },
+      discord: { ...discordPublic, guildId: local.discord.guildId, channelId: local.discord.channelId },
       preflight: preflightState,
       remote: {
         supported: true,
@@ -934,7 +974,7 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
         backgroundId = existingDraft.id;
         return;
       }
-      if (findScheduledLiveForStart(local.planning, observedAt)) {
+      if (findScheduledLiveForStart(temporalPlanning(observedAt - DAY_MS, observedAt + DAY_MS), observedAt)) {
         trackedUnplannedLiveId = null;
         return;
       }
@@ -1043,8 +1083,10 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
       return;
     }
     scheduleRemoteActivitySave();
-    const allowed = (req.method === 'GET' && (pathName === '/v1/state' || pathName === '/v1/twitch/categories'))
-      || (req.method === 'POST' && (['/v1/commands', '/v1/remote/ws-ticket', '/v1/twitch/channel', '/v1/planning', '/v1/companion/sync'].includes(pathName) || /^\/v1\/companion\/conflicts\/[^/]+\/resolve$/.test(pathName)));
+    const allowed = (req.method === 'GET' && (['/v1/state', '/v1/twitch/categories', '/v1/discord/status', '/v1/discord/guilds'].includes(pathName) || /^\/v1\/discord\/guilds\/\d+\/channels$/.test(pathName)))
+      || (req.method === 'PUT' && (pathName === '/v1/discord/settings' || /^\/v1\/planning\/[^/]+(?:\/occurrence)?$/.test(pathName)))
+      || (req.method === 'DELETE' && /^\/v1\/planning\/[^/]+(?:\/occurrence)?$/.test(pathName))
+      || (req.method === 'POST' && (['/v1/commands', '/v1/remote/ws-ticket', '/v1/twitch/channel', '/v1/planning', '/v1/companion/sync', '/v1/discord/planning'].includes(pathName) || /^\/v1\/companion\/conflicts\/[^/]+\/resolve$/.test(pathName)));
     if (!allowed) {
       res.status(403).json({ ok: false, error: { code: 'REMOTE_SCOPE_DENIED', message: 'Cette action n’est pas autorisée depuis la télécommande.' } });
       return;
@@ -1067,6 +1109,43 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
   app.get('/api/v1/health', health);
   app.get('/api/v1/state', (req, res) => res.json(isRemoteRequest(req) ? toRemoteDashboardState(snapshot()) : snapshot()));
   app.get('/api/v1/capabilities', (_req, res) => res.json(capabilities));
+  const refreshDiscord = async () => {
+    if (!discordToken) { discordPublic = { configured: false, connected: false, guildName: null, channelName: null, error: null }; return; }
+    try {
+      const client = discordClient(); await client.verify();
+      const guild = local.discord.guildId ? (await client.guilds()).find(value => value.id === local.discord.guildId) : undefined;
+      const channel = guild && local.discord.channelId ? (await client.channels(guild.id)).find(value => value.id === local.discord.channelId) : undefined;
+      discordPublic = { configured: true, connected: true, guildName: guild?.name ?? null, channelName: channel?.name ?? null, error: null };
+    } catch (error) { discordPublic = { configured: true, connected: false, guildName: null, channelName: null, error: error instanceof Error ? error.message : String(error) }; }
+  };
+  app.get('/api/v1/discord/status', async (_req, res) => { await refreshDiscord(); res.json(snapshot().discord); });
+  app.get('/api/v1/discord/guilds', async (_req, res, next) => { try { res.json(await discordClient().guilds()); } catch (error) { next(error); } });
+  app.get('/api/v1/discord/guilds/:guildId/channels', async (req, res, next) => { try { const id = String(req.params.guildId); if (!/^\d{1,24}$/.test(id)) throw new Error('Serveur Discord invalide.'); res.json(await discordClient().channels(id)); } catch (error) { next(error); } });
+  app.put('/api/v1/discord/settings', async (req, res, next) => {
+    try {
+      if (!object(req.body) || Object.keys(req.body).some(key => !['guildId', 'channelId', 'defaultMessage'].includes(key))) throw new Error('Réglages Discord invalides.');
+      const guildId = req.body.guildId == null ? null : String(req.body.guildId); const channelId = req.body.channelId == null ? null : String(req.body.channelId); const defaultMessage = String(req.body.defaultMessage ?? '');
+      if ((guildId && !/^\d{1,24}$/.test(guildId)) || (channelId && !/^\d{1,24}$/.test(channelId)) || defaultMessage.length > 2000) throw new Error('Réglages Discord invalides.');
+      if (channelId && (!guildId || !(await discordClient().ensureChannel(guildId, channelId)))) throw new Error('Salon Discord invalide.');
+      local.discord = { guildId, channelId, defaultMessage }; await save(); await refreshDiscord(); broadcast(); res.json(snapshot().discord);
+    } catch (error) { next(error); }
+  });
+  app.put('/api/v1/discord/token', async (req, res, next) => { try { if (!requireLocal(req, res)) return; const token = String(req.body?.token ?? '').trim(); if (!token || token.length > 300) throw new Error('Token Discord invalide.'); await new DiscordClient(token, options.discordFetch ?? fetch).verify(); await secrets.setDiscordToken(token); discordToken = token; await refreshDiscord(); broadcast(); res.json(snapshot().discord); } catch (error) { next(error); } });
+  app.delete('/api/v1/discord/token', async (req, res, next) => { try { if (!requireLocal(req, res)) return; await secrets.clearDiscordToken(); discordToken = ''; await refreshDiscord(); broadcast(); res.json(snapshot().discord); } catch (error) { next(error); } });
+  const discordPosts = new Map<string, Promise<{ id: string; channelId: string }>>();
+  app.post('/api/v1/discord/planning', async (req, res, next) => {
+    try {
+      if (!object(req.body) || 'imageUrl' in req.body) throw new Error('Payload Discord invalide.');
+      const imageBase64 = String(req.body.imageBase64 ?? ''); const filenameInput = String(req.body.filename ?? 'planning.png'); const message = req.body.message == null ? local.discord.defaultMessage : String(req.body.message); const channelId = req.body.channelId == null ? local.discord.channelId : String(req.body.channelId);
+      if (!channelId || !/^\d{1,24}$/.test(channelId) || !local.discord.guildId || message.length > 2000 || imageBase64.length > 14_000_000) throw new Error('Publication Discord invalide.');
+      const png = Buffer.from(imageBase64, 'base64'); if (!png.length || png.length > 10 * 1024 * 1024 || !png.subarray(0, 8).equals(Buffer.from([137,80,78,71,13,10,26,10]))) throw new Error('Image PNG invalide ou trop volumineuse.');
+      const filename = path.basename(filenameInput).replace(/[^A-Za-z0-9._-]/g, '-').slice(0, 100); if (!filename.toLowerCase().endsWith('.png')) throw new Error('Nom de fichier PNG invalide.');
+      const client = discordClient(); await client.ensureChannel(local.discord.guildId, channelId);
+      const key = createHash('sha256').update(png).update(channelId).update(message).digest('hex');
+      let flight = discordPosts.get(key); if (!flight) { flight = client.postPlanning(channelId, png, filename, message); discordPosts.set(key, flight); setTimeout(() => discordPosts.delete(key), 15_000).unref(); }
+      const result = await flight; await refreshDiscord(); res.status(201).json({ ok: true, ...result, channelName: discordPublic.channelName });
+    } catch (error) { next(error); }
+  });
   app.post('/api/v1/companion/sync', async (req, res, next) => {
     try {
       // Unlike ordinary desktop API calls, sync always requires a paired credential:
@@ -1074,7 +1153,7 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
       const credential = req.headers.authorization?.match(/^Device (\S+)$/)?.[1] ?? '';
       const deviceId = remoteAuth.authenticate(credential);
       if (!deviceId) { res.status(401).json({ ok: false, error: { code: 'DEVICE_AUTH_REQUIRED', message: 'Compagnon non autorisé.' } }); return; }
-      if (req.body?.schemaVersion !== 2) { res.status(409).json({ ok: false, error: { code: 'COMPANION_SCHEMA_INCOMPATIBLE', message: 'Version du cache compagnon incompatible. Les opérations locales sont conservées.' } }); return; }
+      if (req.body?.schemaVersion !== 3) { res.status(409).json({ ok: false, error: { code: 'COMPANION_SCHEMA_INCOMPATIBLE', message: 'Version du cache compagnon incompatible. Les opérations locales sont conservées.' } }); return; }
       if (req.body?.deviceId !== deviceId) { res.status(400).json({ ok: false, error: { code: 'COMPANION_PAYLOAD_INVALID', message: 'Identité compagnon invalide.' } }); return; }
       const result = await plan(async () => {
         const reconciled = reconcileCompanionBatch(local.planning, local.checklist, local.companion, req.body.operations as SyncOperation[]);
@@ -1166,6 +1245,7 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
         desiredPublication: desired,
         twitchCategoryId: typeof input.twitchCategoryId === 'string' ? input.twitchCategoryId : undefined,
         twitchCategoryName: typeof input.twitchCategoryName === 'string' ? input.twitchCategoryName : undefined,
+        recurrence: input.recurrence ? validateRecurrence(input.recurrence) : undefined,
       }));
       for (const created of local.planning.filter(item => !beforeIds.has(item.id))) {
         local.companion.eventRevisions[created.id] = 1;
@@ -1212,6 +1292,7 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
         kind,
         twitchCategoryId: typeof req.body.twitchCategoryId === 'string' ? req.body.twitchCategoryId : item.twitchCategoryId,
         twitchCategoryName: typeof req.body.twitchCategoryName === 'string' ? req.body.twitchCategoryName : item.twitchCategoryName,
+        recurrence: req.body.recurrence === null ? undefined : req.body.recurrence !== undefined ? validateRecurrence(req.body.recurrence) : item.recurrence,
       }, {
         desiredPublication,
         confirmRecurring: req.body.confirmRecurring === true,
@@ -1270,6 +1351,26 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
       local.companion.tombstones[id] = { id, revision: oldRevision + 1, updatedAt: new Date().toISOString() };
       delete local.companion.eventHistory[id]; local.companion.serverRevision++;
       invalidatePreflight();
+      res.json(await changed());
+    } catch (error) { next(error); }
+  };
+
+  const recurrenceException: express.RequestHandler = async (req, res, next) => {
+    try {
+      const series = local.planning.find(value => value.id === String(req.params.id));
+      if (!series?.recurrence) throw Object.assign(new Error('Série récurrente introuvable.'), { name: 'NOT_FOUND' });
+      const occurrenceKey = String(req.body?.occurrenceKey ?? '');
+      if (!occurrenceKey.startsWith(`${series.localId || series.id}:`) || occurrenceKey.length > 180) throw new Error('Occurrence invalide.');
+      const recurrence = structuredClone(series.recurrence); recurrence.exceptions ??= {};
+      if (req.method === 'DELETE') recurrence.exceptions[occurrenceKey] = { cancelled: true };
+      else {
+        const patch = object(req.body?.patch) ? req.body.patch : {};
+        const validated = validateRecurrence({ ...recurrence, exceptions: { [occurrenceKey]: { patch } } });
+        if (!validated?.exceptions?.[occurrenceKey]) throw new Error('Patch d’occurrence invalide.');
+        recurrence.exceptions[occurrenceKey] = validated.exceptions[occurrenceKey];
+      }
+      await plan(async () => planning().update(series.id, { title: series.title, description: series.description, startAtUtc: series.startAtUtc, endAtUtc: series.endAtUtc, allDay: series.allDay, category: series.category, kind: series.kind, twitchCategoryId: series.twitchCategoryId, twitchCategoryName: series.twitchCategoryName, recurrence }));
+      local.companion.eventRevisions[series.id] = (local.companion.eventRevisions[series.id] ?? 1) + 1; local.companion.serverRevision++;
       res.json(await changed());
     } catch (error) { next(error); }
   };
@@ -1336,6 +1437,8 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
     app.post(`${prefix}/planning`, planningCreate);
     app.put(`${prefix}/planning/:id`, planningUpdate);
     app.delete(`${prefix}/planning/:id`, planningDelete);
+    app.put(`${prefix}/planning/:id/occurrence`, recurrenceException);
+    app.delete(`${prefix}/planning/:id/occurrence`, recurrenceException);
     app.post(`${prefix}/planning/:id/retry/:provider`, planningRetry);
     app.post(`${prefix}/planning/:id/conflict/:provider`, planningResolveConflict);
     app.put(`${prefix}/settings`, settingsUpdate);

@@ -18,6 +18,16 @@ export interface ProviderLink {
   lastSyncedAt?: string;
   lastError?: string;
   deletedRemotely?: boolean;
+  occurrences?: Record<string, { remoteId: string; remoteRevision?: string; calendarId?: string; syncedAt?: string }>;
+}
+
+export type RecurrenceFrequency = 'weekly' | 'monthly';
+export interface RecurrenceRule {
+  frequency: RecurrenceFrequency;
+  interval: 1 | 2;
+  timeZone: string;
+  until?: string | null;
+  exceptions?: Record<string, { cancelled?: boolean; patch?: Partial<Pick<CalendarItem, 'title' | 'description' | 'startAtUtc' | 'endAtUtc' | 'category' | 'kind' | 'twitchCategoryId' | 'twitchCategoryName' | 'desiredPublication'>> }>;
 }
 
 export interface CalendarItem {
@@ -45,6 +55,9 @@ export interface CalendarItem {
   desiredPublication?: { local: boolean; twitch: boolean; google: boolean };
   providers?: Partial<Record<'twitch' | 'google', ProviderLink>>;
   external?: boolean;
+  recurrence?: RecurrenceRule;
+  seriesId?: string;
+  occurrenceKey?: string;
   conflict?: {
     provider: 'twitch' | 'google';
     detectedAt: string;
@@ -60,6 +73,9 @@ export interface GoogleCalendarState {
   error: string | null;
   lastSyncedAt: string | null;
 }
+
+export interface DiscordState { configured: boolean; connected: boolean; guildId: string | null; guildName: string | null; channelId: string | null; channelName: string | null; error: string | null }
+export interface DiscordSettings { guildId: string | null; channelId: string | null; defaultMessage: string }
 
 export interface PreflightState {
   eventId: string | null;
@@ -147,6 +163,7 @@ export interface DashboardState {
   settings: DashboardSettings;
   twitch: TwitchState;
   google?: GoogleCalendarState;
+  discord?: DiscordState;
   preflight?: PreflightState;
   remote?: RemoteState;
   runtime: { serverVersion: string; nodeVersion: string; electronVersion: string | null; platform: string; port: number; logsPath: string | null };
@@ -157,12 +174,13 @@ export interface RemoteDashboardState {
   at: string;
   mode: RunMode;
   timer: TimerState;
-  planning: Array<Pick<CalendarItem, 'id' | 'title' | 'startAtUtc' | 'endAtUtc' | 'allDay' | 'category' | 'kind' | 'source' | 'twitchCategoryId' | 'twitchCategoryName' | 'desiredPublication'>>;
+  planning: Array<Pick<CalendarItem, 'id' | 'title' | 'startAtUtc' | 'endAtUtc' | 'allDay' | 'category' | 'kind' | 'source' | 'twitchCategoryId' | 'twitchCategoryName' | 'desiredPublication' | 'recurrence' | 'seriesId' | 'occurrenceKey'>>;
   nextLive: Pick<CalendarItem, 'id' | 'title' | 'startAtUtc' | 'endAtUtc' | 'allDay' | 'category' | 'kind' | 'source' | 'twitchCategoryId' | 'twitchCategoryName' | 'desiredPublication'> | null;
   obs: Pick<ObsState, 'connected' | 'streaming' | 'scene' | 'inputs' | 'activeAudioInputs' | 'mediaInputs'>;
   settings: Pick<DashboardSettings, 'confirmStop' | 'streamerName' | 'modeScenes' | 'chattingScene'>;
   twitch: Pick<TwitchState, 'connected' | 'channelTitle' | 'gameId' | 'gameName' | 'error'>;
   google?: Pick<GoogleCalendarState, 'configured' | 'connected'>;
+  discord?: DiscordState;
   preflight?: PreflightState;
 }
 
