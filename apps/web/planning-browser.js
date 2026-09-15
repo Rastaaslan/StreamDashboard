@@ -1,7 +1,9 @@
 import { filterPlanningTemporal, paginatePlanning, TEMPORAL_FILTERS } from '../mobile/planning-model.js';
+import { expandRecurringItems } from '../mobile/shared/recurrence.js';
 
 const STORAGE_KEY = 'streamdashboard.desktopPlanningList';
 const PAGE_SIZE = 8;
+const DAY_MS = 86_400_000;
 let preferences = { temporal: TEMPORAL_FILTERS.UPCOMING };
 let page = 1;
 let currentState = null;
@@ -55,11 +57,18 @@ function controlsFor(schedule) {
   return controls;
 }
 
+function expandedPlanning(items, now = Date.now()) {
+  return expandRecurringItems(items, { from: now - 366 * DAY_MS, to: now + 730 * DAY_MS });
+}
+
 function applyCurrentState() {
   const schedule = view?.querySelector('.schedule');
   if (!schedule || !currentState?.planning) return;
   const articles = [...schedule.querySelectorAll(':scope > article')];
-  const sorted = [...currentState.planning].sort((left, right) => Date.parse(left.startAtUtc) - Date.parse(right.startAtUtc));
+  // app.js renders this same bounded occurrence window. Use the exact same expansion
+  // here so pagination never falls back just because one canonical series produced
+  // several virtual rows.
+  const sorted = expandedPlanning(currentState.planning);
   if (articles.length !== sorted.length) return;
 
   const byId = new Map();
@@ -95,8 +104,8 @@ function applyCurrentState() {
   const nextTitle = preferences.temporal === TEMPORAL_FILTERS.PAST
     ? 'Historique'
     : preferences.temporal === TEMPORAL_FILTERS.ALL
-      ? 'Tous les rendez-vous'
-      : 'Prochains rendez-vous';
+      ? 'Tous les événements'
+      : 'Prochains événements';
   if (title && title.textContent !== nextTitle) title.textContent = nextTitle;
 }
 

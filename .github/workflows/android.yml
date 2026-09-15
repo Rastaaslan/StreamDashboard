@@ -30,6 +30,12 @@ jobs:
           java-version: '17'
       - name: Setup Android SDK
         uses: android-actions/setup-android@07976c6290703d34c16d382cb36445f98bb43b1f # v3.2.2
+        with:
+          # The action's default includes the legacy `tools` package, which is no
+          # longer published by the current Android SDK repository. The runner
+          # already provides platform/build tooling and Gradle installs any
+          # project-specific SDK components it requires.
+          packages: ''
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@748248ddd2a24f49513d8f472f81c3a07d4d50e1 # v4.4.4
         with:
@@ -82,7 +88,7 @@ jobs:
           test -n "$AAPT" && test -x "$AAPT"
           CERTS=$("$APKSIGNER" verify --verbose --print-certs "$APK")
           printf '%s\n' "$CERTS"
-          ACTUAL_CERT_SHA256=$(printf '%s\n' "$CERTS" | sed -n 's/^Signer #1 certificate SHA-256 digest: //p' | head -n 1 | tr -d '[:space:]:' | tr '[:lower:]' '[:upper:]')
+          ACTUAL_CERT_SHA256=$(printf '%s\n' "$CERTS" | sed -n -E 's/^.*certificate SHA-256 digest:[[:space:]]*//p' | head -n 1 | tr -d '[:space:]:' | tr '[:lower:]' '[:upper:]')
           EXPECTED_CERT_SHA256=$(printf '%s' "$ANDROID_CERT_SHA256" | tr -d '[:space:]:' | tr '[:lower:]' '[:upper:]')
           if [[ -z "$ACTUAL_CERT_SHA256" || "$ACTUAL_CERT_SHA256" != "$EXPECTED_CERT_SHA256" ]]; then
             echo "Stable Android signing certificate SHA-256 mismatch." >&2

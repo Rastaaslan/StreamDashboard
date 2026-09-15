@@ -4,6 +4,7 @@ import { apiUrl, nextRetry, normalizeServer, parsePairing, websocketUrl } from '
 
 const mobileIndex = readFileSync(new URL('../apps/mobile/index.html', import.meta.url), 'utf8');
 const mobileScript = readFileSync(new URL('../apps/mobile/mobile.js', import.meta.url), 'utf8');
+const mobilePolish = readFileSync(new URL('../apps/mobile/mobile-polish.js', import.meta.url), 'utf8');
 const remotePolicy = readFileSync(new URL('../apps/server/src/remote-policy.ts', import.meta.url), 'utf8');
 const androidActivity = readFileSync(new URL('../android/app/src/main/java/com/rastaaslan/streamdashboard/remote/MainActivity.java', import.meta.url), 'utf8');
 const androidManifest = readFileSync(new URL('../android/app/src/main/AndroidManifest.xml', import.meta.url), 'utf8');
@@ -24,25 +25,42 @@ describe('Android remote runtime', () => {
     expect(remotePolicy).toContain("case 'scene.chatting'");
     expect(remotePolicy).not.toContain("case 'obs.scene'");
   });
-  it('présente quatre volets persistants sans reconnecter le WebSocket', () => {
-    for (const tab of ['live', 'regie', 'planning', 'settings']) expect(mobileIndex).toContain(`data-tab="${tab}"`);
+  it('présente cinq volets persistants sans reconnecter le WebSocket', () => {
+    for (const tab of ['live', 'regie', 'planning', 'prepare', 'settings']) expect(mobileIndex).toContain(`data-tab="${tab}"`);
     expect(mobileScript).toContain("localStorage.setItem('streamdashboard.mobileTab', tab)");
     expect(mobileScript).not.toMatch(/selectTab[\s\S]{0,300}(connect\(|location\.reload)/);
-    expect(mobileIndex).toContain('+ CRÉNEAU');
+    expect(mobileIndex).toContain('+ ÉVÉNEMENT');
   });
-  it('propose l’agenda semaine prochaine et une note éditoriale persistante', () => {
-    expect(mobileIndex).toContain('value="next-week"');
+  it('propose les trois périodes d’export et une note éditoriale persistante', () => {
+    for (const period of ['today', 'this-week', 'next-week']) expect(mobileIndex).toContain(`value="${period}"`);
     expect(mobileIndex).toContain('id="export-note-enabled"');
     expect(mobileIndex).toContain('id="export-note-text"');
-    expect(mobileScript).toContain("streamdashboard.exportNote");
+    expect(mobileScript).toContain('streamdashboard.exportNote');
   });
-  it('branche le créneau sur un sélecteur Twitch officiel debounced et anti-réponse obsolète', () => {
+  it('branche l’événement sur un sélecteur Twitch officiel debounced et anti-réponse obsolète', () => {
     expect(mobileIndex).toContain('id="slot-twitch-category"');
     expect(mobileIndex).toContain('id="slot-twitch-game-id"');
-    expect(mobileScript).toContain("query.length<2");
+    expect(mobileScript).toContain('query.length<2');
     expect(mobileScript).toContain('request!==generation');
     expect(mobileScript).toContain("attachCategoryPicker('slot-twitch-category','slot-twitch-game-id','slot-twitch-results')");
-    expect(mobileScript).toContain("Sélectionnez une catégorie Twitch officielle.");
+    expect(mobileScript).toContain('Sélectionnez une catégorie Twitch officielle.');
+  });
+  it('intègre les templates directement au formulaire Planning sans masquer la périodicité', () => {
+    expect(mobileIndex).toContain('id="event-template"');
+    expect(mobileIndex).toContain('name="recurrence"');
+    expect(mobileIndex).toContain('name="recurrenceUntil"');
+    expect(mobilePolish).toContain('applyTemplate(template');
+    expect(mobilePolish).toContain('La périodicité reste libre');
+    expect(mobilePolish).toContain('CRÉER UN ÉVÉNEMENT');
+  });
+  it('répare le démarrage live Android avec préparation et confirmation de bypass checklist', () => {
+    expect(mobileIndex).toContain('src="mobile-polish.js"');
+    expect(mobilePolish).toContain("transport.command({ type: 'session.prepare' })");
+    expect(mobilePolish).toContain("transport.command({ type: 'session.start', force: false })");
+    expect(mobilePolish).toContain("transport.command({ type: 'session.start', force: true })");
+    expect(mobilePolish).toContain('Démarrer quand même depuis le téléphone ?');
+    expect(remotePolicy).toContain("force: command.force === true");
+    expect(remotePolicy).not.toContain('Le contournement de checklist est réservé au PC.');
   });
   it('partage uniquement un PNG du cache privé avec FileProvider', () => {
     expect(androidManifest).toContain('androidx.core.content.FileProvider');

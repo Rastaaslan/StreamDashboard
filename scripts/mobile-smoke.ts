@@ -53,8 +53,17 @@ try {
   });
   const result = await allowedCommand.json() as { ok: boolean };
 
+  // Le démarrage forcé n'est autorisé que depuis un téléphone déjà appairé et après
+  // confirmation explicite dans l'UI Android. Ici OBS/checklist ne sont volontairement
+  // pas prêts : la commande doit atteindre la validation métier (4xx), mais ne doit
+  // surtout plus être rejetée par la politique remote avec REMOTE_SCOPE_DENIED (403).
+  const pairedStart = await fetch(`${remoteOrigin}/api/v1/commands`, {
+    method: 'POST', headers, body: JSON.stringify({ type: 'session.start', force: true }),
+  });
+  if (pairedStart.status === 403) throw new Error('session.start force=true ne doit plus être bloqué par le scope remote après appairage.');
+  if (pairedStart.status < 400 || pairedStart.status >= 500) throw new Error(`Le smoke attend un refus métier 4xx sans OBS prêt, reçu ${pairedStart.status}.`);
+
   const forbiddenCommands = [
-    { type: 'session.start', force: true },
     { type: 'obs.record', start: true },
     { type: 'obs.scene', scene: 'Arbitrary scene' },
     { type: 'obs.browser.refresh', input: 'Anything' },
@@ -121,7 +130,7 @@ try {
     || revokedCredential.status !== 401) {
     throw new Error('Le protocole mobile sécurisé est incomplet.');
   }
-  console.log('Mobile smoke OK: LAN auth, pairing, redacted state, command allowlist, scope denial, one-use WS ticket, immediate revoke');
+  console.log('Mobile smoke OK: LAN auth, pairing, redacted state, start scope, command allowlist, scope denial, one-use WS ticket, immediate revoke');
 } finally {
   await dashboard.stop();
   await rm(dataDir, { recursive: true, force: true });
