@@ -26,7 +26,7 @@ describe('Android remote runtime', () => {
     expect(remotePolicy).not.toContain("case 'obs.scene'");
   });
   it('présente cinq volets persistants sans reconnecter le WebSocket', () => {
-    for (const tab of ['live', 'regie', 'planning', 'prepare', 'settings']) expect(mobileIndex).toContain(`data-tab="${tab}"`);
+    for (const tab of ['home', 'live', 'sounds', 'planning', 'more']) expect(mobileIndex).toContain(`data-tab="${tab}"`);
     expect(mobileScript).toContain("localStorage.setItem('streamdashboard.mobileTab', tab)");
     expect(mobileScript).not.toMatch(/selectTab[\s\S]{0,300}(connect\(|location\.reload)/);
     expect(mobileIndex).toContain('+ ÉVÉNEMENT');

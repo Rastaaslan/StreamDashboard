@@ -32,7 +32,8 @@ try { planningFilters = { ...planningFilters, ...JSON.parse(localStorage.getItem
 if (!Object.values(TEMPORAL_FILTERS).includes(planningTemporal)) planningTemporal = TEMPORAL_FILTERS.UPCOMING;
 
 const transport = createTransport(() => server, () => credential);
-const note = value => { $('message').textContent = String(value || ''); };
+let noteTimer;
+const note = value => { const message = $('message'); message.textContent = String(value || ''); clearTimeout(noteTimer); if (value) noteTimer = setTimeout(() => { message.textContent = ''; }, 4_000); };
 const text = (tag, value, className) => {
   const node = document.createElement(tag);
   node.textContent = String(value ?? '');
@@ -151,24 +152,32 @@ function renderControlHub(hub) {
   $('hub-category').textContent = hub?.live?.category || (companionMode === CompanionMode.ONLINE_PC ? 'PC Runtime connecté' : 'Les contrôles PC reviendront à la reconnexion.');
   $('hub-viewers').textContent = Number.isInteger(hub?.audience?.viewerCount) ? String(hub.audience.viewerCount) : '—';
   $('hub-chatters').textContent = Array.isArray(hub?.audience?.chatters) ? String(hub.audience.chatters.length) : '—';
+  const isLive = hub?.live?.isLive === true; const degraded = Object.values(hub?.integrations || {}).some(value => ['DEGRADED', 'ERROR'].includes(value.status)); const duration = Number.isFinite(hub?.live?.durationSeconds) ? formatClock(hub.live.durationSeconds) : '—';
+  $('home-live-status').textContent = isLive ? `${degraded ? '!' : '●'} Live` : companionMode === CompanionMode.ONLINE_PC ? '○ Prêt' : '○ Hors ligne'; $('home-live-status').className = `live-line ${isLive ? degraded ? 'danger' : 'ok' : ''}`; $('home-duration').textContent = duration;
+  $('live-workspace-status').textContent = $('home-live-status').textContent; $('live-workspace-status').className = $('home-live-status').className; $('live-duration').textContent = duration; $('live-viewers').textContent = $('hub-viewers').textContent; $('live-chatters').textContent = $('hub-chatters').textContent; $('live-scene').textContent = state?.obs?.scene || '—';
   const labels = { runtime: 'Runtime', obs: 'OBS', twitch: 'Twitch', discord: 'Discord', streamlabs: 'Streamlabs', wizebot: 'WizeBot' };
   for (const [key, label] of Object.entries(labels)) {
     const status = hub?.integrations?.[key]?.status || 'DISCONNECTED';
     const row = document.createElement('div');
     row.className = 'integration-card';
     const dot = text('i', '', `provider-dot status-${status.toLowerCase()}`);
-    row.append(dot, text('span', label), text('small', status.replace('_', ' '), 'muted'));
+    row.append(dot, text('span', label), text('small', humanProviderStatus(status), 'muted'));
     integrations.append(row);
   }
   for (const event of (hub?.activity || []).slice(-6).reverse()) {
     const row = document.createElement('div'); row.className = 'activity-row';
     const time = Number.isFinite(Date.parse(event.occurredAt)) ? new Date(event.occurredAt).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' }) : '—';
-    row.append(text('time', time), text('b', event.type)); activity.append(row);
+    row.append(text('time', time), text('b', humanActivity(event))); activity.append(row);
   }
   if (!activity.children.length) activity.append(text('p', 'Aucune activité récente.', 'muted'));
   renderHubChat(hub?.chat?.messages || []);
+  const preview = $('home-chat-preview'); preview.replaceChildren(...(hub?.chat?.messages || []).slice(-3).map(message => { const row = document.createElement('p'); row.className = 'home-chat-line'; row.append(text('b', message.chatter?.displayName || message.chatter?.login || 'Twitch'), document.createTextNode(`  ${message.text}`)); return row; })); if (!preview.children.length) preview.append(text('p', hub?.chat?.connected ? 'Aucun message pour le moment.' : 'Connecte Twitch pour afficher le chat.', 'empty-copy'));
   renderAudience(hub?.audience);
 }
+
+const formatClock = seconds => { const value = Math.max(0, Math.floor(seconds)); return `${String(Math.floor(value / 3600)).padStart(2, '0')}:${String(Math.floor(value / 60) % 60).padStart(2, '0')}:${String(value % 60).padStart(2, '0')}`; };
+const humanProviderStatus = status => ({ CONNECTED: 'Connecté', CONNECTING: 'Connexion…', DEGRADED: 'Dégradé', ERROR: 'Erreur', NOT_CONFIGURED: 'Non configuré', DISCONNECTED: 'Déconnecté' })[status] || 'Indisponible';
+const humanActivity = event => event.type === 'support.received' ? `Soutien · ${event.payload?.displayName || 'Anonyme'}` : event.type === 'stream.started' ? 'Le live a démarré' : event.type === 'stream.stopped' ? 'Le live est terminé' : event.type === 'chat.message.received' ? `Chat · ${event.payload?.chatter?.displayName || 'nouveau message'}` : event.type === 'soundboard.played' ? 'Son joué' : event.type === 'automation.triggered' ? 'Automatisation exécutée' : event.type.replaceAll('.', ' · ');
 
 let moderationCapabilities = null;
 async function loadModerationCapabilities() { if (companionMode !== CompanionMode.ONLINE_PC) return; try { moderationCapabilities = await transport.twitchModerationCapabilities(); const missing = Object.entries(moderationCapabilities.requiredScopes || {}).filter(([action]) => !moderationCapabilities[action]).map(([, scope]) => scope); $('moderation-state').textContent = missing.length ? `Modération partielle · autorisations manquantes : ${[...new Set(missing)].join(', ')}` : 'Modération Twitch autorisée'; renderHubChat(state?.controlHub?.chat?.messages || []); } catch (error) { $('moderation-state').textContent = error.message; } }
@@ -184,7 +193,7 @@ function renderHubChat(messages) {
     row.append(header);
     if (message.reply) row.append(text('div', `↳ ${message.reply.parentUserName}: ${message.reply.parentMessageBody}`, 'chat-reply'));
     row.append(text('div', `${message.text}${message.bits ? ` · ${message.bits} bits` : ''}`));
-    const tools = document.createElement('div'); tools.className = 'inline-actions'; const reply = text('button', 'RÉPONDRE'); reply.type = 'button'; reply.onclick = () => { $('chat-reply-context').hidden = false; $('chat-reply-context').textContent = `Réponse à ${message.chatter?.displayName || message.chatter?.login}`; $('chat-reply-context').dataset.messageId = message.id; $('chat-message').focus(); }; const moderation = (label, capability, run) => { const button = text('button', label); button.type = 'button'; button.disabled = !moderationCapabilities?.[capability]; button.title = button.disabled ? `NOT_AUTHORIZED · ${moderationCapabilities?.requiredScopes?.[capability] || 'scope Twitch requis'}` : ''; button.onclick = async () => { try { await run(); note(`${label} confirmé par Twitch.`); } catch (error) { note(error.message); } }; return button; }; tools.append(reply, moderation('SUPPR.', 'deleteMessage', () => transport.deleteTwitchMessage(message.id)), moderation('TIMEOUT', 'timeout', () => transport.moderateTwitchUser({ userId: message.chatter.id, duration: 600, reason: 'Modération StreamDashboard' })), moderation('BAN', 'ban', () => transport.moderateTwitchUser({ userId: message.chatter.id, reason: 'Modération StreamDashboard' }))); row.append(tools);
+    const menu = document.createElement('details'); menu.className = 'message-menu'; const summary = text('summary', 'Actions'); summary.setAttribute('aria-label', `Actions pour le message de ${message.chatter?.displayName || message.chatter?.login}`); const tools = document.createElement('div'); tools.className = 'inline-actions'; const reply = text('button', 'Répondre'); reply.type = 'button'; reply.onclick = () => { menu.open = false; $('chat-reply-context').hidden = false; $('chat-reply-context').textContent = `Réponse à ${message.chatter?.displayName || message.chatter?.login}`; $('chat-reply-context').dataset.messageId = message.id; $('chat-message').focus(); }; const moderation = (label, capability, run) => { const button = text('button', label); button.type = 'button'; button.disabled = !moderationCapabilities?.[capability]; button.title = button.disabled ? `NOT_AUTHORIZED · ${moderationCapabilities?.requiredScopes?.[capability] || 'scope Twitch requis'}` : ''; button.onclick = async () => { try { await run(); menu.open = false; note(`${label} confirmé par Twitch.`); } catch (error) { note(error.message); } }; return button; }; tools.append(reply, moderation('Supprimer', 'deleteMessage', () => transport.deleteTwitchMessage(message.id)), moderation('Timeout', 'timeout', () => transport.moderateTwitchUser({ userId: message.chatter.id, duration: 600, reason: 'Modération StreamDashboard' })), moderation('Ban', 'ban', () => transport.moderateTwitchUser({ userId: message.chatter.id, reason: 'Modération StreamDashboard' }))); menu.append(summary, tools); row.append(menu);
     container.append(row);
   }
   if (!container.children.length) container.append(text('p', 'Aucun message reçu pour le moment.', 'muted'));
@@ -207,8 +216,9 @@ let vodCursor = null, clipCursor = null;
 let soundboardState = null;
 const newCommandId = () => globalThis.crypto?.randomUUID?.() || `${deviceId || 'android'}:${Date.now()}:${Math.random().toString(36).slice(2)}`;
 async function loadSoundboard() {
-  if (companionMode !== CompanionMode.ONLINE_PC) { soundboardState = null; $('soundboard-state').textContent = 'PC hors ligne · le Soundboard sera disponible à la reconnexion.'; renderSoundboard(); return; }
-  try { soundboardState = await transport.soundboard(); $('soundboard-state').textContent = soundboardState.available ? (soundboardState.currentPlayback ? 'Lecture en cours…' : `${soundboardState.sounds.length} sons · ${soundboardState.supportsExplicitOutputSelection ? 'sorties audio sélectionnables' : 'sortie système par défaut uniquement'}`) : 'Moteur audio indisponible sur ce PC.'; renderSoundboard(); }
+  if (companionMode !== CompanionMode.ONLINE_PC) { soundboardState = null; $('sounds-pc-state').textContent = 'PC hors ligne'; $('soundboard-state').textContent = 'PC StreamDashboard hors ligne. Les sons redeviendront disponibles à la reconnexion.'; renderSoundboard(); return; }
+  $('soundboard-state').textContent = 'Chargement des sons…';
+  try { soundboardState = await transport.soundboard(); $('sounds-pc-state').textContent = 'PC connecté'; $('soundboard-state').textContent = soundboardState.available ? (soundboardState.currentPlayback ? 'Lecture en cours…' : `${soundboardState.sounds.length} sons · ${soundboardState.supportsExplicitOutputSelection ? 'sorties audio sélectionnables' : 'sortie système par défaut'}`) : 'Le moteur audio du PC est indisponible.'; renderSoundboard(); }
   catch (error) { $('soundboard-state').textContent = error.message; }
 }
 function renderSoundboard() {
@@ -222,7 +232,7 @@ function renderSoundboard() {
     pad.querySelector('.sound-favorite').onclick = async event => { event.stopPropagation(); try { soundboardState = await transport.updateSound(sound.id, { favorite: !sound.favorite }); renderSoundboard(); } catch (error) { note(error.message); } };
     container.append(pad);
   }
-  if (!container.children.length) container.append(text('p', 'Aucun son pour ces filtres.', 'muted'));
+  if (!container.children.length) { const empty = document.createElement('div'); empty.className = 'module-empty'; empty.append(text('b', sounds.length ? 'Aucun son ne correspond à ces filtres.' : 'Aucun son configuré.'), text('p', sounds.length ? 'Modifie la recherche ou affiche toutes les catégories.' : 'Ajoute des sons depuis StreamDashboard sur le PC, ils apparaîtront ici automatiquement.', 'muted')); container.append(empty); }
 }
 let automationState = [];
 async function loadAutomations() { if (companionMode !== CompanionMode.ONLINE_PC) { $('automation-list').replaceChildren(text('p', 'PC hors ligne · automatisations en lecture locale indisponibles.', 'muted')); return; } try { const result = await transport.automations(); automationState = result.items || []; renderAutomations(); } catch (error) { note(error.message); } }
@@ -236,7 +246,7 @@ function renderAutomations() {
 }
 let supportState = null;
 const money = (amountMinor, currency) => new Intl.NumberFormat('fr-FR', { style: 'currency', currency }).format(amountMinor / 100);
-async function loadSupports() { if (companionMode !== CompanionMode.ONLINE_PC) { $('support-provider').textContent = 'PC hors ligne · historique conservé sur le PC Runtime.'; return; } try { supportState = await transport.supports(); $('support-provider').textContent = `Streamlabs · ${supportState.provider.status.replace('_', ' ')}`; renderSupports(); } catch (error) { note(error.message); } }
+async function loadSupports() { if (companionMode !== CompanionMode.ONLINE_PC) { $('support-provider').textContent = 'PC hors ligne · historique conservé sur le PC Runtime.'; return; } try { supportState = await transport.supports(); $('support-provider').textContent = supportState.provider.status === 'NOT_CONFIGURED' ? 'Streamlabs n’est pas encore connecté.' : `Streamlabs · ${humanProviderStatus(supportState.provider.status)}`; renderSupports(); } catch (error) { note(error.message); } }
 function renderSupports() {
   if (!supportState) return; const totals = $('support-totals'); totals.replaceChildren();
   for (const [key, label] of [['session', 'LIVE'], ['day', 'AUJOURD’HUI'], ['month', 'CE MOIS']]) { const values = supportState.totals[key] || {}; const card = document.createElement('div'); card.className = 'support-total'; card.append(text('small', label), ...Object.entries(values).map(([currency, amount]) => text('b', money(amount, currency)))); if (!Object.keys(values).length) card.append(text('b', '—')); totals.append(card); }
@@ -248,18 +258,18 @@ function resourceLink(url, label = 'OUVRIR') { const link = document.createEleme
 async function loadVods(append = false) {
   if (companionMode !== CompanionMode.ONLINE_PC) { note('PC hors ligne. Les VOD Twitch ne peuvent pas être chargées via le runtime.'); return; }
   try {
-    const result = await transport.twitchVideos(append ? vodCursor : ''); const container = $('vod-list'); if (!append) container.replaceChildren();
+    const container = $('vod-list'); if (!append) container.replaceChildren(text('p', 'Chargement des VOD…', 'muted')); const result = await transport.twitchVideos(append ? vodCursor : ''); if (!append) container.replaceChildren();
     for (const vod of result.items || []) {
       const card = document.createElement('article'); card.className = 'resource-card'; card.append(text('b', vod.title), text('small', `${new Date(vod.createdAt).toLocaleDateString('fr-FR')} · ${vod.duration} · ${vod.viewCount} vues`, 'muted'));
       const actions = document.createElement('div'); actions.className = 'resource-actions'; actions.append(resourceLink(vod.url));
       const remove = text('button', 'SUPPRIMER', 'danger-button'); remove.type = 'button'; remove.onclick = async () => { if (prompt(`Suppression définitive. Saisissez DELETE ${vod.id}`) !== `DELETE ${vod.id}`) return; try { await transport.deleteTwitchVideo(vod.id); card.remove(); note('VOD supprimée après confirmation Twitch.'); } catch (error) { note(error.message); } }; actions.append(remove); card.append(actions); container.append(card);
     }
-    vodCursor = result.cursor; $('more-vods').hidden = !vodCursor;
+    vodCursor = result.cursor; $('more-vods').hidden = !vodCursor; if (!container.children.length) container.append(text('p', 'Aucune VOD disponible.', 'empty-copy'));
   } catch (error) { note(error.message); }
 }
 async function loadClips(append = false) {
   if (companionMode !== CompanionMode.ONLINE_PC) { note('PC hors ligne. Les clips Twitch ne peuvent pas être chargés via le runtime.'); return; }
-  try { const result = await transport.twitchClips(append ? clipCursor : ''); const container = $('clip-list'); if (!append) container.replaceChildren(); for (const clip of result.items || []) { const card = document.createElement('article'); card.className = 'resource-card'; card.append(text('b', clip.title), text('small', `${clip.creatorName} · ${clip.viewCount} vues · ${clip.duration}s`, 'muted'), resourceLink(clip.url)); container.append(card); } clipCursor = result.cursor; $('more-clips').hidden = !clipCursor; } catch (error) { note(error.message); }
+  try { const container = $('clip-list'); if (!append) container.replaceChildren(text('p', 'Chargement des clips…', 'muted')); const result = await transport.twitchClips(append ? clipCursor : ''); if (!append) container.replaceChildren(); for (const clip of result.items || []) { const card = document.createElement('article'); card.className = 'resource-card'; card.append(text('b', clip.title), text('small', `${clip.creatorName} · ${clip.viewCount} vues · ${clip.duration}s`, 'muted'), resourceLink(clip.url)); container.append(card); } clipCursor = result.cursor; $('more-clips').hidden = !clipCursor; if (!container.children.length) container.append(text('p', 'Aucun clip disponible.', 'empty-copy')); } catch (error) { note(error.message); }
 }
 
 function renderPlanning(items) {
@@ -328,7 +338,7 @@ function render(next) {
   if (companionMode === CompanionMode.ONLINE_PC) $('pc').textContent = 'Connecté';
   $('obs').textContent = next.obs.connected ? 'Prêt' : 'Déconnecté';
   $('scene').textContent = next.obs.scene || '—';
-  $('live').textContent = next.obs.streaming ? 'LIVE' : 'OFFLINE';
+  $('live').textContent = next.obs.streaming ? 'Live' : 'Hors ligne';
   $('live').className = next.obs.streaming ? 'ok' : '';
   $('next').textContent = next.nextLive ? `${next.nextLive.title} · ${formatPlanningDate(next.nextLive)}` : 'Aucun live planifié';
   $('stream').textContent = next.obs.streaming ? 'ARRÊTER LE LIVE' : 'DÉMARRER LE LIVE';
@@ -346,13 +356,13 @@ function render(next) {
   if (companionMode === CompanionMode.ONLINE_PC) showPairing(false);
   remoteButtons(companionMode !== CompanionMode.ONLINE_PC);
   $('stream').disabled = !next.obs.connected;
+  $('quick-clip').disabled = !next.twitch?.connected || !next.obs.streaming;
   const chattingActive = next.mode === 'live' && Boolean(next.settings.chattingScene) && next.obs.scene === next.settings.chattingScene;
   document.querySelectorAll('[data-mode]').forEach(button => {
     button.disabled = !next.obs.connected;
     button.classList.toggle('active', button.dataset.mode === next.mode && !(button.dataset.mode === 'live' && chattingActive));
   });
-  document.querySelector('[data-chatting]').disabled = !next.obs.connected || !next.settings.chattingScene;
-  document.querySelector('[data-chatting]').classList.toggle('active', chattingActive);
+  document.querySelectorAll('[data-chatting]').forEach(button => { button.disabled = !next.obs.connected || !next.settings.chattingScene; button.classList.toggle('active', chattingActive); });
 }
 
 function tickTimer() {
@@ -528,13 +538,30 @@ $('publish-discord').onclick = async () => {
 $('edit-server').onclick = () => { showPairing(true); $('pair-server').focus(); };
 $('keep-awake').onchange = () => globalThis.StreamDashboardNative?.setKeepAwake?.($('keep-awake').checked);
 
+function organizeMobileShell() {
+  const home = document.querySelector('[data-view="home"]'); const live = document.querySelector('[data-view="live"]'); const sounds = $('primary-soundboard'); const moreAutomations = $('more-automations'); const tools = home.querySelector('.hub-tools');
+  for (const selector of ['.modes', '.timer', '#stream']) { const node = home.querySelector(selector); if (node) live.append(node); }
+  if (tools) live.append(tools);
+  const soundPanel = document.querySelector('[data-hub-panel="soundboard"]'); if (soundPanel) { soundPanel.hidden = false; sounds.append(soundPanel); }
+  document.querySelector('[data-hub-tool="soundboard"]')?.remove();
+  const automationPanel = document.querySelector('[data-hub-panel="automations"]'); if (automationPanel) { automationPanel.hidden = false; moreAutomations.append(automationPanel); }
+  document.querySelector('[data-hub-tool="automations"]')?.remove();
+  const message = $('message'); document.body.append(message); message.className = 'app-toast';
+}
+organizeMobileShell();
+
 const selectTab = tab => {
   document.querySelectorAll('[data-view]').forEach(view => view.classList.toggle('active', view.dataset.view === tab));
-  document.querySelectorAll('[data-tab]').forEach(button => button.classList.toggle('active', button.dataset.tab === tab));
+  const primary = ['prepare', 'settings'].includes(tab) ? 'more' : tab;
+  document.querySelectorAll('[data-tab]').forEach(button => button.classList.toggle('active', button.dataset.tab === primary));
   localStorage.setItem('streamdashboard.mobileTab', tab);
+  if (tab === 'sounds') void loadSoundboard();
 };
 document.querySelector('.bottom-nav').onclick = event => { const button = event.target.closest('[data-tab]'); if (button) selectTab(button.dataset.tab); };
-selectTab(localStorage.getItem('streamdashboard.mobileTab') || 'live');
+document.addEventListener('click', event => { const open = event.target.closest('[data-open-tab]'); if (open) selectTab(open.dataset.openTab); const tool = event.target.closest('[data-open-live-tool]'); if (tool) { selectTab('live'); document.querySelector(`[data-hub-tool="${tool.dataset.openLiveTool}"]`)?.click(); } });
+$('open-automations').onclick = () => { $('more-automations').classList.toggle('expanded'); void loadSoundboard().then(loadAutomations); };
+$('quick-clip').onclick = async () => { try { const clip = await transport.createTwitchClip(); note(`Clip créé ✓ · ${clip.id}`); } catch (error) { note(`Impossible de créer le clip. ${error.message}`); } };
+const savedTab = localStorage.getItem('streamdashboard.mobileTab'); selectTab(['home', 'live', 'sounds', 'planning', 'more', 'prepare', 'settings'].includes(savedTab) ? savedTab : 'home');
 try { const saved = JSON.parse(localStorage.getItem(exportNoteKey) || '{}'); $('export-note-enabled').checked = saved.enabled === true; if (saved.text) $('export-note-text').value = saved.text; } catch { /* reset invalid preference */ }
 const saveExportNote = () => localStorage.setItem(exportNoteKey, JSON.stringify({ enabled: $('export-note-enabled').checked, text: $('export-note-text').value }));
 $('export-note-enabled').onchange = saveExportNote; $('export-note-text').onchange = saveExportNote;

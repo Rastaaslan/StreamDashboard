@@ -36,7 +36,7 @@ function applyCriticalState(next) {
   if (!next) return;
   hotState = next;
   if ($('live')) {
-    $('live').textContent = next.obs?.streaming ? 'LIVE' : 'OFFLINE';
+    $('live').textContent = next.obs?.streaming ? 'Live' : 'Hors ligne';
     $('live').className = next.obs?.streaming ? 'ok' : '';
   }
   if ($('stream')) {
@@ -219,7 +219,7 @@ async function prepareFromPhone(button) {
     await ensureCredential();
     const result = await transport.command({ type: 'session.prepare' });
     applyCriticalState(result.state);
-    document.querySelector('[data-tab="prepare"]')?.click();
+    document.querySelector('[data-open-tab="prepare"]')?.click();
     const preflight = result.state.preflight;
     if (preflight?.status === 'action-required' || preflight?.status === 'error') notify(preflight.error || 'Préparation à compléter.');
     else notify('Préparation lancée · vérifie la checklist avant le live.');
