@@ -1,38 +1,48 @@
 import { describe, expect, it } from 'vitest';
 import { readFileSync } from 'node:fs';
+import { createMobileFixture, devFixtureName } from '../apps/mobile/dev-fixtures.js';
 
 const html = readFileSync(new URL('../apps/mobile/index.html', import.meta.url), 'utf8');
 const mobile = readFileSync(new URL('../apps/mobile/mobile.js', import.meta.url), 'utf8');
-const css = readFileSync(new URL('../apps/mobile/mobile-shell.css', import.meta.url), 'utf8');
+const css = readFileSync(new URL('../apps/mobile/mobile.css', import.meta.url), 'utf8');
 
-describe('Android five-tab control shell', () => {
-  it('expose exactement cinq destinations primaires dans l’ordre demandé', () => {
+describe('Android Mobile 2.0 control surface', () => {
+  it('expose les cinq destinations et la palette globale', () => {
     const tabs = [...html.matchAll(/<button data-tab="([^"]+)"/g)].map(match => match[1]);
     expect(tabs).toEqual(['home', 'live', 'sounds', 'planning', 'more']);
-    expect(html).toContain('aria-label="Navigation principale"');
-    expect(html).not.toContain('data-tab="regie"');
+    expect(html).toContain('id="command-trigger"');
+    expect(html).toContain('id="command-palette"');
+    expect(html).toContain('id="command-search"');
+    expect(mobile).toContain('streamdashboard.mobileRecentCommands');
   });
 
-  it('rend Live, Soundboard, Planning et Plus accessibles sans ancien portail Outils live', () => {
-    for (const view of ['home', 'live', 'sounds', 'planning', 'more', 'prepare', 'settings']) expect(html).toContain(`data-view="${view}"`);
+  it('fournit les deep links et commandes instantanées sans ancien portail', () => {
+    for (const link of ['home-viewers-link', 'home-chatters-link', 'home-scene-link', 'quick-clip', 'quick-mic']) expect(html).toContain(`id="${link}"`);
+    for (const tool of ['chat', 'audience', 'supports', 'vod']) expect(html).toContain(`data-open-live-tool="${tool}"`);
     expect(html).not.toContain('<small>OUTILS LIVE</small>');
+    expect(html).toContain('class="scene-bank"');
+  });
+
+  it('conserve les fonctions et présente Sons/Plus comme matrices et lignes', () => {
     for (const feature of ['data-hub-panel="chat"', 'data-hub-panel="audience"', 'data-hub-panel="supports"', 'data-hub-panel="vod"', 'data-hub-panel="clips"', 'id="primary-soundboard"', 'id="more-automations"', 'id="diagnostics"']) expect(html).toContain(feature);
-  });
-
-  it('décrit explicitement les états vides, offline et providers en langage humain', () => {
-    expect(mobile).toContain('Aucun son configuré.');
+    expect(css).toContain('.sound-pad::before');
+    expect(css).toContain('.more-group>button,.integration-card');
+    expect(mobile).toContain('Le catalogue Soundboard est vide.');
     expect(mobile).toContain('PC StreamDashboard hors ligne.');
-    expect(mobile).toContain('Aucune VOD disponible.');
-    expect(mobile).toContain('Streamlabs n’est pas encore connecté.');
-    expect(mobile).toContain("NOT_CONFIGURED: 'Non configuré'");
-    expect(html).toContain('Diagnostics développeur · Events');
   });
 
-  it('définit le système visuel, les touch targets, focus et reduced motion', () => {
-    for (const token of ['--bg:', '--surface:', '--border:', '--accent:', '--ember:', '--motion:']) expect(css).toContain(token);
+  it('remplace l’ancien CSS par un design system accessible', () => {
+    for (const token of ['--surface-1:', '--surface-2:', '--surface-3:', '--text-secondary:', '--violet:', '--ember:', '--warning:', '--line:', '--space-8:', '--motion-normal:']) expect(css).toContain(token);
     expect(css).toContain('min-height:44px');
     expect(css).toContain(':focus-visible');
     expect(css).toContain('prefers-reduced-motion:reduce');
-    expect(html.match(/<svg /g)).toHaveLength(5);
+    expect(html).not.toContain('mobile-shell.css');
+  });
+
+  it('borne les fixtures visuelles au développement local', () => {
+    expect(devFixtureName({ hostname: 'localhost', search: '?fixture=live' } as Location)).toBe('live');
+    expect(devFixtureName({ hostname: 'stream.example', search: '?fixture=live' } as Location)).toBeNull();
+    expect(createMobileFixture('live').state.controlHub.audience.viewerCount).toBe(17);
+    expect(createMobileFixture('offline').state.obs.streaming).toBe(false);
   });
 });

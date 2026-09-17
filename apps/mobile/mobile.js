@@ -6,6 +6,7 @@ import { normalizeCategoryQuery, rankCategories, rememberCategory } from './twit
 import { CompanionMode, createCompanionStore, resolveMode } from './companion-store.js';
 import { createNativeProviderAdapter, createStandaloneProviderSync } from './provider-sync.js';
 import { recurrenceSummary } from './shared/recurrence.js';
+import { createMobileFixture, devFixtureName } from './dev-fixtures.js';
 
 const $ = id => document.getElementById(id);
 
@@ -85,7 +86,7 @@ function showPairing(show) {
 async function command(value) {
   if (busy || !credential || !ws || ws.readyState !== WebSocket.OPEN) {
     note('Télécommande non connectée.');
-    return;
+    return false;
   }
   busy = true;
   try {
@@ -93,8 +94,10 @@ async function command(value) {
     render(body.state);
     globalThis.StreamDashboardNative?.haptic?.(['session.start', 'session.stop'].includes(value.type) ? 'strong' : 'light');
     note('Commande confirmée par le PC.');
+    return true;
   } catch (error) {
     note(error.message);
+    return false;
   } finally {
     busy = false;
   }
@@ -228,11 +231,12 @@ function renderSoundboard() {
   for (const sound of sounds.filter(value => (!query || value.name.toLocaleLowerCase().includes(query)) && (!select.value || value.category === select.value) && (!onlyFavorites || value.favorite))) {
     const pad = document.createElement('button'); pad.type = 'button'; pad.className = `sound-pad${soundboardState.currentPlayback?.soundId === sound.id ? ' playing' : ''}${!sound.sourceAvailable ? ' sound-error' : ''}`; pad.disabled = !sound.enabled || !sound.sourceAvailable;
     pad.append(text('b', sound.name), text('small', `${sound.category} · ${Math.round(sound.volume * 100)}%`), text('span', sound.favorite ? '★' : '☆', 'sound-favorite'));
-    pad.onclick = async event => { if (event.target.closest('.sound-favorite')) return; if (companionMode !== CompanionMode.ONLINE_PC) { note('PC hors ligne. Le son n’a pas été joué.'); return; } const commandId = newCommandId(); pad.disabled = true; try { const ack = await transport.playSound({ commandId, soundId: sound.id, issuedAt: new Date().toISOString() }); if (ack.status !== 'succeeded') throw new Error(ack.message || ack.errorCode || 'Lecture échouée.'); note(`Lecture confirmée par le PC : ${sound.name}`); } catch (error) { note(error.message); } finally { pad.disabled = false; await loadSoundboard(); } };
+    pad.onclick = async event => { if (event.target.closest('.sound-favorite')) return; if (companionMode !== CompanionMode.ONLINE_PC) { note('PC hors ligne. Le son n’a pas été joué.'); return; } const commandId = newCommandId(); pad.disabled = true; try { const ack = await transport.playSound({ commandId, soundId: sound.id, issuedAt: new Date().toISOString() }); if (ack.status !== 'succeeded') throw new Error(ack.message || ack.errorCode || 'Lecture échouée.'); rememberCommand({ id: `sound:${sound.id}`, label: sound.name, action: 'sound', soundId: sound.id }); globalThis.StreamDashboardNative?.haptic?.('light'); note(`Lecture confirmée par le PC : ${sound.name}`); } catch (error) { note(error.message); } finally { pad.disabled = false; await loadSoundboard(); } };
     pad.querySelector('.sound-favorite').onclick = async event => { event.stopPropagation(); try { soundboardState = await transport.updateSound(sound.id, { favorite: !sound.favorite }); renderSoundboard(); } catch (error) { note(error.message); } };
     container.append(pad);
   }
-  if (!container.children.length) { const empty = document.createElement('div'); empty.className = 'module-empty'; empty.append(text('b', sounds.length ? 'Aucun son ne correspond à ces filtres.' : 'Aucun son configuré.'), text('p', sounds.length ? 'Modifie la recherche ou affiche toutes les catégories.' : 'Ajoute des sons depuis StreamDashboard sur le PC, ils apparaîtront ici automatiquement.', 'muted')); container.append(empty); }
+  if (!container.children.length) { const empty = document.createElement('div'); empty.className = 'module-empty'; empty.append(text('small', sounds.length ? 'RECHERCHE' : 'AUCUN SON', 'console-label'), text('b', sounds.length ? 'Aucun pad ne correspond.' : 'Le catalogue Soundboard est vide.'), text('p', sounds.length ? 'Modifie la recherche ou affiche toutes les catégories.' : 'Ajoute des sons depuis le PC StreamDashboard. Ils seront disponibles ici immédiatement.', 'muted')); container.append(empty); }
+  renderCommandSounds();
 }
 let automationState = [];
 async function loadAutomations() { if (companionMode !== CompanionMode.ONLINE_PC) { $('automation-list').replaceChildren(text('p', 'PC hors ligne · automatisations en lecture locale indisponibles.', 'muted')); return; } try { const result = await transport.automations(); automationState = result.items || []; renderAutomations(); } catch (error) { note(error.message); } }
@@ -395,6 +399,7 @@ async function pair() {
     connect();
   } catch (error) {
     note(error.message);
+    return false;
   } finally {
     busy = false;
   }
@@ -558,9 +563,22 @@ const selectTab = tab => {
   if (tab === 'sounds') void loadSoundboard();
 };
 document.querySelector('.bottom-nav').onclick = event => { const button = event.target.closest('[data-tab]'); if (button) selectTab(button.dataset.tab); };
-document.addEventListener('click', event => { const open = event.target.closest('[data-open-tab]'); if (open) selectTab(open.dataset.openTab); const tool = event.target.closest('[data-open-live-tool]'); if (tool) { selectTab('live'); document.querySelector(`[data-hub-tool="${tool.dataset.openLiveTool}"]`)?.click(); } });
+document.addEventListener('click', event => { const open = event.target.closest('[data-open-tab]'); if (open) { selectTab(open.dataset.openTab); $('command-palette')?.close(); } const tool = event.target.closest('[data-open-live-tool]'); if (tool) { selectTab('live'); document.querySelector(`[data-hub-tool="${tool.dataset.openLiveTool}"]`)?.click(); $('command-palette')?.close(); } });
+const recentCommandsKey = 'streamdashboard.mobileRecentCommands';
+let recentCommands = []; try { recentCommands = JSON.parse(localStorage.getItem(recentCommandsKey) || '[]').slice(0, 6); } catch { recentCommands = []; }
+function rememberCommand(entry) { recentCommands = [entry, ...recentCommands.filter(value => value.id !== entry.id)].slice(0, 6); localStorage.setItem(recentCommandsKey, JSON.stringify(recentCommands)); renderCommandRecents(); }
+function renderCommandRecents() { const container = $('command-recents'); container.replaceChildren(...recentCommands.map(entry => { const button = text('button', entry.label); button.type = 'button'; button.dataset.recentCommand = entry.id; button.onclick = () => void runPaletteAction(entry.action, entry); return button; })); if (!container.children.length) container.append(text('span', 'Aucune commande récente.', 'empty-copy')); }
+function renderCommandSounds() { const container = $('command-sounds'); if (!container) return; const favorites = (soundboardState?.sounds || []).filter(sound => sound.favorite && sound.enabled && sound.sourceAvailable).slice(0, 6); container.replaceChildren(...favorites.map(sound => { const button = text('button', sound.name); button.type = 'button'; button.onclick = () => void runPaletteAction('sound', { soundId: sound.id, label: sound.name }); return button; })); if (!container.children.length) container.append(text('span', 'Aucun son favori.', 'empty-copy')); }
+async function createQuickClip() { if (companionMode !== CompanionMode.ONLINE_PC) throw new Error('PC hors ligne.'); const clip = await transport.createTwitchClip(); rememberCommand({ id: 'clip', label: 'Clip', action: 'clip' }); globalThis.StreamDashboardNative?.haptic?.('light'); note(`Clip créé ✓ · ${clip.id}`); }
+async function togglePrimaryMic() { const input = state?.obs?.activeAudioInputs?.[0]; if (!input || !state?.obs?.inputs?.[input]) throw new Error('Aucun micro actif détecté.'); const confirmed = await command({ type: 'obs.mute', input, muted: !state.obs.inputs[input].muted }); if (!confirmed) throw new Error('Commande non confirmée par le PC.'); rememberCommand({ id: 'mute', label: 'Mute micro', action: 'mute' }); }
+async function runPaletteAction(action, detail = {}) { try { if (action === 'clip') await createQuickClip(); else if (action === 'mute') await togglePrimaryMic(); else if (action === 'sound') { const sound = soundboardState?.sounds?.find(value => value.id === detail.soundId); if (!sound) throw new Error('Son indisponible.'); const ack = await transport.playSound({ commandId: newCommandId(), soundId: sound.id, issuedAt: new Date().toISOString() }); if (ack.status !== 'succeeded') throw new Error(ack.message || 'Lecture échouée.'); rememberCommand({ id: `sound:${sound.id}`, label: sound.name, action: 'sound', soundId: sound.id }); note(`Son joué ✓ · ${sound.name}`); } else { const mode = action === 'chatting' ? null : action; const confirmed = await command(action === 'chatting' ? { type: 'scene.chatting' } : { type: 'mode.set', mode }); if (!confirmed) throw new Error('Commande non confirmée par le PC.'); rememberCommand({ id: action, label: action === 'pause' ? 'Pause' : action === 'chatting' ? 'Chatting' : 'Intro', action }); } $('command-palette').close(); } catch (error) { note(`Commande impossible. ${error.message}`); } }
+$('command-trigger').onclick = () => { renderCommandRecents(); renderCommandSounds(); $('command-palette').showModal(); $('command-search').focus(); };
+$('close-commands').onclick = () => $('command-palette').close();
+$('command-palette').onclick = event => { if (event.target === $('command-palette')) $('command-palette').close(); const action = event.target.closest('[data-palette-action]')?.dataset.paletteAction; if (action) void runPaletteAction(action); };
+$('command-search').oninput = event => { const query = event.target.value.trim().toLocaleLowerCase(); document.querySelectorAll('#command-palette [data-palette-action]').forEach(button => { button.hidden = !button.textContent.toLocaleLowerCase().includes(query); }); };
+renderCommandRecents();
 $('open-automations').onclick = () => { $('more-automations').classList.toggle('expanded'); void loadSoundboard().then(loadAutomations); };
-$('quick-clip').onclick = async () => { try { const clip = await transport.createTwitchClip(); note(`Clip créé ✓ · ${clip.id}`); } catch (error) { note(`Impossible de créer le clip. ${error.message}`); } };
+$('quick-clip').onclick = () => void createQuickClip().catch(error => note(`Impossible de créer le clip. ${error.message}`)); $('live-clip').onclick = $('quick-clip').onclick; $('quick-mic').onclick = () => void togglePrimaryMic().catch(error => note(error.message)); $('live-end').onclick = () => { if (confirm('Arrêter réellement le live ?')) void command({ type: 'session.stop' }); }; $('refresh-sounds').onclick = () => void loadSoundboard();
 const savedTab = localStorage.getItem('streamdashboard.mobileTab'); selectTab(['home', 'live', 'sounds', 'planning', 'more', 'prepare', 'settings'].includes(savedTab) ? savedTab : 'home');
 try { const saved = JSON.parse(localStorage.getItem(exportNoteKey) || '{}'); $('export-note-enabled').checked = saved.enabled === true; if (saved.text) $('export-note-text').value = saved.text; } catch { /* reset invalid preference */ }
 const saveExportNote = () => localStorage.setItem(exportNoteKey, JSON.stringify({ enabled: $('export-note-enabled').checked, text: $('export-note-text').value }));
@@ -747,4 +765,5 @@ function renderCompanion() {
 }
 for (const [buttonId, kind, inputId, property] of [['add-note','notes','note-text','text'],['add-template','templates','template-title','title'],['add-check','checklist','check-label','label']]) $(buttonId).onclick = () => { const input = $(inputId); if (!input.value.trim()) return; companion.upsertCollection(kind, { [property]: input.value.trim(), ...(kind === 'checklist' ? { done: false } : {}) }); input.value = ''; renderCompanion(); note('Enregistré localement · À synchroniser.'); };
 renderCompanion();
-void start();
+const fixtureName = devFixtureName(location);
+if (fixtureName) { const fixture = createMobileFixture(fixtureName); setConnectionMode(CompanionMode.ONLINE_PC); soundboardState = fixture.soundboard; render(fixture.state); renderSoundboard(); showPairing(false); } else void start();
