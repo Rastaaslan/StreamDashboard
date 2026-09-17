@@ -155,9 +155,10 @@ function renderControlHub(hub) {
   $('hub-category').textContent = hub?.live?.category || (companionMode === CompanionMode.ONLINE_PC ? 'PC Runtime connecté' : 'Les contrôles PC reviendront à la reconnexion.');
   $('hub-viewers').textContent = Number.isInteger(hub?.audience?.viewerCount) ? String(hub.audience.viewerCount) : '—';
   $('hub-chatters').textContent = Array.isArray(hub?.audience?.chatters) ? String(hub.audience.chatters.length) : '—';
-  const isLive = hub?.live?.isLive === true; document.querySelector('[data-view="direct"]')?.classList.toggle('is-live', isLive); const degraded = Object.values(hub?.integrations || {}).some(value => ['DEGRADED', 'ERROR'].includes(value.status)); const duration = Number.isFinite(hub?.live?.durationSeconds) ? formatClock(hub.live.durationSeconds) : '—';
+  const isLive = hub?.live?.isLive === true; document.querySelector('[data-view="home"]')?.classList.toggle('is-live', isLive); const degraded = Object.values(hub?.integrations || {}).some(value => ['DEGRADED', 'ERROR'].includes(value.status)); const duration = Number.isFinite(hub?.live?.durationSeconds) ? formatClock(hub.live.durationSeconds) : '—';
   $('home-live-status').textContent = isLive ? `${degraded ? '!' : '●'} En direct` : companionMode === CompanionMode.ONLINE_PC ? '○ Prêt' : '○ Hors ligne'; $('home-live-status').className = `live-line ${isLive ? degraded ? 'danger' : 'ok' : ''}`; $('home-duration').textContent = duration;
   $('direct-scene').textContent = state?.obs?.scene || 'Aucune scène'; $('direct-twitch-state').textContent = humanProviderStatus(hub?.integrations?.twitch?.status || 'DISCONNECTED');
+  $('live-workspace-status').textContent = $('home-live-status').textContent; $('live-workspace-status').className = $('home-live-status').className; $('live-duration').textContent = duration; $('live-viewers').textContent = $('hub-viewers').textContent; $('live-chatters').textContent = $('hub-chatters').textContent; $('live-scene').textContent = state?.obs?.scene || '—';
   const labels = { runtime: 'Runtime', obs: 'OBS', twitch: 'Twitch', discord: 'Discord', streamlabs: 'Streamlabs', wizebot: 'WizeBot' };
   for (const [key, label] of Object.entries(labels)) {
     const status = hub?.integrations?.[key]?.status || 'DISCONNECTED';
@@ -545,11 +546,11 @@ $('edit-server').onclick = () => { showPairing(true); $('pair-server').focus(); 
 $('keep-awake').onchange = () => globalThis.StreamDashboardNative?.setKeepAwake?.($('keep-awake').checked);
 
 function organizeMobileShell() {
-  const direct = document.querySelector('[data-view="direct"]'); const advanced = $('advanced-live-controls'); const sounds = $('primary-soundboard'); const moreAutomations = $('more-automations'); const tools = direct.querySelector('.hub-tools'); const streamMenu = document.querySelector('[data-view="more"] .more-group:nth-of-type(2)');
-  const legacyControls = document.createElement('details'); legacyControls.className = 'legacy-live-controls'; const legacySummary = document.createElement('summary'); legacySummary.textContent = 'Contrôles avancés du direct'; legacyControls.append(legacySummary);
-  for (const selector of ['#twitch-editor', '#audio', '#deck', '.modes', '.timer', '#stream', '.live-command-grid']) { const node = document.querySelector(selector); if (node) legacyControls.append(node); }
-  if (legacyControls.children.length > 1) streamMenu?.append(legacyControls); advanced?.remove();
-  if (tools) { const controlTab = document.createElement('button'); controlTab.type = 'button'; controlTab.dataset.hubTool = 'control'; controlTab.textContent = 'CONTRÔLE'; tools.querySelector('.hub-tool-tabs')?.prepend(controlTab); const controlPanel = document.createElement('div'); controlPanel.className = 'hub-tool-panel'; controlPanel.dataset.hubPanel = 'control'; for (const selector of ['.control-bank', '.direct-context', '.activity-list']) { const node = direct.querySelector(selector); if (node) controlPanel.append(node.closest('.flat-section') || node); } tools.querySelector('.hub-tool-tabs')?.after(controlPanel); }
+  const home = document.querySelector('[data-view="home"]'); const live = document.querySelector('[data-view="live"]'); const sounds = $('primary-soundboard'); const moreAutomations = $('more-automations'); const tools = home.querySelector('.hub-tools'); const streamMenu = document.querySelector('[data-view="more"] .more-group:nth-of-type(2)');
+  const legacyControls = document.createElement('details'); legacyControls.className = 'legacy-live-controls'; const legacySummary = document.createElement('summary'); legacySummary.textContent = 'Contrôles avancés'; legacyControls.append(legacySummary);
+  for (const selector of ['#twitch-editor', '#audio', '#deck', '.modes', '.timer', '#stream']) { const node = document.querySelector(selector); if (node) legacyControls.append(node); }
+  if (legacyControls.children.length > 1) streamMenu?.append(legacyControls);
+  if (tools) { live.append(tools); const controlTab = document.createElement('button'); controlTab.type = 'button'; controlTab.dataset.hubTool = 'control'; controlTab.textContent = 'CONTRÔLE'; tools.querySelector('.hub-tool-tabs')?.prepend(controlTab); const controlPanel = document.createElement('div'); controlPanel.className = 'hub-tool-panel'; controlPanel.dataset.hubPanel = 'control'; controlPanel.append(live.querySelector('.live-overview'), live.querySelector('.live-command-grid')); tools.querySelector('.hub-tool-tabs')?.after(controlPanel); }
   const soundPanel = document.querySelector('[data-hub-panel="soundboard"]'); if (soundPanel) { soundPanel.hidden = false; sounds.append(soundPanel); }
   document.querySelector('[data-hub-tool="soundboard"]')?.remove();
   const automationPanel = document.querySelector('[data-hub-panel="automations"]'); if (automationPanel) { automationPanel.hidden = false; moreAutomations.append(automationPanel); }
@@ -560,7 +561,6 @@ function organizeMobileShell() {
 organizeMobileShell();
 
 const selectTab = tab => {
-  tab = ['home', 'live'].includes(tab) ? 'direct' : tab;
   document.querySelectorAll('[data-view]').forEach(view => view.classList.toggle('active', view.dataset.view === tab));
   const primary = ['prepare', 'settings', 'more'].includes(tab) ? '' : tab;
   document.querySelectorAll('[data-tab]').forEach(button => button.classList.toggle('active', button.dataset.tab === primary));
@@ -568,7 +568,7 @@ const selectTab = tab => {
   if (tab === 'sounds') void loadSoundboard();
 };
 document.querySelector('.bottom-nav').onclick = event => { const button = event.target.closest('[data-tab]'); if (button) selectTab(button.dataset.tab); };
-document.addEventListener('click', event => { const open = event.target.closest('[data-open-tab]'); if (open) { selectTab(open.dataset.openTab); $('command-palette')?.close(); } const tool = event.target.closest('[data-open-live-tool]'); if (tool) { selectTab('direct'); document.querySelector(`[data-hub-tool="${tool.dataset.openLiveTool}"]`)?.click(); $('command-palette')?.close(); } });
+document.addEventListener('click', event => { const open = event.target.closest('[data-open-tab]'); if (open) { selectTab(open.dataset.openTab); $('command-palette')?.close(); } const tool = event.target.closest('[data-open-live-tool]'); if (tool) { selectTab('live'); document.querySelector(`[data-hub-tool="${tool.dataset.openLiveTool}"]`)?.click(); $('command-palette')?.close(); } });
 const recentCommandsKey = 'streamdashboard.mobileRecentCommands';
 let recentCommands = []; try { recentCommands = JSON.parse(localStorage.getItem(recentCommandsKey) || '[]').slice(0, 6); } catch { recentCommands = []; }
 function rememberCommand(entry) { recentCommands = [entry, ...recentCommands.filter(value => value.id !== entry.id)].slice(0, 6); localStorage.setItem(recentCommandsKey, JSON.stringify(recentCommands)); renderCommandRecents(); }
@@ -583,8 +583,12 @@ $('command-palette').onclick = event => { if (event.target === $('command-palett
 $('command-search').oninput = event => { const query = event.target.value.trim().toLocaleLowerCase(); document.querySelectorAll('#command-palette [data-palette-action]').forEach(button => { button.hidden = !button.textContent.toLocaleLowerCase().includes(query); }); };
 renderCommandRecents();
 $('open-automations').onclick = () => { $('more-automations').classList.toggle('expanded'); void loadSoundboard().then(loadAutomations); };
-$('quick-clip').onclick = () => void createQuickClip().catch(error => note(`Impossible de créer le clip. ${error.message}`)); const liveClip = $('live-clip'); if (liveClip) liveClip.onclick = $('quick-clip').onclick; const quickMic = $('quick-mic'); if (quickMic) quickMic.onclick = () => void togglePrimaryMic().catch(error => note(error.message)); $('home-mic').onclick = quickMic?.onclick || (() => void togglePrimaryMic().catch(error => note(error.message))); $('open-scenes').onclick = () => $('scene-sheet').showModal(); $('close-scenes').onclick = () => $('scene-sheet').close(); $('scene-sheet').onclick = event => { if (event.target === $('scene-sheet')) $('scene-sheet').close(); }; $('scene-sheet').querySelectorAll('[data-mode],[data-chatting]').forEach(button => button.addEventListener('click', () => $('scene-sheet').close())); const liveEnd = $('live-end'); if (liveEnd) liveEnd.onclick = () => { if (confirm('Arrêter réellement le live ?')) void command({ type: 'session.stop' }); }; $('refresh-sounds').onclick = () => void loadSoundboard();
-const savedTab = localStorage.getItem('streamdashboard.mobileTab'); selectTab(['direct', 'home', 'live', 'sounds', 'planning', 'more', 'prepare', 'settings'].includes(savedTab) ? savedTab : 'direct');
+$('quick-clip').onclick = () => void createQuickClip().catch(error => note(`Impossible de créer le clip. ${error.message}`)); $('live-clip').onclick = $('quick-clip').onclick; $('quick-mic').onclick = () => void togglePrimaryMic().catch(error => note(error.message)); $('home-mic').onclick = $('quick-mic').onclick; const openScenes = () => $('scene-sheet').showModal(); $('open-scenes').onclick = openScenes; $('open-scenes-live').onclick = openScenes; $('home-scene-link').onclick = openScenes; $('close-scenes').onclick = () => $('scene-sheet').close(); $('scene-sheet').onclick = event => { if (event.target === $('scene-sheet')) $('scene-sheet').close(); }; $('scene-sheet').querySelectorAll('[data-mode],[data-chatting]').forEach(button => button.addEventListener('click', () => $('scene-sheet').close())); $('refresh-sounds').onclick = () => void loadSoundboard();
+const savedTab = localStorage.getItem('streamdashboard.mobileTab'); selectTab(['home', 'live', 'sounds', 'planning', 'more', 'prepare', 'settings'].includes(savedTab) ? savedTab : 'home');
+
+const preferenceKey = 'streamdashboard.mobileUx'; let uxPreferences = { focus: false, reducedMotion: false, density: 'comfort' }; try { uxPreferences = { ...uxPreferences, ...JSON.parse(localStorage.getItem(preferenceKey) || '{}') }; } catch { /* use calm defaults */ }
+function applyUxPreferences() { document.body.classList.toggle('focus-mode', uxPreferences.focus); document.body.classList.toggle('reduce-motion', uxPreferences.reducedMotion); document.body.dataset.density = uxPreferences.density; $('focus-mode').checked = uxPreferences.focus; $('reduce-motion').checked = uxPreferences.reducedMotion; $('ui-density').value = uxPreferences.density; localStorage.setItem(preferenceKey, JSON.stringify(uxPreferences)); }
+$('focus-mode').onchange = event => { uxPreferences.focus = event.target.checked; applyUxPreferences(); }; $('reduce-motion').onchange = event => { uxPreferences.reducedMotion = event.target.checked; applyUxPreferences(); }; $('ui-density').onchange = event => { uxPreferences.density = event.target.value; applyUxPreferences(); }; applyUxPreferences();
 try { const saved = JSON.parse(localStorage.getItem(exportNoteKey) || '{}'); $('export-note-enabled').checked = saved.enabled === true; if (saved.text) $('export-note-text').value = saved.text; } catch { /* reset invalid preference */ }
 const saveExportNote = () => localStorage.setItem(exportNoteKey, JSON.stringify({ enabled: $('export-note-enabled').checked, text: $('export-note-text').value }));
 $('export-note-enabled').onchange = saveExportNote; $('export-note-text').onchange = saveExportNote;
@@ -701,7 +705,7 @@ document.querySelectorAll('[data-hub-tool]').forEach(button => button.onclick = 
   if (button.dataset.hubTool === 'audience') void loadMoreChatters(true);
   if (button.dataset.hubTool === 'chat') void loadModerationCapabilities();
 });
-document.querySelector('[data-hub-tool="chat"]').classList.add('active');
+document.querySelector('[data-hub-tool="control"]')?.click();
 $('audience-search').oninput = () => renderAudience(state?.controlHub?.audience);
 $('more-chatters').onclick = () => void loadMoreChatters();
 $('sound-search').oninput = renderSoundboard; $('sound-category').onchange = renderSoundboard; $('sound-favorites').onchange = renderSoundboard;

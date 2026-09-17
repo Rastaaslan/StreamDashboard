@@ -1,16 +1,27 @@
-# StreamDashboard Mobile 3.0 — navigation Direct
+# StreamDashboard Mobile 2.3 — navigation focus
 
 ## Architecture finale
 
-La barre basse contient exactement trois destinations : **Direct**, **Sons** et **Planning**. Direct remplace Accueil et Live et adapte son contenu à l'état réel. **Le camp** regroupe les fonctions secondaires. La palette Commandes y reste disponible comme outil avancé, sans être nécessaire à la navigation.
+La barre basse conserve quatre destinations stables : **Accueil**, **Live**, **Sons** et **Planning**. Accueil est un résumé minimal ; Live ne présente que Contrôle, Chat et Audience. **Le camp** regroupe les fonctions de préparation, de gestion et de diagnostic. La palette Commandes y reste disponible comme outil avancé.
+
+## Préférences cognitives locales
+
+Les réglages mobiles sont stockés uniquement sur le téléphone. Le mode **Focus**
+masque l'activité, l'aperçu secondaire et les sous-vues non critiques afin de ne
+laisser visibles que le statut, la scène, Clip, Pause, Scènes et Micro. Le réglage
+**Réduire les animations** neutralise transitions et animations, indépendamment
+de `prefers-reduced-motion`. La densité **Confort** est la valeur par défaut ;
+Compact et Normal conservent les mêmes positions afin de préserver la mémoire
+musculaire.
 
 Les raccourcis contextuels de l'Accueil ouvrent directement Audience, Chat, Live/scènes ou Soundboard. `Le camp` est un menu secondaire en lignes : Préparation, Stream, Intégrations et Application. Aucun endpoint ni contrat réseau n'est ajouté.
 
-## Matrice d'accès depuis Direct
+## Matrice d'accès depuis l'Accueil
 
 | Fonction | Taps maximum | Chemin |
 | --- | ---: | --- |
-| Direct | 0 | destination initiale |
+| Accueil | 0 | destination initiale |
+| Live | 1 | barre basse |
 | Soundboard | 1 | barre basse ou action Sons |
 | Planning | 1 | barre basse |
 | Clip | 1 | commande immédiate |
@@ -19,8 +30,8 @@ Les raccourcis contextuels de l'Accueil ouvrent directement Audience, Chat, Live
 | Audience | 1 | métrique viewers/chatters |
 | Scene switch | 2 | ligne Scène → choix |
 | Mute micro | 1 | ligne Micro |
-| Soutiens | 2 | Live → Soutiens ou palette |
-| VOD / Clips | 2 | Live → Média |
+| Soutiens | 2 | Le camp → Soutiens |
+| VOD / Clips | 2 | Le camp → VOD & Clips |
 | Automatisations | 2 | menu Le camp → Stream |
 | Checklist / Notes | 2 | menu Le camp → Préparation |
 | Intégrations | 1 | menu du header |

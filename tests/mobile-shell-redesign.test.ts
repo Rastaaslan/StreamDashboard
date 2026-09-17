@@ -6,13 +6,10 @@ const html = readFileSync(new URL('../apps/mobile/index.html', import.meta.url),
 const mobile = readFileSync(new URL('../apps/mobile/mobile.js', import.meta.url), 'utf8');
 const css = readFileSync(new URL('../apps/mobile/mobile.css', import.meta.url), 'utf8');
 
-describe('Android Mobile 3.0 control surface', () => {
-  it('expose exactement Direct, Sons et Planning avec Le camp en secondaire', () => {
+describe('Android Mobile 2.3 focus surface', () => {
+  it('expose quatre destinations stables avec Le camp en secondaire', () => {
     const tabs = [...html.matchAll(/<button data-tab="([^"]+)"/g)].map(match => match[1]);
-    expect(tabs).toEqual(['direct', 'sounds', 'planning']);
-    expect(html).not.toContain('data-tab="home"');
-    expect(html).not.toContain('data-tab="live"');
-    expect(html).not.toContain('data-view="live"');
+    expect(tabs).toEqual(['home', 'live', 'sounds', 'planning']);
     expect(html).toContain('id="menu-trigger"');
     expect(html).toContain('data-view="more"');
     expect(html).toContain('id="command-trigger"');
@@ -43,7 +40,7 @@ describe('Android Mobile 3.0 control surface', () => {
     expect(css).toContain('prefers-reduced-motion:reduce');
     expect(html).not.toContain('mobile-shell.css');
     expect(css).toContain('gap:var(--space-4);row-gap:var(--space-4)');
-    expect(css).toContain('grid-template-columns:repeat(3,minmax(0,1fr))');
+    expect(css).toContain('grid-template-columns:repeat(4,minmax(0,1fr))');
     expect(css).toContain('@keyframes campfire-live');
   });
 
@@ -59,6 +56,21 @@ describe('Android Mobile 3.0 control surface', () => {
     for (const feature of ['Checklist', 'Notes', 'Templates', 'Automatisations', 'Soutiens', 'VOD &amp; Clips', 'Appairage', 'Réglages', 'Diagnostics']) expect(html).toContain(feature);
     expect(html).toContain('id="scene-sheet"');
     expect(html).toContain('id="direct-mic-state"');
+  });
+
+  it('propose des préférences locales de focus, mouvement et densité', () => {
+    for (const id of ['focus-mode', 'reduce-motion', 'ui-density']) expect(html).toContain(`id="${id}"`);
+    expect(mobile).toContain('streamdashboard.mobileUx');
+    expect(css).toContain('.focus-mode .focus-secondary');
+    expect(css).toContain('.reduce-motion *');
+    expect(css).toContain('body[data-density="comfort"]');
+  });
+
+  it('stabilise les quatre actions vitales sans modules secondaires dans Live', () => {
+    for (const id of ['quick-clip', 'open-scenes', 'home-mic', 'live-clip', 'open-scenes-live', 'quick-mic']) expect(html).toContain(`id="${id}"`);
+    expect(css).toContain('gap:20px 16px');
+    expect(css).toContain('.sound-pad small{display:none}');
+    expect(css).toContain('.hub-tool-tabs [data-hub-tool="supports"]');
   });
 
   it('borne les fixtures visuelles au développement local', () => {
