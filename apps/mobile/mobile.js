@@ -142,6 +142,126 @@ function renderDeck(media) {
   if (!container.children.length) container.append(text('p', 'Aucun média OBS détecté.', 'muted'));
 }
 
+function renderControlHub(hub) {
+  const integrations = $('hub-integrations');
+  const activity = $('hub-activity');
+  integrations.replaceChildren();
+  activity.replaceChildren();
+  $('hub-title').textContent = hub?.live?.isLive ? (hub.live.title || 'Live en cours') : 'Prêt à streamer';
+  $('hub-category').textContent = hub?.live?.category || (companionMode === CompanionMode.ONLINE_PC ? 'PC Runtime connecté' : 'Les contrôles PC reviendront à la reconnexion.');
+  $('hub-viewers').textContent = Number.isInteger(hub?.audience?.viewerCount) ? String(hub.audience.viewerCount) : '—';
+  $('hub-chatters').textContent = Array.isArray(hub?.audience?.chatters) ? String(hub.audience.chatters.length) : '—';
+  const labels = { runtime: 'Runtime', obs: 'OBS', twitch: 'Twitch', discord: 'Discord', streamlabs: 'Streamlabs', wizebot: 'WizeBot' };
+  for (const [key, label] of Object.entries(labels)) {
+    const status = hub?.integrations?.[key]?.status || 'DISCONNECTED';
+    const row = document.createElement('div');
+    row.className = 'integration-card';
+    const dot = text('i', '', `provider-dot status-${status.toLowerCase()}`);
+    row.append(dot, text('span', label), text('small', status.replace('_', ' '), 'muted'));
+    integrations.append(row);
+  }
+  for (const event of (hub?.activity || []).slice(-6).reverse()) {
+    const row = document.createElement('div'); row.className = 'activity-row';
+    const time = Number.isFinite(Date.parse(event.occurredAt)) ? new Date(event.occurredAt).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' }) : '—';
+    row.append(text('time', time), text('b', event.type)); activity.append(row);
+  }
+  if (!activity.children.length) activity.append(text('p', 'Aucune activité récente.', 'muted'));
+  renderHubChat(hub?.chat?.messages || []);
+  renderAudience(hub?.audience);
+}
+
+let moderationCapabilities = null;
+async function loadModerationCapabilities() { if (companionMode !== CompanionMode.ONLINE_PC) return; try { moderationCapabilities = await transport.twitchModerationCapabilities(); const missing = Object.entries(moderationCapabilities.requiredScopes || {}).filter(([action]) => !moderationCapabilities[action]).map(([, scope]) => scope); $('moderation-state').textContent = missing.length ? `Modération partielle · autorisations manquantes : ${[...new Set(missing)].join(', ')}` : 'Modération Twitch autorisée'; renderHubChat(state?.controlHub?.chat?.messages || []); } catch (error) { $('moderation-state').textContent = error.message; } }
+function renderHubChat(messages) {
+  const container = $('hub-chat'); container.replaceChildren();
+  for (const message of messages.slice(-100)) {
+    const row = document.createElement('article'); row.className = 'chat-row';
+    const header = document.createElement('header');
+    for (const badge of message.chatter?.badges || []) header.append(text('span', badge.setId, 'badge'));
+    const name = text('b', message.chatter?.displayName || message.chatter?.login || 'Twitch');
+    if (/^#[0-9A-F]{6}$/i.test(message.chatter?.color || '')) name.style.color = message.chatter.color;
+    header.append(name, text('time', new Date(message.receivedAt).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })));
+    row.append(header);
+    if (message.reply) row.append(text('div', `↳ ${message.reply.parentUserName}: ${message.reply.parentMessageBody}`, 'chat-reply'));
+    row.append(text('div', `${message.text}${message.bits ? ` · ${message.bits} bits` : ''}`));
+    const tools = document.createElement('div'); tools.className = 'inline-actions'; const reply = text('button', 'RÉPONDRE'); reply.type = 'button'; reply.onclick = () => { $('chat-reply-context').hidden = false; $('chat-reply-context').textContent = `Réponse à ${message.chatter?.displayName || message.chatter?.login}`; $('chat-reply-context').dataset.messageId = message.id; $('chat-message').focus(); }; const moderation = (label, capability, run) => { const button = text('button', label); button.type = 'button'; button.disabled = !moderationCapabilities?.[capability]; button.title = button.disabled ? `NOT_AUTHORIZED · ${moderationCapabilities?.requiredScopes?.[capability] || 'scope Twitch requis'}` : ''; button.onclick = async () => { try { await run(); note(`${label} confirmé par Twitch.`); } catch (error) { note(error.message); } }; return button; }; tools.append(reply, moderation('SUPPR.', 'deleteMessage', () => transport.deleteTwitchMessage(message.id)), moderation('TIMEOUT', 'timeout', () => transport.moderateTwitchUser({ userId: message.chatter.id, duration: 600, reason: 'Modération StreamDashboard' })), moderation('BAN', 'ban', () => transport.moderateTwitchUser({ userId: message.chatter.id, reason: 'Modération StreamDashboard' }))); row.append(tools);
+    container.append(row);
+  }
+  if (!container.children.length) container.append(text('p', 'Aucun message reçu pour le moment.', 'muted'));
+  container.scrollTop = container.scrollHeight;
+}
+
+function renderAudience(audience) {
+  $('audience-viewers').textContent = Number.isInteger(audience?.viewerCount) ? String(audience.viewerCount) : '—';
+  $('audience-chatters').textContent = Array.isArray(audience?.chatters) ? String(audience.chatters.length) : '—';
+  const query = $('audience-search').value.trim().toLocaleLowerCase();
+  const container = $('audience-list'); container.replaceChildren();
+  for (const chatter of (audience?.chatters || []).filter(value => value.displayName.toLocaleLowerCase().includes(query))) {
+    const row = document.createElement('div'); row.className = 'row'; row.append(text('b', chatter.displayName), text('small', chatter.role, 'muted')); container.append(row);
+  }
+}
+let chatterCursor = null;
+async function loadMoreChatters(reset = false) { if (companionMode !== CompanionMode.ONLINE_PC) return; try { const result = await transport.twitchChatters(reset ? '' : chatterCursor); chatterCursor = result.cursor; const known = new Set(state.controlHub.audience.chatters.map(value => value.id)); for (const chatter of result.items || []) if (!known.has(chatter.id)) state.controlHub.audience.chatters.push({ id: chatter.id, displayName: chatter.displayName, role: 'viewer' }); $('more-chatters').hidden = !chatterCursor; renderAudience(state.controlHub.audience); } catch (error) { note(error.message); } }
+
+let vodCursor = null, clipCursor = null;
+let soundboardState = null;
+const newCommandId = () => globalThis.crypto?.randomUUID?.() || `${deviceId || 'android'}:${Date.now()}:${Math.random().toString(36).slice(2)}`;
+async function loadSoundboard() {
+  if (companionMode !== CompanionMode.ONLINE_PC) { soundboardState = null; $('soundboard-state').textContent = 'PC hors ligne · le Soundboard sera disponible à la reconnexion.'; renderSoundboard(); return; }
+  try { soundboardState = await transport.soundboard(); $('soundboard-state').textContent = soundboardState.available ? (soundboardState.currentPlayback ? 'Lecture en cours…' : `${soundboardState.sounds.length} sons · ${soundboardState.supportsExplicitOutputSelection ? 'sorties audio sélectionnables' : 'sortie système par défaut uniquement'}`) : 'Moteur audio indisponible sur ce PC.'; renderSoundboard(); }
+  catch (error) { $('soundboard-state').textContent = error.message; }
+}
+function renderSoundboard() {
+  const sounds = soundboardState?.sounds || []; const categories = [...new Set(sounds.map(sound => sound.category))].sort();
+  const select = $('sound-category'); const selected = select.value; select.replaceChildren(new Option('Toutes les catégories', ''), ...categories.map(value => new Option(value, value))); select.value = categories.includes(selected) ? selected : '';
+  const query = $('sound-search').value.trim().toLocaleLowerCase(); const onlyFavorites = $('sound-favorites').checked; const container = $('sound-grid'); container.replaceChildren();
+  for (const sound of sounds.filter(value => (!query || value.name.toLocaleLowerCase().includes(query)) && (!select.value || value.category === select.value) && (!onlyFavorites || value.favorite))) {
+    const pad = document.createElement('button'); pad.type = 'button'; pad.className = `sound-pad${soundboardState.currentPlayback?.soundId === sound.id ? ' playing' : ''}${!sound.sourceAvailable ? ' sound-error' : ''}`; pad.disabled = !sound.enabled || !sound.sourceAvailable;
+    pad.append(text('b', sound.name), text('small', `${sound.category} · ${Math.round(sound.volume * 100)}%`), text('span', sound.favorite ? '★' : '☆', 'sound-favorite'));
+    pad.onclick = async event => { if (event.target.closest('.sound-favorite')) return; if (companionMode !== CompanionMode.ONLINE_PC) { note('PC hors ligne. Le son n’a pas été joué.'); return; } const commandId = newCommandId(); pad.disabled = true; try { const ack = await transport.playSound({ commandId, soundId: sound.id, issuedAt: new Date().toISOString() }); if (ack.status !== 'succeeded') throw new Error(ack.message || ack.errorCode || 'Lecture échouée.'); note(`Lecture confirmée par le PC : ${sound.name}`); } catch (error) { note(error.message); } finally { pad.disabled = false; await loadSoundboard(); } };
+    pad.querySelector('.sound-favorite').onclick = async event => { event.stopPropagation(); try { soundboardState = await transport.updateSound(sound.id, { favorite: !sound.favorite }); renderSoundboard(); } catch (error) { note(error.message); } };
+    container.append(pad);
+  }
+  if (!container.children.length) container.append(text('p', 'Aucun son pour ces filtres.', 'muted'));
+}
+let automationState = [];
+async function loadAutomations() { if (companionMode !== CompanionMode.ONLINE_PC) { $('automation-list').replaceChildren(text('p', 'PC hors ligne · automatisations en lecture locale indisponibles.', 'muted')); return; } try { const result = await transport.automations(); automationState = result.items || []; renderAutomations(); } catch (error) { note(error.message); } }
+function automationPayload(value = {}) { const amount = Number($('automation-amount').value); return { name: $('automation-name').value.trim(), enabled: $('automation-enabled').checked, trigger: $('automation-trigger').value, conditions: Number.isSafeInteger(amount) && amount > 0 ? [{ path: 'amountMinor', operator: 'gte', value: amount }] : [], actions: [{ type: 'soundboard.play', payload: { soundId: $('automation-sound').value } }], cooldownMs: Math.round(Number($('automation-cooldown').value) * 1_000), ...value }; }
+function resetAutomationForm() { $('automation-id').value = ''; $('automation-name').value = ''; $('automation-enabled').checked = true; $('automation-trigger').value = 'support.received'; $('automation-amount').value = '500'; $('automation-cooldown').value = '30'; }
+function renderAutomations() {
+  const sounds = soundboardState?.sounds || []; $('automation-sound').replaceChildren(...sounds.map(sound => new Option(sound.name, sound.id)));
+  const container = $('automation-list'); container.replaceChildren();
+  for (const automation of automationState) { const row = document.createElement('div'); row.className = 'automation-row'; row.append(text('b', `${automation.enabled ? '●' : '○'} ${automation.name}`), text('small', `${automation.trigger} · dernier résultat : ${automation.lastResult?.status || 'jamais'}`, automation.lastResult?.status === 'failed' ? 'danger' : 'muted')); const actions = document.createElement('div'); const edit = text('button', 'ÉDITER'); edit.type = 'button'; edit.onclick = () => { $('automation-id').value = automation.id; $('automation-name').value = automation.name; $('automation-enabled').checked = automation.enabled; $('automation-trigger').value = automation.trigger; $('automation-amount').value = String(automation.conditions.find(value => value.path === 'amountMinor')?.value ?? 0); $('automation-sound').value = automation.actions[0]?.payload?.soundId || ''; $('automation-cooldown').value = String(automation.cooldownMs / 1_000); }; const toggle = text('button', automation.enabled ? 'OFF' : 'ON'); toggle.type = 'button'; toggle.onclick = async () => { try { await transport.updateAutomation(automation.id, automationPayload({ name: automation.name, enabled: !automation.enabled, trigger: automation.trigger, conditions: automation.conditions, actions: automation.actions, cooldownMs: automation.cooldownMs })); await loadAutomations(); } catch (error) { note(error.message); } }; const remove = text('button', 'SUPPR.'); remove.type = 'button'; remove.onclick = async () => { if (!confirm(`Supprimer l’automatisation « ${automation.name} » ?`)) return; try { await transport.deleteAutomation(automation.id); await loadAutomations(); } catch (error) { note(error.message); } }; actions.append(edit, toggle, remove); row.append(actions); container.append(row); }
+  if (!container.children.length) container.append(text('p', 'Aucune automatisation.', 'muted'));
+}
+let supportState = null;
+const money = (amountMinor, currency) => new Intl.NumberFormat('fr-FR', { style: 'currency', currency }).format(amountMinor / 100);
+async function loadSupports() { if (companionMode !== CompanionMode.ONLINE_PC) { $('support-provider').textContent = 'PC hors ligne · historique conservé sur le PC Runtime.'; return; } try { supportState = await transport.supports(); $('support-provider').textContent = `Streamlabs · ${supportState.provider.status.replace('_', ' ')}`; renderSupports(); } catch (error) { note(error.message); } }
+function renderSupports() {
+  if (!supportState) return; const totals = $('support-totals'); totals.replaceChildren();
+  for (const [key, label] of [['session', 'LIVE'], ['day', 'AUJOURD’HUI'], ['month', 'CE MOIS']]) { const values = supportState.totals[key] || {}; const card = document.createElement('div'); card.className = 'support-total'; card.append(text('small', label), ...Object.entries(values).map(([currency, amount]) => text('b', money(amount, currency)))); if (!Object.keys(values).length) card.append(text('b', '—')); totals.append(card); }
+  const filter = $('support-filter').value; const now = new Date(); const start = filter === 'session' ? Date.parse(supportState.sessionStartedAt || '') : filter === 'day' ? new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime() : filter === 'month' ? new Date(now.getFullYear(), now.getMonth(), 1).getTime() : 0; const container = $('support-history'); container.replaceChildren();
+  for (const support of supportState.history.filter(value => filter === 'all' || (Number.isFinite(start) && Date.parse(value.receivedAt) >= start))) { const row = document.createElement('article'); row.className = 'support-row'; row.append(text('time', new Date(support.receivedAt).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })), text('b', support.displayName), text('strong', money(support.amountMinor, support.currency))); if (support.message) row.append(text('p', `“${support.message}”`)); container.append(row); }
+  if (!container.children.length) container.append(text('p', 'Aucun soutien pour cette période.', 'muted'));
+}
+function resourceLink(url, label = 'OUVRIR') { const link = document.createElement('a'); link.href = url; link.target = '_blank'; link.rel = 'noopener noreferrer'; link.textContent = label; return link; }
+async function loadVods(append = false) {
+  if (companionMode !== CompanionMode.ONLINE_PC) { note('PC hors ligne. Les VOD Twitch ne peuvent pas être chargées via le runtime.'); return; }
+  try {
+    const result = await transport.twitchVideos(append ? vodCursor : ''); const container = $('vod-list'); if (!append) container.replaceChildren();
+    for (const vod of result.items || []) {
+      const card = document.createElement('article'); card.className = 'resource-card'; card.append(text('b', vod.title), text('small', `${new Date(vod.createdAt).toLocaleDateString('fr-FR')} · ${vod.duration} · ${vod.viewCount} vues`, 'muted'));
+      const actions = document.createElement('div'); actions.className = 'resource-actions'; actions.append(resourceLink(vod.url));
+      const remove = text('button', 'SUPPRIMER', 'danger-button'); remove.type = 'button'; remove.onclick = async () => { if (prompt(`Suppression définitive. Saisissez DELETE ${vod.id}`) !== `DELETE ${vod.id}`) return; try { await transport.deleteTwitchVideo(vod.id); card.remove(); note('VOD supprimée après confirmation Twitch.'); } catch (error) { note(error.message); } }; actions.append(remove); card.append(actions); container.append(card);
+    }
+    vodCursor = result.cursor; $('more-vods').hidden = !vodCursor;
+  } catch (error) { note(error.message); }
+}
+async function loadClips(append = false) {
+  if (companionMode !== CompanionMode.ONLINE_PC) { note('PC hors ligne. Les clips Twitch ne peuvent pas être chargés via le runtime.'); return; }
+  try { const result = await transport.twitchClips(append ? clipCursor : ''); const container = $('clip-list'); if (!append) container.replaceChildren(); for (const clip of result.items || []) { const card = document.createElement('article'); card.className = 'resource-card'; card.append(text('b', clip.title), text('small', `${clip.creatorName} · ${clip.viewCount} vues · ${clip.duration}s`, 'muted'), resourceLink(clip.url)); container.append(card); } clipCursor = result.cursor; $('more-clips').hidden = !clipCursor; } catch (error) { note(error.message); }
+}
+
 function renderPlanning(items) {
   const container = $('planning');
   container.replaceChildren();
@@ -218,6 +338,7 @@ function render(next) {
   $('twitch-game-id').value = next.twitch?.gameId || '';
   $('twitch-editor').hidden = !next.twitch?.connected;
   renderDeck(next.obs.mediaInputs);
+  renderControlHub(next.controlHub);
   renderPlanning(next.planning);
   $('discord-destination').textContent = companionMode === CompanionMode.ONLINE_PC ? `Discord · ${next.discord?.channelName ? `#${next.discord.channelName}` : 'à configurer'}` : 'Connexion PC requise pour publier sur Discord.';
   $('publish-discord').disabled = companionMode !== CompanionMode.ONLINE_PC || !next.discord?.configured;
@@ -518,6 +639,36 @@ $('stream').onclick = () => {
     : state.settings.confirmStop ? 'Arrêter réellement le live ?' : 'Arrêter le live ?';
   if (confirm(question)) void command({ type: start ? 'session.start' : 'session.stop', ...(start ? { force: false } : {}) });
 };
+
+document.querySelectorAll('[data-hub-tool]').forEach(button => button.onclick = () => {
+  document.querySelectorAll('[data-hub-tool]').forEach(value => value.classList.toggle('active', value === button));
+  document.querySelectorAll('[data-hub-panel]').forEach(panel => { panel.hidden = panel.dataset.hubPanel !== button.dataset.hubTool; });
+  if (button.dataset.hubTool === 'vod') void loadVods();
+  if (button.dataset.hubTool === 'clips') void loadClips();
+  if (button.dataset.hubTool === 'soundboard') void loadSoundboard();
+  if (button.dataset.hubTool === 'automations') void loadSoundboard().then(loadAutomations);
+  if (button.dataset.hubTool === 'supports') void loadSupports();
+  if (button.dataset.hubTool === 'audience') void loadMoreChatters(true);
+  if (button.dataset.hubTool === 'chat') void loadModerationCapabilities();
+});
+document.querySelector('[data-hub-tool="chat"]').classList.add('active');
+$('audience-search').oninput = () => renderAudience(state?.controlHub?.audience);
+$('more-chatters').onclick = () => void loadMoreChatters();
+$('sound-search').oninput = renderSoundboard; $('sound-category').onchange = renderSoundboard; $('sound-favorites').onchange = renderSoundboard;
+$('stop-sound').onclick = async () => { if (companionMode !== CompanionMode.ONLINE_PC) { note('PC hors ligne.'); return; } try { await transport.stopSound(); note('Lecture arrêtée par le PC Runtime.'); await loadSoundboard(); } catch (error) { note(error.message); } };
+$('automation-reset').onclick = resetAutomationForm;
+$('automation-form').onsubmit = async event => { event.preventDefault(); try { const id = $('automation-id').value; if (id) await transport.updateAutomation(id, automationPayload()); else await transport.createAutomation(automationPayload()); resetAutomationForm(); await loadAutomations(); note('Automatisation enregistrée par le PC Runtime.'); } catch (error) { note(error.message); } };
+$('automation-test').onclick = async () => { try { const accepted = await transport.testAutomation(500); note(`Événement test accepté · corrélation ${accepted.correlationId}`); } catch (error) { note(error.message); } };
+$('support-filter').onchange = renderSupports;
+async function loadDiagnosticEvents() { if (companionMode !== CompanionMode.ONLINE_PC) { $('diagnostic-events').replaceChildren(text('p', 'PC hors ligne · diagnostics Runtime indisponibles.', 'muted')); return; } try { const result = await transport.events({ type: $('event-filter-type').value.trim(), source: $('event-filter-source').value.trim(), correlationId: $('event-filter-correlation').value.trim(), limit: '100' }); const container = $('diagnostic-events'); container.replaceChildren(); for (const event of [...result.items].reverse()) { const row = document.createElement('div'); row.className = 'diagnostic-event'; row.append(text('time', new Date(event.occurredAt).toLocaleTimeString('fr-FR')), text('b', event.type), text('small', event.source), text('code', event.correlationId)); container.append(row); } if (!container.children.length) container.append(text('p', 'Aucun événement correspondant.', 'muted')); } catch (error) { note(error.message); } }
+$('refresh-events').onclick = () => void loadDiagnosticEvents();
+$('diagnostics').ontoggle = () => { if ($('diagnostics').open) void loadDiagnosticEvents(); };
+$('refresh-vods').onclick = () => void loadVods();
+$('more-vods').onclick = () => void loadVods(true);
+$('more-clips').onclick = () => void loadClips(true);
+$('create-clip').onclick = async () => { if (companionMode !== CompanionMode.ONLINE_PC) { note('PC hors ligne.'); return; } try { const clip = await transport.createTwitchClip(); note(`Clip accepté par Twitch (${clip.id}). Il sera disponible après traitement.`); await loadClips(); } catch (error) { note(error.message); } };
+$('chat-form').onsubmit = async event => { event.preventDefault(); const message = $('chat-message').value.trim(); if (!message) return; if (companionMode !== CompanionMode.ONLINE_PC) { note('PC hors ligne. Le message n’a pas été envoyé.'); return; } try { const replyParentMessageId = $('chat-reply-context').dataset.messageId; await transport.sendTwitchChat({ message, ...(replyParentMessageId ? { replyParentMessageId } : {}) }); $('chat-message').value = ''; $('chat-reply-context').hidden = true; delete $('chat-reply-context').dataset.messageId; note('Message confirmé par Twitch.'); } catch (error) { note(error.message); } };
+$('unban-user').onclick = async () => { const userId = $('unban-user-id').value.trim(); if (!moderationCapabilities?.unban) { note(`NOT_AUTHORIZED · ${moderationCapabilities?.requiredScopes?.unban || 'scope Twitch requis'}`); return; } try { await transport.unbanTwitchUser(userId); $('unban-user-id').value = ''; note('UNBAN confirmé par Twitch.'); } catch (error) { note(error.message); } };
 
 if ('serviceWorker' in navigator && window.isSecureContext) {
   navigator.serviceWorker.register('sw.js').catch(() => undefined);

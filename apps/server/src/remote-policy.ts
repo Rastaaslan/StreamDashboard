@@ -103,6 +103,7 @@ export function toRemoteDashboardState(state: DashboardState): ExtendedRemoteDas
     ...(state.google ? { google: { configured: state.google.configured, connected: state.google.connected } } : {}),
     ...(state.discord ? { discord: structuredClone(state.discord) } : {}),
     ...(state.preflight ? { preflight: { ...state.preflight } } : {}),
+    ...(state.controlHub ? { controlHub: structuredClone(state.controlHub) } : {}),
   };
 }
 

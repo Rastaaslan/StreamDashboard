@@ -4,7 +4,14 @@ const API = 'https://api.twitch.tv/helix';
 const AUTH = 'https://id.twitch.tv/oauth2';
 const SCHEDULE_SCOPE = 'channel:manage:schedule';
 const BROADCAST_SCOPE = 'channel:manage:broadcast';
-const REQUESTED_SCOPES = [SCHEDULE_SCOPE, BROADCAST_SCOPE] as const;
+const CHAT_READ_SCOPE = 'user:read:chat';
+const CHAT_WRITE_SCOPE = 'user:write:chat';
+const CHATTERS_SCOPE = 'moderator:read:chatters';
+const CLIPS_SCOPE = 'clips:edit';
+const VIDEOS_SCOPE = 'channel:manage:videos';
+const DELETE_CHAT_SCOPE = 'moderator:manage:chat_messages';
+const BANS_SCOPE = 'moderator:manage:banned_users';
+const REQUESTED_SCOPES = [SCHEDULE_SCOPE, BROADCAST_SCOPE, CHAT_READ_SCOPE, CHAT_WRITE_SCOPE, CHATTERS_SCOPE, CLIPS_SCOPE, VIDEOS_SCOPE, DELETE_CHAT_SCOPE, BANS_SCOPE] as const;
 const REQUEST_TIMEOUT_MS = 15_000;
 
 type Credentials = {
@@ -32,6 +39,11 @@ type ScheduleSegment = {
   category?: { id?: string; name?: string } | null;
 };
 
+export interface TwitchLiveState { isLive: boolean; title: string | null; category: string | null; categoryId: string | null; startedAt: string | null; viewerCount: number | null; thumbnailUrl: string | null }
+export interface TwitchVideo { id: string; title: string; description: string; createdAt: string; publishedAt: string; url: string; thumbnailUrl: string; viewCount: number; duration: string; type: 'archive' | 'highlight' | 'upload' }
+export interface TwitchClip { id: string; title: string; url: string; embedUrl: string; broadcasterName: string; creatorName: string; createdAt: string; thumbnailUrl: string; duration: number; videoId: string | null; vodOffset: number | null; viewCount: number }
+export interface TwitchChatter { id: string; login: string; displayName: string }
+
 export class TwitchClient {
   private pending?: PendingDeviceAuthorization;
   private pollTimer?: ReturnType<typeof setTimeout>;
@@ -44,6 +56,7 @@ export class TwitchClient {
   private generation = 0;
   private error: string | null = null;
   private networkAbort = new AbortController();
+  private grantedScopes = new Set<string>();
 
   constructor(
     private credentials: Credentials,
@@ -118,6 +131,7 @@ export class TwitchClient {
       userName: '',
       displayName: '',
     };
+    this.grantedScopes.clear();
     this.error = null;
     await this.onTokensChanged(null);
   }
@@ -147,6 +161,83 @@ export class TwitchClient {
       userName: this.credentials.userName,
       displayName: this.credentials.displayName,
     };
+  }
+
+  async getLiveState(): Promise<TwitchLiveState> {
+    this.requireConnected();
+    const value = await this.api<{ data: Array<{ title: string; game_id: string; game_name: string; started_at: string; viewer_count: number; thumbnail_url: string }> }>(`/streams?user_id=${encodeURIComponent(this.credentials.broadcasterId)}&first=1`);
+    const stream = value.data[0];
+    if (!stream) return { isLive: false, title: null, category: null, categoryId: null, startedAt: null, viewerCount: null, thumbnailUrl: null };
+    return { isLive: true, title: stream.title, category: stream.game_name, categoryId: stream.game_id, startedAt: stream.started_at, viewerCount: stream.viewer_count, thumbnailUrl: stream.thumbnail_url };
+  }
+
+  async videos(after = '', first = 20) {
+    this.requireConnected();
+    const query = `/videos?user_id=${encodeURIComponent(this.credentials.broadcasterId)}&first=${Math.min(50, Math.max(1, first))}${after ? `&after=${encodeURIComponent(after)}` : ''}`;
+    const value = await this.api<{ data: Array<{ id: string; title: string; description: string; created_at: string; published_at: string; url: string; thumbnail_url: string; view_count: number; duration: string; type: TwitchVideo['type'] }>; pagination?: { cursor?: string } }>(query);
+    return { items: value.data.map(video => ({ id: video.id, title: video.title, description: video.description, createdAt: video.created_at, publishedAt: video.published_at, url: video.url, thumbnailUrl: video.thumbnail_url, viewCount: video.view_count, duration: video.duration, type: video.type })), cursor: value.pagination?.cursor ?? null };
+  }
+
+  async deleteVideo(id: string) {
+    if (!/^\d{1,30}$/.test(id)) throw new Error('Identifiant VOD invalide.');
+    await this.api(`/videos?id=${encodeURIComponent(id)}`, { method: 'DELETE' });
+  }
+
+  async clips(after = '', first = 20) {
+    this.requireConnected();
+    const value = await this.api<{ data: Array<{ id: string; title: string; url: string; embed_url: string; broadcaster_name: string; creator_name: string; created_at: string; thumbnail_url: string; duration: number; video_id: string; vod_offset: number | null; view_count: number }>; pagination?: { cursor?: string } }>(`/clips?broadcaster_id=${encodeURIComponent(this.credentials.broadcasterId)}&first=${Math.min(50, Math.max(1, first))}${after ? `&after=${encodeURIComponent(after)}` : ''}`);
+    return { items: value.data.map(clip => ({ id: clip.id, title: clip.title, url: clip.url, embedUrl: clip.embed_url, broadcasterName: clip.broadcaster_name, creatorName: clip.creator_name, createdAt: clip.created_at, thumbnailUrl: clip.thumbnail_url, duration: clip.duration, videoId: clip.video_id || null, vodOffset: clip.vod_offset, viewCount: clip.view_count })), cursor: value.pagination?.cursor ?? null };
+  }
+
+  async createClip() {
+    this.requireConnected();
+    const value = await this.api<{ data: Array<{ id: string; edit_url: string }> }>(`/clips?broadcaster_id=${encodeURIComponent(this.credentials.broadcasterId)}`, { method: 'POST' });
+    const clip = value.data[0];
+    if (!clip) throw new Error('Twitch n’a renvoyé aucun clip.');
+    return { id: clip.id, editUrl: clip.edit_url };
+  }
+
+  async chatters(after = '', first = 100) {
+    this.requireConnected();
+    const value = await this.api<{ data: Array<{ user_id: string; user_login: string; user_name: string }>; pagination?: { cursor?: string }; total?: number }>(`/chat/chatters?broadcaster_id=${encodeURIComponent(this.credentials.broadcasterId)}&moderator_id=${encodeURIComponent(this.credentials.broadcasterId)}&first=${Math.min(1_000, Math.max(1, first))}${after ? `&after=${encodeURIComponent(after)}` : ''}`);
+    return { items: value.data.map(user => ({ id: user.user_id, login: user.user_login, displayName: user.user_name })), total: value.total ?? value.data.length, cursor: value.pagination?.cursor ?? null };
+  }
+
+  async sendChatMessage(message: string, replyParentMessageId?: string) {
+    this.requireConnected();
+    const normalized = message.trim();
+    if (!normalized || normalized.length > 500) throw new Error('Le message Twitch doit contenir entre 1 et 500 caractères.');
+    const value = await this.api<{ data: Array<{ message_id: string; is_sent: boolean; drop_reason?: { code: string; message: string } }> }>('/chat/messages', { method: 'POST', body: JSON.stringify({ broadcaster_id: this.credentials.broadcasterId, sender_id: this.credentials.broadcasterId, message: normalized, ...(replyParentMessageId ? { reply_parent_message_id: replyParentMessageId } : {}) }) });
+    const result = value.data[0];
+    if (!result?.is_sent) throw new Error(result?.drop_reason?.message ?? 'Twitch a refusé le message.');
+    return { messageId: result.message_id };
+  }
+
+  moderationCapabilities() { return { deleteMessage: this.grantedScopes.has(DELETE_CHAT_SCOPE), timeout: this.grantedScopes.has(BANS_SCOPE), ban: this.grantedScopes.has(BANS_SCOPE), unban: this.grantedScopes.has(BANS_SCOPE), requiredScopes: { deleteMessage: DELETE_CHAT_SCOPE, timeout: BANS_SCOPE, ban: BANS_SCOPE, unban: BANS_SCOPE } }; }
+
+  async deleteChatMessage(messageId: string) {
+    this.requireScope(DELETE_CHAT_SCOPE);
+    if (!/^[A-Za-z0-9_-]{1,200}$/.test(messageId)) throw new Error('Identifiant de message invalide.');
+    await this.api(`/moderation/chat?broadcaster_id=${encodeURIComponent(this.credentials.broadcasterId)}&moderator_id=${encodeURIComponent(this.credentials.broadcasterId)}&message_id=${encodeURIComponent(messageId)}`, { method: 'DELETE' });
+  }
+
+  async banUser(userId: string, options: { duration?: number; reason?: string } = {}) {
+    this.requireScope(BANS_SCOPE);
+    if (!/^\d{1,30}$/.test(userId)) throw new Error('Utilisateur Twitch invalide.');
+    if (options.duration !== undefined && (!Number.isInteger(options.duration) || options.duration < 1 || options.duration > 1_209_600)) throw new Error('Durée de timeout invalide.');
+    const reason = options.reason?.trim(); if (reason && reason.length > 500) throw new Error('Raison de modération trop longue.');
+    await this.api(`/moderation/bans?broadcaster_id=${encodeURIComponent(this.credentials.broadcasterId)}&moderator_id=${encodeURIComponent(this.credentials.broadcasterId)}`, { method: 'POST', body: JSON.stringify({ data: { user_id: userId, ...(options.duration ? { duration: options.duration } : {}), ...(reason ? { reason } : {}) } }) });
+  }
+
+  async unbanUser(userId: string) {
+    this.requireScope(BANS_SCOPE);
+    if (!/^\d{1,30}$/.test(userId)) throw new Error('Utilisateur Twitch invalide.');
+    await this.api(`/moderation/bans?broadcaster_id=${encodeURIComponent(this.credentials.broadcasterId)}&moderator_id=${encodeURIComponent(this.credentials.broadcasterId)}&user_id=${encodeURIComponent(userId)}`, { method: 'DELETE' });
+  }
+
+  async subscribeChat(sessionId: string) {
+    if (!/^[A-Za-z0-9_-]{1,200}$/.test(sessionId)) throw new Error('Session EventSub invalide.');
+    return this.api('/eventsub/subscriptions', { method: 'POST', body: JSON.stringify({ type: 'channel.chat.message', version: '1', condition: { broadcaster_user_id: this.credentials.broadcasterId, user_id: this.credentials.broadcasterId }, transport: { method: 'websocket', session_id: sessionId } }) });
   }
 
   async validateSession() {
@@ -194,6 +285,7 @@ export class TwitchClient {
       this.error = 'La connexion Twitch ne possède pas l’autorisation de gérer le planning. Reconnectez le compte.';
       return false;
     }
+    this.grantedScopes = new Set(value.scopes);
     return generation === this.generation;
   }
 
@@ -469,6 +561,11 @@ export class TwitchClient {
     }
     return duration;
   }
+
+  private requireConnected() {
+    if (!this.state.connected) throw new Error('Connectez Twitch avant cette action.');
+  }
+  private requireScope(scope: string) { this.requireConnected(); if (!this.grantedScopes.has(scope)) { const error = new Error(`Autorisation Twitch requise : ${scope}. Reconnectez le compte.`); error.name = 'TWITCH_NOT_AUTHORIZED'; Object.assign(error, { requiredScope: scope }); throw error; } }
 
   private sameIdentity(item: CalendarItem, segment: ScheduleSegment) {
     return item.title === segment.title

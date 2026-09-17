@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { mkdir, open, readFile, rename, unlink } from 'node:fs/promises';
 import path from 'node:path';
 
-export const DASHBOARD_SCHEMA_VERSION = 5;
+export const DASHBOARD_SCHEMA_VERSION = 6;
 
 export interface SecretStore {
   readonly persistent: boolean;
@@ -17,6 +17,9 @@ export interface SecretStore {
   getDiscordToken(): Promise<string>;
   setDiscordToken(token: string): Promise<void>;
   clearDiscordToken(): Promise<void>;
+  getStreamlabsToken?(): Promise<string>;
+  setStreamlabsToken?(token: string): Promise<void>;
+  clearStreamlabsToken?(): Promise<void>;
 }
 
 export class MemorySecretStore implements SecretStore {
@@ -25,6 +28,7 @@ export class MemorySecretStore implements SecretStore {
   private obsPassword = '';
   private google: Record<string, string> | null = null;
   private discord = '';
+  private streamlabs = '';
 
   async getTwitchTokens() { return this.tokens ? { ...this.tokens } : null; }
   async setTwitchTokens(tokens: Record<string, string>) { this.tokens = { ...tokens }; }
@@ -37,6 +41,9 @@ export class MemorySecretStore implements SecretStore {
   async getDiscordToken() { return this.discord; }
   async setDiscordToken(token: string) { this.discord = token; }
   async clearDiscordToken() { this.discord = ''; }
+  async getStreamlabsToken() { return this.streamlabs; }
+  async setStreamlabsToken(token: string) { this.streamlabs = token; }
+  async clearStreamlabsToken() { this.streamlabs = ''; }
 }
 
 /** JSON configuration store using serialized temp + fsync + rename writes. */
