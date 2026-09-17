@@ -27,7 +27,7 @@ test('Electron réel démarre, persiste, impose une instance et arrête son back
     application = await launch(profile);
     const window = await application.firstWindow();
     await expect(window).toHaveTitle(/StreamDashboard/);
-    await expect(window.locator('h1')).toContainText('Vue d’ensemble');
+    await expect(window.locator('#title')).toHaveText('Accueil');
 
     const health = await window.evaluate(() => fetch('/api/v1/health').then(response => response.json()));
     expect(health).toMatchObject({ ok: true, protocolVersion: 1 });
