@@ -91,20 +91,17 @@ function renderNotes() {
   for (const item of notes) {
     const row = document.createElement('div');
     row.className = 'companion-row mobile-note-row';
-    const label = text('span', item.text || '');
-    const actions = document.createElement('div');
-    actions.className = 'inline-actions';
-    const edit = text('button', 'MODIFIER');
-    edit.type = 'button';
-    edit.className = 'secondary';
-    edit.onclick = async () => {
+    const label = text('button', item.text || '', 'note-open');
+    label.type = 'button';
+    label.onclick = async () => {
       const value = prompt('Modifier la note', item.text || '');
       if (value === null || !value.trim() || value.trim() === item.text) return;
       companion.upsertCollection('notes', { ...item, text: value.trim() });
       renderNotes();
       try { await syncCompanionNow(); notify('Note modifiée.'); } catch (error) { notify(error.message); }
     };
-    const remove = text('button', 'SUPPRIMER');
+    const menu = document.createElement('details'); menu.className = 'row-overflow'; const summary = text('summary', '⋮'); summary.setAttribute('aria-label', 'Actions de la note');
+    const remove = text('button', 'Supprimer');
     remove.type = 'button';
     remove.className = 'secondary danger-button';
     remove.onclick = async () => {
@@ -113,8 +110,8 @@ function renderNotes() {
       renderNotes();
       try { await syncCompanionNow(); notify('Note supprimée.'); } catch (error) { notify(error.message); }
     };
-    actions.append(edit, remove);
-    row.append(label, actions);
+    menu.append(summary, remove);
+    row.append(label, menu);
     root.append(row);
   }
   if (!notes.length) root.append(text('p', 'Aucune note pour le moment.', 'muted'));
@@ -152,7 +149,8 @@ function renderChecklist() {
       } catch (error) { notify(error.message); }
       finally { toggle.disabled = false; }
     };
-    const remove = text('button', '×');
+    const menu = document.createElement('details'); menu.className = 'row-overflow'; const summary = text('summary', '⋮'); summary.setAttribute('aria-label', `Actions pour ${item.label}`);
+    const remove = text('button', 'Supprimer');
     remove.type = 'button';
     remove.className = 'secondary checklist-remove';
     remove.title = 'Supprimer';
@@ -167,10 +165,11 @@ function renderChecklist() {
         if (onlinePc()) await refreshRemoteState();
       } catch (error) { notify(error.message); }
     };
-    row.append(toggle, remove);
+    menu.append(summary, remove); row.append(toggle, menu);
     root.append(row);
   }
-  if (!values.length) root.append(text('p', 'Checklist vide.', 'muted'));
+  if (!values.length) root.append(text('p', 'Checklist vide. Ajoute le premier point à vérifier.', 'muted'));
+  const completed = values.filter(item => item.done).length; const copy = $('check-progress-copy'); const bar = $('mobile-check-progress'); if (copy) copy.textContent = `${completed} / ${values.length}`; if (bar) bar.style.width = `${values.length ? completed / values.length * 100 : 0}%`;
 
   if (onlinePc() && values.length) {
     const reset = text('button', 'RÉINITIALISER LA CHECKLIST');
@@ -195,6 +194,7 @@ async function addNote() {
   companion.upsertCollection('notes', { text: value });
   input.value = '';
   renderNotes();
+  $('note-dialog')?.close();
   try { await syncCompanionNow(); notify(onlinePc() ? 'Note enregistrée et synchronisée.' : 'Note enregistrée · À synchroniser.'); }
   catch (error) { notify(error.message); }
 }

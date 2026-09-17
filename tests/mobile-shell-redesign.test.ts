@@ -59,11 +59,23 @@ describe('Android Mobile 2.3 focus surface', () => {
   });
 
   it('propose des préférences locales de focus, mouvement et densité', () => {
-    for (const id of ['focus-mode', 'reduce-motion', 'ui-density']) expect(html).toContain(`id="${id}"`);
+    for (const id of ['focus-toggle', 'ui-preferences', 'focus-mode', 'reduce-motion', 'ui-density']) expect(html).toContain(`id="${id}"`);
     expect(mobile).toContain('streamdashboard.mobileUx');
+    expect(html).toMatch(/id="ui-preferences"[\s\S]*id="focus-mode"[\s\S]*id="android-options"/);
+    expect(mobile).toContain("$('focus-toggle').onclick");
     expect(css).toContain('.focus-mode .focus-secondary');
     expect(css).toContain('.reduce-motion *');
     expect(css).toContain('body[data-density="comfort"]');
+  });
+
+  it('sépare Checklist, Notes et Templates en intentions exclusives', () => {
+    for (const tab of ['checklist', 'notes', 'templates']) {
+      expect(html).toContain(`data-prepare-tab="${tab}"`);
+      expect(html).toContain(`data-prepare-panel="${tab}"`);
+    }
+    expect(mobile).toContain('selectPreparationTab');
+    expect(html).not.toContain('Le bouton Préparer t’amène ici');
+    expect(html).toContain('class="inline-create"');
   });
 
   it('stabilise les quatre actions vitales sans modules secondaires dans Live', () => {

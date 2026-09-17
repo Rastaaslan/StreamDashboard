@@ -32,7 +32,7 @@ describe('retours à chaud mobile', () => {
   });
 
   it('Préparer ouvre la prépa et permet de cocher la checklist depuis le remote', () => {
-    expect(index).toContain('Checklist pré-live');
+    expect(index).toContain('data-prepare-panel="checklist"');
     expect(feedback).toContain("transport.command({ type: 'session.prepare' })");
     expect(feedback).toContain("document.querySelector('[data-open-tab=\"prepare\"]')?.click()");
     expect(parseRemoteCommand({ type: 'checklist.toggle', id: 'audio' }, state)).toEqual({ type: 'checklist.toggle', id: 'audio' });
