@@ -7,9 +7,11 @@ const mobile = readFileSync(new URL('../apps/mobile/mobile.js', import.meta.url)
 const css = readFileSync(new URL('../apps/mobile/mobile.css', import.meta.url), 'utf8');
 
 describe('Android Mobile 2.0 control surface', () => {
-  it('expose les cinq destinations et la palette globale', () => {
+  it('expose quatre destinations, le menu secondaire et la palette globale', () => {
     const tabs = [...html.matchAll(/<button data-tab="([^"]+)"/g)].map(match => match[1]);
-    expect(tabs).toEqual(['home', 'live', 'sounds', 'planning', 'more']);
+    expect(tabs).toEqual(['home', 'live', 'sounds', 'planning']);
+    expect(html).toContain('id="menu-trigger"');
+    expect(html).toContain('data-view="more"');
     expect(html).toContain('id="command-trigger"');
     expect(html).toContain('id="command-palette"');
     expect(html).toContain('id="command-search"');
@@ -32,11 +34,14 @@ describe('Android Mobile 2.0 control surface', () => {
   });
 
   it('remplace l’ancien CSS par un design system accessible', () => {
-    for (const token of ['--surface-1:', '--surface-2:', '--surface-3:', '--text-secondary:', '--violet:', '--ember:', '--warning:', '--line:', '--space-8:', '--motion-normal:']) expect(css).toContain(token);
+    for (const token of ['--surface-1:', '--surface-2:', '--surface-3:', '--text-secondary:', '--violet:', '--ember:', '--lavender:', '--warning:', '--line:', '--space-8:', '--motion-normal:']) expect(css).toContain(token);
     expect(css).toContain('min-height:44px');
     expect(css).toContain(':focus-visible');
     expect(css).toContain('prefers-reduced-motion:reduce');
     expect(html).not.toContain('mobile-shell.css');
+    expect(css).toContain('gap:var(--space-4);row-gap:var(--space-4)');
+    expect(css).toContain('grid-template-columns:repeat(4,1fr)');
+    expect(css).toContain('@keyframes campfire-live');
   });
 
   it('borne les fixtures visuelles au développement local', () => {
