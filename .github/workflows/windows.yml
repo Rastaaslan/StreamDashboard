@@ -44,7 +44,6 @@ jobs:
       - name: Audit runtime dependencies
         run: npm audit --omit=dev --audit-level=high
       - name: Audit development toolchain
-        continue-on-error: true
         run: npm audit --include=dev --audit-level=high
       - name: Package Windows application for PR validation
         if: github.event_name == 'pull_request'
