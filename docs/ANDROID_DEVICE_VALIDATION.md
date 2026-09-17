@@ -32,6 +32,16 @@ Run this checklist on the CI APK and a physical Android device before merge.
 ## Diagnostics and presentation
 
 - Filter Events by type, source and correlation ID.
-- Rotate screen, background/restore, verify touch targets and bounded scrolling.
+- Validate Direct offline and live at 320, 360, 375, 390, 412, 430, 480 and
+  540+ CSS pixels. There must be no global horizontal scroll.
+- Rotate to landscape and confirm the header, three-item bottom navigation and
+  content remain clear of all Android safe areas.
+- Open the keyboard in Chat and verify the composer remains reachable.
+- Open the scene sheet with long names; verify its flexible two-column grid.
+- Exercise Clip, Pause and the Micro row; feedback must follow the runtime ACK.
+- Page long Audience and Soundboard lists, multiple sound categories and a full
+  Planning timeline; all scrolling must remain vertical and bounded.
+- Open Le camp and visit Supports, VOD & Clips, Automations and Diagnostics.
+- Background/restore and verify 48 px touch targets and retained navigation.
 - Confirm no token, source path, Authorization header or provider secret appears
   in state, UI, URL, Android logs or diagnostic events.

@@ -6,10 +6,13 @@ const html = readFileSync(new URL('../apps/mobile/index.html', import.meta.url),
 const mobile = readFileSync(new URL('../apps/mobile/mobile.js', import.meta.url), 'utf8');
 const css = readFileSync(new URL('../apps/mobile/mobile.css', import.meta.url), 'utf8');
 
-describe('Android Mobile 2.0 control surface', () => {
-  it('expose quatre destinations, le menu secondaire et la palette globale', () => {
+describe('Android Mobile 3.0 control surface', () => {
+  it('expose exactement Direct, Sons et Planning avec Le camp en secondaire', () => {
     const tabs = [...html.matchAll(/<button data-tab="([^"]+)"/g)].map(match => match[1]);
-    expect(tabs).toEqual(['home', 'live', 'sounds', 'planning']);
+    expect(tabs).toEqual(['direct', 'sounds', 'planning']);
+    expect(html).not.toContain('data-tab="home"');
+    expect(html).not.toContain('data-tab="live"');
+    expect(html).not.toContain('data-view="live"');
     expect(html).toContain('id="menu-trigger"');
     expect(html).toContain('data-view="more"');
     expect(html).toContain('id="command-trigger"');
@@ -19,10 +22,10 @@ describe('Android Mobile 2.0 control surface', () => {
   });
 
   it('fournit les deep links et commandes instantanées sans ancien portail', () => {
-    for (const link of ['home-viewers-link', 'home-chatters-link', 'home-scene-link', 'quick-clip', 'quick-mic']) expect(html).toContain(`id="${link}"`);
+    for (const link of ['home-viewers-link', 'home-chatters-link', 'open-scenes', 'quick-clip', 'home-mic']) expect(html).toContain(`id="${link}"`);
     for (const tool of ['chat', 'audience', 'supports', 'vod']) expect(html).toContain(`data-open-live-tool="${tool}"`);
     expect(html).not.toContain('<small>OUTILS LIVE</small>');
-    expect(html).toContain('class="scene-bank"');
+    expect(html).toContain('class="scene-sheet-grid"');
   });
 
   it('conserve les fonctions et présente Sons/Plus comme matrices et lignes', () => {
@@ -40,8 +43,22 @@ describe('Android Mobile 2.0 control surface', () => {
     expect(css).toContain('prefers-reduced-motion:reduce');
     expect(html).not.toContain('mobile-shell.css');
     expect(css).toContain('gap:var(--space-4);row-gap:var(--space-4)');
-    expect(css).toContain('grid-template-columns:repeat(4,1fr)');
+    expect(css).toContain('grid-template-columns:repeat(3,minmax(0,1fr))');
     expect(css).toContain('@keyframes campfire-live');
+  });
+
+  it('durcit toutes les largeurs mobiles et safe areas', () => {
+    expect(css).toContain('html,body{width:100%;max-width:100%;overflow-x:hidden}');
+    expect(css).toContain('grid-template-columns:repeat(2,minmax(0,1fr))');
+    expect(css).toContain('@media(min-width:540px){.sound-grid{grid-template-columns:repeat(3,minmax(0,1fr))}}');
+    expect(css).not.toMatch(/\.sound-pad\{[^}]*width:128px/);
+    for (const inset of ['safe-area-inset-top', 'safe-area-inset-bottom', 'safe-area-inset-left', 'safe-area-inset-right']) expect(css).toContain(inset);
+  });
+
+  it('garde chaque fonction secondaire accessible depuis Le camp', () => {
+    for (const feature of ['Checklist', 'Notes', 'Templates', 'Automatisations', 'Soutiens', 'VOD &amp; Clips', 'Appairage', 'Réglages', 'Diagnostics']) expect(html).toContain(feature);
+    expect(html).toContain('id="scene-sheet"');
+    expect(html).toContain('id="direct-mic-state"');
   });
 
   it('borne les fixtures visuelles au développement local', () => {

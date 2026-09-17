@@ -25,8 +25,10 @@ describe('Android remote runtime', () => {
     expect(remotePolicy).toContain("case 'scene.chatting'");
     expect(remotePolicy).not.toContain("case 'obs.scene'");
   });
-  it('présente quatre destinations et un menu secondaire sans reconnecter le WebSocket', () => {
-    for (const tab of ['home', 'live', 'sounds', 'planning']) expect(mobileIndex).toContain(`data-tab="${tab}"`);
+  it('présente trois destinations et un menu secondaire sans reconnecter le WebSocket', () => {
+    for (const tab of ['direct', 'sounds', 'planning']) expect(mobileIndex).toContain(`data-tab="${tab}"`);
+    expect(mobileIndex).not.toContain('data-tab="home"');
+    expect(mobileIndex).not.toContain('data-tab="live"');
     expect(mobileIndex).toContain('id="menu-trigger"');
     expect(mobileScript).toContain("localStorage.setItem('streamdashboard.mobileTab', tab)");
     expect(mobileScript).not.toMatch(/selectTab[\s\S]{0,300}(connect\(|location\.reload)/);

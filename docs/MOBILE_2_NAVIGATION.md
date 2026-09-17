@@ -1,24 +1,24 @@
-# StreamDashboard Mobile 2.0 — navigation et validation
+# StreamDashboard Mobile 3.0 — navigation Direct
 
 ## Architecture finale
 
-La barre basse contient quatre destinations stables : **Accueil**, **Live**, **Sons** et **Planning**. Le menu **Le camp**, ouvert depuis le header, regroupe les fonctions secondaires. Le bouton flottant **Commandes** reste disponible au-dessus de la barre depuis chaque destination principale et ouvre une palette basse avec recherche, commandes récentes bornées, scènes, actions Stream et six sons favoris.
+La barre basse contient exactement trois destinations : **Direct**, **Sons** et **Planning**. Direct remplace Accueil et Live et adapte son contenu à l'état réel. **Le camp** regroupe les fonctions secondaires. La palette Commandes y reste disponible comme outil avancé, sans être nécessaire à la navigation.
 
 Les raccourcis contextuels de l'Accueil ouvrent directement Audience, Chat, Live/scènes ou Soundboard. `Le camp` est un menu secondaire en lignes : Préparation, Stream, Intégrations et Application. Aucun endpoint ni contrat réseau n'est ajouté.
 
-## Matrice d'accès depuis l'Accueil
+## Matrice d'accès depuis Direct
 
 | Fonction | Taps maximum | Chemin |
 | --- | ---: | --- |
-| Live | 1 | barre basse |
+| Direct | 0 | destination initiale |
 | Soundboard | 1 | barre basse ou action Sons |
 | Planning | 1 | barre basse |
 | Clip | 1 | commande immédiate |
 | Pause | 1 | commande immédiate |
 | Chat | 1 | aperçu Chat |
 | Audience | 1 | métrique viewers/chatters |
-| Scene switch | 1 | état Scène vers Live |
-| Mute micro | 1 | palette Commandes |
+| Scene switch | 2 | ligne Scène → choix |
+| Mute micro | 1 | ligne Micro |
 | Soutiens | 2 | Live → Soutiens ou palette |
 | VOD / Clips | 2 | Live → Média |
 | Automatisations | 2 | menu Le camp → Stream |
