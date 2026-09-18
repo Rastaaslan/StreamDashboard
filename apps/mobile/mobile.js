@@ -446,11 +446,18 @@ async function getWsTicket() {
 }
 
 async function fetchState() {
-  if (credential && deviceId) await syncCompanion();
+  // REST state is the authority for whether the PC command channel is reachable.
+  // Companion sync must never gate remote-control availability.
   const next = await transport.state();
   if (!companion.snapshot().pending.length) companion.replaceServerSnapshot(next);
   companionMode = CompanionMode.ONLINE_PC;
   render(next);
+  setConnectionMode(CompanionMode.ONLINE_PC);
+  remoteButtons(false);
+  if (credential && deviceId) {
+    void syncCompanion().catch(error => note(`PC connecté · synchro compagnon différée : ${error.message}`));
+  }
+  return next;
 }
 
 async function syncCompanion() {
@@ -489,45 +496,15 @@ async function connect() {
     showPairing(true);
     return;
   }
+
+  // Phase 1: establish the HTTP command channel. This alone is enough to make
+  // the remote usable; realtime is an optional telemetry enhancement.
   try {
-    $('connection').textContent = 'Connexion…';
+    $('connection').textContent = 'Connexion au PC…';
     remoteButtons(true);
     await fetchState();
-    remoteButtons(true);
-    const ticket = await getWsTicket();
-    ws = transport.websocket(ticket);
-    ws.onopen = () => {
-      retry = 500;
-      $('connection').textContent = 'Connecté';
-      $('connection').className = 'ok';
-      render(state);
-      setConnectionMode(CompanionMode.ONLINE_PC);
-      note('Télécommande connectée au PC.');
-    };
-    ws.onmessage = event => {
-      try {
-        const value = JSON.parse(event.data);
-        if (value.type === 'state.updated') render(value.data);
-      } catch { note('Événement temps réel invalide.'); }
-    };
-    ws.onclose = () => {
-      $('connection').textContent = 'Temps réel en reconnexion…';
-      $('connection').className = '';
-      // A telemetry outage is not proof that the HTTP command channel is down.
-      // Keep the last authoritative state and probe REST before declaring the PC offline.
-      void transport.state().then(next => {
-        companionMode = CompanionMode.ONLINE_PC;
-        render(next);
-        $('connection').textContent = 'Temps réel en reconnexion…';
-        remoteButtons(false);
-      }).catch(error => {
-        if (error instanceof HttpError && [401, 403].includes(error.status)) return;
-        setConnectionMode(resolveMode({ pcAvailable: false, internetAvailable: navigator.onLine }));
-      });
-      reconnectTimer = setTimeout(connect, retry);
-      retry = nextRetry(retry);
-    };
-    ws.onerror = () => ws.close();
+    $('connection').textContent = 'PC connecté';
+    $('connection').className = 'ok';
   } catch (error) {
     setConnectionMode(resolveMode({ pcAvailable: false, internetAvailable: navigator.onLine }));
     render(offlineState());
@@ -538,6 +515,62 @@ async function connect() {
       showPairing(true);
       return;
     }
+    note(`Connexion PC impossible : ${error.message}`);
+    reconnectTimer = setTimeout(connect, retry);
+    retry = nextRetry(retry);
+    return;
+  }
+
+  // Phase 2: realtime must never disable a healthy HTTP command channel.
+  try {
+    const ticket = await getWsTicket();
+    ws = transport.websocket(ticket);
+    ws.onopen = () => {
+      retry = 500;
+      setConnectionMode(CompanionMode.ONLINE_PC);
+      $('connection').textContent = 'PC connecté · temps réel';
+      $('connection').className = 'ok';
+      render(state);
+      remoteButtons(false);
+      note('Télécommande connectée au PC.');
+    };
+    ws.onmessage = event => {
+      try {
+        const value = JSON.parse(event.data);
+        if (value.type === 'state.updated') render(value.data);
+      } catch { note('Événement temps réel invalide.'); }
+    };
+    ws.onclose = () => {
+      $('connection').textContent = 'PC connecté · temps réel en reconnexion…';
+      $('connection').className = '';
+      void transport.state().then(next => {
+        companionMode = CompanionMode.ONLINE_PC;
+        render(next);
+        setConnectionMode(CompanionMode.ONLINE_PC);
+        $('connection').textContent = 'PC connecté · temps réel en reconnexion…';
+        remoteButtons(false);
+      }).catch(async error => {
+        if (error instanceof HttpError && [401, 403].includes(error.status)) {
+          credential = '';
+          await credentialStorage.clear();
+          showPairing(true);
+          note('Cette télécommande a été révoquée depuis le PC.');
+          return;
+        }
+        setConnectionMode(resolveMode({ pcAvailable: false, internetAvailable: navigator.onLine }));
+      });
+      reconnectTimer = setTimeout(connect, retry);
+      retry = nextRetry(retry);
+    };
+    ws.onerror = () => ws.close();
+  } catch (error) {
+    // Ticket/WebSocket failure is telemetry-only. Keep HTTP controls enabled.
+    companionMode = CompanionMode.ONLINE_PC;
+    setConnectionMode(CompanionMode.ONLINE_PC);
+    remoteButtons(false);
+    $('connection').textContent = 'PC connecté · temps réel indisponible';
+    $('connection').className = 'ok';
+    note(`Contrôle disponible · temps réel indisponible : ${error.message}`);
     reconnectTimer = setTimeout(connect, retry);
     retry = nextRetry(retry);
   }
