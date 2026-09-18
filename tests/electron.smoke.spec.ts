@@ -29,6 +29,21 @@ test('Electron réel démarre, persiste, impose une instance et arrête son back
     const window = await application.firstWindow();
     await expect(window).toHaveTitle(/StreamDashboard/);
     await expect(window.locator('#title')).toHaveText('Accueil');
+
+    // Exercise the real delegated navigation wiring. These routes used to be
+    // present in the renderer but absent from its route table, so a click
+    // crashed instead of opening the requested tool.
+    const secondaryRoutes = [
+      ['live', 'Live'], ['deck', 'Scènes & audio'], ['fun', 'Médias OBS'],
+      ['supports', 'Soutiens'], ['automations', 'Automatisations'], ['diagnostics', 'Diagnostics'],
+    ] as const;
+    for (const [route, title] of secondaryRoutes) {
+      await window.locator('.secondary-nav').evaluate((element: HTMLDetailsElement) => { element.open = true; });
+      await window.locator(`.secondary-nav [data-page="${route}"]`).click();
+      await expect(window.locator('#title')).toHaveText(title);
+      await expect(window.locator('#view')).not.toBeEmpty();
+    }
+    await window.locator('nav [data-page="overview"]').click();
     const electronVersion = await application.evaluate(() => process.versions.electron);
     expect(electronVersion).toBe(packageJson.devDependencies.electron);
 
