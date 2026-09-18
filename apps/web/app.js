@@ -148,7 +148,7 @@ function eventRange(item) {
 }
 
 function nav() {
-  $('nav').innerHTML = pages.map(([id, label, icon]) => `<button data-page="${id}" class="${id === page ? 'active' : ''}"><span>${icon}</span>${label}</button>`).join('');
+  $('nav').innerHTML = pages.map(([id, label, icon], index) => `<button data-page="${id}" class="${id === page ? 'active' : ''}" title="${label} · Alt+${index + 1}"><span>${icon}</span>${label}</button>`).join('');
   document.querySelectorAll('[data-page]').forEach(button => {
     button.onclick = () => window.go(button.dataset.page);
   });
@@ -557,6 +557,17 @@ function bindForms() {
     if (discordMessage) discordMessage.onchange = () => void window.saveDiscordSettings();
   }
 }
+
+document.addEventListener('keydown', event => {
+  const target = event.target;
+  if (target instanceof HTMLElement && (target.matches('input, textarea, select') || target.isContentEditable)) return;
+  if (!event.altKey || event.ctrlKey || event.metaKey || event.shiftKey) return;
+  const routes = { '1': 'overview', '2': 'planning', '3': 'prepare', '4': 'settings', l: 'live', d: 'deck' };
+  const route = routes[event.key.toLocaleLowerCase()];
+  if (!route) return;
+  event.preventDefault();
+  window.go(route);
+});
 
 window.command = command;
 window.go = id => {
