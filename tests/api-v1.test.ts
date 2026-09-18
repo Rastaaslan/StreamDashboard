@@ -33,6 +33,34 @@ describe('API publique v1', () => {
     expect(response.headers.get('x-frame-options')).toBe('DENY');
   });
 
+  it('expose un cockpit mobile honnête et des événements bornés', async () => {
+    const app = await start();
+    const hub = await fetch(`${app.url}/api/v1/control-hub`).then(response => response.json());
+    expect(hub).toMatchObject({
+      live: { isLive: false, viewerCount: null },
+      audience: { viewerCount: null, chatters: [] },
+      integrations: { runtime: { status: 'CONNECTED' }, streamlabs: { status: 'NOT_SUPPORTED' }, wizebot: { status: 'NOT_SUPPORTED' } },
+      availability: { chat: 'NOT_CONFIGURED', support: 'NOT_SUPPORTED', soundboard: 'AVAILABLE' },
+    });
+    await fetch(`${app.url}/api/v1/commands`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ type: 'timer.reset' }) });
+    const events = await fetch(`${app.url}/api/v1/events?type=dashboard.state.updated&limit=10`).then(response => response.json());
+    expect(events.items).toHaveLength(1);
+    expect(events.items[0]).toMatchObject({ schemaVersion: 1, type: 'dashboard.state.updated', source: 'runtime' });
+  });
+
+  it('accepte l’origine Android WebViewAssetLoader pour REST et WebSocket', async () => {
+    const app = await start();
+    const origin = 'http://appassets.androidplatform.net';
+    const response = await fetch(`${app.url}/api/v1/state`, { headers: { Origin: origin } });
+    expect(response.status).toBe(200);
+    expect(response.headers.get('access-control-allow-origin')).toBe(origin);
+    await expect(new Promise<void>((resolve, reject) => {
+      const ws = new WebSocket(app.url.replace('http:', 'ws:') + '/ws/v1', { origin });
+      ws.on('open', () => { ws.close(); resolve(); });
+      ws.on('error', reject);
+    })).resolves.toBeUndefined();
+  });
+
   it('refuse une origine WebSocket étrangère ou un faux port local', async () => {
     const app = await start(); const wsUrl = app.url.replace('http:', 'ws:') + '/ws/v1';
     await wsRejected(wsUrl, 'https://evil.example');
@@ -59,6 +87,25 @@ describe('API publique v1', () => {
     expect(await valid.json()).toMatchObject({ ok: true, commandType: 'timer.add', state: { timer: { remaining: 310 } } });
     const persisted = await readFile(path.join(dataDir, 'dashboard.json'), 'utf8');
     expect(persisted).not.toMatch(/accessToken|refreshToken|deviceCode|obsPassword/);
+  });
+
+  it('déduplique les retries commandId et publie une révision monotone', async () => {
+    const app = await start();
+    const command = { type: 'timer.add', seconds: 60, commandId: 'retry_timer_0001', correlationId: 'corr_timer_0001' };
+    const responses = await Promise.all(Array.from({ length: 3 }, () => fetch(`${app.url}/api/v1/commands`, {
+      method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(command),
+    }).then(response => response.json())));
+    expect(responses.every(response => response.commandId === command.commandId)).toBe(true);
+    expect(new Set(responses.map(response => response.stateRevision)).size).toBe(1);
+    const state = await fetch(`${app.url}/api/v1/state`).then(response => response.json());
+    expect(state.timer.remaining).toBe(360);
+    expect(state.stateRevision).toBeGreaterThan(0);
+
+    const collision = await fetch(`${app.url}/api/v1/commands`, {
+      method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ ...command, seconds: 30 }),
+    });
+    expect(collision.status).toBe(400);
   });
 
   it('rejette les URLs OBS non locales et expose les réglages valides par v1', async () => {

@@ -2,6 +2,85 @@ export type RunMode = 'idle' | 'intro' | 'live' | 'pause' | 'end';
 export type ApiVersion = 1;
 export const protocolVersion: ApiVersion = 1;
 
+export type IntegrationStatus = 'DISCONNECTED' | 'CONNECTING' | 'CONNECTED' | 'DEGRADED' | 'ERROR' | 'NOT_CONFIGURED' | 'NOT_SUPPORTED';
+export interface IntegrationState {
+  status: IntegrationStatus;
+  lastConnectedAt: string | null;
+  lastEventAt: string | null;
+  lastError: { code: string; message: string; retryable: boolean } | null;
+  retryState: { attempt: number; nextRetryAt: string | null };
+}
+
+export interface EventEnvelope<TPayload = unknown> {
+  eventId: string;
+  schemaVersion: 1;
+  type: string;
+  source: string;
+  occurredAt: string;
+  receivedAt: string;
+  correlationId: string;
+  payload: TPayload;
+}
+
+export type CommandLifecycleStatus = 'accepted' | 'executing' | 'succeeded' | 'failed' | 'rejected';
+export interface ActionCommand<TPayload = unknown> {
+  commandId: string;
+  type: string;
+  origin: 'android' | 'desktop' | 'remote-web' | 'automation' | 'runtime';
+  deviceId?: string;
+  issuedAt: string;
+  correlationId?: string;
+  payload: TPayload;
+}
+export interface CommandAcknowledgement {
+  commandId: string;
+  correlationId: string;
+  status: CommandLifecycleStatus;
+  errorCode?: string;
+  message?: string;
+  timestamp: string;
+}
+
+export interface StructuredError {
+  code: string;
+  message: string;
+  retryable: boolean;
+  details: Record<string, unknown> | null;
+}
+
+export interface ControlHubSnapshot {
+  live: { isLive: boolean; title: string | null; category: string | null; startedAt: string | null; durationSeconds: number | null; viewerCount: number | null };
+  audience: { viewerCount: number | null; chatters: Array<{ id: string; displayName: string; role: 'broadcaster' | 'moderator' | 'vip' | 'viewer' }> };
+  activity: EventEnvelope[];
+  integrations: Record<'runtime' | 'obs' | 'twitch' | 'discord' | 'streamlabs' | 'wizebot', IntegrationState>;
+  availability: Record<'chat' | 'support' | 'vod' | 'clips' | 'soundboard' | 'automation', 'AVAILABLE' | 'NOT_CONFIGURED' | 'NOT_SUPPORTED'>;
+  chat: { messages: ChatMessage[]; connected: boolean };
+}
+export interface ChatMessage {
+  id: string;
+  chatter: { id: string; login: string; displayName: string; color: string | null; badges: Array<{ setId: string; id: string; info: string }> };
+  text: string;
+  fragments: Array<{ type: string; text: string; emote?: { id: string; setId: string; ownerId: string; format: string[] } }>;
+  reply: { parentMessageId: string; parentMessageBody: string; parentUserId: string; parentUserName: string } | null;
+  bits: number | null;
+  receivedAt: string;
+}
+
+export interface Sound {
+  id: string;
+  name: string;
+  category: string;
+  source: string;
+  favorite: boolean;
+  volume: number;
+  cooldownMs: number;
+  enabled: boolean;
+  outputId: string;
+}
+export interface PublicSound extends Omit<Sound, 'source'> { sourceAvailable: boolean }
+export interface AudioOutput { id: string; name: string; isDefault: boolean; selectable: boolean }
+export interface SoundboardSnapshot { sounds: PublicSound[]; outputs: AudioOutput[]; currentPlayback: { soundId: string; commandId: string; startedAt: string } | null; available: boolean; supportedFormats: string[]; supportsVolume: boolean; supportsStop: boolean; supportsExplicitOutputSelection: boolean; error: StructuredError | null }
+
 export interface TimerState {
   running: boolean;
   duration: number;
@@ -98,6 +177,8 @@ export interface ObsInputState { muted: boolean; volume: number; volumeDb?: numb
 export interface ObsState {
   connected: boolean;
   streaming: boolean;
+  /** False means `streaming` is only the last known value after OBS telemetry loss. */
+  streamingKnown?: boolean;
   recording: boolean;
   scene: string | null;
   scenes: string[];
@@ -130,6 +211,10 @@ export interface DashboardSettings {
   startMode?: 'intro' | 'live';
   /** Exact OBS browser source used for the visible session timer overlay. */
   timerBrowserSource?: string;
+  /** Explicit input controlled by the mobile one-tap microphone action. */
+  primaryMicInput?: string;
+  /** When true, Start is blocked unless the configured timer Browser Source can be refreshed. */
+  requireTimerOverlayOnStart?: boolean;
   /** Persisted preference. Binding to LAN is applied on next desktop startup. */
   remoteEnabled?: boolean;
 }
@@ -153,6 +238,8 @@ export interface TwitchState {
 
 export interface DashboardState {
   at: string;
+  /** Monotonic runtime snapshot revision. Optional only for legacy persisted/test fixtures. */
+  stateRevision?: number;
   mode: RunMode;
   timer: TimerState;
   planning: CalendarItem[];
@@ -167,21 +254,24 @@ export interface DashboardState {
   preflight?: PreflightState;
   remote?: RemoteState;
   runtime: { serverVersion: string; nodeVersion: string; electronVersion: string | null; platform: string; port: number; logsPath: string | null };
+  controlHub?: ControlHubSnapshot;
 }
 
 /** Minimal, explicitly redacted state exposed to a paired LAN remote. */
 export interface RemoteDashboardState {
   at: string;
+  stateRevision?: number;
   mode: RunMode;
   timer: TimerState;
   planning: Array<Pick<CalendarItem, 'id' | 'title' | 'startAtUtc' | 'endAtUtc' | 'allDay' | 'category' | 'kind' | 'source' | 'twitchCategoryId' | 'twitchCategoryName' | 'desiredPublication' | 'recurrence' | 'seriesId' | 'occurrenceKey'>>;
   nextLive: Pick<CalendarItem, 'id' | 'title' | 'startAtUtc' | 'endAtUtc' | 'allDay' | 'category' | 'kind' | 'source' | 'twitchCategoryId' | 'twitchCategoryName' | 'desiredPublication'> | null;
-  obs: Pick<ObsState, 'connected' | 'streaming' | 'scene' | 'inputs' | 'activeAudioInputs' | 'mediaInputs'>;
-  settings: Pick<DashboardSettings, 'confirmStop' | 'streamerName' | 'modeScenes' | 'chattingScene'>;
+  obs: Pick<ObsState, 'connected' | 'streaming' | 'streamingKnown' | 'scene' | 'inputs' | 'activeAudioInputs' | 'mediaInputs'>;
+  settings: Pick<DashboardSettings, 'confirmStop' | 'streamerName' | 'modeScenes' | 'chattingScene' | 'primaryMicInput' | 'requireTimerOverlayOnStart'>;
   twitch: Pick<TwitchState, 'connected' | 'channelTitle' | 'gameId' | 'gameName' | 'error'>;
   google?: Pick<GoogleCalendarState, 'configured' | 'connected'>;
   discord?: DiscordState;
   preflight?: PreflightState;
+  controlHub?: ControlHubSnapshot;
 }
 
 export type PublicState = DashboardState;

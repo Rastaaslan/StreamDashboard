@@ -8,8 +8,11 @@ import { WebSocketServer, type WebSocket } from 'ws';
 import { ObsClient } from '../../../integrations/obs/src/client.js';
 import { TwitchClient } from '../../../integrations/twitch/src/client.js';
 import { TwitchPreflight } from '../../../integrations/twitch/src/preflight.js';
+import { TwitchEventSub, type TwitchChatMessage } from '../../../integrations/twitch/src/eventsub.js';
 import { DiscordClient } from '../../../integrations/discord/src/client.js';
 import { expandRecurringItems } from '../../../packages/core/src/recurrence.js';
+import { EventCore } from '../../../packages/core/src/events.js';
+import { integrationState, transitionIntegration } from '../../../packages/core/src/integrations.js';
 import {
   createGoogleOAuthAttempt,
   GoogleCalendarClient,
@@ -32,17 +35,26 @@ import {
   type ChecklistItem,
   type DashboardSettings,
   type DashboardState,
+  type DashboardCommand,
   type DiscordSettings,
   type PreflightState,
   type ProviderLink,
   type RunMode,
   type ServerCapabilities,
   type TimerState,
+  type ControlHubSnapshot,
+  type Sound,
 } from '../../../packages/contracts/src/index.js';
 import { DashboardCommandService } from './command-service.js';
 import { companionSnapshot, emptyCompanionState, reconcileCompanionBatch, resolveCompanionConflict, type CompanionState, type SyncOperation } from './companion-sync.js';
 import { RemoteAuth, type PersistedRemoteDevice } from './remote-auth.js';
 import { parseRemoteCommand, toRemoteDashboardState } from './remote-policy.js';
+import { SoundboardRuntime, validateSound } from './soundboard-runtime.js';
+import { AutomationRuntime } from './automation-runtime.js';
+import type { Automation, Support } from '../../../packages/core/src/live-control-domains.js';
+import { SupportRuntime } from './support-runtime.js';
+import { StreamlabsAdapter } from '../../../integrations/streamlabs/src/adapter.js';
+import { registerLiveControlRoutes } from './live-control-routes.js';
 import {
   AtomicJsonStore,
   DASHBOARD_SCHEMA_VERSION,
@@ -75,6 +87,9 @@ interface LocalData {
   remoteDevices: PersistedRemoteDevice[];
   companion: CompanionState;
   discord: DiscordSettings;
+  sounds: Sound[];
+  automations: Automation[];
+  supports: Support[];
 }
 export interface DashboardServerOptions {
   port?: number;
@@ -107,7 +122,7 @@ const LOCAL_ADDRESSES = new Set(['127.0.0.1', '::1', '::ffff:127.0.0.1']);
 const PROVIDER_STATUSES = new Set(['synced', 'pending', 'error', 'not-published', 'conflict']);
 const DAY_MS = 86_400_000;
 const REMOTE_ACTIVITY_PERSIST_MS = 30_000;
-const ANDROID_NATIVE_ORIGIN = 'http://localhost';
+const ANDROID_NATIVE_ORIGINS = new Set(['http://localhost', 'http://appassets.androidplatform.net']);
 
 function object(value: unknown): value is Record<string, unknown> {
   return Boolean(value && typeof value === 'object' && !Array.isArray(value));
@@ -328,6 +343,9 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
     remoteDevices: [],
     companion: emptyCompanionState(),
     discord: { guildId: null, channelId: null, defaultMessage: '' },
+    sounds: [],
+    automations: [],
+    supports: [],
   };
 
   let local = await store.read(defaults);
@@ -355,6 +373,9 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
     channelId: typeof rawDiscord.channelId === 'string' && /^\d{1,24}$/.test(rawDiscord.channelId) ? rawDiscord.channelId : null,
     defaultMessage: typeof rawDiscord.defaultMessage === 'string' ? rawDiscord.defaultMessage.slice(0, 2000) : '',
   };
+  local.sounds = Array.isArray(local.sounds) ? local.sounds.flatMap(value => { try { return [validateSound(value)]; } catch { return []; } }) : [];
+  local.automations = Array.isArray(local.automations) ? local.automations : [];
+  local.supports = Array.isArray(local.supports) ? local.supports : [];
   if (!Array.isArray(local.checklist)) local.checklist = structuredClone(defaults.checklist);
   else {
     const seen = new Set<string>();
@@ -384,6 +405,9 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
     startMode: rawSettings.startMode === 'live' ? 'live' : 'intro',
     timerBrowserSource: typeof rawSettings.timerBrowserSource === 'string' && rawSettings.timerBrowserSource.trim().length <= 200
       ? rawSettings.timerBrowserSource.trim() || undefined : undefined,
+    primaryMicInput: typeof rawSettings.primaryMicInput === 'string' && rawSettings.primaryMicInput.trim().length <= 200
+      ? rawSettings.primaryMicInput.trim() || undefined : undefined,
+    requireTimerOverlayOnStart: rawSettings.requireTimerOverlayOnStart === true,
     remoteEnabled: rawSettings.remoteEnabled === true,
     ...(typeof rawSettings.obsPassword === 'string' && rawSettings.obsPassword.length <= 500 ? { obsPassword: rawSettings.obsPassword } : {}),
   };
@@ -463,6 +487,11 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
   );
   let googleCalendars: Array<{ id: string; summary: string; writable: boolean }> = [];
   let twitchChannel: { title: string; gameId: string; gameName: string } = { title: '', gameId: '', gameName: '' };
+  let twitchLive: Awaited<ReturnType<TwitchClient['getLiveState']>> = { isLive: false, title: null, category: null, categoryId: null, startedAt: null, viewerCount: null, thumbnailUrl: null };
+  let twitchChatters: Awaited<ReturnType<TwitchClient['chatters']>> = { items: [], total: 0, cursor: null };
+  let chatMessages: TwitchChatMessage[] = [];
+  let chatStatus: 'CONNECTING' | 'CONNECTED' | 'DEGRADED' | 'DISCONNECTED' = 'DISCONNECTED';
+  let twitchEventSubStarted = false;
   let googleError: string | null = null;
   let googleOAuthAttempt: GoogleOAuthAttempt | null = null;
   let preflightState: PreflightState = {
@@ -479,12 +508,37 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
     searchGame: name => twitch.searchGames(name),
     updateChannel: value => twitch.updateChannelMetadata(value),
   });
+  const twitchEventSub = new TwitchEventSub(
+    sessionId => twitch.subscribeChat(sessionId),
+    message => {
+      if (chatMessages.some(item => item.id === message.id)) return;
+      chatMessages = [...chatMessages.slice(-199), message];
+      eventCore.publish({ type: 'chat.message.received', source: 'twitch', occurredAt: message.receivedAt, payload: message });
+      broadcast();
+    },
+    (status, error) => {
+      chatStatus = status;
+      eventCore.publish({ type: status === 'CONNECTED' ? 'integration.connected' : status === 'DISCONNECTED' ? 'integration.disconnected' : 'integration.degraded', source: 'twitch-chat', payload: { integration: 'twitch-chat', status, ...(error ? { error } : {}) } });
+      broadcast();
+    },
+  );
 
   const app = express();
   const remoteAuth = new RemoteAuth(Date.now, local.remoteDevices);
   const server = createServer(app);
   const sockets = new WebSocketServer({ noServer: true });
   const socketDevices = new Map<WebSocket, string>();
+  const eventCore = new EventCore(250);
+  const soundboard = new SoundboardRuntime(local.sounds, undefined, () => Date.now(), event => {
+    eventCore.publish({ type: event.type, source: 'soundboard', correlationId: event.correlationId, payload: event.payload });
+  });
+  const automation = new AutomationRuntime(local.automations, async (action, context) => {
+    if (action.type !== 'soundboard.play' || typeof action.payload.soundId !== 'string') throw new Error(`Action ${action.type} non supportée.`);
+    const ack = await soundboard.play({ commandId: `${context.correlationId}:${context.automationId}:${context.actionIndex}`, correlationId: context.correlationId, type: 'soundboard.play', origin: 'automation', issuedAt: new Date().toISOString(), payload: { soundId: action.payload.soundId, ...(typeof action.payload.volume === 'number' ? { volume: action.payload.volume } : {}) } });
+    if (ack.status !== 'succeeded') { const error = new Error(ack.message ?? 'Lecture soundboard échouée.'); error.name = ack.errorCode ?? 'SOUNDBOARD_FAILED'; throw error; }
+  }, async values => { local.automations = values; await save(); });
+  const support = new SupportRuntime(local.supports, async values => { local.supports = values; await save(); }, value => { eventCore.publish({ type: 'support.received', source: value.provider, occurredAt: value.receivedAt, correlationId: `${value.provider}:${value.externalId}`, payload: value }); });
+  const streamlabs = new StreamlabsAdapter(await secrets.getStreamlabsToken?.() ?? process.env.STREAMLABS_SOCKET_TOKEN ?? '', value => support.record(value).then(() => undefined));
 
   const isLocalAddress = (address: string | undefined | null) => LOCAL_ADDRESSES.has(address ?? '');
   const isLocalRequest = (req: express.Request) => isLocalAddress(req.socket.remoteAddress);
@@ -502,7 +556,7 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
     const requestHost = request.headers.host;
     const acceptedOrigin = (() => {
       if (!origin) return true;
-      try { return origin === ANDROID_NATIVE_ORIGIN || (Boolean(requestHost) && new URL(origin).host === requestHost); }
+      try { return ANDROID_NATIVE_ORIGINS.has(origin) || (Boolean(requestHost) && new URL(origin).host === requestHost); }
       catch { return false; }
     })();
     const remoteRequest = !isLocalAddress(request.socket.remoteAddress);
@@ -533,9 +587,9 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
   app.use((req, res, next) => {
     const origin = req.headers.origin;
     if (!origin) { next(); return; }
-    if (origin === ANDROID_NATIVE_ORIGIN) {
+    if (ANDROID_NATIVE_ORIGINS.has(origin)) {
       res.set({
-        'Access-Control-Allow-Origin': ANDROID_NATIVE_ORIGIN,
+        'Access-Control-Allow-Origin': origin,
         'Access-Control-Allow-Headers': 'Authorization, Content-Type',
         'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
         Vary: 'Origin',
@@ -593,6 +647,8 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
     chattingScene: local.settings.chattingScene,
     startMode: local.settings.startMode ?? 'intro',
     timerBrowserSource: local.settings.timerBrowserSource,
+    primaryMicInput: local.settings.primaryMicInput,
+    requireTimerOverlayOnStart: local.settings.requireTimerOverlayOnStart === true,
     remoteEnabled: local.settings.remoteEnabled === true,
   });
   const features = ['obs', 'twitch', 'preflight', 'timer', 'planning', 'planning-recurrence', 'discord-planning', 'checklist', 'deck', 'mobile-remote', 'unplanned-live-tracking'];
@@ -604,6 +660,7 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
     accessMode: remoteRuntimeEnabled ? 'remote-LAN' : 'desktop-local',
   };
   let runtimePort = requestedPort;
+  let stateRevision = 0;
   const temporalPlanning = (from = Date.now() - DAY_MS, to = Date.now() + 730 * DAY_MS) => expandRecurringItems(local.planning, { from, to });
   const nextLive = () => temporalPlanning()
     .filter(item => !item.allDay && (item.category === 'live' || item.kind === 'LIVE') && Date.parse(item.endAtUtc) > Date.now())
@@ -612,8 +669,29 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
     const currentRemaining = remaining();
     const timer: TimerState = { ...local.timer, remaining: currentRemaining };
     if (timer.running && currentRemaining <= 0) { timer.running = false; timer.deadline = null; }
+    const connectedState = (connected: boolean, configured = true, error?: string | null) => {
+      if (!configured) return integrationState('NOT_CONFIGURED');
+      if (connected) return transitionIntegration(integrationState(), 'CONNECTED', { at: new Date().toISOString() });
+      return error ? transitionIntegration(integrationState(), 'DEGRADED', { error: { code: 'PROVIDER_UNAVAILABLE', message: error, retryable: true, details: null } }) : integrationState('DISCONNECTED');
+    };
+    const controlHub: ControlHubSnapshot = {
+      live: { isLive: twitchLive.isLive, title: twitchLive.title ?? (twitchChannel.title || null), category: twitchLive.category ?? (twitchChannel.gameName || null), startedAt: twitchLive.startedAt, durationSeconds: twitchLive.startedAt ? Math.max(0, Math.floor((Date.now() - Date.parse(twitchLive.startedAt)) / 1_000)) : null, viewerCount: twitchLive.viewerCount },
+      audience: { viewerCount: twitchLive.viewerCount, chatters: twitchChatters.items.map(user => { const badges = chatMessages.find(message => message.chatter.id === user.id)?.chatter.badges.map(badge => badge.setId) ?? []; return { id: user.id, displayName: user.displayName, role: user.id === local.twitch.broadcasterId ? 'broadcaster' as const : badges.includes('moderator') ? 'moderator' as const : badges.includes('vip') ? 'vip' as const : 'viewer' as const }; }) },
+      activity: eventCore.recent({ limit: 20 }),
+      chat: { messages: chatMessages, connected: chatStatus === 'CONNECTED' },
+      integrations: {
+        runtime: transitionIntegration(integrationState(), 'CONNECTED'),
+        obs: connectedState(obs.state.connected, true, obs.state.error),
+        twitch: connectedState(twitch.state.connected, Boolean(options.twitchClientId ?? process.env.TWITCH_CLIENT_ID), twitch.state.error),
+        discord: connectedState(discordPublic.connected, discordPublic.configured, discordPublic.error),
+        streamlabs: streamlabs.state(),
+        wizebot: integrationState('NOT_SUPPORTED'),
+      },
+      availability: { chat: twitch.state.connected ? 'AVAILABLE' : 'NOT_CONFIGURED', support: streamlabs.state().status === 'NOT_SUPPORTED' ? 'NOT_SUPPORTED' : streamlabs.state().status === 'NOT_CONFIGURED' ? 'NOT_CONFIGURED' : 'AVAILABLE', vod: twitch.state.connected ? 'AVAILABLE' : 'NOT_CONFIGURED', clips: twitch.state.connected ? 'AVAILABLE' : 'NOT_CONFIGURED', soundboard: 'AVAILABLE', automation: 'AVAILABLE' },
+    };
     return {
       at: new Date().toISOString(),
+      stateRevision,
       mode: local.mode,
       timer,
       planning: local.planning,
@@ -646,6 +724,7 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
         devices: remoteAuth.list(),
         urls: remoteRuntimeEnabled ? lanUrls(runtimePort) : [],
       },
+      controlHub,
       health: {
         dashboard: { ok: true, detail: 'API locale opérationnelle', reconnects: 0 },
         storage: { ok: true, detail: dataFile, reconnects: 0 },
@@ -679,11 +758,17 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
     data: remote ? toRemoteDashboardState(snapshot()) : snapshot(),
   });
   const broadcast = () => {
+    stateRevision += 1;
     for (const ws of sockets.clients) {
       if (ws.readyState !== ws.OPEN) continue;
       ws.send(stateEvent(socketDevices.has(ws)));
     }
   };
+  eventCore.subscribe(event => {
+    const message = JSON.stringify({ type: 'event.received', data: event });
+    for (const ws of sockets.clients) if (ws.readyState === ws.OPEN) ws.send(message);
+    if (event.source !== 'automation') void automation.consume(event).then(results => { for (const result of results) eventCore.publish({ type: result.status === 'succeeded' ? 'automation.triggered' : 'automation.failed', source: 'automation', correlationId: result.correlationId, payload: result }); }).catch(logError);
+  });
   const save = async () => {
     local.remoteDevices = remoteAuth.serialize();
     local.schemaVersion = DASHBOARD_SCHEMA_VERSION;
@@ -722,6 +807,7 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
   const changed = async () => {
     scheduleTimerExpiry();
     await save();
+    eventCore.publish({ type: 'dashboard.state.updated', source: 'runtime', payload: { mode: local.mode, streaming: obs.state.streaming } });
     broadcast();
     return snapshot();
   };
@@ -831,11 +917,34 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
       return changed();
     }
   };
+  const commandJournal = new Map<string, { fingerprint: string; operation: Promise<{ command: DashboardCommand; state: DashboardState }> }>();
   const executeCommand = async (body: unknown, remote = false) => {
-    const command = remote ? parseRemoteCommand(body, snapshot()) : parseCommand(body);
-    const state = await commands.execute(command);
-    if (command.type === 'session.prepare') return { command, state: await runPreflight() };
-    return { command, state };
+    const envelope = body && typeof body === 'object' ? body as Record<string, unknown> : {};
+    const commandId = envelope.commandId;
+    const correlationId = envelope.correlationId;
+    for (const [name, value] of [['commandId', commandId], ['correlationId', correlationId]] as const) {
+      if (value !== undefined && (typeof value !== 'string' || !/^[A-Za-z0-9_-]{8,100}$/.test(value))) throw new Error(`${name} invalide.`);
+    }
+    const commandBody = Object.fromEntries(Object.entries(envelope).filter(([key]) => key !== 'commandId' && key !== 'correlationId'));
+    const command = remote ? parseRemoteCommand(commandBody, snapshot()) : parseCommand(commandBody);
+    const fingerprint = JSON.stringify(command);
+    if (typeof commandId === 'string') {
+      const existing = commandJournal.get(commandId);
+      if (existing) {
+        if (existing.fingerprint !== fingerprint) throw new Error('commandId déjà utilisé pour une autre commande.');
+        return existing.operation;
+      }
+    }
+    const operation = (async () => {
+      const state = await commands.execute(command);
+      if (command.type === 'session.prepare') return { command, state: await runPreflight() };
+      return { command, state };
+    })();
+    if (typeof commandId === 'string') {
+      commandJournal.set(commandId, { fingerprint, operation });
+      while (commandJournal.size > 500) commandJournal.delete(commandJournal.keys().next().value!);
+    }
+    return operation;
   };
   const validateTwitch = async () => {
     if (!twitch.state.connected) return;
@@ -845,8 +954,25 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
     } else {
       const metadata = await twitch.getChannelMetadata();
       twitchChannel = { title: metadata.title, gameId: metadata.gameId, gameName: metadata.gameName };
+      [twitchLive, twitchChatters] = await Promise.all([twitch.getLiveState(), twitch.chatters()]);
+      if (!twitchEventSubStarted) { twitchEventSubStarted = true; twitchEventSub.start(); }
     }
     broadcast();
+  };
+  const refreshTwitchLive = async () => {
+    if (!twitch.state.connected) return;
+    try {
+      const [live, chatters] = await Promise.all([twitch.getLiveState(), twitch.chatters()]);
+      const liveChanged = live.isLive !== twitchLive.isLive;
+      twitchLive = live;
+      twitchChatters = chatters;
+      eventCore.publish({ type: 'audience.viewerCount.updated', source: 'twitch', payload: { viewerCount: live.viewerCount } });
+      if (liveChanged) eventCore.publish({ type: live.isLive ? 'stream.started' : 'stream.stopped', source: 'twitch', occurredAt: live.startedAt ?? undefined, payload: live });
+      broadcast();
+    } catch (error) {
+      eventCore.publish({ type: 'integration.degraded', source: 'twitch', payload: { error: error instanceof Error ? error.message : String(error) } });
+      logError(error);
+    }
   };
 
   let trackedUnplannedLiveId = findUnplannedDraft(local.planning)?.id ?? null;
@@ -1083,10 +1209,10 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
       return;
     }
     scheduleRemoteActivitySave();
-    const allowed = (req.method === 'GET' && (['/v1/state', '/v1/twitch/categories', '/v1/discord/status', '/v1/discord/guilds'].includes(pathName) || /^\/v1\/discord\/guilds\/\d+\/channels$/.test(pathName)))
-      || (req.method === 'PUT' && (pathName === '/v1/discord/settings' || /^\/v1\/planning\/[^/]+(?:\/occurrence)?$/.test(pathName)))
-      || (req.method === 'DELETE' && /^\/v1\/planning\/[^/]+(?:\/occurrence)?$/.test(pathName))
-      || (req.method === 'POST' && (['/v1/commands', '/v1/remote/ws-ticket', '/v1/twitch/channel', '/v1/planning', '/v1/companion/sync', '/v1/discord/planning'].includes(pathName) || /^\/v1\/companion\/conflicts\/[^/]+\/resolve$/.test(pathName)));
+    const allowed = (req.method === 'GET' && (['/v1/state', '/v1/control-hub', '/v1/events', '/v1/soundboard', '/v1/automations', '/v1/supports', '/v1/twitch/categories', '/v1/twitch/videos', '/v1/twitch/clips', '/v1/twitch/chatters', '/v1/twitch/moderation/capabilities', '/v1/discord/status', '/v1/discord/guilds'].includes(pathName) || /^\/v1\/discord\/guilds\/\d+\/channels$/.test(pathName)))
+      || (req.method === 'PUT' && (pathName === '/v1/discord/settings' || /^\/v1\/planning\/[^/]+(?:\/occurrence)?$/.test(pathName) || /^\/v1\/soundboard\/sounds\/[A-Za-z0-9._:-]+$/.test(pathName) || /^\/v1\/automations\/[A-Za-z0-9._:-]+$/.test(pathName)))
+      || (req.method === 'DELETE' && (/^\/v1\/planning\/[^/]+(?:\/occurrence)?$/.test(pathName) || /^\/v1\/twitch\/videos\/\d+$/.test(pathName) || /^\/v1\/twitch\/moderation\/(?:messages|bans)\/[A-Za-z0-9_-]+$/.test(pathName) || /^\/v1\/automations\/[A-Za-z0-9._:-]+$/.test(pathName)))
+      || (req.method === 'POST' && (['/v1/commands', '/v1/remote/ws-ticket', '/v1/soundboard/play', '/v1/soundboard/stop', '/v1/automations', '/v1/automations/test', '/v1/twitch/channel', '/v1/twitch/chat/messages', '/v1/twitch/clips', '/v1/twitch/moderation/bans', '/v1/planning', '/v1/companion/sync', '/v1/discord/planning'].includes(pathName) || /^\/v1\/companion\/conflicts\/[^/]+\/resolve$/.test(pathName)));
     if (!allowed) {
       res.status(403).json({ ok: false, error: { code: 'REMOTE_SCOPE_DENIED', message: 'Cette action n’est pas autorisée depuis la télécommande.' } });
       return;
@@ -1108,6 +1234,18 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
   });
   app.get('/api/v1/health', health);
   app.get('/api/v1/state', (req, res) => res.json(isRemoteRequest(req) ? toRemoteDashboardState(snapshot()) : snapshot()));
+  app.get('/api/v1/control-hub', (_req, res) => res.json(snapshot().controlHub));
+  registerLiveControlRoutes({ app, soundboard, automation, support, streamlabs, eventCore, secrets, requireLocal, isRemote: isRemoteRequest, save, sounds: () => local.sounds, setSounds: value => { local.sounds = value; }, sessionStartedAt: () => twitchLive.startedAt });
+  app.get('/api/v1/twitch/videos', async (req, res, next) => { try { res.json(await twitch.videos(String(req.query.after ?? ''), Number(req.query.first) || 20)); } catch (error) { next(error); } });
+  app.delete('/api/v1/twitch/videos/:id', async (req, res, next) => { try { const id = String(req.params.id); if (req.body?.confirmation !== `DELETE ${id}`) { res.status(409).json({ ok: false, error: { code: 'CONFIRM_REQUIRED', message: `Confirmez avec DELETE ${id}.` } }); return; } await twitch.deleteVideo(id); res.sendStatus(204); } catch (error) { next(error); } });
+  app.get('/api/v1/twitch/clips', async (req, res, next) => { try { res.json(await twitch.clips(String(req.query.after ?? ''), Number(req.query.first) || 20)); } catch (error) { next(error); } });
+  app.post('/api/v1/twitch/clips', async (_req, res, next) => { try { res.status(202).json(await twitch.createClip()); } catch (error) { next(error); } });
+  app.get('/api/v1/twitch/chatters', async (req, res, next) => { try { res.json(await twitch.chatters(String(req.query.after ?? ''), Number(req.query.first) || 100)); } catch (error) { next(error); } });
+  app.post('/api/v1/twitch/chat/messages', async (req, res, next) => { try { res.status(201).json(await twitch.sendChatMessage(String(req.body?.message ?? ''), typeof req.body?.replyParentMessageId === 'string' ? req.body.replyParentMessageId : undefined)); } catch (error) { next(error); } });
+  app.get('/api/v1/twitch/moderation/capabilities', (_req, res) => res.json(twitch.moderationCapabilities()));
+  app.delete('/api/v1/twitch/moderation/messages/:id', async (req, res, next) => { try { await twitch.deleteChatMessage(String(req.params.id)); res.status(204).end(); } catch (error) { next(error); } });
+  app.post('/api/v1/twitch/moderation/bans', async (req, res, next) => { try { await twitch.banUser(String(req.body?.userId ?? ''), { ...(req.body?.duration !== undefined ? { duration: Number(req.body.duration) } : {}), ...(typeof req.body?.reason === 'string' ? { reason: req.body.reason } : {}) }); res.status(204).end(); } catch (error) { next(error); } });
+  app.delete('/api/v1/twitch/moderation/bans/:userId', async (req, res, next) => { try { await twitch.unbanUser(String(req.params.userId)); res.status(204).end(); } catch (error) { next(error); } });
   app.get('/api/v1/capabilities', (_req, res) => res.json(capabilities));
   const refreshDiscord = async () => {
     if (!discordToken) { discordPublic = { configured: false, connected: false, guildName: null, channelName: null, error: null }; return; }
@@ -1204,6 +1342,9 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
         ok: true,
         state: remote ? toRemoteDashboardState(result.state) : result.state,
         commandType: result.command.type,
+        ...(typeof req.body?.commandId === 'string' ? { commandId: req.body.commandId } : {}),
+        ...(typeof req.body?.correlationId === 'string' ? { correlationId: req.body.correlationId } : {}),
+        stateRevision: result.state.stateRevision,
       });
     } catch (error) { next(error); }
   });
@@ -1406,6 +1547,14 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
           if (typeof input.timerBrowserSource !== 'string' || input.timerBrowserSource.length > 200) throw new Error('Source timer OBS invalide.');
           local.settings.timerBrowserSource = input.timerBrowserSource.trim() || undefined;
         }
+        if (input.primaryMicInput !== undefined) {
+          if (typeof input.primaryMicInput !== 'string' || input.primaryMicInput.length > 200) throw new Error('Micro principal OBS invalide.');
+          local.settings.primaryMicInput = input.primaryMicInput.trim() || undefined;
+        }
+        if (input.requireTimerOverlayOnStart !== undefined) {
+          if (typeof input.requireTimerOverlayOnStart !== 'boolean') throw new Error('Politique timer OBS invalide.');
+          local.settings.requireTimerOverlayOnStart = input.requireTimerOverlayOnStart;
+        }
         if (input.obsExecutablePath !== undefined) {
           if (typeof input.obsExecutablePath !== 'string' || input.obsExecutablePath.length > 500) throw new Error('Chemin OBS invalide.');
           local.settings.obsExecutablePath = input.obsExecutablePath.trim() || undefined;
@@ -1454,7 +1603,7 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
         void twitch.waitForDeviceAuthorization().then(async () => {
           Object.assign(local.twitch, twitch.publicIdentity());
           await save();
-          broadcast();
+          await validateTwitch();
         }).catch(error => { logError(error); broadcast(); });
       }
     } catch (error) { next(error); }
@@ -1464,6 +1613,8 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
       await twitch.disconnect();
       local.twitch = { broadcasterId: '', userName: '', displayName: '' };
       local.twitchLastSyncedAt = null;
+      twitchEventSub.stop(); twitchEventSubStarted = false; chatMessages = []; chatStatus = 'DISCONNECTED'; twitchChatters = { items: [], total: 0, cursor: null };
+      twitchLive = { isLive: false, title: null, category: null, categoryId: null, startedAt: null, viewerCount: null, thumbnailUrl: null };
       invalidatePreflight();
       res.json(await changed());
     } catch (error) { next(error); }
@@ -1694,7 +1845,7 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
     logError(error);
     const name = error instanceof Error ? error.name : '';
     const status = name === 'NOT_FOUND' ? 404
-      : name === 'REMOTE_SCOPE_DENIED' ? 403
+      : ['REMOTE_SCOPE_DENIED', 'TWITCH_NOT_AUTHORIZED'].includes(name) ? 403
         : ['CHECKLIST_INCOMPLETE', 'CONFIRM_REQUIRED', 'TWITCH_DISCONNECTED', 'NOT_EDITABLE'].includes(name) ? 409
           : 400;
     const code = name === 'CHECKLIST_INCOMPLETE' ? 'CHECKLIST_INCOMPLETE'
@@ -1703,8 +1854,9 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
           : name === 'NOT_FOUND' ? 'NOT_FOUND'
             : name === 'NOT_EDITABLE' ? 'NOT_EDITABLE'
               : name === 'REMOTE_SCOPE_DENIED' ? 'REMOTE_SCOPE_DENIED'
+                : name === 'TWITCH_NOT_AUTHORIZED' ? 'TWITCH_NOT_AUTHORIZED'
                 : 'INVALID_REQUEST';
-    res.status(status).json({ ok: false, error: { code, message: error instanceof Error ? error.message : 'Erreur interne' } });
+    res.status(status).json({ ok: false, error: { code, message: error instanceof Error ? error.message : 'Erreur interne', retryable: false, ...((error as Error & { requiredScope?: string })?.requiredScope ? { details: { requiredScope: (error as Error & { requiredScope: string }).requiredScope } } : {}) } });
   });
 
   sockets.on('connection', ws => {
@@ -1722,6 +1874,7 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
   const actualPort = typeof address === 'object' && address ? address.port : requestedPort;
   runtimePort = actualPort;
   const unsubscribeObs = obs.onStateChanged(() => {
+    eventCore.publish({ type: obs.state.connected ? 'obs.state.changed' : 'obs.disconnected', source: 'obs', payload: { connected: obs.state.connected, streaming: obs.state.streaming, streamingKnown: obs.state.streamingKnown !== false, scene: obs.state.scene } });
     const currentStreaming = obs.state.streaming;
     if (obs.state.connected) {
       if (!obsConnectionObserved) {
@@ -1740,7 +1893,10 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
   });
   const validator = setInterval(() => { void validateTwitch().catch(logError); }, 60 * 60_000);
   validator.unref();
+  const twitchLivePoller = setInterval(() => { void refreshTwitchLive(); }, 30_000);
+  twitchLivePoller.unref();
   await validateTwitch().catch(logError);
+  await streamlabs.connect();
   if (google.connected) await refreshGoogleCalendars().catch(logError);
   void obs.configure(local.settings.obsUrl, currentObsPassword).then(broadcast).catch(error => { logError(error); broadcast(); });
   void Promise.resolve(logger.info(`StreamDashboard ready on ${host}:${actualPort}`)).catch(() => undefined);
@@ -1750,12 +1906,15 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
   const stop = () => stopPromise ??= (async () => {
     unsubscribeObs();
     clearInterval(validator);
+    clearInterval(twitchLivePoller);
     if (timerExpiry) clearTimeout(timerExpiry);
     if (remoteActivitySaveTimer) clearTimeout(remoteActivitySaveTimer);
     await streamTrackingQueue.catch(() => undefined);
     await unplannedMetadataQueue.catch(() => undefined);
     await unplannedGoogleQueue.catch(() => undefined);
     twitch.close();
+    twitchEventSub.stop();
+    await streamlabs.disconnect();
     for (const ws of sockets.clients) ws.terminate();
     sockets.close();
     await obs.close();

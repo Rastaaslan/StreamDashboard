@@ -33,6 +33,21 @@ describe('stabilisation workflow live réel', () => {
     expect(obs.stream).toHaveBeenCalledWith(true); expect(warnings).toHaveLength(1); expect(domain.mode).toBe('live');
   });
 
+  it('bloque Start quand le timer est obligatoire et que la Browser Source ne peut pas être rafraîchie', async () => {
+    const domain = { mode: 'idle' as const, timer: { running: false, duration: 300, remaining: 300, deadline: null }, checklist: [] };
+    const obs: ObsCommands = {
+      state: { connected: true, streaming: false }, scene: vi.fn(), mute: vi.fn(), volume: vi.fn(), stream: vi.fn(), record: vi.fn(), restartMedia: vi.fn(), refresh: vi.fn(),
+      refreshBrowserSource: vi.fn(async () => { throw new Error('browser cache fail'); }), waitForStreaming: vi.fn(async expected => { obs.state.streaming = expected; }),
+    };
+    const service = new DashboardCommandService(domain, obs, vi.fn(async () => ({}) as never), {
+      settings: { modeScenes: {}, timerBrowserSource: 'Timer', requireTimerOverlayOnStart: true },
+      logger: { info() {}, warn() {} },
+    });
+    await expect(service.execute({ type: 'session.start' })).rejects.toMatchObject({ name: 'TIMER_OVERLAY_NOT_READY' });
+    expect(obs.stream).not.toHaveBeenCalled();
+    expect(domain.mode).toBe('idle');
+  });
+
   it('délègue le volume dB sans repasser par le multiplicateur linéaire', async () => {
     const domain = { mode: 'idle' as const, timer: { running: false, duration: 300, remaining: 300, deadline: null }, checklist: [] };
     const obs: ObsCommands = { state: { connected: true, streaming: false }, scene: vi.fn(), mute: vi.fn(), volume: vi.fn(), volumeDb: vi.fn(), stream: vi.fn(), record: vi.fn(), restartMedia: vi.fn(), refresh: vi.fn() };

@@ -17,7 +17,8 @@ export function startUpdater(
 
   const logError = (...values: unknown[]) => { void Promise.resolve(logger.error(...values)).catch(() => undefined); };
   const offerWhenSafe = async () => {
-    if (!active || !ready || dialogOpen || Date.now() < deferredUntil || dashboard.state().obs.streaming) return;
+    const obs = dashboard.state().obs;
+    if (!active || !ready || dialogOpen || Date.now() < deferredUntil || !obs.connected || obs.streamingKnown === false || obs.streaming) return;
     dialogOpen = true;
     try {
       const choice = await dialog.showMessageBox(window, {

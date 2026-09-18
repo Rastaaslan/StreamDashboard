@@ -4,7 +4,7 @@ import { apiUrl, nextRetry, normalizeServer, parsePairing, websocketUrl } from '
 
 const mobileIndex = readFileSync(new URL('../apps/mobile/index.html', import.meta.url), 'utf8');
 const mobileScript = readFileSync(new URL('../apps/mobile/mobile.js', import.meta.url), 'utf8');
-const mobilePolish = readFileSync(new URL('../apps/mobile/mobile-polish.js', import.meta.url), 'utf8');
+const templatesFeature = readFileSync(new URL('../apps/mobile/features/templates.js', import.meta.url), 'utf8');
 const remotePolicy = readFileSync(new URL('../apps/server/src/remote-policy.ts', import.meta.url), 'utf8');
 const androidActivity = readFileSync(new URL('../android/app/src/main/java/com/rastaaslan/streamdashboard/remote/MainActivity.java', import.meta.url), 'utf8');
 const androidManifest = readFileSync(new URL('../android/app/src/main/AndroidManifest.xml', import.meta.url), 'utf8');
@@ -25,8 +25,9 @@ describe('Android remote runtime', () => {
     expect(remotePolicy).toContain("case 'scene.chatting'");
     expect(remotePolicy).not.toContain("case 'obs.scene'");
   });
-  it('présente cinq volets persistants sans reconnecter le WebSocket', () => {
-    for (const tab of ['live', 'regie', 'planning', 'prepare', 'settings']) expect(mobileIndex).toContain(`data-tab="${tab}"`);
+  it('présente quatre destinations et un menu secondaire sans reconnecter le WebSocket', () => {
+    for (const tab of ['home', 'live', 'sounds', 'planning']) expect(mobileIndex).toContain(`data-tab="${tab}"`);
+    expect(mobileIndex).toContain('id="menu-trigger"');
     expect(mobileScript).toContain("localStorage.setItem('streamdashboard.mobileTab', tab)");
     expect(mobileScript).not.toMatch(/selectTab[\s\S]{0,300}(connect\(|location\.reload)/);
     expect(mobileIndex).toContain('+ ÉVÉNEMENT');
@@ -49,16 +50,15 @@ describe('Android remote runtime', () => {
     expect(mobileIndex).toContain('id="event-template"');
     expect(mobileIndex).toContain('name="recurrence"');
     expect(mobileIndex).toContain('name="recurrenceUntil"');
-    expect(mobilePolish).toContain('applyTemplate(template');
-    expect(mobilePolish).toContain('La périodicité reste libre');
-    expect(mobilePolish).toContain('CRÉER UN ÉVÉNEMENT');
+    expect(templatesFeature).toContain('applyTemplate(template');
+    expect(templatesFeature).toContain('La périodicité reste libre');
+    expect(templatesFeature).toContain('CRÉER UN ÉVÉNEMENT');
   });
   it('répare le démarrage live Android avec préparation et confirmation de bypass checklist', () => {
-    expect(mobileIndex).toContain('src="mobile-polish.js"');
-    expect(mobilePolish).toContain("transport.command({ type: 'session.prepare' })");
-    expect(mobilePolish).toContain("transport.command({ type: 'session.start', force: false })");
-    expect(mobilePolish).toContain("transport.command({ type: 'session.start', force: true })");
-    expect(mobilePolish).toContain('Démarrer quand même depuis le téléphone ?');
+    expect(mobileScript).toContain("command({ type: 'session.prepare' })");
+    expect(mobileScript).toContain("command({ type: 'session.start', force: requiresBypass }");
+    expect(mobileScript).toContain('Démarrer quand même ?');
+    expect(templatesFeature).not.toContain("$('stream').onclick");
     expect(remotePolicy).toContain("force: command.force === true");
     expect(remotePolicy).not.toContain('Le contournement de checklist est réservé au PC.');
   });
@@ -72,7 +72,10 @@ describe('Android remote runtime', () => {
     expect(androidActivity).toContain('"image/png".equals(mimeType)');
     for (const permission of ['READ_MEDIA_IMAGES', 'READ_EXTERNAL_STORAGE', 'WRITE_EXTERNAL_STORAGE', 'MANAGE_EXTERNAL_STORAGE']) expect(androidManifest).not.toContain(permission);
   });
-  it('active les dialogues JavaScript Android utilisés par les confirmations du planning', () => {
+  it('durcit la WebView Android et conserve les dialogues JavaScript', () => {
+    expect(androidActivity).toContain('MIXED_CONTENT_NEVER_ALLOW');
+    expect(androidActivity).toContain('WebViewAssetLoader');
+    expect(androidActivity).not.toContain('MIXED_CONTENT_ALWAYS_ALLOW');
     expect(androidActivity).toContain('import android.webkit.WebChromeClient;');
     expect(androidActivity).toContain('webView.setWebChromeClient(new WebChromeClient());');
   });

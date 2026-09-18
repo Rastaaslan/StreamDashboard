@@ -3,6 +3,7 @@ import { access, mkdtemp, rm } from 'node:fs/promises';
 import { spawn } from 'node:child_process';
 import os from 'node:os';
 import path from 'node:path';
+import packageJson from '../package.json' with { type: 'json' };
 
 const packagedExecutable = process.env.STREAMDASHBOARD_PACKAGED_EXE;
 
@@ -27,7 +28,9 @@ test('Electron réel démarre, persiste, impose une instance et arrête son back
     application = await launch(profile);
     const window = await application.firstWindow();
     await expect(window).toHaveTitle(/StreamDashboard/);
-    await expect(window.locator('h1')).toContainText('Vue d’ensemble');
+    await expect(window.locator('#title')).toHaveText('Accueil');
+    const electronVersion = await application.evaluate(() => process.versions.electron);
+    expect(electronVersion).toBe(packageJson.devDependencies.electron);
 
     const health = await window.evaluate(() => fetch('/api/v1/health').then(response => response.json()));
     expect(health).toMatchObject({ ok: true, protocolVersion: 1 });
@@ -61,7 +64,7 @@ test('Electron réel démarre, persiste, impose une instance et arrête son back
         second.once('exit', value => { clearTimeout(timeout); resolve(value); });
       });
       expect(code).toBe(0);
-      await expect(window.locator('h1')).toBeVisible();
+      await expect(window.locator('#title')).toBeVisible();
     }
 
     const origin = await window.evaluate(() => location.origin);

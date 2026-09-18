@@ -1,6 +1,10 @@
 plugins { id 'com.android.application' }
 
-dependencies { implementation 'androidx.core:core:1.15.0' }
+dependencies {
+    implementation 'androidx.core:core:1.15.0'
+    implementation 'androidx.webkit:webkit:1.15.0'
+    testImplementation 'junit:junit:4.13.2'
+}
 
 def stableKeystore = System.getenv('ANDROID_KEYSTORE_PATH')
 def hasStableSigning = stableKeystore && System.getenv('ANDROID_KEYSTORE_PASSWORD') && System.getenv('ANDROID_KEY_ALIAS') && System.getenv('ANDROID_KEY_PASSWORD')

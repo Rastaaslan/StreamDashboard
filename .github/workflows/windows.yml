@@ -36,15 +36,12 @@ jobs:
       - name: Static security invariants
         run: npm run security:check
       - name: Check mobile JavaScript syntax
-        run: |
-          node --check apps/mobile/mobile.js
-          node --check apps/mobile/planning-export.js
+        run: npm run check:shipped-js
       - name: Smoke remote/mobile security flow
         run: npm run mobile:smoke
       - name: Audit runtime dependencies
         run: npm audit --omit=dev --audit-level=high
       - name: Audit development toolchain
-        continue-on-error: true
         run: npm audit --include=dev --audit-level=high
       - name: Package Windows application for PR validation
         if: github.event_name == 'pull_request'

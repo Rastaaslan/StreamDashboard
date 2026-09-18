@@ -2,20 +2,21 @@
 <html lang="fr">
 <head>
   <meta charset="utf-8">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data: https:; connect-src 'self' http: https: ws: wss:; object-src 'none'; frame-src 'none'; base-uri 'none'; form-action 'self'">
   <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-  <meta name="theme-color" content="#111124">
+  <meta name="theme-color" content="#0b0b10">
   <meta name="mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <link rel="manifest" href="manifest.webmanifest">
   <link rel="apple-touch-icon" href="icon-192.png">
   <link rel="stylesheet" href="mobile.css">
-  <title>StreamDashboard Remote</title>
+  <title>StreamDashboard</title>
 </head>
 <body>
-<header>
-  <div><small>STREAMDASHBOARD COMPAGNON</small><h1 id="connection">PC hors ligne</h1><small id="last-sync">Aucune synchronisation PC</small></div>
-  <b id="live">OFFLINE</b>
+<header class="app-header">
+  <div><span class="brand-mark" aria-hidden="true"></span><h1>StreamDashboard</h1><small id="connection">PC hors ligne</small><small id="last-sync">Aucune synchronisation PC</small></div>
+  <div class="header-actions"><b id="live" class="global-status">Hors ligne</b><button type="button" id="focus-toggle" class="focus-toggle" aria-pressed="false">Focus</button><button type="button" id="menu-trigger" data-open-tab="more" aria-label="Ouvrir le menu secondaire"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 7h14M5 12h14M5 17h14"/></svg></button></div>
 </header>
 <main>
   <section id="pairing" class="pairing" hidden>
@@ -29,19 +30,41 @@
     <button id="pair-button">APPAIRER</button>
   </section>
 
-  <div class="view active" data-view="live">
-    <section class="status"><span>PC <b id="pc">—</b></span><span>OBS <b id="obs">—</b></span><span>SCÈNE <b id="scene">—</b></span></section>
-    <section><small>PROCHAIN LIVE</small><h2 id="next">Aucun live planifié</h2><button data-command="session.prepare">PRÉPARER</button></section>
+  <div class="view active" data-view="home">
+    <section class="broadcast-home" aria-label="État du direct">
+      <div><span id="home-live-status" class="live-line">○ Hors ligne</span><h2 id="hub-title">Prêt à streamer</h2><p id="hub-category" class="muted">Console de contrôle prête.</p></div><strong id="home-duration" class="live-duration">—</strong>
+      <div class="live-metric-rail"><button type="button" id="home-viewers-link" data-open-live-tool="audience"><b id="hub-viewers">—</b><small>viewers</small></button><button type="button" id="home-chatters-link" data-open-live-tool="audience"><b id="hub-chatters">—</b><small>dans le chat</small></button></div>
+    </section>
+    <section class="system-rail direct-ready" aria-label="Prêt à partir"><span>PC <b id="pc">—</b></span><span>OBS <b id="obs">—</b></span><span>TWITCH <b id="direct-twitch-state">—</b></span></section>
+
+    <section class="control-bank home-live"><h2>Actions</h2><div><button type="button" id="quick-clip">Clip</button><button type="button" data-mode="pause">Pause</button><button type="button" id="open-scenes">Scènes</button><button type="button" id="home-mic">Micro</button></div></section><section class="home-live-context home-live"><button type="button" id="home-scene-link"><span>Scène</span><b id="direct-scene">—</b></button><span><small>Micro</small><b id="direct-mic-state">Indisponible</b><i id="direct-mic-dot">○</i></span></section><section class="flat-section focus-secondary"><h2>Activité</h2><div id="hub-activity" class="activity-list"><p class="empty-copy">Aucune activité récente.</p></div></section><section class="flat-section home-chat home-live focus-secondary"><h2>Chat</h2><div id="home-chat-preview"><p class="empty-copy">Connecte Twitch pour afficher le chat.</p></div><button type="button" class="text-action" data-open-live-tool="chat">Ouvrir le chat</button></section>
+    <section class="hub-tools">
+      <h2>Espaces live</h2>
+      <div class="hub-tool-tabs"><button type="button" data-hub-tool="chat">CHAT</button><button type="button" data-hub-tool="audience">AUDIENCE</button><button type="button" data-hub-tool="soundboard">SONS</button><button type="button" data-hub-tool="supports">SOUTIENS</button><button type="button" data-hub-tool="automations">AUTO</button><button type="button" data-hub-tool="vod">VOD</button><button type="button" data-hub-tool="clips">CLIPS</button></div>
+      <div class="hub-tool-panel" data-hub-panel="chat"><p id="moderation-state" class="muted"></p><div id="hub-chat" class="chat-list"><p class="muted">Connexion Twitch requise.</p></div><div id="chat-reply-context" class="chat-reply" hidden></div><form id="chat-form" class="chat-compose"><input id="chat-message" maxlength="500" placeholder="Envoyer dans le chat Twitch"><button>ENVOYER</button></form><div class="chat-compose"><input id="unban-user-id" maxlength="30" inputmode="numeric" placeholder="ID utilisateur à débannir"><button type="button" id="unban-user">UNBAN</button></div></div>
+      <div class="hub-tool-panel" data-hub-panel="audience" hidden><p><b id="audience-viewers">—</b> viewers actuels</p><p><b id="audience-chatters">—</b> utilisateurs présents dans le chat</p><input id="audience-search" placeholder="Rechercher un chatter"><div id="audience-list"></div><button type="button" class="secondary" id="more-chatters" hidden>PLUS DE CHATTERS</button></div>
+      <div class="hub-tool-panel" data-hub-panel="soundboard" hidden><div class="soundboard-toolbar"><input id="sound-search" placeholder="Rechercher un son"><select id="sound-category"><option value="">Toutes les catégories</option></select><label class="toggle"><input type="checkbox" id="sound-favorites"> Favoris</label></div><p id="soundboard-state" class="muted"></p><div id="sound-grid" class="sound-grid"></div><button type="button" class="secondary" id="stop-sound">STOP</button></div>
+      <div class="hub-tool-panel" data-hub-panel="automations" hidden><div id="automation-list"></div><form id="automation-form"><input type="hidden" id="automation-id"><label>Nom<input id="automation-name" maxlength="120" required></label><label>Trigger<select id="automation-trigger"><option value="support.received">Soutien reçu</option><option value="test.support">Événement test soutien</option><option value="twitch.raid">Raid Twitch</option></select></label><label>Montant minimum (unités mineures)<input id="automation-amount" type="number" min="0" step="1" value="500"></label><label>Son<select id="automation-sound" required></select></label><label>Cooldown (secondes)<input id="automation-cooldown" type="number" min="0" max="3600" value="30"></label><label class="toggle"><input id="automation-enabled" type="checkbox" checked> Activée</label><button>ENREGISTRER</button><button type="button" class="secondary" id="automation-reset">NOUVELLE</button></form><button type="button" class="secondary" id="automation-test">TESTER UN SOUTIEN 5 €</button></div>
+      <div class="hub-tool-panel" data-hub-panel="supports" hidden><p id="support-provider" class="muted">Streamlabs non configuré.</p><div id="support-totals" class="support-totals"></div><label>Historique<select id="support-filter"><option value="session">Session live</option><option value="day">Aujourd’hui</option><option value="month">Ce mois</option><option value="all">Tout</option></select></label><div id="support-history"></div></div>
+      <div class="hub-tool-panel" data-hub-panel="vod" hidden><button type="button" id="refresh-vods">RAFRAÎCHIR</button><div id="vod-list"></div><button type="button" class="secondary" id="more-vods" hidden>PLUS</button></div>
+      <div class="hub-tool-panel" data-hub-panel="clips" hidden><button type="button" id="create-clip">CRÉER UN CLIP</button><div id="clip-list"></div><button type="button" class="secondary" id="more-clips" hidden>PLUS</button></div>
+    </section>
+    <section class="direct-next"><small>Prochain direct</small><h2 id="next">Aucun live planifié</h2><button data-command="session.prepare">PRÉPARER LE DIRECT</button></section>
     <section class="modes"><button data-mode="intro">INTRO</button><button data-mode="live">LIVE</button><button data-chatting>CHATTING</button><button data-mode="pause">PAUSE</button><button data-mode="end">END</button></section>
     <section class="timer"><strong id="timer">05:00</strong><div class="timer-actions"><button data-command="timer.start">▶</button><button data-command="timer.pause">Ⅱ</button><button data-command="timer.reset">↺</button></div><div class="timer-presets"><button data-command="timer.add" data-seconds="60">+1 min</button><button data-command="timer.add" data-seconds="120">+2 min</button><button data-command="timer.add" data-seconds="300">+5 min</button><button data-command="timer.add" data-seconds="600">+10 min</button></div></section>
     <button class="critical" id="stream">DÉMARRER LE LIVE</button>
   </div>
 
-  <div class="view" data-view="regie">
+  <div class="view" data-view="live">
+    <div class="screen-heading"><div><span class="eyebrow">Workspace</span><h2>Live</h2></div><span id="live-workspace-status" class="live-line">○ Hors ligne</span></div>
+    <section class="live-overview" aria-label="Bande de statut Live"><div><small>Durée</small><b id="live-duration">—</b></div><div><small>Viewers</small><b id="live-viewers">—</b></div><div><small>Chat</small><b id="live-chatters">—</b></div><div><small>Scène</small><b id="live-scene">—</b></div></section>
+    <section class="live-command-grid"><button type="button" id="live-clip">Clip</button><button type="button" data-mode="pause">Pause</button><button type="button" id="open-scenes-live">Scènes</button><button type="button" id="quick-mic">Micro</button></section>
     <section id="twitch-editor"><h2>Informations Twitch</h2><label>Titre du live<input id="twitch-title" maxlength="140"></label><label>Catégorie<input id="twitch-category" maxlength="80" autocomplete="off"><input id="twitch-game-id" type="hidden"></label><div id="twitch-results" class="category-results"></div><button id="save-twitch">ENREGISTRER</button></section>
     <section><h2>Audio</h2><div id="audio"></div></section>
     <section><h2>Fun Deck</h2><div id="deck"></div></section>
   </div>
+
+  <div class="view" data-view="sounds"><div class="screen-heading"><div><span class="eyebrow">PC Runtime</span><h2>Sons</h2></div><span id="sounds-pc-state" class="connection-copy">PC hors ligne</span></div><div id="primary-soundboard"></div><button type="button" id="refresh-sounds" class="refresh-control">Rafraîchir le catalogue</button></div>
 
   <div class="view" data-view="planning">
     <section>
@@ -78,38 +101,40 @@
   </div>
 
   <div class="view" data-view="prepare">
-    <section><h2>Idées / Notes</h2><div id="notes"></div><label>Nouvelle idée<input id="note-text" maxlength="300" placeholder="Finir Road 96"></label><button id="add-note">AJOUTER L’IDÉE</button></section>
-    <section><h2>Checklist pré-live</h2><p class="muted">Le bouton Préparer t’amène ici : coche chaque point avant de lancer le live. Si tu choisis malgré tout de lancer avec une vérification incomplète, l’app te demandera confirmation.</p><div id="checklist"></div><label>Nouvel élément<input id="check-label" maxlength="120" placeholder="Micro chargé"></label><button id="add-check">AJOUTER</button></section>
-    <section class="templates-section">
-      <div class="section-heading"><div><h2>Templates d’événement</h2><p class="muted">Un template préremplit le formulaire Planning ; il ne crée jamais un événement tout seul.</p></div><button id="add-template">+ TEMPLATE</button></div>
-      <div id="templates"></div>
-    </section>
-    <dialog id="template-dialog">
-      <form id="template-form">
-        <h2 id="template-dialog-title">Nouveau template</h2>
-        <label>Nom du template<input name="title" id="template-name" maxlength="140" required placeholder="FC26 Clubs"></label>
-        <label>Description / note<textarea name="description" id="template-description" maxlength="500" placeholder="Session Clubs chill avec le FC Peace"></textarea></label>
-        <label>Catégorie Twitch<input id="template-twitch-category" maxlength="80" autocomplete="off" placeholder="Rechercher une catégorie officielle"><input id="template-twitch-game-id" type="hidden"></label>
-        <div id="template-twitch-results" class="category-results"></div>
-        <label class="toggle"><input type="checkbox" id="template-publish-twitch"> Publier sur Twitch</label>
-        <label class="toggle"><input type="checkbox" id="template-publish-google"> Ajouter à Google Calendar</label>
-        <div class="dialog-actions"><button type="submit">ENREGISTRER</button><button type="button" class="secondary" id="close-template">ANNULER</button></div>
-      </form>
-    </dialog>
+    <div class="screen-heading"><div><span class="eyebrow">Une chose à la fois</span><h2>Préparation</h2></div></div>
+    <nav class="prepare-tabs" aria-label="Sections de préparation"><button type="button" data-prepare-tab="checklist">Checklist</button><button type="button" data-prepare-tab="notes">Notes</button><button type="button" data-prepare-tab="templates">Templates</button></nav>
+    <section data-prepare-panel="checklist"><div class="section-heading"><h2>Checklist</h2><span id="check-progress-copy">0 / 0</span></div><div class="progress"><i id="mobile-check-progress"></i></div><div id="checklist"></div><details class="inline-create"><summary>+ Ajouter un élément</summary><label><span class="sr-only">Nouvel élément</span><input id="check-label" maxlength="120" placeholder="Casque chargé"></label><button id="add-check">Ajouter</button></details></section>
+    <section data-prepare-panel="notes" hidden><div class="section-heading"><h2>Notes</h2><button type="button" class="icon-control" id="new-note" aria-label="Nouvelle note">+</button></div><div id="notes"></div><dialog id="note-dialog"><form method="dialog"><h2>Nouvelle note</h2><label>Note<textarea id="note-text" maxlength="300" placeholder="Idée à retrouver avant le live"></textarea></label><div class="dialog-actions"><button type="button" id="add-note">Enregistrer</button><button type="button" class="secondary" id="cancel-note">Annuler</button></div></form></dialog></section>
+    <section class="templates-section" data-prepare-panel="templates" hidden><div class="section-heading"><h2>Templates</h2><button id="add-template" class="icon-control" aria-label="Nouveau template">+</button></div><div id="templates"></div></section>
+    <dialog id="template-dialog"><form id="template-form"><h2 id="template-dialog-title">Nouveau template</h2><label>Nom du template<input name="title" id="template-name" maxlength="140" required></label><label>Description / note<textarea name="description" id="template-description" maxlength="500"></textarea></label><label>Catégorie Twitch<input id="template-twitch-category" maxlength="80" autocomplete="off"><input id="template-twitch-game-id" type="hidden"></label><div id="template-twitch-results" class="category-results"></div><label class="toggle"><input type="checkbox" id="template-publish-twitch"> Publier sur Twitch</label><label class="toggle"><input type="checkbox" id="template-publish-google"> Ajouter à Google Calendar</label><div class="dialog-actions"><button type="submit">Enregistrer</button><button type="button" class="secondary" id="close-template">Annuler</button></div></form></dialog>
   </div>
 
   <div class="view" data-view="settings">
     <button class="secondary" id="forget-device" hidden>Oublier cette télécommande</button>
     <section id="provider-accounts" hidden><h2>Providers autonomes</h2><p class="muted">Utilisé uniquement lorsque le PC est hors ligne.</p><div class="companion-row"><span>Twitch autonome · <b id="twitch-standalone-status">—</b></span><button id="twitch-standalone-auth">Connecter</button><button id="twitch-standalone-logout" class="secondary">Déconnecter</button></div><div class="companion-row"><span>Google autonome · <b id="google-standalone-status">—</b></span><button id="google-standalone-auth">Connecter</button><button id="google-standalone-logout" class="secondary">Déconnecter</button></div></section>
-    <section id="android-options" hidden><label class="toggle"><input type="checkbox" id="keep-awake"> Garder l’écran allumé pendant le live</label><button class="secondary" id="edit-server">Modifier l’adresse du PC</button></section>
+    <section id="ui-preferences"><h2>Confort visuel</h2><label class="toggle"><input type="checkbox" id="focus-mode"> Mode Focus</label><label class="toggle"><input type="checkbox" id="reduce-motion"> Réduire les animations</label><label>Densité<select id="ui-density"><option value="compact">Compact</option><option value="normal">Normal</option><option value="comfort" selected>Confort</option></select></label></section><section id="android-options" hidden><label class="toggle"><input type="checkbox" id="keep-awake"> Garder l’écran allumé pendant le live</label><button class="secondary" id="edit-server">Modifier l’adresse du PC</button></section>
     <dialog id="sync-conflict"><h2>⚠️ Conflit de synchronisation</h2><p id="sync-conflict-fields"></p><div class="conflict-actions"><button id="keep-pc">GARDER PC</button><button id="keep-phone">GARDER TÉLÉPHONE</button></div></dialog>
+    <details id="diagnostics"><summary>Diagnostics développeur · Events</summary><section><label>Type<input id="event-filter-type" maxlength="120"></label><label>Source / domaine<input id="event-filter-source" maxlength="80"></label><label>Correlation ID<input id="event-filter-correlation" maxlength="128"></label><button type="button" id="refresh-events">FILTRER</button><div id="diagnostic-events"></div></section></details>
     <p id="message" role="status" aria-live="polite"></p>
   </div>
+  <div class="view" data-view="more"><div class="screen-heading"><div><span class="eyebrow">Menu secondaire</span><h2>Le camp</h2></div><button type="button" data-open-tab="home" aria-label="Fermer le menu">×</button></div><section class="more-group"><h3>Préparation</h3><button type="button" data-open-tab="prepare" data-prepare-target="checklist">Checklist <span>›</span></button><button type="button" data-open-tab="prepare" data-prepare-target="notes">Notes <span>›</span></button><button type="button" data-open-tab="prepare" data-prepare-target="templates">Templates <span>›</span></button></section><section class="more-group"><h3>Stream</h3><button type="button" id="open-automations">Automatisations <span>›</span></button><button type="button" data-open-live-tool="supports">Soutiens <span>›</span></button><button type="button" data-open-live-tool="vod">VOD &amp; Clips <span>›</span></button><div id="more-automations"></div></section><section class="more-group"><h3>Connexions</h3><div id="hub-integrations" class="integration-list"></div></section><section class="more-group"><h3>Application</h3><button type="button" data-open-tab="settings">Appairage <span>›</span></button><button type="button" data-open-tab="settings">Réglages <span>›</span></button><button type="button" data-open-tab="settings">Diagnostics <span>›</span></button><p class="about-copy">StreamDashboard · Le Feu de Camp de Dam</p></section></div>
+<dialog id="scene-sheet" class="scene-sheet"><div class="sheet-handle" aria-hidden="true"></div><header><h2>Changer de scène</h2><button type="button" id="close-scenes" aria-label="Fermer">×</button></header><div class="scene-sheet-grid"><button type="button" data-mode="live">Gameplay</button><button type="button" data-chatting>Chatting</button><button type="button" data-mode="pause">AFK</button><button type="button" data-mode="intro">Intro</button></div></dialog>
 </main>
-<nav class="bottom-nav"><button data-tab="live">●<small>LIVE</small></button><button data-tab="regie">◆<small>RÉGIE</small></button><button data-tab="planning">▦<small>PLANNING</small></button><button data-tab="prepare">✓<small>PRÉPA</small></button><button data-tab="settings">⚙<small>RÉGLAGES</small></button></nav>
+<button type="button" id="command-trigger" class="command-trigger" aria-haspopup="dialog" aria-controls="command-palette"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M4 12h10M4 17h7"/><circle cx="18" cy="15" r="3"/></svg><span>Commandes</span></button>
+<dialog id="command-palette" class="command-sheet" aria-labelledby="command-title">
+  <div class="sheet-handle" aria-hidden="true"></div><header><div><small>Accès instantané</small><h2 id="command-title">Commandes</h2></div><button type="button" id="close-commands" aria-label="Fermer les commandes">×</button></header>
+  <label class="command-search"><span class="sr-only">Rechercher une commande</span><input id="command-search" type="search" placeholder="Rechercher une commande…" autocomplete="off"></label>
+  <section><h3>Récents</h3><div id="command-recents" class="command-strip"><span class="empty-copy">Aucune commande récente.</span></div></section>
+  <section><h3>Stream</h3><div class="command-list"><button type="button" data-palette-action="clip">Créer un clip <span>Instantané</span></button><button type="button" data-palette-action="pause">Pause <span>Scène</span></button><button type="button" data-palette-action="chatting">Chatting <span>Scène</span></button><button type="button" data-palette-action="intro">Intro <span>Scène</span></button><button type="button" data-palette-action="mute">Mute micro <span>Audio</span></button></div></section>
+  <section><h3>Sons favoris</h3><div id="command-sounds" class="command-pad-strip"><span class="empty-copy">Aucun favori.</span></div></section>
+  <section><h3>Ouvrir</h3><div class="command-list"><button type="button" data-open-live-tool="chat">Chat <span>Live</span></button><button type="button" data-open-live-tool="audience">Audience <span>Live</span></button><button type="button" data-open-live-tool="supports">Soutiens <span>Live</span></button></div></section>
+</dialog>
+<nav class="bottom-nav" aria-label="Navigation principale">
+<button data-tab="home" aria-label="Accueil"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 10.5 12 4l8 6.5V20h-6v-6h-4v6H4z"/></svg><small>Accueil</small></button>
+<button data-tab="live" aria-label="Live"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="4"/><path d="M5.6 5.6a9 9 0 0 0 0 12.8M18.4 5.6a9 9 0 0 1 0 12.8"/></svg><small>Live</small></button>
+<button data-tab="sounds" aria-label="Sons"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 14h4l5 4V6L8 10H4zM17 9a5 5 0 0 1 0 6M19.5 6.5a9 9 0 0 1 0 11"/></svg><small>Sons</small></button>
+<button data-tab="planning" aria-label="Planning"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M8 3v4M16 3v4M3 10h18"/></svg><small>Planning</small></button>
+</nav>
 <script type="module" src="mobile.js"></script>
-<script type="module" src="templates-ui.js"></script>
-<script type="module" src="mobile-live-feedback.js"></script>
-<script type="module" src="mobile-polish.js"></script>
 </body>
 </html>
