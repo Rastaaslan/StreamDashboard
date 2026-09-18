@@ -70,8 +70,9 @@ jobs:
           ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
           ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
         run: |
-          ./android/gradlew -p android testDebugUnitTest lintDebug assembleRelease
+          ./android/gradlew -p android testDebugUnitTest lintDebug assembleRelease assemblePreview
           cp android/app/build/outputs/apk/release/app-release.apk StreamDashboard-Remote-rc.apk
+          cp android/app/build/outputs/apk/preview/app-preview.apk StreamDashboard-Preview.apk
       - name: Verify APK identity, version and signature
         shell: bash
         env:
@@ -93,9 +94,21 @@ jobs:
           fi
           "$AAPT" dump badging "$APK" | grep "package: name='com.rastaaslan.streamdashboard.remote'"
           "$AAPT" dump badging "$APK" | grep "versionCode='$ANDROID_VERSION_CODE' versionName='$ANDROID_VERSION_NAME'"
+          PREVIEW=StreamDashboard-Preview.apk
+          test -s "$PREVIEW"
+          "$APKSIGNER" verify --verbose "$PREVIEW"
+          "$AAPT" dump badging "$PREVIEW" | grep "package: name='com.rastaaslan.streamdashboard.remote.preview'"
+          "$AAPT" dump badging "$PREVIEW" | grep "application-label:'StreamDashboard Preview'"
       - name: Upload Android APK
         uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
         with:
           name: StreamDashboard-Remote
           path: StreamDashboard-Remote-rc.apk
+          if-no-files-found: error
+
+      - name: Upload Android Preview APK
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
+        with:
+          name: StreamDashboard-Preview
+          path: StreamDashboard-Preview.apk
           if-no-files-found: error

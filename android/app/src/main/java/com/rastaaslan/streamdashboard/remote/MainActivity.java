@@ -64,13 +64,15 @@ public class MainActivity extends Activity {
       .addPathHandler("/mobile/", this::localAsset)
       .build();
     webView.addJavascriptInterface(new NativeBridge(), "StreamDashboardNative");
-    providerBridge = new ProviderBridge(this);
-    webView.addJavascriptInterface(providerBridge, "StreamDashboardProviders");
+    if (!BuildConfig.PREVIEW_MODE) {
+      providerBridge = new ProviderBridge(this);
+      webView.addJavascriptInterface(providerBridge, "StreamDashboardProviders");
+    }
     webView.setWebChromeClient(new WebChromeClient());
     webView.setWebViewClient(new LocalOnlyClient());
     setContentView(webView);
     captureDeepLink(getIntent());
-    webView.loadUrl(ORIGIN + "/mobile/index.html");
+    webView.loadUrl(ORIGIN + (BuildConfig.PREVIEW_MODE ? "/mobile/preview.html" : "/mobile/index.html"));
   }
 
   @Override protected void onNewIntent(Intent intent) {
@@ -89,6 +91,7 @@ public class MainActivity extends Activity {
   @Override public void onBackPressed() { if (webView.canGoBack()) webView.goBack(); else super.onBackPressed(); }
 
   private void captureDeepLink(Intent intent) {
+    if (BuildConfig.PREVIEW_MODE) return;
     Uri data = intent == null ? null : intent.getData();
     if (data == null) return;
     if (DeepLinkRouter.route(data.toString()) != DeepLinkRouter.Route.INVALID) pendingDeepLink = data;
@@ -103,13 +106,13 @@ public class MainActivity extends Activity {
     if (route == DeepLinkRouter.Route.PAIR) {
       String quoted = org.json.JSONObject.quote(data.toString());
       webView.evaluateJavascript("window.dispatchEvent(new CustomEvent('native-pairing',{detail:" + quoted + "}))", null);
-    } else if (route == DeepLinkRouter.Route.OAUTH) {
+    } else if (route == DeepLinkRouter.Route.OAUTH && providerBridge != null) {
       providerBridge.acceptOAuthCallback(data);
     }
   }
 
   void dispatchProviderAuth(String provider, boolean connected) {
-    if (!pageReady) return;
+    if (BuildConfig.PREVIEW_MODE || !pageReady) return;
     webView.evaluateJavascript("window.dispatchEvent(new CustomEvent('provider-auth',{detail:{provider:"+org.json.JSONObject.quote(provider)+",connected:"+connected+"}}))",null);
   }
 

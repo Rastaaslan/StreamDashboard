@@ -7,6 +7,10 @@ const pages = [
   ['prepare', 'Préparation', '✓'],
   ['settings', 'Réglages', '⚙'],
 ];
+const secondaryPages = {
+  live: 'Live', deck: 'Scènes & audio', fun: 'Médias OBS', supports: 'Soutiens',
+  automations: 'Automatisations', diagnostics: 'Diagnostics',
+};
 
 let page = 'overview';
 let state;
@@ -150,6 +154,7 @@ function eventRange(item) {
 function nav() {
   $('nav').innerHTML = pages.map(([id, label, icon], index) => `<button data-page="${id}" class="${id === page ? 'active' : ''}" title="${label} · Alt+${index + 1}"><span>${icon}</span>${label}</button>`).join('');
   document.querySelectorAll('[data-page]').forEach(button => {
+    button.classList.toggle('active', button.dataset.page === page);
     button.onclick = () => window.go(button.dataset.page);
   });
 }
@@ -287,10 +292,11 @@ function render() {
   if (!state) return;
   document.body.classList.toggle('desktop-focus', desktopFocus);
   document.documentElement.dataset.accent = state.settings.accent;
-  $('#title').textContent = pages.find(item => item[0] === page)?.[1] ?? 'StreamDashboard';
+  $('#title').textContent = pages.find(item => item[0] === page)?.[1] ?? secondaryPages[page] ?? 'StreamDashboard';
   updateHeader();
-  const views = { overview, prepare: preparation, live, planning, sounds: deck, supports, automations, connections, settings };
-  $('#view').innerHTML = views[page]();
+  const views = { overview, prepare: preparation, live, planning, deck, sounds: deck, fun, supports, automations, diagnostics, connections, settings };
+  const view = views[page] || overview;
+  $('#view').innerHTML = view();
   bindForms();
   document.querySelectorAll('[data-preparation-view]').forEach(button => { button.onclick = () => { preparationView = button.dataset.preparationView; localStorage.setItem('streamdashboard.desktopPreparationView', preparationView); render(); }; });
 }
@@ -446,7 +452,7 @@ function bindForms() {
   };
   const eventDialog = $('#event-dialog');
   const eventForm = $('#event-form');
-  if (eventDialog) eventDialog.addEventListener('close', resetEventDialogState, { once: true });
+  if (eventDialog) eventDialog.addEventListener('close', resetEventDialogState);
   if (eventForm) {
     const categoryInput = eventForm.elements.twitchCategoryName;
     const categoryId = eventForm.elements.twitchCategoryId;

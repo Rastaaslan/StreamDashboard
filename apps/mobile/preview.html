@@ -1,0 +1,318 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self' http: https: ws: wss:; object-src 'none'; frame-src 'none'; base-uri 'none'; form-action 'none'">
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+  <meta name="theme-color" content="#0b0810">
+  <link rel="stylesheet" href="preview.css">
+  <title>StreamDashboard Preview</title>
+</head>
+<body>
+  <div class="ambient" aria-hidden="true"></div>
+
+  <header class="topbar">
+    <div class="brand">
+      <span class="ember-mark" aria-hidden="true"></span>
+      <div>
+        <small>LE FEU DE CAMP DE DAM</small>
+        <strong>StreamDashboard</strong>
+      </div>
+    </div>
+    <button class="icon-button" id="open-camp" aria-label="Ouvrir Le camp">☰</button>
+  </header>
+
+  <main class="app">
+    <section class="screen active" data-screen="home">
+      <div class="screen-title">
+        <div>
+          <span class="eyebrow">CE SOIR</span>
+          <h1>Salut Dam 👋</h1>
+        </div>
+        <span class="status-pill live" id="home-live-pill"><i></i> <span id="home-live-copy">En direct</span></span>
+      </div>
+
+      <article class="hero-card">
+        <div class="hero-topline">
+          <span class="live-dot"><i></i> LIVE</span>
+          <span class="duration" id="home-duration">02:14:32</span>
+        </div>
+        <h2 id="home-title">In Sound Mind — découverte</h2>
+        <p id="home-category">Horreur psychologique • Twitch</p>
+
+        <div class="metric-row">
+          <div><b id="home-viewers">17</b><span>Viewers</span></div>
+          <div><b id="home-chatters">6</b><span>Dans le chat</span></div>
+          <div><b id="home-scene-name">Gameplay</b><span>Scène</span></div>
+        </div>
+      </article>
+
+      <section class="block quick-actions">
+        <div class="section-head">
+          <h2>Actions rapides</h2>
+          <span>1 geste</span>
+        </div>
+
+        <div class="quick-subhead">
+          <span>SCÈNES</span>
+          <button class="text-button" data-go="live">Cockpit</button>
+        </div>
+        <div class="quick-scenes" aria-label="Scènes principales">
+          <button data-quick-scene data-scene="Intro"><span>01</span><b>Intro</b></button>
+          <button class="selected" data-quick-scene data-scene="Gameplay"><span>02</span><b>Gameplay</b></button>
+          <button data-quick-scene data-scene="Chatting"><span>03</span><b>Chatting</b></button>
+          <button data-quick-scene data-scene="Pause"><span>04</span><b>Pause</b></button>
+          <button data-quick-scene data-scene="Fin"><span>05</span><b>Fin</b></button>
+        </div>
+
+        <div class="quick-subhead sound-head">
+          <span>SONS RAPIDES</span>
+          <button class="add-quick-sound" id="add-quick-sound" type="button">+ Ajouter</button>
+        </div>
+        <div class="quick-sound-categories" id="quick-sound-categories" aria-label="Catégories de sons"></div>
+        <div class="quick-sound-grid" id="quick-sound-grid"></div>
+      </section>
+
+      <section class="block compact">
+        <div class="section-head">
+          <h2>À surveiller</h2>
+          <button class="text-button" data-go="live">Ouvrir le live</button>
+        </div>
+        <div class="signal-list">
+          <div><span>OBS</span><b class="good" id="status-obs">Connecté</b></div>
+          <div><span>Twitch</span><b class="good" id="status-twitch">Connecté</b></div>
+          <div><span>Streamlabs</span><b class="muted" id="status-streamlabs">Non configuré</b></div>
+        </div>
+      </section>
+
+      <section class="block compact">
+        <div class="section-head"><h2>Chat récent</h2><span>2 messages</span></div>
+        <div class="chat-preview" id="home-chat-preview">
+          <p><b>Mimi</b><span>mdrrrr derrière toi 😭</span></p>
+          <p><b>Fred</b><span>gg !</span></p>
+        </div>
+      </section>
+    </section>
+
+    <section class="screen" data-screen="live">
+      <div class="screen-title">
+        <div><span class="eyebrow">COCKPIT</span><h1>Live</h1></div>
+        <span class="status-pill live" id="live-status-pill"><i></i> <span id="live-status-copy">02:14:32</span></span>
+      </div>
+
+      <article class="live-core">
+        <div class="live-core-title">
+          <div><small>SCÈNE ACTIVE</small><h2 id="scene-name">Gameplay</h2></div>
+          <span class="scene-state" id="scene-state">OBS OK</span>
+        </div>
+        <div class="scene-grid">
+          <button data-scene="Intro"><span>01</span><b>Intro</b></button>
+          <button class="selected" data-scene="Gameplay"><span>02</span><b>Gameplay</b></button>
+          <button data-scene="Chatting"><span>03</span><b>Chatting</b></button>
+          <button data-scene="Pause"><span>04</span><b>Pause</b></button>
+          <button data-scene="Fin"><span>05</span><b>Fin</b></button>
+        </div>
+      </article>
+
+      <section class="block">
+        <div class="section-head"><h2>Audio</h2><span>3 sources</span></div>
+        <div class="audio-stack">
+          <button class="audio-row on" data-audio>
+            <span class="audio-dot"></span><b>Micro</b><div class="meter"><i style="width:76%"></i></div><small>-8 dB</small>
+          </button>
+          <button class="audio-row on" data-audio>
+            <span class="audio-dot"></span><b>Jeu</b><div class="meter"><i style="width:58%"></i></div><small>-14 dB</small>
+          </button>
+          <button class="audio-row on" data-audio>
+            <span class="audio-dot"></span><b>Discord</b><div class="meter"><i style="width:43%"></i></div><small>-18 dB</small>
+          </button>
+        </div>
+      </section>
+
+      <section class="timer-card">
+        <div><small>MINUTEUR PAUSE</small><strong id="timer-value">05:00</strong></div>
+        <div class="timer-actions">
+          <button data-timer="-60">−1</button>
+          <button id="timer-toggle">▶</button>
+          <button data-timer="60">+1</button>
+        </div>
+      </section>
+
+      <button class="danger-outline" id="stop-live">■ Arrêter le live</button>
+    </section>
+
+    <section class="screen" data-screen="sounds">
+      <div class="screen-title">
+        <div><span class="eyebrow">RÉACTIONS</span><h1>Sons</h1></div>
+        <span class="status-pill" id="sounds-pc-pill"><i></i> <span id="sounds-pc-copy">PC connecté</span></span>
+      </div>
+
+      <label class="search-box">
+        <span>⌕</span>
+        <input id="sound-search" placeholder="Chercher un son">
+      </label>
+
+      <div class="chips" id="sound-filters">
+        <button class="active" data-filter="all">Tout</button>
+        <button data-filter="fav">Favoris</button>
+        <button data-filter="minecraft">Minecraft</button>
+        <button data-filter="reaction">Réactions</button>
+      </div>
+
+      <div class="sound-grid" id="sound-grid">
+        <button class="sound-pad favorite" data-name="BONK" data-kind="reaction"><span>★</span><b>BONK</b><small>Réactions</small></button>
+        <button class="sound-pad favorite" data-name="CREEPER" data-kind="minecraft"><span>★</span><b>CREEPER</b><small>Minecraft</small></button>
+        <button class="sound-pad" data-name="GG" data-kind="reaction"><span>☆</span><b>GG</b><small>Réactions</small></button>
+        <button class="sound-pad" data-name="OH NON" data-kind="reaction"><span>☆</span><b>OH NON</b><small>Réactions</small></button>
+        <button class="sound-pad" data-name="TNT" data-kind="minecraft"><span>☆</span><b>TNT</b><small>Minecraft</small></button>
+        <button class="sound-pad" data-name="VICTOIRE" data-kind="reaction"><span>☆</span><b>VICTOIRE</b><small>Réactions</small></button>
+      </div>
+    </section>
+
+    <section class="screen" data-screen="planning">
+      <div class="screen-title">
+        <div><span class="eyebrow">SEMAINE</span><h1>Planning</h1></div>
+        <button class="primary-small" id="add-event">+ Événement</button>
+      </div>
+
+      <div class="week-strip" id="week-strip">
+        <button><small>LUN</small><b>14</b></button>
+        <button><small>MAR</small><b>15</b></button>
+        <button><small>MER</small><b>16</b></button>
+        <button class="active"><small>JEU</small><b>17</b></button>
+        <button><small>VEN</small><b>18</b></button>
+        <button><small>SAM</small><b>19</b></button>
+        <button><small>DIM</small><b>20</b></button>
+      </div>
+
+      <section class="agenda" id="agenda">
+        <div class="agenda-label"><span>CE SOIR</span><i></i></div>
+        <article class="event-card live-event">
+          <div class="event-time"><b>20:30</b><span>→ 23:30</span></div>
+          <div><small>LIVE TWITCH</small><h2>In Sound Mind</h2><p>Horreur psychologique · découverte</p></div>
+          <span class="event-dot"></span>
+        </article>
+
+        <div class="agenda-label"><span>DEMAIN</span><i></i></div>
+        <article class="event-card">
+          <div class="event-time"><b>21:00</b><span>→ 00:00</span></div>
+          <div><small>LIVE TWITCH</small><h2>FC 26 · FC Peace</h2><p>Club Pro · recrutement</p></div>
+          <span class="event-dot"></span>
+        </article>
+
+        <article class="event-card personal">
+          <div class="event-time"><b>10:00</b><span>→ 12:00</span></div>
+          <div><small>PERSO</small><h2>Polymatheia</h2><p>Atelier · Maison des associations</p></div>
+          <span class="event-dot"></span>
+        </article>
+      </section>
+
+      <button class="export-button" id="export-planning">▧ Générer l’image du planning</button>
+    </section>
+  </main>
+
+  <nav class="bottom-nav" aria-label="Navigation principale">
+    <button class="active" data-nav="home"><span>⌂</span><small>Accueil</small></button>
+    <button data-nav="live"><span>●</span><small>Live</small></button>
+    <button data-nav="sounds"><span>♫</span><small>Sons</small></button>
+    <button data-nav="planning"><span>▦</span><small>Planning</small></button>
+  </nav>
+
+  <dialog class="quick-sound-dialog" id="quick-sound-dialog">
+    <form method="dialog" id="quick-sound-form">
+      <div class="sheet-head">
+        <div><span class="eyebrow">ACCUEIL</span><h2>Ajouter un son rapide</h2></div>
+        <button type="button" id="close-quick-sound">×</button>
+      </div>
+      <label>Son
+        <select id="quick-sound-choice">
+          <option value="BONK">BONK</option>
+          <option value="CREEPER">CREEPER</option>
+          <option value="GG">GG</option>
+          <option value="OH NON">OH NON</option>
+          <option value="TNT">TNT</option>
+          <option value="VICTOIRE">VICTOIRE</option>
+        </select>
+      </label>
+      <label>Catégorie
+        <input id="quick-sound-category" list="quick-sound-category-list" maxlength="28" value="Réactions">
+        <datalist id="quick-sound-category-list">
+          <option value="Réactions"></option>
+          <option value="Minecraft"></option>
+          <option value="Alertes"></option>
+          <option value="Memes"></option>
+        </datalist>
+      </label>
+      <p class="dialog-hint">Dans l’application finale, ce bouton choisira un son de ta bibliothèque existante. Ici, on simule l’ajout et la catégorie.</p>
+      <div class="dialog-buttons">
+        <button type="button" class="secondary-button" id="cancel-quick-sound">Annuler</button>
+        <button type="submit" class="primary-button">Ajouter</button>
+      </div>
+    </form>
+  </dialog>
+
+  <dialog class="quick-sound-dialog" id="connection-dialog">
+    <form id="connection-form">
+      <div class="sheet-head">
+        <div><span class="eyebrow">CONNEXION</span><h2>Relier le PC</h2></div>
+        <button type="button" id="close-connection">×</button>
+      </div>
+      <p class="dialog-hint" id="connection-hint">Entre l’adresse LAN et le code généré par StreamDashboard Desktop.</p>
+      <label>Adresse du PC
+        <input id="pair-server" inputmode="url" placeholder="192.168.1.42:47832" autocomplete="url">
+      </label>
+      <label>ID d’appairage
+        <input id="pair-id" autocomplete="off">
+      </label>
+      <label>Code
+        <input id="pair-code" autocomplete="one-time-code">
+      </label>
+      <label>Nom du téléphone
+        <input id="pair-name" maxlength="80" value="Android Preview">
+      </label>
+      <div class="dialog-buttons">
+        <button type="button" class="secondary-button" id="forget-connection">Oublier</button>
+        <button type="submit" class="primary-button">Appairer</button>
+      </div>
+    </form>
+  </dialog>
+
+  <dialog class="quick-sound-dialog" id="event-dialog">
+    <form id="event-form">
+      <div class="sheet-head">
+        <div><span class="eyebrow">PLANNING</span><h2>Nouvel événement</h2></div>
+        <button type="button" id="close-event">×</button>
+      </div>
+      <label>Titre<input id="event-title" maxlength="140" required placeholder="FC 26 · FC Peace"></label>
+      <div class="event-form-grid">
+        <label>Date<input id="event-date" type="date" required></label>
+        <label>Début<input id="event-start" type="time" required value="20:30"></label>
+        <label>Fin<input id="event-end" type="time" required value="23:30"></label>
+        <label>Type
+          <select id="event-category"><option value="live">Live</option><option value="personal">Perso</option><option value="production">Production</option></select>
+        </label>
+      </div>
+      <div class="dialog-buttons">
+        <button type="button" class="secondary-button" id="cancel-event">Annuler</button>
+        <button type="submit" class="primary-button">Ajouter</button>
+      </div>
+    </form>
+  </dialog>
+
+  <aside class="camp-sheet" id="camp-sheet" hidden>
+    <div class="sheet-backdrop" data-close-camp></div>
+    <section>
+      <div class="sheet-head"><div><span class="eyebrow">SECONDAIRE</span><h2>Le camp</h2></div><button data-close-camp>×</button></div>
+      <button class="camp-row"><span>✓</span><div><b>Préparation</b><small>Checklist avant live</small></div><i>›</i></button>
+      <button class="camp-row"><span>✎</span><div><b>Notes</b><small>Idées et rappels</small></div><i>›</i></button>
+      <button class="camp-row"><span>▣</span><div><b>Templates</b><small>Configurations réutilisables</small></div><i>›</i></button>
+      <button class="camp-row" id="open-connection"><span>⚙</span><div><b>Connexions</b><small id="connection-copy">PC non appairé</small></div><i>›</i></button>
+      <button class="camp-row"><span>◇</span><div><b>Diagnostics</b><small>État et événements</small></div><i>›</i></button>
+    </section>
+  </aside>
+
+  <div class="preview-badge">APERÇU • AUCUNE COMMANDE RÉELLE</div>
+  <div class="toast" id="toast" role="status"></div>
+  <script type="module" src="preview.js"></script>
+</body>
+</html>
