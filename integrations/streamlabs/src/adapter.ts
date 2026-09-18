@@ -10,20 +10,22 @@ export class StreamlabsAdapter implements SupportProvider {
   private lifecycle = integrationState('NOT_CONFIGURED');
   private close?: () => Promise<void>;
 
-  constructor(private token: string, private readonly onSupport: (support: Support) => Promise<void>, private readonly transport?: StreamlabsTransport) {}
+  constructor(private token: string, private readonly onSupport: (support: Support) => Promise<void>, private readonly transport?: StreamlabsTransport) {
+    this.lifecycle = integrationState(transport ? (token.trim() ? 'DISCONNECTED' : 'NOT_CONFIGURED') : 'NOT_SUPPORTED');
+  }
   state() { return structuredClone(this.lifecycle); }
-  configure(token: string) { this.token = token.trim(); this.lifecycle = integrationState(this.token ? 'DISCONNECTED' : 'NOT_CONFIGURED'); }
+  configure(token: string) { this.token = token.trim(); this.lifecycle = integrationState(this.transport ? (this.token ? 'DISCONNECTED' : 'NOT_CONFIGURED') : 'NOT_SUPPORTED'); }
 
   async connect() {
+    if (!this.transport) { this.lifecycle = integrationState('NOT_SUPPORTED'); return; }
     if (!this.token) { this.lifecycle = integrationState('NOT_CONFIGURED'); return; }
     this.lifecycle = transitionIntegration(this.lifecycle, 'CONNECTING');
-    if (!this.transport) { this.lifecycle = transitionIntegration(this.lifecycle, 'ERROR', { error: { code: 'STREAMLABS_TRANSPORT_UNAVAILABLE', message: 'Transport Streamlabs non installé dans cette distribution.', retryable: false, details: null } }); return; }
     try {
       this.close = await this.transport.connect(this.token, value => { void this.receive(value); }, error => { this.lifecycle = transitionIntegration(this.lifecycle, 'DEGRADED', { error: { code: 'STREAMLABS_DISCONNECTED', message: error?.message ?? 'Connexion Streamlabs interrompue.', retryable: true, details: null } }); });
       this.lifecycle = transitionIntegration(this.lifecycle, 'CONNECTED');
     } catch (error) { this.lifecycle = transitionIntegration(this.lifecycle, 'ERROR', { error: { code: 'STREAMLABS_CONNECT_FAILED', message: error instanceof Error ? error.message : String(error), retryable: true, details: null } }); }
   }
-  async disconnect() { await this.close?.(); this.close = undefined; this.lifecycle = integrationState(this.token ? 'DISCONNECTED' : 'NOT_CONFIGURED'); }
+  async disconnect() { await this.close?.(); this.close = undefined; this.lifecycle = integrationState(this.transport ? (this.token ? 'DISCONNECTED' : 'NOT_CONFIGURED') : 'NOT_SUPPORTED'); }
 
   private async receive(value: unknown) {
     const support = normalizeStreamlabsTip(value);
