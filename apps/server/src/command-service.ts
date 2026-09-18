@@ -11,7 +11,7 @@ export interface ObsCommands {
   waitForStreaming?(expected: boolean, timeoutMs?: number): Promise<void>;
   waitForScene?(expected: string, timeoutMs?: number): Promise<void>;
 }
-export interface CommandContext { settings: Pick<DashboardSettings, 'modeScenes' | 'chattingScene' | 'startMode' | 'timerBrowserSource'>; logger?: Pick<Console, 'info' | 'warn'>; wait?: (milliseconds: number) => Promise<void> }
+export interface CommandContext { settings: Pick<DashboardSettings, 'modeScenes' | 'chattingScene' | 'startMode' | 'timerBrowserSource' | 'requireTimerOverlayOnStart'>; logger?: Pick<Console, 'info' | 'warn'>; wait?: (milliseconds: number) => Promise<void> }
 
 /** Unique, serialized application command bus shared by every client. */
 export class DashboardCommandService {
@@ -49,11 +49,27 @@ export class DashboardCommandService {
     this.domain.mode = mode;
   }
 
-  private async refreshTimerBrowserSource() {
+  private timerOverlayNotReady(message: string) {
+    const error = new Error(message);
+    error.name = 'TIMER_OVERLAY_NOT_READY';
+    return error;
+  }
+
+  private async refreshTimerBrowserSource(required = false) {
     const source = this.context.settings.timerBrowserSource?.trim();
-    if (!source || !this.obs.refreshBrowserSource) return;
+    if (!source) {
+      if (required) throw this.timerOverlayNotReady('Aucune Browser Source timer n’est configurée.');
+      return;
+    }
+    if (!this.obs.refreshBrowserSource) {
+      if (required) throw this.timerOverlayNotReady('Le rafraîchissement de la Browser Source timer est indisponible.');
+      return;
+    }
     try { await this.obs.refreshBrowserSource(source); }
-    catch (error) { this.context.logger?.warn(`Impossible de rafraîchir la Browser Source timer « ${source} ».`, error); }
+    catch (error) {
+      this.context.logger?.warn(`Impossible de rafraîchir la Browser Source timer « ${source} ».`, error);
+      if (required) throw this.timerOverlayNotReady(`La Browser Source timer « ${source} » n’est pas prête. Démarrage interrompu.`);
+    }
   }
 
   private async applyStreamState(expected: boolean) {
@@ -80,7 +96,7 @@ export class DashboardCommandService {
     if (command.type === 'session.prepare') {
       await this.obs.refresh();
       if (!this.obs.state.streaming) applyDashboardCommand(this.domain, { type: 'timer.reset' });
-      await this.refreshTimerBrowserSource();
+      await this.refreshTimerBrowserSource(this.context.settings.requireTimerOverlayOnStart === true);
       return this.commit();
     }
     if (command.type === 'session.start') {
@@ -99,7 +115,7 @@ export class DashboardCommandService {
         await this.confirmScene(startScene);
       }
 
-      await this.refreshTimerBrowserSource();
+      await this.refreshTimerBrowserSource(this.context.settings.requireTimerOverlayOnStart === true);
       await this.applyStreamState(true);
       this.domain.mode = startMode;
       startNewSessionTimer(this.domain);
