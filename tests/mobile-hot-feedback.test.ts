@@ -46,6 +46,16 @@ describe('retours à chaud mobile', () => {
     expect((toRemoteDashboardState(state) as unknown as { checklist: typeof state.checklist }).checklist).toEqual(state.checklist);
   });
 
+  it('considère REST comme autorité de connexion et ne laisse ni Companion Sync ni WebSocket bloquer les contrôles', () => {
+    const stateIndex = mobile.indexOf('const next = await transport.state();');
+    const companionIndex = mobile.indexOf('void syncCompanion().catch');
+    expect(stateIndex).toBeGreaterThan(-1);
+    expect(companionIndex).toBeGreaterThan(stateIndex);
+    expect(mobile).toContain("setConnectionMode(CompanionMode.ONLINE_PC)");
+    expect(mobile).toContain("remoteButtons(false)");
+    expect(mobile).toContain('realtime must never disable a healthy HTTP command channel');
+  });
+
   it('arrête le live par HTTP sans dépendre de l’état du WebSocket', () => {
     expect(parseRemoteCommand({ type: 'session.stop' }, state)).toEqual({ type: 'session.stop' });
     expect(mobile).toContain("command({ type: 'session.stop' }, { reconcile:");
