@@ -72,7 +72,7 @@ public class MainActivity extends Activity {
     webView.setWebViewClient(new LocalOnlyClient());
     setContentView(webView);
     captureDeepLink(getIntent());
-    webView.loadUrl(ORIGIN + "/mobile/index.html" + (BuildConfig.PREVIEW_MODE ? "?fixture=live&preview=1" : ""));
+    webView.loadUrl(ORIGIN + (BuildConfig.PREVIEW_MODE ? "/mobile/preview.html" : "/mobile/index.html"));
   }
 
   @Override protected void onNewIntent(Intent intent) {
