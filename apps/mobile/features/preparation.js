@@ -1,16 +1,10 @@
 import { CompanionMode } from '../companion-store.js';
-import { DEFAULT_FILTERS, filterPlanning, filterPlanningTemporal, paginatePlanning, TEMPORAL_FILTERS } from '../planning-model.js';
 import { getMobileContext } from '../mobile-context.js';
 
 const $ = id => document.getElementById(id);
-const { companion, transport, providerSync, ensureCredential, executeCommand, getMode, getState } = getMobileContext();
-let hotState = getState();
-let editingPlanningId = null;
+const { companion, transport, ensureCredential, executeCommand, getMode, getState, applyState, note } = getMobileContext();
 let companionSyncFlight = null;
-let planningEnhanceQueued = false;
-let planningObserver = null;
 
-const notify = value => { if ($('message')) $('message').textContent = String(value || ''); };
 const text = (tag, value, className) => {
   const node = document.createElement(tag);
   node.textContent = String(value ?? '');
@@ -18,28 +12,13 @@ const text = (tag, value, className) => {
   return node;
 };
 const onlinePc = () => getMode() === CompanionMode.ONLINE_PC;
-const mode = () => getMode();
-
-function applyCriticalState(next) {
-  if (!next) return;
-  hotState = next;
-  if ($('live')) {
-    $('live').textContent = next.obs?.streaming ? 'Live' : 'Hors ligne';
-    $('live').className = next.obs?.streaming ? 'ok' : '';
-  }
-  if ($('stream')) {
-    $('stream').textContent = next.obs?.streaming ? 'ARRÊTER LE LIVE' : 'DÉMARRER LE LIVE';
-    $('stream').disabled = !next.obs?.connected;
-  }
-  renderChecklist();
-  queuePlanningEnhance();
-}
 
 async function refreshRemoteState() {
   if (!onlinePc()) return null;
   await ensureCredential();
   const next = await transport.state();
-  applyCriticalState(next);
+  applyState(next);
+  renderChecklist();
   return next;
 }
 
@@ -59,11 +38,12 @@ async function syncCompanionNow() {
     const response = await transport.syncCompanion({
       schemaVersion: cache.schemaVersion,
       deviceId,
-      lastKnownServerRevision: cache.serverRevision || 0,
+      lastKnownServerRevision: cache.serverRevision ?? 0,
       operations: cache.pending,
     });
     companion.applySyncResponse(response);
     renderNotes();
+    renderChecklist();
     window.dispatchEvent(new CustomEvent('companion-refreshed'));
     return response;
   })();
@@ -86,9 +66,12 @@ function renderNotes() {
       if (value === null || !value.trim() || value.trim() === item.text) return;
       companion.upsertCollection('notes', { ...item, text: value.trim() });
       renderNotes();
-      try { await syncCompanionNow(); notify('Note modifiée.'); } catch (error) { notify(error.message); }
+      try { await syncCompanionNow(); note('Note modifiée.'); } catch (error) { note(error.message); }
     };
-    const menu = document.createElement('details'); menu.className = 'row-overflow'; const summary = text('summary', '⋮'); summary.setAttribute('aria-label', 'Actions de la note');
+    const menu = document.createElement('details');
+    menu.className = 'row-overflow';
+    const summary = text('summary', '⋮');
+    summary.setAttribute('aria-label', 'Actions de la note');
     const remove = text('button', 'Supprimer');
     remove.type = 'button';
     remove.className = 'secondary danger-button';
@@ -96,7 +79,7 @@ function renderNotes() {
       if (!confirm('Supprimer cette note ?')) return;
       companion.removeCollection('notes', item.id);
       renderNotes();
-      try { await syncCompanionNow(); notify('Note supprimée.'); } catch (error) { notify(error.message); }
+      try { await syncCompanionNow(); note('Note supprimée.'); } catch (error) { note(error.message); }
     };
     menu.append(summary, remove);
     row.append(label, menu);
@@ -106,7 +89,8 @@ function renderNotes() {
 }
 
 function checklistValues() {
-  if (onlinePc() && Array.isArray(hotState?.checklist)) return hotState.checklist;
+  const state = getState();
+  if (onlinePc() && Array.isArray(state?.checklist)) return state.checklist;
   return companion.snapshot().checklist;
 }
 
@@ -126,7 +110,6 @@ function renderChecklist() {
       toggle.disabled = true;
       try {
         if (onlinePc()) {
-          await ensureCredential();
           const confirmed = await executeCommand({ type: 'checklist.toggle', id: item.id });
           if (!confirmed) throw new Error('Commande checklist non confirmée.');
           await refreshRemoteState();
@@ -135,32 +118,34 @@ function renderChecklist() {
           companion.upsertCollection('checklist', { ...item, done: !item.done });
           renderChecklist();
         }
-      } catch (error) { notify(error.message); }
+      } catch (error) { note(error.message); }
       finally { toggle.disabled = false; }
     };
-    const menu = document.createElement('details'); menu.className = 'row-overflow'; const summary = text('summary', '⋮'); summary.setAttribute('aria-label', `Actions pour ${item.label}`);
+    const menu = document.createElement('details');
+    menu.className = 'row-overflow';
+    const summary = text('summary', '⋮');
+    summary.setAttribute('aria-label', `Actions pour ${item.label}`);
     const remove = text('button', 'Supprimer');
     remove.type = 'button';
     remove.className = 'secondary checklist-remove';
-    remove.title = 'Supprimer';
     remove.onclick = async () => {
       if (!confirm(`Supprimer « ${item.label} » de la checklist ?`)) return;
       try {
-        if (onlinePc()) await syncCompanionNow();
         const removed = companion.removeCollection('checklist', item.id);
         if (!removed.deleted) throw new Error('Cet élément doit d’abord être synchronisé avant suppression.');
         renderChecklist();
         await syncCompanionNow();
         if (onlinePc()) await refreshRemoteState();
-      } catch (error) { notify(error.message); }
+      } catch (error) { note(error.message); }
     };
-    menu.append(summary, remove); row.append(toggle, menu);
+    menu.append(summary, remove);
+    row.append(toggle, menu);
     root.append(row);
   }
   if (!values.length) root.append(text('p', 'Checklist vide. Ajoute le premier point à vérifier.', 'muted'));
-  const completed = values.filter(item => item.done).length; const copy = $('check-progress-copy'); const bar = $('mobile-check-progress'); if (copy) copy.textContent = `${completed} / ${values.length}`; if (bar) bar.style.width = `${values.length ? completed / values.length * 100 : 0}%`;
-
-  // Reset is intentionally local-desktop only in remote-policy. Do not render a dead control.
+  const completed = values.filter(item => item.done).length;
+  if ($('check-progress-copy')) $('check-progress-copy').textContent = `${completed} / ${values.length}`;
+  if ($('mobile-check-progress')) $('mobile-check-progress').style.width = `${values.length ? completed / values.length * 100 : 0}%`;
 }
 
 async function addNote() {
@@ -171,8 +156,10 @@ async function addNote() {
   input.value = '';
   renderNotes();
   $('note-dialog')?.close();
-  try { await syncCompanionNow(); notify(onlinePc() ? 'Note enregistrée et synchronisée.' : 'Note enregistrée · À synchroniser.'); }
-  catch (error) { notify(error.message); }
+  try {
+    await syncCompanionNow();
+    note(onlinePc() ? 'Note enregistrée et synchronisée.' : 'Note enregistrée · À synchroniser.');
+  } catch (error) { note(error.message); }
 }
 
 async function addChecklistItem() {
@@ -185,8 +172,8 @@ async function addChecklistItem() {
   try {
     await syncCompanionNow();
     if (onlinePc()) await refreshRemoteState();
-    notify(onlinePc() ? 'Élément ajouté à la checklist.' : 'Élément enregistré · À synchroniser.');
-  } catch (error) { notify(error.message); }
+    note(onlinePc() ? 'Élément ajouté à la checklist.' : 'Élément enregistré · À synchroniser.');
+  } catch (error) { note(error.message); }
 }
 
 async function prepareFromPhone(button) {
@@ -195,230 +182,33 @@ async function prepareFromPhone(button) {
     await ensureCredential();
     const confirmed = await executeCommand({ type: 'session.prepare' });
     if (!confirmed) throw new Error('Préparation non confirmée par le PC.');
-    await refreshRemoteState();
+    const next = await refreshRemoteState();
     document.querySelector('[data-open-tab="prepare"]')?.click();
-    const preflight = result.state.preflight;
-    if (preflight?.status === 'action-required' || preflight?.status === 'error') notify(preflight.error || 'Préparation à compléter.');
-    else notify('Préparation lancée · vérifie la checklist avant le live.');
+    const preflight = next?.preflight;
+    if (preflight?.status === 'action-required' || preflight?.status === 'error') note(preflight.error || 'Préparation à compléter.');
+    else note('Préparation lancée · vérifie la checklist avant le live.');
     await syncCompanionNow();
-  } catch (error) { notify(error.message); }
+  } catch (error) { note(error.message); }
   finally { button.disabled = false; }
 }
 
-function localDate(value) {
-  const date = new Date(value);
-  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
-}
-function localTime(value) {
-  const date = new Date(value);
-  return `${String(date.getHours()).padStart(2, '0')}:${String(date.getMinutes()).padStart(2, '0')}`;
-}
-
-function clearPlanningEdit() {
-  editingPlanningId = null;
-  $('slot-form')?.removeAttribute('data-editing-id');
-  const heading = $('slot-dialog')?.querySelector('h2');
-  if (heading) heading.textContent = 'Nouveau créneau';
-}
-
-function openPlanningEdit(item) {
-  if (item.editable === false) { notify('Cet événement est en lecture seule.'); return; }
-  editingPlanningId = item.id;
-  const form = $('slot-form');
-  form.dataset.editingId = item.id;
-  form.elements.namedItem('title').value = item.title || '';
-  form.elements.namedItem('date').value = localDate(item.startAtUtc);
-  form.elements.namedItem('start').value = localTime(item.startAtUtc);
-  form.elements.namedItem('end').value = localTime(item.endAtUtc);
-  form.elements.namedItem('category').value = item.category || 'live';
-  form.elements.namedItem('description').value = item.description || '';
-  form.elements.namedItem('twitch').checked = item.desiredPublication?.twitch === true;
-  form.elements.namedItem('google').checked = item.desiredPublication?.google === true;
-  $('slot-twitch-category').value = item.twitchCategoryName || '';
-  $('slot-twitch-game-id').value = item.twitchCategoryId || '';
-  $('slot-twitch-results').replaceChildren();
-  const heading = $('slot-dialog').querySelector('h2');
-  if (heading) heading.textContent = 'Modifier le créneau';
-  $('slot-dialog').showModal();
-}
-
-function planningPayload(formElement) {
-  const form = new FormData(formElement);
-  const date = String(form.get('date') || '');
-  const startAtUtc = new Date(`${date}T${form.get('start')}`).toISOString();
-  const endAtUtc = new Date(`${date}T${form.get('end')}`).toISOString();
-  if (form.get('twitch') === 'on' && !$('slot-twitch-game-id').value) throw new Error('Sélectionnez une catégorie Twitch officielle.');
-  return {
-    title: String(form.get('title') || '').trim(),
-    startAtUtc,
-    endAtUtc,
-    category: form.get('category'),
-    description: form.get('description') || '',
-    desiredPublication: { local: true, twitch: form.get('twitch') === 'on', google: form.get('google') === 'on' },
-    twitchCategoryId: form.get('twitch') === 'on' ? $('slot-twitch-game-id').value : undefined,
-    twitchCategoryName: form.get('twitch') === 'on' ? $('slot-twitch-category').value : undefined,
+for (const button of document.querySelectorAll('button[data-command="session.prepare"]')) {
+  button.onclick = event => {
+    event.stopPropagation();
+    void prepareFromPhone(button);
   };
 }
+$('add-note').onclick = () => void addNote();
+$('add-check').onclick = () => void addChecklistItem();
 
-async function submitPlanningEdit(event) {
-  if (!editingPlanningId) return;
-  event.preventDefault();
-  event.stopImmediatePropagation();
-  const id = editingPlanningId;
-  const formElement = event.currentTarget;
-  try {
-    const payload = planningPayload(formElement);
-    if (onlinePc()) {
-      await ensureCredential();
-      const next = await transport.updatePlanning(id, payload);
-      applyCriticalState(next);
-      notify('Créneau modifié.');
-    } else {
-      const current = companion.snapshot().planning.find(item => item.id === id);
-      if (!current) throw new Error('Créneau introuvable dans le cache mobile.');
-      const result = companion.updateEvent(id, payload, current.revision);
-      if (result.conflict) throw new Error('Ce créneau a changé sur un autre appareil.');
-      if (mode() === CompanionMode.ONLINE_STANDALONE) await providerSync.apply(mode(), result.item, 'update');
-      notify('Créneau modifié · À synchroniser.');
-    }
-    $('slot-dialog').close();
-    formElement.reset();
-    clearPlanningEdit();
-    if (onlinePc()) await refreshRemoteState();
-    else queuePlanningEnhance();
-  } catch (error) { notify(error.message); }
-}
+window.addEventListener('companion-mutated', event => {
+  if (!['notes', 'checklist'].includes(event.detail?.kind)) return;
+  void syncCompanionNow().then(() => refreshRemoteState()).catch(error => note(error.message));
+});
+window.addEventListener('online', () => { if (onlinePc()) void refreshRemoteState(); });
+window.addEventListener('offline', () => { renderNotes(); renderChecklist(); });
+document.addEventListener('visibilitychange', () => { if (!document.hidden && onlinePc()) void refreshRemoteState(); });
 
-async function deletePlanningItem(item) {
-  if (item.editable === false) { notify('Cet événement est en lecture seule.'); return; }
-  if (!confirm(`Supprimer « ${item.title} » ?`)) return;
-  try {
-    if (onlinePc()) {
-      await ensureCredential();
-      const next = await transport.deletePlanning(item.id);
-      applyCriticalState(next);
-      notify('Créneau supprimé.');
-      await refreshRemoteState();
-    } else {
-      const current = companion.snapshot().planning.find(value => value.id === item.id) || item;
-      const result = companion.deleteEvent(item.id, current.revision);
-      if (result.conflict) throw new Error('Ce créneau a changé sur un autre appareil.');
-      if (mode() === CompanionMode.ONLINE_STANDALONE) await providerSync.apply(mode(), current, 'delete');
-      notify('Créneau supprimé · À synchroniser.');
-      queuePlanningEnhance();
-    }
-  } catch (error) { notify(error.message); }
-}
-
-function planningItemsForVisibleRows() {
-  const source = onlinePc() ? hotState?.planning || [] : companion.snapshot().planning;
-  let filters = { ...DEFAULT_FILTERS };
-  try { filters = { ...filters, ...JSON.parse(localStorage.getItem('streamdashboard.planningFilters') || '{}') }; } catch { /* ignore */ }
-  const temporal = localStorage.getItem('streamdashboard.planningTemporal') || TEMPORAL_FILTERS.UPCOMING;
-  const filtered = filterPlanning(source, filters);
-  const temporalItems = filterPlanningTemporal(filtered, temporal, new Date());
-  const label = $('planning')?.querySelector('.planning-pagination span')?.textContent || '';
-  const page = Number(label.match(/Page\s+(\d+)/)?.[1] || 1);
-  return paginatePlanning(temporalItems, page, 8).items;
-}
-
-function enhancePlanningRows() {
-  planningEnhanceQueued = false;
-  const root = $('planning');
-  if (!root) return;
-  planningObserver?.disconnect();
-  try {
-    const rows = [...root.children].filter(node => node.classList?.contains('planning-row'));
-    const items = planningItemsForVisibleRows();
-    rows.forEach((row, index) => {
-      const item = items[index];
-      if (!item) return;
-      for (const button of [...row.querySelectorAll('button')]) {
-        if (['Modifier', 'Supprimer'].includes(button.textContent?.trim())) button.remove();
-      }
-      row.querySelector('.mobile-event-actions')?.remove();
-      const actions = document.createElement('div');
-      actions.className = 'mobile-event-actions';
-      const edit = text('button', 'MODIFIER');
-      edit.type = 'button';
-      edit.disabled = item.editable === false;
-      edit.onclick = () => openPlanningEdit(item);
-      const remove = text('button', 'SUPPRIMER');
-      remove.type = 'button';
-      remove.className = 'secondary danger-button';
-      remove.disabled = item.editable === false;
-      remove.onclick = () => void deletePlanningItem(item);
-      actions.append(edit, remove);
-      row.append(actions);
-    });
-  } finally {
-    planningObserver?.observe(root, { childList: true, subtree: true });
-  }
-}
-
-function queuePlanningEnhance() {
-  if (planningEnhanceQueued) return;
-  planningEnhanceQueued = true;
-  queueMicrotask(enhancePlanningRows);
-}
-
-async function refreshAll() {
-  try {
-    if (onlinePc()) {
-      await ensureCredential();
-      await syncCompanionNow();
-      await refreshRemoteState();
-    } else {
-      renderNotes();
-      renderChecklist();
-      queuePlanningEnhance();
-    }
-  } catch (error) { notify(error.message); }
-}
-
-// Capture the hot-path actions before the legacy mobile handlers. Commands are HTTP;
-// they must not depend on an incidental WebSocket state.
-document.addEventListener('click', event => {
-  const button = event.target.closest('button');
-  if (!button) return;
-  if (button.dataset.command === 'session.prepare') {
-    event.preventDefault(); event.stopImmediatePropagation();
-    void prepareFromPhone(button);
-    return;
-  }
-  if (button.id === 'add-note') {
-    event.preventDefault(); event.stopImmediatePropagation();
-    void addNote();
-    return;
-  }
-  if (button.id === 'add-check') {
-    event.preventDefault(); event.stopImmediatePropagation();
-    void addChecklistItem();
-    return;
-  }
-  if (button.id === 'add-slot') clearPlanningEdit();
-  if (button.id === 'close-slot') clearPlanningEdit();
-}, true);
-
-$('slot-form')?.addEventListener('submit', event => void submitPlanningEdit(event), true);
-$('slot-dialog')?.addEventListener('cancel', clearPlanningEdit);
-
-planningObserver = new MutationObserver(queuePlanningEnhance);
-if ($('planning')) planningObserver.observe($('planning'), { childList: true, subtree: true });
-
-const connectionObserver = new MutationObserver(() => void refreshAll());
-if ($('pc')) connectionObserver.observe($('pc'), { childList: true, characterData: true, subtree: true });
-
-window.addEventListener('companion-mutated', () => void syncCompanionNow().then(() => refreshRemoteState()).catch(error => notify(error.message)));
-window.addEventListener('online', () => void refreshAll());
-window.addEventListener('offline', () => { renderNotes(); renderChecklist(); queuePlanningEnhance(); });
-
-document.addEventListener('visibilitychange', () => { if (!document.hidden) void refreshAll(); });
-
-void (async () => {
-  renderNotes();
-  renderChecklist();
-  queuePlanningEnhance();
-  setTimeout(() => void refreshAll(), 250);
-  setTimeout(() => void refreshAll(), 1_000);
-})();
+renderNotes();
+renderChecklist();
+setTimeout(() => { if (onlinePc()) void syncCompanionNow().then(refreshRemoteState).catch(error => note(error.message)); }, 250);
