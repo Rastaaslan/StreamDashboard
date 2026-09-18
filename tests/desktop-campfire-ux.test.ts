@@ -7,7 +7,8 @@ const css = readFileSync(new URL('../apps/web/style.css', import.meta.url), 'utf
 
 describe('Desktop Campfire console', () => {
   it('expose une sidebar stable sans navigation mobile', () => {
-    for (const page of ['Accueil', 'Live', 'Préparer', 'Planning', 'Sons', 'Soutiens', 'Automatisations', 'Connexions', 'Réglages']) expect(app).toContain(`'${page}'`);
+    for (const page of ['Accueil', 'Planning', 'Préparation', 'Connexions', 'Réglages']) expect(app).toContain(`'${page}'`);
+    expect(app).toContain('data-value="live"');
     expect(html).toContain('<aside aria-label="Navigation principale">');
     expect(html).not.toContain('bottom-nav');
   });

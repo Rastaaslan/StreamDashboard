@@ -9,27 +9,31 @@ export class StreamlabsAdapter implements SupportProvider {
   readonly id = 'streamlabs';
   private lifecycle = integrationState('NOT_CONFIGURED');
   private close?: () => Promise<void>;
+  private reconnect?: NodeJS.Timeout;
+  private generation = 0;
 
-  constructor(private token: string, private readonly onSupport: (support: Support) => Promise<void>, private readonly transport?: StreamlabsTransport) {
+  constructor(private token: string, private readonly onSupport: (support: Support) => Promise<void>, private readonly transport?: StreamlabsTransport, private readonly logger?: Pick<Console, 'info' | 'warn'>) {
     this.lifecycle = integrationState(transport ? (token.trim() ? 'DISCONNECTED' : 'NOT_CONFIGURED') : 'NOT_SUPPORTED');
   }
   state() { return structuredClone(this.lifecycle); }
-  configure(token: string) { this.token = token.trim(); this.lifecycle = integrationState(this.transport ? (this.token ? 'DISCONNECTED' : 'NOT_CONFIGURED') : 'NOT_SUPPORTED'); }
+  configure(token: string) { this.generation++; if (this.reconnect) clearTimeout(this.reconnect); this.reconnect = undefined; this.token = token.trim(); this.lifecycle = integrationState(this.transport ? (this.token ? 'DISCONNECTED' : 'NOT_CONFIGURED') : 'NOT_SUPPORTED'); }
 
   async connect() {
     if (!this.transport) { this.lifecycle = integrationState('NOT_SUPPORTED'); return; }
     if (!this.token) { this.lifecycle = integrationState('NOT_CONFIGURED'); return; }
     this.lifecycle = transitionIntegration(this.lifecycle, 'CONNECTING');
+    const generation = this.generation;
     try {
-      this.close = await this.transport.connect(this.token, value => { void this.receive(value); }, error => { this.lifecycle = transitionIntegration(this.lifecycle, 'DEGRADED', { error: { code: 'STREAMLABS_DISCONNECTED', message: error?.message ?? 'Connexion Streamlabs interrompue.', retryable: true, details: null } }); });
+      this.close = await this.transport.connect(this.token, value => { void this.receive(value).catch(() => { this.lifecycle = transitionIntegration(this.lifecycle, 'DEGRADED', { error: { code: 'STREAMLABS_EVENT_INVALID', message: 'Événement Streamlabs invalide.', retryable: false, details: null } }); }); }, error => { if (generation !== this.generation) return; this.lifecycle = transitionIntegration(this.lifecycle, 'DEGRADED', { error: { code: 'STREAMLABS_DISCONNECTED', message: error?.message ?? 'Connexion Streamlabs interrompue.', retryable: true, details: null } }); this.logger?.warn('Streamlabs reconnecting'); this.reconnect = setTimeout(() => { this.reconnect = undefined; void this.connect(); }, 2_000); });
       this.lifecycle = transitionIntegration(this.lifecycle, 'CONNECTED');
     } catch (error) { this.lifecycle = transitionIntegration(this.lifecycle, 'ERROR', { error: { code: 'STREAMLABS_CONNECT_FAILED', message: error instanceof Error ? error.message : String(error), retryable: true, details: null } }); }
   }
-  async disconnect() { await this.close?.(); this.close = undefined; this.lifecycle = integrationState(this.transport ? (this.token ? 'DISCONNECTED' : 'NOT_CONFIGURED') : 'NOT_SUPPORTED'); }
+  async disconnect() { this.generation++; if (this.reconnect) clearTimeout(this.reconnect); this.reconnect = undefined; await this.close?.(); this.close = undefined; this.lifecycle = integrationState(this.transport ? (this.token ? 'DISCONNECTED' : 'NOT_CONFIGURED') : 'NOT_SUPPORTED'); }
 
   private async receive(value: unknown) {
     const support = normalizeStreamlabsTip(value);
     await this.onSupport(support);
+    this.logger?.info('Streamlabs support received');
     this.lifecycle = { ...this.lifecycle, lastEventAt: support.receivedAt };
   }
 }

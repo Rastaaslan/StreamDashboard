@@ -22,6 +22,6 @@ describe('Twitch Live Control mobile', () => {
 
   it('conserve un message PC hors ligne explicite', () => {
     expect(mobile).toContain('PC hors ligne. Le message n’a pas été envoyé.');
-    expect(mobile).toContain('PC hors ligne. Les VOD Twitch ne peuvent pas être chargées via le runtime.');
+    expect(mobile).toContain('PC hors ligne. Les VOD Twitch ne peuvent pas être chargées via le PC.');
   });
 });

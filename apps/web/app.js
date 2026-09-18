@@ -3,12 +3,8 @@ import { expandRecurringItems, recurrenceSummary } from '../mobile/shared/recurr
 
 const pages = [
   ['overview', 'Accueil', '⌂'],
-  ['live', 'Live', '●'],
-  ['prepare', 'Préparer', '✓'],
   ['planning', 'Planning', '▣'],
-  ['sounds', 'Sons', '⌘'],
-  ['supports', 'Soutiens', '♡'],
-  ['automations', 'Automatisations', '⚡'],
+  ['prepare', 'Préparation', '✓'],
   ['connections', 'Connexions', '⌁'],
   ['settings', 'Réglages', '⚙'],
 ];
@@ -153,8 +149,7 @@ function eventRange(item) {
 }
 
 function nav() {
-  const management = new Set(['supports', 'automations', 'connections']);
-  $('nav').innerHTML = pages.map(([id, label, icon]) => `${management.has(id) && id === 'supports' ? '<span class="nav-separator">Gestion</span>' : ''}<button data-page="${id}" class="${id === page ? 'active' : ''}"><span>${icon}</span>${label}</button>`).join('');
+  $('nav').innerHTML = pages.map(([id, label, icon]) => `<button data-page="${id}" class="${id === page ? 'active' : ''}"><span>${icon}</span>${label}</button>`).join('');
   document.querySelectorAll('[data-page]').forEach(button => {
     button.onclick = () => window.go(button.dataset.page);
   });
@@ -191,7 +186,20 @@ function preparation() {
 
 function supports() { const values = state.controlHub?.support?.totals || {}; return `<div class="intent-panel"><span class="label">SOUTIENS</span><h3>Vue d’ensemble</h3><div class="status-strip"><span>Session <b>${esc(values.session || '—')}</b></span><span>Aujourd’hui <b>${esc(values.day || '—')}</b></span><span>Mois <b>${esc(values.month || '—')}</b></span></div><div class="empty"><b>${state.controlHub?.integrations?.streamlabs?.status === 'CONNECTED' ? 'Aucun soutien récent' : 'Streamlabs non configuré'}</b><p>L’historique apparaîtra ici lorsque le provider sera disponible.</p></div></div>`; }
 function automations() { return '<div class="intent-panel"><span class="label">AUTOMATISATIONS</span><h3>Règles du stream</h3><div class="empty"><b>Gestion depuis le Control Hub</b><p>Les règles existantes restent exécutées par le PC Runtime.</p></div></div>'; }
-function connections() { return `<div class="intent-panel"><span class="label">CONNEXIONS</span><h3>État des services</h3><div class="connection-list"><button data-action="go" data-value="settings"><span>OBS</span><b>${state.obs.connected ? 'Connecté' : 'Déconnecté'}</b></button><button data-action="go" data-value="settings"><span>Twitch</span><b>${state.twitch.connected ? 'Connecté' : 'Déconnecté'}</b></button><button data-action="go" data-value="settings"><span>Discord</span><b>${state.discord?.configured ? 'Connecté' : 'Non configuré'}</b></button><button data-action="go" data-value="settings"><span>Streamlabs</span><b>Non configuré</b></button><button data-action="go" data-value="settings"><span>WizeBot</span><b>Non configuré</b></button></div></div>`; }
+const connectionLabel = status => ({ CONNECTED: 'Connecté', CONNECTING: 'Connexion…', DISCONNECTED: 'Déconnecté', NOT_CONFIGURED: 'À configurer', NOT_SUPPORTED: 'Non disponible', DEGRADED: 'Connexion instable', ERROR: 'Erreur' })[status] || 'À configurer';
+function connections() {
+  const integrations = state.controlHub?.integrations || {};
+  const streamlabs = integrations.streamlabs || { status: 'NOT_CONFIGURED' };
+  const wizebot = integrations.wizebot || { status: 'NOT_CONFIGURED' };
+  return `<div class="intent-panel"><span class="label">CONNEXIONS</span><h3>Services connectés</h3><div class="connection-cards">
+    <article><div><b>OBS</b><span>${state.obs.connected ? '● Connecté' : '○ Déconnecté'}</span></div><button class="secondary compact" data-action="go" data-value="settings">CONFIGURER</button></article>
+    <article><div><b>Twitch</b><span>${state.twitch.connected ? '● Connecté' : '○ Déconnecté'}</span></div><button class="secondary compact" data-action="${state.twitch.connected ? 'disconnect-twitch' : 'connect-twitch'}">${state.twitch.connected ? 'DÉCONNECTER' : 'CONNECTER'}</button></article>
+    <article><div><b>Discord</b><span>${state.discord?.connected ? '● Connecté' : state.discord?.configured ? '○ Erreur' : '○ À configurer'}</span></div><button class="secondary compact" data-action="go" data-value="settings">CONFIGURER</button></article>
+    <article><div><b>Streamlabs</b><span>${streamlabs.status === 'CONNECTED' ? '●' : '○'} ${connectionLabel(streamlabs.status)}</span></div><form id="streamlabs-form"><input name="token" type="password" maxlength="1000" autocomplete="new-password" aria-label="Token Socket Streamlabs" placeholder="Token Socket API"><div class="button-row"><button class="primary compact" type="submit">CONFIGURER</button><button class="secondary compact" type="button" data-action="test-streamlabs">TESTER</button><button class="danger compact" type="button" data-action="disconnect-streamlabs">DÉCONNECTER</button></div></form></article>
+    <article><div><b>WizeBot</b><span>${wizebot.status === 'CONNECTED' ? '●' : '○'} ${connectionLabel(wizebot.status)}${wizebot.profile?.name ? ` · ${esc(wizebot.profile.name)}` : ''}</span></div><form id="wizebot-form"><input name="apiBaseUrl" type="url" required aria-label="Adresse API fournie par WizeBot" placeholder="Adresse API fournie par WizeBot"><input name="token" type="password" maxlength="1000" required autocomplete="new-password" aria-label="Token WizeBot" placeholder="Token API"><div class="button-row"><button class="primary compact" type="submit">CONFIGURER</button><button class="secondary compact" type="button" data-action="refresh-wizebot">RAFRAÎCHIR</button><button class="danger compact" type="button" data-action="disconnect-wizebot">DÉCONNECTER</button></div></form></article>
+    <article><div><b>Android</b><span>${state.remote?.devices?.some(item => !item.revokedAt) ? '● Appairé' : '○ À appairer'}</span></div><button class="secondary compact" data-action="go" data-value="settings">APPAIRAGE</button></article>
+  </div></div>`;
+}
 
 function live() {
   const offline = !state.obs.connected;
@@ -409,6 +417,21 @@ function resetEventDialogState() {
 }
 
 function bindForms() {
+  const streamlabsForm = $('#streamlabs-form');
+  if (streamlabsForm) streamlabsForm.onsubmit = async event => {
+    event.preventDefault();
+    const token = new FormData(streamlabsForm).get('token');
+    if (!String(token || '').trim()) { toast('Saisissez le token Socket Streamlabs.', true); return; }
+    try { await request('/api/v1/supports/streamlabs/config', 'PUT', { token }); streamlabsForm.reset(); toast('Streamlabs configuré'); await refresh(true); }
+    catch (error) { toast(error.message, true); }
+  };
+  const wizebotForm = $('#wizebot-form');
+  if (wizebotForm) wizebotForm.onsubmit = async event => {
+    event.preventDefault();
+    const form = new FormData(wizebotForm);
+    try { await request('/api/v1/wizebot/config', 'PUT', { apiBaseUrl: form.get('apiBaseUrl'), token: form.get('token') }); wizebotForm.reset(); toast('WizeBot configuré'); await refresh(true); }
+    catch (error) { toast(error.message, true); }
+  };
   const eventDialog = $('#event-dialog');
   const eventForm = $('#event-form');
   if (eventDialog) eventDialog.addEventListener('close', resetEventDialogState, { once: true });
@@ -642,6 +665,10 @@ window.exportPlanning = async () => {
 };
 window.saveDiscordToken = async () => { try { const input = $('#discord-token'); if (!input.value.trim()) throw new Error('Saisissez le token du bot.'); await request('/api/v1/discord/token', 'PUT', { token: input.value }); input.value = ''; toast('Token configuré'); await refresh(true); } catch (error) { toast(error.message, true); } };
 window.deleteDiscordToken = async () => { try { await request('/api/v1/discord/token', 'DELETE'); toast('Bot Discord déconnecté'); await refresh(true); } catch (error) { toast(error.message, true); } };
+window.testStreamlabs = async () => { try { await request('/api/v1/supports/streamlabs/test', 'POST'); toast('Soutien de test reçu'); } catch (error) { toast(error.message, true); } };
+window.disconnectStreamlabs = async () => { try { await request('/api/v1/supports/streamlabs/config', 'DELETE'); toast('Streamlabs déconnecté'); await refresh(true); } catch (error) { toast(error.message, true); } };
+window.refreshWizebot = async () => { try { await request('/api/v1/wizebot/refresh', 'POST'); toast('WizeBot rafraîchi'); await refresh(true); } catch (error) { toast(error.message, true); } };
+window.disconnectWizebot = async () => { try { await request('/api/v1/wizebot/config', 'DELETE'); toast('WizeBot déconnecté'); await refresh(true); } catch (error) { toast(error.message, true); } };
 window.loadDiscord = async () => { try { const guilds = await request('/api/v1/discord/guilds'); const select = $('#discord-guild'); select.replaceChildren(new Option('Choisir…', ''), ...guilds.map(value => new Option(value.name, value.id))); if (state.discord?.guildId) select.value = state.discord.guildId; await window.loadDiscordChannels(); toast('Discord chargé'); } catch (error) { toast(error.message, true); } };
 window.loadDiscordChannels = async () => { const guildId = $('#discord-guild')?.value; if (!guildId) return; const channels = await request(`/api/v1/discord/guilds/${encodeURIComponent(guildId)}/channels`); const select = $('#discord-channel'); select.replaceChildren(new Option('Choisir…', ''), ...channels.map(value => new Option(`#${value.name}`, value.id))); if (state.discord?.channelId) select.value = state.discord.channelId; };
 window.saveDiscordSettings = async () => { try { await request('/api/v1/discord/settings', 'PUT', { guildId: $('#discord-guild').value || null, channelId: $('#discord-channel').value || null, defaultMessage: $('#discord-default-message').value }); toast('Destination Discord enregistrée'); await refresh(true); } catch (error) { toast(error.message, true); } };
@@ -770,6 +797,10 @@ document.addEventListener('click', event => {
     'save-discord-token': window.saveDiscordToken,
     'delete-discord-token': window.deleteDiscordToken,
     'load-discord': window.loadDiscord,
+    'test-streamlabs': window.testStreamlabs,
+    'disconnect-streamlabs': window.disconnectStreamlabs,
+    'refresh-wizebot': window.refreshWizebot,
+    'disconnect-wizebot': window.disconnectWizebot,
     'disconnect-twitch': window.disconnectTwitch,
     'connect-twitch': window.connectTwitch,
     'connect-google': window.connectGoogle,

@@ -1,10 +1,12 @@
 # WizeBot boundary
 
-`WizeBotAdapter` models configuration and provider lifecycle without guessing API
-routes. It stays `NOT_CONFIGURED` without an API base URL/token, and reports
-`WIZEBOT_TRANSPORT_UNAVAILABLE` when configured without a verified transport.
-A tested injected transport can move it to `CONNECTED`.
+WizeBot is no longer advertised as unsupported. `WizeBotAdapter` is wired to an
+HTTP transport and exposes configuration, authentication validation, refresh,
+account name, bot connectivity, disconnect, and explicit lifecycle errors.
 
-No scraping, undocumented command endpoint or simulated success is used. A future
-transport needs user-provided credentials in secure storage and a verified API
-contract before commands, announcements or custom events can be exposed.
+WizeBot deployments/accounts can provide different API resources. To avoid
+inventing an endpoint, StreamDashboard sends a GET to the complete HTTPS status
+resource supplied by WizeBot and does not append a path. Authentication uses a
+Bearer token. Both values are kept in `ElectronSecretStore`; neither is emitted
+to the dashboard/mobile state or logs. `WIZEBOT_API_URL` and `WIZEBOT_TOKEN` are
+also supported for managed distributions.

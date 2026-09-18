@@ -10,6 +10,7 @@ interface SecurePayload {
   obsPassword?: string;
   discordToken?: string;
   streamlabsToken?: string;
+  wizebot?: { apiBaseUrl: string; token: string };
 }
 
 export class ElectronSecretStore implements SecretStore {
@@ -84,4 +85,7 @@ export class ElectronSecretStore implements SecretStore {
   async getStreamlabsToken() { return (await this.read()).streamlabsToken ?? ''; }
   async setStreamlabsToken(streamlabsToken: string) { await this.update(value => { value.streamlabsToken = streamlabsToken; }); }
   async clearStreamlabsToken() { await this.update(value => { delete value.streamlabsToken; }); }
+  async getWizeBotConfiguration() { const value = (await this.read()).wizebot; return value ? { ...value } : null; }
+  async setWizeBotConfiguration(wizebot: { apiBaseUrl: string; token: string }) { await this.update(value => { value.wizebot = { ...wizebot }; }); }
+  async clearWizeBotConfiguration() { await this.update(value => { delete value.wizebot; }); }
 }
