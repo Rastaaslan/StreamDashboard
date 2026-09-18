@@ -2,7 +2,7 @@ export type RunMode = 'idle' | 'intro' | 'live' | 'pause' | 'end';
 export type ApiVersion = 1;
 export const protocolVersion: ApiVersion = 1;
 
-export type IntegrationStatus = 'DISCONNECTED' | 'CONNECTING' | 'CONNECTED' | 'DEGRADED' | 'ERROR' | 'NOT_CONFIGURED';
+export type IntegrationStatus = 'DISCONNECTED' | 'CONNECTING' | 'CONNECTED' | 'DEGRADED' | 'ERROR' | 'NOT_CONFIGURED' | 'NOT_SUPPORTED';
 export interface IntegrationState {
   status: IntegrationStatus;
   lastConnectedAt: string | null;
