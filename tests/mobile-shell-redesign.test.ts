@@ -7,6 +7,12 @@ const mobile = readFileSync(new URL('../apps/mobile/mobile.js', import.meta.url)
 const css = readFileSync(new URL('../apps/mobile/mobile.css', import.meta.url), 'utf8');
 
 describe('Android Mobile 2.3 focus surface', () => {
+  it('ne référence aucun id statique absent du shell mobile', () => {
+    const ids = [...new Set([...mobile.matchAll(/\$\('([^']+)'\)/g)].map(match => match[1]))];
+    const missing = ids.filter(id => !html.includes(`id="${id}"`));
+    expect(missing).toEqual([]);
+  });
+
   it('expose quatre destinations stables avec Le camp en secondaire', () => {
     const tabs = [...html.matchAll(/<button data-tab="([^"]+)"/g)].map(match => match[1]);
     expect(tabs).toEqual(['home', 'live', 'sounds', 'planning']);
