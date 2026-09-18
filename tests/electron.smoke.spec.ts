@@ -29,7 +29,7 @@ test('Electron réel démarre, persiste, impose une instance et arrête son back
     const window = await application.firstWindow();
     await expect(window).toHaveTitle(/StreamDashboard/);
     await expect(window.locator('#title')).toHaveText('Accueil');
-    const electronVersion = await application.evaluate(({ process }) => process.versions.electron);
+    const electronVersion = await application.evaluate(() => process.versions.electron);
     expect(electronVersion).toBe(packageJson.devDependencies.electron);
 
     const health = await window.evaluate(() => fetch('/api/v1/health').then(response => response.json()));
