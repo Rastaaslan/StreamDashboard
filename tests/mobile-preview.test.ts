@@ -15,5 +15,10 @@ describe('Android preview', () => {
       expect(preview).toContain(target);
     }
     expect(preview).toContain('APERÇU • AUCUNE COMMANDE RÉELLE');
+    for (const scene of ['Intro', 'Gameplay', 'Chatting', 'Pause', 'Fin']) {
+      expect(preview).toContain(`data-scene="${scene}"`);
+    }
+    expect(preview).toContain('id="add-quick-sound"');
+    expect(preview).toContain('id="quick-sound-categories"');
   });
 });

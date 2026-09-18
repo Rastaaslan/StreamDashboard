@@ -43,21 +43,34 @@
         <div class="metric-row">
           <div><b>17</b><span>Viewers</span></div>
           <div><b>6</b><span>Dans le chat</span></div>
-          <div><b>Gameplay</b><span>Scène</span></div>
+          <div><b id="home-scene-name">Gameplay</b><span>Scène</span></div>
         </div>
       </article>
 
-      <section class="block">
+      <section class="block quick-actions">
         <div class="section-head">
-          <h2>Contrôle rapide</h2>
+          <h2>Actions rapides</h2>
           <span>1 geste</span>
         </div>
-        <div class="quick-grid">
-          <button class="action-card" data-demo="clip"><span class="action-icon">✂</span><b>Clip</b><small>Marquer le moment</small></button>
-          <button class="action-card" data-demo="pause"><span class="action-icon">Ⅱ</span><b>Pause</b><small>Basculer la scène</small></button>
-          <button class="action-card" data-go="live"><span class="action-icon">▦</span><b>Scènes</b><small>Changer rapidement</small></button>
-          <button class="action-card active" data-demo="mic"><span class="action-icon">●</span><b>Micro</b><small>Actif · -8 dB</small></button>
+
+        <div class="quick-subhead">
+          <span>SCÈNES</span>
+          <button class="text-button" data-go="live">Cockpit</button>
         </div>
+        <div class="quick-scenes" aria-label="Scènes principales">
+          <button data-quick-scene data-scene="Intro"><span>01</span><b>Intro</b></button>
+          <button class="selected" data-quick-scene data-scene="Gameplay"><span>02</span><b>Gameplay</b></button>
+          <button data-quick-scene data-scene="Chatting"><span>03</span><b>Chatting</b></button>
+          <button data-quick-scene data-scene="Pause"><span>04</span><b>Pause</b></button>
+          <button data-quick-scene data-scene="Fin"><span>05</span><b>Fin</b></button>
+        </div>
+
+        <div class="quick-subhead sound-head">
+          <span>SONS RAPIDES</span>
+          <button class="add-quick-sound" id="add-quick-sound" type="button">+ Ajouter</button>
+        </div>
+        <div class="quick-sound-categories" id="quick-sound-categories" aria-label="Catégories de sons"></div>
+        <div class="quick-sound-grid" id="quick-sound-grid"></div>
       </section>
 
       <section class="block compact">
@@ -97,6 +110,7 @@
           <button class="selected" data-scene="Gameplay"><span>02</span><b>Gameplay</b></button>
           <button data-scene="Chatting"><span>03</span><b>Chatting</b></button>
           <button data-scene="Pause"><span>04</span><b>Pause</b></button>
+          <button data-scene="Fin"><span>05</span><b>Fin</b></button>
         </div>
       </article>
 
@@ -203,6 +217,39 @@
     <button data-nav="sounds"><span>♫</span><small>Sons</small></button>
     <button data-nav="planning"><span>▦</span><small>Planning</small></button>
   </nav>
+
+  <dialog class="quick-sound-dialog" id="quick-sound-dialog">
+    <form method="dialog" id="quick-sound-form">
+      <div class="sheet-head">
+        <div><span class="eyebrow">ACCUEIL</span><h2>Ajouter un son rapide</h2></div>
+        <button type="button" id="close-quick-sound">×</button>
+      </div>
+      <label>Son
+        <select id="quick-sound-choice">
+          <option value="BONK">BONK</option>
+          <option value="CREEPER">CREEPER</option>
+          <option value="GG">GG</option>
+          <option value="OH NON">OH NON</option>
+          <option value="TNT">TNT</option>
+          <option value="VICTOIRE">VICTOIRE</option>
+        </select>
+      </label>
+      <label>Catégorie
+        <input id="quick-sound-category" list="quick-sound-category-list" maxlength="28" value="Réactions">
+        <datalist id="quick-sound-category-list">
+          <option value="Réactions"></option>
+          <option value="Minecraft"></option>
+          <option value="Alertes"></option>
+          <option value="Memes"></option>
+        </datalist>
+      </label>
+      <p class="dialog-hint">Dans l’application finale, ce bouton choisira un son de ta bibliothèque existante. Ici, on simule l’ajout et la catégorie.</p>
+      <div class="dialog-buttons">
+        <button type="button" class="secondary-button" id="cancel-quick-sound">Annuler</button>
+        <button type="submit" class="primary-button">Ajouter</button>
+      </div>
+    </form>
+  </dialog>
 
   <aside class="camp-sheet" id="camp-sheet" hidden>
     <div class="sheet-backdrop" data-close-camp></div>

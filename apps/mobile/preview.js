@@ -32,12 +32,14 @@ $$('[data-demo]').forEach(button => button.addEventListener('click', () => {
   toast(button.dataset.demo === 'clip' ? 'Clip créé (simulation)' : 'Pause activée (simulation)');
 }));
 
-$$('[data-scene]').forEach(button => button.addEventListener('click', () => {
-  $$('[data-scene]').forEach(item => item.classList.remove('selected'));
-  button.classList.add('selected');
-  $('#scene-name').textContent = button.dataset.scene;
-  toast(`Scène → ${button.dataset.scene} (simulation)`);
-}));
+const selectScene = scene => {
+  $('[data-scene]').forEach(item => item.classList.toggle('selected', item.dataset.scene === scene));
+  $('#scene-name').textContent = scene;
+  const homeScene = $('#home-scene-name');
+  if (homeScene) homeScene.textContent = scene;
+  toast(`Scène → ${scene} (simulation)`);
+};
+$('[data-scene]').forEach(button => button.addEventListener('click', () => selectScene(button.dataset.scene)));
 
 $$('[data-audio]').forEach(button => button.addEventListener('click', () => {
   button.classList.toggle('on');
@@ -106,3 +108,82 @@ $$('#sound-filters button').forEach(button => button.addEventListener('click', (
   applySoundFilter();
 }));
 $('#sound-search').addEventListener('input', applySoundFilter);
+
+const quickSoundStorageKey = 'streamdashboard.preview.quickSounds';
+const defaultQuickSounds = [
+  { name: 'BONK', category: 'Réactions' },
+  { name: 'GG', category: 'Réactions' },
+  { name: 'CREEPER', category: 'Minecraft' },
+  { name: 'TNT', category: 'Minecraft' },
+];
+let quickSounds = defaultQuickSounds;
+try {
+  const saved = JSON.parse(localStorage.getItem(quickSoundStorageKey) || 'null');
+  if (Array.isArray(saved) && saved.every(item => item?.name && item?.category)) quickSounds = saved;
+} catch {}
+let quickSoundCategory = quickSounds[0]?.category || 'Réactions';
+
+const saveQuickSounds = () => localStorage.setItem(quickSoundStorageKey, JSON.stringify(quickSounds));
+const renderQuickSounds = () => {
+  const categoryHost = $('#quick-sound-categories');
+  const soundHost = $('#quick-sound-grid');
+  if (!categoryHost || !soundHost) return;
+  const categories = [...new Set(quickSounds.map(item => item.category))];
+  if (!categories.includes(quickSoundCategory)) quickSoundCategory = categories[0] || '';
+  categoryHost.replaceChildren(...categories.map(category => {
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.textContent = category;
+    button.classList.toggle('active', category === quickSoundCategory);
+    button.addEventListener('click', () => {
+      quickSoundCategory = category;
+      renderQuickSounds();
+    });
+    return button;
+  }));
+  soundHost.replaceChildren();
+  const visible = quickSounds.filter(item => item.category === quickSoundCategory);
+  for (const sound of visible) {
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.className = 'quick-sound-button';
+    button.innerHTML = `<b></b><small></small><span class="sound-glyph">♫</span>`;
+    button.querySelector('b').textContent = sound.name;
+    button.querySelector('small').textContent = sound.category;
+    button.addEventListener('click', () => {
+      $$('.quick-sound-button').forEach(item => item.classList.remove('playing'));
+      button.classList.add('playing');
+      toast(`${sound.name} · lecture simulée`);
+      setTimeout(() => button.classList.remove('playing'), 850);
+    });
+    soundHost.append(button);
+  }
+  if (!visible.length) {
+    const empty = document.createElement('div');
+    empty.className = 'quick-sound-empty';
+    empty.textContent = 'Aucun son dans cette catégorie.';
+    soundHost.append(empty);
+  }
+};
+
+const quickSoundDialog = $('#quick-sound-dialog');
+$('#add-quick-sound')?.addEventListener('click', () => {
+  $('#quick-sound-category').value = quickSoundCategory || 'Réactions';
+  quickSoundDialog.showModal();
+});
+$('#close-quick-sound')?.addEventListener('click', () => quickSoundDialog.close());
+$('#cancel-quick-sound')?.addEventListener('click', () => quickSoundDialog.close());
+$('#quick-sound-form')?.addEventListener('submit', event => {
+  event.preventDefault();
+  const name = $('#quick-sound-choice').value.trim();
+  const category = $('#quick-sound-category').value.trim() || 'Sans catégorie';
+  const existing = quickSounds.find(item => item.name === name);
+  if (existing) existing.category = category;
+  else quickSounds.push({ name, category });
+  quickSoundCategory = category;
+  saveQuickSounds();
+  renderQuickSounds();
+  quickSoundDialog.close();
+  toast(`${name} ajouté à ${category}`);
+});
+renderQuickSounds();

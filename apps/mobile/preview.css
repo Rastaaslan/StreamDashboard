@@ -121,3 +121,39 @@ button{color:inherit}
 @media(max-width:370px){body{padding-left:14px;padding-right:14px}.screen-title h1{font-size:28px}.metric-row{grid-template-columns:1fr 1fr}.metric-row>div:last-child{grid-column:1/-1}.quick-grid,.scene-grid,.sound-grid{gap:10px}.action-card{min-height:104px}.audio-row{grid-template-columns:10px 62px 1fr 42px}}
 @media(min-width:560px){body{padding-left:24px;padding-right:24px}.sound-grid{grid-template-columns:repeat(3,1fr)}}
 @media(prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
+
+/* Quick actions v2 — five fixed scenes + configurable categorized sounds. */
+.quick-actions{padding-bottom:2px}
+.quick-subhead{display:flex;align-items:center;justify-content:space-between;margin:18px 0 10px}
+.quick-subhead:first-of-type{margin-top:0}
+.quick-subhead>span{color:var(--muted2);font-size:9px;font-weight:900;letter-spacing:.14em}
+.quick-scenes{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
+.quick-scenes button{display:grid;grid-template-columns:24px 1fr;align-items:center;gap:8px;min-height:58px;padding:10px 12px;border:1px solid var(--line);border-radius:15px;background:var(--surface);text-align:left}
+.quick-scenes button:last-child{grid-column:1/-1}
+.quick-scenes button span{display:grid;place-items:center;width:24px;height:24px;border-radius:8px;background:#1e1725;color:var(--muted2);font-size:9px;font-weight:900}
+.quick-scenes button b{font-size:12px}
+.quick-scenes button.selected{border-color:#6d488e;background:#21172b;box-shadow:inset 0 -2px #a66cff}
+.quick-scenes button.selected span{background:#342245;color:var(--lavender)}
+.sound-head{margin-top:22px}
+.add-quick-sound{min-height:34px;padding:0 11px;border:1px solid #5c4075;border-radius:999px;background:#1d1525;color:var(--lavender);font-size:10px;font-weight:900}
+.quick-sound-categories{display:flex;gap:7px;margin:0 -18px 10px;padding:0 18px;overflow:auto;scrollbar-width:none}
+.quick-sound-categories::-webkit-scrollbar{display:none}
+.quick-sound-categories button{flex:0 0 auto;min-height:32px;padding:0 11px;border:1px solid var(--line);border-radius:999px;background:#100d14;color:var(--muted);font-size:10px;font-weight:800}
+.quick-sound-categories button.active{border-color:#60437b;background:#201629;color:var(--lavender)}
+.quick-sound-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
+.quick-sound-button{position:relative;min-height:64px;padding:11px 34px 11px 12px;border:1px solid #33283c;border-radius:15px;background:linear-gradient(150deg,#1b1422,#111016);text-align:left;overflow:hidden}
+.quick-sound-button::after{content:"";position:absolute;left:0;right:0;bottom:0;height:2px;background:#4b385d}
+.quick-sound-button b{display:block;font-size:12px}.quick-sound-button small{display:block;margin-top:3px;color:var(--muted2);font-size:9px}
+.quick-sound-button .sound-glyph{position:absolute;right:11px;top:11px;color:var(--muted2);font-size:13px}
+.quick-sound-button.playing{border-color:#7c52a1;box-shadow:0 0 18px #a66cff24}.quick-sound-button.playing::after{background:var(--violet);box-shadow:0 0 9px #a66cff}
+.quick-sound-empty{grid-column:1/-1;padding:14px;border:1px dashed var(--line);border-radius:14px;color:var(--muted2);font-size:10px}
+.quick-sound-dialog{width:min(520px,calc(100% - 28px));border:1px solid #3b2d48;border-radius:22px;padding:18px;background:#100d15;color:var(--text)}
+.quick-sound-dialog::backdrop{background:#000b}
+.quick-sound-dialog .sheet-head{margin-bottom:14px}
+.quick-sound-dialog label{display:grid;gap:7px;margin:12px 0;color:var(--muted);font-size:11px;font-weight:800}
+.quick-sound-dialog input,.quick-sound-dialog select{width:100%;min-height:48px;padding:0 12px;border:1px solid var(--line);border-radius:14px;background:#17121d;color:var(--text)}
+.dialog-hint{margin:12px 0 16px;color:var(--muted2);font-size:10px;line-height:1.5}
+.dialog-buttons{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.dialog-buttons button{min-height:48px;border-radius:14px;font-weight:900}
+.secondary-button{border:1px solid var(--line);background:transparent}.primary-button{border:1px solid #68488a;background:#261933;color:var(--lavender)}
+@media(max-width:370px){.quick-scenes,.quick-sound-grid{gap:8px}.quick-scenes button,.quick-sound-button{min-height:58px}}
