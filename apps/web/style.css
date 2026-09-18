@@ -33,3 +33,12 @@ main{max-width:1500px;padding:30px clamp(28px,3vw,48px)}header{min-width:0}.head
 body.desktop-focus .overview-status{display:none}
 @media(max-width:1000px){.overview-status{grid-template-columns:repeat(2,minmax(0,1fr))}.overview-status span:nth-child(2){border-right:0}}
 @media(max-width:760px){.overview-status{grid-template-columns:1fr}.overview-status span{border-right:0}}
+
+
+/* Efficiency pass — common actions stay one click away without adding visual noise. */
+.quick-actions{display:flex;align-items:center;gap:6px}
+.quick-action{min-height:34px;padding:7px 10px;border:1px solid var(--line);border-radius:6px;background:transparent;color:var(--text-secondary);font-size:.72rem;font-weight:800}
+.quick-action:hover{border-color:var(--purple-active);color:var(--text-primary)}
+.quick-action.primary-inline{background:var(--purple-active);color:var(--text-primary);border-color:var(--purple-active)}
+@media(max-width:1120px){.quick-actions{order:2;width:100%;justify-content:flex-end}.header-actions{max-width:620px;justify-content:flex-end}}
+@media(max-width:760px){.quick-actions{justify-content:flex-start;overflow-x:auto}.quick-action{flex:0 0 auto}}
