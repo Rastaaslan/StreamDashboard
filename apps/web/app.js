@@ -306,6 +306,14 @@ function updateHeader() {
   $('#live-pill').textContent = state.obs.streaming ? '● EN DIRECT' : 'HORS LIGNE';
   $('#live-pill').className = `live-pill ${state.obs.streaming ? 'on' : ''}`;
   $('#twitch-pill').textContent = `TWITCH ${state.twitch.connected ? 'CONNECTÉ' : 'DÉCONNECTÉ'}`;
+
+  const quick = $('#quick-actions');
+  if (quick) {
+    const preflightReady = state.preflight?.status === 'ready';
+    quick.innerHTML = state.obs.streaming
+      ? `<button class="quick-action" data-action="go" data-value="live">Live</button><button class="quick-action" data-command="mode.set" data-value="pause">Pause</button><button class="quick-action" data-action="toggle-primary-mic">Micro</button><button class="quick-action" data-action="go" data-value="deck">Scènes</button>`
+      : `${preflightReady && state.obs.connected ? '<button class="quick-action primary-inline" data-command="session.start">Démarrer</button>' : '<button class="quick-action primary-inline" data-action="go" data-value="prepare">Préparer</button>'}<button class="quick-action" data-action="go" data-value="planning">Planning</button><button class="quick-action" data-action="go" data-value="deck">Scènes</button>`;
+  }
 }
 function dirtyForm() { return document.querySelector('#view form[data-dirty="true"]'); }
 function updateSettingsRuntime() {
@@ -682,6 +690,13 @@ window.publishPlanningDiscord = async () => {
 window.stopStream = () => {
   if (state.obs.streaming && (!state.settings.confirmStop || confirm('Arrêter réellement la diffusion ?'))) void command('session.stop');
 };
+window.togglePrimaryMic = async () => {
+  const input = state.settings.primaryMicInput;
+  if (!input) { toast('Micro principal non configuré.', true); return; }
+  const current = state.obs.inputs?.[input];
+  if (!current) { toast('Micro principal introuvable dans OBS.', true); return; }
+  await command('obs.mute', { input, muted: !current.muted });
+};
 window.testObs = async () => {
   const formElement = $('#settings-form');
   if (!formElement) return;
@@ -784,6 +799,7 @@ document.addEventListener('click', event => {
   const actions = {
     go: () => window.go(value),
     'stop-stream': window.stopStream,
+    'toggle-primary-mic': window.togglePrimaryMic,
     'sync-twitch': window.syncTwitch,
     'sync-google': window.syncGoogle,
     'export-planning': window.exportPlanning,
