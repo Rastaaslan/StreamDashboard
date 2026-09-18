@@ -640,6 +640,14 @@ const selectTab = tab => {
 };
 document.querySelector('.bottom-nav').onclick = event => { const button = event.target.closest('[data-tab]'); if (button) selectTab(button.dataset.tab); };
 document.addEventListener('click', event => { const open = event.target.closest('[data-open-tab]'); if (open) { selectTab(open.dataset.openTab); $('command-palette')?.close(); } const tool = event.target.closest('[data-open-live-tool]'); if (tool) { selectTab('live'); document.querySelector(`[data-hub-tool="${tool.dataset.openLiveTool}"]`)?.click(); $('command-palette')?.close(); } });
+document.addEventListener('click', event => {
+  const target = event.target.closest('[data-settings-target]')?.dataset.settingsTarget;
+  if (!target) return;
+  const diagnostics = $('diagnostics');
+  diagnostics.open = target === 'diagnostics';
+  if (target === 'pairing') showPairing(true);
+  requestAnimationFrame(() => (target === 'diagnostics' ? diagnostics : target === 'preferences' ? $('ui-preferences') : $('pairing')).scrollIntoView({ block: 'start' }));
+});
 const recentCommandsKey = 'streamdashboard.mobileRecentCommands';
 let recentCommands = []; try { recentCommands = JSON.parse(localStorage.getItem(recentCommandsKey) || '[]').slice(0, 6); } catch { recentCommands = []; }
 function rememberCommand(entry) { recentCommands = [entry, ...recentCommands.filter(value => value.id !== entry.id)].slice(0, 6); localStorage.setItem(recentCommandsKey, JSON.stringify(recentCommands)); renderCommandRecents(); }
