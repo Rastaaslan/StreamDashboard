@@ -4,7 +4,7 @@ import { createCompanionStore } from '../apps/mobile/companion-store.js';
 
 const index = readFileSync(new URL('../apps/mobile/index.html', import.meta.url), 'utf8');
 const mobile = readFileSync(new URL('../apps/mobile/mobile.js', import.meta.url), 'utf8');
-const templatesUi = readFileSync(new URL('../apps/mobile/templates-ui.js', import.meta.url), 'utf8');
+const templatesUi = readFileSync(new URL('../apps/mobile/features/templates.js', import.meta.url), 'utf8');
 
 class MemoryStorage {
   values = new Map<string, string>();
@@ -20,7 +20,7 @@ describe('templates de live mobile', () => {
       expect(index).toContain(`id="${id}"`);
     }
     expect(index).not.toContain('src="templates-ui.js"');
-    expect(mobile).toContain("import('./templates-ui.js')");
+    expect(mobile).toContain("import('./features/templates.js')");
   });
 
   it('permet créer, modifier, supprimer et appliquer un template au planning', () => {
