@@ -177,6 +177,8 @@ export interface ObsInputState { muted: boolean; volume: number; volumeDb?: numb
 export interface ObsState {
   connected: boolean;
   streaming: boolean;
+  /** False means `streaming` is only the last known value after OBS telemetry loss. */
+  streamingKnown?: boolean;
   recording: boolean;
   scene: string | null;
   scenes: string[];
@@ -211,6 +213,8 @@ export interface DashboardSettings {
   timerBrowserSource?: string;
   /** Explicit input controlled by the mobile one-tap microphone action. */
   primaryMicInput?: string;
+  /** When true, Start is blocked unless the configured timer Browser Source can be refreshed. */
+  requireTimerOverlayOnStart?: boolean;
   /** Persisted preference. Binding to LAN is applied on next desktop startup. */
   remoteEnabled?: boolean;
 }
@@ -261,8 +265,8 @@ export interface RemoteDashboardState {
   timer: TimerState;
   planning: Array<Pick<CalendarItem, 'id' | 'title' | 'startAtUtc' | 'endAtUtc' | 'allDay' | 'category' | 'kind' | 'source' | 'twitchCategoryId' | 'twitchCategoryName' | 'desiredPublication' | 'recurrence' | 'seriesId' | 'occurrenceKey'>>;
   nextLive: Pick<CalendarItem, 'id' | 'title' | 'startAtUtc' | 'endAtUtc' | 'allDay' | 'category' | 'kind' | 'source' | 'twitchCategoryId' | 'twitchCategoryName' | 'desiredPublication'> | null;
-  obs: Pick<ObsState, 'connected' | 'streaming' | 'scene' | 'inputs' | 'activeAudioInputs' | 'mediaInputs'>;
-  settings: Pick<DashboardSettings, 'confirmStop' | 'streamerName' | 'modeScenes' | 'chattingScene' | 'primaryMicInput'>;
+  obs: Pick<ObsState, 'connected' | 'streaming' | 'streamingKnown' | 'scene' | 'inputs' | 'activeAudioInputs' | 'mediaInputs'>;
+  settings: Pick<DashboardSettings, 'confirmStop' | 'streamerName' | 'modeScenes' | 'chattingScene' | 'primaryMicInput' | 'requireTimerOverlayOnStart'>;
   twitch: Pick<TwitchState, 'connected' | 'channelTitle' | 'gameId' | 'gameName' | 'error'>;
   google?: Pick<GoogleCalendarState, 'configured' | 'connected'>;
   discord?: DiscordState;
