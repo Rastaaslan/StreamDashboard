@@ -35,7 +35,7 @@ export function registerLiveControlRoutes(options: Options) {
 
 function automationInput(value: unknown) {
   if (!object(value)) throw new Error('Automation invalide.'); const conditions = Array.isArray(value.conditions) ? value.conditions : []; const actions = Array.isArray(value.actions) ? value.actions : [];
-  if (!['support.received', 'twitch.raid', 'test.support'].includes(String(value.trigger))) throw new Error('Trigger non supporté.');
+  if (!['support.received', 'test.support'].includes(String(value.trigger))) throw new Error('Trigger non supporté.');
   if (conditions.some(condition => !object(condition) || !['eq', 'gte'].includes(String(condition.operator)) || typeof condition.path !== 'string')) throw new Error('Condition invalide.');
   if (actions.some(action => !object(action) || action.type !== 'soundboard.play' || !object(action.payload) || typeof action.payload.soundId !== 'string')) throw new Error('Action invalide.');
   return { name: String(value.name ?? '').slice(0, 120), enabled: value.enabled === true, trigger: String(value.trigger), conditions: conditions as Automation['conditions'], actions: actions as Automation['actions'], cooldownMs: Number(value.cooldownMs ?? 0) };
