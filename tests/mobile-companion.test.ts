@@ -13,7 +13,7 @@ describe('compagnon Android autonome', () => {
 
   it('démarre sans serveur et sans snapshot avec un planning vide', () => {
     const store = createCompanionStore(storage as unknown as Storage);
-    expect(store.snapshot()).toMatchObject({ schemaVersion: 2, planning: [], pending: [], tombstones: [] });
+    expect(store.snapshot()).toMatchObject({ schemaVersion: 3, planning: [], pending: [], tombstones: [] });
     expect(resolveMode({ pcAvailable: false, internetAvailable: false })).toBe(CompanionMode.OFFLINE);
     expect(resolveMode({ pcAvailable: false, internetAvailable: true })).toBe(CompanionMode.ONLINE_STANDALONE);
   });
@@ -23,6 +23,11 @@ describe('compagnon Android autonome', () => {
     first.replaceServerSnapshot({ at: '2026-09-12T22:13:00.000Z', planning: [{ id: 'pc-1', title: 'FC26' }], settings: { streamerName: 'Rasta' } });
     const restarted = createCompanionStore(storage as unknown as Storage);
     expect(restarted.snapshot()).toMatchObject({ streamerName: 'Rasta', lastServerSyncAt: '2026-09-12T22:14:00.000Z', planning: [{ id: 'pc-1', title: 'FC26' }] });
+  });
+
+  it('migre le cache v2 vers v3 sans perdre planning, pending, tombstones ou collections', () => {
+    storage.setItem('streamdashboard.companion.v2', JSON.stringify({ schemaVersion: 2, planning: [{ id: 'series', title: 'Minecraft', recurrence: { frequency: 'weekly', interval: 1, timeZone: 'Europe/Paris', exceptions: {} } }], pending: [{ id: 'op' }], tombstones: [{ id: 'old' }], notes: [{ id: 'n' }], templates: [{ id: 't' }], checklist: [{ id: 'c' }], conflicts: [{ id: 'x' }] }));
+    expect(createCompanionStore(storage as unknown as Storage).snapshot()).toMatchObject({ schemaVersion: 3, planning: [{ id: 'series', recurrence: { frequency: 'weekly' } }], pending: [{ id: 'op' }], tombstones: [{ id: 'old' }], notes: [{ id: 'n' }], templates: [{ id: 't' }], checklist: [{ id: 'c' }], conflicts: [{ id: 'x' }] });
   });
 
   it('persiste create/update/delete avec identité canonique, révision et tombstone', () => {

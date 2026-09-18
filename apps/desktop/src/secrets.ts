@@ -8,6 +8,7 @@ interface SecurePayload {
   twitch?: Record<string, string>;
   google?: Record<string, string>;
   obsPassword?: string;
+  discordToken?: string;
 }
 
 export class ElectronSecretStore implements SecretStore {
@@ -76,4 +77,7 @@ export class ElectronSecretStore implements SecretStore {
   async getGoogleTokens() { return (await this.read()).google ?? null; }
   async setGoogleTokens(google: Record<string, string>) { await this.update(value => { value.google = { ...google }; }); }
   async clearGoogleTokens() { await this.update(value => { delete value.google; }); }
+  async getDiscordToken() { return (await this.read()).discordToken ?? ''; }
+  async setDiscordToken(discordToken: string) { await this.update(value => { value.discordToken = discordToken; }); }
+  async clearDiscordToken() { await this.update(value => { delete value.discordToken; }); }
 }

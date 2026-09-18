@@ -26,7 +26,7 @@ export class ObsClient {
   private reconnects = 0;
   private retry?: NodeJS.Timeout;
   private suppressReconnect = false;
-  state: ObsState = { connected: false, streaming: false, recording: false, scene: null, scenes: [], inputs: {}, activeAudioInputs: [], mediaInputs: [], browserInputs: [], error: null, obsVersion: null, websocketVersion: null };
+  state: ObsState = { connected: false, streaming: false, streamingKnown: false, recording: false, scene: null, scenes: [], inputs: {}, activeAudioInputs: [], mediaInputs: [], browserInputs: [], error: null, obsVersion: null, websocketVersion: null };
   private listeners = new Set<() => void>();
   private refreshTimer?: NodeJS.Timeout;
   private refreshPromise?: Promise<void>;
@@ -38,7 +38,7 @@ export class ObsClient {
       if (!this.suppressReconnect) this.schedule();
     });
     this.client.on('CurrentProgramSceneChanged', ({ sceneName }) => { this.state.scene = sceneName; this.notify(); this.scheduleRefresh(); });
-    this.client.on('StreamStateChanged', ({ outputActive }) => { this.state.streaming = outputActive; this.notify(); });
+    this.client.on('StreamStateChanged', ({ outputActive }) => { this.state.streaming = outputActive; this.state.streamingKnown = true; this.notify(); });
     this.client.on('RecordStateChanged', ({ outputActive }) => { this.state.recording = outputActive; this.notify(); });
     this.client.on('InputMuteStateChanged', ({ inputName, inputMuted }) => {
       this.state.inputs[inputName] = { ...(this.state.inputs[inputName] ?? { volume: 1, volumeDb: 0 }), muted: inputMuted };
@@ -55,7 +55,7 @@ export class ObsClient {
 
   private clearLiveState(error: string | null) {
     this.state.connected = false;
-    this.state.streaming = false;
+    this.state.streamingKnown = false;
     this.state.recording = false;
     this.state.scene = null;
     this.state.scenes = [];
@@ -156,6 +156,7 @@ export class ObsClient {
     this.state.scene = scene.currentProgramSceneName;
     this.state.scenes = scenes.scenes.map(({ sceneName }) => String(sceneName));
     this.state.streaming = stream.outputActive;
+    this.state.streamingKnown = true;
     if (recordResult.status === 'fulfilled') this.state.recording = recordResult.value.outputActive;
     if (inputsResult.status !== 'fulfilled') {
       this.state.inputs = {};

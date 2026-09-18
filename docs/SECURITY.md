@@ -58,3 +58,8 @@ Le workflow PR utilise des permissions GitHub `contents: read`, des actions épi
 Les releases officielles taguées s'exécutent dans un job séparé avec `contents: write`, exigent les secrets de signature, vérifient Authenticode avant publication et génèrent des checksums. Une release officielle non signée doit échouer.
 
 `npm run security:check` est un garde-fou statique et ne remplace pas les tests d'intégration ni l'acceptation réelle sur Windows/OBS/Twitch/Google/Android.
+# Secret Discord
+
+Le token du bot Discord est un secret serveur : `ElectronSecretStore` le chiffre avec Electron `safeStorage`, dans le même conteneur sécurisé que les autres credentials. Il est absent du JSON `DashboardState`, de `RemoteDashboardState`, du renderer, du cache compagnon et d’Android. Les endpoints de création et suppression du token refusent toute requête non locale ; une télécommande appairée peut seulement choisir une destination non secrète et publier un PNG.
+
+Le serveur refuse les URL d’image, les fichiers sans signature PNG, les images dépassant 10 Mio, les messages de plus de 2 000 caractères et les salons n’appartenant pas à la guilde configurée. Une empreinte image/salon/message fournit un single-flight de courte durée contre les doubles publications. Le client Discord ne journalise jamais l’en-tête `Authorization`.

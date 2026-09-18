@@ -63,3 +63,10 @@ Le JSON atomique contient `schemaVersion`, planning, liens providers, devices di
 ## Projets historiques
 
 **StreamTool et damPlanner ne font pas partie du graphe d'exécution**. Ils restent indépendants, non modifiés et utilisables comme fallback.
+# Planning V2 : séries et Discord
+
+Les récurrences sont conservées sous forme d’un événement canonique contenant une règle (`weekly`/`monthly`, intervalle, fuseau, fin) et une table d’exceptions. `packages/core/src/recurrence.js` développe cette série uniquement dans la fenêtre demandée. Une occurrence virtuelle porte `seriesId` et une `occurrenceKey` construite à partir de l’identité de série et de son heure murale locale ; elle n’est jamais persistée comme événement autonome. Les conversions de fuseau recalculent chaque occurrence depuis l’ancre afin de préserver l’heure locale pendant les changements DST. Les jours 29–31 mensuels sont ramenés au dernier jour valide sans faire dériver l’ancre des mois suivants.
+
+Le cache compagnon v3 conserve les événements canoniques et traite `recurrence` comme un champ atomique : deux éditions concurrentes déclenchent le mécanisme de conflit existant. Les providers actuels ne garantissant pas des exceptions réconciliables, une série locale demandée sur Twitch/Google est conservée mais marquée en erreur explicite, plutôt que de publier une représentation fausse ou dupliquée. L’horizon d’expansion des listes générales est borné à deux ans ; chaque export utilise exactement les bornes de sa période.
+
+Discord est exclusivement une intégration serveur. Desktop ou Android génère le PNG avec `buildPlanningPng`, puis envoie les octets au serveur appairé. Le serveur valide le PNG, la destination et le message, contrôle le salon auprès de Discord et publie un multipart. Android ne reçoit que l’état public, les noms/identifiants de guildes et salons, jamais le token.

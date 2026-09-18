@@ -1,4 +1,5 @@
 import { normalizeCategoryQuery, rankCategories, rememberCategory } from '../mobile/twitch-category.js';
+import { expandRecurringItems, recurrenceSummary } from '../mobile/shared/recurrence.js';
 
 const pages = [
   ['overview', 'Vue d’ensemble', '⌂'],
@@ -15,6 +16,7 @@ let page = 'overview';
 let state;
 let remotePairing = null;
 let editingEventId = null;
+let editingOccurrence = null;
 const planningPreferencesKey = 'streamdashboard.desktopPlanningExport';
 const recentCategoriesKey = 'streamdashboard.recentTwitchCategories';
 let planningExportPreferences = { period: 'today', filters: { twitch: true, google: true, allDay: true, live: true, personal: true, production: true }, noteEnabled: false, noteText: 'Et potentiellement d’autres lives à l’improviste 🔥' };
@@ -184,7 +186,10 @@ function live() {
 
 function planningActions(item) {
   const actions = [];
-  if (item.editable !== false) actions.push(`<button class="ghost compact" data-action="edit-event" data-value="${encodeURIComponent(item.id)}">Modifier</button>`);
+  if (item.editable !== false) {
+    if (item.occurrenceKey) actions.push(`<button class="ghost compact" data-action="edit-occurrence" data-value="${encodeURIComponent(item.id)}">Modifier cette occurrence</button><button class="ghost compact" data-action="edit-event" data-value="${encodeURIComponent(item.seriesId)}">Modifier toute la série</button>`);
+    else actions.push(`<button class="ghost compact" data-action="edit-event" data-value="${encodeURIComponent(item.id)}">Modifier</button>`);
+  }
   for (const provider of ['twitch', 'google']) {
     const link = item.providers?.[provider];
     if (link?.status === 'error' && !item.conflict) {
@@ -197,18 +202,19 @@ function planningActions(item) {
     actions.push(`<button class="ghost compact" data-action="resolve-conflict" data-provider="${provider}" data-strategy="remote" data-value="${encodeURIComponent(item.id)}">Garder ${provider}</button>`);
     actions.push(`<button class="ghost compact" data-action="resolve-conflict" data-provider="${provider}" data-strategy="local" data-value="${encodeURIComponent(item.id)}">Garder local</button>`);
   }
-  actions.push(`<button class="icon-btn" data-action="remove-event" data-value="${encodeURIComponent(item.id)}" aria-label="Supprimer">×</button>`);
+  if (item.occurrenceKey) actions.push(`<button class="ghost compact" data-action="remove-occurrence" data-value="${encodeURIComponent(item.id)}">Supprimer cette occurrence</button><button class="icon-btn" data-action="remove-event" data-value="${encodeURIComponent(item.seriesId)}" aria-label="Supprimer toute la série">×</button>`);
+  else actions.push(`<button class="icon-btn" data-action="remove-event" data-value="${encodeURIComponent(item.id)}" aria-label="Supprimer">×</button>`);
   return actions.join('');
 }
 
 function planning() {
-  const rows = [...state.planning].sort((left, right) => Date.parse(left.startAtUtc) - Date.parse(right.startAtUtc));
+  const rows = expandRecurringItems(state.planning, { from: Date.now() - 366 * 86400000, to: Date.now() + 730 * 86400000 });
   const googleText = !state.google?.configured
     ? 'Google non configuré'
     : state.google.connected
       ? `Google connecté${state.google.lastSyncedAt ? ` · synchro ${date(state.google.lastSyncedAt)}` : ''}`
       : 'Google non connecté';
-  return `<div class="section-head"><div><span class="label">PLANNING SYNCHRONISÉ</span><h3>Prochains rendez-vous</h3><small class="muted">${state.twitch.connected ? `Twitch · ${esc(state.twitch.displayName)}` : 'Twitch non connecté'} · ${esc(googleText)}</small></div><div class="button-row">${state.twitch.connected ? `<button class="ghost compact" ${state.twitch.syncing ? 'disabled' : ''} data-action="sync-twitch">↻ Twitch</button>` : ''}${state.google?.connected && state.google.targetCalendarId ? '<button class="ghost compact" data-action="sync-google">↻ Google</button>' : ''}<button class="primary compact" data-action="open-event">+ Ajouter</button></div></div><div class="schedule">${rows.map(item => `<article><time><b>${new Date(item.startAtUtc).toLocaleDateString('fr-FR', { day: '2-digit', timeZone: item.allDay ? 'UTC' : undefined })}</b>${new Date(item.startAtUtc).toLocaleDateString('fr-FR', { month: 'short', timeZone: item.allDay ? 'UTC' : undefined })}</time><div><div>${providerBadge(item, 'twitch')} ${providerBadge(item, 'google')}</div><h3>${esc(item.title)}</h3><p>${eventRange(item)}</p>${item.draft ? '<p class="muted">● Live non programmé en cours · fin provisoire jusqu’à l’arrêt OBS.</p>' : ''}${item.editable === false ? '<p class="muted">Lecture seule</p>' : ''}${item.twitchCategoryName ? `<p class="muted">Twitch : ${esc(item.twitchCategoryName)}</p>` : ''}${item.conflict ? `<p class="muted">⚠ Conflit ${esc(item.conflict.provider)} : choisis explicitement la version à garder.</p>` : ''}${item.syncError ? `<p class="muted">⚠ ${esc(item.syncError)}</p>` : ''}${item.providers?.twitch?.lastError ? `<p class="muted">Twitch : ${esc(item.providers.twitch.lastError)}</p>` : ''}${item.providers?.google?.lastError ? `<p class="muted">Google : ${esc(item.providers.google.lastError)}</p>` : ''}</div><div class="button-row">${planningActions(item)}</div></article>`).join('') || '<div class="empty"><b>Aucun événement planifié</b><p>Votre planning est prêt à accueillir un premier live.</p></div>'}</div><div class="panel space" id="planning-export-options"><h3>Image réseaux</h3><label>Période export<select name="exportPeriod"><option value="today">Aujourd’hui</option><option value="next-week">Semaine prochaine</option></select></label><div class="form-grid">${Object.entries({twitch:'Twitch',google:'Google',allDay:'Journée entière',live:'Live',personal:'Personnel',production:'Production'}).map(([key,label])=>`<label class="switch"><span>${label}</span><input type="checkbox" name="filter-${key}"></label>`).join('')}</div><label class="switch"><span>Afficher une note « lives improvisés »</span><input type="checkbox" name="exportNoteEnabled"></label><label>Texte de la note<input name="exportNoteText" maxlength="120"></label><button class="ghost" data-action="export-planning">IMAGE DU PLANNING</button></div><dialog id="event-dialog"><form id="event-form" data-dirty="false"><div class="section-head"><h3 id="event-dialog-title">Nouveau rendez-vous</h3><button type="button" class="icon-btn" data-action="close-dialog">×</button></div><label>Titre<input name="title" maxlength="140" required></label><label class="switch"><span><b>Toute la journée</b><small>Google conserve alors un vrai événement journée entière.</small></span><input name="allDay" type="checkbox"></label><div class="form-grid"><label>Début<input name="start" type="datetime-local" required></label><label>Fin<input name="end" type="datetime-local" required></label></div><label>Type<select name="category"><option value="live">Live</option><option value="production">Production</option><option value="personal">Personnel</option></select></label><label>Catégorie Twitch<input name="twitchCategoryName" maxlength="140" autocomplete="off"><input name="twitchCategoryId" type="hidden"></label><div id="desktop-twitch-results" class="category-results"></div><div id="publication-options" class="form-grid"><label class="switch"><span><b>Publier sur Twitch</b></span><input name="publishTwitch" type="checkbox"></label><label class="switch"><span><b>Publier sur Google</b></span><input name="publishGoogle" type="checkbox"></label></div><small class="muted">Les destinations sont modifiables ensuite. Désactiver une destination retire la publication distante sans perdre l’événement local.</small><button class="primary" type="submit">Enregistrer</button></form></dialog>`;
+  return `<div class="section-head"><div><span class="label">PLANNING SYNCHRONISÉ</span><h3>Prochains rendez-vous</h3><small class="muted">${state.twitch.connected ? `Twitch · ${esc(state.twitch.displayName)}` : 'Twitch non connecté'} · ${esc(googleText)}</small></div><div class="button-row">${state.twitch.connected ? `<button class="ghost compact" ${state.twitch.syncing ? 'disabled' : ''} data-action="sync-twitch">↻ Twitch</button>` : ''}${state.google?.connected && state.google.targetCalendarId ? '<button class="ghost compact" data-action="sync-google">↻ Google</button>' : ''}<button class="primary compact" data-action="open-event">+ Ajouter</button></div></div><div class="schedule">${rows.map(item => `<article><time><b>${new Date(item.startAtUtc).toLocaleDateString('fr-FR', { day: '2-digit', timeZone: item.allDay ? 'UTC' : undefined })}</b>${new Date(item.startAtUtc).toLocaleDateString('fr-FR', { month: 'short', timeZone: item.allDay ? 'UTC' : undefined })}</time><div><div>${providerBadge(item, 'twitch')} ${providerBadge(item, 'google')}</div><h3>${esc(item.title)}</h3><p>${eventRange(item)}</p>${item.recurrence ? `<p class="muted">${esc(recurrenceSummary(item))}</p>` : ''}${item.draft ? '<p class="muted">● Live non programmé en cours · fin provisoire jusqu’à l’arrêt OBS.</p>' : ''}${item.editable === false ? '<p class="muted">Lecture seule</p>' : ''}${item.twitchCategoryName ? `<p class="muted">Twitch : ${esc(item.twitchCategoryName)}</p>` : ''}${item.conflict ? `<p class="muted">⚠ Conflit ${esc(item.conflict.provider)} : choisis explicitement la version à garder.</p>` : ''}${item.syncError ? `<p class="muted">⚠ ${esc(item.syncError)}</p>` : ''}${item.providers?.twitch?.lastError ? `<p class="muted">Twitch : ${esc(item.providers.twitch.lastError)}</p>` : ''}${item.providers?.google?.lastError ? `<p class="muted">Google : ${esc(item.providers.google.lastError)}</p>` : ''}</div><div class="button-row">${planningActions(item)}</div></article>`).join('') || '<div class="empty"><b>Aucun événement planifié</b><p>Votre planning est prêt à accueillir un premier live.</p></div>'}</div><div class="panel space" id="planning-export-options"><h3>Image réseaux</h3><label>Période export<select name="exportPeriod"><option value="today">Aujourd’hui</option><option value="this-week">Cette semaine</option><option value="next-week">Semaine prochaine</option></select></label><div class="form-grid">${Object.entries({twitch:'Twitch',google:'Google',allDay:'Journée entière',live:'Live',personal:'Personnel',production:'Production'}).map(([key,label])=>`<label class="switch"><span>${label}</span><input type="checkbox" name="filter-${key}"></label>`).join('')}</div><label class="switch"><span>Afficher une note « lives improvisés »</span><input type="checkbox" name="exportNoteEnabled"></label><label>Texte de la note<input name="exportNoteText" maxlength="120"></label><button class="ghost" data-action="export-planning">IMAGE DU PLANNING</button><button class="primary" data-action="publish-planning-discord">PUBLIER SUR DISCORD</button></div><dialog id="event-dialog"><form id="event-form" data-dirty="false"><div class="section-head"><h3 id="event-dialog-title">Nouveau rendez-vous</h3><button type="button" class="icon-btn" data-action="close-dialog">×</button></div><label>Titre<input name="title" maxlength="140" required></label><label class="switch"><span><b>Toute la journée</b><small>Google conserve alors un vrai événement journée entière.</small></span><input name="allDay" type="checkbox"></label><div class="form-grid"><label>Début<input name="start" type="datetime-local" required></label><label>Fin<input name="end" type="datetime-local" required></label></div><label>Type<select name="category"><option value="live">Live</option><option value="production">Production</option><option value="personal">Personnel</option></select></label><div class="form-grid"><label>Répéter<select name="recurrence"><option value="">Non</option><option value="weekly-1">Chaque semaine</option><option value="weekly-2">Toutes les 2 semaines</option><option value="monthly-1">Chaque mois</option></select></label><label>Fin de répétition<input name="recurrenceUntil" type="date"><small>Vide = sans fin.</small></label></div><label>Catégorie Twitch<input name="twitchCategoryName" maxlength="140" autocomplete="off"><input name="twitchCategoryId" type="hidden"></label><div id="desktop-twitch-results" class="category-results"></div><div id="publication-options" class="form-grid"><label class="switch"><span><b>Publier sur Twitch</b></span><input name="publishTwitch" type="checkbox"></label><label class="switch"><span><b>Publier sur Google</b></span><input name="publishGoogle" type="checkbox"></label></div><small class="muted">Les destinations sont modifiables ensuite. Désactiver une destination retire la publication distante sans perdre l’événement local.</small><button class="primary" type="submit">Enregistrer</button></form></dialog>`;
 }
 
 function deck() {
@@ -251,7 +257,7 @@ function remoteRuntime() {
 function settings() {
   const browsers = configuredOptions(state.settings.timerBrowserSource, state.obs.browserInputs || []);
   const sceneOptions = mode => configuredOptions(state.settings.modeScenes?.[mode], state.obs.scenes || []);
-  return `<form class="panel settings" id="settings-form"><span class="label">PRÉFÉRENCES DU COCKPIT</span><label>Nom affiché<input name="streamerName" maxlength="80" value="${esc(state.settings.streamerName)}"></label><label>Couleur d’accent<select name="accent"><option value="violet">Violet</option><option value="cyan">Cyan</option><option value="rose">Rose</option></select></label><label class="switch"><span><b>Confirmer l’arrêt du live</b><small>Évite les arrêts accidentels</small></span><input name="confirmStop" type="checkbox" ${state.settings.confirmStop ? 'checked' : ''}></label><span class="label section-label">CONNEXION OBS</span><label class="switch"><span><b>Lancer OBS avec StreamDashboard</b></span><input name="launchObs" type="checkbox" ${state.settings.launchObs ? 'checked' : ''}></label><label>Chemin OBS Studio<input name="obsExecutablePath" maxlength="500" value="${esc(state.settings.obsExecutablePath || '')}"></label><label>Adresse OBS WebSocket<input name="obsUrl" value="${esc(state.settings.obsUrl)}"></label><label>Mot de passe OBS<input name="obsPassword" type="password" maxlength="500" autocomplete="new-password" placeholder="${state.settings.obsPasswordSet ? 'Mot de passe enregistré — laisser vide pour conserver' : 'Mot de passe WebSocket OBS'}"></label>${state.settings.obsPasswordSet ? '<label class="switch"><span><b>Effacer le mot de passe OBS enregistré</b></span><input name="clearObsPassword" type="checkbox"></label>' : ''}<div id="obs-runtime">${obsRuntime()}</div><label>Scène au clic « Démarrer le live »<select name="startMode"><option value="intro" ${state.settings.startMode !== 'live' ? 'selected' : ''}>Intro (recommandé)</option><option value="live" ${state.settings.startMode === 'live' ? 'selected' : ''}>Live / Gameplay</option></select><small>La scène choisie est envoyée à OBS puis confirmée avant StartStream.</small></label><label>Browser Source du timer<select name="timerBrowserSource"><option value="">Non configurée</option>${browsers.map(name => `<option value="${esc(name)}" ${state.settings.timerBrowserSource === name ? 'selected' : ''}>${esc(name)}${state.obs.browserInputs?.includes(name) ? '' : ' (configurée, OBS hors ligne/absente)'}</option>`).join('')}</select><small>Cette source sera rafraîchie sans cache à Préparer et juste avant Start.</small></label><span class="label section-label">SCÈNES PAR MODE</span><div class="form-grid">${['intro', 'live', 'pause', 'end'].map(mode => `<label>Scène ${mode}<select name="scene-${mode}"><option value="">Non configurée</option>${sceneOptions(mode).map(scene => `<option value="${esc(scene)}" ${state.settings.modeScenes?.[mode] === scene ? 'selected' : ''}>${esc(scene)}${state.obs.scenes?.includes(scene) ? '' : ' (configurée, OBS hors ligne/absente)'}</option>`).join('')}</select></label>`).join('')}</div><label>Scène Chatting<select name="chattingScene"><option value="">Non configurée</option>${configuredOptions(state.settings.chattingScene, state.obs.scenes || []).map(scene => `<option value="${esc(scene)}" ${state.settings.chattingScene === scene ? 'selected' : ''}>${esc(scene)}</option>`).join('')}</select><small>Variante de contenu du mode Live, sans changer le timer ni l’état Twitch.</small></label><span class="label section-label">TWITCH</span><div id="twitch-runtime">${twitchRuntime()}</div><span class="label section-label">GOOGLE CALENDAR</span><div id="google-runtime">${googleRuntime()}</div><span class="label section-label">TÉLÉCOMMANDE</span><div id="remote-runtime">${remoteRuntime()}</div><div class="button-row"><button class="ghost" type="button" data-action="test-obs">Tester OBS</button><button class="primary" type="submit">Enregistrer</button></div></form>`;
+  return `<form class="panel settings" id="settings-form"><span class="label">PRÉFÉRENCES DU COCKPIT</span><label>Nom affiché<input name="streamerName" maxlength="80" value="${esc(state.settings.streamerName)}"></label><label>Couleur d’accent<select name="accent"><option value="violet">Violet</option><option value="cyan">Cyan</option><option value="rose">Rose</option></select></label><label class="switch"><span><b>Confirmer l’arrêt du live</b><small>Évite les arrêts accidentels</small></span><input name="confirmStop" type="checkbox" ${state.settings.confirmStop ? 'checked' : ''}></label><span class="label section-label">CONNEXION OBS</span><label class="switch"><span><b>Lancer OBS avec StreamDashboard</b></span><input name="launchObs" type="checkbox" ${state.settings.launchObs ? 'checked' : ''}></label><label>Chemin OBS Studio<input name="obsExecutablePath" maxlength="500" value="${esc(state.settings.obsExecutablePath || '')}"></label><label>Adresse OBS WebSocket<input name="obsUrl" value="${esc(state.settings.obsUrl)}"></label><label>Mot de passe OBS<input name="obsPassword" type="password" maxlength="500" autocomplete="new-password" placeholder="${state.settings.obsPasswordSet ? 'Mot de passe enregistré — laisser vide pour conserver' : 'Mot de passe WebSocket OBS'}"></label>${state.settings.obsPasswordSet ? '<label class="switch"><span><b>Effacer le mot de passe OBS enregistré</b></span><input name="clearObsPassword" type="checkbox"></label>' : ''}<div id="obs-runtime">${obsRuntime()}</div><label>Scène au clic « Démarrer le live »<select name="startMode"><option value="intro" ${state.settings.startMode !== 'live' ? 'selected' : ''}>Intro (recommandé)</option><option value="live" ${state.settings.startMode === 'live' ? 'selected' : ''}>Live / Gameplay</option></select><small>La scène choisie est envoyée à OBS puis confirmée avant StartStream.</small></label><label>Browser Source du timer<select name="timerBrowserSource"><option value="">Non configurée</option>${browsers.map(name => `<option value="${esc(name)}" ${state.settings.timerBrowserSource === name ? 'selected' : ''}>${esc(name)}${state.obs.browserInputs?.includes(name) ? '' : ' (configurée, OBS hors ligne/absente)'}</option>`).join('')}</select><small>Cette source sera rafraîchie sans cache à Préparer et juste avant Start.</small></label><label class="switch"><span><b>Exiger le timer avant Start</b><small>Interrompt le démarrage si la Browser Source ne répond pas.</small></span><input name="requireTimerOverlayOnStart" type="checkbox" ${state.settings.requireTimerOverlayOnStart ? 'checked' : ''}></label><label>Micro principal<select name="primaryMicInput"><option value="">Non configuré</option>${Object.keys(state.obs.inputs || {}).map(name => `<option value="${esc(name)}" ${state.settings.primaryMicInput === name ? 'selected' : ''}>${esc(name)}</option>`).join('')}</select><small>Utilisé par les actions rapides ; aucune source arbitraire n’est choisie.</small></label><span class="label section-label">SCÈNES PAR MODE</span><div class="form-grid">${['intro', 'live', 'pause', 'end'].map(mode => `<label>Scène ${mode}<select name="scene-${mode}"><option value="">Non configurée</option>${sceneOptions(mode).map(scene => `<option value="${esc(scene)}" ${state.settings.modeScenes?.[mode] === scene ? 'selected' : ''}>${esc(scene)}${state.obs.scenes?.includes(scene) ? '' : ' (configurée, OBS hors ligne/absente)'}</option>`).join('')}</select></label>`).join('')}</div><label>Scène Chatting<select name="chattingScene"><option value="">Non configurée</option>${configuredOptions(state.settings.chattingScene, state.obs.scenes || []).map(scene => `<option value="${esc(scene)}" ${state.settings.chattingScene === scene ? 'selected' : ''}>${esc(scene)}</option>`).join('')}</select><small>Variante de contenu du mode Live, sans changer le timer ni l’état Twitch.</small></label><span class="label section-label">TWITCH</span><div id="twitch-runtime">${twitchRuntime()}</div><span class="label section-label">GOOGLE CALENDAR</span><div id="google-runtime">${googleRuntime()}</div><span class="label section-label">DISCORD</span><div id="discord-runtime"><p>${state.discord?.configured ? `Token configuré · ${state.discord.connected ? 'Connecté' : esc(state.discord.error || 'À tester')}` : 'Bot non configuré'}</p><label>Token du bot<input id="discord-token" type="password" maxlength="300" autocomplete="new-password" placeholder="Le token ne sera jamais réaffiché"></label><div class="button-row"><button type="button" class="ghost" data-action="save-discord-token">Enregistrer/remplacer</button><button type="button" class="ghost" data-action="delete-discord-token">Supprimer/déconnecter</button><button type="button" class="ghost" data-action="load-discord">Tester/charger Discord</button></div><label>Serveur<select id="discord-guild"><option value="">Choisir…</option></select></label><label>Salon texte<select id="discord-channel"><option value="">Choisir…</option></select></label><label>Message par défaut<textarea id="discord-default-message" maxlength="2000">${esc(state.discordDefaultMessage || '')}</textarea></label></div><span class="label section-label">TÉLÉCOMMANDE</span><div id="remote-runtime">${remoteRuntime()}</div><div class="button-row"><button class="ghost" type="button" data-action="test-obs">Tester OBS</button><button class="primary" type="submit">Enregistrer</button></div></form>`;
 }
 
 function render() {
@@ -378,8 +384,9 @@ function configureEventDateInputs(allDay, preserve = true) {
 
 function resetEventDialogState() {
   editingEventId = null;
+  editingOccurrence = null;
   const form = $('#event-form');
-  if (form) form.dataset.dirty = 'false';
+  if (form) { form.dataset.dirty = 'false'; form.elements.recurrence.disabled = false; form.elements.recurrenceUntil.disabled = false; }
 }
 
 function bindForms() {
@@ -391,10 +398,10 @@ function bindForms() {
     const categoryId = eventForm.elements.twitchCategoryId;
     const results = $('#desktop-twitch-results');
     let categoryTimer; let categoryGeneration = 0;
-    const showCategories = items => { results.replaceChildren(...items.map(item => { const button = document.createElement('button'); button.type = 'button'; button.className = 'ghost'; button.textContent = item.name; button.dataset.gameId = item.id; button.dataset.gameName = item.name; return button; })); };
+    const showCategories = items => { results.replaceChildren(...items.map(item => { const button = document.createElement('button'); button.type = 'button'; button.className = 'ghost'; button.textContent = item.name; button.dataset.gameId = item.id; button.dataset.gameName = item.name; button.dataset.boxArtUrl = item.box_art_url || ''; return button; })); };
     categoryInput.onfocus = () => { if (!categoryInput.value.trim()) showCategories(recentCategories); };
     categoryInput.oninput = () => { categoryId.value = ''; clearTimeout(categoryTimer); const query = normalizeCategoryQuery(categoryInput.value); const generation = ++categoryGeneration; if (query.length < 2) { showCategories(query ? [] : recentCategories); return; } results.textContent = 'Recherche…'; categoryTimer = setTimeout(async () => { try { const found = await request(`/api/v1/twitch/categories?q=${encodeURIComponent(query)}`); if (generation !== categoryGeneration) return; const ranked = rankCategories(found, recentCategories, query); showCategories(ranked); if (!ranked.length) results.textContent = 'Aucune catégorie trouvée.'; } catch (error) { if (generation === categoryGeneration) results.textContent = error.message; } }, 300); };
-    results.onclick = event => { const button = event.target.closest('[data-game-id]'); if (!button) return; categoryId.value = button.dataset.gameId; categoryInput.value = button.dataset.gameName; recentCategories = rememberCategory(recentCategories, { id: button.dataset.gameId, name: button.dataset.gameName }); localStorage.setItem(recentCategoriesKey, JSON.stringify(recentCategories)); results.replaceChildren(); };
+    results.onclick = event => { const button = event.target.closest('[data-game-id]'); if (!button) return; categoryId.value = button.dataset.gameId; categoryInput.value = button.dataset.gameName; recentCategories = rememberCategory(recentCategories, { id: button.dataset.gameId, name: button.dataset.gameName, box_art_url: button.dataset.boxArtUrl || undefined }); localStorage.setItem(recentCategoriesKey, JSON.stringify(recentCategories)); results.replaceChildren(); };
     eventForm.dataset.dirty ||= 'false';
     eventForm.onsubmit = async event => {
       event.preventDefault();
@@ -403,6 +410,7 @@ function bindForms() {
       const startValue = String(form.get('start') || '');
       const endValue = String(form.get('end') || '');
       try {
+        const current = editingEventId ? state.planning.find(item => item.id === editingEventId) : null;
         const payload = {
           title: form.get('title'),
           startAtUtc: allDay ? allDayUtc(startValue) : new Date(startValue).toISOString(),
@@ -417,19 +425,24 @@ function bindForms() {
             google: form.get('publishGoogle') === 'on',
           },
         };
+        const recurrenceValue = String(form.get('recurrence') || ''); const [frequency, interval] = recurrenceValue.split('-'); const untilDate = String(form.get('recurrenceUntil') || '');
+        payload.recurrence = recurrenceValue ? { frequency, interval: Number(interval), timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone || 'Europe/Paris', until: untilDate ? new Date(`${untilDate}T23:59:59`).toISOString() : null, exceptions: editingOccurrence?.recurrence?.exceptions || current?.recurrence?.exceptions || {} } : null;
         if (payload.desiredPublication.twitch && !payload.twitchCategoryId) throw new Error('Sélectionnez une catégorie Twitch officielle.');
-        const current = editingEventId ? state.planning.find(item => item.id === editingEventId) : null;
         if (current?.twitchRecurring
           && current.desiredPublication?.twitch
           && !payload.desiredPublication.twitch
           && !confirm('Ce live appartient à une série Twitch récurrente. Confirmer son retrait du planning Twitch ?')) return;
         if (current?.twitchRecurring && current.desiredPublication?.twitch && !payload.desiredPublication.twitch) payload.confirmRecurring = true;
 
-        const result = editingEventId
+        const occurrencePatch = { title: payload.title, startAtUtc: payload.startAtUtc, endAtUtc: payload.endAtUtc, category: payload.category, twitchCategoryId: payload.twitchCategoryId, twitchCategoryName: payload.twitchCategoryName, desiredPublication: payload.desiredPublication };
+        const result = editingOccurrence
+          ? await request(`/api/v1/planning/${encodeURIComponent(editingOccurrence.seriesId)}/occurrence`, 'PUT', { occurrenceKey: editingOccurrence.occurrenceKey, patch: occurrencePatch })
+          : editingEventId
           ? await request(`/api/v1/planning/${encodeURIComponent(editingEventId)}`, 'PUT', payload)
           : await request('/api/v1/planning', 'POST', payload);
         eventForm.dataset.dirty = 'false';
         editingEventId = null;
+        editingOccurrence = null;
         eventDialog?.close();
         applyStateUpdate(result, true);
         toast('Planning enregistré');
@@ -463,6 +476,8 @@ function bindForms() {
         remoteEnabled: form.get('remoteEnabled') === 'on',
         startMode: form.get('startMode'),
         timerBrowserSource: form.get('timerBrowserSource'),
+        primaryMicInput: form.get('primaryMicInput'),
+        requireTimerOverlayOnStart: form.get('requireTimerOverlayOnStart') === 'on',
         chattingScene: form.get('chattingScene'),
         obsUrl: form.get('obsUrl'),
         modeScenes: Object.fromEntries(['intro', 'live', 'pause', 'end']
@@ -482,6 +497,10 @@ function bindForms() {
         toast(error.message, true);
       }
     };
+    const discordGuild = $('#discord-guild'); const discordChannel = $('#discord-channel'); const discordMessage = $('#discord-default-message');
+    if (discordGuild) discordGuild.onchange = () => void window.loadDiscordChannels();
+    if (discordChannel) discordChannel.onchange = () => void window.saveDiscordSettings();
+    if (discordMessage) discordMessage.onchange = () => void window.saveDiscordSettings();
   }
 }
 
@@ -527,7 +546,20 @@ window.editEvent = id => {
   form.elements.twitchCategoryId.value = item.twitchCategoryId || '';
   form.elements.publishTwitch.checked = item.desiredPublication?.twitch === true;
   form.elements.publishGoogle.checked = item.desiredPublication?.google === true;
+  form.elements.recurrence.value = item.recurrence ? `${item.recurrence.frequency}-${item.recurrence.interval}` : '';
+  form.elements.recurrenceUntil.value = item.recurrence?.until ? item.recurrence.until.slice(0, 10) : '';
   dialog.showModal();
+};
+window.editOccurrence = id => {
+  const rows = expandRecurringItems(state.planning, { from: Date.now() - 366 * 86400000, to: Date.now() + 730 * 86400000 });
+  const item = rows.find(value => value.id === id); if (!item) return;
+  window.editEvent(item.seriesId); editingOccurrence = item; editingEventId = null;
+  const form = $('#event-form'); $('#event-dialog-title').textContent = 'Modifier cette occurrence'; form.elements.title.value = item.title; form.elements.start.value = datetimeLocal(item.startAtUtc); form.elements.end.value = datetimeLocal(item.endAtUtc); form.elements.recurrence.disabled = true; form.elements.recurrenceUntil.disabled = true;
+};
+window.removeOccurrence = async id => {
+  const item = expandRecurringItems(state.planning, { from: Date.now() - 366 * 86400000, to: Date.now() + 730 * 86400000 }).find(value => value.id === id);
+  if (!item || !confirm(`Supprimer uniquement l’occurrence « ${item.title} » ?`)) return;
+  try { applyStateUpdate(await request(`/api/v1/planning/${encodeURIComponent(item.seriesId)}/occurrence`, 'DELETE', { occurrenceKey: item.occurrenceKey }), true); toast('Occurrence supprimée'); } catch (error) { toast(error.message, true); }
 };
 window.removeEvent = async id => {
   const item = state.planning.find(value => value.id === id);
@@ -577,11 +609,25 @@ window.exportPlanning = async () => {
     planningExportPreferences = { period: options.querySelector('[name="exportPeriod"]').value, filters: Object.fromEntries(['twitch','google','allDay','live','personal','production'].map(key => [key, options.querySelector(`[name="filter-${key}"]`).checked])), noteEnabled: options.querySelector('[name="exportNoteEnabled"]').checked, noteText: options.querySelector('[name="exportNoteText"]').value };
     localStorage.setItem(planningPreferencesKey, JSON.stringify(planningExportPreferences));
     const { exportPlanningImage } = await import('../mobile/planning-export.js');
-    const count = await exportPlanningImage(state.planning, state.settings.streamerName, planningExportPreferences);
+    const resolveArtwork = async item => {
+      const cached = recentCategories.find(category => category.id === item.twitchCategoryId)?.box_art_url;
+      if (cached) return cached;
+      const found = await request(`/api/v1/twitch/categories?q=${encodeURIComponent(item.twitchCategoryName || '')}`);
+      return found.find(category => category.id === item.twitchCategoryId)?.box_art_url;
+    };
+    const count = await exportPlanningImage(state.planning, state.settings.streamerName, { ...planningExportPreferences, resolveArtwork });
     toast(`Image du planning générée · ${count} live${count > 1 ? 's' : ''}`);
   } catch (error) {
     toast(error.message, true);
   }
+};
+window.saveDiscordToken = async () => { try { const input = $('#discord-token'); if (!input.value.trim()) throw new Error('Saisissez le token du bot.'); await request('/api/v1/discord/token', 'PUT', { token: input.value }); input.value = ''; toast('Token configuré'); await refresh(true); } catch (error) { toast(error.message, true); } };
+window.deleteDiscordToken = async () => { try { await request('/api/v1/discord/token', 'DELETE'); toast('Bot Discord déconnecté'); await refresh(true); } catch (error) { toast(error.message, true); } };
+window.loadDiscord = async () => { try { const guilds = await request('/api/v1/discord/guilds'); const select = $('#discord-guild'); select.replaceChildren(new Option('Choisir…', ''), ...guilds.map(value => new Option(value.name, value.id))); if (state.discord?.guildId) select.value = state.discord.guildId; await window.loadDiscordChannels(); toast('Discord chargé'); } catch (error) { toast(error.message, true); } };
+window.loadDiscordChannels = async () => { const guildId = $('#discord-guild')?.value; if (!guildId) return; const channels = await request(`/api/v1/discord/guilds/${encodeURIComponent(guildId)}/channels`); const select = $('#discord-channel'); select.replaceChildren(new Option('Choisir…', ''), ...channels.map(value => new Option(`#${value.name}`, value.id))); if (state.discord?.channelId) select.value = state.discord.channelId; };
+window.saveDiscordSettings = async () => { try { await request('/api/v1/discord/settings', 'PUT', { guildId: $('#discord-guild').value || null, channelId: $('#discord-channel').value || null, defaultMessage: $('#discord-default-message').value }); toast('Destination Discord enregistrée'); await refresh(true); } catch (error) { toast(error.message, true); } };
+window.publishPlanningDiscord = async () => {
+  try { const options = $('#planning-export-options'); const resolveArtwork = async item => { const cached = recentCategories.find(category => category.id === item.twitchCategoryId)?.box_art_url; if (cached) return cached; const found = await request(`/api/v1/twitch/categories?q=${encodeURIComponent(item.twitchCategoryName || '')}`); return found.find(category => category.id === item.twitchCategoryId)?.box_art_url; }; const preferences = { period: options.querySelector('[name="exportPeriod"]').value, filters: Object.fromEntries(['twitch','google','allDay','live','personal','production'].map(key => [key, options.querySelector(`[name="filter-${key}"]`).checked])), noteEnabled: options.querySelector('[name="exportNoteEnabled"]').checked, noteText: options.querySelector('[name="exportNoteText"]').value, resolveArtwork }; const { buildPlanningPng } = await import('../mobile/planning-export.js'); toast('Génération du planning…'); const result = await buildPlanningPng(state.planning, state.settings.streamerName, preferences); const buffer = new Uint8Array(await result.blob.arrayBuffer()); let binary = ''; for (let i = 0; i < buffer.length; i += 0x8000) binary += String.fromCharCode(...buffer.subarray(i, i + 0x8000)); toast('Publication Discord…'); const posted = await request('/api/v1/discord/planning', 'POST', { imageBase64: btoa(binary), filename: result.fileName }); toast(`Planning publié dans #${posted.channelName || 'planning'}.`); } catch (error) { toast(error.message, true); }
 };
 window.stopStream = () => {
   if (state.obs.streaming && (!state.settings.confirmStop || confirm('Arrêter réellement la diffusion ?'))) void command('session.stop');
@@ -691,14 +737,20 @@ document.addEventListener('click', event => {
     'sync-twitch': window.syncTwitch,
     'sync-google': window.syncGoogle,
     'export-planning': window.exportPlanning,
+    'publish-planning-discord': window.publishPlanningDiscord,
     'open-event': window.openEvent,
     'edit-event': () => window.editEvent(value),
+    'edit-occurrence': () => window.editOccurrence(value),
     'retry-provider': () => window.retryProvider(value, element.dataset.provider),
     'resolve-conflict': () => window.resolveConflict(value, element.dataset.provider, element.dataset.strategy),
     'remove-event': () => window.removeEvent(value),
+    'remove-occurrence': () => window.removeOccurrence(value),
     'close-dialog': () => { resetEventDialogState(); element.closest('dialog')?.close(); },
     'open-logs': () => window.streamDashboardDesktop?.openLogs(),
     'test-obs': window.testObs,
+    'save-discord-token': window.saveDiscordToken,
+    'delete-discord-token': window.deleteDiscordToken,
+    'load-discord': window.loadDiscord,
     'disconnect-twitch': window.disconnectTwitch,
     'connect-twitch': window.connectTwitch,
     'connect-google': window.connectGoogle,

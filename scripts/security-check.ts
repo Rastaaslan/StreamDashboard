@@ -51,7 +51,7 @@ if (mobile.includes('Access-Control-Allow-Origin: *')) failures.push('apps/mobil
 const server = await readFile('apps/server/src/index.ts', 'utf8');
 if (server.includes("req.method === 'GET' || req.path === '/v1/remote/pair'")) failures.push('apps/server/src/index.ts: GET distants globalement exemptés d’authentification');
 if (!server.includes("['/v1/health', '/v1/capabilities']")) failures.push('apps/server/src/index.ts: allowlist GET public remote attendue absente');
-if (!server.includes('parseRemoteCommand(body, snapshot())')) failures.push('apps/server/src/index.ts: politique de commandes remote dédiée absente');
+if (!server.includes('parseRemoteCommand(payload, snapshot())')) failures.push('apps/server/src/index.ts: politique de commandes remote dédiée absente');
 if (!server.includes('toRemoteDashboardState')) failures.push('apps/server/src/index.ts: projection de state remote nettoyée absente');
 if (!server.includes("req.path.startsWith('/mobile')")) failures.push('apps/server/src/index.ts: garde statique LAN/mobile absente');
 
@@ -60,7 +60,7 @@ for (const forbiddenCommand of ["case 'obs.record'", "case 'obs.scene'", "case '
   if (remotePolicy.includes(forbiddenCommand)) failures.push(`apps/server/src/remote-policy.ts: commande sensible explicitement autorisée (${forbiddenCommand})`);
 }
 if (!remotePolicy.includes("case 'session.start'")) failures.push('apps/server/src/remote-policy.ts: workflow Start distant absent');
-if (!remotePolicy.includes('command.force === true')) failures.push('apps/server/src/remote-policy.ts: garde force:true absente');
+if (!remotePolicy.includes('force: command.force === true')) failures.push('apps/server/src/remote-policy.ts: force distant non normalisé explicitement');
 
 const logger = await readFile('apps/desktop/src/logger.ts', 'utf8');
 for (const secretName of ['credential', 'ticket', 'verifier', 'client[_-]?secret']) {

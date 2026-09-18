@@ -43,10 +43,21 @@ if ($LASTEXITCODE -ne 0 -or -not (Test-Path $KeystorePath)) {
 }
 
 $keystoreBase64 = [Convert]::ToBase64String([IO.File]::ReadAllBytes($KeystorePath))
+$certificatePath = [IO.Path]::GetTempFileName()
+try {
+  & $keytool.Source -exportcert -keystore $KeystorePath -storepass $storePassword -alias $alias -file $certificatePath | Out-Null
+  if ($LASTEXITCODE -ne 0) { throw 'Impossible d’extraire le certificat public du keystore.' }
+  $sha256 = [System.Security.Cryptography.SHA256]::Create()
+  try { $certificateHash = $sha256.ComputeHash([IO.File]::ReadAllBytes($certificatePath)) } finally { $sha256.Dispose() }
+  $certificateSha256 = ($certificateHash | ForEach-Object { $_.ToString('X2') }) -join ':'
+} finally {
+  Remove-Item -Force -ErrorAction SilentlyContinue $certificatePath
+}
 
 Write-Host ''
 Write-Host 'Keystore Android permanent créé.' -ForegroundColor Green
 Write-Host "Emplacement : $KeystorePath"
+Write-Host "Empreinte publique SHA-256 : $certificateSha256"
 Write-Host 'GARDE CE FICHIER ET SES MOTS DE PASSE EN SAUVEGARDE PRIVÉE.' -ForegroundColor Yellow
 
 if ($ConfigureGitHub) {
@@ -59,9 +70,10 @@ if ($ConfigureGitHub) {
   $storePassword | & $gh.Source secret set ANDROID_KEYSTORE_PASSWORD --repo $Repository
   $alias | & $gh.Source secret set ANDROID_KEY_ALIAS --repo $Repository
   $keyPassword | & $gh.Source secret set ANDROID_KEY_PASSWORD --repo $Repository
+  $certificateSha256 | & $gh.Source secret set ANDROID_CERT_SHA256 --repo $Repository
   if ($LASTEXITCODE -ne 0) { throw 'Configuration des secrets GitHub incomplète.' }
 
-  Write-Host 'Les 4 secrets GitHub de signature Android sont configurés.' -ForegroundColor Green
+  Write-Host 'Les 5 secrets GitHub de signature Android sont configurés.' -ForegroundColor Green
   Write-Host 'Les prochains APK release/RC utiliseront tous cette même identité.' -ForegroundColor Green
 } else {
   Write-Host ''
@@ -70,6 +82,7 @@ if ($ConfigureGitHub) {
   Write-Host '  ANDROID_KEYSTORE_PASSWORD'
   Write-Host '  ANDROID_KEY_ALIAS'
   Write-Host '  ANDROID_KEY_PASSWORD'
+  Write-Host '  ANDROID_CERT_SHA256'
   Write-Host ''
   Write-Host 'Relance avec -ConfigureGitHub pour les configurer automatiquement via GitHub CLI.'
 }
@@ -82,6 +95,7 @@ Keystore: $KeystorePath
 Alias: $alias
 Store password: $storePassword
 Key password: $keyPassword
+Certificate SHA-256: $certificateSha256
 
 IMPORTANT: conserver ce fichier avec le keystore dans un stockage privé et sauvegardé.
 Ne jamais les committer dans Git.

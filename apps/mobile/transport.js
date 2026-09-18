@@ -3,27 +3,29 @@ import { apiUrl, isAndroidRuntime, websocketUrl } from './runtime.js';
 
 export const REQUEST_TIMEOUT_MS = 15_000;
 
+export class RequestTimeoutError extends Error { constructor(message) { super(message); this.name = 'RequestTimeoutError'; } }
+
 export class HttpError extends Error {
   constructor(status, message) { super(message); this.status = status; }
 }
 
 export function createTransport(getServer, getCredential) {
   const url = path => isAndroidRuntime() ? apiUrl(getServer(), path) : path;
-  const request = async (path, init = {}) => {
+  const request = async (path, init = {}, options = {}) => {
     const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+    const timeout = setTimeout(() => controller.abort(), options.timeoutMs ?? REQUEST_TIMEOUT_MS);
     try {
       const response = await fetch(url(path), { ...init, signal: controller.signal });
       const body = await response.json().catch(() => ({}));
       if (!response.ok) throw new HttpError(response.status, body.error?.message || body.error || `HTTP ${response.status}`);
       return body;
     } catch (error) {
-      if (error?.name === 'AbortError') throw new Error('Le PC ne répond pas dans le délai attendu.');
+      if (error?.name === 'AbortError') throw new RequestTimeoutError('Le PC ne répond pas dans le délai attendu.');
       throw error;
     } finally { clearTimeout(timeout); }
   };
   const authHeaders = () => ({ 'content-type': 'application/json', authorization: `Device ${getCredential()}` });
-  const state = () => request('/api/v1/state', { headers: { authorization: `Device ${getCredential()}` } });
+  const state = options => request('/api/v1/state', { headers: { authorization: `Device ${getCredential()}` } }, options);
   const syncCompanion = value => request('/api/v1/companion/sync', { method: 'POST', headers: authHeaders(), body: JSON.stringify(value) });
 
   async function syncStore(store) {
@@ -56,7 +58,7 @@ export function createTransport(getServer, getCredential) {
     state,
     pair: payload => request('/api/v1/remote/pair', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(payload) }),
     ticket: () => request('/api/v1/remote/ws-ticket', { method: 'POST', headers: authHeaders(), body: '{}' }),
-    command: value => request('/api/v1/commands', { method: 'POST', headers: authHeaders(), body: JSON.stringify(value) }),
+    command: (value, options = {}) => request('/api/v1/commands', { method: 'POST', headers: authHeaders(), body: JSON.stringify({ ...value, ...(options.commandId ? { commandId: options.commandId } : {}) }) }, options),
     searchTwitch: query => request(`/api/v1/twitch/categories?q=${encodeURIComponent(query)}`, { headers: { authorization: `Device ${getCredential()}` } }),
     updateTwitch: value => request('/api/v1/twitch/channel', { method: 'POST', headers: authHeaders(), body: JSON.stringify(value) }),
     createPlanning: value => request('/api/v1/planning', { method: 'POST', headers: authHeaders(), body: JSON.stringify(value) }),
@@ -68,6 +70,13 @@ export function createTransport(getServer, getCredential) {
       try { return await request(`/api/v1/planning/${encodeURIComponent(id)}`, { method: 'DELETE', headers: authHeaders(), body: JSON.stringify(value) }); }
       catch (error) { if (!shouldFallbackPlanning(error)) throw error; return planningFallback(id, {}, true); }
     },
+    updateOccurrence: (seriesId, occurrenceKey, patch) => request(`/api/v1/planning/${encodeURIComponent(seriesId)}/occurrence`, { method: 'PUT', headers: authHeaders(), body: JSON.stringify({ occurrenceKey, patch }) }),
+    deleteOccurrence: (seriesId, occurrenceKey) => request(`/api/v1/planning/${encodeURIComponent(seriesId)}/occurrence`, { method: 'DELETE', headers: authHeaders(), body: JSON.stringify({ occurrenceKey }) }),
+    discordStatus: () => request('/api/v1/discord/status', { headers: { authorization: `Device ${getCredential()}` } }),
+    discordGuilds: () => request('/api/v1/discord/guilds', { headers: { authorization: `Device ${getCredential()}` } }),
+    discordChannels: guildId => request(`/api/v1/discord/guilds/${encodeURIComponent(guildId)}/channels`, { headers: { authorization: `Device ${getCredential()}` } }),
+    discordSettings: value => request('/api/v1/discord/settings', { method: 'PUT', headers: authHeaders(), body: JSON.stringify(value) }),
+    publishDiscord: value => request('/api/v1/discord/planning', { method: 'POST', headers: authHeaders(), body: JSON.stringify(value) }),
     syncCompanion,
     resolveCompanionConflict: (operationId, strategy) => request(`/api/v1/companion/conflicts/${encodeURIComponent(operationId)}/resolve`, { method: 'POST', headers: authHeaders(), body: JSON.stringify({ strategy }) }),
     websocket: ticket => new WebSocket(isAndroidRuntime() ? websocketUrl(getServer(), ticket) : `${location.protocol === 'https:' ? 'wss' : 'ws'}://${location.host}/ws/v1?ticket=${encodeURIComponent(ticket)}`),
