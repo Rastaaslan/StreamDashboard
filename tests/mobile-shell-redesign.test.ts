@@ -18,6 +18,12 @@ describe('Android Mobile 2.3 focus surface', () => {
     expect(mobile).toContain('streamdashboard.mobileRecentCommands');
   });
 
+  it('branche le menu burger sur une navigation locale indépendante du réseau', () => {
+    expect(mobile).toContain("const activateView = tab =>");
+    expect(mobile).toContain("$('menu-trigger')?.addEventListener('click'");
+    expect(mobile).toContain("activateView('more')");
+  });
+
   it('fournit les deep links et commandes instantanées sans ancien portail', () => {
     for (const link of ['home-viewers-link', 'home-chatters-link', 'open-scenes', 'quick-clip', 'home-mic']) expect(html).toContain(`id="${link}"`);
     for (const tool of ['chat', 'audience', 'supports', 'vod']) expect(html).toContain(`data-open-live-tool="${tool}"`);
