@@ -39,8 +39,8 @@ describe('API publique v1', () => {
     expect(hub).toMatchObject({
       live: { isLive: false, viewerCount: null },
       audience: { viewerCount: null, chatters: [] },
-      integrations: { runtime: { status: 'CONNECTED' }, streamlabs: { status: 'NOT_CONFIGURED' }, wizebot: { status: 'NOT_CONFIGURED' } },
-      availability: { chat: 'NOT_CONFIGURED', support: 'NOT_CONFIGURED', soundboard: 'AVAILABLE' },
+      integrations: { runtime: { status: 'CONNECTED' }, streamlabs: { status: 'NOT_SUPPORTED' }, wizebot: { status: 'NOT_SUPPORTED' } },
+      availability: { chat: 'NOT_CONFIGURED', support: 'NOT_SUPPORTED', soundboard: 'AVAILABLE' },
     });
     await fetch(`${app.url}/api/v1/commands`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ type: 'timer.reset' }) });
     const events = await fetch(`${app.url}/api/v1/events?type=dashboard.state.updated&limit=10`).then(response => response.json());
