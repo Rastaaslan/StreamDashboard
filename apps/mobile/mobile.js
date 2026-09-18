@@ -11,6 +11,21 @@ import { acceptsSnapshot, createCommandController, primaryMicCommand } from './c
 import { setMobileContext } from './mobile-context.js';
 
 const $ = id => document.getElementById(id);
+const fixtureName = devFixtureName(location);
+const previewMode = fixtureName && new URLSearchParams(location.search).get('preview') === '1';
+
+if (previewMode) {
+  const nativeFetch = globalThis.fetch?.bind(globalThis);
+  if (nativeFetch) {
+    globalThis.fetch = (input, init) => {
+      const raw = typeof input === 'string' ? input : input?.url || '';
+      const url = new URL(raw, location.href);
+      if (url.origin === location.origin) return nativeFetch(input, init);
+      return Promise.reject(new Error('Mode aperçu : accès réseau désactivé.'));
+    };
+  }
+  document.documentElement.dataset.preview = 'true';
+}
 
 const activateView = tab => {
   document.querySelectorAll('[data-view]').forEach(view => view.classList.toggle('active', view.dataset.view === tab));
@@ -112,6 +127,10 @@ const commandResource = value => value.type.startsWith('session.') ? 'stream'
       : value.type.startsWith('timer.') ? 'timer' : value.type;
 
 async function command(value, { reconcile } = {}) {
+  if (previewMode) {
+    note('Mode aperçu : aucune commande réelle envoyée.');
+    return true;
+  }
   if (!credential) {
     note('Télécommande non connectée.');
     return false;
@@ -867,8 +886,26 @@ for (const provider of ['twitch','google']) {
 }
 window.addEventListener('provider-auth',()=>void refreshProviderAccounts());
 
-const fixtureName = devFixtureName(location);
-if (fixtureName) { const fixture = createMobileFixture(fixtureName); setConnectionMode(CompanionMode.ONLINE_PC); soundboardState = fixture.soundboard; render(fixture.state); renderSoundboard(); showPairing(false); } else void start();
+if (fixtureName) {
+  const fixture = createMobileFixture(fixtureName);
+  setConnectionMode(CompanionMode.ONLINE_PC);
+  soundboardState = fixture.soundboard;
+  render(fixture.state);
+  renderSoundboard();
+  showPairing(false);
+  if (previewMode) {
+    const banner = document.createElement('div');
+    banner.textContent = 'APERÇU · aucune commande réelle';
+    Object.assign(banner.style, {
+      position: 'fixed', top: '8px', left: '50%', transform: 'translateX(-50%)',
+      zIndex: '9999', padding: '7px 12px', borderRadius: '999px',
+      background: '#17111f', border: '1px solid #7c4dff', color: '#f2ecff',
+      fontSize: '11px', fontWeight: '800', letterSpacing: '.08em',
+      pointerEvents: 'none', boxShadow: '0 6px 24px rgba(0,0,0,.35)'
+    });
+    document.body.append(banner);
+  }
+} else void start();
 
 // This is the only HTML bootstrap. Feature modules are loaded in a deterministic
 // order after the canonical store/transport/controller have installed their owners.

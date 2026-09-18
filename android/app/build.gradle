@@ -27,6 +27,8 @@ android {
         versionName buildVersionName
         buildConfigField 'String', 'TWITCH_ANDROID_CLIENT_ID', '"' + twitchAndroidClientId.replace('"', '\\"') + '"'
         buildConfigField 'String', 'GOOGLE_ANDROID_CLIENT_ID', '"' + googleAndroidClientId.replace('"', '\\"') + '"'
+        buildConfigField 'boolean', 'PREVIEW_MODE', 'false'
+        manifestPlaceholders = [deepLinkScheme: 'streamdashboard']
     }
     signingConfigs {
         if (hasStableSigning) {
@@ -43,6 +45,13 @@ android {
             minifyEnabled false
             proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
             if (hasStableSigning) signingConfig signingConfigs.stable
+        }
+        preview {
+            initWith debug
+            applicationIdSuffix '.preview'
+            versionNameSuffix '-preview'
+            buildConfigField 'boolean', 'PREVIEW_MODE', 'true'
+            manifestPlaceholders = [deepLinkScheme: 'streamdashboard-preview']
         }
     }
 }

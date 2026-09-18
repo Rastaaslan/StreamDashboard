@@ -1,5 +1,5 @@
 export function devFixtureName(locationLike) {
-  if (!['localhost', '127.0.0.1'].includes(locationLike.hostname)) return null;
+  if (!['localhost', '127.0.0.1', 'appassets.androidplatform.net'].includes(locationLike.hostname)) return null;
   return new URLSearchParams(locationLike.search).get('fixture');
 }
 
