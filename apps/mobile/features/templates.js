@@ -1,8 +1,9 @@
+import { CompanionMode } from '../companion-store.js';
 import { normalizeCategoryQuery, rankCategories, rememberCategory } from '../twitch-category.js';
 import { getMobileContext } from '../mobile-context.js';
 
 const $ = id => document.getElementById(id);
-const { companion, transport, providerSync, ensureCredential, getMode } = getMobileContext();
+const { companion, transport, providerSync, ensureCredential, syncCompanion, getMode } = getMobileContext();
 let editingId = null;
 let observer;
 let recentCategories = [];
@@ -69,7 +70,7 @@ function ensureScheduleDefaults() {
   if (end && !end.value) end.value = localTime(finish);
 }
 
-function applyTemplate(template) {
+function populateTemplate(template) {
   const form = $('slot-form');
   form.elements.namedItem('title').value = template.title || '';
   form.elements.namedItem('description').value = template.description || '';
@@ -79,9 +80,22 @@ function applyTemplate(template) {
   $('slot-twitch-game-id').value = template.twitchCategoryId || '';
   $('slot-twitch-results').replaceChildren();
   ensureScheduleDefaults();
-  document.querySelector('[data-tab="planning"]')?.click();
-  if (!$('slot-dialog').open) $('slot-dialog').showModal();
-  notify(`Template « ${template.title} » appliqué au nouveau créneau.`);
+}
+
+function applyTemplate(template, { openPlanning = true } = {}) {
+  if (!template) return;
+  if (openPlanning) {
+    document.querySelector('[data-tab="planning"]')?.click();
+    $('add-slot')?.click();
+    queueMicrotask(() => {
+      populateTemplate(template);
+      if ($('event-template')) $('event-template').value = template.id;
+      notify(`Template « ${template.title} » appliqué. Ajuste la périodicité si besoin.`);
+    });
+    return;
+  }
+  populateTemplate(template);
+  notify(`Template « ${template.title} » appliqué. La périodicité reste libre.`);
 }
 
 function templateSubtitle(template) {
@@ -108,7 +122,7 @@ function renderTemplates() {
 
     const actions = document.createElement('div');
     actions.className = 'template-actions';
-    const use = text('button', 'UTILISER');
+    const use = text('button', 'CRÉER UN ÉVÉNEMENT');
     use.type = 'button';
     use.onclick = () => applyTemplate(template);
     const edit = text('button', 'Modifier');
@@ -123,6 +137,7 @@ function renderTemplates() {
       companion.removeCollection('templates', template.id);
       renderTemplates();
       emitMutation();
+      if (currentMode() === CompanionMode.ONLINE_PC) void syncCompanion().catch(error => notify(error.message));
       notify('Template supprimé · synchronisation en cours.');
     };
     const menu = document.createElement('details'); menu.className = 'row-overflow template-overflow'; const menuToggle = text('summary', '⋮'); menuToggle.setAttribute('aria-label', `Actions pour ${template.title}`); menu.append(menuToggle, edit, remove);
@@ -130,8 +145,18 @@ function renderTemplates() {
     row.append(summary, actions);
     root.append(row);
   }
-  if (!templates.length) root.append(text('p', 'Aucun template pour le moment. Crée ton premier modèle de live.', 'muted'));
+  if (!templates.length) root.append(text('p', 'Aucun template d’événement pour le moment.', 'muted'));
+  refreshTemplateSelect();
   observer?.observe(root, { childList: true });
+}
+
+function refreshTemplateSelect() {
+  const select = $('event-template');
+  if (!select) return;
+  const selected = select.value;
+  const templates = [...companion.snapshot().templates].sort((left, right) => String(left.title || '').localeCompare(String(right.title || ''), 'fr'));
+  select.replaceChildren(new Option('Aucun', ''), ...templates.map(template => new Option(template.title || 'Template', template.id)));
+  if (templates.some(template => template.id === selected)) select.value = selected;
 }
 
 function attachTemplateCategoryPicker() {
@@ -212,10 +237,20 @@ $('template-form').onsubmit = event => {
   closeTemplateDialog();
   renderTemplates();
   emitMutation();
+  if (currentMode() === CompanionMode.ONLINE_PC) void syncCompanion().catch(error => notify(error.message));
   notify(existing ? 'Template modifié · synchronisation en cours.' : 'Template créé · synchronisation en cours.');
 };
+
+const eventTemplate = $('event-template');
+if (eventTemplate) {
+  eventTemplate.onchange = () => {
+    const template = companion.snapshot().templates.find(item => item.id === eventTemplate.value);
+    if (template) applyTemplate(template, { openPlanning: false });
+  };
+}
 
 attachTemplateCategoryPicker();
 observer = new MutationObserver(() => queueMicrotask(renderTemplates));
 window.addEventListener('companion-refreshed', renderTemplates);
+window.addEventListener('companion-mutated', event => { if (event.detail?.kind === 'templates') renderTemplates(); });
 renderTemplates();
