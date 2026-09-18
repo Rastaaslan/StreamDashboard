@@ -13,9 +13,9 @@ describe('Android Mobile 2.3 focus surface', () => {
     expect(missing).toEqual([]);
   });
 
-  it('expose quatre destinations stables avec Le camp en secondaire', () => {
+  it('expose quatre destinations stables et regroupe le secondaire sous Plus', () => {
     const tabs = [...html.matchAll(/<button data-tab="([^"]+)"/g)].map(match => match[1]);
-    expect(tabs).toEqual(['home', 'live', 'sounds', 'planning']);
+    expect(tabs).toEqual(['home', 'live', 'planning', 'more']);
     expect(html).toContain('id="menu-trigger"');
     expect(html).toContain('data-view="more"');
     expect(html).toContain('id="command-trigger"');
@@ -37,8 +37,9 @@ describe('Android Mobile 2.3 focus surface', () => {
     expect(html).toContain('class="scene-sheet-grid"');
   });
 
-  it('conserve les fonctions et présente Sons/Plus comme matrices et lignes', () => {
+  it('conserve les fonctions et garde Sons accessible depuis Plus', () => {
     for (const feature of ['data-hub-panel="chat"', 'data-hub-panel="audience"', 'data-hub-panel="supports"', 'data-hub-panel="vod"', 'data-hub-panel="clips"', 'id="primary-soundboard"', 'id="more-automations"', 'id="diagnostics"']) expect(html).toContain(feature);
+    expect(html).toContain('data-open-tab="sounds"');
     expect(css).toContain('.sound-pad::before');
     expect(css).toContain('.more-group>button,.integration-card');
     expect(mobile).toContain('Le catalogue Soundboard est vide.');
@@ -90,6 +91,11 @@ describe('Android Mobile 2.3 focus surface', () => {
     expect(html).toContain('class="inline-create"');
   });
 
+  it('cache les outils avancés derrière une divulgation progressive sans supprimer leurs contrôles', () => {
+    expect(html).toContain('class="progressive-tools"');
+    for (const id of ['twitch-editor', 'twitch-title', 'twitch-category', 'audio', 'deck']) expect(html).toContain(`id="${id}"`);
+    expect(css).toContain('.progressive-tools>summary');
+  });
   it('stabilise les quatre actions vitales sans modules secondaires dans Live', () => {
     for (const id of ['quick-clip', 'open-scenes', 'home-mic', 'live-clip', 'open-scenes-live', 'quick-mic']) expect(html).toContain(`id="${id}"`);
     expect(css).toContain('gap:20px 16px');
