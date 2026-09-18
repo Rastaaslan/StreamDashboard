@@ -2,6 +2,7 @@ import { createCompanionStore } from './companion-store.js';
 import { apiUrl, isAndroidRuntime, websocketUrl } from './runtime.js';
 
 export const REQUEST_TIMEOUT_MS = 15_000;
+export const CRITICAL_COMMAND_TIMEOUT_MS = 30_000;
 
 export class HttpError extends Error {
   constructor(status, message) { super(message); this.status = status; }
@@ -9,9 +10,9 @@ export class HttpError extends Error {
 
 export function createTransport(getServer, getCredential) {
   const url = path => isAndroidRuntime() ? apiUrl(getServer(), path) : path;
-  const request = async (path, init = {}) => {
+  const request = async (path, init = {}, timeoutMs = REQUEST_TIMEOUT_MS) => {
     const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+    const timeout = setTimeout(() => controller.abort(), timeoutMs);
     try {
       const response = await fetch(url(path), { ...init, signal: controller.signal });
       const body = await response.json().catch(() => ({}));
@@ -54,9 +55,30 @@ export function createTransport(getServer, getCredential) {
     request,
     authHeaders,
     state,
+    soundboard: () => request('/api/v1/soundboard', { headers: { authorization: `Device ${getCredential()}` } }),
+    playSound: value => request('/api/v1/soundboard/play', { method: 'POST', headers: authHeaders(), body: JSON.stringify(value) }),
+    stopSound: () => request('/api/v1/soundboard/stop', { method: 'POST', headers: authHeaders(), body: '{}' }),
+    updateSound: (id, value) => request(`/api/v1/soundboard/sounds/${encodeURIComponent(id)}`, { method: 'PUT', headers: authHeaders(), body: JSON.stringify(value) }),
+    automations: () => request('/api/v1/automations', { headers: { authorization: `Device ${getCredential()}` } }),
+    createAutomation: value => request('/api/v1/automations', { method: 'POST', headers: authHeaders(), body: JSON.stringify(value) }),
+    updateAutomation: (id, value) => request(`/api/v1/automations/${encodeURIComponent(id)}`, { method: 'PUT', headers: authHeaders(), body: JSON.stringify(value) }),
+    deleteAutomation: id => request(`/api/v1/automations/${encodeURIComponent(id)}`, { method: 'DELETE', headers: authHeaders(), body: '{}' }),
+    testAutomation: amountMinor => request('/api/v1/automations/test', { method: 'POST', headers: authHeaders(), body: JSON.stringify({ amountMinor }) }),
+    supports: () => request('/api/v1/supports', { headers: { authorization: `Device ${getCredential()}` } }),
+    events: filters => request(`/api/v1/events?${new URLSearchParams(Object.entries(filters).filter(([, value]) => value))}`, { headers: { authorization: `Device ${getCredential()}` } }),
+    twitchVideos: after => request(`/api/v1/twitch/videos${after ? `?after=${encodeURIComponent(after)}` : ''}`, { headers: { authorization: `Device ${getCredential()}` } }),
+    deleteTwitchVideo: id => request(`/api/v1/twitch/videos/${encodeURIComponent(id)}`, { method: 'DELETE', headers: authHeaders(), body: JSON.stringify({ confirmation: `DELETE ${id}` }) }),
+    twitchClips: after => request(`/api/v1/twitch/clips${after ? `?after=${encodeURIComponent(after)}` : ''}`, { headers: { authorization: `Device ${getCredential()}` } }),
+    createTwitchClip: () => request('/api/v1/twitch/clips', { method: 'POST', headers: authHeaders(), body: '{}' }),
+    twitchChatters: after => request(`/api/v1/twitch/chatters${after ? `?after=${encodeURIComponent(after)}` : ''}`, { headers: { authorization: `Device ${getCredential()}` } }),
+    sendTwitchChat: value => request('/api/v1/twitch/chat/messages', { method: 'POST', headers: authHeaders(), body: JSON.stringify(value) }),
+    twitchModerationCapabilities: () => request('/api/v1/twitch/moderation/capabilities', { headers: { authorization: `Device ${getCredential()}` } }),
+    deleteTwitchMessage: id => request(`/api/v1/twitch/moderation/messages/${encodeURIComponent(id)}`, { method: 'DELETE', headers: authHeaders(), body: '{}' }),
+    moderateTwitchUser: value => request('/api/v1/twitch/moderation/bans', { method: 'POST', headers: authHeaders(), body: JSON.stringify(value) }),
+    unbanTwitchUser: userId => request(`/api/v1/twitch/moderation/bans/${encodeURIComponent(userId)}`, { method: 'DELETE', headers: authHeaders(), body: '{}' }),
     pair: payload => request('/api/v1/remote/pair', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(payload) }),
     ticket: () => request('/api/v1/remote/ws-ticket', { method: 'POST', headers: authHeaders(), body: '{}' }),
-    command: value => request('/api/v1/commands', { method: 'POST', headers: authHeaders(), body: JSON.stringify(value) }),
+    command: (value, { timeoutMs = REQUEST_TIMEOUT_MS } = {}) => request('/api/v1/commands', { method: 'POST', headers: authHeaders(), body: JSON.stringify(value) }, timeoutMs),
     searchTwitch: query => request(`/api/v1/twitch/categories?q=${encodeURIComponent(query)}`, { headers: { authorization: `Device ${getCredential()}` } }),
     updateTwitch: value => request('/api/v1/twitch/channel', { method: 'POST', headers: authHeaders(), body: JSON.stringify(value) }),
     createPlanning: value => request('/api/v1/planning', { method: 'POST', headers: authHeaders(), body: JSON.stringify(value) }),

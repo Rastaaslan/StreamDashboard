@@ -33,6 +33,21 @@ describe('API publique v1', () => {
     expect(response.headers.get('x-frame-options')).toBe('DENY');
   });
 
+  it('expose un cockpit mobile honnête et des événements bornés', async () => {
+    const app = await start();
+    const hub = await fetch(`${app.url}/api/v1/control-hub`).then(response => response.json());
+    expect(hub).toMatchObject({
+      live: { isLive: false, viewerCount: null },
+      audience: { viewerCount: null, chatters: [] },
+      integrations: { runtime: { status: 'CONNECTED' }, streamlabs: { status: 'NOT_CONFIGURED' }, wizebot: { status: 'NOT_CONFIGURED' } },
+      availability: { chat: 'NOT_CONFIGURED', support: 'NOT_CONFIGURED', soundboard: 'AVAILABLE' },
+    });
+    await fetch(`${app.url}/api/v1/commands`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ type: 'timer.reset' }) });
+    const events = await fetch(`${app.url}/api/v1/events?type=dashboard.state.updated&limit=10`).then(response => response.json());
+    expect(events.items).toHaveLength(1);
+    expect(events.items[0]).toMatchObject({ schemaVersion: 1, type: 'dashboard.state.updated', source: 'runtime' });
+  });
+
   it('refuse une origine WebSocket étrangère ou un faux port local', async () => {
     const app = await start(); const wsUrl = app.url.replace('http:', 'ws:') + '/ws/v1';
     await wsRejected(wsUrl, 'https://evil.example');

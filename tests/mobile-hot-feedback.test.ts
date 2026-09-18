@@ -6,6 +6,7 @@ import type { DashboardState } from '../packages/contracts/src/index.js';
 
 const index = readFileSync(new URL('../apps/mobile/index.html', import.meta.url), 'utf8');
 const feedback = readFileSync(new URL('../apps/mobile/mobile-live-feedback.js', import.meta.url), 'utf8');
+const mobile = readFileSync(new URL('../apps/mobile/mobile.js', import.meta.url), 'utf8');
 const transport = readFileSync(new URL('../apps/mobile/transport.js', import.meta.url), 'utf8');
 
 const state = {
@@ -32,9 +33,9 @@ describe('retours à chaud mobile', () => {
   });
 
   it('Préparer ouvre la prépa et permet de cocher la checklist depuis le remote', () => {
-    expect(index).toContain('Checklist pré-live');
+    expect(index).toContain('data-prepare-panel="checklist"');
     expect(feedback).toContain("transport.command({ type: 'session.prepare' })");
-    expect(feedback).toContain("document.querySelector('[data-tab=\"prepare\"]')?.click()");
+    expect(feedback).toContain("document.querySelector('[data-open-tab=\"prepare\"]')?.click()");
     expect(parseRemoteCommand({ type: 'checklist.toggle', id: 'audio' }, state)).toEqual({ type: 'checklist.toggle', id: 'audio' });
     expect(() => parseRemoteCommand({ type: 'checklist.reset' }, state)).toThrow('réservée au PC');
     expect((toRemoteDashboardState(state) as unknown as { checklist: typeof state.checklist }).checklist).toEqual(state.checklist);
@@ -42,9 +43,9 @@ describe('retours à chaud mobile', () => {
 
   it('arrête le live par HTTP sans dépendre de l’état du WebSocket', () => {
     expect(parseRemoteCommand({ type: 'session.stop' }, state)).toEqual({ type: 'session.stop' });
-    expect(feedback).toContain("transport.command({ type: start ? 'session.start' : 'session.stop'");
-    expect(feedback).toContain("OBS indique que le live est toujours actif après la commande d’arrêt.");
-    expect(feedback).not.toContain('ws.readyState');
+    expect(mobile).toContain("command({ type: 'session.stop' }, { reconcile:");
+    expect(mobile).not.toContain('!ws || ws.readyState !== WebSocket.OPEN');
+    expect(feedback).not.toContain("button.id === 'stream'");
   });
 
   it('rend les notes réellement éditables et synchronisées', () => {

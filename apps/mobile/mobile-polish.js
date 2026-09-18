@@ -165,67 +165,6 @@ function updateDialogTitle() {
   hydrateEditingFields();
 }
 
-async function remoteTransport() {
-  const credential = await credentialStorage.get();
-  const server = settingsStorage.getServer();
-  if (!credential || !server) throw new Error('Télécommande non connectée au PC.');
-  return createTransport(() => server, () => credential);
-}
-
-async function startLiveFromPhone() {
-  const button = $('stream');
-  if (!button || button.disabled) return;
-  const stopping = $('live')?.textContent?.trim() === 'LIVE';
-  const question = stopping ? 'Arrêter réellement le live ?' : 'Démarrer réellement le live ?';
-  if (!confirm(question)) return;
-
-  const previousLabel = button.textContent;
-  button.disabled = true;
-  button.dataset.status = 'loading';
-  try {
-    const transport = await remoteTransport();
-    if (stopping) {
-      button.textContent = 'ARRÊT…';
-      note('Arrêt du live…');
-      const result = await transport.command({ type: 'session.stop' });
-      button.textContent = 'DÉMARRER LE LIVE';
-      globalThis.StreamDashboardNative?.haptic?.('strong');
-      note(result.state?.obs?.streaming ? 'OBS signale encore un live actif.' : 'Live arrêté.');
-      return;
-    }
-
-    button.textContent = 'PRÉPARATION…';
-    note('Préparation du live…');
-    const prepared = await transport.command({ type: 'session.prepare' });
-    const preflight = prepared.state?.preflight;
-    if (preflight?.status === 'error') note(`Préparation : ${preflight.error || 'une vérification demande ton attention.'}`);
-    if (preflight?.status === 'action-required') note(preflight.error || 'Une action est nécessaire avant le live.');
-
-    button.textContent = 'DÉMARRAGE…';
-    let started;
-    try {
-      started = await transport.command({ type: 'session.start', force: false });
-    } catch (error) {
-      if (!String(error?.message || '').includes('Certaines vérifications')) throw error;
-      if (!confirm(`${error.message}\n\nDémarrer quand même depuis le téléphone ?`)) {
-        note('Démarrage annulé : checklist incomplète.');
-        return;
-      }
-      started = await transport.command({ type: 'session.start', force: true });
-    }
-
-    button.textContent = started.state?.obs?.streaming ? 'ARRÊTER LE LIVE' : previousLabel;
-    globalThis.StreamDashboardNative?.haptic?.('strong');
-    note(started.state?.obs?.streaming ? 'Live démarré.' : 'Commande envoyée, en attente de confirmation OBS.');
-  } catch (error) {
-    note(`Impossible de lancer le live : ${error.message}`);
-  } finally {
-    button.dataset.status = 'idle';
-    button.disabled = $('obs')?.textContent === 'Déconnecté';
-    if (!button.disabled && !['ARRÊTER LE LIVE', 'DÉMARRER LE LIVE'].includes(button.textContent)) button.textContent = previousLabel;
-  }
-}
-
 const templateSelect = $('event-template');
 if (templateSelect) {
   templateSelect.onchange = () => {
@@ -257,8 +196,8 @@ $('slot-dialog')?.addEventListener('close', () => {
   if ($('event-template')) $('event-template').disabled = false;
 });
 
-const streamButton = $('stream');
-if (streamButton) streamButton.onclick = () => void startLiveFromPhone();
+// The stream button is owned exclusively by mobile.js. Presentation modules must
+// not shadow the canonical workflow with capture or property handlers.
 
 const templateObserver = new MutationObserver(() => queueMicrotask(() => { refreshTemplateSelect(); decorateTemplateCards(); }));
 if ($('templates')) templateObserver.observe($('templates'), { childList: true, subtree: true });

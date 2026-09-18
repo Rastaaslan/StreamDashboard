@@ -25,8 +25,9 @@ describe('Android remote runtime', () => {
     expect(remotePolicy).toContain("case 'scene.chatting'");
     expect(remotePolicy).not.toContain("case 'obs.scene'");
   });
-  it('présente cinq volets persistants sans reconnecter le WebSocket', () => {
-    for (const tab of ['live', 'regie', 'planning', 'prepare', 'settings']) expect(mobileIndex).toContain(`data-tab="${tab}"`);
+  it('présente quatre destinations et un menu secondaire sans reconnecter le WebSocket', () => {
+    for (const tab of ['home', 'live', 'sounds', 'planning']) expect(mobileIndex).toContain(`data-tab="${tab}"`);
+    expect(mobileIndex).toContain('id="menu-trigger"');
     expect(mobileScript).toContain("localStorage.setItem('streamdashboard.mobileTab', tab)");
     expect(mobileScript).not.toMatch(/selectTab[\s\S]{0,300}(connect\(|location\.reload)/);
     expect(mobileIndex).toContain('+ ÉVÉNEMENT');
@@ -54,11 +55,10 @@ describe('Android remote runtime', () => {
     expect(mobilePolish).toContain('CRÉER UN ÉVÉNEMENT');
   });
   it('répare le démarrage live Android avec préparation et confirmation de bypass checklist', () => {
-    expect(mobileIndex).toContain('src="mobile-polish.js"');
-    expect(mobilePolish).toContain("transport.command({ type: 'session.prepare' })");
-    expect(mobilePolish).toContain("transport.command({ type: 'session.start', force: false })");
-    expect(mobilePolish).toContain("transport.command({ type: 'session.start', force: true })");
-    expect(mobilePolish).toContain('Démarrer quand même depuis le téléphone ?');
+    expect(mobileScript).toContain("command({ type: 'session.prepare' })");
+    expect(mobileScript).toContain("command({ type: 'session.start', force: requiresBypass }");
+    expect(mobileScript).toContain('Démarrer quand même ?');
+    expect(mobilePolish).not.toContain("$('stream').onclick");
     expect(remotePolicy).toContain("force: command.force === true");
     expect(remotePolicy).not.toContain('Le contournement de checklist est réservé au PC.');
   });

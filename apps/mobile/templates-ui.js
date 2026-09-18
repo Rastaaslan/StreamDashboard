@@ -122,11 +122,11 @@ function renderTemplates() {
     const use = text('button', 'UTILISER');
     use.type = 'button';
     use.onclick = () => applyTemplate(template);
-    const edit = text('button', 'MODIFIER');
+    const edit = text('button', 'Modifier');
     edit.type = 'button';
     edit.className = 'secondary';
     edit.onclick = () => openTemplateDialog(template);
-    const remove = text('button', 'SUPPRIMER');
+    const remove = text('button', 'Supprimer');
     remove.type = 'button';
     remove.className = 'secondary danger-button';
     remove.onclick = () => {
@@ -136,7 +136,8 @@ function renderTemplates() {
       emitMutation();
       notify('Template supprimé · synchronisation en cours.');
     };
-    actions.append(use, edit, remove);
+    const menu = document.createElement('details'); menu.className = 'row-overflow template-overflow'; const menuToggle = text('summary', '⋮'); menuToggle.setAttribute('aria-label', `Actions pour ${template.title}`); menu.append(menuToggle, edit, remove);
+    actions.append(use, menu);
     row.append(summary, actions);
     root.append(row);
   }

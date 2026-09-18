@@ -9,6 +9,7 @@ interface SecurePayload {
   google?: Record<string, string>;
   obsPassword?: string;
   discordToken?: string;
+  streamlabsToken?: string;
 }
 
 export class ElectronSecretStore implements SecretStore {
@@ -80,4 +81,7 @@ export class ElectronSecretStore implements SecretStore {
   async getDiscordToken() { return (await this.read()).discordToken ?? ''; }
   async setDiscordToken(discordToken: string) { await this.update(value => { value.discordToken = discordToken; }); }
   async clearDiscordToken() { await this.update(value => { delete value.discordToken; }); }
+  async getStreamlabsToken() { return (await this.read()).streamlabsToken ?? ''; }
+  async setStreamlabsToken(streamlabsToken: string) { await this.update(value => { value.streamlabsToken = streamlabsToken; }); }
+  async clearStreamlabsToken() { await this.update(value => { delete value.streamlabsToken; }); }
 }
