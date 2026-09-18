@@ -88,12 +88,13 @@ export function toRemoteDashboardState(state: DashboardState): ExtendedRemoteDas
     obs: {
       connected: state.obs.connected,
       streaming: state.obs.streaming,
+      streamingKnown: state.obs.streamingKnown,
       scene: state.obs.scene,
       inputs: structuredClone(state.obs.inputs),
       activeAudioInputs: [...state.obs.activeAudioInputs],
       mediaInputs: [...state.obs.mediaInputs],
     },
-    settings: { confirmStop: state.settings.confirmStop, streamerName: state.settings.streamerName, modeScenes: { ...state.settings.modeScenes }, chattingScene: state.settings.chattingScene, primaryMicInput: state.settings.primaryMicInput },
+    settings: { confirmStop: state.settings.confirmStop, streamerName: state.settings.streamerName, modeScenes: { ...state.settings.modeScenes }, chattingScene: state.settings.chattingScene, primaryMicInput: state.settings.primaryMicInput, requireTimerOverlayOnStart: state.settings.requireTimerOverlayOnStart },
     twitch: {
       connected: state.twitch.connected,
       channelTitle: state.twitch.channelTitle,
