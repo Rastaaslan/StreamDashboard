@@ -76,6 +76,25 @@ describe('API publique v1', () => {
     expect(persisted).not.toMatch(/accessToken|refreshToken|deviceCode|obsPassword/);
   });
 
+  it('déduplique les retries commandId et publie une révision monotone', async () => {
+    const app = await start();
+    const command = { type: 'timer.add', seconds: 60, commandId: 'retry_timer_0001', correlationId: 'corr_timer_0001' };
+    const responses = await Promise.all(Array.from({ length: 3 }, () => fetch(`${app.url}/api/v1/commands`, {
+      method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(command),
+    }).then(response => response.json())));
+    expect(responses.every(response => response.commandId === command.commandId)).toBe(true);
+    expect(new Set(responses.map(response => response.stateRevision)).size).toBe(1);
+    const state = await fetch(`${app.url}/api/v1/state`).then(response => response.json());
+    expect(state.timer.remaining).toBe(360);
+    expect(state.stateRevision).toBeGreaterThan(0);
+
+    const collision = await fetch(`${app.url}/api/v1/commands`, {
+      method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ ...command, seconds: 30 }),
+    });
+    expect(collision.status).toBe(400);
+  });
+
   it('rejette les URLs OBS non locales et expose les réglages valides par v1', async () => {
     const app = await start();
     const remote = await fetch(`${app.url}/api/v1/settings`, { method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ obsUrl: 'ws://example.com:4455' }) });

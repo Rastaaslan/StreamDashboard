@@ -79,6 +79,7 @@ export function toRemoteDashboardState(state: DashboardState): ExtendedRemoteDas
 
   return {
     at: state.at,
+    ...(state.stateRevision !== undefined ? { stateRevision: state.stateRevision } : {}),
     mode: state.mode,
     timer: { ...state.timer },
     planning: state.planning.map(projectItem),
@@ -92,7 +93,7 @@ export function toRemoteDashboardState(state: DashboardState): ExtendedRemoteDas
       activeAudioInputs: [...state.obs.activeAudioInputs],
       mediaInputs: [...state.obs.mediaInputs],
     },
-    settings: { confirmStop: state.settings.confirmStop, streamerName: state.settings.streamerName, modeScenes: { ...state.settings.modeScenes }, chattingScene: state.settings.chattingScene },
+    settings: { confirmStop: state.settings.confirmStop, streamerName: state.settings.streamerName, modeScenes: { ...state.settings.modeScenes }, chattingScene: state.settings.chattingScene, primaryMicInput: state.settings.primaryMicInput },
     twitch: {
       connected: state.twitch.connected,
       channelTitle: state.twitch.channelTitle,

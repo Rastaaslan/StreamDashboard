@@ -18,3 +18,13 @@ export function createCommandController<T = unknown>(options: {
   }): Promise<CommandExecutionResult<T>>;
   isLocked(resource: string): boolean;
 };
+
+export function primaryMicCommand(state: {
+  settings?: { primaryMicInput?: string };
+  obs?: { inputs?: Record<string, { muted: boolean }> };
+}): { type: 'obs.mute'; input: string; muted: boolean };
+
+export function acceptsSnapshot(
+  current: { stateRevision?: number } | null,
+  incoming: { stateRevision?: number } | null,
+): boolean;

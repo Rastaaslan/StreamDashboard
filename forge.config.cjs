@@ -1,10 +1,11 @@
 const certificateFile = process.env.WINDOWS_CERTIFICATE_FILE || undefined;
 const certificatePassword = process.env.WINDOWS_CERTIFICATE_PASSWORD || undefined;
+const electronVersion = require('./package.json').devDependencies.electron;
 
 module.exports = {
   packagerConfig: {
     name: 'StreamDashboard',
-    electronVersion: '43.0.0',
+    electronVersion,
     executableName: 'StreamDashboard',
     appBundleId: 'com.rastaaslan.streamdashboard',
     icon: './resources/streamdashboard',

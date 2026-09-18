@@ -35,6 +35,7 @@ import {
   type ChecklistItem,
   type DashboardSettings,
   type DashboardState,
+  type DashboardCommand,
   type DiscordSettings,
   type PreflightState,
   type ProviderLink,
@@ -404,6 +405,8 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
     startMode: rawSettings.startMode === 'live' ? 'live' : 'intro',
     timerBrowserSource: typeof rawSettings.timerBrowserSource === 'string' && rawSettings.timerBrowserSource.trim().length <= 200
       ? rawSettings.timerBrowserSource.trim() || undefined : undefined,
+    primaryMicInput: typeof rawSettings.primaryMicInput === 'string' && rawSettings.primaryMicInput.trim().length <= 200
+      ? rawSettings.primaryMicInput.trim() || undefined : undefined,
     remoteEnabled: rawSettings.remoteEnabled === true,
     ...(typeof rawSettings.obsPassword === 'string' && rawSettings.obsPassword.length <= 500 ? { obsPassword: rawSettings.obsPassword } : {}),
   };
@@ -641,6 +644,7 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
     chattingScene: local.settings.chattingScene,
     startMode: local.settings.startMode ?? 'intro',
     timerBrowserSource: local.settings.timerBrowserSource,
+    primaryMicInput: local.settings.primaryMicInput,
     remoteEnabled: local.settings.remoteEnabled === true,
   });
   const features = ['obs', 'twitch', 'preflight', 'timer', 'planning', 'planning-recurrence', 'discord-planning', 'checklist', 'deck', 'mobile-remote', 'unplanned-live-tracking'];
@@ -652,6 +656,7 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
     accessMode: remoteRuntimeEnabled ? 'remote-LAN' : 'desktop-local',
   };
   let runtimePort = requestedPort;
+  let stateRevision = 0;
   const temporalPlanning = (from = Date.now() - DAY_MS, to = Date.now() + 730 * DAY_MS) => expandRecurringItems(local.planning, { from, to });
   const nextLive = () => temporalPlanning()
     .filter(item => !item.allDay && (item.category === 'live' || item.kind === 'LIVE') && Date.parse(item.endAtUtc) > Date.now())
@@ -682,6 +687,7 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
     };
     return {
       at: new Date().toISOString(),
+      stateRevision,
       mode: local.mode,
       timer,
       planning: local.planning,
@@ -748,6 +754,7 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
     data: remote ? toRemoteDashboardState(snapshot()) : snapshot(),
   });
   const broadcast = () => {
+    stateRevision += 1;
     for (const ws of sockets.clients) {
       if (ws.readyState !== ws.OPEN) continue;
       ws.send(stateEvent(socketDevices.has(ws)));
@@ -906,11 +913,34 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
       return changed();
     }
   };
+  const commandJournal = new Map<string, { fingerprint: string; operation: Promise<{ command: DashboardCommand; state: DashboardState }> }>();
   const executeCommand = async (body: unknown, remote = false) => {
-    const command = remote ? parseRemoteCommand(body, snapshot()) : parseCommand(body);
-    const state = await commands.execute(command);
-    if (command.type === 'session.prepare') return { command, state: await runPreflight() };
-    return { command, state };
+    const envelope = body && typeof body === 'object' ? body as Record<string, unknown> : {};
+    const commandId = envelope.commandId;
+    const correlationId = envelope.correlationId;
+    for (const [name, value] of [['commandId', commandId], ['correlationId', correlationId]] as const) {
+      if (value !== undefined && (typeof value !== 'string' || !/^[A-Za-z0-9_-]{8,100}$/.test(value))) throw new Error(`${name} invalide.`);
+    }
+    const commandBody = Object.fromEntries(Object.entries(envelope).filter(([key]) => key !== 'commandId' && key !== 'correlationId'));
+    const command = remote ? parseRemoteCommand(commandBody, snapshot()) : parseCommand(commandBody);
+    const fingerprint = JSON.stringify(command);
+    if (typeof commandId === 'string') {
+      const existing = commandJournal.get(commandId);
+      if (existing) {
+        if (existing.fingerprint !== fingerprint) throw new Error('commandId déjà utilisé pour une autre commande.');
+        return existing.operation;
+      }
+    }
+    const operation = (async () => {
+      const state = await commands.execute(command);
+      if (command.type === 'session.prepare') return { command, state: await runPreflight() };
+      return { command, state };
+    })();
+    if (typeof commandId === 'string') {
+      commandJournal.set(commandId, { fingerprint, operation });
+      while (commandJournal.size > 500) commandJournal.delete(commandJournal.keys().next().value!);
+    }
+    return operation;
   };
   const validateTwitch = async () => {
     if (!twitch.state.connected) return;
@@ -1308,6 +1338,9 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
         ok: true,
         state: remote ? toRemoteDashboardState(result.state) : result.state,
         commandType: result.command.type,
+        ...(typeof req.body?.commandId === 'string' ? { commandId: req.body.commandId } : {}),
+        ...(typeof req.body?.correlationId === 'string' ? { correlationId: req.body.correlationId } : {}),
+        stateRevision: result.state.stateRevision,
       });
     } catch (error) { next(error); }
   });
@@ -1509,6 +1542,10 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
         if (input.timerBrowserSource !== undefined) {
           if (typeof input.timerBrowserSource !== 'string' || input.timerBrowserSource.length > 200) throw new Error('Source timer OBS invalide.');
           local.settings.timerBrowserSource = input.timerBrowserSource.trim() || undefined;
+        }
+        if (input.primaryMicInput !== undefined) {
+          if (typeof input.primaryMicInput !== 'string' || input.primaryMicInput.length > 200) throw new Error('Micro principal OBS invalide.');
+          local.settings.primaryMicInput = input.primaryMicInput.trim() || undefined;
         }
         if (input.obsExecutablePath !== undefined) {
           if (typeof input.obsExecutablePath !== 'string' || input.obsExecutablePath.length > 500) throw new Error('Chemin OBS invalide.');

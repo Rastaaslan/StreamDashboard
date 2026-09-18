@@ -27,9 +27,11 @@ const state = {
 } as DashboardState;
 
 describe('retours à chaud mobile', () => {
-  it('charge le contrôleur correctif après le runtime mobile historique', () => {
-    expect(index.indexOf('src="mobile.js"')).toBeGreaterThan(-1);
-    expect(index.indexOf('src="mobile-live-feedback.js"')).toBeGreaterThan(index.indexOf('src="mobile.js"'));
+  it('utilise un bootstrap HTML unique et charge les features dans un ordre déterministe', () => {
+    expect(index.match(/<script type="module"/g)).toHaveLength(1);
+    expect(index).toContain('src="mobile.js"');
+    expect(mobile.indexOf("import('./mobile-live-feedback.js')")).toBeGreaterThan(mobile.indexOf("import('./templates-ui.js')"));
+    expect(mobile.indexOf("import('./mobile-polish.js')")).toBeGreaterThan(mobile.indexOf("import('./mobile-live-feedback.js')"));
   });
 
   it('Préparer ouvre la prépa et permet de cocher la checklist depuis le remote', () => {

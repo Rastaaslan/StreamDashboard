@@ -209,6 +209,8 @@ export interface DashboardSettings {
   startMode?: 'intro' | 'live';
   /** Exact OBS browser source used for the visible session timer overlay. */
   timerBrowserSource?: string;
+  /** Explicit input controlled by the mobile one-tap microphone action. */
+  primaryMicInput?: string;
   /** Persisted preference. Binding to LAN is applied on next desktop startup. */
   remoteEnabled?: boolean;
 }
@@ -232,6 +234,8 @@ export interface TwitchState {
 
 export interface DashboardState {
   at: string;
+  /** Monotonic runtime snapshot revision. Optional only for legacy persisted/test fixtures. */
+  stateRevision?: number;
   mode: RunMode;
   timer: TimerState;
   planning: CalendarItem[];
@@ -252,12 +256,13 @@ export interface DashboardState {
 /** Minimal, explicitly redacted state exposed to a paired LAN remote. */
 export interface RemoteDashboardState {
   at: string;
+  stateRevision?: number;
   mode: RunMode;
   timer: TimerState;
   planning: Array<Pick<CalendarItem, 'id' | 'title' | 'startAtUtc' | 'endAtUtc' | 'allDay' | 'category' | 'kind' | 'source' | 'twitchCategoryId' | 'twitchCategoryName' | 'desiredPublication' | 'recurrence' | 'seriesId' | 'occurrenceKey'>>;
   nextLive: Pick<CalendarItem, 'id' | 'title' | 'startAtUtc' | 'endAtUtc' | 'allDay' | 'category' | 'kind' | 'source' | 'twitchCategoryId' | 'twitchCategoryName' | 'desiredPublication'> | null;
   obs: Pick<ObsState, 'connected' | 'streaming' | 'scene' | 'inputs' | 'activeAudioInputs' | 'mediaInputs'>;
-  settings: Pick<DashboardSettings, 'confirmStop' | 'streamerName' | 'modeScenes' | 'chattingScene'>;
+  settings: Pick<DashboardSettings, 'confirmStop' | 'streamerName' | 'modeScenes' | 'chattingScene' | 'primaryMicInput'>;
   twitch: Pick<TwitchState, 'connected' | 'channelTitle' | 'gameId' | 'gameName' | 'error'>;
   google?: Pick<GoogleCalendarState, 'configured' | 'connected'>;
   discord?: DiscordState;

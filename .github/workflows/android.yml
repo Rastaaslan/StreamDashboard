@@ -43,7 +43,7 @@ jobs:
       - name: Install dependencies
         run: npm ci
       - name: Validate shared remote
-        run: npm test && npm run build && npm run security:check && npm run mobile:smoke
+        run: npm test && npm run build && npm run security:check && npm run check:shipped-js && npm run mobile:smoke
       - name: Synchronize Android assets
         run: npm run android:sync
       - name: Require stable Android signing identity

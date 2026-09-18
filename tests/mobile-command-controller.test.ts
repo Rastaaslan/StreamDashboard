@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { createCommandController } from '../apps/mobile/command-controller.js';
+import { acceptsSnapshot, createCommandController, primaryMicCommand } from '../apps/mobile/command-controller.js';
 
 describe('mobile HTTP command controller', () => {
   it('sends commands without requiring a realtime channel', async () => {
@@ -53,5 +53,39 @@ describe('mobile HTTP command controller', () => {
     const controller = createCommandController({ send, readState: vi.fn(), applyState: vi.fn() });
     await expect(controller.execute({ type: 'mode.set' }, { resource: 'scene' })).rejects.toThrow('offline');
     await expect(controller.execute({ type: 'mode.set' }, { resource: 'scene' })).resolves.toMatchObject({ accepted: true });
+  });
+
+  it('reports both the command and reconciliation failures', async () => {
+    const controller = createCommandController({
+      send: vi.fn().mockRejectedValue(new Error('command timeout')),
+      readState: vi.fn().mockRejectedValue(new Error('REST down')),
+      applyState: vi.fn(),
+    });
+    await expect(controller.execute({ type: 'session.start' }, {
+      resource: 'stream', reconcile: () => false,
+    })).rejects.toThrow('La réconciliation de l’état a également échoué');
+  });
+});
+
+describe('explicit primary microphone', () => {
+  it('never falls back to the first active audio source', () => {
+    const state = {
+      settings: { primaryMicInput: 'DJI Mic' },
+      obs: { inputs: { 'Game Audio': { muted: false }, Discord: { muted: false }, 'DJI Mic': { muted: true } } },
+    };
+    expect(primaryMicCommand(state)).toEqual({ type: 'obs.mute', input: 'DJI Mic', muted: false });
+  });
+
+  it('fails closed when no primary microphone is configured', () => {
+    expect(() => primaryMicCommand({ settings: {}, obs: { inputs: { Discord: { muted: false } } } }))
+      .toThrow('Micro principal non configuré');
+  });
+});
+
+describe('monotonic mobile snapshots', () => {
+  it('ignores a stale revision after a newer HTTP or realtime snapshot', () => {
+    expect(acceptsSnapshot({ stateRevision: 42 }, { stateRevision: 41 })).toBe(false);
+    expect(acceptsSnapshot({ stateRevision: 42 }, { stateRevision: 43 })).toBe(true);
+    expect(acceptsSnapshot({ stateRevision: 42 }, {})).toBe(true);
   });
 });

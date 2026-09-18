@@ -7,7 +7,7 @@ import { CompanionMode, createCompanionStore, resolveMode } from './companion-st
 import { createNativeProviderAdapter, createStandaloneProviderSync } from './provider-sync.js';
 import { recurrenceSummary } from './shared/recurrence.js';
 import { createMobileFixture, devFixtureName } from './dev-fixtures.js';
-import { createCommandController } from './command-controller.js';
+import { acceptsSnapshot, createCommandController, primaryMicCommand } from './command-controller.js';
 
 const $ = id => document.getElementById(id);
 
@@ -101,9 +101,10 @@ async function command(value, { reconcile } = {}) {
     return false;
   }
   const resource = commandResource(value);
+  const commandId = globalThis.crypto?.randomUUID?.() || `cmd_${Date.now()}_${Math.random().toString(36).slice(2)}`;
   try {
     const critical = value.type === 'session.start' || value.type === 'session.stop';
-    const result = await commandController.execute(value, {
+    const result = await commandController.execute({ ...value, commandId, correlationId: commandId }, {
       resource,
       timeoutMs: critical ? CRITICAL_COMMAND_TIMEOUT_MS : undefined,
       reconcile,
@@ -354,11 +355,12 @@ async function syncEventProviders(event, action) {
 
 function render(next) {
   if (!next) return;
+  if (!acceptsSnapshot(state, next)) return;
   state = next;
   if (companionMode === CompanionMode.ONLINE_PC) $('pc').textContent = 'Connecté';
   $('obs').textContent = next.obs.connected ? 'Prêt' : 'Déconnecté';
   $('scene').textContent = next.obs.scene || '—';
-  const primaryMic = next.obs.activeAudioInputs?.[0]; const micMuted = primaryMic ? next.obs.inputs?.[primaryMic]?.muted : null; $('direct-mic-state').textContent = primaryMic ? (micMuted ? 'Coupé' : 'Ouvert') : 'Indisponible'; $('direct-mic-dot').textContent = primaryMic && !micMuted ? '●' : '○'; $('direct-mic-dot').className = primaryMic && !micMuted ? 'ok' : 'muted';
+  const primaryMic = next.settings.primaryMicInput; const micMuted = primaryMic ? next.obs.inputs?.[primaryMic]?.muted : null; $('direct-mic-state').textContent = primaryMic ? (micMuted === null || micMuted === undefined ? 'Introuvable' : micMuted ? 'Coupé' : 'Ouvert') : 'Non configuré'; $('direct-mic-dot').textContent = primaryMic && micMuted === false ? '●' : '○'; $('direct-mic-dot').className = primaryMic && micMuted === false ? 'ok' : 'muted';
   $('live').textContent = next.obs.streaming ? 'Live' : 'Hors ligne';
   $('live').className = next.obs.streaming ? 'ok' : '';
   $('next').textContent = next.nextLive ? `${next.nextLive.title} · ${formatPlanningDate(next.nextLive)}` : 'Aucun live planifié';
@@ -599,7 +601,7 @@ function rememberCommand(entry) { recentCommands = [entry, ...recentCommands.fil
 function renderCommandRecents() { const container = $('command-recents'); container.replaceChildren(...recentCommands.map(entry => { const button = text('button', entry.label); button.type = 'button'; button.dataset.recentCommand = entry.id; button.onclick = () => void runPaletteAction(entry.action, entry); return button; })); if (!container.children.length) container.append(text('span', 'Aucune commande récente.', 'empty-copy')); }
 function renderCommandSounds() { const container = $('command-sounds'); if (!container) return; const favorites = (soundboardState?.sounds || []).filter(sound => sound.favorite && sound.enabled && sound.sourceAvailable).slice(0, 6); container.replaceChildren(...favorites.map(sound => { const button = text('button', sound.name); button.type = 'button'; button.onclick = () => void runPaletteAction('sound', { soundId: sound.id, label: sound.name }); return button; })); if (!container.children.length) container.append(text('span', 'Aucun son favori.', 'empty-copy')); }
 async function createQuickClip() { if (companionMode !== CompanionMode.ONLINE_PC) throw new Error('PC hors ligne.'); const clip = await transport.createTwitchClip(); rememberCommand({ id: 'clip', label: 'Clip', action: 'clip' }); globalThis.StreamDashboardNative?.haptic?.('light'); note(`Clip créé ✓ · ${clip.id}`); }
-async function togglePrimaryMic() { const input = state?.obs?.activeAudioInputs?.[0]; if (!input || !state?.obs?.inputs?.[input]) throw new Error('Aucun micro actif détecté.'); const confirmed = await command({ type: 'obs.mute', input, muted: !state.obs.inputs[input].muted }); if (!confirmed) throw new Error('Commande non confirmée par le PC.'); rememberCommand({ id: 'mute', label: 'Mute micro', action: 'mute' }); }
+async function togglePrimaryMic() { const value = primaryMicCommand(state); const confirmed = await command(value, { reconcile: next => next.obs?.inputs?.[value.input]?.muted === value.muted }); if (!confirmed) throw new Error('Commande non confirmée par le PC.'); rememberCommand({ id: 'mute', label: 'Mute micro', action: 'mute' }); }
 async function runPaletteAction(action, detail = {}) { try { if (action === 'clip') await createQuickClip(); else if (action === 'mute') await togglePrimaryMic(); else if (action === 'sound') { const sound = soundboardState?.sounds?.find(value => value.id === detail.soundId); if (!sound) throw new Error('Son indisponible.'); const ack = await transport.playSound({ commandId: newCommandId(), soundId: sound.id, issuedAt: new Date().toISOString() }); if (ack.status !== 'succeeded') throw new Error(ack.message || 'Lecture échouée.'); rememberCommand({ id: `sound:${sound.id}`, label: sound.name, action: 'sound', soundId: sound.id }); note(`Son joué ✓ · ${sound.name}`); } else { const mode = action === 'chatting' ? null : action; const confirmed = await command(action === 'chatting' ? { type: 'scene.chatting' } : { type: 'mode.set', mode }); if (!confirmed) throw new Error('Commande non confirmée par le PC.'); rememberCommand({ id: action, label: action === 'pause' ? 'Pause' : action === 'chatting' ? 'Chatting' : 'Intro', action }); } $('command-palette').close(); } catch (error) { note(`Commande impossible. ${error.message}`); } }
 $('command-trigger').onclick = () => { renderCommandRecents(); renderCommandSounds(); $('command-palette').showModal(); $('command-search').focus(); };
 $('close-commands').onclick = () => $('command-palette').close();
@@ -819,3 +821,10 @@ for (const [buttonId, kind, inputId, property] of [['add-note','notes','note-tex
 renderCompanion();
 const fixtureName = devFixtureName(location);
 if (fixtureName) { const fixture = createMobileFixture(fixtureName); setConnectionMode(CompanionMode.ONLINE_PC); soundboardState = fixture.soundboard; render(fixture.state); renderSoundboard(); showPairing(false); } else void start();
+
+// This is the only HTML bootstrap. Feature modules are loaded in a deterministic
+// order after the canonical store/transport/controller have installed their owners.
+void import('./templates-ui.js')
+  .then(() => import('./mobile-live-feedback.js'))
+  .then(() => import('./mobile-polish.js'))
+  .catch(error => note(`Initialisation mobile incomplète : ${error.message}`));

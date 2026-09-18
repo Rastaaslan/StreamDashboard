@@ -18,7 +18,12 @@ export function createCommandController({ send, readState, applyState, onMessage
             onMessage('Commande confirmée après resynchronisation.');
             return { accepted: true, body: { state: current }, reconciled: true };
           }
-        } catch { /* Preserve the original command error. */ }
+        } catch (reconciliationError) {
+          throw new AggregateError(
+            [error, reconciliationError],
+            `${error.message} La réconciliation de l’état a également échoué.`,
+          );
+        }
       }
       throw error;
     } finally {
@@ -27,4 +32,17 @@ export function createCommandController({ send, readState, applyState, onMessage
   }
 
   return { execute, isLocked: resource => locks.has(resource) };
+}
+
+export function primaryMicCommand(state) {
+  const input = state?.settings?.primaryMicInput;
+  if (!input) throw new Error('Micro principal non configuré.');
+  const current = state?.obs?.inputs?.[input];
+  if (!current) throw new Error('Micro principal introuvable.');
+  return { type: 'obs.mute', input, muted: !current.muted };
+}
+
+export function acceptsSnapshot(current, incoming) {
+  return !(Number.isInteger(incoming?.stateRevision) && Number.isInteger(current?.stateRevision)
+    && incoming.stateRevision < current.stateRevision);
 }
