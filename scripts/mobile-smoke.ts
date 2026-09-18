@@ -54,7 +54,6 @@ try {
   const result = await allowedCommand.json() as { ok: boolean };
 
   const forbiddenCommands = [
-    { type: 'session.start', force: true },
     { type: 'obs.record', start: true },
     { type: 'obs.scene', scene: 'Arbitrary scene' },
     { type: 'obs.browser.refresh', input: 'Anything' },
@@ -66,6 +65,8 @@ try {
     });
     if (denied.status !== 403) throw new Error(`Commande distante sensible ${command.type} devrait être 403, reçu ${denied.status}.`);
   }
+  const explicitStart = await fetch(`${remoteOrigin}/api/v1/commands`, { method: 'POST', headers, body: JSON.stringify({ type: 'session.start', force: true }) });
+  if (explicitStart.status === 403) throw new Error('Le bypass checklist explicitement confirmé par le téléphone reste bloqué par la policy remote.');
 
   for (const protectedPath of ['/api/v1/settings', '/api/v1/diagnostics', '/api/v1/google/calendars']) {
     const denied = await fetch(`${remoteOrigin}${protectedPath}`, {

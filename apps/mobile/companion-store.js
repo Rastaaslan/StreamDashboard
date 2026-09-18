@@ -1,5 +1,6 @@
-export const COMPANION_SCHEMA_VERSION = 2;
-export const COMPANION_KEY = 'streamdashboard.companion.v2';
+export const COMPANION_SCHEMA_VERSION = 3;
+export const COMPANION_KEY = 'streamdashboard.companion.v3';
+const LEGACY_COMPANION_KEY = 'streamdashboard.companion.v2';
 export const CompanionMode = Object.freeze({ ONLINE_PC: 'ONLINE_PC', ONLINE_STANDALONE: 'ONLINE_STANDALONE', OFFLINE: 'OFFLINE' });
 
 const clone = value => JSON.parse(JSON.stringify(value));
@@ -22,7 +23,7 @@ export function createCompanionStore(storage = localStorage, clock = now) {
   if (sharedDefault && defaultStore) return defaultStore;
 
   let data;
-  try { data = migrate(JSON.parse(storage.getItem(COMPANION_KEY) || 'null')); } catch { data = empty(); }
+  try { data = migrate(JSON.parse(storage.getItem(COMPANION_KEY) || storage.getItem(LEGACY_COMPANION_KEY) || 'null')); } catch { data = empty(); }
   const persist = () => storage.setItem(COMPANION_KEY, JSON.stringify(data));
   const operation = (type, eventId, baseRevision, patch, desiredPublication, base) => ({ id: uid('op'), operationId: undefined, type, eventId, baseRevision, timestamp: clock(), patch: clone(patch || {}), base: clone(base || {}), desiredPublication: clone(desiredPublication || {}) });
   const saveEvent = (input, baseRevision) => {

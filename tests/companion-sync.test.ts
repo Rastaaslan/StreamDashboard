@@ -34,6 +34,14 @@ describe('transaction compagnon', () => {
     expect(result.planning).toEqual([]); expect(result.companion.tombstones['event-a']).toBeTruthy(); expect(result.acknowledged).toEqual(['delete', 'note', 'check', 'template']);
     expect(companionSnapshot(result.planning, result.companion)).toMatchObject({ notes: [{ text: 'Idée' }], checklist: [{ done: true }], templates: [{ title: 'FC26' }] });
   });
+
+  it('traite la récurrence comme un champ atomique concurrent', () => {
+    const recurrence = { frequency: 'weekly', interval: 1, timeZone: 'Europe/Paris', until: null, exceptions: {} };
+    const created = reconcileCompanionBatch([], [], emptyCompanionState(), [op('create-series', 'create', { ...event(), recurrence })]);
+    const pc = [{ ...created.planning[0], recurrence: { ...recurrence, interval: 2 } as any }]; created.companion.eventRevisions['event-a'] = 2;
+    const result = reconcileCompanionBatch(pc, [], created.companion, [{ ...op('android-series', 'update', { recurrence: { ...recurrence, until: '2026-12-01T00:00:00.000Z' } }, 1), base: { ...event(), recurrence } }]);
+    expect(result.conflicts[0].fields).toEqual(['recurrence']);
+  });
 });
 
 describe('intégration serveur PC ↔ Android', () => {
@@ -47,7 +55,7 @@ describe('intégration serveur PC ↔ Android', () => {
     const paired = await fetch(`${server.url}/api/v1/remote/pair`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ id: pairing.id, code: pairing.code, name: 'Test Android' }) }).then(r => r.json());
     const headers = { 'content-type': 'application/json', authorization: `Device ${paired.credential}` };
     const create = op('offline-create', 'create', event('event-a', '2026-09-12T21:00:00.000Z'));
-    const send = () => fetch(`${server!.url}/api/v1/companion/sync`, { method: 'POST', headers, body: JSON.stringify({ schemaVersion: 2, deviceId: paired.deviceId, lastKnownServerRevision: 0, operations: [create] }) }).then(r => r.json());
+    const send = () => fetch(`${server!.url}/api/v1/companion/sync`, { method: 'POST', headers, body: JSON.stringify({ schemaVersion: 3, deviceId: paired.deviceId, lastKnownServerRevision: 0, operations: [create] }) }).then(r => r.json());
     expect(await send()).toMatchObject({ acknowledged: ['offline-create'], snapshot: { planning: [{ id: 'event-a', startAtUtc: '2026-09-12T21:00:00.000Z' }] } });
     await server.stop(); server = await startDashboardServer({ port: 0, remoteEnabled: true, dataDir, logger: { info() {}, warn() {}, error() {} } });
     const replay = await send(); expect(replay.snapshot.planning).toHaveLength(1); expect(replay.snapshot.planning[0].startAtUtc).toBe('2026-09-12T21:00:00.000Z');

@@ -5,7 +5,7 @@ import { parseRemoteCommand, toRemoteDashboardState } from '../apps/server/src/r
 import type { DashboardState } from '../packages/contracts/src/index.js';
 
 const index = readFileSync(new URL('../apps/mobile/index.html', import.meta.url), 'utf8');
-const feedback = readFileSync(new URL('../apps/mobile/mobile-live-feedback.js', import.meta.url), 'utf8');
+const mobile = readFileSync(new URL('../apps/mobile/mobile.js', import.meta.url), 'utf8');
 const transport = readFileSync(new URL('../apps/mobile/transport.js', import.meta.url), 'utf8');
 
 const state = {
@@ -26,37 +26,34 @@ const state = {
 } as DashboardState;
 
 describe('retours à chaud mobile', () => {
-  it('charge le contrôleur correctif après le runtime mobile historique', () => {
-    expect(index.indexOf('src="mobile.js"')).toBeGreaterThan(-1);
-    expect(index.indexOf('src="mobile-live-feedback.js"')).toBeGreaterThan(index.indexOf('src="mobile.js"'));
+  it('charge un bootstrap unique sans couche corrective concurrente', () => {
+    expect(index.match(/<script type="module"/g)).toHaveLength(1);
+    expect(index).toContain('src="mobile.js"');
+    expect(index).not.toContain('mobile-live-feedback.js');
   });
 
   it('Préparer ouvre la prépa et permet de cocher la checklist depuis le remote', () => {
     expect(index).toContain('Checklist pré-live');
-    expect(feedback).toContain("transport.command({ type: 'session.prepare' })");
-    expect(feedback).toContain("document.querySelector('[data-tab=\"prepare\"]')?.click()");
+    expect(mobile).toContain("commandController.execute({ type: 'session.prepare' })");
     expect(parseRemoteCommand({ type: 'checklist.toggle', id: 'audio' }, state)).toEqual({ type: 'checklist.toggle', id: 'audio' });
-    expect(() => parseRemoteCommand({ type: 'checklist.reset' }, state)).toThrow('réservée au PC');
+    expect(index).not.toContain('RÉINITIALISER LA CHECKLIST');
     expect((toRemoteDashboardState(state) as unknown as { checklist: typeof state.checklist }).checklist).toEqual(state.checklist);
   });
 
   it('arrête le live par HTTP sans dépendre de l’état du WebSocket', () => {
     expect(parseRemoteCommand({ type: 'session.stop' }, state)).toEqual({ type: 'session.stop' });
-    expect(feedback).toContain("transport.command({ type: start ? 'session.start' : 'session.stop'");
-    expect(feedback).toContain("OBS indique que le live est toujours actif après la commande d’arrêt.");
-    expect(feedback).not.toContain('ws.readyState');
+    expect(mobile).toContain("command({ type: 'session.stop' })");
+    expect(mobile).not.toContain('ws.readyState');
   });
 
   it('rend les notes réellement éditables et synchronisées', () => {
-    expect(feedback).toContain("companion.upsertCollection('notes'");
-    expect(feedback).toContain("companion.removeCollection('notes'");
-    expect(feedback).toContain('await syncCompanionNow()');
+    expect(mobile).toContain("['add-note','notes'");
+    expect(mobile).toContain('companion.removeCollection');
   });
 
   it('ajoute une vraie édition et suppression des événements du planning avec fallback compagnon', () => {
-    expect(feedback).toContain('openPlanningEdit(item)');
-    expect(feedback).toContain('submitPlanningEdit(event)');
-    expect(feedback).toContain('deletePlanningItem(item)');
+    expect(mobile).toContain("openMobileEditor({ ...item, seriesId: item.id }, 'event')");
+    expect(mobile).toContain('removeMobileSeries');
     expect(transport).toContain('updatePlanning:');
     expect(transport).toContain('deletePlanning:');
     expect(transport).toContain('planningFallback');

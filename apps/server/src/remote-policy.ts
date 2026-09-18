@@ -10,7 +10,7 @@ import {
 const REMOTE_MODES = new Set(['intro', 'live', 'pause', 'end']);
 
 type RemotePlanningItem = Pick<CalendarItem,
-  'id' | 'title' | 'description' | 'startAtUtc' | 'endAtUtc' | 'allDay' | 'category' | 'kind' | 'source' | 'editable' | 'twitchCategoryId' | 'twitchCategoryName' | 'desiredPublication'
+  'id' | 'title' | 'description' | 'startAtUtc' | 'endAtUtc' | 'allDay' | 'category' | 'kind' | 'source' | 'editable' | 'twitchCategoryId' | 'twitchCategoryName' | 'desiredPublication' | 'recurrence' | 'seriesId' | 'occurrenceKey'
 >;
 type ExtendedRemoteDashboardState = Omit<RemoteDashboardState, 'planning' | 'nextLive'> & {
   planning: RemotePlanningItem[];
@@ -34,8 +34,7 @@ export function parseRemoteCommand(value: unknown, state: DashboardState): Dashb
     case 'checklist.toggle':
       return command;
     case 'session.start':
-      if (command.force === true) throw denied('Le contournement de checklist est réservé au PC.');
-      return { type: 'session.start', force: false };
+      return { type: 'session.start', force: command.force === true };
     case 'mode.set':
       if (!REMOTE_MODES.has(command.mode)) throw denied('Ce mode n’est pas pilotable depuis la télécommande.');
       return command;
@@ -69,10 +68,14 @@ export function toRemoteDashboardState(state: DashboardState): ExtendedRemoteDas
     ...(item.twitchCategoryId !== undefined ? { twitchCategoryId: item.twitchCategoryId } : {}),
     ...(item.twitchCategoryName !== undefined ? { twitchCategoryName: item.twitchCategoryName } : {}),
     ...(item.desiredPublication !== undefined ? { desiredPublication: { ...item.desiredPublication } } : {}),
+    ...(item.recurrence !== undefined ? { recurrence: structuredClone(item.recurrence) } : {}),
+    ...(item.seriesId !== undefined ? { seriesId: item.seriesId } : {}),
+    ...(item.occurrenceKey !== undefined ? { occurrenceKey: item.occurrenceKey } : {}),
   });
 
   return {
     at: state.at,
+    ...(state.stateRevision !== undefined ? { stateRevision: state.stateRevision } : {}),
     mode: state.mode,
     timer: { ...state.timer },
     planning: state.planning.map(projectItem),
@@ -95,6 +98,7 @@ export function toRemoteDashboardState(state: DashboardState): ExtendedRemoteDas
       error: state.twitch.error,
     },
     ...(state.google ? { google: { configured: state.google.configured, connected: state.google.connected } } : {}),
+    ...(state.discord ? { discord: structuredClone(state.discord) } : {}),
     ...(state.preflight ? { preflight: { ...state.preflight } } : {}),
   };
 }
