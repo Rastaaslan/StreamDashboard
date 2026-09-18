@@ -683,9 +683,9 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
         twitch: connectedState(twitch.state.connected, Boolean(options.twitchClientId ?? process.env.TWITCH_CLIENT_ID), twitch.state.error),
         discord: connectedState(discordPublic.connected, discordPublic.configured, discordPublic.error),
         streamlabs: streamlabs.state(),
-        wizebot: integrationState('NOT_CONFIGURED'),
+        wizebot: integrationState('NOT_SUPPORTED'),
       },
-      availability: { chat: twitch.state.connected ? 'AVAILABLE' : 'NOT_CONFIGURED', support: 'NOT_CONFIGURED', vod: twitch.state.connected ? 'AVAILABLE' : 'NOT_CONFIGURED', clips: twitch.state.connected ? 'AVAILABLE' : 'NOT_CONFIGURED', soundboard: 'AVAILABLE', automation: 'AVAILABLE' },
+      availability: { chat: twitch.state.connected ? 'AVAILABLE' : 'NOT_CONFIGURED', support: streamlabs.state().status === 'NOT_SUPPORTED' ? 'NOT_SUPPORTED' : streamlabs.state().status === 'NOT_CONFIGURED' ? 'NOT_CONFIGURED' : 'AVAILABLE', vod: twitch.state.connected ? 'AVAILABLE' : 'NOT_CONFIGURED', clips: twitch.state.connected ? 'AVAILABLE' : 'NOT_CONFIGURED', soundboard: 'AVAILABLE', automation: 'AVAILABLE' },
     };
     return {
       at: new Date().toISOString(),
