@@ -529,7 +529,9 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
   const sockets = new WebSocketServer({ noServer: true });
   const socketDevices = new Map<WebSocket, string>();
   const eventCore = new EventCore(250);
-  const soundboard = new SoundboardRuntime(local.sounds);
+  const soundboard = new SoundboardRuntime(local.sounds, undefined, () => Date.now(), event => {
+    eventCore.publish({ type: event.type, source: 'soundboard', correlationId: event.correlationId, payload: event.payload });
+  });
   const automation = new AutomationRuntime(local.automations, async (action, context) => {
     if (action.type !== 'soundboard.play' || typeof action.payload.soundId !== 'string') throw new Error(`Action ${action.type} non supportée.`);
     const ack = await soundboard.play({ commandId: `${context.correlationId}:${context.automationId}:${context.actionIndex}`, correlationId: context.correlationId, type: 'soundboard.play', origin: 'automation', issuedAt: new Date().toISOString(), payload: { soundId: action.payload.soundId, ...(typeof action.payload.volume === 'number' ? { volume: action.payload.volume } : {}) } });
