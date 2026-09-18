@@ -2,8 +2,7 @@ import { CompanionMode } from '../companion-store.js';
 import { getMobileContext } from '../mobile-context.js';
 
 const $ = id => document.getElementById(id);
-const { companion, transport, ensureCredential, executeCommand, getMode, getState, applyState, note } = getMobileContext();
-let companionSyncFlight = null;
+const { companion, transport, ensureCredential, executeCommand, syncCompanion, getMode, getState, applyState, note } = getMobileContext();
 
 const text = (tag, value, className) => {
   const node = document.createElement(tag);
@@ -23,32 +22,18 @@ async function refreshRemoteState() {
 }
 
 async function syncCompanionNow() {
-  if (companionSyncFlight) return companionSyncFlight;
   if (!onlinePc()) {
     renderNotes();
     renderChecklist();
     window.dispatchEvent(new CustomEvent('companion-refreshed'));
     return null;
   }
-  companionSyncFlight = (async () => {
-    await ensureCredential();
-    const deviceId = localStorage.getItem('streamdashboard.deviceId') || '';
-    if (!deviceId) throw new Error('Identité de télécommande introuvable.');
-    const cache = companion.snapshot();
-    const response = await transport.syncCompanion({
-      schemaVersion: cache.schemaVersion,
-      deviceId,
-      lastKnownServerRevision: cache.serverRevision ?? 0,
-      operations: cache.pending,
-    });
-    companion.applySyncResponse(response);
-    renderNotes();
-    renderChecklist();
-    window.dispatchEvent(new CustomEvent('companion-refreshed'));
-    return response;
-  })();
-  try { return await companionSyncFlight; }
-  finally { companionSyncFlight = null; }
+  await ensureCredential();
+  const response = await syncCompanion();
+  renderNotes();
+  renderChecklist();
+  window.dispatchEvent(new CustomEvent('companion-refreshed'));
+  return response;
 }
 
 function renderNotes() {
