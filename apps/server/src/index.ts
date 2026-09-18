@@ -122,7 +122,7 @@ const LOCAL_ADDRESSES = new Set(['127.0.0.1', '::1', '::ffff:127.0.0.1']);
 const PROVIDER_STATUSES = new Set(['synced', 'pending', 'error', 'not-published', 'conflict']);
 const DAY_MS = 86_400_000;
 const REMOTE_ACTIVITY_PERSIST_MS = 30_000;
-const ANDROID_NATIVE_ORIGIN = 'http://localhost';
+const ANDROID_NATIVE_ORIGINS = new Set(['http://localhost', 'http://appassets.androidplatform.net']);
 
 function object(value: unknown): value is Record<string, unknown> {
   return Boolean(value && typeof value === 'object' && !Array.isArray(value));
@@ -556,7 +556,7 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
     const requestHost = request.headers.host;
     const acceptedOrigin = (() => {
       if (!origin) return true;
-      try { return origin === ANDROID_NATIVE_ORIGIN || (Boolean(requestHost) && new URL(origin).host === requestHost); }
+      try { return ANDROID_NATIVE_ORIGINS.has(origin) || (Boolean(requestHost) && new URL(origin).host === requestHost); }
       catch { return false; }
     })();
     const remoteRequest = !isLocalAddress(request.socket.remoteAddress);
@@ -587,9 +587,9 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
   app.use((req, res, next) => {
     const origin = req.headers.origin;
     if (!origin) { next(); return; }
-    if (origin === ANDROID_NATIVE_ORIGIN) {
+    if (ANDROID_NATIVE_ORIGINS.has(origin)) {
       res.set({
-        'Access-Control-Allow-Origin': ANDROID_NATIVE_ORIGIN,
+        'Access-Control-Allow-Origin': origin,
         'Access-Control-Allow-Headers': 'Authorization, Content-Type',
         'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
         Vary: 'Origin',
