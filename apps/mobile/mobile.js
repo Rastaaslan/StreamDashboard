@@ -629,7 +629,9 @@ function organizeMobileShell() {
   document.querySelector('[data-hub-tool="soundboard"]')?.remove();
   const automationPanel = document.querySelector('[data-hub-panel="automations"]'); if (automationPanel) { automationPanel.hidden = false; moreAutomations.append(automationPanel); }
   document.querySelector('[data-hub-tool="automations"]')?.remove();
-  const commandTrigger = $('command-trigger'); commandTrigger.className = 'power-command'; streamMenu?.append(commandTrigger);
+  // Keep instant commands globally one tap away. The command palette is an
+  // efficiency surface, not a secondary settings tool.
+  const commandTrigger = $('command-trigger'); commandTrigger.className = 'command-trigger';
   const message = $('message'); document.body.append(message); message.className = 'app-toast';
 }
 organizeMobileShell();
