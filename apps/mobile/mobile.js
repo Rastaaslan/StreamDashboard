@@ -325,7 +325,7 @@ function renderPlanning(items) {
     }
     container.append(row);
   }
-  if (!pagination.total) container.append(text('p', 'Aucun rendez-vous.', 'muted'));
+  if (!pagination.total) container.append(text('p', 'Aucun événement.', 'muted'));
   if (pagination.totalPages > 1) {
     const nav = document.createElement('div');
     nav.className = 'companion-row planning-pagination';
@@ -340,7 +340,7 @@ function renderPlanning(items) {
 }
 
 function openMobileEditor(item, scope) {
-  mobileEditing = { item, scope }; const form = $('slot-form'); const start = new Date(item.startAtUtc); const end = new Date(item.endAtUtc);
+  mobileEditing = { item, scope }; if ($('slot-dialog-title')) $('slot-dialog-title').textContent = scope === 'occurrence' ? 'Modifier cette occurrence' : 'Modifier l’événement'; const form = $('slot-form'); const start = new Date(item.startAtUtc); const end = new Date(item.endAtUtc);
   form.elements.title.value = item.title; form.elements.date.value = start.toISOString().slice(0, 10); form.elements.start.value = start.toTimeString().slice(0, 5); form.elements.end.value = end.toTimeString().slice(0, 5); form.elements.category.value = item.category || 'live'; form.elements.description.value = item.description || '';
   form.elements.recurrence.value = item.recurrence ? `${item.recurrence.frequency}-${item.recurrence.interval}` : ''; form.elements.recurrenceUntil.value = item.recurrence?.until?.slice(0, 10) || ''; form.elements.recurrence.disabled = scope === 'occurrence'; form.elements.recurrenceUntil.disabled = scope === 'occurrence'; $('slot-dialog').showModal();
 }
@@ -646,8 +646,8 @@ for (const [key, label] of Object.entries(filterNames)) {
   input.onchange = () => { planningFilters[key] = input.checked; planningPage = 1; localStorage.setItem('streamdashboard.planningFilters', JSON.stringify(planningFilters)); renderPlanning(state?.planning); };
   const row = document.createElement('label'); row.append(input, text('span', label)); $('planning-filters').append(row);
 }
-$('add-slot').onclick = () => { mobileEditing = null; $('slot-form').elements.recurrence.disabled = false; $('slot-form').elements.recurrenceUntil.disabled = false; $('slot-form').reset(); $('slot-dialog').showModal(); };
-$('close-slot').onclick = () => { mobileEditing = null; $('slot-form').elements.recurrence.disabled = false; $('slot-form').elements.recurrenceUntil.disabled = false; $('slot-dialog').close(); };
+$('add-slot').onclick = () => { mobileEditing = null; if ($('slot-dialog-title')) $('slot-dialog-title').textContent = 'Nouvel événement'; $('slot-form').elements.recurrence.disabled = false; $('slot-form').elements.recurrenceUntil.disabled = false; $('slot-form').reset(); $('slot-dialog').showModal(); };
+$('close-slot').onclick = () => { mobileEditing = null; if ($('slot-dialog-title')) $('slot-dialog-title').textContent = 'Nouvel événement'; $('slot-form').elements.recurrence.disabled = false; $('slot-form').elements.recurrenceUntil.disabled = false; $('slot-dialog').close(); };
 $('slot-form').onsubmit = async event => {
   event.preventDefault(); const form = new FormData(event.currentTarget);
   const date = form.get('date'); const startAtUtc = new Date(`${date}T${form.get('start')}`).toISOString(); const endAtUtc = new Date(`${date}T${form.get('end')}`).toISOString();
@@ -815,13 +815,6 @@ for (const provider of ['twitch','google']) {
 }
 window.addEventListener('provider-auth',()=>void refreshProviderAccounts());
 
-function renderCompanion() {
-  const cache = companion.snapshot();
-  const draw = (id, values, label) => { const root = $(id); root.replaceChildren(...values.map(item => { const row = document.createElement('div'); row.className = 'companion-row'; row.append(text('span', label(item))); const remove = text('button', 'Supprimer'); remove.type = 'button'; remove.onclick = () => { companion.removeCollection(id, item.id); renderCompanion(); }; row.append(remove); return row; })); };
-  draw('notes', cache.notes, item => item.text); draw('templates', cache.templates, item => item.title); draw('checklist', cache.checklist, item => `${item.done ? '✓' : '○'} ${item.label}`);
-}
-for (const [buttonId, kind, inputId, property] of [['add-note','notes','note-text','text'],['add-template','templates','template-title','title'],['add-check','checklist','check-label','label']]) $(buttonId).onclick = () => { const input = $(inputId); if (!input.value.trim()) return; companion.upsertCollection(kind, { [property]: input.value.trim(), ...(kind === 'checklist' ? { done: false } : {}) }); input.value = ''; renderCompanion(); note('Enregistré localement · À synchroniser.'); };
-renderCompanion();
 const fixtureName = devFixtureName(location);
 if (fixtureName) { const fixture = createMobileFixture(fixtureName); setConnectionMode(CompanionMode.ONLINE_PC); soundboardState = fixture.soundboard; render(fixture.state); renderSoundboard(); showPairing(false); } else void start();
 
@@ -829,5 +822,4 @@ if (fixtureName) { const fixture = createMobileFixture(fixtureName); setConnecti
 // order after the canonical store/transport/controller have installed their owners.
 void import('./features/templates.js')
   .then(() => import('./features/preparation.js'))
-  .then(() => import('./features/planning-polish.js'))
   .catch(error => note(`Initialisation mobile incomplète : ${error.message}`));
