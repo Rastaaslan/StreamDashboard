@@ -26,6 +26,10 @@ import android.security.keystore.KeyGenParameterSpec;
 import android.security.keystore.KeyProperties;
 import android.util.Base64;
 import androidx.core.content.FileProvider;
+import androidx.webkit.WebViewAssetLoader;
+import java.io.ByteArrayInputStream;
+import java.net.URLConnection;
+import java.util.Collections;
 import java.io.File;
 import java.io.FileOutputStream;
 import java.util.concurrent.CountDownLatch;
@@ -33,9 +37,15 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
 
 public class MainActivity extends Activity {
-  private static final String ORIGIN = "http://localhost";
+  private static final String APP_HOST = WebViewAssetLoader.DEFAULT_DOMAIN;
+  // HTTP is intentionally retained for the local app origin so the WebView can
+  // still reach the authenticated cleartext LAN Runtime without mixed-content exceptions.
+  private static final String ORIGIN = "http://" + APP_HOST;
   private WebView webView;
   private ProviderBridge providerBridge;
+  private WebViewAssetLoader assetLoader;
+  private Uri pendingDeepLink;
+  private boolean pageReady = false;
 
   @Override public void onCreate(Bundle state) {
     super.onCreate(state);
@@ -46,50 +56,97 @@ public class MainActivity extends Activity {
     settings.setDomStorageEnabled(true);
     settings.setAllowFileAccess(false);
     settings.setAllowContentAccess(false);
-    settings.setMixedContentMode(WebSettings.MIXED_CONTENT_ALWAYS_ALLOW);
+    settings.setMixedContentMode(WebSettings.MIXED_CONTENT_NEVER_ALLOW);
     settings.setSupportMultipleWindows(false);
+    assetLoader = new WebViewAssetLoader.Builder()
+      .setDomain(APP_HOST)
+      .setHttpAllowed(true)
+      .addPathHandler("/mobile/", this::localAsset)
+      .build();
     webView.addJavascriptInterface(new NativeBridge(), "StreamDashboardNative");
     providerBridge = new ProviderBridge(this);
     webView.addJavascriptInterface(providerBridge, "StreamDashboardProviders");
     webView.setWebChromeClient(new WebChromeClient());
     webView.setWebViewClient(new LocalOnlyClient());
     setContentView(webView);
+    captureDeepLink(getIntent());
     webView.loadUrl(ORIGIN + "/mobile/index.html");
   }
 
-  @Override protected void onNewIntent(Intent intent) { super.onNewIntent(intent); setIntent(intent); deliverPairingLink(); deliverOAuthLink(); }
-  @Override protected void onResume() { super.onResume(); deliverPairingLink(); deliverOAuthLink(); webView.evaluateJavascript("document.dispatchEvent(new Event('visibilitychange'))", null); }
+  @Override protected void onNewIntent(Intent intent) {
+    super.onNewIntent(intent);
+    setIntent(intent);
+    captureDeepLink(intent);
+    deliverPendingDeepLink();
+  }
+
+  @Override protected void onResume() {
+    super.onResume();
+    deliverPendingDeepLink();
+    if (pageReady) webView.evaluateJavascript("document.dispatchEvent(new Event('visibilitychange'))", null);
+  }
+
   @Override public void onBackPressed() { if (webView.canGoBack()) webView.goBack(); else super.onBackPressed(); }
 
-  private void deliverPairingLink() {
-    Uri data = getIntent().getData();
-    if (data != null && "streamdashboard".equals(data.getScheme())) {
+  private void captureDeepLink(Intent intent) {
+    Uri data = intent == null ? null : intent.getData();
+    if (data == null) return;
+    if (DeepLinkRouter.route(data.toString()) != DeepLinkRouter.Route.INVALID) pendingDeepLink = data;
+    intent.setData(null);
+  }
+
+  private void deliverPendingDeepLink() {
+    if (!pageReady || pendingDeepLink == null) return;
+    Uri data = pendingDeepLink;
+    pendingDeepLink = null;
+    DeepLinkRouter.Route route = DeepLinkRouter.route(data.toString());
+    if (route == DeepLinkRouter.Route.PAIR) {
       String quoted = org.json.JSONObject.quote(data.toString());
       webView.evaluateJavascript("window.dispatchEvent(new CustomEvent('native-pairing',{detail:" + quoted + "}))", null);
-      getIntent().setData(null);
+    } else if (route == DeepLinkRouter.Route.OAUTH) {
+      providerBridge.acceptOAuthCallback(data);
     }
   }
-  private void deliverOAuthLink() { Uri data=getIntent().getData(); if(data!=null&&"streamdashboard".equals(data.getScheme())&&"oauth".equals(data.getHost())){providerBridge.acceptOAuthCallback(data);getIntent().setData(null);} }
-  void dispatchProviderAuth(String provider, boolean connected) { webView.evaluateJavascript("window.dispatchEvent(new CustomEvent('provider-auth',{detail:{provider:"+org.json.JSONObject.quote(provider)+",connected:"+connected+"}}))",null); }
+
+  void dispatchProviderAuth(String provider, boolean connected) {
+    if (!pageReady) return;
+    webView.evaluateJavascript("window.dispatchEvent(new CustomEvent('provider-auth',{detail:{provider:"+org.json.JSONObject.quote(provider)+",connected:"+connected+"}}))",null);
+  }
+
+  private WebResourceResponse localAsset(String relativePath) {
+    String asset = "public/" + relativePath;
+    if (asset.endsWith("/")) asset += "index.html";
+    try {
+      InputStream stream = getAssets().open(asset);
+      String mime = URLConnection.guessContentTypeFromName(asset);
+      if (mime == null) mime = asset.endsWith(".js") ? "application/javascript" : "text/plain";
+      return new WebResourceResponse(mime, "UTF-8", stream);
+    } catch (Exception ignored) {
+      return new WebResourceResponse("text/plain", "UTF-8", 404, "Not Found", Collections.emptyMap(), new ByteArrayInputStream(new byte[0]));
+    }
+  }
 
   private final class LocalOnlyClient extends WebViewClient {
-    @Override public void onPageFinished(WebView view, String url) { deliverPairingLink(); }
+    @Override public void onPageFinished(WebView view, String url) {
+      Uri uri = Uri.parse(url);
+      if (APP_HOST.equals(uri.getHost()) && uri.getPath() != null && uri.getPath().startsWith("/mobile/")) {
+        pageReady = true;
+        deliverPendingDeepLink();
+      }
+    }
+
     @Override public WebResourceResponse shouldInterceptRequest(WebView view, WebResourceRequest request) {
       Uri uri = request.getUrl();
-      if ("localhost".equals(uri.getHost()) && uri.getPath().startsWith("/mobile/")) {
-        String asset = "public/" + uri.getPath().substring("/mobile/".length());
-        if (asset.endsWith("/")) asset += "index.html";
-        try {
-          InputStream stream = getAssets().open(asset);
-          String mime = asset.endsWith(".html") ? "text/html" : asset.endsWith(".css") ? "text/css" : asset.endsWith(".png") ? "image/png" : "application/javascript";
-          return new WebResourceResponse(mime, "UTF-8", stream);
-        } catch (Exception ignored) { return null; }
+      if (APP_HOST.equals(uri.getHost())) {
+        if (uri.getPath() != null && uri.getPath().startsWith("/mobile/")) return assetLoader.shouldInterceptRequest(uri);
+        return new WebResourceResponse("text/plain", "UTF-8", 404, "Not Found", Collections.emptyMap(), new ByteArrayInputStream(new byte[0]));
       }
       return null;
     }
+
     @Override public boolean shouldOverrideUrlLoading(WebView view, WebResourceRequest request) {
       Uri uri = request.getUrl();
-      return !("http".equals(uri.getScheme()) && "localhost".equals(uri.getHost()) && uri.getPath().startsWith("/mobile/"));
+      return !("http".equals(uri.getScheme()) && APP_HOST.equals(uri.getHost()) && uri.getPath() != null && uri.getPath().startsWith("/mobile/"));
     }
   }
 
