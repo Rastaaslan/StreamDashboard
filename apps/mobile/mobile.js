@@ -14,7 +14,7 @@ const $ = id => document.getElementById(id);
 
 const activateView = tab => {
   document.querySelectorAll('[data-view]').forEach(view => view.classList.toggle('active', view.dataset.view === tab));
-  const primary = ['prepare', 'settings', 'more'].includes(tab) ? '' : tab;
+  const primary = ['prepare', 'settings', 'sounds', 'more'].includes(tab) ? 'more' : tab;
   document.querySelectorAll('[data-tab]').forEach(button => button.classList.toggle('active', button.dataset.tab === primary));
   try { localStorage.setItem('streamdashboard.mobileTab', tab); } catch { /* navigation must remain usable */ }
 };
