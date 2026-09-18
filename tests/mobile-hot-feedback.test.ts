@@ -5,7 +5,7 @@ import { parseRemoteCommand, toRemoteDashboardState } from '../apps/server/src/r
 import type { DashboardState } from '../packages/contracts/src/index.js';
 
 const index = readFileSync(new URL('../apps/mobile/index.html', import.meta.url), 'utf8');
-const feedback = readFileSync(new URL('../apps/mobile/mobile-live-feedback.js', import.meta.url), 'utf8');
+const feedback = readFileSync(new URL('../apps/mobile/features/preparation.js', import.meta.url), 'utf8');
 const mobile = readFileSync(new URL('../apps/mobile/mobile.js', import.meta.url), 'utf8');
 const transport = readFileSync(new URL('../apps/mobile/transport.js', import.meta.url), 'utf8');
 
@@ -30,13 +30,16 @@ describe('retours à chaud mobile', () => {
   it('utilise un bootstrap HTML unique et charge les features dans un ordre déterministe', () => {
     expect(index.match(/<script type="module"/g)).toHaveLength(1);
     expect(index).toContain('src="mobile.js"');
-    expect(mobile.indexOf("import('./mobile-live-feedback.js')")).toBeGreaterThan(mobile.indexOf("import('./templates-ui.js')"));
-    expect(mobile.indexOf("import('./mobile-polish.js')")).toBeGreaterThan(mobile.indexOf("import('./mobile-live-feedback.js')"));
+    expect(mobile).toContain("import('./features/templates.js')");
+    expect(mobile).toContain("import('./features/preparation.js')");
+    expect(mobile).not.toContain("mobile-live-feedback.js");
+    expect(mobile).not.toContain("mobile-polish.js");
+    expect(mobile).not.toContain("templates-ui.js");
   });
 
   it('Préparer ouvre la prépa et permet de cocher la checklist depuis le remote', () => {
     expect(index).toContain('data-prepare-panel="checklist"');
-    expect(feedback).toContain("transport.command({ type: 'session.prepare' })");
+    expect(feedback).toContain("executeCommand({ type: 'session.prepare' })");
     expect(feedback).toContain("document.querySelector('[data-open-tab=\"prepare\"]')?.click()");
     expect(parseRemoteCommand({ type: 'checklist.toggle', id: 'audio' }, state)).toEqual({ type: 'checklist.toggle', id: 'audio' });
     expect(() => parseRemoteCommand({ type: 'checklist.reset' }, state)).toThrow('réservée au PC');
@@ -56,12 +59,12 @@ describe('retours à chaud mobile', () => {
     expect(feedback).toContain('await syncCompanionNow()');
   });
 
-  it('ajoute une vraie édition et suppression des événements du planning avec fallback compagnon', () => {
-    expect(feedback).toContain('openPlanningEdit(item)');
-    expect(feedback).toContain('submitPlanningEdit(event)');
-    expect(feedback).toContain('deletePlanningItem(item)');
-    expect(transport).toContain('updatePlanning:');
-    expect(transport).toContain('deletePlanning:');
+  it('laisse mobile.js propriétaire du planning avec fallback transport/compagnon', () => {
+    expect(mobile).toContain('transport.updatePlanning');
+    expect(mobile).toContain('transport.deletePlanning');
+    expect(mobile).toContain('companion.updateEvent');
+    expect(mobile).toContain('companion.deleteEvent');
+    expect(feedback).not.toContain('openPlanningEdit(item)');
     expect(transport).toContain('planningFallback');
     expect(transport).toContain('shouldFallbackPlanning');
     expect(transport).toContain('transactional companion POST');
