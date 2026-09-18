@@ -17,17 +17,17 @@ import org.json.*;
 public final class ProviderBridge {
   private static final String TWITCH_SCOPES = "channel:manage:schedule channel:read:schedule";
   private static final String GOOGLE_SCOPES = "https://www.googleapis.com/auth/calendar.events https://www.googleapis.com/auth/calendar.readonly";
+  private static final long OAUTH_PENDING_TTL_MS = 10 * 60_000L;
   private final Activity activity;
   private final SecureCredentialStore credentials;
-  private final Map<String,String> verifiers = new HashMap<>();
 
   ProviderBridge(Activity activity) { this.activity = activity; credentials = new SecureCredentialStore(activity); }
   @JavascriptInterface public String twitchStatus(String ignored) { return status("twitch", BuildConfig.TWITCH_ANDROID_CLIENT_ID); }
   @JavascriptInterface public String googleStatus(String ignored) { return status("google", BuildConfig.GOOGLE_ANDROID_CLIENT_ID); }
   @JavascriptInterface public String twitchAuthorize(String ignored) { return authorize("twitch", BuildConfig.TWITCH_ANDROID_CLIENT_ID, "https://id.twitch.tv/oauth2/authorize", TWITCH_SCOPES); }
   @JavascriptInterface public String googleAuthorize(String ignored) { return authorize("google", BuildConfig.GOOGLE_ANDROID_CLIENT_ID, "https://accounts.google.com/o/oauth2/v2/auth", GOOGLE_SCOPES); }
-  @JavascriptInterface public String twitchLogout(String ignored) { credentials.clear("twitch"); return ok().toString(); }
-  @JavascriptInterface public String googleLogout(String ignored) { credentials.clear("google"); return ok().toString(); }
+  @JavascriptInterface public String twitchLogout(String ignored) { credentials.clear("twitch"); credentials.clear(pendingKey("twitch")); return ok().toString(); }
+  @JavascriptInterface public String googleLogout(String ignored) { credentials.clear("google"); credentials.clear(pendingKey("google")); return ok().toString(); }
   @JavascriptInterface public String twitchSearchCategories(String raw) { return guarded(() -> twitchSearch(body(raw).optString("query"))); }
   @JavascriptInterface public String twitchCreatePlanning(String raw) { return guarded(() -> twitchMutate("create", body(raw))); }
   @JavascriptInterface public String twitchUpdatePlanning(String raw) { return guarded(() -> twitchMutate("update", body(raw))); }
@@ -37,12 +37,16 @@ public final class ProviderBridge {
   @JavascriptInterface public String googleDeletePlanning(String raw) { return guarded(() -> googleMutate("delete", body(raw))); }
 
   void acceptOAuthCallback(Uri uri) {
-    String provider = uri.getHost();
-    if (!"oauth".equals(provider)) return;
-    provider = uri.getQueryParameter("provider");
-    String code = uri.getQueryParameter("code"), state = uri.getQueryParameter("state");
-    String verifier = verifiers.remove(provider + ":" + state);
-    if (code == null || verifier == null) return;
+    if (uri == null || DeepLinkRouter.route(uri.toString()) != DeepLinkRouter.Route.OAUTH) return;
+    String provider = uri.getQueryParameter("provider");
+    String code = uri.getQueryParameter("code");
+    String state = uri.getQueryParameter("state");
+    if (!"twitch".equals(provider) && !"google".equals(provider)) return;
+    if (code == null || state == null) { notifyAuth(provider, false); return; }
+    final String verifier;
+    try { verifier = consumePendingVerifier(provider, state); }
+    catch (Exception ignored) { notifyAuth(provider, false); return; }
+    if (verifier == null) { notifyAuth(provider, false); return; }
     final String selected = provider;
     new Thread(() -> { try { exchangeCode(selected, code, verifier); notifyAuth(selected, true); } catch (Exception ignored) { notifyAuth(selected, false); } }).start();
   }
@@ -53,11 +57,43 @@ public final class ProviderBridge {
     if (clientId.isEmpty()) return failure("NOT_CONFIGURED", provider.equals("google") ? "Google autonome non configuré" : "Twitch autonome non configuré");
     try {
       String verifier = random(48), state = random(24), challenge = base64(MessageDigest.getInstance("SHA-256").digest(verifier.getBytes(StandardCharsets.US_ASCII)));
-      verifiers.put(provider + ":" + state, verifier);
+      long now = System.currentTimeMillis();
+      JSONObject pending = new JSONObject()
+        .put("provider", provider)
+        .put("state", state)
+        .put("verifier", verifier)
+        .put("createdAt", now)
+        .put("expiresAt", now + OAUTH_PENDING_TTL_MS);
+      credentials.put(pendingKey(provider), pending.toString());
       Uri uri = Uri.parse(endpoint).buildUpon().appendQueryParameter("client_id", clientId).appendQueryParameter("redirect_uri", "streamdashboard://oauth?provider=" + provider).appendQueryParameter("response_type", "code").appendQueryParameter("scope", scopes).appendQueryParameter("state", state).appendQueryParameter("code_challenge", challenge).appendQueryParameter("code_challenge_method", "S256").build();
       activity.startActivity(new Intent(Intent.ACTION_VIEW, uri)); return ok().put("launched", true).toString();
     } catch (Exception e) { return failure("AUTH", "Impossible de lancer l’autorisation."); }
   }
+  private static String pendingKey(String provider) { return "oauth_pending_" + provider; }
+
+  private String consumePendingVerifier(String provider, String state) throws Exception {
+    String key = pendingKey(provider);
+    String raw = credentials.get(key);
+    credentials.clear(key); // single-use even for malformed/expired callbacks
+    if (raw.isEmpty()) return null;
+    JSONObject pending;
+    try { pending = new JSONObject(raw); }
+    catch (JSONException error) { return null; }
+    long now = System.currentTimeMillis();
+    long createdAt = pending.optLong("createdAt", 0);
+    long expiresAt = pending.optLong("expiresAt", 0);
+    if (!provider.equals(pending.optString("provider")) || createdAt <= 0 || expiresAt <= now || expiresAt - createdAt > OAUTH_PENDING_TTL_MS) return null;
+    String expectedState = pending.optString("state");
+    if (!constantTimeEquals(expectedState, state)) return null;
+    String verifier = pending.optString("verifier");
+    return verifier.isEmpty() ? null : verifier;
+  }
+
+  private static boolean constantTimeEquals(String left, String right) {
+    if (left == null || right == null) return false;
+    return MessageDigest.isEqual(left.getBytes(StandardCharsets.UTF_8), right.getBytes(StandardCharsets.UTF_8));
+  }
+
   private void exchangeCode(String provider, String code, String verifier) throws Exception {
     String clientId = provider.equals("twitch") ? BuildConfig.TWITCH_ANDROID_CLIENT_ID : BuildConfig.GOOGLE_ANDROID_CLIENT_ID;
     String endpoint = provider.equals("twitch") ? "https://id.twitch.tv/oauth2/token" : "https://oauth2.googleapis.com/token";
