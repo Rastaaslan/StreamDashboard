@@ -8,6 +8,7 @@ import { createNativeProviderAdapter, createStandaloneProviderSync } from './pro
 import { recurrenceSummary } from './shared/recurrence.js';
 import { createMobileFixture, devFixtureName } from './dev-fixtures.js';
 import { acceptsSnapshot, createCommandController, primaryMicCommand } from './command-controller.js';
+import { setMobileContext } from './mobile-context.js';
 
 const $ = id => document.getElementById(id);
 
@@ -42,6 +43,8 @@ const commandController = createCommandController({
 });
 let noteTimer;
 const note = value => { const message = $('message'); message.textContent = String(value || ''); clearTimeout(noteTimer); if (value) noteTimer = setTimeout(() => { message.textContent = ''; }, 4_000); };
+async function ensureCredentialOwner() { if (!credential) credential = await credentialStorage.get() || ''; if (!credential) throw new Error('Télécommande non appairée.'); return credential; }
+setMobileContext({ companion, transport, providerSync, getCredential: () => credential, ensureCredential: ensureCredentialOwner, getMode: () => companionMode, getState: () => state, applyState: next => render(next), executeCommand: command, note });
 const text = (tag, value, className) => {
   const node = document.createElement(tag);
   node.textContent = String(value ?? '');
@@ -824,7 +827,7 @@ if (fixtureName) { const fixture = createMobileFixture(fixtureName); setConnecti
 
 // This is the only HTML bootstrap. Feature modules are loaded in a deterministic
 // order after the canonical store/transport/controller have installed their owners.
-void import('./templates-ui.js')
-  .then(() => import('./mobile-live-feedback.js'))
-  .then(() => import('./mobile-polish.js'))
+void import('./features/templates.js')
+  .then(() => import('./features/preparation.js'))
+  .then(() => import('./features/planning-polish.js'))
   .catch(error => note(`Initialisation mobile incomplète : ${error.message}`));
