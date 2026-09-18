@@ -157,3 +157,17 @@ button{color:inherit}
 .dialog-buttons button{min-height:48px;border-radius:14px;font-weight:900}
 .secondary-button{border:1px solid var(--line);background:transparent}.primary-button{border:1px solid #68488a;background:#261933;color:var(--lavender)}
 @media(max-width:370px){.quick-scenes,.quick-sound-grid{gap:8px}.quick-scenes button,.quick-sound-button{min-height:58px}}
+
+/* Functional wiring states: layout stays frozen, only state colors/disabled affordances change. */
+.status-pill.offline{color:var(--muted);border-color:var(--line);background:#131017}
+.status-pill.offline i{background:var(--muted2);box-shadow:none}
+.status-pill.degraded{color:#f4d18c;border-color:#594629;background:#1c1710}
+.status-pill.degraded i{background:#e3b65d;box-shadow:0 0 8px #e3b65d66}
+.signal-list b.bad{color:var(--danger)}.signal-list b.warn{color:#e3b65d}
+.scene-state.offline{color:var(--muted2)}
+button:disabled{opacity:.42;filter:saturate(.55);cursor:not-allowed}
+.audio-row.muted{opacity:.52}.audio-row.muted .audio-dot{background:var(--muted2);box-shadow:none}
+.live-command{width:100%;min-height:56px;margin-top:18px;border-radius:16px;font-weight:900}
+.live-command.start{border:1px solid #68488a;background:#261933;color:var(--lavender)}
+.event-form-grid{display:grid;grid-template-columns:1fr 1fr;gap:0 10px}
+#connection-hint.error{color:var(--danger)}

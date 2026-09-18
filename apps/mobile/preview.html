@@ -2,7 +2,7 @@
 <html lang="fr">
 <head>
   <meta charset="utf-8">
-  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; object-src 'none'; frame-src 'none'; base-uri 'none'; form-action 'none'">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self' http: https: ws: wss:; object-src 'none'; frame-src 'none'; base-uri 'none'; form-action 'none'">
   <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
   <meta name="theme-color" content="#0b0810">
   <link rel="stylesheet" href="preview.css">
@@ -29,20 +29,20 @@
           <span class="eyebrow">CE SOIR</span>
           <h1>Salut Dam 👋</h1>
         </div>
-        <span class="status-pill live"><i></i> En direct</span>
+        <span class="status-pill live" id="home-live-pill"><i></i> <span id="home-live-copy">En direct</span></span>
       </div>
 
       <article class="hero-card">
         <div class="hero-topline">
           <span class="live-dot"><i></i> LIVE</span>
-          <span class="duration">02:14:32</span>
+          <span class="duration" id="home-duration">02:14:32</span>
         </div>
-        <h2>In Sound Mind — découverte</h2>
-        <p>Horreur psychologique • Twitch</p>
+        <h2 id="home-title">In Sound Mind — découverte</h2>
+        <p id="home-category">Horreur psychologique • Twitch</p>
 
         <div class="metric-row">
-          <div><b>17</b><span>Viewers</span></div>
-          <div><b>6</b><span>Dans le chat</span></div>
+          <div><b id="home-viewers">17</b><span>Viewers</span></div>
+          <div><b id="home-chatters">6</b><span>Dans le chat</span></div>
           <div><b id="home-scene-name">Gameplay</b><span>Scène</span></div>
         </div>
       </article>
@@ -79,15 +79,15 @@
           <button class="text-button" data-go="live">Ouvrir le live</button>
         </div>
         <div class="signal-list">
-          <div><span>OBS</span><b class="good">Connecté</b></div>
-          <div><span>Twitch</span><b class="good">Connecté</b></div>
-          <div><span>Streamlabs</span><b class="muted">Non configuré</b></div>
+          <div><span>OBS</span><b class="good" id="status-obs">Connecté</b></div>
+          <div><span>Twitch</span><b class="good" id="status-twitch">Connecté</b></div>
+          <div><span>Streamlabs</span><b class="muted" id="status-streamlabs">Non configuré</b></div>
         </div>
       </section>
 
       <section class="block compact">
         <div class="section-head"><h2>Chat récent</h2><span>2 messages</span></div>
-        <div class="chat-preview">
+        <div class="chat-preview" id="home-chat-preview">
           <p><b>Mimi</b><span>mdrrrr derrière toi 😭</span></p>
           <p><b>Fred</b><span>gg !</span></p>
         </div>
@@ -97,13 +97,13 @@
     <section class="screen" data-screen="live">
       <div class="screen-title">
         <div><span class="eyebrow">COCKPIT</span><h1>Live</h1></div>
-        <span class="status-pill live"><i></i> 02:14:32</span>
+        <span class="status-pill live" id="live-status-pill"><i></i> <span id="live-status-copy">02:14:32</span></span>
       </div>
 
       <article class="live-core">
         <div class="live-core-title">
           <div><small>SCÈNE ACTIVE</small><h2 id="scene-name">Gameplay</h2></div>
-          <span class="scene-state">OBS OK</span>
+          <span class="scene-state" id="scene-state">OBS OK</span>
         </div>
         <div class="scene-grid">
           <button data-scene="Intro"><span>01</span><b>Intro</b></button>
@@ -144,7 +144,7 @@
     <section class="screen" data-screen="sounds">
       <div class="screen-title">
         <div><span class="eyebrow">RÉACTIONS</span><h1>Sons</h1></div>
-        <span class="status-pill"><i></i> PC connecté</span>
+        <span class="status-pill" id="sounds-pc-pill"><i></i> <span id="sounds-pc-copy">PC connecté</span></span>
       </div>
 
       <label class="search-box">
@@ -185,7 +185,7 @@
         <button><small>DIM</small><b>20</b></button>
       </div>
 
-      <section class="agenda">
+      <section class="agenda" id="agenda">
         <div class="agenda-label"><span>CE SOIR</span><i></i></div>
         <article class="event-card live-event">
           <div class="event-time"><b>20:30</b><span>→ 23:30</span></div>
@@ -207,7 +207,7 @@
         </article>
       </section>
 
-      <button class="export-button">▧ Générer l’image du planning</button>
+      <button class="export-button" id="export-planning">▧ Générer l’image du planning</button>
     </section>
   </main>
 
@@ -251,6 +251,54 @@
     </form>
   </dialog>
 
+  <dialog class="quick-sound-dialog" id="connection-dialog">
+    <form id="connection-form">
+      <div class="sheet-head">
+        <div><span class="eyebrow">CONNEXION</span><h2>Relier le PC</h2></div>
+        <button type="button" id="close-connection">×</button>
+      </div>
+      <p class="dialog-hint" id="connection-hint">Entre l’adresse LAN et le code généré par StreamDashboard Desktop.</p>
+      <label>Adresse du PC
+        <input id="pair-server" inputmode="url" placeholder="192.168.1.42:47832" autocomplete="url">
+      </label>
+      <label>ID d’appairage
+        <input id="pair-id" autocomplete="off">
+      </label>
+      <label>Code
+        <input id="pair-code" autocomplete="one-time-code">
+      </label>
+      <label>Nom du téléphone
+        <input id="pair-name" maxlength="80" value="Android Preview">
+      </label>
+      <div class="dialog-buttons">
+        <button type="button" class="secondary-button" id="forget-connection">Oublier</button>
+        <button type="submit" class="primary-button">Appairer</button>
+      </div>
+    </form>
+  </dialog>
+
+  <dialog class="quick-sound-dialog" id="event-dialog">
+    <form id="event-form">
+      <div class="sheet-head">
+        <div><span class="eyebrow">PLANNING</span><h2>Nouvel événement</h2></div>
+        <button type="button" id="close-event">×</button>
+      </div>
+      <label>Titre<input id="event-title" maxlength="140" required placeholder="FC 26 · FC Peace"></label>
+      <div class="event-form-grid">
+        <label>Date<input id="event-date" type="date" required></label>
+        <label>Début<input id="event-start" type="time" required value="20:30"></label>
+        <label>Fin<input id="event-end" type="time" required value="23:30"></label>
+        <label>Type
+          <select id="event-category"><option value="live">Live</option><option value="personal">Perso</option><option value="production">Production</option></select>
+        </label>
+      </div>
+      <div class="dialog-buttons">
+        <button type="button" class="secondary-button" id="cancel-event">Annuler</button>
+        <button type="submit" class="primary-button">Ajouter</button>
+      </div>
+    </form>
+  </dialog>
+
   <aside class="camp-sheet" id="camp-sheet" hidden>
     <div class="sheet-backdrop" data-close-camp></div>
     <section>
@@ -258,13 +306,13 @@
       <button class="camp-row"><span>✓</span><div><b>Préparation</b><small>Checklist avant live</small></div><i>›</i></button>
       <button class="camp-row"><span>✎</span><div><b>Notes</b><small>Idées et rappels</small></div><i>›</i></button>
       <button class="camp-row"><span>▣</span><div><b>Templates</b><small>Configurations réutilisables</small></div><i>›</i></button>
-      <button class="camp-row"><span>⚙</span><div><b>Connexions</b><small>Twitch, Discord, Streamlabs</small></div><i>›</i></button>
+      <button class="camp-row" id="open-connection"><span>⚙</span><div><b>Connexions</b><small id="connection-copy">PC non appairé</small></div><i>›</i></button>
       <button class="camp-row"><span>◇</span><div><b>Diagnostics</b><small>État et événements</small></div><i>›</i></button>
     </section>
   </aside>
 
   <div class="preview-badge">APERÇU • AUCUNE COMMANDE RÉELLE</div>
   <div class="toast" id="toast" role="status"></div>
-  <script src="preview.js" defer></script>
+  <script type="module" src="preview.js"></script>
 </body>
 </html>
