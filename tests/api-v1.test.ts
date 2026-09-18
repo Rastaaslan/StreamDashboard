@@ -48,6 +48,19 @@ describe('API publique v1', () => {
     expect(events.items[0]).toMatchObject({ schemaVersion: 1, type: 'dashboard.state.updated', source: 'runtime' });
   });
 
+  it('accepte l’origine Android WebViewAssetLoader pour REST et WebSocket', async () => {
+    const app = await start();
+    const origin = 'http://appassets.androidplatform.net';
+    const response = await fetch(`${app.url}/api/v1/state`, { headers: { Origin: origin } });
+    expect(response.status).toBe(200);
+    expect(response.headers.get('access-control-allow-origin')).toBe(origin);
+    await expect(new Promise<void>((resolve, reject) => {
+      const ws = new WebSocket(app.url.replace('http:', 'ws:') + '/ws/v1', { origin });
+      ws.on('open', () => { ws.close(); resolve(); });
+      ws.on('error', reject);
+    })).resolves.toBeUndefined();
+  });
+
   it('refuse une origine WebSocket étrangère ou un faux port local', async () => {
     const app = await start(); const wsUrl = app.url.replace('http:', 'ws:') + '/ws/v1';
     await wsRejected(wsUrl, 'https://evil.example');
