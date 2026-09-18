@@ -14,3 +14,31 @@ main{max-width:1500px;padding:30px clamp(28px,3vw,48px)}header{min-width:0}.head
 .planning-tools>summary{min-height:44px;cursor:pointer;color:var(--purple-core);font-weight:700}.desktop-focus .stats,.desktop-focus .quick,.desktop-focus .planning-tools{display:none}.desktop-focus .live-console{grid-template-columns:minmax(0,1fr)}
 @media(max-width:1100px){body{grid-template-columns:210px minmax(0,1fr)}main{padding:28px}.grid.stats{grid-template-columns:repeat(2,minmax(0,1fr))}.quick{grid-template-columns:repeat(2,minmax(0,1fr))}}
 @media(max-width:760px){body{grid-template-columns:190px minmax(0,1fr)}aside{height:100vh;position:sticky;border-right:1px solid var(--line);border-bottom:0;padding:22px 12px}nav{display:grid;grid-template-columns:1fr;margin-top:24px}.brand small{display:none}main{padding:24px 18px}.header-actions{justify-content:flex-end}.status-pill{display:none}.live-console{grid-template-columns:1fr}}
+.secondary{border-radius:10px;padding:13px 19px;font-weight:750;background:#1c202c;border:1px solid #303647}.connection-cards{display:grid;gap:2px;margin-top:22px}.connection-cards article{display:grid;grid-template-columns:minmax(150px,1fr) minmax(300px,2fr);align-items:center;gap:24px;padding:20px 0;border-bottom:1px solid var(--line)}.connection-cards article>div{display:grid;gap:7px}.connection-cards article span{color:var(--text-secondary);font-size:13px}.connection-cards form{display:flex;justify-content:flex-end;gap:8px;flex-wrap:wrap}.connection-cards input{min-height:44px;min-width:220px;padding:10px 12px;background:#0e1119;border:1px solid #303647;border-radius:9px;color:#fff}.connection-cards button{min-height:44px}@media(max-width:900px){.connection-cards article{grid-template-columns:1fr}.connection-cards form{justify-content:flex-start}.connection-cards input{width:100%}}
+
+
+/* Minimal UI pass — preserve every capability, reduce permanent visual weight. */
+.header-actions [hidden]{display:none!important}
+.ready-summary{color:var(--purple-core);border-color:var(--purple-active);background:rgba(116,64,160,.12)}
+.minimal-hero{padding-block:24px}
+.overview-status{margin-top:14px;display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:0;background:transparent;border-top:1px solid var(--line);border-bottom:1px solid var(--line)}
+.overview-status span{display:flex;align-items:center;justify-content:space-between;gap:10px;min-width:0;padding:14px 16px;border-right:1px solid var(--line);color:var(--text-tertiary);font-size:.78rem}
+.overview-status span:last-child{border-right:0}
+.overview-status b{color:var(--text-primary);font-size:.86rem}
+.minimal-section-head{margin:24px 0 10px}
+.minimal-quick{gap:10px}
+.minimal-quick button{min-height:72px;padding:16px 18px}
+.minimal-quick small{margin-top:2px}
+.settings>.section-label{margin-top:8px}
+body.desktop-focus .overview-status{display:none}
+@media(max-width:1000px){.overview-status{grid-template-columns:repeat(2,minmax(0,1fr))}.overview-status span:nth-child(2){border-right:0}}
+@media(max-width:760px){.overview-status{grid-template-columns:1fr}.overview-status span{border-right:0}}
+
+
+/* Efficiency pass — common actions stay one click away without adding visual noise. */
+.quick-actions{display:flex;align-items:center;gap:6px}
+.quick-action{min-height:34px;padding:7px 10px;border:1px solid var(--line);border-radius:6px;background:transparent;color:var(--text-secondary);font-size:.72rem;font-weight:800}
+.quick-action:hover{border-color:var(--purple-active);color:var(--text-primary)}
+.quick-action.primary-inline{background:var(--purple-active);color:var(--text-primary);border-color:var(--purple-active)}
+@media(max-width:1120px){.quick-actions{order:2;width:100%;justify-content:flex-end}.header-actions{max-width:620px;justify-content:flex-end}}
+@media(max-width:760px){.quick-actions{justify-content:flex-start;overflow-x:auto}.quick-action{flex:0 0 auto}}

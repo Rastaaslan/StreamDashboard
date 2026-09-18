@@ -14,7 +14,7 @@ const $ = id => document.getElementById(id);
 
 const activateView = tab => {
   document.querySelectorAll('[data-view]').forEach(view => view.classList.toggle('active', view.dataset.view === tab));
-  const primary = ['prepare', 'settings', 'more'].includes(tab) ? '' : tab;
+  const primary = ['prepare', 'settings', 'sounds', 'more'].includes(tab) ? 'more' : tab;
   document.querySelectorAll('[data-tab]').forEach(button => button.classList.toggle('active', button.dataset.tab === primary));
   try { localStorage.setItem('streamdashboard.mobileTab', tab); } catch { /* navigation must remain usable */ }
 };
@@ -191,7 +191,7 @@ function renderControlHub(hub) {
   $('home-live-status').textContent = isLive ? `${degraded ? '!' : '●'} En direct` : companionMode === CompanionMode.ONLINE_PC ? '○ Prêt' : '○ Hors ligne'; $('home-live-status').className = `live-line ${isLive ? degraded ? 'danger' : 'ok' : ''}`; $('home-duration').textContent = duration;
   $('direct-scene').textContent = state?.obs?.scene || 'Aucune scène'; $('direct-twitch-state').textContent = humanProviderStatus(hub?.integrations?.twitch?.status || 'DISCONNECTED');
   $('live-workspace-status').textContent = $('home-live-status').textContent; $('live-workspace-status').className = $('home-live-status').className; $('live-duration').textContent = duration; $('live-viewers').textContent = $('hub-viewers').textContent; $('live-chatters').textContent = $('hub-chatters').textContent; $('live-scene').textContent = state?.obs?.scene || '—';
-  const labels = { runtime: 'Runtime', obs: 'OBS', twitch: 'Twitch', discord: 'Discord', streamlabs: 'Streamlabs', wizebot: 'WizeBot' };
+  const labels = { runtime: 'PC', obs: 'OBS', twitch: 'Twitch', discord: 'Discord', streamlabs: 'Streamlabs', wizebot: 'WizeBot' };
   for (const [key, label] of Object.entries(labels)) {
     const status = hub?.integrations?.[key]?.status || 'DISCONNECTED';
     const row = document.createElement('div');
@@ -212,7 +212,7 @@ function renderControlHub(hub) {
 }
 
 const formatClock = seconds => { const value = Math.max(0, Math.floor(seconds)); return `${String(Math.floor(value / 3600)).padStart(2, '0')}:${String(Math.floor(value / 60) % 60).padStart(2, '0')}:${String(value % 60).padStart(2, '0')}`; };
-const humanProviderStatus = status => ({ CONNECTED: 'Connecté', CONNECTING: 'Connexion…', DEGRADED: 'Dégradé', ERROR: 'Erreur', NOT_CONFIGURED: 'Non configuré', DISCONNECTED: 'Déconnecté' })[status] || 'Indisponible';
+const humanProviderStatus = status => ({ CONNECTED: 'Connecté', CONNECTING: 'Connexion…', DEGRADED: 'Connexion instable', ERROR: 'Erreur', NOT_CONFIGURED: 'À configurer', DISCONNECTED: 'Déconnecté' })[status] || 'Indisponible';
 const humanActivity = event => event.type === 'support.received' ? `Soutien · ${event.payload?.displayName || 'Anonyme'}` : event.type === 'stream.started' ? 'Le live a démarré' : event.type === 'stream.stopped' ? 'Le live est terminé' : event.type === 'chat.message.received' ? `Chat · ${event.payload?.chatter?.displayName || 'nouveau message'}` : event.type === 'soundboard.played' ? 'Son joué' : event.type === 'automation.triggered' ? 'Automatisation exécutée' : event.type.replaceAll('.', ' · ');
 
 let moderationCapabilities = null;
@@ -283,7 +283,7 @@ function renderAutomations() {
 }
 let supportState = null;
 const money = (amountMinor, currency) => new Intl.NumberFormat('fr-FR', { style: 'currency', currency }).format(amountMinor / 100);
-async function loadSupports() { if (companionMode !== CompanionMode.ONLINE_PC) { $('support-provider').textContent = 'PC hors ligne · historique conservé sur le PC Runtime.'; return; } try { supportState = await transport.supports(); $('support-provider').textContent = supportState.provider.status === 'NOT_CONFIGURED' ? 'Streamlabs n’est pas encore connecté.' : `Streamlabs · ${humanProviderStatus(supportState.provider.status)}`; renderSupports(); } catch (error) { note(error.message); } }
+async function loadSupports() { if (companionMode !== CompanionMode.ONLINE_PC) { $('support-provider').textContent = 'PC hors ligne · historique conservé sur le PC.'; return; } try { supportState = await transport.supports(); $('support-provider').textContent = supportState.provider.status === 'NOT_CONFIGURED' ? 'Streamlabs n’est pas encore connecté.' : `Streamlabs · ${humanProviderStatus(supportState.provider.status)}`; renderSupports(); } catch (error) { note(error.message); } }
 function renderSupports() {
   if (!supportState) return; const totals = $('support-totals'); totals.replaceChildren();
   for (const [key, label] of [['session', 'LIVE'], ['day', 'AUJOURD’HUI'], ['month', 'CE MOIS']]) { const values = supportState.totals[key] || {}; const card = document.createElement('div'); card.className = 'support-total'; card.append(text('small', label), ...Object.entries(values).map(([currency, amount]) => text('b', money(amount, currency)))); if (!Object.keys(values).length) card.append(text('b', '—')); totals.append(card); }
@@ -293,7 +293,7 @@ function renderSupports() {
 }
 function resourceLink(url, label = 'OUVRIR') { const link = document.createElement('a'); link.href = url; link.target = '_blank'; link.rel = 'noopener noreferrer'; link.textContent = label; return link; }
 async function loadVods(append = false) {
-  if (companionMode !== CompanionMode.ONLINE_PC) { note('PC hors ligne. Les VOD Twitch ne peuvent pas être chargées via le runtime.'); return; }
+  if (companionMode !== CompanionMode.ONLINE_PC) { note('PC hors ligne. Les VOD Twitch ne peuvent pas être chargées via le PC.'); return; }
   try {
     const container = $('vod-list'); if (!append) container.replaceChildren(text('p', 'Chargement des VOD…', 'muted')); const result = await transport.twitchVideos(append ? vodCursor : ''); if (!append) container.replaceChildren();
     for (const vod of result.items || []) {
@@ -305,7 +305,7 @@ async function loadVods(append = false) {
   } catch (error) { note(error.message); }
 }
 async function loadClips(append = false) {
-  if (companionMode !== CompanionMode.ONLINE_PC) { note('PC hors ligne. Les clips Twitch ne peuvent pas être chargés via le runtime.'); return; }
+  if (companionMode !== CompanionMode.ONLINE_PC) { note('PC hors ligne. Les clips Twitch ne peuvent pas être chargés via le PC.'); return; }
   try { const container = $('clip-list'); if (!append) container.replaceChildren(text('p', 'Chargement des clips…', 'muted')); const result = await transport.twitchClips(append ? clipCursor : ''); if (!append) container.replaceChildren(); for (const clip of result.items || []) { const card = document.createElement('article'); card.className = 'resource-card'; card.append(text('b', clip.title), text('small', `${clip.creatorName} · ${clip.viewCount} vues · ${clip.duration}s`, 'muted'), resourceLink(clip.url)); container.append(card); } clipCursor = result.cursor; $('more-clips').hidden = !clipCursor; if (!container.children.length) container.append(text('p', 'Aucun clip disponible.', 'empty-copy')); } catch (error) { note(error.message); }
 }
 
@@ -629,7 +629,9 @@ function organizeMobileShell() {
   document.querySelector('[data-hub-tool="soundboard"]')?.remove();
   const automationPanel = document.querySelector('[data-hub-panel="automations"]'); if (automationPanel) { automationPanel.hidden = false; moreAutomations.append(automationPanel); }
   document.querySelector('[data-hub-tool="automations"]')?.remove();
-  const commandTrigger = $('command-trigger'); commandTrigger.className = 'power-command'; streamMenu?.append(commandTrigger);
+  // Keep instant commands globally one tap away. The command palette is an
+  // efficiency surface, not a secondary settings tool.
+  const commandTrigger = $('command-trigger'); commandTrigger.className = 'command-trigger';
   const message = $('message'); document.body.append(message); message.className = 'app-toast';
 }
 organizeMobileShell();

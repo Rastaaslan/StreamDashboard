@@ -7,7 +7,11 @@ const css = readFileSync(new URL('../apps/web/style.css', import.meta.url), 'utf
 
 describe('Desktop Campfire console', () => {
   it('expose une sidebar stable sans navigation mobile', () => {
-    for (const page of ['Accueil', 'Live', 'Préparer', 'Planning', 'Sons', 'Soutiens', 'Automatisations', 'Connexions', 'Réglages']) expect(app).toContain(`'${page}'`);
+    for (const page of ['Accueil', 'Planning', 'Préparation', 'Réglages']) expect(app).toContain(`'${page}'`);
+    expect(app).not.toContain("['connections', 'Connexions'");
+    expect(app).toContain('function connections()');
+    expect(app).toContain('return `${connections()}<form class="panel settings"');
+    expect(app).toContain('data-value="live"');
     expect(html).toContain('<aside aria-label="Navigation principale">');
     expect(html).not.toContain('bottom-nav');
   });
@@ -19,6 +23,12 @@ describe('Desktop Campfire console', () => {
     expect(app).toContain('<details>');
   });
 
+  it('condense les états sains sans masquer les détails en cas de problème', () => {
+    expect(app).toContain("healthy ? '✓ TOUT EST PRÊT'");
+    expect(app).toContain("$('#obs-pill').hidden = healthy");
+    expect(app).toContain("$('#twitch-pill').hidden = healthy");
+    expect(css).toContain('.overview-status');
+  });
   it('garde planning et configuration avancée en divulgation progressive', () => {
     expect(app).toContain('class="panel space planning-tools"');
     expect(app).toContain('<summary>Outils du planning</summary>');

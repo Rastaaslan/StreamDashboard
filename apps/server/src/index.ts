@@ -54,6 +54,11 @@ import { AutomationRuntime } from './automation-runtime.js';
 import type { Automation, Support } from '../../../packages/core/src/live-control-domains.js';
 import { SupportRuntime } from './support-runtime.js';
 import { StreamlabsAdapter } from '../../../integrations/streamlabs/src/adapter.js';
+import type { StreamlabsTransport } from '../../../integrations/streamlabs/src/adapter.js';
+import { StreamlabsSocketTransport } from '../../../integrations/streamlabs/src/socket-transport.js';
+import { WizeBotAdapter } from '../../../integrations/wizebot/src/adapter.js';
+import type { WizeBotTransport } from '../../../integrations/wizebot/src/adapter.js';
+import { WizeBotHttpTransport } from '../../../integrations/wizebot/src/http-transport.js';
 import { registerLiveControlRoutes } from './live-control-routes.js';
 import {
   AtomicJsonStore,
@@ -106,6 +111,8 @@ export interface DashboardServerOptions {
   logsPath?: string;
   logger?: Pick<Console, 'info' | 'warn' | 'error'>;
   discordFetch?: typeof fetch;
+  streamlabsTransport?: StreamlabsTransport;
+  wizebotTransport?: WizeBotTransport;
 }
 export interface DashboardServerHandle {
   port: number;
@@ -538,7 +545,10 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
     if (ack.status !== 'succeeded') { const error = new Error(ack.message ?? 'Lecture soundboard échouée.'); error.name = ack.errorCode ?? 'SOUNDBOARD_FAILED'; throw error; }
   }, async values => { local.automations = values; await save(); });
   const support = new SupportRuntime(local.supports, async values => { local.supports = values; await save(); }, value => { eventCore.publish({ type: 'support.received', source: value.provider, occurredAt: value.receivedAt, correlationId: `${value.provider}:${value.externalId}`, payload: value }); });
-  const streamlabs = new StreamlabsAdapter(await secrets.getStreamlabsToken?.() ?? process.env.STREAMLABS_SOCKET_TOKEN ?? '', value => support.record(value).then(() => undefined));
+  const streamlabs = new StreamlabsAdapter(await secrets.getStreamlabsToken?.() ?? process.env.STREAMLABS_SOCKET_TOKEN ?? '', value => support.record(value).then(() => undefined), options.streamlabsTransport ?? new StreamlabsSocketTransport({ logger }), logger);
+  const storedWizeBot = await secrets.getWizeBotConfiguration?.() ?? null;
+  const environmentWizeBot = process.env.WIZEBOT_API_URL && process.env.WIZEBOT_TOKEN ? { apiBaseUrl: process.env.WIZEBOT_API_URL, token: process.env.WIZEBOT_TOKEN } : null;
+  const wizebot = new WizeBotAdapter(storedWizeBot ?? environmentWizeBot, options.wizebotTransport ?? new WizeBotHttpTransport(), logger);
 
   const isLocalAddress = (address: string | undefined | null) => LOCAL_ADDRESSES.has(address ?? '');
   const isLocalRequest = (req: express.Request) => isLocalAddress(req.socket.remoteAddress);
@@ -685,7 +695,7 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
         twitch: connectedState(twitch.state.connected, Boolean(options.twitchClientId ?? process.env.TWITCH_CLIENT_ID), twitch.state.error),
         discord: connectedState(discordPublic.connected, discordPublic.configured, discordPublic.error),
         streamlabs: streamlabs.state(),
-        wizebot: integrationState('NOT_SUPPORTED'),
+        wizebot: wizebot.state(),
       },
       availability: { chat: twitch.state.connected ? 'AVAILABLE' : 'NOT_CONFIGURED', support: streamlabs.state().status === 'NOT_SUPPORTED' ? 'NOT_SUPPORTED' : streamlabs.state().status === 'NOT_CONFIGURED' ? 'NOT_CONFIGURED' : 'AVAILABLE', vod: twitch.state.connected ? 'AVAILABLE' : 'NOT_CONFIGURED', clips: twitch.state.connected ? 'AVAILABLE' : 'NOT_CONFIGURED', soundboard: 'AVAILABLE', automation: 'AVAILABLE' },
     };
@@ -1235,7 +1245,7 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
   app.get('/api/v1/health', health);
   app.get('/api/v1/state', (req, res) => res.json(isRemoteRequest(req) ? toRemoteDashboardState(snapshot()) : snapshot()));
   app.get('/api/v1/control-hub', (_req, res) => res.json(snapshot().controlHub));
-  registerLiveControlRoutes({ app, soundboard, automation, support, streamlabs, eventCore, secrets, requireLocal, isRemote: isRemoteRequest, save, sounds: () => local.sounds, setSounds: value => { local.sounds = value; }, sessionStartedAt: () => twitchLive.startedAt });
+  registerLiveControlRoutes({ app, soundboard, automation, support, streamlabs, wizebot, eventCore, secrets, requireLocal, isRemote: isRemoteRequest, save, sounds: () => local.sounds, setSounds: value => { local.sounds = value; }, sessionStartedAt: () => twitchLive.startedAt });
   app.get('/api/v1/twitch/videos', async (req, res, next) => { try { res.json(await twitch.videos(String(req.query.after ?? ''), Number(req.query.first) || 20)); } catch (error) { next(error); } });
   app.delete('/api/v1/twitch/videos/:id', async (req, res, next) => { try { const id = String(req.params.id); if (req.body?.confirmation !== `DELETE ${id}`) { res.status(409).json({ ok: false, error: { code: 'CONFIRM_REQUIRED', message: `Confirmez avec DELETE ${id}.` } }); return; } await twitch.deleteVideo(id); res.sendStatus(204); } catch (error) { next(error); } });
   app.get('/api/v1/twitch/clips', async (req, res, next) => { try { res.json(await twitch.clips(String(req.query.after ?? ''), Number(req.query.first) || 20)); } catch (error) { next(error); } });
@@ -1897,6 +1907,7 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
   twitchLivePoller.unref();
   await validateTwitch().catch(logError);
   await streamlabs.connect();
+  await wizebot.refresh();
   if (google.connected) await refreshGoogleCalendars().catch(logError);
   void obs.configure(local.settings.obsUrl, currentObsPassword).then(broadcast).catch(error => { logError(error); broadcast(); });
   void Promise.resolve(logger.info(`StreamDashboard ready on ${host}:${actualPort}`)).catch(() => undefined);
