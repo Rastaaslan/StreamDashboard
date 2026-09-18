@@ -44,7 +44,7 @@ const commandController = createCommandController({
 let noteTimer;
 const note = value => { const message = $('message'); message.textContent = String(value || ''); clearTimeout(noteTimer); if (value) noteTimer = setTimeout(() => { message.textContent = ''; }, 4_000); };
 async function ensureCredentialOwner() { if (!credential) credential = await credentialStorage.get() || ''; if (!credential) throw new Error('Télécommande non appairée.'); return credential; }
-setMobileContext({ companion, transport, providerSync, getCredential: () => credential, ensureCredential: ensureCredentialOwner, getMode: () => companionMode, getState: () => state, applyState: next => render(next), executeCommand: command, note });
+setMobileContext({ companion, transport, providerSync, getCredential: () => credential, ensureCredential: ensureCredentialOwner, getMode: () => companionMode, getState: () => state, applyState: next => render(next), executeCommand: command, syncCompanion, note });
 const text = (tag, value, className) => {
   const node = document.createElement(tag);
   node.textContent = String(value ?? '');
@@ -444,7 +444,7 @@ async function syncCompanion() {
   if (companionSyncFlight) return companionSyncFlight;
   companionSyncFlight = (async () => {
     const cache = companion.snapshot();
-    const response = await transport.syncCompanion({ schemaVersion: cache.schemaVersion, deviceId, lastKnownServerRevision: cache.serverRevision || 0, operations: cache.pending });
+    const response = await transport.syncCompanion({ schemaVersion: cache.schemaVersion, deviceId, lastKnownServerRevision: cache.serverRevision ?? 0, operations: cache.pending });
     companion.applySyncResponse(response);
     showSyncConflict();
     return response;
