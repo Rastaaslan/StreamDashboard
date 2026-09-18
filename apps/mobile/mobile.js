@@ -12,6 +12,19 @@ import { setMobileContext } from './mobile-context.js';
 
 const $ = id => document.getElementById(id);
 
+const activateView = tab => {
+  document.querySelectorAll('[data-view]').forEach(view => view.classList.toggle('active', view.dataset.view === tab));
+  const primary = ['prepare', 'settings', 'more'].includes(tab) ? '' : tab;
+  document.querySelectorAll('[data-tab]').forEach(button => button.classList.toggle('active', button.dataset.tab === primary));
+  try { localStorage.setItem('streamdashboard.mobileTab', tab); } catch { /* navigation must remain usable */ }
+};
+$('menu-trigger')?.addEventListener('click', event => {
+  event.preventDefault();
+  event.stopPropagation();
+  activateView('more');
+});
+
+
 let credential = '';
 let server = settingsStorage.getServer();
 let state = null;
@@ -590,10 +603,7 @@ function organizeMobileShell() {
 organizeMobileShell();
 
 const selectTab = tab => {
-  document.querySelectorAll('[data-view]').forEach(view => view.classList.toggle('active', view.dataset.view === tab));
-  const primary = ['prepare', 'settings', 'more'].includes(tab) ? '' : tab;
-  document.querySelectorAll('[data-tab]').forEach(button => button.classList.toggle('active', button.dataset.tab === primary));
-  localStorage.setItem('streamdashboard.mobileTab', tab);
+  activateView(tab);
   if (tab === 'sounds') void loadSoundboard();
 };
 document.querySelector('.bottom-nav').onclick = event => { const button = event.target.closest('[data-tab]'); if (button) selectTab(button.dataset.tab); };
