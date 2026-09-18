@@ -375,7 +375,6 @@ function render(next) {
   state = next;
   if (companionMode === CompanionMode.ONLINE_PC) $('pc').textContent = 'Connecté';
   $('obs').textContent = next.obs.connected ? 'Prêt' : 'Déconnecté';
-  $('scene').textContent = next.obs.scene || '—';
   const primaryMic = next.settings.primaryMicInput; const micMuted = primaryMic ? next.obs.inputs?.[primaryMic]?.muted : null; $('direct-mic-state').textContent = primaryMic ? (micMuted === null || micMuted === undefined ? 'Introuvable' : micMuted ? 'Coupé' : 'Ouvert') : 'Non configuré'; $('direct-mic-dot').textContent = primaryMic && micMuted === false ? '●' : '○'; $('direct-mic-dot').className = primaryMic && micMuted === false ? 'ok' : 'muted';
   $('live').textContent = next.obs.streaming ? 'Live' : 'Hors ligne';
   $('live').className = next.obs.streaming ? 'ok' : '';
