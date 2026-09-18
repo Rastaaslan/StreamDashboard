@@ -79,7 +79,7 @@ export interface Sound {
 }
 export interface PublicSound extends Omit<Sound, 'source'> { sourceAvailable: boolean }
 export interface AudioOutput { id: string; name: string; isDefault: boolean; selectable: boolean }
-export interface SoundboardSnapshot { sounds: PublicSound[]; outputs: AudioOutput[]; currentPlayback: { soundId: string; commandId: string; startedAt: string } | null; available: boolean; supportsExplicitOutputSelection: boolean; error: StructuredError | null }
+export interface SoundboardSnapshot { sounds: PublicSound[]; outputs: AudioOutput[]; currentPlayback: { soundId: string; commandId: string; startedAt: string } | null; available: boolean; supportedFormats: string[]; supportsVolume: boolean; supportsStop: boolean; supportsExplicitOutputSelection: boolean; error: StructuredError | null }
 
 export interface TimerState {
   running: boolean;
