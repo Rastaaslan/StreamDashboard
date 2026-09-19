@@ -386,15 +386,15 @@ function ensureStreamerPingHost(){
   host=document.createElement('section');host.id='streamer-ping';host.className='streamer-ping';host.hidden=true;document.body.append(host);return host;
 }
 function syncStreamerPing(){
-  const host=ensureStreamerPingHost();const ping=(state.dashboard?.streamerPings||[]).find(value=>!value.acknowledgedAt);
+  const host=ensureStreamerPingHost();const pending=(state.dashboard?.streamerPings||[]).filter(value=>!value.acknowledgedAt),ping=pending[0];
   if(!state.runtime||!ping){host.hidden=true;host.replaceChildren();activeStreamerPingId=null;return}
   if(activeStreamerPingId===ping.id&&!host.hidden)return;
   activeStreamerPingId=ping.id;host.hidden=false;
-  host.innerHTML=`<div><span class="eyebrow">STREAMER PING</span><h2>${esc(ping.rewardTitle)}</h2><p><b>${esc(ping.userName)}</b> a utilisé cette récompense${ping.rewardCost?` · ${ping.rewardCost} points`:''}.</p>${ping.userInput?`<p class="ping-input">“${esc(ping.userInput)}”</p>`:''}</div><button class="action" data-ping-ack="${esc(ping.id)}">Vu</button>`;
+  host.innerHTML=`<div><span class="eyebrow">STREAMER PING · 1/${pending.length}</span><h2>${esc(ping.rewardTitle)}</h2><p><b>${esc(ping.userName)}</b> a utilisé cette récompense${ping.rewardCost?` · ${ping.rewardCost} points`:''}.</p>${ping.userInput?`<p class="ping-input">“${esc(ping.userInput)}”</p>`:''}</div><button class="action" data-ping-ack="${esc(ping.id)}">Vu</button>`;
   host.querySelector('[data-ping-ack]').onclick=()=>void acknowledgeStreamerPing(ping.id);
 }
 async function acknowledgeStreamerPing(id){
-  try{const next=await request(`/api/v1/streamer-pings/${encodeURIComponent(id)}/ack`,{method:'POST',body:'{}'});applyDashboard(next);render();toast('Streamer Ping acquitté')}catch(error){toast(error.message,true)}
+  try{const next=await request(`/api/v1/streamer-pings/${encodeURIComponent(id)}/ack`,{method:'POST',body:'{}'});applyDashboard(next);if(state.campItem==='Réglages')await loadPingHistory();render();toast('Streamer Ping acquitté')}catch(error){toast(error.message,true)}
 }
 async function loadStreamerPingRewards(){
   if(!state.runtime||state.campItem!=='Réglages'||state.dashboard?.twitch?.redemptionsAvailable!==true)return;
@@ -404,6 +404,8 @@ function bindStreamerPingSettings(){
   if(state.view!=='camp'||state.campItem!=='Réglages')return;
   document.querySelector('[data-ping-action="reauthorize"]')?.addEventListener('click',async()=>{try{const result=await request('/api/v1/twitch/device',{method:'POST',body:'{}'});if(window.streamDashboardDesktop?.openTwitchActivation)await window.streamDashboardDesktop.openTwitchActivation(result.verificationUri);toast(`Code Twitch : ${result.userCode}`)}catch(error){toast(error.message,true)}});
   document.querySelector('[data-ping-action="save"]')?.addEventListener('click',async()=>{const ids=[...document.querySelectorAll('[data-ping-reward]:checked')].map(input=>input.dataset.pingReward);try{const next=await request('/api/v1/settings',{method:'PUT',body:JSON.stringify({streamerPingRewardIds:ids})});applyDashboard(next);toast('Récompenses Streamer Ping enregistrées');render()}catch(error){toast(error.message,true)}});
+  document.querySelector('[data-ping-action="ack-all"]')?.addEventListener('click',async()=>{try{const next=await request('/api/v1/streamer-pings/ack-all',{method:'POST',body:'{}'});applyDashboard(next);await loadPingHistory();render();toast('Tous les Streamer Pings sont vus')}catch(error){toast(error.message,true)}});
+  document.querySelector('[data-ping-action="clear-history"]')?.addEventListener('click',async()=>{if(!confirm('Effacer les Streamer Pings déjà acquittés ?'))return;try{await request('/api/v1/streamer-pings/history',{method:'DELETE'});await loadPingHistory();render();toast('Historique nettoyé')}catch(error){toast(error.message,true)}});
 }
 function requireRuntime(){if(state.runtime)return true;toast('Passe en mode Runtime pour utiliser cette connexion.',true);return false}
 async function refreshAfterConnection(message){await refreshRuntime();if(message)toast(message)}
