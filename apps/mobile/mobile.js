@@ -11,8 +11,10 @@ import { acceptsSnapshot, createCommandController, primaryMicCommand } from './c
 import { setMobileContext } from './mobile-context.js';
 
 const $ = id => document.getElementById(id);
+const params = new URLSearchParams(location.search);
 const fixtureName = devFixtureName(location);
-const previewMode = fixtureName && new URLSearchParams(location.search).get('preview') === '1';
+const previewMode = fixtureName && params.get('preview') === '1';
+const legacyMode = params.get('legacy') === '1';
 
 if (previewMode) {
   const nativeFetch = globalThis.fetch?.bind(globalThis);
@@ -162,9 +164,18 @@ function setConnectionMode(mode) {
   remoteButtons(!online);
 }
 
+function openCanonicalPairing(pendingLink = '') {
+  if (pendingLink) localStorage.setItem('streamdashboard.pendingPairing', pendingLink);
+  location.href = './preview.html?runtime=1';
+}
+
 function showPairing(show) {
+  if (legacyMode && show) {
+    openCanonicalPairing();
+    return;
+  }
   $('pairing').hidden = !show;
-  $('forget-device').hidden = show;
+  $('forget-device').hidden = show || legacyMode;
   if (show) remoteButtons(true);
 }
 
@@ -693,7 +704,6 @@ async function connect() {
   }
 }
 
-const params = new URLSearchParams(location.search);
 if (params.get('pair')) $('pair-id').value = params.get('pair');
 if (params.get('code')) $('pair-code').value = params.get('code');
 if (params.has('pair') || params.has('code')) history.replaceState(null, '', location.pathname);
@@ -734,7 +744,7 @@ $('publish-discord').onclick = async () => {
     note(`Planning publié dans #${posted.channelName || 'planning'}.`);
   } catch (error) { note(error.message); }
 };
-$('edit-server').onclick = () => { showPairing(true); $('pair-server').focus(); };
+if ($('edit-server')) $('edit-server').onclick = () => { if (legacyMode) openCanonicalPairing(); else { showPairing(true); $('pair-server').focus(); } };
 $('keep-awake').onchange = () => globalThis.StreamDashboardNative?.setKeepAwake?.($('keep-awake').checked);
 
 function organizeMobileShell() {
@@ -972,12 +982,23 @@ if ('serviceWorker' in navigator && window.isSecureContext) {
 }
 setInterval(tickTimer, 1000);
 window.addEventListener('native-pairing', event => {
-  $('pair-link').value = String(event.detail || '');
+  const link = String(event.detail || '');
+  if (legacyMode) {
+    openCanonicalPairing(link);
+    return;
+  }
+  $('pair-link').value = link;
   showPairing(true);
   void pair();
 });
 async function start() {
   credential = await credentialStorage.get();
+  if (legacyMode) {
+    $('pairing').hidden = true;
+    $('forget-device').hidden = true;
+    document.querySelector('[data-settings-target="pairing"]')?.remove();
+    $('edit-server')?.remove();
+  }
   if (isAndroidRuntime()) {
     void refreshProviderAccounts();
     $('android-options').hidden = false;
