@@ -147,7 +147,7 @@ function bindConnections(){
   const guild=document.querySelector('#preview-discord-guild');if(guild)guild.onchange=()=>void loadDiscordChannels().catch(error=>toast(error.message,true));
   document.querySelectorAll('[data-revoke-device]').forEach(button=>button.onclick=async()=>{if(!requireRuntime()||!confirm('Révoquer immédiatement cette télécommande ?'))return;try{await request(`/api/v1/remote/devices/${encodeURIComponent(button.dataset.revokeDevice)}`,{method:'DELETE'});await refreshAfterConnection('Télécommande révoquée')}catch(error){toast(error.message,true)}});
   document.querySelectorAll('[data-connection-action]').forEach(button=>button.onclick=async event=>{
-    if(button.type==='submit')return;event.preventDefault();if(!requireRuntime())return;
+    if(button.closest('form')&&button.type==='submit')return;event.preventDefault();if(!requireRuntime())return;
     try{
       const action=button.dataset.connectionAction;
       if(action==='obs-launch'){const result=await window.streamDashboardDesktop?.ensureObsRunning?.();toast(result?.detail||'Demande de lancement OBS envoyée');return}
