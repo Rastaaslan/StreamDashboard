@@ -84,7 +84,10 @@ function showPairing(show) {
 }
 
 async function command(value) {
-  if (busy || !credential || !ws || ws.readyState !== WebSocket.OPEN) {
+  // Commands are acknowledged by the authenticated HTTP endpoint.  The socket is
+  // only a state push optimisation and may reconnect independently; making it a
+  // prerequisite used to turn every control into a dead button during that window.
+  if (busy || !credential || companionMode !== CompanionMode.ONLINE_PC) {
     note('Télécommande non connectée.');
     return false;
   }
@@ -626,7 +629,7 @@ $('slot-form').onsubmit = async event => {
     if (form.get('twitch') === 'on' && !$('slot-twitch-game-id').value) throw new Error('Sélectionnez une catégorie Twitch officielle.');
     const recurrenceValue = String(form.get('recurrence') || ''); const [frequency, interval] = recurrenceValue.split('-'); const untilDate = String(form.get('recurrenceUntil') || '');
     const recurrence = recurrenceValue ? { frequency, interval: Number(interval), timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone || 'Europe/Paris', until: untilDate ? new Date(`${untilDate}T23:59:59`).toISOString() : null, exceptions: {} } : undefined;
-    const value = { title: form.get('title'), startAtUtc, endAtUtc, category: form.get('category'), description: form.get('description') || '', recurrence, desiredPublication: { local: false, twitch: form.get('twitch') === 'on', google: form.get('google') === 'on' }, twitchCategoryId: form.get('twitch') === 'on' ? $('slot-twitch-game-id').value : undefined, twitchCategoryName: form.get('twitch') === 'on' ? $('slot-twitch-category').value : undefined };
+    const value = { title: form.get('title'), startAtUtc, endAtUtc, category: form.get('category'), description: form.get('description') || '', recurrence, desiredPublication: { local: true, twitch: form.get('twitch') === 'on', google: form.get('google') === 'on' }, twitchCategoryId: form.get('twitch') === 'on' ? $('slot-twitch-game-id').value : undefined, twitchCategoryName: form.get('twitch') === 'on' ? $('slot-twitch-category').value : undefined };
     planningPage = 1;
     if (mobileEditing?.scope === 'occurrence') {
       const patch = { title: value.title, startAtUtc, endAtUtc, category: value.category, twitchCategoryId: value.twitchCategoryId, twitchCategoryName: value.twitchCategoryName, desiredPublication: value.desiredPublication };
@@ -777,9 +780,28 @@ window.addEventListener('provider-auth',()=>void refreshProviderAccounts());
 
 function renderCompanion() {
   const cache = companion.snapshot();
+  $('remote-device-id').textContent = deviceId || 'Non appairé';
+  $('remote-server-revision').textContent = String(cache.serverRevision || 0);
+  $('remote-pending-count').textContent = String(cache.pending.length);
+  $('remote-conflict-count').textContent = String(cache.conflicts.length);
+  $('remote-last-sync').textContent = cache.lastServerSyncAt
+    ? new Date(cache.lastServerSyncAt).toLocaleString('fr-FR')
+    : 'Jamais';
   const draw = (id, values, label) => { const root = $(id); root.replaceChildren(...values.map(item => { const row = document.createElement('div'); row.className = 'companion-row'; row.append(text('span', label(item))); const remove = text('button', 'Supprimer'); remove.type = 'button'; remove.onclick = () => { companion.removeCollection(id, item.id); renderCompanion(); }; row.append(remove); return row; })); };
   draw('notes', cache.notes, item => item.text); draw('templates', cache.templates, item => item.title); draw('checklist', cache.checklist, item => `${item.done ? '✓' : '○'} ${item.label}`);
 }
+$('sync-now').onclick = async () => {
+  const button = $('sync-now');
+  if (companionMode !== CompanionMode.ONLINE_PC) { note('PC hors ligne. La file locale est conservée.'); return; }
+  button.disabled = true;
+  try {
+    await syncCompanion();
+    await fetchState();
+    renderCompanion();
+    note('Synchronisation confirmée par le PC.');
+  } catch (error) { note(`Synchronisation impossible. ${error.message}`); }
+  finally { button.disabled = false; }
+};
 for (const [buttonId, kind, inputId, property] of [['add-note','notes','note-text','text'],['add-template','templates','template-title','title'],['add-check','checklist','check-label','label']]) $(buttonId).onclick = () => { const input = $(inputId); if (!input.value.trim()) return; companion.upsertCollection(kind, { [property]: input.value.trim(), ...(kind === 'checklist' ? { done: false } : {}) }); input.value = ''; renderCompanion(); note('Enregistré localement · À synchroniser.'); };
 renderCompanion();
 const fixtureName = devFixtureName(location);

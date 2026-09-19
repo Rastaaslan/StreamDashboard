@@ -112,4 +112,18 @@ describe('Android remote runtime', () => {
     expect(nextRetry(8000)).toBe(10000);
     expect(nextRetry(10000)).toBe(10000);
   });
+
+  it('ne bloque pas les commandes HTTP pendant une reconnexion WebSocket et conserve le planning local', () => {
+    expect(mobileScript).toContain('companionMode !== CompanionMode.ONLINE_PC');
+    expect(mobileScript).not.toMatch(/async function command\(value\)[\s\S]{0,250}ws\.readyState/);
+    expect(mobileScript).toContain('desiredPublication: { local: true');
+  });
+
+  it('expose un diagnostic de synchronisation et une resynchronisation manuelle', () => {
+    for (const id of ['remote-device-id', 'remote-server-revision', 'remote-pending-count', 'remote-conflict-count', 'remote-last-sync', 'sync-now']) {
+      expect(mobileIndex).toContain(`id="${id}"`);
+    }
+    expect(mobileScript).toContain("$('sync-now').onclick = async");
+    expect(mobileScript).toContain("note('Synchronisation confirmée par le PC.')");
+  });
 });
