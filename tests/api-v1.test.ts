@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from 'vitest';
-import { mkdtemp, readFile, rm } from 'node:fs/promises';
+import { access, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import WebSocket from 'ws';
@@ -141,6 +141,19 @@ describe('API publique v1', () => {
   it('refuse une écoute LAN sans pairing authentifié', async () => {
     dataDir = await mkdtemp(path.join(os.tmpdir(), 'streamdashboard-api-'));
     await expect(startDashboardServer({ port: 0, host: '0.0.0.0', dataDir })).rejects.toThrow(/remote-LAN/);
+  });
+
+  it('gère la bibliothèque Soundboard locale sans exposer le chemin source', async () => {
+    const app = await start(); const library = path.join(dataDir, 'soundboard'); const file = path.join(library, 'bonk.mp3');
+    await writeFile(file, 'fake-audio');
+    const created = await fetch(`${app.url}/api/v1/soundboard/sounds`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ libraryId: 'bonk.mp3', name: 'BONK', category: 'Réactions', volume: .8, cooldownMs: 500, favorite: true, enabled: true, monitoringMode: 'stream' }) });
+    expect(created.status).toBe(201); const snapshot = await created.json();
+    expect(snapshot.sounds[0]).toMatchObject({ name: 'BONK', category: 'Réactions', volume: .8, monitoringMode: 'stream', sourceAvailable: true });
+    expect(JSON.stringify(snapshot)).not.toContain(file); const id = snapshot.sounds[0].id;
+    const edited = await fetch(`${app.url}/api/v1/soundboard/sounds/${id}`, { method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ monitoringMode: 'monitor', volume: .5 }) });
+    expect(await edited.json()).toMatchObject({ sounds: [expect.objectContaining({ id, monitoringMode: 'monitor', volume: .5 })] });
+    expect((await fetch(`${app.url}/api/v1/soundboard/sounds/${id}`, { method: 'DELETE' })).status).toBe(204);
+    await expect(access(file)).rejects.toThrow();
   });
 
   it('arrête le serveur proprement et de façon idempotente', async () => {
