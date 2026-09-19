@@ -102,7 +102,7 @@ function syncMobileStreamerPing(pings = []) {
     if (dialog.open) dialog.close();
     return;
   }
-  notifyMobileStreamerPing(ping, pending.length);
+  notifyMobileStreamerPing(pending.at(-1), pending.length);
   if (activeMobileStreamerPingId === ping.id && dialog.open) {
     const label = dialog.querySelector('.console-label'); if (label) label.textContent = `STREAMER PING · 1/${pending.length}`;
     return;
@@ -966,7 +966,7 @@ async function start() {
       if (!document.hidden) { ws?.close(); void connect(); }
       else if (state?.streamerPings?.length) {
         const pending = state.streamerPings.filter(value => !value.acknowledgedAt);
-        notifyMobileStreamerPing(pending[0], pending.length);
+        notifyMobileStreamerPing(pending.at(-1), pending.length);
       }
     });
   } else {
