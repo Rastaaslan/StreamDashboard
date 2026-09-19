@@ -28,7 +28,8 @@ describe('API providers', () => {
     folder = await mkdtemp(join(tmpdir(), 'streamdashboard-streamlabs-oauth-'));
     const secrets = new MemorySecretStore();
     const close = vi.fn(async () => undefined);
-    const transport = { connect: vi.fn(async (_token: string) => close) };
+    let onTip: ((value: unknown) => void) | undefined;
+    const transport = { connect: vi.fn(async (_token: string, nextTip: (value: unknown) => void) => { onTip = nextTip; return close; }) };
     const streamlabsFetch = vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
       const url = String(input);
       if (url === 'https://streamlabs.com/api/v2.0/token') {
@@ -42,20 +43,32 @@ describe('API providers', () => {
         expect(new Headers(init?.headers).get('authorization')).toBe('Bearer access-secret');
         return new Response(JSON.stringify({ socket_token: 'socket-secret' }), { status: 200, headers: { 'content-type': 'application/json' } });
       }
+      if (url.startsWith('https://streamlabs.com/api/v2.0/donations?')) {
+        expect(init?.method).toBe('POST');
+        expect(new Headers(init?.headers).get('authorization')).toBe('Bearer access-secret');
+        const donation = new URL(url);
+        expect(donation.searchParams.get('name')).toBe('StreamDashboard');
+        expect(donation.searchParams.get('amount')).toBe('1');
+        expect(donation.searchParams.get('currency')).toBe('EUR');
+        expect(donation.searchParams.get('skip_alert')).toBe('no');
+        const message = donation.searchParams.get('message') ?? '';
+        setTimeout(() => onTip?.({ id: 'real-test-donation', name: 'StreamDashboard', message, amountMinor: 100, currency: 'EUR', receivedAt: new Date().toISOString() }), 10);
+        return new Response(JSON.stringify({ data: { donation_id: 'real-test-donation' } }), { status: 200, headers: { 'content-type': 'application/json' } });
+      }
       throw new Error(`Unexpected Streamlabs URL ${url}`);
     });
     server = await startDashboardServer({ port: 0, dataDir: folder, secretStore: secrets, streamlabsTransport: transport, streamlabsFetch });
     const call = (path: string, method = 'GET', body?: unknown) => fetch(server!.url + path, { method, headers: { 'content-type': 'application/json' }, body: body === undefined ? undefined : JSON.stringify(body) });
 
     const configured = await (await call('/api/v1/supports/streamlabs/oauth/config', 'PUT', { clientId: 'client-id', clientSecret: 'client-secret' })).json();
-    expect(configured).toMatchObject({ configured: true, authorized: false, connected: false, scope: 'socket.token' });
+    expect(configured).toMatchObject({ configured: true, authorized: false, connected: false, scope: 'socket.token donations.create' });
     expect(await secrets.getStreamlabsOAuth()).toEqual({ clientId: 'client-id', clientSecret: 'client-secret' });
 
     const started = await (await call('/api/v1/supports/streamlabs/oauth/start', 'POST')).json() as { authorizationUrl: string };
     const authorization = new URL(started.authorizationUrl);
     expect(authorization.origin + authorization.pathname).toBe('https://streamlabs.com/api/v2.0/authorize');
     expect(authorization.searchParams.get('client_id')).toBe('client-id');
-    expect(authorization.searchParams.get('scope')).toBe('socket.token');
+    expect(authorization.searchParams.get('scope')).toBe('socket.token donations.create');
     expect(authorization.searchParams.get('redirect_uri')).toBe('http://127.0.0.1:47832/api/v1/streamlabs/oauth/callback');
     const state = authorization.searchParams.get('state');
     expect(state).toMatch(/^streamlabs_/);
@@ -70,8 +83,14 @@ describe('API providers', () => {
     const publicState = await call('/api/v1/state').then(value => value.text());
     for (const secret of ['client-secret', 'access-secret', 'socket-secret']) expect(publicState).not.toContain(secret);
     const status = await call('/api/v1/supports/streamlabs/oauth/status').then(value => value.json());
-    expect(status).toMatchObject({ configured: true, authorized: true, connected: true });
+    expect(status).toMatchObject({ configured: true, authorized: true, connected: true, scope: 'socket.token donations.create' });
     expect(JSON.stringify(status)).not.toContain('client-secret');
+
+    const realTest = await call('/api/v1/supports/streamlabs/test-real', 'POST');
+    expect(realTest.status).toBe(201);
+    expect(await realTest.json()).toMatchObject({ ok: true, created: true, socketReceived: true, support: { provider: 'streamlabs', amountMinor: 100, currency: 'EUR' } });
+    const supports = await call('/api/v1/supports').then(value => value.json());
+    expect(supports.history.some((value: { message?: string }) => value.message?.includes('SDTEST-'))).toBe(true);
   });
 
   it('configure, rafraîchit et déconnecte WizeBot sans exposer son token', async () => {
