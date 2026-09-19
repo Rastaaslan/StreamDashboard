@@ -28,7 +28,7 @@ test('le bootstrap mobile réel reste navigable lorsque REST est indisponible', 
       };
       Object.defineProperty(window, '__listenerCounts', { value: counts });
     });
-    await page.goto(`${origin}/mobile/`);
+    await page.route('**/api/v1/**', route => route.abort('connectionrefused'));
     await page.evaluate(() => {
       localStorage.clear();
       localStorage.setItem('streamdashboard.device', 'unreachable-test-device');
@@ -38,8 +38,7 @@ test('le bootstrap mobile réel reste navigable lorsque REST est indisponible', 
         templates: [],
       }));
     });
-    await page.route('**/api/v1/**', route => route.abort('connectionrefused'));
-    await page.reload();
+    await page.goto(`${origin}/mobile/`);
 
     await expect(page.locator('#checklist')).toContainText('Checklist hors ligne conservée');
     await expect(page.locator('#templates')).toContainText('Aucun template');
