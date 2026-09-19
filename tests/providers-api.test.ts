@@ -56,11 +56,11 @@ describe('API providers', () => {
     expect(authorization.origin + authorization.pathname).toBe('https://streamlabs.com/api/v2.0/authorize');
     expect(authorization.searchParams.get('client_id')).toBe('client-id');
     expect(authorization.searchParams.get('scope')).toBe('socket.token');
-    expect(authorization.searchParams.get('redirect_uri')).toBe('http://127.0.0.1:47832/api/v1/supports/streamlabs/oauth/callback');
+    expect(authorization.searchParams.get('redirect_uri')).toBe('http://127.0.0.1:47832/api/v1/streamlabs/oauth/callback');
     const state = authorization.searchParams.get('state');
     expect(state).toMatch(/^streamlabs_/);
 
-    const callback = await call(`/api/v1/supports/streamlabs/oauth/callback?code=oauth-code&state=${encodeURIComponent(state!)}`);
+    const callback = await call(`/api/v1/streamlabs/oauth/callback?code=oauth-code&state=${encodeURIComponent(state!)}`);
     expect(callback.status).toBe(200);
     expect(await callback.text()).toContain('Streamlabs connecté');
     expect(transport.connect).toHaveBeenCalledWith('socket-secret', expect.any(Function), expect.any(Function));
