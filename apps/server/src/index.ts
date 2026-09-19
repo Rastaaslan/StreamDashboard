@@ -1688,6 +1688,8 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
         void twitch.waitForDeviceAuthorization().then(async () => {
           Object.assign(local.twitch, twitch.publicIdentity());
           await save();
+          twitchEventSub.stop();
+          twitchEventSubStarted = false;
           await validateTwitch();
         }).catch(error => { logError(error); broadcast(); });
       }
