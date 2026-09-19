@@ -682,11 +682,11 @@ const boot=async()=>{
     $('#preview-badge')?.remove();
     const name=$('#pair-name'); if(name) name.value='Android Remote';
   }
+  credential=await credentialStorage.get()||'';
+  server=settingsStorage.getServer();
   renderCurrentWeek();
   resetProductionShell();
   renderQuickSounds();renderFullSoundboard();
-  credential=await credentialStorage.get()||'';
-  server=settingsStorage.getServer();
   $('#pair-server').value=server||'';
   const pendingPairing = localStorage.getItem('streamdashboard.pendingPairing');
   if (pendingPairing) {
