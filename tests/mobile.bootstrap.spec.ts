@@ -32,11 +32,16 @@ test('le bootstrap mobile réel reste navigable lorsque REST est indisponible', 
     await page.evaluate(() => {
       localStorage.clear();
       localStorage.setItem('streamdashboard.device', 'unreachable-test-device');
+      localStorage.setItem('streamdashboard.companion.v3', JSON.stringify({
+        schemaVersion: 3,
+        checklist: [{ id: 'offline-check', label: 'Checklist hors ligne conservée', done: false }],
+        templates: [],
+      }));
     });
     await page.route('**/api/v1/**', route => route.abort('connectionrefused'));
     await page.reload();
 
-    await expect(page.locator('#checklist')).toContainText('Checklist vide');
+    await expect(page.locator('#checklist')).toContainText('Checklist hors ligne conservée');
     await expect(page.locator('#templates')).toContainText('Aucun template');
     await expect(page.locator('#connection')).not.toHaveText('Connexion au PC…');
     expect(runtimeErrors).toEqual([]);
