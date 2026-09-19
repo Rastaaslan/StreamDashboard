@@ -26,6 +26,7 @@ const AUTOMATION_ACTIONS = ['soundboard.play', 'obs.scene', 'obs.media.restart',
 export function registerLiveControlRoutes(options: Options) {
   const { app, soundboard, automation, support, streamlabs, streamlabsOAuth, wizebot, eventCore } = options;
   let pendingStreamlabsOAuth: { state: string; expiresAt: number } | null = null;
+  let lastRealStreamlabsTestAt = 0;
   const streamlabsOAuthStatus = async () => {
     const configuration = await options.secrets.getStreamlabsOAuth?.() ?? null;
     return {
@@ -33,7 +34,7 @@ export function registerLiveControlRoutes(options: Options) {
       authorized: Boolean(configuration?.accessToken),
       connected: streamlabs.state().status === 'CONNECTED',
       redirectUri: options.streamlabsRedirectUri,
-      scope: 'socket.token',
+      scope: 'socket.token donations.create',
     };
   };
   app.get('/api/v1/events', (req, res) => { const string = (value: unknown, max: number) => typeof value === 'string' && value.length <= max ? value : undefined; res.json({ items: eventCore.recent({ type: string(req.query.type, 120), source: string(req.query.source, 80), correlationId: string(req.query.correlationId, 128), limit: Number(req.query.limit) || 100 }) }); });
@@ -151,6 +152,44 @@ export function registerLiveControlRoutes(options: Options) {
   app.put('/api/v1/supports/streamlabs/config', async (req, res, next) => { try { if (!options.requireLocal(req, res)) return; const token = String(req.body?.token ?? '').trim(); if (!token || token.length > 1_000) throw new Error('Token Streamlabs invalide.'); await streamlabs.disconnect(); await options.secrets.setStreamlabsToken?.(token); streamlabs.configure(token); await streamlabs.connect(); options.broadcast(); res.json(streamlabs.state()); } catch (error) { next(error); } });
   app.delete('/api/v1/supports/streamlabs/config', async (req, res, next) => { try { if (!options.requireLocal(req, res)) return; await streamlabs.disconnect(); await options.secrets.clearStreamlabsToken?.(); const configuration = await options.secrets.getStreamlabsOAuth?.() ?? null; if (configuration?.clientId && configuration.clientSecret) await options.secrets.setStreamlabsOAuth?.({ clientId: configuration.clientId, clientSecret: configuration.clientSecret }); streamlabs.configure(''); pendingStreamlabsOAuth = null; options.broadcast(); res.json(streamlabs.state()); } catch (error) { next(error); } });
   app.post('/api/v1/supports/streamlabs/test', async (req, res, next) => { try { if (!options.requireLocal(req, res)) return; const now = new Date().toISOString(); const value = await support.record({ id: `streamlabs:test:${Date.now()}`, provider: 'streamlabs', externalId: `test:${Date.now()}`, displayName: 'Test StreamDashboard', amountMinor: 100, currency: 'EUR', message: '[TEST] Soutien Streamlabs', receivedAt: now }); eventCore.publish({ type: 'test.support', source: 'test', correlationId: value.support.id, payload: { ...value.support, test: true } }); res.status(201).json({ support: value.support, test: true }); } catch (error) { next(error); } });
+  app.post('/api/v1/supports/streamlabs/test-real', async (req, res, next) => {
+    try {
+      if (!options.requireLocal(req, res)) return;
+      if (Date.now() - lastRealStreamlabsTestAt < 30_000) {
+        res.status(429).json({ ok: false, error: { code: 'STREAMLABS_TEST_RATE_LIMIT', message: 'Attends 30 secondes entre deux tests réels Streamlabs.' } });
+        return;
+      }
+      const configuration = await options.secrets.getStreamlabsOAuth?.() ?? null;
+      if (!configuration?.accessToken) throw new Error('Réautorise Streamlabs pour accorder le scope donations.create.');
+      if (streamlabs.state().status !== 'CONNECTED') throw new Error('Le Socket Streamlabs n’est pas connecté. Réautorise Streamlabs puis réessaie.');
+      lastRealStreamlabsTestAt = Date.now();
+      const marker = `SDTEST-${randomUUID().slice(0, 8)}`;
+      const startedAt = Date.now();
+      await streamlabsOAuth.createDonation(configuration.accessToken, {
+        name: 'StreamDashboard',
+        message: `[TEST] StreamDashboard ${marker}`,
+        identifier: `streamdashboard-${marker.toLowerCase()}`,
+        amount: 1,
+        currency: 'EUR',
+        skipAlert: false,
+      });
+      const deadline = Date.now() + 12_000;
+      let received: ReturnType<typeof support.snapshot>['history'][number] | undefined;
+      while (Date.now() < deadline) {
+        received = support.snapshot(options.sessionStartedAt()).history.find(value =>
+          value.provider === 'streamlabs'
+          && value.message.includes(marker)
+          && Date.parse(value.receivedAt) >= startedAt - 1_000);
+        if (received) break;
+        await new Promise(resolve => setTimeout(resolve, 250));
+      }
+      if (!received) {
+        res.status(504).json({ ok: false, error: { code: 'STREAMLABS_SOCKET_TEST_TIMEOUT', message: 'Donation test envoyée à Streamlabs, mais aucun retour n’a été reçu sur le Socket Streamlabs dans les 12 secondes.' } });
+        return;
+      }
+      res.status(201).json({ ok: true, created: true, socketReceived: true, support: received });
+    } catch (error) { next(error); }
+  });
   app.get('/api/v1/wizebot', (_req, res) => res.json(wizebot.state()));
   app.put('/api/v1/wizebot/config', async (req, res, next) => { try { if (!options.requireLocal(req, res)) return; const apiBaseUrl = String(req.body?.apiBaseUrl ?? '').trim(); const token = String(req.body?.token ?? '').trim(); let url: URL; try { url = new URL(apiBaseUrl); } catch { throw new Error('Adresse API WizeBot invalide.'); } if (url.protocol !== 'https:' || !token || token.length > 1_000) throw new Error('Configuration WizeBot invalide.'); const configuration = { apiBaseUrl: url.toString(), token }; await options.secrets.setWizeBotConfiguration?.(configuration); wizebot.configure(configuration); res.json(await wizebot.refresh()); } catch (error) { next(error); } });
   app.post('/api/v1/wizebot/refresh', async (req, res, next) => { try { if (!options.requireLocal(req, res)) return; res.json(await wizebot.refresh()); } catch (error) { next(error); } });
