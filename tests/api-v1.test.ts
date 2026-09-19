@@ -112,8 +112,8 @@ describe('API publique v1', () => {
     const app = await start();
     const remote = await fetch(`${app.url}/api/v1/settings`, { method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ obsUrl: 'ws://example.com:4455' }) });
     expect(remote.status).toBe(400);
-    const updated = await fetch(`${app.url}/api/v1/settings`, { method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ streamerName: 'Smoke', obsExecutablePath: 'C:\\OBS\\bin\\64bit\\obs64.exe' }) }).then(r => r.json());
-    expect(updated.settings).toMatchObject({ streamerName: 'Smoke', obsExecutablePath: 'C:\\OBS\\bin\\64bit\\obs64.exe', obsUrl: 'ws://127.0.0.1:4455' });
+    const updated = await fetch(`${app.url}/api/v1/settings`, { method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ streamerName: 'Smoke', obsExecutablePath: 'C:\\OBS\\bin\\64bit\\obs64.exe', streamerPingRewardIds: ['reward-water', 'reward-stretch'] }) }).then(r => r.json());
+    expect(updated.settings).toMatchObject({ streamerName: 'Smoke', obsExecutablePath: 'C:\\OBS\\bin\\64bit\\obs64.exe', obsUrl: 'ws://127.0.0.1:4455', streamerPingRewardIds: ['reward-water', 'reward-stretch'] });
     const probe = await fetch(`${app.url}/api/v1/obs/test`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ obsUrl: 'wss://evil.example/ws' }) });
     expect(probe.status).toBe(400);
     expect((await fetch(`${app.url}/api/v1/diagnostics`)).status).toBe(200);
