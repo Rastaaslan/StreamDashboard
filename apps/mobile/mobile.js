@@ -353,7 +353,7 @@ function renderSoundboard() {
   for (const sound of sounds.filter(value => (!query || value.name.toLocaleLowerCase().includes(query)) && (!select.value || value.category === select.value) && (!onlyFavorites || value.favorite))) {
     const pad = document.createElement('button'); pad.type = 'button'; pad.className = `sound-pad${soundboardState.currentPlayback?.soundId === sound.id ? ' playing' : ''}${!sound.sourceAvailable ? ' sound-error' : ''}`; pad.disabled = !sound.enabled || !sound.sourceAvailable;
     pad.append(text('b', sound.name), text('small', `${sound.category} · ${Math.round(sound.volume * 100)}%`), text('span', sound.favorite ? '★' : '☆', 'sound-favorite'));
-    pad.onclick = async event => { if (event.target.closest('.sound-favorite')) return; if (companionMode !== CompanionMode.ONLINE_PC) { note('PC hors ligne. Le son n’a pas été joué.'); return; } const commandId = newCommandId(); pad.disabled = true; try { const ack = await transport.playSound({ commandId, soundId: sound.id, issuedAt: new Date().toISOString() }); if (ack.status !== 'succeeded') throw new Error(ack.message || ack.errorCode || 'Lecture échouée.'); rememberCommand({ id: `sound:${sound.id}`, label: sound.name, action: 'sound', soundId: sound.id }); globalThis.StreamDashboardNative?.haptic?.('light'); note(`Lecture confirmée par le PC : ${sound.name}`); } catch (error) { note(error.message); } finally { pad.disabled = false; await loadSoundboard(); } };
+    pad.onclick = async event => { if (event.target.closest('.sound-favorite')) return; if (companionMode !== CompanionMode.ONLINE_PC) { note('PC hors ligne. Le son n’a pas été joué.'); return; } const commandId = newCommandId(); pad.disabled = true; try { const ack = await transport.playSound({ commandId, soundId: sound.id, issuedAt: new Date().toISOString() }); if (ack.status !== 'succeeded') throw new Error(ack.message || ack.errorCode || 'Lecture échouée.'); globalThis.StreamDashboardNative?.haptic?.('light'); note(`Lecture confirmée par le PC : ${sound.name}`); } catch (error) { note(error.message); } finally { pad.disabled = false; await loadSoundboard(); } };
     pad.querySelector('.sound-favorite').onclick = async event => { event.stopPropagation(); try { soundboardState = await transport.updateSound(sound.id, { favorite: !sound.favorite }); renderSoundboard(); } catch (error) { note(error.message); } };
     container.append(pad);
   }
@@ -495,7 +495,7 @@ function renderPlanning(items) {
 function openMobileEditor(item, scope) {
   mobileEditing = { item, scope }; if ($('slot-dialog-title')) $('slot-dialog-title').textContent = scope === 'occurrence' ? 'Modifier cette occurrence' : 'Modifier l’événement'; const form = $('slot-form'); const start = new Date(item.startAtUtc); const end = new Date(item.endAtUtc);
   form.elements.title.value = item.title; form.elements.date.value = start.toISOString().slice(0, 10); form.elements.start.value = start.toTimeString().slice(0, 5); form.elements.end.value = end.toTimeString().slice(0, 5); form.elements.category.value = item.category || 'live'; form.elements.description.value = item.description || '';
-  form.elements.recurrence.value = item.recurrence ? `${item.recurrence.frequency}-${item.recurrence.interval}` : ''; form.elements.recurrenceUntil.value = item.recurrence?.until?.slice(0, 10) || ''; form.elements.recurrence.disabled = scope === 'occurrence'; form.elements.recurrenceUntil.disabled = scope === 'occurrence'; $('slot-dialog').showModal();
+  form.elements.recurrence.value = item.recurrence ? `${item.recurrence.frequency}-${item.recurrence.interval}` : ''; form.elements.recurrenceUntil.value = item.recurrence?.until?.slice(0, 10) || ''; form.elements.recurrence.disabled = scope === 'occurrence'; form.elements.recurrenceUntil.disabled = scope === 'occurrence'; selectPlanningPage('main'); $('slot-dialog').showModal();
 }
 async function removeMobileOccurrence(item) {
   if (!confirm(`Supprimer uniquement cette occurrence de « ${item.title} » ?`)) return;
@@ -546,7 +546,10 @@ function render(next) {
 }
 
 function tickTimer() {
-  if (state) $('timer').textContent = formatDuration(remaining());
+  if (!state) return;
+  const value = formatDuration(remaining());
+  $('timer').textContent = value;
+  $('timer-preview').textContent = `${value} · ${state.timer.running ? 'en cours' : 'prêt'}`;
 }
 
 async function pair() {
@@ -771,7 +774,7 @@ const selectTab = tab => {
   if (tab === 'sounds') void loadSoundboard();
 };
 document.querySelector('.bottom-nav').onclick = event => { const button = event.target.closest('[data-tab]'); if (button) selectTab(button.dataset.tab); };
-document.addEventListener('click', event => { const open = event.target.closest('[data-open-tab]'); if (open) { selectTab(open.dataset.openTab); } const tool = event.target.closest('[data-open-live-tool]'); if (tool) { selectTab('live'); document.querySelector(`[data-hub-tool="${tool.dataset.openLiveTool}"]`)?.click(); } });
+document.addEventListener('click', event => { const open = event.target.closest('[data-open-tab]'); if (open) selectTab(open.dataset.openTab); const tool = event.target.closest('[data-open-live-tool]'); if (tool) openLiveTool(tool.dataset.openLiveTool); });
 document.addEventListener('click', event => {
   const target = event.target.closest('[data-settings-target]')?.dataset.settingsTarget;
   if (!target) return;
@@ -780,12 +783,11 @@ document.addEventListener('click', event => {
   if (target === 'pairing') showPairing(true);
   requestAnimationFrame(() => (target === 'diagnostics' ? diagnostics : target === 'preferences' ? $('ui-preferences') : target === 'connections' ? $('mobile-connections') : $('pairing')).scrollIntoView({ block: 'start' }));
 });
-function rememberCommand() { /* recent global commands were intentionally removed from mobile */ }
 async function createQuickClip() { if (companionMode !== CompanionMode.ONLINE_PC) throw new Error('PC requis.'); const clip = await transport.createTwitchClip(); globalThis.StreamDashboardNative?.haptic?.('light'); note(`Clip créé · ${clip.id}`); }
 async function togglePrimaryMic() { const value = primaryMicCommand(state); const confirmed = await command(value, { reconcile: next => next.obs?.inputs?.[value.input]?.muted === value.muted }); if (!confirmed) throw new Error('Commande non confirmée par le PC.'); }
-$('open-automations').onclick = () => { selectTab('live'); document.querySelector('[data-hub-tool="automations"]')?.click(); };
+$('open-automations').onclick = () => openLiveTool('automations');
 $('return-v2').onclick = () => activateView('settings'); $('live-stream').onclick = () => $('stream').click();
-$('live-clip').onclick = () => void createQuickClip().catch(error => note(`Impossible de créer le clip. ${error.message}`)); $('quick-mic').onclick = () => void togglePrimaryMic().catch(error => note(error.message)); const openScenes = () => $('scene-sheet').showModal(); $('open-scenes-live').onclick = openScenes; $('close-scenes').onclick = () => $('scene-sheet').close(); $('scene-sheet').onclick = event => { if (event.target === $('scene-sheet')) $('scene-sheet').close(); }; $('scene-sheet').querySelectorAll('[data-mode],[data-chatting]').forEach(button => button.addEventListener('click', () => $('scene-sheet').close())); $('refresh-sounds').onclick = () => void loadSoundboard();
+$('live-clip').onclick = () => void createQuickClip().catch(error => note(`Impossible de créer le clip. ${error.message}`)); $('quick-mic').onclick = () => void togglePrimaryMic().catch(error => note(error.message)); $('open-scenes-live').onclick = () => openLiveTool('scenes'); $('refresh-sounds').onclick = () => void loadSoundboard();
 const savedTab = localStorage.getItem('streamdashboard.mobileTab'); selectTab(['home', 'live', 'sounds', 'planning', 'more', 'prepare', 'settings'].includes(savedTab) ? savedTab : 'home');
 
 
@@ -811,7 +813,7 @@ async function loadProductProfile() {
   applyModuleProjection(productProfile.modules || {});
 }
 function applyModuleProjection(enabled) {
-  document.querySelectorAll('[data-module]').forEach(node => { node.hidden = !node.dataset.module.split(',').some(id => enabled[id] !== false); });
+  document.querySelectorAll('[data-module]').forEach(node => { const unavailable = !node.dataset.module.split(',').some(id => enabled[id] !== false); node.dataset.moduleUnavailable = String(unavailable); if (node.matches('[data-live-panel]')) { if (unavailable) node.hidden = true; } else node.hidden = unavailable; });
   const active = document.querySelector('[data-view].active'); if (active?.hidden) activateView('home');
 }
 applyUxPreferences(); setFocusPreference(uxPreferences.focus);
@@ -832,7 +834,7 @@ try {
       queueMicrotask(() => document.querySelector(`[data-settings-target="${legacyTarget.settings}"]`)?.click());
     } else if (legacyTarget.liveTool) {
       selectTab('live');
-      queueMicrotask(() => document.querySelector(`[data-hub-tool="${legacyTarget.liveTool}"]`)?.click());
+      queueMicrotask(() => openLiveTool(legacyTarget.liveTool));
     } else if (legacyTarget.action === 'automations') {
       selectTab('more');
       queueMicrotask(() => $('open-automations')?.click());
@@ -860,7 +862,13 @@ for (const [key, label] of Object.entries(filterNames)) {
   input.onchange = () => { planningFilters[key] = input.checked; planningPage = 1; localStorage.setItem('streamdashboard.planningFilters', JSON.stringify(planningFilters)); renderPlanning(state?.planning); };
   const row = document.createElement('label'); row.append(input, text('span', label)); $('planning-filters').append(row);
 }
-$('add-slot').onclick = () => { mobileEditing = null; if ($('slot-dialog-title')) $('slot-dialog-title').textContent = 'Nouvel événement'; $('slot-form').elements.recurrence.disabled = false; $('slot-form').elements.recurrenceUntil.disabled = false; $('slot-form').reset(); $('slot-dialog').showModal(); };
+function selectPlanningPage(page) { document.querySelectorAll('[data-planning-page]').forEach(value => { value.hidden = value.dataset.planningPage !== page; }); }
+document.querySelectorAll('[data-open-planning-page]').forEach(button => button.onclick = () => selectPlanningPage(button.dataset.openPlanningPage));
+$('open-planning-filters').onclick = () => $('planning-filters-sheet').showModal();
+$('close-planning-filters').onclick = () => $('planning-filters-sheet').close();
+$('open-planning-publish').onclick = () => $('planning-publish-sheet').showModal();
+$('close-planning-publish').onclick = () => $('planning-publish-sheet').close();
+$('add-slot').onclick = () => { mobileEditing = null; if ($('slot-dialog-title')) $('slot-dialog-title').textContent = 'Nouvel événement'; $('slot-form').elements.recurrence.disabled = false; $('slot-form').elements.recurrenceUntil.disabled = false; $('slot-form').reset(); selectPlanningPage('main'); $('slot-dialog').showModal(); };
 $('close-slot').onclick = () => { mobileEditing = null; if ($('slot-dialog-title')) $('slot-dialog-title').textContent = 'Nouvel événement'; $('slot-form').elements.recurrence.disabled = false; $('slot-form').elements.recurrenceUntil.disabled = false; $('slot-dialog').close(); };
 $('slot-form').onsubmit = async event => {
   event.preventDefault(); const form = new FormData(event.currentTarget);
@@ -956,18 +964,22 @@ $('stream').onclick = () => {
   })();
 };
 
-document.querySelectorAll('[data-hub-tool]').forEach(button => button.onclick = () => {
-  document.querySelectorAll('[data-hub-tool]').forEach(value => value.classList.toggle('active', value === button));
-  document.querySelectorAll('[data-hub-panel]').forEach(panel => { panel.hidden = panel.dataset.hubPanel !== button.dataset.hubTool; });
-  if (button.dataset.hubTool === 'vod') void loadVods();
-  if (button.dataset.hubTool === 'clips') void loadClips();
-  if (button.dataset.hubTool === 'soundboard') void loadSoundboard();
-  if (button.dataset.hubTool === 'automations') void loadSoundboard().then(loadAutomations);
-  if (button.dataset.hubTool === 'supports') void loadSupports();
-  if (button.dataset.hubTool === 'audience') void loadMoreChatters(true);
-  if (button.dataset.hubTool === 'chat') void loadModerationCapabilities();
-});
-document.querySelector('[data-hub-tool="control"]')?.click();
+const liveToolTitles = { timer: 'Timer', audio: 'Audio', twitch: 'Informations Twitch', audience: 'Audience et modération', scenes: 'Modes et scènes', vod: 'VOD et clips', supports: 'Dons et soutiens', automations: 'Automatisations', media: 'Médias OBS' };
+function openLiveTool(tool) {
+  const panel = document.querySelector(`[data-live-panel="${tool}"]`);
+  if (!panel || panel.dataset.moduleUnavailable === 'true') return;
+  selectTab('live');
+  document.querySelectorAll('[data-live-panel]').forEach(value => { value.hidden = value !== panel; });
+  $('live-tool-title').textContent = liveToolTitles[tool] || 'Outil live';
+  const sheet = $('live-tools-sheet'); if (!sheet.open) sheet.showModal();
+  if (tool === 'vod') { void loadVods(); void loadClips(); }
+  if (tool === 'automations') void loadSoundboard().then(loadAutomations);
+  if (tool === 'supports') void loadSupports();
+  if (tool === 'audience') { void loadMoreChatters(true); void loadModerationCapabilities(); }
+}
+$('close-live-tool').onclick = () => $('live-tools-sheet').close();
+$('live-tools-sheet').onclick = event => { if (event.target === $('live-tools-sheet')) $('live-tools-sheet').close(); };
+$('live-tools-sheet').querySelectorAll('[data-mode],[data-chatting]').forEach(button => button.addEventListener('click', () => $('live-tools-sheet').close()));
 $('audience-search').oninput = () => renderAudience(state?.controlHub?.audience);
 $('more-chatters').onclick = () => void loadMoreChatters();
 $('sound-search').oninput = renderSoundboard; $('sound-category').onchange = renderSoundboard; $('sound-favorites').onchange = renderSoundboard;
