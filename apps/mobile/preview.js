@@ -4,7 +4,8 @@ import { isAndroidRuntime, nextRetry, normalizeServer } from './runtime.js';
 import { credentialStorage, settingsStorage } from './storage.js';
 
 const $ = selector => document.querySelector(selector);
-const $$ = selector => [...document.querySelectorAll(selector)];
+const $ = selector => [...document.querySelectorAll(selector)];
+const productionUi = new URLSearchParams(location.search).get('runtime') === '1';
 
 let state = null;
 let soundboard = null;
@@ -15,6 +16,8 @@ let reconnectTimer = null;
 let retry = 500;
 let httpReady = false;
 let pairing = false;
+let activeStreamerPingId = null;
+const notifiedStreamerPingIds = new Set();
 
 const quickSoundStorageKey = 'streamdashboard.preview.quickSoundSelections';
 let quickSoundSelections = [];
@@ -235,6 +238,7 @@ const applyState = next => {
   renderAudio(next);
   renderPlanning(next.planning);
   $('#timer-value').textContent = formatTimer(timerRemaining());
+  syncStreamerPings(next.streamerPings || []);
 
   const stop = $('#stop-live');
   stop.textContent = isLive ? '■ Arrêter le live' : '▶ Démarrer le live';
@@ -242,6 +246,54 @@ const applyState = next => {
   stop.classList.toggle('live-command', !isLive);
   stop.classList.toggle('start', !isLive);
   stop.dataset.action = isLive ? 'stop' : 'start';
+};
+
+const notifyStreamerPing = (ping, pendingCount) => {
+  if (!productionUi || !document.hidden || !ping || notifiedStreamerPingIds.has(ping.id)) return;
+  notifiedStreamerPingIds.add(ping.id);
+  const message = `${ping.userName || 'Viewer'} · ${ping.rewardCost || 0} points${pendingCount > 1 ? ` · ${pendingCount} pings en attente` : ''}`;
+  globalThis.StreamDashboardNative?.notifyStreamerPing?.(ping.id, ping.rewardTitle || 'Streamer Ping', message);
+};
+
+const syncStreamerPings = pings => {
+  const pending = (Array.isArray(pings) ? pings : []).filter(value => !value.acknowledgedAt);
+  const ping = pending[0];
+  const dialog = $('#streamer-ping-dialog');
+  if (!dialog) return;
+  if (!ping) {
+    activeStreamerPingId = null;
+    if (dialog.open) dialog.close();
+    return;
+  }
+  notifyStreamerPing(pending.at(-1), pending.length);
+  const content = $('#streamer-ping-content');
+  if (activeStreamerPingId !== ping.id || !dialog.open) {
+    activeStreamerPingId = ping.id;
+    content.replaceChildren();
+    const label = document.createElement('small'); label.className = 'eyebrow'; label.textContent = `STREAMER PING · 1/${pending.length}`;
+    const title = document.createElement('h2'); title.textContent = ping.rewardTitle || 'Récompense Twitch';
+    const copy = document.createElement('p'); copy.textContent = `${ping.userName || 'Viewer'} a utilisé cette récompense${ping.rewardCost ? ` · ${ping.rewardCost} points` : ''}.`;
+    content.append(label, title, copy);
+    if (ping.userInput) { const quote = document.createElement('blockquote'); quote.textContent = ping.userInput; content.append(quote); }
+    globalThis.StreamDashboardNative?.haptic?.('strong');
+    if (!dialog.open) dialog.showModal();
+  } else {
+    const label = content.querySelector('.eyebrow'); if (label) label.textContent = `STREAMER PING · 1/${pending.length}`;
+  }
+};
+
+const openLegacyTools = button => {
+  const tab = button.dataset.legacyTab || 'more';
+  localStorage.setItem('streamdashboard.mobileTab', tab);
+  if (button.dataset.legacyPrepare) localStorage.setItem('streamdashboard.mobilePreparationTab', button.dataset.legacyPrepare);
+  localStorage.setItem('streamdashboard.legacyTarget', JSON.stringify({
+    tab,
+    prepare: button.dataset.legacyPrepare || '',
+    settings: button.dataset.legacySettings || '',
+    liveTool: button.dataset.legacyLiveTool || '',
+    action: button.dataset.legacyAction || '',
+  }));
+  location.href = './index.html?legacy=1';
 };
 
 const renderConnection = (copy, mode='offline') => {
@@ -499,12 +551,25 @@ $('#quick-sound-form').onsubmit=event=>{
   renderQuickSounds();$('#quick-sound-dialog').close();toast('Son rapide ajouté.');
 };
 
+$('[data-legacy-tab]').forEach(button => button.onclick = () => openLegacyTools(button));
 $('#open-connection').onclick=()=>{$('#camp-sheet').hidden=true;$('#pair-server').value=server||'';$('#connection-dialog').showModal();};
 $('#close-connection').onclick=()=>$('#connection-dialog').close();
 $('#connection-form').onsubmit=pair;
 $('#forget-connection').onclick=async()=>{
   credential='';httpReady=false;ws?.close();await credentialStorage.clear();settingsStorage.setServer('');server='';
   renderConnection('PC non appairé','offline');toast('Connexion locale oubliée.');
+};
+
+$('#streamer-ping-ack').onclick = async () => {
+  const id = activeStreamerPingId;
+  if (!id || !requireConnection()) return;
+  try {
+    const next = await transport.acknowledgeStreamerPing(id);
+    activeStreamerPingId = null;
+    if ($('#streamer-ping-dialog').open) $('#streamer-ping-dialog').close();
+    applyState(next);
+    toast('Streamer Ping acquitté.');
+  } catch (error) { toast(error.message); }
 };
 
 $('#add-event').onclick=()=>{
@@ -539,9 +604,20 @@ $('#export-planning').onclick=async()=>{
 
 window.addEventListener('online',()=>void probeAndConnect());
 window.addEventListener('offline',()=>{httpReady=false;renderConnection('PC hors ligne','offline');});
-document.addEventListener('visibilitychange',()=>{if(!document.hidden&&credential)void probeAndConnect();});
+document.addEventListener('visibilitychange',()=>{
+  if(!document.hidden&&credential) void probeAndConnect();
+  else if(document.hidden&&state?.streamerPings?.length){
+    const pending=state.streamerPings.filter(value=>!value.acknowledgedAt);
+    notifyStreamerPing(pending.at(-1),pending.length);
+  }
+});
 
 const boot=async()=>{
+  if (productionUi) {
+    document.title='StreamDashboard';
+    $('#preview-badge')?.remove();
+    const name=$('#pair-name'); if(name) name.value='Android Remote';
+  }
   renderQuickSounds();renderFullSoundboard();
   credential=await credentialStorage.get()||'';
   server=settingsStorage.getServer();
