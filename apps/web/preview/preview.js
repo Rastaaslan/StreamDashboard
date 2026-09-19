@@ -1,10 +1,13 @@
 import { fixture } from './fixtures.js';
+import { expandRecurringItems } from '/mobile/shared/recurrence.js';
+import { buildPlanningPng } from '/mobile/planning-export.js';
 
 const state={
   view:'home',runtime:false,scene:fixture.live.scene,timerRunning:true,seconds:36,
   sounds:structuredClone(fixture.sounds),audio:structuredClone(fixture.audio),live:structuredClone(fixture.live),
   planning:structuredClone(fixture.planning),dashboard:null,soundboard:null,obsSetup:null,search:'',
-  campItem:'Préparation',remotePairing:null,twitchRewards:null
+  campItem:'Préparation',remotePairing:null,twitchRewards:null,companion:null,supports:null,automations:null,automationCapabilities:null,
+  diagnostics:null,pingHistory:null,planningFilter:'upcoming',planningPeriod:'this-week',eventEdit:null
 };
 const view=document.querySelector('#view'),title=document.querySelector('#title'),eyebrow=document.querySelector('#eyebrow');
 const commandLog=[]; window.__preview={state,commandLog};
