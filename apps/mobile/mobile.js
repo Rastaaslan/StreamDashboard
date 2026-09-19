@@ -290,12 +290,6 @@ function renderControlHub(hub) {
     row.append(dot, text('span', label), text('small', humanProviderStatus(status), 'muted'));
     integrations.append(row);
   }
-  for (const event of (hub?.activity || []).slice(-6).reverse()) {
-    const row = document.createElement('div'); row.className = 'activity-row';
-    const time = Number.isFinite(Date.parse(event.occurredAt)) ? new Date(event.occurredAt).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' }) : '—';
-    row.append(text('time', time), text('b', humanActivity(event))); activity.append(row);
-  }
-  if (!activity.children.length) activity.append(text('p', 'Aucune activité récente.', 'muted'));
   renderHubChat(hub?.chat?.messages || []);
   renderAudience(hub?.audience);
 }
