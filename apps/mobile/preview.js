@@ -1,6 +1,6 @@
 import { createTransport, CRITICAL_COMMAND_TIMEOUT_MS, HttpError } from './transport.js';
 import { createCommandController, acceptsSnapshot } from './command-controller.js';
-import { isAndroidRuntime, nextRetry, normalizeServer } from './runtime.js';
+import { isAndroidRuntime, nextRetry, normalizeServer, parsePairing } from './runtime.js';
 import { credentialStorage, settingsStorage } from './storage.js';
 
 const $ = selector => document.querySelector(selector);
@@ -487,7 +487,7 @@ const probeAndConnect=async()=>{
 };
 
 const pair=async event=>{
-  event.preventDefault();if(pairing)return;pairing=true;
+  event?.preventDefault?.();if(pairing)return;pairing=true;
   const hint=$('#connection-hint');hint.classList.remove('error');hint.textContent='Appairage en cours…';
   try{
     server=isAndroidRuntime()?normalizeServer($('#pair-server').value):settingsStorage.getServer();
@@ -551,7 +551,7 @@ $('#quick-sound-form').onsubmit=event=>{
   renderQuickSounds();$('#quick-sound-dialog').close();toast('Son rapide ajouté.');
 };
 
-$('[data-legacy-tab]').forEach(button => button.onclick = () => openLegacyTools(button));
+all('[data-legacy-tab]').forEach(button => button.onclick = () => openLegacyTools(button));
 $('#open-connection').onclick=()=>{$('#camp-sheet').hidden=true;$('#pair-server').value=server||'';$('#connection-dialog').showModal();};
 $('#close-connection').onclick=()=>$('#connection-dialog').close();
 $('#connection-form').onsubmit=pair;
@@ -609,6 +609,23 @@ document.addEventListener('visibilitychange',()=>{
   else if(document.hidden&&state?.streamerPings?.length){
     const pending=state.streamerPings.filter(value=>!value.acknowledgedAt);
     notifyStreamerPing(pending.at(-1),pending.length);
+  }
+});
+
+window.addEventListener('native-pairing', event => {
+  try {
+    const parsed = parsePairing(String(event.detail || ''));
+    server = parsed.server;
+    settingsStorage.setServer(server);
+    $('#pair-server').value = parsed.server;
+    $('#pair-id').value = parsed.id;
+    $('#pair-code').value = parsed.code;
+    $('#connection-dialog').showModal();
+    void pair();
+  } catch (error) {
+    $('#connection-hint').classList.add('error');
+    $('#connection-hint').textContent = error.message;
+    $('#connection-dialog').showModal();
   }
 });
 
