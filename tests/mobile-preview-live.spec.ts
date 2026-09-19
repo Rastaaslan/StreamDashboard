@@ -35,6 +35,12 @@ test('preview figé pilote réellement scènes et soundboard via HTTP sans dépe
       await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ credential: 'test-device-credential', deviceId: 'device-v2' }) });
     });
     await page.goto(`${origin}/mobile/preview.html?runtime=1`);
+    await expect(page.locator('#home-title')).toHaveText('Aucun live en cours');
+    await expect(page.locator('#home-viewers')).toHaveText('—');
+    await expect(page.locator('#sounds-pc-copy')).toContainText('PC non appairé');
+    await expect(page.locator('#preview-badge')).toHaveCount(0);
+    await expect(page.locator('#sound-grid')).not.toContainText('BONK');
+
     await page.evaluate(link => window.dispatchEvent(new CustomEvent('native-pairing', { detail: link })), `streamdashboard://pair?v=1&server=${encodeURIComponent(origin)}&id=pair-1&code=123456`);
     await expect.poll(()=>paired).toBe(true);
     await expect(page.locator('#connection-dialog')).not.toBeVisible();
