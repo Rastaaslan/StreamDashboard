@@ -59,3 +59,13 @@ export function websocketUrl(baseUrl, ticket) {
 export function nextRetry(current) {
   return Math.min(10_000, Math.max(500, Number(current) || 500) * 2);
 }
+
+/** Calendar date for an HTML date input, deliberately using the device timezone. */
+export function localDateInputValue(value = new Date()) {
+  const date = value instanceof Date ? value : new Date(value);
+  if (!Number.isFinite(date.getTime())) throw new Error('Date locale invalide.');
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}

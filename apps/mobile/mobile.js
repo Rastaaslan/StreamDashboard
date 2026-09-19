@@ -35,6 +35,13 @@ const activateView = tab => {
   document.querySelectorAll('[data-tab]').forEach(button => button.classList.toggle('active', button.dataset.tab === primary));
   try { localStorage.setItem('streamdashboard.mobileTab', tab); } catch { /* navigation must remain usable */ }
 };
+window.StreamDashboardHandleBack = () => {
+  const dialog = [...document.querySelectorAll('dialog[open]')].at(-1);
+  if (dialog) { dialog.close(); return true; }
+  const active = document.querySelector('[data-view].active')?.dataset.view;
+  if (active && active !== 'home') { activateView('home'); return true; }
+  return false;
+};
 $('menu-trigger')?.addEventListener('click', event => {
   event.preventDefault();
   event.stopPropagation();

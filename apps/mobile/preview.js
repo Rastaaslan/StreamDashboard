@@ -1,6 +1,6 @@
 import { createTransport, CRITICAL_COMMAND_TIMEOUT_MS, HttpError } from './transport.js';
 import { createCommandController, acceptsSnapshot } from './command-controller.js';
-import { isAndroidRuntime, nextRetry, normalizeServer, parsePairing } from './runtime.js';
+import { isAndroidRuntime, localDateInputValue, nextRetry, normalizeServer, parsePairing } from './runtime.js';
 import { credentialStorage, settingsStorage } from './storage.js';
 
 const $ = selector => document.querySelector(selector);
@@ -49,6 +49,16 @@ const go = target => {
   all('.screen').forEach(screen => screen.classList.toggle('active', screen.dataset.screen === target));
   all('[data-nav]').forEach(button => button.classList.toggle('active', button.dataset.nav === target));
   window.scrollTo({ top: 0, behavior: 'smooth' });
+};
+
+window.StreamDashboardHandleBack = () => {
+  const dialog = all('dialog[open]').at(-1);
+  if (dialog) { dialog.close(); return true; }
+  const camp = $('#camp-sheet');
+  if (camp && !camp.hidden) { camp.hidden = true; return true; }
+  const active = $('.screen.active')?.dataset.screen;
+  if (active && active !== 'home') { go('home'); return true; }
+  return false;
 };
 
 const formatDuration = seconds => {
@@ -601,7 +611,7 @@ $('#streamer-ping-ack').onclick = async () => {
 
 $('#add-event').onclick=()=>{
   if(!requireConnection())return;
-  const date=new Date();$('#event-date').value=date.toISOString().slice(0,10);$('#event-dialog').showModal();
+  $('#event-date').value=localDateInputValue();$('#event-dialog').showModal();
 };
 $('#close-event').onclick=()=>$('#event-dialog').close();
 $('#cancel-event').onclick=()=>$('#event-dialog').close();

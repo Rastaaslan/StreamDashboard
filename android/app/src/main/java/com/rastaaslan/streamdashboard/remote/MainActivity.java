@@ -111,7 +111,16 @@ public class MainActivity extends Activity {
     }
   }
 
-  @Override public void onBackPressed() { if (webView.canGoBack()) webView.goBack(); else super.onBackPressed(); }
+  @Override public void onBackPressed() {
+    if (!pageReady) { super.onBackPressed(); return; }
+    webView.evaluateJavascript(
+      "Boolean(window.StreamDashboardHandleBack && window.StreamDashboardHandleBack())",
+      handled -> {
+        if ("true".equals(handled)) return;
+        if (webView.canGoBack()) webView.goBack(); else MainActivity.super.onBackPressed();
+      }
+    );
+  }
 
   private void captureDeepLink(Intent intent) {
     if (BuildConfig.PREVIEW_MODE) return;
