@@ -24,12 +24,37 @@ test('Desktop Preview navigue et émet une commande unique par contrôle', async
       expect(route.request().postDataJSON()).toMatchObject({ obsUrl: 'ws://127.0.0.1:4455' });
       await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ ok: true, obsVersion: '31.0.0' }) });
     });
+    let repairedSoundboard = false; let playedDesktopSound = false;
+    await page.route('**/api/v1/soundboard', async route => {
+      await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({
+        sounds: [{ id: 'bonk', name: 'BONK', category: 'Réactions', favorite: true, enabled: true, sourceAvailable: true, volume: 1, cooldownMs: 0, outputId: 'obs', monitoringMode: 'stream' }],
+        outputs: [{ id: 'obs', name: 'Mix OBS', isDefault: true, selectable: true }], currentPlayback: null, available: true,
+        supportedFormats: ['mp3'], supportsVolume: true, supportsStop: true, supportsExplicitOutputSelection: false, error: null,
+      }) });
+    });
+    await page.route('**/api/v1/soundboard/obs/status', async route => {
+      await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ connected: true, inputName: 'StreamDashboard • Soundboard', inputExists: repairedSoundboard, inputKind: repairedSoundboard ? 'ffmpeg_source' : null, wrongInputKind: false, targetScenes: ['Gameplay'], attachedScenes: repairedSoundboard ? ['Gameplay'] : [], missingScenes: [], ready: repairedSoundboard }) });
+    });
+    await page.route('**/api/v1/soundboard/obs/setup', async route => {
+      repairedSoundboard = true;
+      await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ connected: true, inputName: 'StreamDashboard • Soundboard', inputExists: true, inputKind: 'ffmpeg_source', wrongInputKind: false, targetScenes: ['Gameplay'], attachedScenes: ['Gameplay'], missingScenes: [], ready: true }) });
+    });
+    await page.route('**/api/v1/soundboard/play', async route => {
+      playedDesktopSound = true;
+      await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ commandId: route.request().postDataJSON().commandId, correlationId: route.request().postDataJSON().correlationId, status: 'succeeded', timestamp: new Date().toISOString() }) });
+    });
     await page.locator('#mode').click(); await expect(page.locator('#runtime-status')).toHaveText('Runtime PC');
     await page.locator('[data-view="camp"]').click(); await page.locator('[data-camp="Connexions"]').click();
     await expect(page.locator('[data-connection-action="obs-test"]')).toBeEnabled();
     await page.locator('[data-connection-action="obs-test"]').click();
     await expect(page.locator('#toast')).toContainText('OBS connecté · v31.0.0');
     expect(testedObs).toBe(true);
+
+    await page.locator('[data-view="sounds"]').click();
+    await page.locator('[data-sound="bonk"]').click();
+    await expect(page.locator('#toast')).toContainText('Son envoyé à OBS');
+    expect(repairedSoundboard).toBe(true);
+    expect(playedDesktopSound).toBe(true);
 
     // Runtime sections in Le Camp are no longer placeholders.
     await page.locator('[data-camp="Préparation"]').click();
