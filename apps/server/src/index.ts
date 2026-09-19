@@ -2056,7 +2056,9 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
   const actualPort = typeof address === 'object' && address ? address.port : requestedPort;
   runtimePort = actualPort;
   const unsubscribeObs = obs.onStateChanged(() => {
-    eventCore.publish({ type: obs.state.connected ? 'obs.state.changed' : 'obs.disconnected', source: 'obs', payload: { connected: obs.state.connected, streaming: obs.state.streaming, streamingKnown: obs.state.streamingKnown !== false, scene: obs.state.scene } });
+    const obsPayload = { connected: obs.state.connected, streaming: obs.state.streaming, streamingKnown: obs.state.streamingKnown !== false, scene: obs.state.scene };
+    eventCore.publish({ type: 'obs.state.changed', source: 'obs', payload: obsPayload });
+    if (!obs.state.connected) eventCore.publish({ type: 'obs.disconnected', source: 'obs', payload: obsPayload });
     const currentStreaming = obs.state.streaming;
     if (obs.state.connected) {
       if (!obsConnectionObserved) {
