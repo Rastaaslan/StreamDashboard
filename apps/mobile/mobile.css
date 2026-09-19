@@ -83,3 +83,5 @@ body[data-density="compact"]{--space-5:16px;--space-6:20px;--space-8:24px}body[d
 .view[data-view="live"]>.live-overview,.view[data-view="live"]>.live-command-grid{margin-bottom:var(--space-5)}
 
 .streamer-ping-dialog{width:min(460px,calc(100vw - 28px));border:1px solid var(--accent,#8f68d8);border-radius:18px;background:#141219;color:inherit;padding:20px}.streamer-ping-dialog::backdrop{background:#000b}.streamer-ping-dialog h2{margin:6px 0 10px}.streamer-ping-dialog p,.streamer-ping-dialog blockquote{margin:8px 0;color:var(--muted)}.streamer-ping-dialog blockquote{padding:10px 12px;border-left:3px solid var(--accent,#8f68d8);background:#1d1924;border-radius:8px}
+
+.automation-editor-row{display:grid;grid-template-columns:1.2fr .7fr 1fr auto;gap:6px;align-items:center;margin:8px 0}.automation-editor-row select,.automation-editor-row input{min-width:0}.automation-editor-row button{min-width:42px;padding:8px}.automation-editor-row[data-action-index]{grid-template-columns:1.2fr 1.4fr auto auto}@media(max-width:390px){.automation-editor-row,.automation-editor-row[data-action-index]{grid-template-columns:1fr}.automation-editor-row button{width:100%}}
