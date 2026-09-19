@@ -785,6 +785,18 @@ $('open-automations').onclick = () => { $('more-automations').classList.toggle('
 $('return-v2').onclick = () => { location.href = './preview.html?runtime=1'; };
 $('quick-clip').onclick = () => void createQuickClip().catch(error => note(`Impossible de créer le clip. ${error.message}`)); $('live-clip').onclick = $('quick-clip').onclick; $('quick-mic').onclick = () => void togglePrimaryMic().catch(error => note(error.message)); $('home-mic').onclick = $('quick-mic').onclick; const openScenes = () => $('scene-sheet').showModal(); $('open-scenes').onclick = openScenes; $('open-scenes-live').onclick = openScenes; $('home-scene-link').onclick = openScenes; $('close-scenes').onclick = () => $('scene-sheet').close(); $('scene-sheet').onclick = event => { if (event.target === $('scene-sheet')) $('scene-sheet').close(); }; $('scene-sheet').querySelectorAll('[data-mode],[data-chatting]').forEach(button => button.addEventListener('click', () => $('scene-sheet').close())); $('refresh-sounds').onclick = () => void loadSoundboard();
 const savedTab = localStorage.getItem('streamdashboard.mobileTab'); selectTab(['home', 'live', 'sounds', 'planning', 'more', 'prepare', 'settings'].includes(savedTab) ? savedTab : 'home');
+
+
+const preferenceKey = 'streamdashboard.mobileUx'; let uxPreferences = { focus: false, reducedMotion: false, density: 'comfort' }; try { uxPreferences = { ...uxPreferences, ...JSON.parse(localStorage.getItem(preferenceKey) || '{}') }; } catch { /* use calm defaults */ }
+function applyUxPreferences() { document.body.classList.toggle('focus-mode', uxPreferences.focus); document.body.classList.toggle('reduce-motion', uxPreferences.reducedMotion); document.body.dataset.density = uxPreferences.density; $('focus-mode').checked = uxPreferences.focus; $('reduce-motion').checked = uxPreferences.reducedMotion; $('ui-density').value = uxPreferences.density; localStorage.setItem(preferenceKey, JSON.stringify(uxPreferences)); }
+function setFocusPreference(value) { uxPreferences.focus = value; applyUxPreferences(); $('focus-toggle').setAttribute('aria-pressed', String(value)); $('focus-toggle').textContent = value ? 'Focus actif' : 'Focus'; }
+$('focus-mode').onchange = event => setFocusPreference(event.target.checked); $('focus-toggle').onclick = () => setFocusPreference(!uxPreferences.focus); $('reduce-motion').onchange = event => { uxPreferences.reducedMotion = event.target.checked; applyUxPreferences(); }; $('ui-density').onchange = event => { uxPreferences.density = event.target.value; applyUxPreferences(); }; applyUxPreferences(); setFocusPreference(uxPreferences.focus);
+
+const preparationKey = 'streamdashboard.mobilePreparationTab';
+function selectPreparationTab(tab, remember = true) { const selected = ['checklist', 'notes', 'templates'].includes(tab) ? tab : 'checklist'; document.querySelectorAll('[data-prepare-tab]').forEach(button => { const active = button.dataset.prepareTab === selected; button.classList.toggle('active', active); button.setAttribute('aria-selected', String(active)); }); document.querySelectorAll('[data-prepare-panel]').forEach(panel => { panel.hidden = panel.dataset.preparePanel !== selected; }); if (remember) localStorage.setItem(preparationKey, selected); }
+document.querySelector('.prepare-tabs').onclick = event => { const tab = event.target.closest('[data-prepare-tab]')?.dataset.prepareTab; if (tab) selectPreparationTab(tab); };
+document.addEventListener('click', event => { const target = event.target.closest('[data-prepare-target]')?.dataset.prepareTarget; if (target) selectPreparationTab(target); });
+selectPreparationTab(localStorage.getItem(preparationKey) || 'checklist', false);
 try {
   const legacyTarget = JSON.parse(localStorage.getItem('streamdashboard.legacyTarget') || 'null');
   if (legacyTarget) {
@@ -804,17 +816,6 @@ try {
     }
   }
 } catch { localStorage.removeItem('streamdashboard.legacyTarget'); }
-
-const preferenceKey = 'streamdashboard.mobileUx'; let uxPreferences = { focus: false, reducedMotion: false, density: 'comfort' }; try { uxPreferences = { ...uxPreferences, ...JSON.parse(localStorage.getItem(preferenceKey) || '{}') }; } catch { /* use calm defaults */ }
-function applyUxPreferences() { document.body.classList.toggle('focus-mode', uxPreferences.focus); document.body.classList.toggle('reduce-motion', uxPreferences.reducedMotion); document.body.dataset.density = uxPreferences.density; $('focus-mode').checked = uxPreferences.focus; $('reduce-motion').checked = uxPreferences.reducedMotion; $('ui-density').value = uxPreferences.density; localStorage.setItem(preferenceKey, JSON.stringify(uxPreferences)); }
-function setFocusPreference(value) { uxPreferences.focus = value; applyUxPreferences(); $('focus-toggle').setAttribute('aria-pressed', String(value)); $('focus-toggle').textContent = value ? 'Focus actif' : 'Focus'; }
-$('focus-mode').onchange = event => setFocusPreference(event.target.checked); $('focus-toggle').onclick = () => setFocusPreference(!uxPreferences.focus); $('reduce-motion').onchange = event => { uxPreferences.reducedMotion = event.target.checked; applyUxPreferences(); }; $('ui-density').onchange = event => { uxPreferences.density = event.target.value; applyUxPreferences(); }; applyUxPreferences(); setFocusPreference(uxPreferences.focus);
-
-const preparationKey = 'streamdashboard.mobilePreparationTab';
-function selectPreparationTab(tab, remember = true) { const selected = ['checklist', 'notes', 'templates'].includes(tab) ? tab : 'checklist'; document.querySelectorAll('[data-prepare-tab]').forEach(button => { const active = button.dataset.prepareTab === selected; button.classList.toggle('active', active); button.setAttribute('aria-selected', String(active)); }); document.querySelectorAll('[data-prepare-panel]').forEach(panel => { panel.hidden = panel.dataset.preparePanel !== selected; }); if (remember) localStorage.setItem(preparationKey, selected); }
-document.querySelector('.prepare-tabs').onclick = event => { const tab = event.target.closest('[data-prepare-tab]')?.dataset.prepareTab; if (tab) selectPreparationTab(tab); };
-document.addEventListener('click', event => { const target = event.target.closest('[data-prepare-target]')?.dataset.prepareTarget; if (target) selectPreparationTab(target); });
-selectPreparationTab(localStorage.getItem(preparationKey) || 'checklist', false);
 $('new-note').onclick = () => $('note-dialog').showModal(); $('cancel-note').onclick = () => $('note-dialog').close();
 try { const saved = JSON.parse(localStorage.getItem(exportNoteKey) || '{}'); $('export-note-enabled').checked = saved.enabled === true; if (saved.text) $('export-note-text').value = saved.text; } catch { /* reset invalid preference */ }
 const saveExportNote = () => localStorage.setItem(exportNoteKey, JSON.stringify({ enabled: $('export-note-enabled').checked, text: $('export-note-text').value }));
