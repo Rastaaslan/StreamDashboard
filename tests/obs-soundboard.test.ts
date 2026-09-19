@@ -38,6 +38,11 @@ describe('ObsSoundboardPlayback', () => {
     expect(obs.stopMedia).toHaveBeenCalledWith(OBS_SOUNDBOARD_INPUT);
     await expect(new ObsSoundboardPlayback(mockObs(false).obs).play({ file: '/x.wav', volume: 1, outputId: 'obs' })).rejects.toMatchObject({ name: 'OBS_UNAVAILABLE' });
   });
+  it('ajuste le volume de la Media Source Soundboard en direct', async () => {
+    const { obs } = mockObs(); const backend = new ObsSoundboardPlayback(obs);
+    await backend.setVolume(.25);
+    expect(obs.volume).toHaveBeenCalledWith(OBS_SOUNDBOARD_INPUT, .25);
+  });
 });
 describe('ObsSoundboardSetup', () => {
   it('crée une seule Media Source puis la rattache idempotemment aux cinq scènes', async () => {
