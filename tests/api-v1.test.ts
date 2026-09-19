@@ -49,7 +49,7 @@ describe('API publique v1', () => {
     expect(exported.headers.get('content-disposition')).toContain('streamdashboard.streamdashboard.yaml');
     expect(yaml).toMatch(/^version: 1\nprofile:\n/); expect(yaml.trimStart()).not.toMatch(/^\{/);
     const invalid = await fetch(`${app.url}/api/v1/profile/import`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ content: 'version: 1\nprofile:\n  accessToken: nope' }) });
-    expect(invalid.status).toBe(500);
+    expect(invalid.status).toBe(400);
     const imported = await fetch(`${app.url}/api/v1/profile/import`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ content: yaml }) }).then(response => response.json());
     expect(imported.backup).toMatch(/backup/);
     await dashboard!.stop(); dashboard = undefined; dashboard = await startDashboardServer({ port: 0, dataDir, logger: { info() {}, warn() {}, error() {} } });
