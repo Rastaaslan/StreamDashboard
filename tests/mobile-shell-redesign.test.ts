@@ -65,8 +65,10 @@ describe('Android Mobile 2.3 focus surface', () => {
     for (const inset of ['safe-area-inset-top', 'safe-area-inset-bottom', 'safe-area-inset-left', 'safe-area-inset-right']) expect(css).toContain(inset);
   });
 
-  it('garde chaque fonction secondaire accessible depuis Le camp', () => {
-    for (const feature of ['Checklist', 'Notes', 'Templates', 'Automatisations', 'Soutiens', 'VOD &amp; Clips', 'Appairage', 'Réglages', 'Diagnostics']) expect(html).toContain(feature);
+  it('garde les fonctions secondaires accessibles sans dupliquer l’appairage', () => {
+    for (const feature of ['Checklist', 'Notes', 'Templates', 'Automatisations', 'Soutiens', 'VOD &amp; Clips', 'Réglages', 'Diagnostics']) expect(html).toContain(feature);
+    expect(html).not.toContain('data-settings-target="pairing"');
+    expect(mobile).toContain('openCanonicalPairing');
     expect(html).toContain('id="scene-sheet"');
     expect(html).toContain('id="direct-mic-state"');
   });
