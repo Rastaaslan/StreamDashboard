@@ -47,7 +47,11 @@ async function boot(): Promise<void> {
     window = null;
     runtime = await startDesktopRuntime();
     const preview = process.argv.includes('--ui-preview=desktop-v2');
-    const targetUrl = preview ? new URL('/preview/', runtime.dashboard.url).toString() : runtime.dashboard.url;
+    const legacy = process.argv.includes('--ui-legacy=desktop-v1');
+    const useDesktopV2 = preview || !legacy;
+    const targetUrl = useDesktopV2
+      ? new URL(preview ? '/preview/' : '/preview/?runtime=1', runtime.dashboard.url).toString()
+      : runtime.dashboard.url;
     window = createDashboardWindow(targetUrl, path.join(import.meta.dirname, 'preload.cjs'), preview ? 'StreamDashboard Desktop Preview' : 'StreamDashboard');
     stopUpdater = startUpdater(window, runtime.dashboard, runtime.logger, async () => { await cleanupRuntime(); });
     window.webContents.on('render-process-gone', (_event, details) => {
