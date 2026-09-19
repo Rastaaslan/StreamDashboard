@@ -4,7 +4,7 @@ import { isAndroidRuntime, nextRetry, normalizeServer } from './runtime.js';
 import { credentialStorage, settingsStorage } from './storage.js';
 
 const $ = selector => document.querySelector(selector);
-const $ = selector => [...document.querySelectorAll(selector)];
+const all = selector => [...document.querySelectorAll(selector)];
 const productionUi = new URLSearchParams(location.search).get('runtime') === '1';
 
 let state = null;
@@ -46,8 +46,8 @@ const commandController = createCommandController({
 });
 
 const go = target => {
-  $$('.screen').forEach(screen => screen.classList.toggle('active', screen.dataset.screen === target));
-  $$('[data-nav]').forEach(button => button.classList.toggle('active', button.dataset.nav === target));
+  all('.screen').forEach(screen => screen.classList.toggle('active', screen.dataset.screen === target));
+  all('[data-nav]').forEach(button => button.classList.toggle('active', button.dataset.nav === target));
   window.scrollTo({ top: 0, behavior: 'smooth' });
 };
 
@@ -98,7 +98,7 @@ const logicalScene = next => {
 };
 
 const selectSceneVisual = scene => {
-  $$('[data-scene]').forEach(item => item.classList.toggle('selected', item.dataset.scene === scene));
+  all('[data-scene]').forEach(item => item.classList.toggle('selected', item.dataset.scene === scene));
 };
 
 const renderChat = messages => {
@@ -127,7 +127,7 @@ const renderChat = messages => {
 };
 
 const renderAudio = next => {
-  const rows = $$('[data-audio]');
+  const rows = all('[data-audio]');
   const inputs = next?.obs?.inputs || {};
   const active = Array.isArray(next?.obs?.activeAudioInputs) ? next.obs.activeAudioInputs : Object.keys(inputs);
   const ordered = [...active].filter(name => inputs[name]).slice(0, rows.length);
@@ -503,18 +503,18 @@ const pair=async event=>{
   finally{pairing=false;}
 };
 
-$$('[data-nav]').forEach(button=>button.addEventListener('click',()=>go(button.dataset.nav)));
-$$('[data-go]').forEach(button=>button.addEventListener('click',()=>go(button.dataset.go)));
+all('[data-nav]').forEach(button=>button.addEventListener('click',()=>go(button.dataset.nav)));
+all('[data-go]').forEach(button=>button.addEventListener('click',()=>go(button.dataset.go)));
 $('#open-camp').onclick=()=>{$('#camp-sheet').hidden=false;};
-$$('[data-close-camp]').forEach(button=>button.onclick=()=>{$('#camp-sheet').hidden=true;});
-$$('[data-scene]').forEach(button=>button.onclick=()=>void selectScene(button.dataset.scene));
+all('[data-close-camp]').forEach(button=>button.onclick=()=>{$('#camp-sheet').hidden=true;});
+all('[data-scene]').forEach(button=>button.onclick=()=>void selectScene(button.dataset.scene));
 
-$$('[data-audio]').forEach(row=>row.onclick=()=>{
+all('[data-audio]').forEach(row=>row.onclick=()=>{
   const input=row.dataset.input;if(!input||!state?.obs?.inputs?.[input])return;
   void execute({type:'obs.mute',input,muted:!state.obs.inputs[input].muted},{resource:`audio:${input}`,reconcile:next=>next.obs?.inputs?.[input]?.muted===!state.obs.inputs[input].muted});
 });
 
-$$('[data-timer]').forEach(button=>button.onclick=()=>void execute({type:'timer.add',seconds:Number(button.dataset.timer)},{resource:'timer'}));
+all('[data-timer]').forEach(button=>button.onclick=()=>void execute({type:'timer.add',seconds:Number(button.dataset.timer)},{resource:'timer'}));
 $('#timer-toggle').onclick=()=>void execute({type:state?.timer?.running?'timer.pause':'timer.start'},{resource:'timer'});
 setInterval(()=>{if(state)$('#timer-value').textContent=formatTimer(timerRemaining());},1000);
 
