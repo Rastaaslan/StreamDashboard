@@ -575,6 +575,7 @@ document.querySelector('#mode').onclick=async e=>{state.runtime=!state.runtime;e
 window.addEventListener('keydown',e=>{if(e.altKey&&['1','2','3','4'].includes(e.key)){e.preventDefault();state.view=['home','live','sounds','planning'][+e.key-1];render()}});
 setInterval(()=>{if(state.runtime&&state.timerRunning){state.seconds=Math.max(0,state.seconds-1);if(state.view==='live')render()}},1000);
 window.addEventListener('beforeunload',closeRuntimeSocket);
+document.documentElement.dataset.appReady='true';
 render();
 if(officialRuntime){
   document.querySelector('#mode').hidden=true;
