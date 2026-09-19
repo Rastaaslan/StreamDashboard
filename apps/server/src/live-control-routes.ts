@@ -4,6 +4,7 @@ import type { ActionCommand, Sound } from '../../../packages/contracts/src/index
 import type { Automation } from '../../../packages/core/src/live-control-domains.js';
 import type { EventCore } from '../../../packages/core/src/events.js';
 import type { StreamlabsAdapter } from '../../../integrations/streamlabs/src/adapter.js';
+import type { StreamlabsOAuthClient } from '../../../integrations/streamlabs/src/oauth.js';
 import type { WizeBotAdapter } from '../../../integrations/wizebot/src/adapter.js';
 import type { SecretStore } from './storage.js';
 import type { ObsSoundboardSetupStatus } from './obs-soundboard.js';
@@ -12,8 +13,8 @@ import type { AutomationRuntime } from './automation-runtime.js';
 import type { SupportRuntime } from './support-runtime.js';
 
 interface Options {
-  app: express.Application; soundboard: SoundboardRuntime; automation: AutomationRuntime; support: SupportRuntime; streamlabs: StreamlabsAdapter; wizebot: WizeBotAdapter; eventCore: EventCore; secrets: SecretStore;
-  requireLocal(req: express.Request, res: express.Response): boolean; isRemote(req: express.Request): boolean; save(): Promise<void>;
+  app: express.Application; soundboard: SoundboardRuntime; automation: AutomationRuntime; support: SupportRuntime; streamlabs: StreamlabsAdapter; streamlabsOAuth: StreamlabsOAuthClient; streamlabsRedirectUri: string; wizebot: WizeBotAdapter; eventCore: EventCore; secrets: SecretStore;
+  requireLocal(req: express.Request, res: express.Response): boolean; isRemote(req: express.Request): boolean; save(): Promise<void>; broadcast(): void;
   sounds(): Sound[]; setSounds(value: Sound[]): void; sessionStartedAt(): string | null;
   resolveSoundLibraryFile(libraryId: string): Promise<string>; removeSoundLibraryFile(source: string): Promise<void>;
   soundboardObsStatus(): Promise<ObsSoundboardSetupStatus>; setupSoundboardObs(): Promise<ObsSoundboardSetupStatus>;
@@ -23,7 +24,18 @@ const AUTOMATION_TRIGGERS = ['support.received', 'test.support', 'twitch.reward.
 const AUTOMATION_ACTIONS = ['soundboard.play', 'obs.scene', 'obs.media.restart', 'timer.add', 'timer.start', 'timer.pause'] as const;
 
 export function registerLiveControlRoutes(options: Options) {
-  const { app, soundboard, automation, support, streamlabs, wizebot, eventCore } = options;
+  const { app, soundboard, automation, support, streamlabs, streamlabsOAuth, wizebot, eventCore } = options;
+  let pendingStreamlabsOAuth: { state: string; expiresAt: number } | null = null;
+  const streamlabsOAuthStatus = async () => {
+    const configuration = await options.secrets.getStreamlabsOAuth?.() ?? null;
+    return {
+      configured: Boolean(configuration?.clientId && configuration?.clientSecret),
+      authorized: Boolean(configuration?.accessToken),
+      connected: streamlabs.state().status === 'CONNECTED',
+      redirectUri: options.streamlabsRedirectUri,
+      scope: 'socket.token',
+    };
+  };
   app.get('/api/v1/events', (req, res) => { const string = (value: unknown, max: number) => typeof value === 'string' && value.length <= max ? value : undefined; res.json({ items: eventCore.recent({ type: string(req.query.type, 120), source: string(req.query.source, 80), correlationId: string(req.query.correlationId, 128), limit: Number(req.query.limit) || 100 }) }); });
   app.get('/api/v1/soundboard', async (_req, res, next) => { try { res.json(await soundboard.snapshot()); } catch (error) { next(error); } });
   app.get('/api/v1/soundboard/obs/status', async (req, res, next) => { try { if (!options.requireLocal(req, res)) return; res.json(await options.soundboardObsStatus()); } catch (error) { next(error); } });
@@ -84,8 +96,60 @@ export function registerLiveControlRoutes(options: Options) {
   app.delete('/api/v1/automations/:id', async (req, res, next) => { try { await automation.remove(String(req.params.id)); res.status(204).end(); } catch (error) { next(error); } });
   app.post('/api/v1/automations/test', (req, res) => { const amountMinor = Number(req.body?.amountMinor); if (!Number.isSafeInteger(amountMinor) || amountMinor < 0) { res.status(400).json({ ok: false, error: { code: 'AMOUNT_INVALID', message: 'Montant mineur invalide.' } }); return; } const event = eventCore.publish({ type: 'test.support', source: 'test', payload: { amountMinor, currency: 'EUR' } }); res.status(202).json({ eventId: event.eventId, correlationId: event.correlationId }); });
   app.get('/api/v1/supports', (_req, res) => { const sessionStartedAt = options.sessionStartedAt(); res.json({ ...support.snapshot(sessionStartedAt), sessionStartedAt, provider: streamlabs.state() }); });
-  app.put('/api/v1/supports/streamlabs/config', async (req, res, next) => { try { if (!options.requireLocal(req, res)) return; const token = String(req.body?.token ?? '').trim(); if (!token || token.length > 1_000) throw new Error('Token Streamlabs invalide.'); await streamlabs.disconnect(); await options.secrets.setStreamlabsToken?.(token); streamlabs.configure(token); await streamlabs.connect(); res.json(streamlabs.state()); } catch (error) { next(error); } });
-  app.delete('/api/v1/supports/streamlabs/config', async (req, res, next) => { try { if (!options.requireLocal(req, res)) return; await streamlabs.disconnect(); await options.secrets.clearStreamlabsToken?.(); streamlabs.configure(''); res.json(streamlabs.state()); } catch (error) { next(error); } });
+  app.get('/api/v1/supports/streamlabs/oauth/status', async (req, res, next) => { try { if (!options.requireLocal(req, res)) return; res.json(await streamlabsOAuthStatus()); } catch (error) { next(error); } });
+  app.put('/api/v1/supports/streamlabs/oauth/config', async (req, res, next) => {
+    try {
+      if (!options.requireLocal(req, res)) return;
+      const clientId = String(req.body?.clientId ?? '').trim();
+      const clientSecret = String(req.body?.clientSecret ?? '').trim();
+      if (!clientId || clientId.length > 500 || !clientSecret || clientSecret.length > 1_000) throw new Error('Identifiants OAuth Streamlabs invalides.');
+      await streamlabs.disconnect();
+      await options.secrets.clearStreamlabsToken?.();
+      await options.secrets.setStreamlabsOAuth?.({ clientId, clientSecret });
+      streamlabs.configure('');
+      pendingStreamlabsOAuth = null;
+      options.broadcast();
+      res.json(await streamlabsOAuthStatus());
+    } catch (error) { next(error); }
+  });
+  app.post('/api/v1/supports/streamlabs/oauth/start', async (req, res, next) => {
+    try {
+      if (!options.requireLocal(req, res)) return;
+      const configuration = await options.secrets.getStreamlabsOAuth?.() ?? null;
+      if (!configuration?.clientId || !configuration.clientSecret) throw new Error('Enregistre d’abord le Client ID et le Client Secret Streamlabs.');
+      const state = `streamlabs_${randomUUID()}`;
+      const expiresAt = Date.now() + 10 * 60_000;
+      pendingStreamlabsOAuth = { state, expiresAt };
+      res.json({ authorizationUrl: streamlabsOAuth.authorizationUrl({ clientId: configuration.clientId, redirectUri: options.streamlabsRedirectUri, state }), expiresAt: new Date(expiresAt).toISOString() });
+    } catch (error) { next(error); }
+  });
+  app.get('/api/v1/supports/streamlabs/oauth/callback', async (req, res, next) => {
+    try {
+      if (!options.requireLocal(req, res)) return;
+      const failure = typeof req.query.error === 'string' ? req.query.error : '';
+      if (failure) throw new Error(`Autorisation Streamlabs refusée : ${failure}`);
+      const code = String(req.query.code ?? '').trim();
+      const state = String(req.query.state ?? '').trim();
+      const pending = pendingStreamlabsOAuth;
+      pendingStreamlabsOAuth = null;
+      if (!pending || pending.expiresAt < Date.now() || !state || state !== pending.state) throw new Error('Session OAuth Streamlabs expirée ou invalide.');
+      if (!code || code.length > 2_000) throw new Error('Code OAuth Streamlabs manquant.');
+      const configuration = await options.secrets.getStreamlabsOAuth?.() ?? null;
+      if (!configuration?.clientId || !configuration.clientSecret) throw new Error('Configuration OAuth Streamlabs introuvable.');
+      const accessToken = await streamlabsOAuth.exchangeCode({ clientId: configuration.clientId, clientSecret: configuration.clientSecret, redirectUri: options.streamlabsRedirectUri, code });
+      const socketToken = await streamlabsOAuth.socketToken(accessToken);
+      await options.secrets.setStreamlabsOAuth?.({ clientId: configuration.clientId, clientSecret: configuration.clientSecret, accessToken });
+      await options.secrets.setStreamlabsToken?.(socketToken);
+      await streamlabs.disconnect();
+      streamlabs.configure(socketToken);
+      await streamlabs.connect();
+      if (streamlabs.state().status !== 'CONNECTED') throw new Error(streamlabs.state().lastError?.message ?? 'Connexion Socket Streamlabs impossible.');
+      options.broadcast();
+      res.status(200).type('html').send('<!doctype html><meta charset="utf-8"><title>StreamDashboard</title><body style="font-family:system-ui;background:#0b0810;color:#f4f0f7;padding:32px"><h1>Streamlabs connecté ✅</h1><p>Tu peux fermer cet onglet et revenir dans StreamDashboard.</p></body>');
+    } catch (error) { next(error); }
+  });
+  app.put('/api/v1/supports/streamlabs/config', async (req, res, next) => { try { if (!options.requireLocal(req, res)) return; const token = String(req.body?.token ?? '').trim(); if (!token || token.length > 1_000) throw new Error('Token Streamlabs invalide.'); await streamlabs.disconnect(); await options.secrets.setStreamlabsToken?.(token); streamlabs.configure(token); await streamlabs.connect(); options.broadcast(); res.json(streamlabs.state()); } catch (error) { next(error); } });
+  app.delete('/api/v1/supports/streamlabs/config', async (req, res, next) => { try { if (!options.requireLocal(req, res)) return; await streamlabs.disconnect(); await options.secrets.clearStreamlabsToken?.(); const configuration = await options.secrets.getStreamlabsOAuth?.() ?? null; if (configuration?.clientId && configuration.clientSecret) await options.secrets.setStreamlabsOAuth?.({ clientId: configuration.clientId, clientSecret: configuration.clientSecret }); streamlabs.configure(''); pendingStreamlabsOAuth = null; options.broadcast(); res.json(streamlabs.state()); } catch (error) { next(error); } });
   app.post('/api/v1/supports/streamlabs/test', async (req, res, next) => { try { if (!options.requireLocal(req, res)) return; const now = new Date().toISOString(); const value = await support.record({ id: `streamlabs:test:${Date.now()}`, provider: 'streamlabs', externalId: `test:${Date.now()}`, displayName: 'Test StreamDashboard', amountMinor: 100, currency: 'EUR', message: '[TEST] Soutien Streamlabs', receivedAt: now }); eventCore.publish({ type: 'test.support', source: 'test', correlationId: value.support.id, payload: { ...value.support, test: true } }); res.status(201).json({ support: value.support, test: true }); } catch (error) { next(error); } });
   app.get('/api/v1/wizebot', (_req, res) => res.json(wizebot.state()));
   app.put('/api/v1/wizebot/config', async (req, res, next) => { try { if (!options.requireLocal(req, res)) return; const apiBaseUrl = String(req.body?.apiBaseUrl ?? '').trim(); const token = String(req.body?.token ?? '').trim(); let url: URL; try { url = new URL(apiBaseUrl); } catch { throw new Error('Adresse API WizeBot invalide.'); } if (url.protocol !== 'https:' || !token || token.length > 1_000) throw new Error('Configuration WizeBot invalide.'); const configuration = { apiBaseUrl: url.toString(), token }; await options.secrets.setWizeBotConfiguration?.(configuration); wizebot.configure(configuration); res.json(await wizebot.refresh()); } catch (error) { next(error); } });
