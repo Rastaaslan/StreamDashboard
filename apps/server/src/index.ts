@@ -1433,32 +1433,30 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
     if (!requireLocal(req, res)) return;
     res.json(companionSnapshot(local.planning, local.companion));
   });
-  app.post('/api/v1/companion/:kind', async (req, res, next) => {
-    try {
-      if (!requireLocal(req, res)) return;
-      const kind = String(req.params.kind) as CompanionCollectionKind;
-      if (!companionKinds.has(kind) || !object(req.body)) throw new Error('Collection compagnon invalide.');
-      const { id: _id, revision: _revision, updatedAt: _updatedAt, ...patch } = req.body;
-      res.status(201).json(await mutateCompanionCollection(kind, 'upsert', undefined, patch));
-    } catch (error) { next(error); }
-  });
-  app.put('/api/v1/companion/:kind/:id', async (req, res, next) => {
-    try {
-      if (!requireLocal(req, res)) return;
-      const kind = String(req.params.kind) as CompanionCollectionKind;
-      if (!companionKinds.has(kind) || !object(req.body)) throw new Error('Collection compagnon invalide.');
-      const { id: _id, revision: _revision, updatedAt: _updatedAt, ...patch } = req.body;
-      res.json(await mutateCompanionCollection(kind, 'upsert', String(req.params.id), patch));
-    } catch (error) { next(error); }
-  });
-  app.delete('/api/v1/companion/:kind/:id', async (req, res, next) => {
-    try {
-      if (!requireLocal(req, res)) return;
-      const kind = String(req.params.kind) as CompanionCollectionKind;
-      if (!companionKinds.has(kind)) throw new Error('Collection compagnon invalide.');
-      res.json(await mutateCompanionCollection(kind, 'delete', String(req.params.id)));
-    } catch (error) { next(error); }
-  });
+  for (const kind of companionKinds) {
+    app.post(`/api/v1/companion/${kind}`, async (req, res, next) => {
+      try {
+        if (!requireLocal(req, res)) return;
+        if (!object(req.body)) throw new Error('Collection compagnon invalide.');
+        const { id: _id, revision: _revision, updatedAt: _updatedAt, ...patch } = req.body;
+        res.status(201).json(await mutateCompanionCollection(kind, 'upsert', undefined, patch));
+      } catch (error) { next(error); }
+    });
+    app.put(`/api/v1/companion/${kind}/:id`, async (req, res, next) => {
+      try {
+        if (!requireLocal(req, res)) return;
+        if (!object(req.body)) throw new Error('Collection compagnon invalide.');
+        const { id: _id, revision: _revision, updatedAt: _updatedAt, ...patch } = req.body;
+        res.json(await mutateCompanionCollection(kind, 'upsert', String(req.params.id), patch));
+      } catch (error) { next(error); }
+    });
+    app.delete(`/api/v1/companion/${kind}/:id`, async (req, res, next) => {
+      try {
+        if (!requireLocal(req, res)) return;
+        res.json(await mutateCompanionCollection(kind, 'delete', String(req.params.id)));
+      } catch (error) { next(error); }
+    });
+  }
 
   app.post('/api/v1/companion/sync', async (req, res, next) => {
     try {
