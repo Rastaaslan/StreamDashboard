@@ -19,7 +19,7 @@ let pairing = false;
 let activeStreamerPingId = null;
 const notifiedStreamerPingIds = new Set();
 
-const quickSoundStorageKey = 'streamdashboard.preview.quickSoundSelections';
+const quickSoundStorageKey = productionUi ? 'streamdashboard.quickSoundSelections' : 'streamdashboard.preview.quickSoundSelections';
 let quickSoundSelections = [];
 try {
   const saved = JSON.parse(localStorage.getItem(quickSoundStorageKey) || '[]');
@@ -147,6 +147,30 @@ const renderAudio = next => {
   });
 };
 
+const renderCurrentWeek = () => {
+  const host = $('#week-strip');
+  if (!host) return;
+  const now = new Date();
+  const monday = new Date(now);
+  const day = (monday.getDay() + 6) % 7;
+  monday.setDate(monday.getDate() - day);
+  monday.setHours(12, 0, 0, 0);
+  host.replaceChildren();
+  for (let index = 0; index < 7; index++) {
+    const date = new Date(monday);
+    date.setDate(monday.getDate() + index);
+    const button = document.createElement('button');
+    button.type = 'button';
+    if (date.toDateString() === now.toDateString()) button.classList.add('active');
+    const small = document.createElement('small');
+    small.textContent = date.toLocaleDateString('fr-FR', { weekday: 'short' }).replace('.', '').toUpperCase();
+    const bold = document.createElement('b');
+    bold.textContent = String(date.getDate());
+    button.append(small, bold);
+    host.append(button);
+  }
+};
+
 const renderPlanning = items => {
   const agenda = $('#agenda');
   if (!agenda) return;
@@ -213,6 +237,7 @@ const applyState = next => {
   const logical = logicalScene(next);
 
   $('#home-live-copy').textContent = isLive ? 'En direct' : 'Prêt';
+  const homeDotCopy = $('#home-live-dot-copy'); if (homeDotCopy) homeDotCopy.textContent = isLive ? 'LIVE' : 'PRÊT';
   $('#home-live-pill').classList.toggle('live', isLive);
   $('#home-live-pill').classList.toggle('offline', !isLive);
   $('#home-duration').textContent = isLive ? formatDuration(duration) : '—';
@@ -629,12 +654,34 @@ window.addEventListener('native-pairing', event => {
   }
 });
 
+const resetProductionShell = () => {
+  if (!productionUi) return;
+  $('#home-live-copy').textContent = 'Prêt';
+  $('#home-live-dot-copy').textContent = 'PRÊT';
+  $('#home-duration').textContent = '—';
+  $('#home-title').textContent = 'Aucun live en cours';
+  $('#home-category').textContent = 'Connecte le PC pour charger l’état réel.';
+  $('#home-viewers').textContent = '—';
+  $('#home-chatters').textContent = '—';
+  $('#home-scene-name').textContent = '—';
+  $('#live-status-copy').textContent = 'Prêt';
+  $('#scene-name').textContent = '—';
+  $('#scene-state').textContent = 'OBS HORS LIGNE';
+  selectSceneVisual('');
+  renderChat([]);
+  renderPlanning([]);
+  renderCurrentWeek();
+  renderConnection(credential ? 'PC hors ligne' : 'PC non appairé', 'offline');
+};
+
 const boot=async()=>{
   if (productionUi) {
     document.title='StreamDashboard';
     $('#preview-badge')?.remove();
     const name=$('#pair-name'); if(name) name.value='Android Remote';
   }
+  renderCurrentWeek();
+  resetProductionShell();
   renderQuickSounds();renderFullSoundboard();
   credential=await credentialStorage.get()||'';
   server=settingsStorage.getServer();
