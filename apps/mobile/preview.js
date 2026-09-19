@@ -637,9 +637,9 @@ document.addEventListener('visibilitychange',()=>{
   }
 });
 
-window.addEventListener('native-pairing', event => {
+const handlePairingLink = link => {
   try {
-    const parsed = parsePairing(String(event.detail || ''));
+    const parsed = parsePairing(String(link || ''));
     server = parsed.server;
     settingsStorage.setServer(server);
     $('#pair-server').value = parsed.server;
@@ -652,7 +652,9 @@ window.addEventListener('native-pairing', event => {
     $('#connection-hint').textContent = error.message;
     $('#connection-dialog').showModal();
   }
-});
+};
+
+window.addEventListener('native-pairing', event => handlePairingLink(event.detail));
 
 const resetProductionShell = () => {
   if (!productionUi) return;
@@ -686,6 +688,12 @@ const boot=async()=>{
   credential=await credentialStorage.get()||'';
   server=settingsStorage.getServer();
   $('#pair-server').value=server||'';
+  const pendingPairing = localStorage.getItem('streamdashboard.pendingPairing');
+  if (pendingPairing) {
+    localStorage.removeItem('streamdashboard.pendingPairing');
+    handlePairingLink(pendingPairing);
+    return;
+  }
   if(!credential){
     renderConnection('PC non appairé','offline');
     if(isAndroidRuntime())$('#connection-dialog').showModal();
