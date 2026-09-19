@@ -73,26 +73,19 @@ let noteTimer;
 const note = value => { const message = $('message'); message.textContent = String(value || ''); clearTimeout(noteTimer); if (value) noteTimer = setTimeout(() => { message.textContent = ''; }, 4_000); };
 let activeMobileStreamerPingId = null;
 function ensureMobileStreamerPingDialog() {
-  let dialog = $('streamer-ping-dialog');
-  if (dialog) return dialog;
-  dialog = document.createElement('dialog');
-  dialog.id = 'streamer-ping-dialog';
-  dialog.className = 'streamer-ping-dialog';
-  dialog.innerHTML = '<div class="streamer-ping-content"></div><div class="dialog-actions"><button type="button" id="streamer-ping-ack">Vu</button></div>';
-  document.body.append(dialog);
-  $('streamer-ping-ack').onclick = async () => {
-    const id = activeMobileStreamerPingId;
-    if (!id) return;
-    try {
-      const next = await transport.acknowledgeStreamerPing(id);
-      activeMobileStreamerPingId = null;
-      dialog.close();
-      render(next);
-      note('Streamer Ping acquitté.');
-    } catch (error) { note(error.message); }
-  };
-  return dialog;
+  return $('streamer-ping-dialog');
 }
+$('streamer-ping-ack').onclick = async () => {
+  const id = activeMobileStreamerPingId;
+  if (!id) return;
+  try {
+    const next = await transport.acknowledgeStreamerPing(id);
+    activeMobileStreamerPingId = null;
+    $('streamer-ping-dialog').close();
+    render(next);
+    note('Streamer Ping acquitté.');
+  } catch (error) { note(error.message); }
+};
 function syncMobileStreamerPing(pings = []) {
   const ping = pings.find(value => !value.acknowledgedAt);
   const dialog = ensureMobileStreamerPingDialog();
