@@ -97,6 +97,7 @@ export function createTransport(getServer, getCredential) {
     discordChannels: guildId => request(`/api/v1/discord/guilds/${encodeURIComponent(guildId)}/channels`, { headers: { authorization: `Device ${getCredential()}` } }),
     discordSettings: value => request('/api/v1/discord/settings', { method: 'PUT', headers: authHeaders(), body: JSON.stringify(value) }),
     publishDiscord: value => request('/api/v1/discord/planning', { method: 'POST', headers: authHeaders(), body: JSON.stringify(value) }),
+    acknowledgeStreamerPing: id => request(`/api/v1/streamer-pings/${encodeURIComponent(id)}/ack`, { method: 'POST', headers: authHeaders(), body: '{}' }),
     syncCompanion,
     resolveCompanionConflict: (operationId, strategy) => request(`/api/v1/companion/conflicts/${encodeURIComponent(operationId)}/resolve`, { method: 'POST', headers: authHeaders(), body: JSON.stringify({ strategy }) }),
     websocket: ticket => new WebSocket(isAndroidRuntime() ? websocketUrl(getServer(), ticket) : `${location.protocol === 'https:' ? 'wss' : 'ws'}://${location.host}/ws/v1?ticket=${encodeURIComponent(ticket)}`),
