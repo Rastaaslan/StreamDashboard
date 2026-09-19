@@ -1395,7 +1395,7 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
     await unlink(resolved).catch(() => undefined);
   };
   registerLiveControlRoutes({
-    app, soundboard, automation, support, streamlabs, wizebot, eventCore, secrets, requireLocal, isRemote: isRemoteRequest, save,
+    app, soundboard, automation, support, streamlabs, streamlabsOAuth, streamlabsRedirectUri, wizebot, eventCore, secrets, requireLocal, isRemote: isRemoteRequest, save, broadcast,
     sounds: () => local.sounds, setSounds: value => { local.sounds = value; }, sessionStartedAt: () => twitchLive.startedAt,
     resolveSoundLibraryFile, removeSoundLibraryFile,
     soundboardObsStatus: () => obsSoundboardSetup.status(soundboardTargetScenes()),
