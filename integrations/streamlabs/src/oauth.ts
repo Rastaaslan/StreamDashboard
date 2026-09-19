@@ -1,0 +1,61 @@
+export interface StreamlabsOAuthApplication {
+  clientId: string;
+  clientSecret: string;
+  accessToken?: string;
+}
+
+export class StreamlabsOAuthClient {
+  constructor(private readonly fetchApi: typeof fetch = fetch) {}
+
+  authorizationUrl(input: { clientId: string; redirectUri: string; state: string }) {
+    const url = new URL('https://streamlabs.com/api/v2.0/authorize');
+    url.searchParams.set('response_type', 'code');
+    url.searchParams.set('client_id', input.clientId);
+    url.searchParams.set('redirect_uri', input.redirectUri);
+    url.searchParams.set('scope', 'socket.token');
+    url.searchParams.set('state', input.state);
+    return url.toString();
+  }
+
+  async exchangeCode(input: { clientId: string; clientSecret: string; redirectUri: string; code: string }) {
+    const response = await this.fetchApi('https://streamlabs.com/api/v2.0/token', {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        'x-requested-with': 'XMLHttpRequest',
+      },
+      body: JSON.stringify({
+        grant_type: 'authorization_code',
+        client_id: input.clientId,
+        client_secret: input.clientSecret,
+        redirect_uri: input.redirectUri,
+        code: input.code,
+      }),
+    });
+    const payload = await response.json().catch(() => ({})) as Record<string, unknown>;
+    if (!response.ok) throw new Error(streamlabsOAuthError(payload, 'Échange OAuth Streamlabs refusé.'));
+    const accessToken = String(payload.access_token ?? '').trim();
+    if (!accessToken || accessToken.length > 4_000) throw new Error('Streamlabs n’a pas renvoyé d’access token valide.');
+    return accessToken;
+  }
+
+  async socketToken(accessToken: string) {
+    const response = await this.fetchApi('https://streamlabs.com/api/v2.0/socket/token', {
+      headers: {
+        accept: 'application/json',
+        authorization: `Bearer ${accessToken}`,
+        'x-requested-with': 'XMLHttpRequest',
+      },
+    });
+    const payload = await response.json().catch(() => ({})) as Record<string, unknown>;
+    if (!response.ok) throw new Error(streamlabsOAuthError(payload, 'Impossible de récupérer le Socket Token Streamlabs.'));
+    const socketToken = String(payload.socket_token ?? '').trim();
+    if (!socketToken || socketToken.length > 4_000) throw new Error('Streamlabs n’a pas renvoyé de Socket Token valide.');
+    return socketToken;
+  }
+}
+
+function streamlabsOAuthError(payload: Record<string, unknown>, fallback: string) {
+  const message = payload.message ?? payload.error_description ?? payload.error;
+  return typeof message === 'string' && message.trim() ? message.trim().slice(0, 500) : fallback;
+}
