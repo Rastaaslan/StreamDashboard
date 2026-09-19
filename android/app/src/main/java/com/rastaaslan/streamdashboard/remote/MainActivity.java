@@ -1,11 +1,17 @@
 package com.rastaaslan.streamdashboard.remote;
 
 import android.app.Activity;
+import android.app.NotificationChannel;
+import android.app.NotificationManager;
+import android.app.PendingIntent;
+import android.Manifest;
 import android.content.Intent;
+import android.content.pm.PackageManager;
 import android.content.ClipData;
 import android.graphics.Color;
 import android.net.Uri;
 import android.os.Bundle;
+import android.os.Build;
 import android.os.VibrationEffect;
 import android.os.Vibrator;
 import android.view.WindowManager;
@@ -25,6 +31,7 @@ import javax.crypto.spec.GCMParameterSpec;
 import android.security.keystore.KeyGenParameterSpec;
 import android.security.keystore.KeyProperties;
 import android.util.Base64;
+import androidx.core.app.NotificationCompat;
 import androidx.core.content.FileProvider;
 import androidx.webkit.WebViewAssetLoader;
 import java.io.ByteArrayInputStream;
@@ -41,6 +48,8 @@ public class MainActivity extends Activity {
   // HTTP is intentionally retained for the local app origin so the WebView can
   // still reach the authenticated cleartext LAN Runtime without mixed-content exceptions.
   private static final String ORIGIN = "http://" + APP_HOST;
+  private static final String PING_CHANNEL_ID = "streamer-pings";
+  private static final int NOTIFICATION_PERMISSION_REQUEST = 7001;
   private WebView webView;
   private ProviderBridge providerBridge;
   private WebViewAssetLoader assetLoader;
@@ -71,6 +80,7 @@ public class MainActivity extends Activity {
     webView.setWebChromeClient(new WebChromeClient());
     webView.setWebViewClient(new LocalOnlyClient());
     setContentView(webView);
+    ensurePingNotifications();
     captureDeepLink(getIntent());
     webView.loadUrl(ORIGIN + (BuildConfig.PREVIEW_MODE ? "/mobile/preview.html" : "/mobile/index.html"));
   }
@@ -86,6 +96,19 @@ public class MainActivity extends Activity {
     super.onResume();
     deliverPendingDeepLink();
     if (pageReady) webView.evaluateJavascript("document.dispatchEvent(new Event('visibilitychange'))", null);
+  }
+
+  private void ensurePingNotifications() {
+    if (BuildConfig.PREVIEW_MODE) return;
+    NotificationManager manager = (NotificationManager)getSystemService(NOTIFICATION_SERVICE);
+    if (manager != null && Build.VERSION.SDK_INT >= 26) {
+      NotificationChannel channel = new NotificationChannel(PING_CHANNEL_ID, "Streamer Pings", NotificationManager.IMPORTANCE_HIGH);
+      channel.setDescription("Récompenses Twitch et rappels importants pendant le live");
+      manager.createNotificationChannel(channel);
+    }
+    if (Build.VERSION.SDK_INT >= 33 && checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
+      requestPermissions(new String[]{ Manifest.permission.POST_NOTIFICATIONS }, NOTIFICATION_PERMISSION_REQUEST);
+    }
   }
 
   @Override public void onBackPressed() { if (webView.canGoBack()) webView.goBack(); else super.onBackPressed(); }
@@ -180,6 +203,26 @@ public class MainActivity extends Activity {
     @JavascriptInterface public void haptic(String strength) {
       Vibrator vibrator = (Vibrator)getSystemService(VIBRATOR_SERVICE);
       if (vibrator != null) vibrator.vibrate(VibrationEffect.createOneShot("strong".equals(strength) ? 45 : 18, VibrationEffect.DEFAULT_AMPLITUDE));
+    }
+    @JavascriptInterface public void notifyStreamerPing(String id, String title, String message) {
+      if (BuildConfig.PREVIEW_MODE) return;
+      if (Build.VERSION.SDK_INT >= 33 && checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) return;
+      String safeId = id == null ? "" : id;
+      String safeTitle = title == null || title.isBlank() ? "Streamer Ping" : title.substring(0, Math.min(120, title.length()));
+      String safeMessage = message == null ? "" : message.substring(0, Math.min(500, message.length()));
+      Intent launch = new Intent(MainActivity.this, MainActivity.class)
+        .addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP | Intent.FLAG_ACTIVITY_CLEAR_TOP);
+      PendingIntent pending = PendingIntent.getActivity(MainActivity.this, 0, launch, PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);
+      NotificationCompat.Builder notification = new NotificationCompat.Builder(MainActivity.this, PING_CHANNEL_ID)
+        .setSmallIcon(R.drawable.ic_launcher)
+        .setContentTitle(safeTitle)
+        .setContentText(safeMessage)
+        .setStyle(new NotificationCompat.BigTextStyle().bigText(safeMessage))
+        .setPriority(NotificationCompat.PRIORITY_HIGH)
+        .setAutoCancel(true)
+        .setContentIntent(pending);
+      NotificationManager manager = (NotificationManager)getSystemService(NOTIFICATION_SERVICE);
+      if (manager != null) manager.notify(safeId.hashCode() & 0x7fffffff, notification.build());
     }
     @JavascriptInterface public String shareImage(String encodedPng, String requestedName, String mimeType) {
       if (!"image/png".equals(mimeType)) return "Type d’image refusé.";
