@@ -2,6 +2,16 @@ import WebSocket from 'ws';
 
 const EVENTSUB_URL = 'wss://eventsub.wss.twitch.tv/ws?keepalive_timeout_seconds=30';
 
+export interface TwitchRewardRedemption {
+  id: string;
+  broadcasterId: string;
+  user: { id: string; login: string; displayName: string };
+  reward: { id: string; title: string; prompt: string; cost: number };
+  userInput: string;
+  status: string;
+  redeemedAt: string;
+}
+
 export interface TwitchChatMessage {
   id: string;
   broadcasterId: string;
@@ -11,6 +21,25 @@ export interface TwitchChatMessage {
   reply: { parentMessageId: string; parentMessageBody: string; parentUserId: string; parentUserName: string } | null;
   bits: number | null;
   receivedAt: string;
+}
+
+export function parseRewardRedemptionNotification(value: unknown): TwitchRewardRedemption | null {
+  if (!value || typeof value !== 'object') return null;
+  const envelope = value as Record<string, any>;
+  if (envelope.metadata?.message_type !== 'notification' || envelope.metadata?.subscription_type !== 'channel.channel_points_custom_reward_redemption.add') return null;
+  const event = envelope.payload?.event;
+  if (!event || typeof event.id !== 'string' || typeof event.user_id !== 'string' || typeof event.reward?.id !== 'string') return null;
+  const redeemedAt = String(event.redeemed_at ?? '');
+  if (!Number.isFinite(Date.parse(redeemedAt))) return null;
+  return {
+    id: event.id,
+    broadcasterId: String(event.broadcaster_user_id ?? ''),
+    user: { id: event.user_id, login: String(event.user_login ?? ''), displayName: String(event.user_name ?? event.user_login ?? '') },
+    reward: { id: event.reward.id, title: String(event.reward.title ?? ''), prompt: String(event.reward.prompt ?? ''), cost: Number.isInteger(event.reward.cost) ? event.reward.cost : 0 },
+    userInput: String(event.user_input ?? ''),
+    status: String(event.status ?? 'unknown'),
+    redeemedAt,
+  };
 }
 
 export function parseChatNotification(value: unknown, receivedAt = new Date().toISOString()): TwitchChatMessage | null {
@@ -49,6 +78,7 @@ export class TwitchEventSub {
     private readonly onMessage: (message: TwitchChatMessage) => void,
     private readonly onStatus: (status: 'CONNECTING' | 'CONNECTED' | 'DEGRADED' | 'DISCONNECTED', error?: string) => void,
     private readonly createSocket = (url: string) => new WebSocket(url),
+    private readonly onRewardRedemption: (redemption: TwitchRewardRedemption) => void = () => undefined,
   ) {}
 
   start() { if (!this.stopped) return; this.stopped = false; this.connect(EVENTSUB_URL, true); }
@@ -77,6 +107,8 @@ export class TwitchEventSub {
       }
       const message = parseChatNotification(value);
       if (message) this.onMessage(message);
+      const redemption = parseRewardRedemptionNotification(value);
+      if (redemption) this.onRewardRedemption(redemption);
     });
     socket.on('error', error => this.onStatus('DEGRADED', error.message));
     socket.on('close', () => {
