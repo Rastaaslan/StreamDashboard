@@ -30,20 +30,20 @@ test('Electron réel démarre, persiste, impose une instance et arrête son back
     await expect(window).toHaveTitle(/StreamDashboard/);
     await expect(window.locator('#title')).toHaveText('Accueil');
 
-    // Exercise the real delegated navigation wiring. These routes used to be
-    // present in the renderer but absent from its route table, so a click
-    // crashed instead of opening the requested tool.
-    const secondaryRoutes = [
-      ['live', 'Live'], ['deck', 'Scènes & audio'], ['fun', 'Médias OBS'],
-      ['supports', 'Soutiens'], ['automations', 'Automatisations'], ['diagnostics', 'Diagnostics'],
-    ] as const;
-    for (const [route, title] of secondaryRoutes) {
-      await window.locator('.secondary-nav').evaluate((element: HTMLDetailsElement) => { element.open = true; });
-      await window.locator(`.secondary-nav [data-page="${route}"]`).click();
+    // The promoted Desktop V2 is the default renderer and boots directly on
+    // the real Runtime. Exercise every primary destination plus the secondary
+    // Camp surface in the packaged executable.
+    await expect(window.locator('#runtime-status')).toHaveText('Runtime PC');
+    for (const [route, title] of [['home', 'Accueil'], ['live', 'Live'], ['sounds', 'Sons'], ['planning', 'Planning'], ['camp', 'Le Camp']] as const) {
+      await window.locator(`[data-view="${route}"]`).click();
       await expect(window.locator('#title')).toHaveText(title);
       await expect(window.locator('#view')).not.toBeEmpty();
     }
-    await window.locator('nav [data-page="overview"]').click();
+    for (const tool of ['Préparation','Notes','Templates','Soutiens','Automatisations','Médias OBS','Connexions','Diagnostics','Réglages']) {
+      await window.locator(`[data-camp="${tool}"]`).click();
+      await expect(window.locator('#camp-title')).toHaveText(tool);
+    }
+    await window.locator('[data-view="home"]').click();
     const electronVersion = await application.evaluate(() => process.versions.electron);
     expect(electronVersion).toBe(packageJson.devDependencies.electron);
 
