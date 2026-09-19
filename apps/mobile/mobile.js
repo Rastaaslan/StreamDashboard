@@ -782,8 +782,28 @@ $('command-palette').onclick = event => { if (event.target === $('command-palett
 $('command-search').oninput = event => { const query = event.target.value.trim().toLocaleLowerCase(); document.querySelectorAll('#command-palette [data-palette-action]').forEach(button => { button.hidden = !button.textContent.toLocaleLowerCase().includes(query); }); };
 renderCommandRecents();
 $('open-automations').onclick = () => { $('more-automations').classList.toggle('expanded'); void loadSoundboard().then(loadAutomations); };
+$('return-v2').onclick = () => { location.href = './preview.html?runtime=1'; };
 $('quick-clip').onclick = () => void createQuickClip().catch(error => note(`Impossible de créer le clip. ${error.message}`)); $('live-clip').onclick = $('quick-clip').onclick; $('quick-mic').onclick = () => void togglePrimaryMic().catch(error => note(error.message)); $('home-mic').onclick = $('quick-mic').onclick; const openScenes = () => $('scene-sheet').showModal(); $('open-scenes').onclick = openScenes; $('open-scenes-live').onclick = openScenes; $('home-scene-link').onclick = openScenes; $('close-scenes').onclick = () => $('scene-sheet').close(); $('scene-sheet').onclick = event => { if (event.target === $('scene-sheet')) $('scene-sheet').close(); }; $('scene-sheet').querySelectorAll('[data-mode],[data-chatting]').forEach(button => button.addEventListener('click', () => $('scene-sheet').close())); $('refresh-sounds').onclick = () => void loadSoundboard();
 const savedTab = localStorage.getItem('streamdashboard.mobileTab'); selectTab(['home', 'live', 'sounds', 'planning', 'more', 'prepare', 'settings'].includes(savedTab) ? savedTab : 'home');
+try {
+  const legacyTarget = JSON.parse(localStorage.getItem('streamdashboard.legacyTarget') || 'null');
+  if (legacyTarget) {
+    localStorage.removeItem('streamdashboard.legacyTarget');
+    if (legacyTarget.prepare) {
+      selectTab('prepare');
+      selectPreparationTab(legacyTarget.prepare);
+    } else if (legacyTarget.settings) {
+      selectTab('settings');
+      queueMicrotask(() => document.querySelector(`[data-settings-target="${legacyTarget.settings}"]`)?.click());
+    } else if (legacyTarget.liveTool) {
+      selectTab('live');
+      queueMicrotask(() => document.querySelector(`[data-hub-tool="${legacyTarget.liveTool}"]`)?.click());
+    } else if (legacyTarget.action === 'automations') {
+      selectTab('more');
+      queueMicrotask(() => $('open-automations')?.click());
+    }
+  }
+} catch { localStorage.removeItem('streamdashboard.legacyTarget'); }
 
 const preferenceKey = 'streamdashboard.mobileUx'; let uxPreferences = { focus: false, reducedMotion: false, density: 'comfort' }; try { uxPreferences = { ...uxPreferences, ...JSON.parse(localStorage.getItem(preferenceKey) || '{}') }; } catch { /* use calm defaults */ }
 function applyUxPreferences() { document.body.classList.toggle('focus-mode', uxPreferences.focus); document.body.classList.toggle('reduce-motion', uxPreferences.reducedMotion); document.body.dataset.density = uxPreferences.density; $('focus-mode').checked = uxPreferences.focus; $('reduce-motion').checked = uxPreferences.reducedMotion; $('ui-density').value = uxPreferences.density; localStorage.setItem(preferenceKey, JSON.stringify(uxPreferences)); }
