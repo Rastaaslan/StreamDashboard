@@ -71,6 +71,48 @@ const commandController = createCommandController({
 });
 let noteTimer;
 const note = value => { const message = $('message'); message.textContent = String(value || ''); clearTimeout(noteTimer); if (value) noteTimer = setTimeout(() => { message.textContent = ''; }, 4_000); };
+let activeMobileStreamerPingId = null;
+function ensureMobileStreamerPingDialog() {
+  let dialog = $('streamer-ping-dialog');
+  if (dialog) return dialog;
+  dialog = document.createElement('dialog');
+  dialog.id = 'streamer-ping-dialog';
+  dialog.className = 'streamer-ping-dialog';
+  dialog.innerHTML = '<div class="streamer-ping-content"></div><div class="dialog-actions"><button type="button" id="streamer-ping-ack">Vu</button></div>';
+  document.body.append(dialog);
+  $('streamer-ping-ack').onclick = async () => {
+    const id = activeMobileStreamerPingId;
+    if (!id) return;
+    try {
+      const next = await transport.acknowledgeStreamerPing(id);
+      activeMobileStreamerPingId = null;
+      dialog.close();
+      render(next);
+      note('Streamer Ping acquitté.');
+    } catch (error) { note(error.message); }
+  };
+  return dialog;
+}
+function syncMobileStreamerPing(pings = []) {
+  const ping = pings.find(value => !value.acknowledgedAt);
+  const dialog = ensureMobileStreamerPingDialog();
+  if (!ping) {
+    activeMobileStreamerPingId = null;
+    if (dialog.open) dialog.close();
+    return;
+  }
+  if (activeMobileStreamerPingId === ping.id && dialog.open) return;
+  activeMobileStreamerPingId = ping.id;
+  const content = dialog.querySelector('.streamer-ping-content');
+  content.replaceChildren(
+    text('small', 'STREAMER PING', 'console-label'),
+    text('h2', ping.rewardTitle || 'Récompense Twitch'),
+    text('p', `${ping.userName || 'Viewer'} a utilisé cette récompense${ping.rewardCost ? ` · ${ping.rewardCost} points` : ''}.`),
+    ...(ping.userInput ? [text('blockquote', ping.userInput)] : []),
+  );
+  globalThis.StreamDashboardNative?.haptic?.('strong');
+  if (!dialog.open) dialog.showModal();
+}
 async function ensureCredentialOwner() { if (!credential) credential = await credentialStorage.get() || ''; if (!credential) throw new Error('Télécommande non appairée.'); return credential; }
 setMobileContext({ companion, transport, providerSync, getCredential: () => credential, ensureCredential: ensureCredentialOwner, getMode: () => companionMode, getState: () => state, applyState: next => render(next), executeCommand: command, syncCompanion, note });
 const text = (tag, value, className) => {
@@ -392,6 +434,7 @@ function render(next) {
   if (!next) return;
   if (!acceptsSnapshot(state, next)) return;
   state = next;
+  syncMobileStreamerPing(next.streamerPings || []);
   if (companionMode === CompanionMode.ONLINE_PC) $('pc').textContent = 'Connecté';
   $('obs').textContent = next.obs.connected ? 'Prêt' : 'Déconnecté';
   const primaryMic = next.settings.primaryMicInput; const micMuted = primaryMic ? next.obs.inputs?.[primaryMic]?.muted : null; $('direct-mic-state').textContent = primaryMic ? (micMuted === null || micMuted === undefined ? 'Introuvable' : micMuted ? 'Coupé' : 'Ouvert') : 'Non configuré'; $('direct-mic-dot').textContent = primaryMic && micMuted === false ? '●' : '○'; $('direct-mic-dot').className = primaryMic && micMuted === false ? 'ok' : 'muted';
