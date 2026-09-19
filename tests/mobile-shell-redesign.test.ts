@@ -13,9 +13,9 @@ describe('Android Mobile 2.3 focus surface', () => {
     expect(missing).toEqual([]);
   });
 
-  it('expose quatre destinations stables et regroupe le secondaire sous Plus', () => {
+  it('expose cinq destinations stables et regroupe le secondaire sous Plus', () => {
     const tabs = [...html.matchAll(/<button data-tab="([^"]+)"/g)].map(match => match[1]);
-    expect(tabs).toEqual(['home', 'live', 'planning', 'more']);
+    expect(tabs).toEqual(['home', 'live', 'sounds', 'planning', 'more']);
     expect(html).toContain('id="menu-trigger"');
     expect(html).toContain('data-view="more"');
     expect(html).toContain('id="command-trigger"');
@@ -47,13 +47,13 @@ describe('Android Mobile 2.3 focus surface', () => {
   });
 
   it('remplace l’ancien CSS par un design system accessible', () => {
-    for (const token of ['--surface-1:', '--surface-2:', '--surface-3:', '--text-secondary:', '--violet:', '--ember:', '--lavender:', '--warning:', '--line:', '--space-8:', '--motion-normal:']) expect(css).toContain(token);
+    for (const token of ['--background:', '--surface:', '--text:', '--muted:', '--border:', '--accent:', '--radius:', '--spacing:', '--font-scale:']) expect(css).toContain(token);
     expect(css).toContain('min-height:44px');
     expect(css).toContain(':focus-visible');
     expect(css).toContain('prefers-reduced-motion:reduce');
     expect(html).not.toContain('mobile-shell.css');
     expect(css).toContain('gap:var(--space-4);row-gap:var(--space-4)');
-    expect(css).toContain('grid-template-columns:repeat(4,minmax(0,1fr))');
+    expect(css).toContain('grid-template-columns:repeat(5,minmax(0,1fr))');
     expect(css).toContain('@keyframes campfire-live');
   });
 
