@@ -55,6 +55,7 @@ export function createTransport(getServer, getCredential) {
     request,
     authHeaders,
     state,
+    profile: () => request('/api/v1/profile', { headers: { authorization: `Device ${getCredential()}` } }),
     soundboard: () => request('/api/v1/soundboard', { headers: { authorization: `Device ${getCredential()}` } }),
     playSound: value => request('/api/v1/soundboard/play', { method: 'POST', headers: authHeaders(), body: JSON.stringify(value) }),
     stopSound: () => request('/api/v1/soundboard/stop', { method: 'POST', headers: authHeaders(), body: '{}' }),

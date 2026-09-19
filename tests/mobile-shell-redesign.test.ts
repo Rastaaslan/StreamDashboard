@@ -66,7 +66,7 @@ describe('Android Mobile 2.3 focus surface', () => {
   });
 
   it('garde les fonctions secondaires accessibles sans dupliquer l’appairage', () => {
-    for (const feature of ['Checklist', 'Notes', 'Templates', 'Automatisations', 'Soutiens', 'VOD &amp; Clips', 'Réglages', 'Diagnostics']) expect(html).toContain(feature);
+    for (const feature of ['Checklist', 'Notes', 'Modèles de live', 'Automatisations', 'Dons et soutiens', 'Vidéos et clips', 'Réglages', 'État technique']) expect(html).toContain(feature);
     expect(html).not.toContain('data-settings-target="pairing"');
     expect(mobile).toContain('openCanonicalPairing');
     expect(html).toContain('id="scene-sheet"');
@@ -83,7 +83,7 @@ describe('Android Mobile 2.3 focus surface', () => {
     expect(css).toContain('body[data-density="comfort"]');
   });
 
-  it('sépare Checklist, Notes et Templates en intentions exclusives', () => {
+  it('sépare Avant le live, Notes et Modèles de live en intentions exclusives', () => {
     for (const tab of ['checklist', 'notes', 'templates']) {
       expect(html).toContain(`data-prepare-tab="${tab}"`);
       expect(html).toContain(`data-prepare-panel="${tab}"`);
@@ -110,5 +110,18 @@ describe('Android Mobile 2.3 focus surface', () => {
     expect(devFixtureName({ hostname: 'stream.example', search: '?fixture=live' } as Location)).toBeNull();
     expect(createMobileFixture('live').state.controlHub.audience.viewerCount).toBe(17);
     expect(createMobileFixture('offline').state.obs.streaming).toBe(false);
+  });
+
+  it('valide le nouveau vocabulaire produit sans réintroduire les anciens termes', () => {
+    for (const label of ['+ Ajouter', 'Modèles de live', 'Avant le live', 'Accueil', 'Live', 'Sons', 'Planning', 'Plus']) expect(html).toContain(label);
+    expect(html).not.toContain('+ ÉVÉNEMENT');
+  });
+
+  it('garde les capacités Live dans le shell canonique et applique la projection modules/apparence', () => {
+    for (const id of ['live-duration','live-viewers','live-chatters','hub-chat','chat-form','audience-list','live-clip','open-scenes-live','quick-mic','timer','twitch-title','twitch-category','audio','deck','support-history','automation-list']) expect(html).toContain(`id="${id}"`);
+    expect(mobile).toContain('loadProductProfile');
+    expect(mobile).toContain("document.querySelectorAll('[data-module]')");
+    expect(mobile).toContain("window.StreamDashboardHandleBack");
+    expect(mobile).not.toContain("location.href = './preview.html?runtime=1'");
   });
 });
