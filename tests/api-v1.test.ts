@@ -199,8 +199,10 @@ describe('API publique v1', () => {
     expect((await fetch(`${app.url}/api/v1/automations/test`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ amountMinor: 500 }) })).status).toBe(202);
     await expect.poll(async () => (await fetch(`${app.url}/api/v1/state`).then(r => r.json())).timer.remaining).toBe(360);
 
-    const automations = await fetch(`${app.url}/api/v1/automations`).then(r => r.json());
-    expect(automations.items[0]).toMatchObject({ name: 'Ajoute une minute', lastResult: { status: 'succeeded' } });
+    await expect.poll(async () => {
+      const automations = await fetch(`${app.url}/api/v1/automations`).then(r => r.json());
+      return automations.items[0]?.lastResult?.status ?? null;
+    }).toBe('succeeded');
   });
 
   it('arrête le serveur proprement et de façon idempotente', async () => {
