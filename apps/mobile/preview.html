@@ -6,7 +6,7 @@
   <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
   <meta name="theme-color" content="#0b0810">
   <link rel="stylesheet" href="preview.css">
-  <title>StreamDashboard Preview</title>
+  <title>StreamDashboard</title>
 </head>
 <body>
   <div class="ambient" aria-hidden="true"></div>
@@ -268,7 +268,7 @@
         <input id="pair-code" autocomplete="one-time-code">
       </label>
       <label>Nom du téléphone
-        <input id="pair-name" maxlength="80" value="Android Preview">
+        <input id="pair-name" maxlength="80" value="Android Remote">
       </label>
       <div class="dialog-buttons">
         <button type="button" class="secondary-button" id="forget-connection">Oublier</button>
@@ -303,15 +303,23 @@
     <div class="sheet-backdrop" data-close-camp></div>
     <section>
       <div class="sheet-head"><div><span class="eyebrow">SECONDAIRE</span><h2>Le camp</h2></div><button data-close-camp>×</button></div>
-      <button class="camp-row"><span>✓</span><div><b>Préparation</b><small>Checklist avant live</small></div><i>›</i></button>
-      <button class="camp-row"><span>✎</span><div><b>Notes</b><small>Idées et rappels</small></div><i>›</i></button>
-      <button class="camp-row"><span>▣</span><div><b>Templates</b><small>Configurations réutilisables</small></div><i>›</i></button>
+      <button class="camp-row" data-legacy-tab="prepare" data-legacy-prepare="checklist"><span>✓</span><div><b>Préparation</b><small>Checklist avant live</small></div><i>›</i></button>
+      <button class="camp-row" data-legacy-tab="prepare" data-legacy-prepare="notes"><span>✎</span><div><b>Notes</b><small>Idées et rappels</small></div><i>›</i></button>
+      <button class="camp-row" data-legacy-tab="prepare" data-legacy-prepare="templates"><span>▣</span><div><b>Templates</b><small>Configurations réutilisables</small></div><i>›</i></button>
+      <button class="camp-row" data-legacy-tab="more" data-legacy-action="automations"><span>⚡</span><div><b>Automatisations</b><small>Règles Twitch, OBS, timer…</small></div><i>›</i></button>
+      <button class="camp-row" data-legacy-tab="live" data-legacy-live-tool="supports"><span>♡</span><div><b>Soutiens</b><small>Streamlabs et historique</small></div><i>›</i></button>
       <button class="camp-row" id="open-connection"><span>⚙</span><div><b>Connexions</b><small id="connection-copy">PC non appairé</small></div><i>›</i></button>
-      <button class="camp-row"><span>◇</span><div><b>Diagnostics</b><small>État et événements</small></div><i>›</i></button>
+      <button class="camp-row" data-legacy-tab="settings" data-legacy-settings="diagnostics"><span>◇</span><div><b>Diagnostics</b><small>État et événements</small></div><i>›</i></button>
+      <button class="camp-row" data-legacy-tab="settings" data-legacy-settings="preferences"><span>◉</span><div><b>Réglages</b><small>Préférences et options avancées</small></div><i>›</i></button>
+      <button class="camp-row" data-legacy-tab="more"><span>⋯</span><div><b>Outils avancés</b><small>Accéder à toutes les fonctions historiques</small></div><i>›</i></button>
     </section>
   </aside>
 
-  <div class="preview-badge">APERÇU • AUCUNE COMMANDE RÉELLE</div>
+  <dialog class="quick-sound-dialog streamer-ping-dialog" id="streamer-ping-dialog">
+    <div id="streamer-ping-content"></div>
+    <div class="dialog-buttons"><button type="button" class="primary-button" id="streamer-ping-ack">Vu</button></div>
+  </dialog>
+  <div class="preview-badge" id="preview-badge">APERÇU • UI V2</div>
   <div class="toast" id="toast" role="status"></div>
   <script type="module" src="preview.js"></script>
 </body>
