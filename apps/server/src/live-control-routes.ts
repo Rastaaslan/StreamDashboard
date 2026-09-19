@@ -19,6 +19,8 @@ interface Options {
   soundboardObsStatus(): Promise<ObsSoundboardSetupStatus>; setupSoundboardObs(): Promise<ObsSoundboardSetupStatus>;
 }
 const object = (value: unknown): value is Record<string, unknown> => Boolean(value && typeof value === 'object' && !Array.isArray(value));
+const AUTOMATION_TRIGGERS = ['support.received', 'test.support', 'twitch.reward.redeemed', 'streamer.ping.received', 'stream.started', 'stream.stopped', 'obs.state.changed', 'chat.message.received'] as const;
+const AUTOMATION_ACTIONS = ['soundboard.play', 'obs.scene', 'obs.media.restart', 'timer.add', 'timer.start', 'timer.pause'] as const;
 
 export function registerLiveControlRoutes(options: Options) {
   const { app, soundboard, automation, support, streamlabs, wizebot, eventCore } = options;
@@ -71,6 +73,12 @@ export function registerLiveControlRoutes(options: Options) {
   app.post('/api/v1/soundboard/stop', async (_req, res, next) => { try { await soundboard.stop(); res.status(204).end(); } catch (error) { next(error); } });
 
   app.get('/api/v1/automations', (_req, res) => res.json({ items: automation.list(), executions: automation.recent() }));
+  app.get('/api/v1/automations/capabilities', (_req, res) => res.json({
+    triggers: AUTOMATION_TRIGGERS,
+    actions: AUTOMATION_ACTIONS,
+    conditionOperators: ['eq', 'gte'],
+    commonConditionPaths: ['amountMinor', 'reward.id', 'reward.title', 'user.id', 'user.displayName', 'text', 'scene', 'streaming'],
+  }));
   app.post('/api/v1/automations', async (req, res, next) => { try { res.status(201).json(await automation.create(automationInput(req.body))); } catch (error) { next(error); } });
   app.put('/api/v1/automations/:id', async (req, res, next) => { try { res.json(await automation.update(String(req.params.id), automationInput(req.body))); } catch (error) { next(error); } });
   app.delete('/api/v1/automations/:id', async (req, res, next) => { try { await automation.remove(String(req.params.id)); res.status(204).end(); } catch (error) { next(error); } });
@@ -86,9 +94,38 @@ export function registerLiveControlRoutes(options: Options) {
 }
 
 function automationInput(value: unknown) {
-  if (!object(value)) throw new Error('Automation invalide.'); const conditions = Array.isArray(value.conditions) ? value.conditions : []; const actions = Array.isArray(value.actions) ? value.actions : [];
-  if (!['support.received', 'test.support'].includes(String(value.trigger))) throw new Error('Trigger non supporté.');
-  if (conditions.some(condition => !object(condition) || !['eq', 'gte'].includes(String(condition.operator)) || typeof condition.path !== 'string')) throw new Error('Condition invalide.');
-  if (actions.some(action => !object(action) || action.type !== 'soundboard.play' || !object(action.payload) || typeof action.payload.soundId !== 'string')) throw new Error('Action invalide.');
-  return { name: String(value.name ?? '').slice(0, 120), enabled: value.enabled === true, trigger: String(value.trigger), conditions: conditions as Automation['conditions'], actions: actions as Automation['actions'], cooldownMs: Number(value.cooldownMs ?? 0) };
+  if (!object(value)) throw new Error('Automation invalide.');
+  const conditions = Array.isArray(value.conditions) ? value.conditions : [];
+  const actions = Array.isArray(value.actions) ? value.actions : [];
+  const trigger = String(value.trigger);
+  if (!(AUTOMATION_TRIGGERS as readonly string[]).includes(trigger)) throw new Error('Trigger non supporté.');
+  if (!actions.length || actions.length > 20) throw new Error('Automation sans action ou trop complexe.');
+  if (conditions.length > 20 || conditions.some(condition => !object(condition) || !['eq', 'gte'].includes(String(condition.operator)) || typeof condition.path !== 'string' || !condition.path.trim() || condition.path.length > 120 || !['string', 'number', 'boolean'].includes(typeof condition.value))) throw new Error('Condition invalide.');
+  for (const action of actions) {
+    if (!object(action) || !(AUTOMATION_ACTIONS as readonly string[]).includes(String(action.type)) || !object(action.payload)) throw new Error('Action invalide.');
+    const payload = action.payload;
+    switch (action.type) {
+      case 'soundboard.play':
+        if (typeof payload.soundId !== 'string' || !payload.soundId || payload.soundId.length > 100 || (payload.volume !== undefined && (typeof payload.volume !== 'number' || !Number.isFinite(payload.volume) || payload.volume < 0 || payload.volume > 1.5))) throw new Error('Action Soundboard invalide.');
+        break;
+      case 'obs.scene':
+      case 'obs.media.restart':
+        if (typeof (action.type === 'obs.scene' ? payload.scene : payload.input) !== 'string' || !String(action.type === 'obs.scene' ? payload.scene : payload.input).trim() || String(action.type === 'obs.scene' ? payload.scene : payload.input).length > 200) throw new Error('Action OBS invalide.');
+        break;
+      case 'timer.add':
+        if (typeof payload.seconds !== 'number' || !Number.isFinite(payload.seconds) || payload.seconds < -86_400 || payload.seconds > 86_400) throw new Error('Action timer invalide.');
+        break;
+      case 'timer.start':
+        if (payload.seconds !== undefined && (typeof payload.seconds !== 'number' || !Number.isFinite(payload.seconds) || payload.seconds < 1 || payload.seconds > 86_400)) throw new Error('Action timer invalide.');
+        break;
+      case 'timer.pause':
+        if (Object.keys(payload).length) throw new Error('Action timer invalide.');
+        break;
+    }
+  }
+  const cooldownMs = Number(value.cooldownMs ?? 0);
+  if (!Number.isFinite(cooldownMs) || cooldownMs < 0 || cooldownMs > 86_400_000) throw new Error('Cooldown invalide.');
+  const name = String(value.name ?? '').trim().slice(0, 120);
+  if (!name) throw new Error('Nom d’automation requis.');
+  return { name, enabled: value.enabled === true, trigger, conditions: conditions as Automation['conditions'], actions: actions as Automation['actions'], cooldownMs };
 }
