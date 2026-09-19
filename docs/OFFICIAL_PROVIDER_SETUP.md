@@ -47,3 +47,15 @@ OBS reste une connexion locale en mode `custom`, harmonisée dans l’écran Con
 4. Vérifier que tous les tokens sont écrits dans `SecretStore`.
 5. Tester connexion, révocation, scopes manquants, réautorisation et indisponibilité.
 6. Publier les URI de redirection, mentions légales et procédures de rotation.
+
+## État d’implémentation
+
+| Provider | Déjà supporté | À configurer par le mainteneur | Pas encore implémenté |
+|---|---|---|---|
+| Twitch | Client Runtime, Device Code Flow, détection des scopes, chat, audience, clips et déconnexion en mode personnalisé/distribution configurée. | Créer l’application officielle et distribuer son client ID public. | Aucun mode officiel utilisable sans ce client ID ; l’UI l’annonce comme indisponible. |
+| Google Calendar | OAuth Desktop/PKCE, refresh, calendriers, synchronisation et déconnexion avec tokens dans `SecretStore`. | Créer le projet et le client OAuth officiels, puis distribuer le client ID public. | Aucun parcours officiel utilisable sans le client ID mainteneur. |
+| Discord | Bot personnel existant en mode `custom`, test, sélection serveur/salon et publication. | Déployer le service et le bot officiels hors de l’EXE. | Le relais officiel Desktop → service → bot ; le mode officiel reste marqué indisponible jusque-là. |
+| Streamlabs | Token Socket/OAuth réellement pris en charge en mode `custom`, test et déconnexion. | Aucun provisionnement officiel annoncé. | Un mode `official` ; il n’est ni simulé ni proposé comme disponible. |
+| WizeBot | Endpoint et token API en mode `custom`, test/refresh et déconnexion. | Aucun provisionnement officiel annoncé. | Un mode `official` ; il reste indisponible. |
+
+La route commune `/api/v1/connections` reflète ces limites avec `status`, `mode`, `message` et `capabilities`. Une interface ne doit afficher une action que si sa capability est présente.

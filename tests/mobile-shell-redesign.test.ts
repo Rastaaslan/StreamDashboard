@@ -14,7 +14,7 @@ describe('Android Mobile 2.3 focus surface', () => {
   });
 
   it('expose cinq destinations stables et regroupe le secondaire sous Plus', () => {
-    const tabs = [...html.matchAll(/<button data-tab="([^"]+)"/g)].map(match => match[1]);
+    const tabs = [...html.matchAll(/<button\b[^>]*\bdata-tab="([^"]+)"[^>]*>/g)].map(match => match[1]);
     expect(tabs).toEqual(['home', 'live', 'sounds', 'planning', 'more']);
     expect(html).toContain('id="menu-trigger"');
     expect(html).toContain('data-view="more"');
@@ -73,14 +73,15 @@ describe('Android Mobile 2.3 focus surface', () => {
     expect(html).toContain('id="direct-mic-state"');
   });
 
-  it('propose des préférences locales de focus, mouvement et densité', () => {
-    for (const id of ['focus-toggle', 'ui-preferences', 'focus-mode', 'reduce-motion', 'ui-density']) expect(html).toContain(`id="${id}"`);
+  it('sépare les préférences locales de l’apparence canonique en lecture seule', () => {
+    for (const id of ['focus-toggle', 'ui-preferences', 'focus-mode', 'reduce-motion', 'appearance-theme', 'appearance-details']) expect(html).toContain(`id="${id}"`);
     expect(mobile).toContain('streamdashboard.mobileUx');
     expect(html).toMatch(/id="ui-preferences"[\s\S]*id="focus-mode"[\s\S]*id="android-options"/);
     expect(mobile).toContain("$('focus-toggle').onclick");
     expect(css).toContain('.focus-mode .focus-secondary');
     expect(css).toContain('.reduce-motion *');
-    expect(css).toContain('body[data-density="comfort"]');
+    expect(html).toContain('Apparence gérée depuis StreamDashboard sur le PC.');
+    expect(mobile).toContain('JSON.stringify({ focus: uxPreferences.focus, reducedMotion: uxPreferences.reducedMotion })');
   });
 
   it('sépare Avant le live, Notes et Modèles de live en intentions exclusives', () => {

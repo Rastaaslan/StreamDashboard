@@ -509,8 +509,9 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
   const discordClient = () => new DiscordClient(discordToken, options.discordFetch ?? fetch);
   const obs = new ObsClient(local.settings.obsUrl, currentObsPassword, { logger });
   const savedTokens = await secrets.getTwitchTokens() ?? {};
+  const twitchClientId = options.twitchClientId ?? process.env.TWITCH_CLIENT_ID ?? '';
   const twitch = new TwitchClient({
-    clientId: options.twitchClientId ?? process.env.TWITCH_CLIENT_ID ?? '',
+    clientId: twitchClientId,
     accessToken: savedTokens.accessToken ?? '',
     refreshToken: savedTokens.refreshToken ?? '',
     ...local.twitch,
@@ -1368,11 +1369,11 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
     const integrationStatus = (value: string) => ({ CONNECTED: 'connected', CONNECTING: 'connecting', DISCONNECTED: 'disconnected', NOT_CONFIGURED: 'disconnected', NOT_SUPPORTED: 'unavailable', DEGRADED: 'error', ERROR: 'error' })[value] ?? 'unavailable';
     res.json({ items: [
       { id: 'obs', label: 'OBS', status: status(obs.state.connected), mode: 'custom', requiresReauth: false, capabilities: ['test','configure','scenes','audio'] },
-      { id: 'twitch', label: 'Twitch', status: status(twitch.state.connected, true, twitch.state.error), mode: productProfile.providers.twitch.mode, requiresReauth: false, capabilities: ['connect','disconnect','test','chat','audience','clips'] },
-      { id: 'google', label: 'Google Calendar', status: status(google.connected, Boolean(googleClientId), googleError), mode: productProfile.providers.google.mode, requiresReauth: false, capabilities: ['connect','disconnect','test','calendar'] },
-      { id: 'discord', label: 'Discord', status: status(discordPublic.connected, true, discordPublic.error), mode: productProfile.providers.discord.mode, requiresReauth: false, capabilities: ['configure','disconnect','test','publish'] },
-      { id: 'streamlabs', label: 'Streamlabs', status: integrationStatus(streamlabs.state().status), mode: productProfile.providers.streamlabs.mode, requiresReauth: false, capabilities: ['configure','disconnect','test','donations'] },
-      { id: 'wizebot', label: 'WizeBot', status: integrationStatus(wizebot.state().status), mode: productProfile.providers.wizebot.mode, requiresReauth: false, capabilities: ['configure','disconnect','test','events'] },
+      { id: 'twitch', label: 'Twitch', status: status(twitch.state.connected, Boolean(twitchClientId), twitch.state.error), mode: productProfile.providers.twitch.mode, requiresReauth: false, capabilities: twitchClientId ? ['connect','disconnect','test','chat','audience','clips'] : [], ...(!twitchClientId ? { message: 'Configuration mainteneur requise' } : {}) },
+      { id: 'google', label: 'Google Calendar', status: status(google.connected, Boolean(googleClientId), googleError), mode: productProfile.providers.google.mode, requiresReauth: false, capabilities: googleClientId ? ['connect','disconnect','test','calendar'] : [], ...(!googleClientId ? { message: 'Configuration mainteneur requise' } : {}) },
+      { id: 'discord', label: 'Discord', status: productProfile.providers.discord.mode === 'official' ? 'unavailable' : status(discordPublic.connected, true, discordPublic.error), mode: productProfile.providers.discord.mode, requiresReauth: false, capabilities: productProfile.providers.discord.mode === 'custom' ? ['configure','disconnect','test','publish'] : [], ...(productProfile.providers.discord.mode === 'official' ? { message: 'Service officiel non encore déployé' } : {}) },
+      { id: 'streamlabs', label: 'Streamlabs', status: productProfile.providers.streamlabs.mode === 'custom' ? integrationStatus(streamlabs.state().status) : 'unavailable', mode: productProfile.providers.streamlabs.mode, requiresReauth: false, capabilities: productProfile.providers.streamlabs.mode === 'custom' ? ['configure','disconnect','test','donations'] : [], ...(productProfile.providers.streamlabs.mode !== 'custom' ? { message: 'Mode officiel non implémenté' } : {}) },
+      { id: 'wizebot', label: 'WizeBot', status: productProfile.providers.wizebot.mode === 'custom' ? integrationStatus(wizebot.state().status) : 'unavailable', mode: productProfile.providers.wizebot.mode, requiresReauth: false, capabilities: productProfile.providers.wizebot.mode === 'custom' ? ['configure','disconnect','test','events'] : [], ...(productProfile.providers.wizebot.mode !== 'custom' ? { message: 'Mode officiel non implémenté' } : {}) },
     ] });
   });
   app.get('/api/v1/control-hub', (_req, res) => res.json(snapshot().controlHub));

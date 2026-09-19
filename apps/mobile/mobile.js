@@ -53,7 +53,9 @@ let credential = '';
 let server = settingsStorage.getServer();
 let state = null;
 let productProfile = null;
+let connectionProjection = [];
 let profileLoaded = false;
+let lastProfileSyncAt = 0;
 let pairingInFlight = false;
 let ws = null;
 let retry = 500;
@@ -277,9 +279,10 @@ function renderControlHub(hub) {
   $('home-live-status').textContent = isLive ? `${degraded ? '!' : '●'} En direct` : companionMode === CompanionMode.ONLINE_PC ? '○ Prêt' : '○ Hors ligne'; $('home-live-status').className = `live-line ${isLive ? degraded ? 'danger' : 'ok' : ''}`; $('home-duration').textContent = duration;
   $('direct-scene').textContent = state?.obs?.scene || 'Aucune scène'; $('direct-twitch-state').textContent = humanProviderStatus(hub?.integrations?.twitch?.status || 'DISCONNECTED');
   $('live-workspace-status').textContent = $('home-live-status').textContent; $('live-workspace-status').className = $('home-live-status').className; $('live-duration').textContent = duration; $('live-viewers').textContent = $('hub-viewers').textContent; $('live-chatters').textContent = $('hub-chatters').textContent; $('live-scene').textContent = state?.obs?.scene || '—';
-  const labels = { runtime: 'PC', obs: 'OBS', twitch: 'Twitch', discord: 'Discord', streamlabs: 'Streamlabs', wizebot: 'WizeBot' };
-  for (const [key, label] of Object.entries(labels)) {
-    const status = hub?.integrations?.[key]?.status || 'DISCONNECTED';
+  const projected = connectionProjection.length ? connectionProjection : Object.entries({ obs: 'OBS', twitch: 'Twitch', discord: 'Discord', streamlabs: 'Streamlabs', wizebot: 'WizeBot' }).map(([id, label]) => ({ id, label, status: (hub?.integrations?.[id]?.status || 'DISCONNECTED').toLowerCase() }));
+  for (const provider of projected) {
+    if (productProfile?.modules?.[provider.id === 'google' ? 'googleCalendar' : provider.id] === false) continue;
+    const status = String(provider.status || 'unavailable').toUpperCase().replace('REAUTH-REQUIRED', 'REAUTH_REQUIRED'); const label = provider.label;
     const row = document.createElement('div');
     row.className = 'integration-card';
     const dot = text('i', '', `provider-dot status-${status.toLowerCase()}`);
@@ -298,7 +301,7 @@ function renderControlHub(hub) {
 }
 
 const formatClock = seconds => { const value = Math.max(0, Math.floor(seconds)); return `${String(Math.floor(value / 3600)).padStart(2, '0')}:${String(Math.floor(value / 60) % 60).padStart(2, '0')}:${String(value % 60).padStart(2, '0')}`; };
-const humanProviderStatus = status => ({ CONNECTED: 'Connecté', CONNECTING: 'Connexion…', DEGRADED: 'Connexion instable', ERROR: 'Erreur', NOT_CONFIGURED: 'À configurer', DISCONNECTED: 'Déconnecté' })[status] || 'Indisponible';
+const humanProviderStatus = status => ({ CONNECTED: 'Connecté', CONNECTING: 'Connexion…', DEGRADED: 'Connexion instable', ERROR: 'Erreur', REAUTH_REQUIRED: 'Autorisation nécessaire', UNAVAILABLE: 'Indisponible', NOT_CONFIGURED: 'À configurer', DISCONNECTED: 'Déconnecté' })[status] || 'Indisponible';
 const humanActivity = event => event.type === 'support.received' ? `Soutien · ${event.payload?.displayName || 'Anonyme'}` : event.type === 'stream.started' ? 'Le live a démarré' : event.type === 'stream.stopped' ? 'Le live est terminé' : event.type === 'chat.message.received' ? `Chat · ${event.payload?.chatter?.displayName || 'nouveau message'}` : event.type === 'streamer.ping.received' ? `Ping · ${event.payload?.rewardTitle || 'récompense Twitch'}` : event.type === 'streamer.ping.acknowledged' ? 'Streamer Ping acquitté' : event.type === 'soundboard.played' ? 'Son joué' : event.type === 'automation.triggered' ? 'Automatisation exécutée' : event.type.replaceAll('.', ' · ');
 
 let moderationCapabilities = null;
@@ -510,6 +513,7 @@ function render(next) {
   if (!next) return;
   if (!acceptsSnapshot(state, next)) return;
   state = next;
+  if (companionMode === CompanionMode.ONLINE_PC && Date.now() - lastProfileSyncAt > 5_000) void loadProductProfile().catch(() => undefined);
   syncMobileStreamerPing(next.streamerPings || []);
   if (companionMode === CompanionMode.ONLINE_PC) $('pc').textContent = 'Connecté';
   $('obs').textContent = next.obs.connected ? 'Prêt' : 'Déconnecté';
@@ -801,28 +805,31 @@ const savedTab = localStorage.getItem('streamdashboard.mobileTab'); selectTab(['
 
 
 const preferenceKey = 'streamdashboard.mobileUx';
-const appearanceDefaults = { focus: false, reducedMotion: false, theme: 'system', preset: 'minimal', accent: '#2474e5', density: 'normal', radius: 'medium', textScale: 'normal' };
-let uxPreferences = { ...appearanceDefaults }; try { uxPreferences = { ...uxPreferences, ...JSON.parse(localStorage.getItem(preferenceKey) || '{}') }; } catch { /* use accessible defaults */ }
+const appearanceDefaults = { theme: 'system', preset: 'minimal', accent: '#2474e5', density: 'normal', radius: 'medium', textScale: 'normal' };
+let uxPreferences = { focus: false, reducedMotion: false, ...appearanceDefaults };
+try { const local = JSON.parse(localStorage.getItem(preferenceKey) || '{}'); uxPreferences.focus = local.focus === true; uxPreferences.reducedMotion = local.reducedMotion === true; } catch { /* use accessible device defaults */ }
 function applyUxPreferences() {
   document.body.classList.toggle('focus-mode', uxPreferences.focus); document.body.classList.toggle('reduce-motion', uxPreferences.reducedMotion);
   for (const key of ['theme', 'preset', 'density', 'radius']) document.body.dataset[key] = uxPreferences[key];
   document.documentElement.style.setProperty('--accent', uxPreferences.accent); document.documentElement.style.setProperty('--font-scale', uxPreferences.textScale === 'large' ? '1.16' : uxPreferences.textScale === 'small' ? '.9' : '1');
   $('focus-mode').checked = uxPreferences.focus; $('reduce-motion').checked = uxPreferences.reducedMotion;
-  for (const [id, key] of [['ui-theme','theme'],['ui-preset','preset'],['ui-density','density'],['ui-radius','radius'],['ui-text','textScale'],['ui-accent','accent']]) $(id).value = uxPreferences[key];
-  localStorage.setItem(preferenceKey, JSON.stringify(uxPreferences));
+  const themeLabels = { system: 'Système', light: 'Clair', dark: 'Sombre', oled: 'OLED' }; const presetLabels = { minimal: 'Minimal', soft: 'Doux', compact: 'Compact', contrast: 'Contrasté' };
+  $('appearance-theme').textContent = `${themeLabels[uxPreferences.theme] || uxPreferences.theme} · ${presetLabels[uxPreferences.preset] || uxPreferences.preset}`;
+  $('appearance-details').textContent = `Densité ${uxPreferences.density} · Texte ${uxPreferences.textScale}`;
+  localStorage.setItem(preferenceKey, JSON.stringify({ focus: uxPreferences.focus, reducedMotion: uxPreferences.reducedMotion }));
 }
 function setFocusPreference(value) { uxPreferences.focus = value; applyUxPreferences(); $('focus-toggle').setAttribute('aria-pressed', String(value)); $('focus-toggle').textContent = value ? 'Focus actif' : 'Focus'; }
 $('focus-mode').onchange = event => setFocusPreference(event.target.checked); $('focus-toggle').onclick = () => setFocusPreference(!uxPreferences.focus); $('reduce-motion').onchange = event => { uxPreferences.reducedMotion = event.target.checked; applyUxPreferences(); };
-for (const [id, key] of [['ui-theme','theme'],['ui-preset','preset'],['ui-density','density'],['ui-radius','radius'],['ui-text','textScale'],['ui-accent','accent']]) $(id).oninput = event => { if (productProfile) { uxPreferences[key] = productProfile.appearance[key]; applyUxPreferences(); note('Modifie l’apparence depuis Réglages → Profil sur le PC.'); return; } uxPreferences[key] = event.target.value; applyUxPreferences(); };
 async function loadProductProfile() {
-  const result = await transport.profile(); productProfile = result.profile;
+  const [result, connections] = await Promise.all([transport.profile(), transport.connections()]); productProfile = result.profile; connectionProjection = connections.items || []; lastProfileSyncAt = Date.now();
   uxPreferences = { ...uxPreferences, ...productProfile.appearance }; applyUxPreferences();
-  const enabled = productProfile.modules || {};
+  applyModuleProjection(productProfile.modules || {});
+}
+function applyModuleProjection(enabled) {
   document.querySelectorAll('[data-module]').forEach(node => { node.hidden = !node.dataset.module.split(',').some(id => enabled[id] !== false); });
   const active = document.querySelector('[data-view].active'); if (active?.hidden) activateView('home');
 }
-$('reset-accent').onclick = () => { uxPreferences.accent = productProfile?.appearance?.accent || appearanceDefaults.accent; applyUxPreferences(); }; applyUxPreferences(); setFocusPreference(uxPreferences.focus);
-
+applyUxPreferences(); setFocusPreference(uxPreferences.focus);
 const preparationKey = 'streamdashboard.mobilePreparationTab';
 function selectPreparationTab(tab, remember = true) { const selected = ['checklist', 'notes', 'templates'].includes(tab) ? tab : 'checklist'; document.querySelectorAll('[data-prepare-tab]').forEach(button => { const active = button.dataset.prepareTab === selected; button.classList.toggle('active', active); button.setAttribute('aria-selected', String(active)); }); document.querySelectorAll('[data-prepare-panel]').forEach(panel => { panel.hidden = panel.dataset.preparePanel !== selected; }); if (remember) localStorage.setItem(preparationKey, selected); }
 document.querySelector('.prepare-tabs').onclick = event => { const tab = event.target.closest('[data-prepare-tab]')?.dataset.prepareTab; if (tab) selectPreparationTab(tab); };
