@@ -431,6 +431,9 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
       ? rawSettings.primaryMicInput.trim() || undefined : undefined,
     requireTimerOverlayOnStart: rawSettings.requireTimerOverlayOnStart === true,
     remoteEnabled: rawSettings.remoteEnabled === true,
+    streamerPingRewardIds: Array.isArray(rawSettings.streamerPingRewardIds)
+      ? [...new Set(rawSettings.streamerPingRewardIds.filter(value => typeof value === 'string' && value.length <= 100))].slice(0, 50)
+      : [],
     ...(typeof rawSettings.obsPassword === 'string' && rawSettings.obsPassword.length <= 500 ? { obsPassword: rawSettings.obsPassword } : {}),
   };
 
