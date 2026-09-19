@@ -259,6 +259,32 @@ export class ObsClient {
   async stopMedia(inputName: string) { this.requireConnected(); await this.client.call('TriggerMediaInputAction', { inputName, mediaAction: 'OBS_WEBSOCKET_MEDIA_INPUT_ACTION_STOP' }); }
   async setInputSettings(inputName: string, inputSettings: Record<string, unknown>) { this.requireConnected(); await this.client.call('SetInputSettings', { inputName, inputSettings: inputSettings as never, overlay: true }); }
   async setMonitorType(inputName: string, monitorType: 'OBS_MONITORING_TYPE_NONE' | 'OBS_MONITORING_TYPE_MONITOR_AND_OUTPUT') { this.requireConnected(); await this.client.call('SetInputAudioMonitorType', { inputName, monitorType }); }
+  async inputKind(inputName: string): Promise<string | null> {
+    this.requireConnected();
+    const result = await this.client.call('GetInputList');
+    const input = result.inputs.find(value => String(value.inputName) === inputName);
+    return input ? String(input.inputKind) : null;
+  }
+  sceneExists(sceneName: string) { return this.state.scenes.includes(sceneName); }
+  async sceneHasSource(sceneName: string, sourceName: string) {
+    this.requireConnected();
+    const result = await this.client.call('GetSceneItemList', { sceneName });
+    return result.sceneItems.some(item => String((item as { sourceName?: unknown }).sourceName) === sourceName);
+  }
+  async createMediaInput(sceneName: string, inputName: string) {
+    this.requireConnected();
+    await this.client.call('CreateInput', {
+      sceneName, inputName, inputKind: 'ffmpeg_source',
+      inputSettings: { is_local_file: true, local_file: '', looping: false, restart_on_activate: false, close_when_inactive: false },
+      sceneItemEnabled: true,
+    } as never);
+    this.scheduleRefresh();
+  }
+  async addInputToScene(sceneName: string, sourceName: string) {
+    this.requireConnected();
+    await this.client.call('CreateSceneItem', { sceneName, sourceName, sceneItemEnabled: true } as never);
+    this.scheduleRefresh();
+  }
   onMediaEnded(listener: (inputName: string) => void) { this.mediaEndedListeners.add(listener); return () => this.mediaEndedListeners.delete(listener); }
   async refreshBrowserSource(inputName: string) {
     this.requireConnected();
