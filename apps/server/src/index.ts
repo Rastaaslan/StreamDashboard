@@ -539,6 +539,7 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
     },
     undefined,
     (redemption: TwitchRewardRedemption) => {
+      eventCore.publish({ type: 'twitch.reward.redeemed', source: 'twitch', occurredAt: redemption.redeemedAt, correlationId: redemption.id, payload: redemption });
       if (!(local.settings.streamerPingRewardIds ?? []).includes(redemption.reward.id)) return;
       if (local.streamerPings.some(ping => ping.id === redemption.id)) return;
       const ping: StreamerPing = {
@@ -571,10 +572,19 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
   const soundboard = new SoundboardRuntime(local.sounds, new ObsSoundboardPlayback(obs), () => Date.now(), event => {
     eventCore.publish({ type: event.type, source: 'soundboard', correlationId: event.correlationId, payload: event.payload });
   });
+  let executeAutomationCommand: (command: DashboardCommand) => Promise<void> = async () => { throw new Error('Runtime de commandes indisponible.'); };
   const automation = new AutomationRuntime(local.automations, async (action, context) => {
-    if (action.type !== 'soundboard.play' || typeof action.payload.soundId !== 'string') throw new Error(`Action ${action.type} non supportée.`);
-    const ack = await soundboard.play({ commandId: `${context.correlationId}:${context.automationId}:${context.actionIndex}`, correlationId: context.correlationId, type: 'soundboard.play', origin: 'automation', issuedAt: new Date().toISOString(), payload: { soundId: action.payload.soundId, ...(typeof action.payload.volume === 'number' ? { volume: action.payload.volume } : {}) } });
-    if (ack.status !== 'succeeded') { const error = new Error(ack.message ?? 'Lecture soundboard échouée.'); error.name = ack.errorCode ?? 'SOUNDBOARD_FAILED'; throw error; }
+    if (action.type === 'soundboard.play' && typeof action.payload.soundId === 'string') {
+      const ack = await soundboard.play({ commandId: `${context.correlationId}:${context.automationId}:${context.actionIndex}`, correlationId: context.correlationId, type: 'soundboard.play', origin: 'automation', issuedAt: new Date().toISOString(), payload: { soundId: action.payload.soundId, ...(typeof action.payload.volume === 'number' ? { volume: action.payload.volume } : {}) } });
+      if (ack.status !== 'succeeded') { const error = new Error(ack.message ?? 'Lecture soundboard échouée.'); error.name = ack.errorCode ?? 'SOUNDBOARD_FAILED'; throw error; }
+      return;
+    }
+    if (action.type === 'obs.scene' && typeof action.payload.scene === 'string') return executeAutomationCommand({ type: 'obs.scene', scene: action.payload.scene });
+    if (action.type === 'obs.media.restart' && typeof action.payload.input === 'string') return executeAutomationCommand({ type: 'obs.media.restart', input: action.payload.input });
+    if (action.type === 'timer.add' && typeof action.payload.seconds === 'number') return executeAutomationCommand({ type: 'timer.add', seconds: action.payload.seconds });
+    if (action.type === 'timer.start') return executeAutomationCommand({ type: 'timer.start', ...(typeof action.payload.seconds === 'number' ? { seconds: action.payload.seconds } : {}) });
+    if (action.type === 'timer.pause') return executeAutomationCommand({ type: 'timer.pause' });
+    throw new Error(`Action ${action.type} non supportée.`);
   }, async values => { local.automations = values; await save(); });
   const support = new SupportRuntime(local.supports, async values => { local.supports = values; await save(); }, value => { eventCore.publish({ type: 'support.received', source: value.provider, occurredAt: value.receivedAt, correlationId: `${value.provider}:${value.externalId}`, payload: value }); });
   const streamlabs = new StreamlabsAdapter(await secrets.getStreamlabsToken?.() ?? process.env.STREAMLABS_SOCKET_TOKEN ?? '', value => support.record(value).then(() => undefined), options.streamlabsTransport ?? new StreamlabsSocketTransport({ logger }), logger);
@@ -990,6 +1000,7 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
     }
     return operation;
   };
+  executeAutomationCommand = async command => { await executeCommand({ ...command, commandId: `auto_${randomUUID()}`, correlationId: `auto_${randomUUID()}` }); };
   const validateTwitch = async () => {
     if (!twitch.state.connected) return;
     if (!await twitch.validateSession()) {
