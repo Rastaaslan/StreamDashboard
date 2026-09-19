@@ -5,7 +5,7 @@ import os from 'node:os'; import path from 'node:path';
 test('Desktop Preview navigue et émet une commande unique par contrôle', async () => {
   const profile=await mkdtemp(path.join(os.tmpdir(),'streamdashboard-preview-'));
   const app=await electron.launch({args:[path.resolve('.'),'--ui-preview=desktop-v2'],env:{...process.env,NODE_ENV:'test',APPDATA:profile,XDG_CONFIG_HOME:profile}});
-  try { const page=await app.firstWindow(); await expect(page).toHaveTitle('StreamDashboard Desktop Preview');
+  try { const page=await app.firstWindow(); await expect(page).toHaveTitle('StreamDashboard Desktop Preview'); await expect(page.locator('html')).toHaveAttribute('data-app-ready','true');
     for(const [view,label] of [['home','Accueil'],['live','Live'],['sounds','Sons'],['planning','Planning'],['camp','Le Camp']]){await page.locator(`[data-view="${view}"]`).click();await expect(page.locator('#title')).toHaveText(label)}
     await page.locator('[data-view="live"]').click();
     for(const scene of ['Intro','Gameplay','Chatting','Pause','Fin']){const before=await page.evaluate(()=>(window as any).__preview.commandLog.length);await page.locator(`[data-scene="${scene}"]`).click();expect(await page.evaluate(()=>(window as any).__preview.commandLog.length)).toBe(before+1)}
