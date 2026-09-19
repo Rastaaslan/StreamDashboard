@@ -110,6 +110,13 @@ describe('Android remote runtime', () => {
     expect(websocketUrl('http://192.168.1.2:47832', 'ticket')).not.toContain('credential');
   });
 
+  it('affiche et acquitte les Streamer Pings Twitch sur Android', () => {
+    expect(mobileScript).toContain('streamer-ping-dialog');
+    expect(mobileScript).toContain('syncMobileStreamerPing(next.streamerPings || [])');
+    expect(mobileScript).toContain("haptic?.('strong')");
+    expect(mobileScript).toContain('transport.acknowledgeStreamerPing(id)');
+  });
+
   it('bounds reconnect backoff at ten seconds', () => {
     expect(nextRetry(500)).toBe(1000);
     expect(nextRetry(8000)).toBe(10000);
