@@ -259,7 +259,7 @@ function renderAudio(inputs, activeInputs = []) {
 function renderDeck(media) {
   const container = $('deck');
   container.replaceChildren();
-  for (const name of media || []) {
+  for (const name of publicObsMediaInputs(media)) {
     const button = document.createElement('button');
     button.type = 'button';
     button.dataset.media = name;
@@ -333,6 +333,11 @@ async function loadMoreChatters(reset = false) { if (companionMode !== Companion
 
 let vodCursor = null, clipCursor = null;
 let soundboardState = null;
+const OBS_SOUNDBOARD_INPUT = 'StreamDashboard • Soundboard';
+const soundboardVolumeKey = 'streamdashboard.soundboardMasterVolume';
+let soundboardMasterVolume = Math.max(0, Math.min(1, Number(localStorage.getItem(soundboardVolumeKey) ?? 1) || 1));
+let soundboardVolumeTimer = null;
+const publicObsMediaInputs = values => (values || []).filter(name => name !== OBS_SOUNDBOARD_INPUT);
 const newCommandId = () => globalThis.crypto?.randomUUID?.() || `${deviceId || 'android'}:${Date.now()}:${Math.random().toString(36).slice(2)}`;
 async function loadSoundboard() {
   if (companionMode !== CompanionMode.ONLINE_PC) { soundboardState = null; $('sounds-pc-state').textContent = 'PC hors ligne'; $('soundboard-state').textContent = 'PC StreamDashboard hors ligne. Les sons redeviendront disponibles à la reconnexion.'; renderSoundboard(); return; }
@@ -342,17 +347,18 @@ async function loadSoundboard() {
 }
 function renderSoundboard() {
   const sounds = soundboardState?.sounds || []; const categories = [...new Set(sounds.map(sound => sound.category))].sort();
+  const volume = $('sound-volume'); volume.value = String(Math.round(soundboardMasterVolume * 100)); volume.disabled = companionMode !== CompanionMode.ONLINE_PC || soundboardState?.supportsVolume !== true;
+  $('stop-sound').disabled = companionMode !== CompanionMode.ONLINE_PC || soundboardState?.supportsStop !== true || !soundboardState?.currentPlayback;
   const select = $('sound-category'); const selected = select.value; select.replaceChildren(new Option('Toutes les catégories', ''), ...categories.map(value => new Option(value, value))); select.value = categories.includes(selected) ? selected : '';
   const query = $('sound-search').value.trim().toLocaleLowerCase(); const onlyFavorites = $('sound-favorites').checked; const container = $('sound-grid'); container.replaceChildren();
   for (const sound of sounds.filter(value => (!query || value.name.toLocaleLowerCase().includes(query)) && (!select.value || value.category === select.value) && (!onlyFavorites || value.favorite))) {
     const pad = document.createElement('button'); pad.type = 'button'; pad.className = `sound-pad${soundboardState.currentPlayback?.soundId === sound.id ? ' playing' : ''}${!sound.sourceAvailable ? ' sound-error' : ''}`; pad.disabled = !sound.enabled || !sound.sourceAvailable;
     pad.append(text('b', sound.name), text('small', `${sound.category} · ${Math.round(sound.volume * 100)}%`), text('span', sound.favorite ? '★' : '☆', 'sound-favorite'));
-    pad.onclick = async event => { if (event.target.closest('.sound-favorite')) return; if (companionMode !== CompanionMode.ONLINE_PC) { note('PC hors ligne. Le son n’a pas été joué.'); return; } const commandId = newCommandId(); pad.disabled = true; try { const ack = await transport.playSound({ commandId, soundId: sound.id, issuedAt: new Date().toISOString() }); if (ack.status !== 'succeeded') throw new Error(ack.message || ack.errorCode || 'Lecture échouée.'); globalThis.StreamDashboardNative?.haptic?.('light'); note(`Lecture confirmée par le PC : ${sound.name}`); } catch (error) { note(error.message); } finally { pad.disabled = false; await loadSoundboard(); } };
+    pad.onclick = async event => { if (event.target.closest('.sound-favorite')) return; if (companionMode !== CompanionMode.ONLINE_PC) { note('PC hors ligne. Le son n’a pas été joué.'); return; } const commandId = newCommandId(); pad.disabled = true; try { const effectiveVolume = Math.max(0, Math.min(1, sound.volume * soundboardMasterVolume)); const ack = await transport.playSound({ commandId, soundId: sound.id, volume: effectiveVolume, issuedAt: new Date().toISOString() }); if (ack.status !== 'succeeded') throw new Error(ack.message || ack.errorCode || 'Lecture échouée.'); globalThis.StreamDashboardNative?.haptic?.('light'); note(`Lecture confirmée par le PC : ${sound.name}`); } catch (error) { note(error.message); } finally { pad.disabled = false; await loadSoundboard(); } };
     pad.querySelector('.sound-favorite').onclick = async event => { event.stopPropagation(); try { soundboardState = await transport.updateSound(sound.id, { favorite: !sound.favorite }); renderSoundboard(); } catch (error) { note(error.message); } };
     container.append(pad);
   }
   if (!container.children.length) { const empty = document.createElement('div'); empty.className = 'module-empty'; empty.append(text('small', sounds.length ? 'RECHERCHE' : 'AUCUN SON', 'console-label'), text('b', sounds.length ? 'Aucun pad ne correspond.' : 'Le catalogue Soundboard est vide.'), text('p', sounds.length ? 'Modifie la recherche ou affiche toutes les catégories.' : 'Ajoute des sons depuis le PC StreamDashboard. Ils seront disponibles ici immédiatement.', 'muted')); container.append(empty); }
-  renderCommandSounds();
 }
 let automationState = [];
 let automationCapabilities = { triggers: ['support.received','test.support','twitch.reward.redeemed','streamer.ping.received','stream.started','stream.stopped','obs.state.changed','chat.message.received'], actions: ['soundboard.play','obs.scene','obs.media.restart','timer.add','timer.start','timer.pause'] };
@@ -381,7 +387,7 @@ function automationActionParameters(action, row) {
   const addParam=(key,node)=>{node.dataset.actionParam=key;row.append(node);};
   if(type==='soundboard.play'){const select=document.createElement('select'); for(const sound of soundboardState?.sounds||[])select.append(new Option(sound.name,sound.id));select.value=payload.soundId||'';addParam('soundId',select);const volume=document.createElement('input');volume.type='number';volume.min='0';volume.max='1.5';volume.step='.05';volume.value=String(payload.volume??1);addParam('volume',volume);}
   else if(type==='obs.scene'){const select=document.createElement('select');for(const scene of state?.obs?.scenes||[])select.append(new Option(scene,scene));select.value=payload.scene||'';addParam('scene',select);}
-  else if(type==='obs.media.restart'){const select=document.createElement('select');for(const input of state?.obs?.mediaInputs||[])select.append(new Option(input,input));select.value=payload.input||'';addParam('input',select);}
+  else if(type==='obs.media.restart'){const select=document.createElement('select');for(const input of publicObsMediaInputs(state?.obs?.mediaInputs))select.append(new Option(input,input));select.value=payload.input||'';addParam('input',select);}
   else if(type==='timer.add'||type==='timer.start'){const seconds=document.createElement('input');seconds.type='number';seconds.min=type==='timer.start'?'1':'-86400';seconds.max='86400';seconds.value=String(payload.seconds??(type==='timer.start'?300:60));addParam('seconds',seconds);}
 }
 function automationActionRow(action = {}, index = 0) {
@@ -977,7 +983,23 @@ $('live-tools-sheet').querySelectorAll('[data-mode],[data-chatting]').forEach(bu
 $('audience-search').oninput = () => renderAudience(state?.controlHub?.audience);
 $('more-chatters').onclick = () => void loadMoreChatters();
 $('sound-search').oninput = renderSoundboard; $('sound-category').onchange = renderSoundboard; $('sound-favorites').onchange = renderSoundboard;
-$('stop-sound').onclick = async () => { if (companionMode !== CompanionMode.ONLINE_PC) { note('PC hors ligne.'); return; } try { await transport.stopSound(); note('Lecture arrêtée par le PC Runtime.'); await loadSoundboard(); } catch (error) { note(error.message); } };
+$('sound-volume').oninput = event => {
+  soundboardMasterVolume = Math.max(0, Math.min(1, Number(event.target.value) / 100));
+  localStorage.setItem(soundboardVolumeKey, String(soundboardMasterVolume));
+  clearTimeout(soundboardVolumeTimer);
+  if (companionMode !== CompanionMode.ONLINE_PC || soundboardState?.supportsVolume !== true || !soundboardState?.currentPlayback) return;
+  const current = soundboardState.sounds?.find(sound => sound.id === soundboardState.currentPlayback.soundId);
+  const effectiveVolume = Math.max(0, Math.min(1, (current?.volume ?? 1) * soundboardMasterVolume));
+  soundboardVolumeTimer = setTimeout(async () => {
+    try { soundboardState = await transport.setSoundVolume(effectiveVolume); renderSoundboard(); }
+    catch (error) { note(error.message); }
+  }, 80);
+};
+$('stop-sound').onclick = async () => {
+  if (companionMode !== CompanionMode.ONLINE_PC) { note('PC hors ligne.'); return; }
+  try { soundboardState = await transport.stopSound(); renderSoundboard(); note('Lecture arrêtée.'); }
+  catch (error) { note(error.message); }
+};
 $('automation-reset').onclick = resetAutomationForm;
 $('automation-condition-add').onclick = () => { automationDraft = readAutomationEditor(); automationDraft.conditions.push({ path: '', operator: 'eq', value: '' }); renderAutomationEditor(); };
 $('automation-action-add').onclick = () => { automationDraft = readAutomationEditor(); automationDraft.actions.push({ type: 'soundboard.play', payload: { soundId: soundboardState?.sounds?.[0]?.id || '' } }); renderAutomationEditor(); };
