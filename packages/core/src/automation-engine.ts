@@ -14,7 +14,7 @@ export class AutomationEngine {
   private readonly automations = new Map<string, Automation>();
   private queue: Promise<void> = Promise.resolve();
 
-  constructor(private readonly executeAction: (action: Automation['actions'][number], context: { correlationId: string; automationId: string; actionIndex: number }) => Promise<void>, private readonly now = () => new Date()) {}
+  constructor(private readonly executeAction: (action: Automation['actions'][number], context: { correlationId: string; automationId: string; actionIndex: number; event: EventEnvelope }) => Promise<void>, private readonly now = () => new Date()) {}
 
   replace(values: Automation[]) {
     const unique = new Map<string, Automation>();
@@ -41,7 +41,7 @@ export class AutomationEngine {
       const startedAt = this.now().toISOString();
       if (!matchAutomation(automation, event, Date.parse(startedAt))) continue;
       try {
-        for (const [actionIndex, action] of automation.actions.entries()) await this.executeAction(action, { correlationId: event.correlationId, automationId: automation.id, actionIndex });
+        for (const [actionIndex, action] of automation.actions.entries()) await this.executeAction(action, { correlationId: event.correlationId, automationId: automation.id, actionIndex, event });
         automation.lastExecutionAt = this.now().toISOString();
         automation.lastResult = { status: 'succeeded', at: automation.lastExecutionAt };
         executions.push({ automationId: automation.id, correlationId: event.correlationId, status: 'succeeded', startedAt, completedAt: automation.lastExecutionAt });
