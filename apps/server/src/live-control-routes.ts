@@ -123,7 +123,7 @@ export function registerLiveControlRoutes(options: Options) {
       res.json({ authorizationUrl: streamlabsOAuth.authorizationUrl({ clientId: configuration.clientId, redirectUri: options.streamlabsRedirectUri, state }), expiresAt: new Date(expiresAt).toISOString() });
     } catch (error) { next(error); }
   });
-  app.get('/api/v1/supports/streamlabs/oauth/callback', async (req, res, next) => {
+  app.get('/api/v1/streamlabs/oauth/callback', async (req, res, next) => {
     try {
       if (!options.requireLocal(req, res)) return;
       const failure = typeof req.query.error === 'string' ? req.query.error : '';
