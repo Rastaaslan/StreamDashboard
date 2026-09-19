@@ -8,7 +8,7 @@ import { MemorySecretStore } from '../apps/server/src/storage.js';
 
 let dashboard: DashboardServerHandle | undefined; let dataDir = '';
 afterEach(async () => { if (dashboard) await dashboard.stop(); if (dataDir) await rm(dataDir, { recursive: true, force: true }); dashboard = undefined; dataDir = ''; });
-async function start() { dataDir = await mkdtemp(path.join(os.tmpdir(), 'streamdashboard-api-')); dashboard = await startDashboardServer({ port: 0, dataDir, logger: { info() {}, warn() {}, error() {} } }); return dashboard; }
+async function start(options: Parameters<typeof startDashboardServer>[0] = {}) { dataDir = await mkdtemp(path.join(os.tmpdir(), 'streamdashboard-api-')); dashboard = await startDashboardServer({ port: 0, dataDir, logger: { info() {}, warn() {}, error() {} }, ...options }); return dashboard; }
 async function wsRejected(url: string, origin: string) {
   await expect(new Promise<void>((resolve, reject) => {
     const ws = new WebSocket(url, { origin });
@@ -19,7 +19,7 @@ async function wsRejected(url: string, origin: string) {
 
 describe('API publique v1', () => {
   it('annonce protocole, capacités et état sans secrets', async () => {
-    const app = await start();
+    const app = await start({ twitchClientId: '' });
     const capabilities = await fetch(`${app.url}/api/v1/capabilities`).then(r => r.json());
     const stateText = await fetch(`${app.url}/api/v1/state`).then(r => r.text());
     const connections = await fetch(`${app.url}/api/v1/connections`).then(r => r.json());
@@ -36,6 +36,16 @@ describe('API publique v1', () => {
     expect(csp).toContain('ws://127.0.0.1:*');
     expect(csp).not.toContain('connect-src *');
     expect(response.headers.get('x-frame-options')).toBe('DENY');
+  });
+
+  it('annonce Twitch disponible quand un Client ID officiel est provisionné', async () => {
+    const app = await start({ twitchClientId: 'test-client-id' });
+    const connections = await fetch(`${app.url}/api/v1/connections`).then(r => r.json());
+    expect(connections.items.find((item: { id: string }) => item.id === 'twitch')).toMatchObject({
+      status: 'disconnected',
+      mode: 'official',
+      capabilities: ['connect','disconnect','test','chat','audience','clips'],
+    });
   });
 
   it('persiste, exporte et réimporte le profil YAML canonique après restart', async () => {
