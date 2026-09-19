@@ -133,11 +133,128 @@ function streamerPingSettings(){
   const selected=new Set(state.dashboard?.settings?.streamerPingRewardIds||[]);
   return `<div class="setup-status"><div class="section-head"><div><b>Streamer Pings</b><span class="label">Choisis les récompenses qui doivent te demander une action.</span></div></div><div class="ping-reward-list">${state.twitchRewards.map(reward=>`<label><input type="checkbox" data-ping-reward="${esc(reward.id)}" ${selected.has(reward.id)?'checked':''}><span><b>${esc(reward.title)}</b><small>${reward.cost} points${reward.prompt?` · ${esc(reward.prompt)}`:''}</small></span></label>`).join('')||'<p class="help">Aucune récompense personnalisée Twitch.</p>'}</div><div class="connection-actions"><button class="action" data-ping-action="save">Enregistrer les Streamer Pings</button></div></div>`;
 }
+
+const euro=(amountMinor,currency='EUR')=>{try{return new Intl.NumberFormat('fr-FR',{style:'currency',currency}).format((Number(amountMinor)||0)/100)}catch{return `${(Number(amountMinor)||0)/100} ${currency}`}};
+const triggerLabels={
+  'support.received':'Soutien reçu','test.support':'Test soutien','twitch.reward.redeemed':'Récompense Twitch',
+  'streamer.ping.received':'Streamer Ping','stream.started':'Début du live','stream.stopped':'Fin du live',
+  'obs.state.changed':'État OBS','chat.message.received':'Message chat'
+};
+const actionLabels={'soundboard.play':'Jouer un son','obs.scene':'Changer de scène','obs.media.restart':'Relancer un média OBS','timer.add':'Ajouter au timer','timer.start':'Démarrer le timer','timer.pause':'Mettre le timer en pause'};
+async function loadCompanion(){
+  if(!state.runtime)return;
+  state.companion=await request('/api/v1/companion/snapshot');
+}
+async function loadSupports(){
+  if(!state.runtime)return;
+  state.supports=await request('/api/v1/supports');
+}
+async function loadAutomations(){
+  if(!state.runtime)return;
+  const [values,capabilities]=await Promise.all([request('/api/v1/automations'),request('/api/v1/automations/capabilities')]);
+  state.automations=values;state.automationCapabilities=capabilities;
+}
+async function loadDiagnostics(){
+  if(!state.runtime)return;
+  const [diagnostics,events]=await Promise.all([request('/api/v1/diagnostics'),request('/api/v1/events?limit=100')]);
+  state.diagnostics={diagnostics,events:events.items||[]};
+}
+async function loadPingHistory(){
+  if(!state.runtime)return;
+  const history=await request('/api/v1/streamer-pings?all=1');state.pingHistory=history.items||[];
+}
+async function loadCampData(item=state.campItem){
+  if(!state.runtime)return;
+  try{
+    if(['Préparation','Notes','Templates'].includes(item))await loadCompanion();
+    else if(item==='Soutiens')await loadSupports();
+    else if(item==='Automatisations')await loadAutomations();
+    else if(item==='Diagnostics')await loadDiagnostics();
+    else if(item==='Réglages'){
+      await Promise.all([loadPingHistory(),state.dashboard?.twitch?.redemptionsAvailable===true?request('/api/v1/twitch/rewards').then(result=>{state.twitchRewards=result.items||[]}):Promise.resolve()]);
+    }
+    if(state.view==='camp'&&state.campItem===item&&!editableFocus())render();
+  }catch(error){toast(error.message,true)}
+}
+function preparationContent(){
+  const items=state.companion?.checklist||state.dashboard?.checklist||[];
+  const done=items.filter(item=>item.done===true).length;
+  return `<div class="connection-stack"><div class="setup-status"><div class="section-head"><div><b>Checklist avant direct</b><span class="label">${done} / ${items.length} terminés</span></div><div class="connection-actions"><button class="secondary" data-camp-action="prepare">Préparer le direct</button><button class="secondary" data-camp-action="check-reset">Tout décocher</button></div></div><div class="camp-list">${items.map(item=>`<div class="camp-row"><button class="check-button ${item.done?'active':''}" data-check-toggle="${esc(item.id)}">${item.done?'✓':'○'} ${esc(item.label)}</button><button class="critical" data-check-delete="${esc(item.id)}">Suppr.</button></div>`).join('')||'<p class="help">Checklist vide.</p>'}</div><form id="camp-check-add" class="toolbar"><input name="label" maxlength="500" placeholder="Nouvel élément" required><button class="action">Ajouter</button></form></div></div>`;
+}
+function notesContent(){
+  const notes=state.companion?.notes||[];
+  return `<div class="connection-stack"><div class="setup-status"><div class="section-head"><b>Notes</b><span class="label">${notes.length} note${notes.length>1?'s':''}</span></div><div class="camp-list">${notes.map(note=>`<div class="camp-note"><textarea data-note-value="${esc(note.id)}" maxlength="500">${esc(note.text||'')}</textarea><div class="connection-actions"><button class="secondary" data-note-save="${esc(note.id)}">Enregistrer</button><button class="critical" data-note-delete="${esc(note.id)}">Supprimer</button></div></div>`).join('')||'<p class="help">Aucune note pour le moment.</p>'}</div><form id="camp-note-add"><label class="label">Nouvelle note<textarea name="text" maxlength="500" required></textarea></label><button class="action">Ajouter la note</button></form></div></div>`;
+}
+function templateEditorContent(){
+  const t=state.templateEditor||{};
+  return `<form id="camp-template-form" class="setup-status"><input type="hidden" name="id" value="${esc(t.id||'')}"><div class="section-head"><b>${t.id?'Modifier le template':'Nouveau template'}</b>${t.id?'<button type="button" class="secondary" data-template-new>Nouveau</button>':''}</div><label class="label">Nom<input name="title" maxlength="140" value="${esc(t.title||'')}" required></label><label class="label">Description<textarea name="description" maxlength="4000">${esc(t.description||'')}</textarea></label><div class="toolbar"><input id="camp-template-category" name="categoryName" maxlength="80" value="${esc(t.twitchCategoryName||'')}" placeholder="Catégorie Twitch"><input id="camp-template-category-id" name="categoryId" type="hidden" value="${esc(t.twitchCategoryId||'')}"><button type="button" class="secondary" data-template-category-search>Rechercher</button></div><select id="camp-template-category-results" hidden></select><div class="checks"><label><input name="publishTwitch" type="checkbox" ${t.desiredPublication?.twitch?'checked':''}> Twitch</label><label><input name="publishGoogle" type="checkbox" ${t.desiredPublication?.google?'checked':''}> Google</label></div><button class="action">Enregistrer le template</button></form>`;
+}
+function templatesContent(){
+  const templates=state.companion?.templates||[];
+  return `<div class="connection-stack"><div class="camp-list">${templates.map(template=>`<article class="setup-status"><div class="section-head"><div><b>${esc(template.title||'Template')}</b><span class="label">${esc([template.twitchCategoryName,template.desiredPublication?.twitch?'Twitch':'',template.desiredPublication?.google?'Google':''].filter(Boolean).join(' · ')||'Local')}</span></div><div class="connection-actions"><button class="action" data-template-use="${esc(template.id)}">Créer un événement</button><button class="secondary" data-template-edit="${esc(template.id)}">Modifier</button><button class="critical" data-template-delete="${esc(template.id)}">Supprimer</button></div></div>${template.description?`<p class="help">${esc(template.description)}</p>`:''}</article>`).join('')||'<p class="help">Aucun template.</p>'}</div>${templateEditorContent()}</div>`;
+}
+function supportsContent(){
+  const values=state.supports;
+  if(!values)return '<p class="help">Chargement des soutiens…</p>';
+  const totals=values.totals||{};
+  const totalBlock=key=>Object.entries(totals[key]||{}).map(([currency,amount])=>euro(amount,currency)).join(' · ')||'—';
+  return `<div class="connection-stack"><div class="support-summary"><article class="setup-status"><span class="label">Session</span><b>${esc(totalBlock('session'))}</b></article><article class="setup-status"><span class="label">Aujourd’hui</span><b>${esc(totalBlock('day'))}</b></article><article class="setup-status"><span class="label">Ce mois</span><b>${esc(totalBlock('month'))}</b></article></div><div class="connection-actions"><button class="secondary" data-camp-action="supports-refresh">Rafraîchir</button><button class="secondary" data-camp-action="supports-test">Test 1 €</button></div><div class="camp-list">${(values.history||[]).slice().reverse().slice(0,50).map(support=>`<div class="camp-row"><span><b>${esc(support.displayName||'Anonyme')}</b><small>${esc(support.message||'')}</small></span><strong>${esc(euro(support.amountMinor,support.currency))}</strong></div>`).join('')||'<p class="help">Aucun soutien enregistré.</p>'}</div></div>`;
+}
+function conditionRow(condition={},index=0){
+  return `<div class="automation-row-fields" data-condition-row="${index}"><input data-condition-path value="${esc(condition.path||'')}" placeholder="Chemin, ex. reward.id"><select data-condition-operator><option value="eq" ${condition.operator==='eq'?'selected':''}>=</option><option value="gte" ${condition.operator==='gte'?'selected':''}>≥</option></select><input data-condition-value value="${esc(condition.value??'')}" placeholder="Valeur"><button type="button" class="critical" data-condition-remove="${index}">×</button></div>`;
+}
+function actionFields(action,index){
+  const type=action.type||'soundboard.play',payload=action.payload||{};
+  if(type==='soundboard.play')return `<select data-action-param="soundId">${(state.sounds||[]).map(sound=>`<option value="${esc(sound.id)}" ${payload.soundId===sound.id?'selected':''}>${esc(sound.name)}</option>`).join('')}</select><input data-action-param="volume" type="number" min="0" max="1.5" step=".05" value="${esc(payload.volume??1)}" aria-label="Volume">`;
+  if(type==='obs.scene')return `<select data-action-param="scene">${(state.dashboard?.obs?.scenes||[]).map(scene=>`<option value="${esc(scene)}" ${payload.scene===scene?'selected':''}>${esc(scene)}</option>`).join('')}</select>`;
+  if(type==='obs.media.restart')return `<select data-action-param="input">${(state.dashboard?.obs?.mediaInputs||[]).map(input=>`<option value="${esc(input)}" ${payload.input===input?'selected':''}>${esc(input)}</option>`).join('')}</select>`;
+  if(type==='timer.add')return `<input data-action-param="seconds" type="number" min="-86400" max="86400" value="${esc(payload.seconds??60)}" aria-label="Secondes">`;
+  if(type==='timer.start')return `<input data-action-param="seconds" type="number" min="1" max="86400" value="${esc(payload.seconds??300)}" aria-label="Durée en secondes">`;
+  return '<span class="help">Aucun paramètre.</span>';
+}
+function actionRow(action={},index=0){
+  const types=state.automationCapabilities?.actions||Object.keys(actionLabels);const current=action.type||'soundboard.play';
+  return `<div class="automation-row-fields" data-action-row="${index}"><select data-action-type>${types.map(type=>`<option value="${esc(type)}" ${type===current?'selected':''}>${esc(actionLabels[type]||type)}</option>`).join('')}</select>${actionFields(action,index)}<button type="button" class="critical" data-action-remove="${index}">×</button></div>`;
+}
+function automationsContent(){
+  if(!state.automations)return '<p class="help">Chargement des automatisations…</p>';
+  const editor=state.automationEditor;
+  const triggers=state.automationCapabilities?.triggers||Object.keys(triggerLabels);
+  return `<div class="connection-stack"><div class="camp-list">${(state.automations.items||[]).map(auto=>`<article class="setup-status"><div class="section-head"><div><b>${auto.enabled?'●':'○'} ${esc(auto.name)}</b><span class="label">${esc(triggerLabels[auto.trigger]||auto.trigger)} · ${auto.lastResult?.status||'jamais exécutée'}</span></div><div class="connection-actions"><button class="secondary" data-auto-edit="${esc(auto.id)}">Modifier</button><button class="secondary" data-auto-toggle="${esc(auto.id)}">${auto.enabled?'Désactiver':'Activer'}</button><button class="critical" data-auto-delete="${esc(auto.id)}">Supprimer</button></div></div></article>`).join('')||'<p class="help">Aucune automatisation.</p>'}</div><form id="camp-automation-form" class="setup-status"><div class="section-head"><b>${editor.id?'Modifier l’automatisation':'Nouvelle automatisation'}</b><button type="button" class="secondary" data-auto-new>Nouvelle</button></div><label class="label">Nom<input name="name" maxlength="120" value="${esc(editor.name||'')}" required></label><label class="label">Quand<select name="trigger">${triggers.map(trigger=>`<option value="${esc(trigger)}" ${editor.trigger===trigger?'selected':''}>${esc(triggerLabels[trigger]||trigger)}</option>`).join('')}</select></label><div class="section-head"><b>Conditions</b><button type="button" class="secondary" data-condition-add>+ Condition</button></div><div id="automation-conditions">${(editor.conditions||[]).map(conditionRow).join('')||'<p class="help">Aucune condition : chaque événement correspondant déclenchera la règle.</p>'}</div><div class="section-head"><b>Actions</b><button type="button" class="secondary" data-action-add>+ Action</button></div><div id="automation-actions">${(editor.actions||[]).map(actionRow).join('')}</div><div class="form-grid"><label class="label">Cooldown (s)<input name="cooldown" type="number" min="0" max="86400" value="${Math.round((editor.cooldownMs||0)/1000)}"></label><label class="checks"><input name="enabled" type="checkbox" ${editor.enabled?'checked':''}> Activée</label></div><button class="action">Enregistrer l’automatisation</button></form></div>`;
+}
+function mediaContent(){
+  const obs=state.dashboard?.obs||{};const media=obs.mediaInputs||[],browsers=obs.browserInputs||[];
+  return `<div class="connection-stack"><div class="setup-status"><div class="section-head"><b>Sources média OBS</b><span class="label">${media.length}</span></div><div class="pads">${media.map(input=>`<button class="pad" data-media-restart="${esc(input)}">${esc(input)}</button>`).join('')||'<p class="help">Aucune Media Source active.</p>'}</div></div><div class="setup-status"><div class="section-head"><b>Browser Sources</b><span class="label">${browsers.length}</span></div><div class="pads">${browsers.map(input=>`<button class="pad" data-browser-refresh="${esc(input)}">${esc(input)}</button>`).join('')||'<p class="help">Aucune Browser Source détectée.</p>'}</div></div></div>`;
+}
+function diagnosticsContent(){
+  const d=state.diagnostics?.diagnostics;if(!d)return '<p class="help">Chargement des diagnostics…</p>';
+  const runtime=d.runtime||{};const events=state.diagnostics?.events||[];
+  return `<div class="connection-stack"><div class="support-summary"><article class="setup-status"><span class="label">Version</span><b>${esc(runtime.version||state.dashboard?.runtime?.serverVersion||'—')}</b></article><article class="setup-status"><span class="label">Uptime</span><b>${Math.round(Number(runtime.uptime)||0)} s</b></article><article class="setup-status"><span class="label">State revision</span><b>${state.dashboard?.stateRevision??'—'}</b></article></div><div class="connection-actions"><button class="secondary" data-camp-action="diagnostics-refresh">Rafraîchir</button></div>${(d.errors||[]).length?`<div class="setup-status"><b>Erreurs Runtime</b>${d.errors.slice(-10).reverse().map(error=>`<p class="warning">${esc(error.message||error)}</p>`).join('')}</div>`:''}<div class="camp-list">${events.slice().reverse().slice(0,50).map(event=>`<div class="diagnostic-line"><time>${esc(new Date(event.occurredAt).toLocaleTimeString('fr-FR'))}</time><b>${esc(event.type)}</b><span>${esc(event.source)}</span></div>`).join('')||'<p class="help">Aucun événement récent.</p>'}</div></div>`;
+}
+function generalSettingsContent(){
+  const settings=state.dashboard?.settings||{},obs=state.dashboard?.obs||{},twitch=state.dashboard?.twitch||{};
+  const sceneOptions=value=>`<option value="">—</option>${(obs.scenes||[]).map(scene=>`<option value="${esc(scene)}" ${value===scene?'selected':''}>${esc(scene)}</option>`).join('')}`;
+  return `<div class="connection-stack"><form id="camp-general-settings" class="setup-status"><div class="section-head"><b>Application & OBS</b><span class="label">Réglages fonctionnels</span></div><label class="label">Nom affiché<input name="streamerName" maxlength="80" value="${esc(settings.streamerName||'')}"></label><div class="form-grid"><label class="label">Mode de démarrage<select name="startMode"><option value="intro" ${settings.startMode!=='live'?'selected':''}>Intro</option><option value="live" ${settings.startMode==='live'?'selected':''}>Live</option></select></label><label class="label">Micro principal<select name="primaryMicInput"><option value="">—</option>${Object.keys(obs.inputs||{}).map(input=>`<option value="${esc(input)}" ${settings.primaryMicInput===input?'selected':''}>${esc(input)}</option>`).join('')}</select></label></div><div class="form-grid"><label class="label">Scène Intro<select name="sceneIntro">${sceneOptions(settings.modeScenes?.intro)}</select></label><label class="label">Scène Gameplay<select name="sceneLive">${sceneOptions(settings.modeScenes?.live)}</select></label><label class="label">Scène Chatting<select name="chattingScene">${sceneOptions(settings.chattingScene)}</select></label><label class="label">Scène Pause<select name="scenePause">${sceneOptions(settings.modeScenes?.pause)}</select></label><label class="label">Scène Fin<select name="sceneEnd">${sceneOptions(settings.modeScenes?.end)}</select></label><label class="label">Timer Browser Source<select name="timerBrowserSource"><option value="">—</option>${(obs.browserInputs||[]).map(input=>`<option value="${esc(input)}" ${settings.timerBrowserSource===input?'selected':''}>${esc(input)}</option>`).join('')}</select></label></div><div class="checks"><label><input name="confirmStop" type="checkbox" ${settings.confirmStop?'checked':''}> Confirmation avant arrêt</label><label><input name="launchObs" type="checkbox" ${settings.launchObs?'checked':''}> Lancer OBS avec StreamDashboard</label><label><input name="requireTimerOverlayOnStart" type="checkbox" ${settings.requireTimerOverlayOnStart?'checked':''}> Exiger le timer au démarrage</label></div><button class="action">Enregistrer les réglages</button></form><form id="camp-twitch-live-settings" class="setup-status"><div class="section-head"><b>Informations Twitch</b><span class="label">${twitch.connected?'Connecté':'Déconnecté'}</span></div><label class="label">Titre<input name="title" maxlength="140" value="${esc(twitch.channelTitle||'')}" ${twitch.connected?'':'disabled'}></label><div class="toolbar"><input id="camp-twitch-category" name="gameName" maxlength="80" value="${esc(twitch.gameName||'')}" placeholder="Catégorie Twitch" ${twitch.connected?'':'disabled'}><input id="camp-twitch-game-id" name="gameId" type="hidden" value="${esc(twitch.gameId||'')}"><button type="button" class="secondary" data-twitch-category-search ${twitch.connected?'':'disabled'}>Rechercher</button></div><select id="camp-twitch-category-results" hidden></select><button class="action" ${twitch.connected?'':'disabled'}>Mettre à jour Twitch</button></form></div>`;
+}
+function pingHistoryContent(){
+  const history=state.pingHistory||[];const pending=history.filter(ping=>!ping.acknowledgedAt).length;
+  return `<div class="setup-status"><div class="section-head"><div><b>Historique Streamer Pings</b><span class="label">${pending} en attente · ${history.length} conservés</span></div><div class="connection-actions"><button class="secondary" data-ping-action="ack-all" ${pending?'':'disabled'}>Tout marquer vu</button><button class="critical" data-ping-action="clear-history">Effacer les acquittés</button></div></div><div class="camp-list">${history.slice(0,20).map(ping=>`<div class="camp-row"><span><b>${esc(ping.rewardTitle)}</b><small>${esc(ping.userName)} · ${esc(new Date(ping.createdAt).toLocaleString('fr-FR'))}</small></span><span class="${ping.acknowledgedAt?'label':'kind'}">${ping.acknowledgedAt?'Vu':'En attente'}</span></div>`).join('')||'<p class="help">Aucun Streamer Ping enregistré.</p>'}</div></div>`;
+}
+function settingsContent(){
+  return `${generalSettingsContent()}<div class="connection-stack">${streamerPingSettings()}${pingHistoryContent()}</div>`;
+}
 function campContent(item){
+  if(!state.runtime&&item!=='Connexions')return '<p class="help">Passe en mode Runtime pour utiliser les données réelles de cette section.</p>';
+  if(item==='Préparation')return preparationContent();
+  if(item==='Notes')return notesContent();
+  if(item==='Templates')return templatesContent();
+  if(item==='Soutiens')return supportsContent();
+  if(item==='Automatisations')return automationsContent();
+  if(item==='Médias OBS')return mediaContent();
   if(item==='Connexions')return connectionsContent();
-  if(item==='Réglages')return streamerPingSettings();
-  const copies={Préparation:'Checklist avant direct · les outils secondaires restent hors du cockpit principal.',Notes:'Les notes restent disponibles depuis le Runtime.',Templates:'Les templates restent disponibles depuis le Runtime.',Soutiens:'Suivi des soutiens et providers.',Automatisations:'Règles automatiques du stream.', 'Médias OBS':'Contrôle des sources média OBS.',Diagnostics:`Build ${state.dashboard?.runtime?.serverVersion||'Preview'} · stateRevision ${state.dashboard?.stateRevision??'—'}`};
-  return `<p>${esc(copies[item]||'')}</p>`;
+  if(item==='Diagnostics')return diagnosticsContent();
+  if(item==='Réglages')return settingsContent();
+  return '';
 }
 function camp(){return`<div class="camp-grid"><section class="section camp-nav">${campItems.map(x=>`<button class="${state.campItem===x?'active':''}" data-camp="${x}">${x}</button>`).join('')}</section><section class="section empty-detail"><p class="eyebrow">LE CAMP</p><h2 id="camp-title">${esc(state.campItem)}</h2><div id="camp-copy">${campContent(state.campItem)}</div></section></div>`}
 function render(){const names={home:['Accueil','COCKPIT'],live:['Live','EN DIRECT'],sounds:['Sons','BIBLIOTHÈQUE'],planning:['Planning','SEMAINE'],camp:['Le Camp','SECONDAIRE']};[title.textContent,eyebrow.textContent]=names[state.view];view.innerHTML=({home,live,sounds:soundboard,planning,camp}[state.view])();document.querySelectorAll('[data-view]').forEach(b=>b.setAttribute('aria-current',b.dataset.view===state.view?'page':'false'));bind()}
