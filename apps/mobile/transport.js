@@ -59,6 +59,7 @@ export function createTransport(getServer, getCredential) {
     connections: () => request('/api/v1/connections', { headers: { authorization: `Device ${getCredential()}` } }),
     soundboard: () => request('/api/v1/soundboard', { headers: { authorization: `Device ${getCredential()}` } }),
     playSound: value => request('/api/v1/soundboard/play', { method: 'POST', headers: authHeaders(), body: JSON.stringify(value) }),
+    setSoundVolume: volume => request('/api/v1/soundboard/volume', { method: 'POST', headers: authHeaders(), body: JSON.stringify({ volume }) }),
     stopSound: () => request('/api/v1/soundboard/stop', { method: 'POST', headers: authHeaders(), body: '{}' }),
     updateSound: (id, value) => request(`/api/v1/soundboard/sounds/${encodeURIComponent(id)}`, { method: 'PUT', headers: authHeaders(), body: JSON.stringify(value) }),
     automations: () => request('/api/v1/automations', { headers: { authorization: `Device ${getCredential()}` } }),
