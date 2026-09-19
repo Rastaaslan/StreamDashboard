@@ -56,6 +56,9 @@ export class StreamlabsOAuthClient {
 }
 
 function streamlabsOAuthError(payload: Record<string, unknown>, fallback: string) {
+  const code = typeof payload.error === 'string' ? payload.error.trim() : '';
+  if (code === 'invalid_client') return 'Streamlabs refuse le Client ID ou le Client Secret. Recopie les identifiants de l’application puis réenregistre-les dans StreamDashboard.';
+  if (code === 'invalid_grant') return 'Streamlabs refuse le code OAuth. Vérifie que la Redirect URI enregistrée est exactement celle affichée dans StreamDashboard, puis recommence la connexion.';
   const message = payload.message ?? payload.error_description ?? payload.error;
   return typeof message === 'string' && message.trim() ? message.trim().slice(0, 500) : fallback;
 }
