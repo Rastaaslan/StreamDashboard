@@ -1,5 +1,6 @@
 const TWITCH_AUTH_HOSTS = new Set(['twitch.tv', 'www.twitch.tv']);
 const GOOGLE_AUTH_HOSTS = new Set(['accounts.google.com']);
+const STREAMLABS_AUTH_HOSTS = new Set(['streamlabs.com', 'www.streamlabs.com']);
 
 export function isAllowedTwitchUrl(value: string) {
   try {
@@ -15,8 +16,19 @@ export function isAllowedGoogleOAuthUrl(value: string) {
   } catch { return false; }
 }
 
+export function isAllowedStreamlabsOAuthUrl(value: string) {
+  try {
+    const url = new URL(value);
+    return url.protocol === 'https:'
+      && STREAMLABS_AUTH_HOSTS.has(url.hostname)
+      && url.pathname === '/api/v2.0/authorize'
+      && !url.username
+      && !url.password;
+  } catch { return false; }
+}
+
 export function isAllowedExternalAuthUrl(value: string) {
-  return isAllowedTwitchUrl(value) || isAllowedGoogleOAuthUrl(value);
+  return isAllowedTwitchUrl(value) || isAllowedGoogleOAuthUrl(value) || isAllowedStreamlabsOAuthUrl(value);
 }
 
 export function isSameOrigin(candidate: string, expected: string) {
