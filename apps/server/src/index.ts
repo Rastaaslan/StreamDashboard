@@ -58,6 +58,7 @@ import { SupportRuntime } from './support-runtime.js';
 import { StreamlabsAdapter } from '../../../integrations/streamlabs/src/adapter.js';
 import type { StreamlabsTransport } from '../../../integrations/streamlabs/src/adapter.js';
 import { StreamlabsSocketTransport } from '../../../integrations/streamlabs/src/socket-transport.js';
+import { StreamlabsOAuthClient } from '../../../integrations/streamlabs/src/oauth.js';
 import { WizeBotAdapter } from '../../../integrations/wizebot/src/adapter.js';
 import type { WizeBotTransport } from '../../../integrations/wizebot/src/adapter.js';
 import { WizeBotHttpTransport } from '../../../integrations/wizebot/src/http-transport.js';
@@ -116,6 +117,8 @@ export interface DashboardServerOptions {
   logger?: Pick<Console, 'info' | 'warn' | 'error'>;
   discordFetch?: typeof fetch;
   streamlabsTransport?: StreamlabsTransport;
+  streamlabsFetch?: typeof fetch;
+  streamlabsRedirectUri?: string;
   wizebotTransport?: WizeBotTransport;
 }
 export interface DashboardServerHandle {
