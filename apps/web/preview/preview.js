@@ -2,8 +2,9 @@ import { fixture } from './fixtures.js';
 import { expandRecurringItems } from '/mobile/shared/recurrence.js';
 import { buildPlanningPng } from '/mobile/planning-export.js';
 
+const officialRuntime=new URLSearchParams(location.search).get('runtime')==='1';
 const state={
-  view:'home',runtime:false,scene:fixture.live.scene,timerRunning:true,seconds:36,
+  view:'home',runtime:officialRuntime,scene:fixture.live.scene,timerRunning:true,seconds:36,
   sounds:structuredClone(fixture.sounds),audio:structuredClone(fixture.audio),live:structuredClone(fixture.live),
   planning:structuredClone(fixture.planning),dashboard:null,soundboard:null,obsSetup:null,search:'',
   campItem:'Préparation',remotePairing:null,twitchRewards:null,companion:null,supports:null,automations:null,automationCapabilities:null,
@@ -557,4 +558,11 @@ document.querySelector('#mode').onclick=async e=>{state.runtime=!state.runtime;e
 window.addEventListener('keydown',e=>{if(e.altKey&&['1','2','3','4'].includes(e.key)){e.preventDefault();state.view=['home','live','sounds','planning'][+e.key-1];render()}});
 setInterval(()=>{if(state.runtime&&state.timerRunning){state.seconds=Math.max(0,state.seconds-1);if(state.view==='live')render()}},1000);
 window.addEventListener('beforeunload',closeRuntimeSocket);
-render();runtimeUi(false,'Aucune commande réelle');
+render();
+if(officialRuntime){
+  document.querySelector('#mode').hidden=true;
+  document.querySelector('.brand small').textContent='Desktop';
+  document.querySelector('.preview-mode span').textContent='RUNTIME PC';
+  runtimeUi(true,'Connexion au Runtime…');
+  void refreshRuntime().then(()=>{if(state.view==='camp')void loadCampData(state.campItem)});
+}else runtimeUi(false,'Aucune commande réelle');
