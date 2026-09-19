@@ -60,6 +60,7 @@ export function createTransport(getServer, getCredential) {
     stopSound: () => request('/api/v1/soundboard/stop', { method: 'POST', headers: authHeaders(), body: '{}' }),
     updateSound: (id, value) => request(`/api/v1/soundboard/sounds/${encodeURIComponent(id)}`, { method: 'PUT', headers: authHeaders(), body: JSON.stringify(value) }),
     automations: () => request('/api/v1/automations', { headers: { authorization: `Device ${getCredential()}` } }),
+    automationCapabilities: () => request('/api/v1/automations/capabilities', { headers: { authorization: `Device ${getCredential()}` } }),
     createAutomation: value => request('/api/v1/automations', { method: 'POST', headers: authHeaders(), body: JSON.stringify(value) }),
     updateAutomation: (id, value) => request(`/api/v1/automations/${encodeURIComponent(id)}`, { method: 'PUT', headers: authHeaders(), body: JSON.stringify(value) }),
     deleteAutomation: id => request(`/api/v1/automations/${encodeURIComponent(id)}`, { method: 'DELETE', headers: authHeaders(), body: '{}' }),
