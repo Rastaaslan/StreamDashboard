@@ -29,6 +29,7 @@ export async function startDesktopRuntime(): Promise<DesktopRuntime> {
     host: remoteEnabled ? '0.0.0.0' : '127.0.0.1',
     remoteEnabled,
     dataDir: path.join(userData, 'config'),
+    soundLibraryDir: path.join(userData, 'soundboard'),
     webDir: path.join(app.getAppPath(), 'apps', 'web'),
     mobileDir: path.join(app.getAppPath(), 'apps', 'mobile'),
     secretStore: new ElectronSecretStore(userData),

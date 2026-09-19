@@ -1,10 +1,11 @@
 import { createTransport, CRITICAL_COMMAND_TIMEOUT_MS, HttpError } from './transport.js';
 import { createCommandController, acceptsSnapshot } from './command-controller.js';
-import { isAndroidRuntime, nextRetry, normalizeServer } from './runtime.js';
+import { isAndroidRuntime, nextRetry, normalizeServer, parsePairing } from './runtime.js';
 import { credentialStorage, settingsStorage } from './storage.js';
 
 const $ = selector => document.querySelector(selector);
-const $$ = selector => [...document.querySelectorAll(selector)];
+const all = selector => [...document.querySelectorAll(selector)];
+const productionUi = new URLSearchParams(location.search).get('runtime') === '1';
 
 let state = null;
 let soundboard = null;
@@ -15,8 +16,10 @@ let reconnectTimer = null;
 let retry = 500;
 let httpReady = false;
 let pairing = false;
+let activeStreamerPingId = null;
+const notifiedStreamerPingIds = new Set();
 
-const quickSoundStorageKey = 'streamdashboard.preview.quickSoundSelections';
+const quickSoundStorageKey = productionUi ? 'streamdashboard.quickSoundSelections' : 'streamdashboard.preview.quickSoundSelections';
 let quickSoundSelections = [];
 try {
   const saved = JSON.parse(localStorage.getItem(quickSoundStorageKey) || '[]');
@@ -43,8 +46,8 @@ const commandController = createCommandController({
 });
 
 const go = target => {
-  $$('.screen').forEach(screen => screen.classList.toggle('active', screen.dataset.screen === target));
-  $$('[data-nav]').forEach(button => button.classList.toggle('active', button.dataset.nav === target));
+  all('.screen').forEach(screen => screen.classList.toggle('active', screen.dataset.screen === target));
+  all('[data-nav]').forEach(button => button.classList.toggle('active', button.dataset.nav === target));
   window.scrollTo({ top: 0, behavior: 'smooth' });
 };
 
@@ -95,7 +98,7 @@ const logicalScene = next => {
 };
 
 const selectSceneVisual = scene => {
-  $$('[data-scene]').forEach(item => item.classList.toggle('selected', item.dataset.scene === scene));
+  all('[data-scene]').forEach(item => item.classList.toggle('selected', item.dataset.scene === scene));
 };
 
 const renderChat = messages => {
@@ -124,7 +127,7 @@ const renderChat = messages => {
 };
 
 const renderAudio = next => {
-  const rows = $$('[data-audio]');
+  const rows = all('[data-audio]');
   const inputs = next?.obs?.inputs || {};
   const active = Array.isArray(next?.obs?.activeAudioInputs) ? next.obs.activeAudioInputs : Object.keys(inputs);
   const ordered = [...active].filter(name => inputs[name]).slice(0, rows.length);
@@ -142,6 +145,30 @@ const renderAudio = next => {
     const meter = row.querySelector('.meter i');
     if (meter) meter.style.width = `${Math.max(4, Math.min(100, ((db + 60) / 66) * 100))}%`;
   });
+};
+
+const renderCurrentWeek = () => {
+  const host = $('#week-strip');
+  if (!host) return;
+  const now = new Date();
+  const monday = new Date(now);
+  const day = (monday.getDay() + 6) % 7;
+  monday.setDate(monday.getDate() - day);
+  monday.setHours(12, 0, 0, 0);
+  host.replaceChildren();
+  for (let index = 0; index < 7; index++) {
+    const date = new Date(monday);
+    date.setDate(monday.getDate() + index);
+    const button = document.createElement('button');
+    button.type = 'button';
+    if (date.toDateString() === now.toDateString()) button.classList.add('active');
+    const small = document.createElement('small');
+    small.textContent = date.toLocaleDateString('fr-FR', { weekday: 'short' }).replace('.', '').toUpperCase();
+    const bold = document.createElement('b');
+    bold.textContent = String(date.getDate());
+    button.append(small, bold);
+    host.append(button);
+  }
 };
 
 const renderPlanning = items => {
@@ -210,6 +237,7 @@ const applyState = next => {
   const logical = logicalScene(next);
 
   $('#home-live-copy').textContent = isLive ? 'En direct' : 'Prêt';
+  const homeDotCopy = $('#home-live-dot-copy'); if (homeDotCopy) homeDotCopy.textContent = isLive ? 'LIVE' : 'PRÊT';
   $('#home-live-pill').classList.toggle('live', isLive);
   $('#home-live-pill').classList.toggle('offline', !isLive);
   $('#home-duration').textContent = isLive ? formatDuration(duration) : '—';
@@ -235,6 +263,7 @@ const applyState = next => {
   renderAudio(next);
   renderPlanning(next.planning);
   $('#timer-value').textContent = formatTimer(timerRemaining());
+  syncStreamerPings(next.streamerPings || []);
 
   const stop = $('#stop-live');
   stop.textContent = isLive ? '■ Arrêter le live' : '▶ Démarrer le live';
@@ -242,6 +271,54 @@ const applyState = next => {
   stop.classList.toggle('live-command', !isLive);
   stop.classList.toggle('start', !isLive);
   stop.dataset.action = isLive ? 'stop' : 'start';
+};
+
+const notifyStreamerPing = (ping, pendingCount) => {
+  if (!productionUi || !document.hidden || !ping || notifiedStreamerPingIds.has(ping.id)) return;
+  notifiedStreamerPingIds.add(ping.id);
+  const message = `${ping.userName || 'Viewer'} · ${ping.rewardCost || 0} points${pendingCount > 1 ? ` · ${pendingCount} pings en attente` : ''}`;
+  globalThis.StreamDashboardNative?.notifyStreamerPing?.(ping.id, ping.rewardTitle || 'Streamer Ping', message);
+};
+
+const syncStreamerPings = pings => {
+  const pending = (Array.isArray(pings) ? pings : []).filter(value => !value.acknowledgedAt);
+  const ping = pending[0];
+  const dialog = $('#streamer-ping-dialog');
+  if (!dialog) return;
+  if (!ping) {
+    activeStreamerPingId = null;
+    if (dialog.open) dialog.close();
+    return;
+  }
+  notifyStreamerPing(pending.at(-1), pending.length);
+  const content = $('#streamer-ping-content');
+  if (activeStreamerPingId !== ping.id || !dialog.open) {
+    activeStreamerPingId = ping.id;
+    content.replaceChildren();
+    const label = document.createElement('small'); label.className = 'eyebrow'; label.textContent = `STREAMER PING · 1/${pending.length}`;
+    const title = document.createElement('h2'); title.textContent = ping.rewardTitle || 'Récompense Twitch';
+    const copy = document.createElement('p'); copy.textContent = `${ping.userName || 'Viewer'} a utilisé cette récompense${ping.rewardCost ? ` · ${ping.rewardCost} points` : ''}.`;
+    content.append(label, title, copy);
+    if (ping.userInput) { const quote = document.createElement('blockquote'); quote.textContent = ping.userInput; content.append(quote); }
+    globalThis.StreamDashboardNative?.haptic?.('strong');
+    if (!dialog.open) dialog.showModal();
+  } else {
+    const label = content.querySelector('.eyebrow'); if (label) label.textContent = `STREAMER PING · 1/${pending.length}`;
+  }
+};
+
+const openLegacyTools = button => {
+  const tab = button.dataset.legacyTab || 'more';
+  localStorage.setItem('streamdashboard.mobileTab', tab);
+  if (button.dataset.legacyPrepare) localStorage.setItem('streamdashboard.mobilePreparationTab', button.dataset.legacyPrepare);
+  localStorage.setItem('streamdashboard.legacyTarget', JSON.stringify({
+    tab,
+    prepare: button.dataset.legacyPrepare || '',
+    settings: button.dataset.legacySettings || '',
+    liveTool: button.dataset.legacyLiveTool || '',
+    action: button.dataset.legacyAction || '',
+  }));
+  location.href = './index.html?legacy=1';
 };
 
 const renderConnection = (copy, mode='offline') => {
@@ -435,11 +512,13 @@ const probeAndConnect=async()=>{
 };
 
 const pair=async event=>{
-  event.preventDefault();if(pairing)return;pairing=true;
+  event?.preventDefault?.();if(pairing)return;pairing=true;
   const hint=$('#connection-hint');hint.classList.remove('error');hint.textContent='Appairage en cours…';
   try{
-    server=isAndroidRuntime()?normalizeServer($('#pair-server').value):settingsStorage.getServer();
-    if(isAndroidRuntime()) settingsStorage.setServer(server);
+    const serverInput=$('#pair-server').value.trim();
+    server=serverInput?normalizeServer(serverInput):settingsStorage.getServer();
+    if(!server)throw new Error('Adresse du PC requise.');
+    settingsStorage.setServer(server);
     const id=$('#pair-id').value.trim(),code=$('#pair-code').value.trim(),name=$('#pair-name').value.trim()||'Android Preview';
     if(!id||!code) throw new Error('ID et code requis.');
     const result=await transport.pair({id,code,name});
@@ -451,18 +530,18 @@ const pair=async event=>{
   finally{pairing=false;}
 };
 
-$$('[data-nav]').forEach(button=>button.addEventListener('click',()=>go(button.dataset.nav)));
-$$('[data-go]').forEach(button=>button.addEventListener('click',()=>go(button.dataset.go)));
+all('[data-nav]').forEach(button=>button.addEventListener('click',()=>go(button.dataset.nav)));
+all('[data-go]').forEach(button=>button.addEventListener('click',()=>go(button.dataset.go)));
 $('#open-camp').onclick=()=>{$('#camp-sheet').hidden=false;};
-$$('[data-close-camp]').forEach(button=>button.onclick=()=>{$('#camp-sheet').hidden=true;});
-$$('[data-scene]').forEach(button=>button.onclick=()=>void selectScene(button.dataset.scene));
+all('[data-close-camp]').forEach(button=>button.onclick=()=>{$('#camp-sheet').hidden=true;});
+all('[data-scene]').forEach(button=>button.onclick=()=>void selectScene(button.dataset.scene));
 
-$$('[data-audio]').forEach(row=>row.onclick=()=>{
+all('[data-audio]').forEach(row=>row.onclick=()=>{
   const input=row.dataset.input;if(!input||!state?.obs?.inputs?.[input])return;
   void execute({type:'obs.mute',input,muted:!state.obs.inputs[input].muted},{resource:`audio:${input}`,reconcile:next=>next.obs?.inputs?.[input]?.muted===!state.obs.inputs[input].muted});
 });
 
-$$('[data-timer]').forEach(button=>button.onclick=()=>void execute({type:'timer.add',seconds:Number(button.dataset.timer)},{resource:'timer'}));
+all('[data-timer]').forEach(button=>button.onclick=()=>void execute({type:'timer.add',seconds:Number(button.dataset.timer)},{resource:'timer'}));
 $('#timer-toggle').onclick=()=>void execute({type:state?.timer?.running?'timer.pause':'timer.start'},{resource:'timer'});
 setInterval(()=>{if(state)$('#timer-value').textContent=formatTimer(timerRemaining());},1000);
 
@@ -499,12 +578,25 @@ $('#quick-sound-form').onsubmit=event=>{
   renderQuickSounds();$('#quick-sound-dialog').close();toast('Son rapide ajouté.');
 };
 
+all('[data-legacy-tab]').forEach(button => button.onclick = () => openLegacyTools(button));
 $('#open-connection').onclick=()=>{$('#camp-sheet').hidden=true;$('#pair-server').value=server||'';$('#connection-dialog').showModal();};
 $('#close-connection').onclick=()=>$('#connection-dialog').close();
 $('#connection-form').onsubmit=pair;
 $('#forget-connection').onclick=async()=>{
   credential='';httpReady=false;ws?.close();await credentialStorage.clear();settingsStorage.setServer('');server='';
   renderConnection('PC non appairé','offline');toast('Connexion locale oubliée.');
+};
+
+$('#streamer-ping-ack').onclick = async () => {
+  const id = activeStreamerPingId;
+  if (!id || !requireConnection()) return;
+  try {
+    const next = await transport.acknowledgeStreamerPing(id);
+    activeStreamerPingId = null;
+    if ($('#streamer-ping-dialog').open) $('#streamer-ping-dialog').close();
+    applyState(next);
+    toast('Streamer Ping acquitté.');
+  } catch (error) { toast(error.message); }
 };
 
 $('#add-event').onclick=()=>{
@@ -539,13 +631,71 @@ $('#export-planning').onclick=async()=>{
 
 window.addEventListener('online',()=>void probeAndConnect());
 window.addEventListener('offline',()=>{httpReady=false;renderConnection('PC hors ligne','offline');});
-document.addEventListener('visibilitychange',()=>{if(!document.hidden&&credential)void probeAndConnect();});
+document.addEventListener('visibilitychange',()=>{
+  if(!document.hidden&&credential) void probeAndConnect();
+  else if(document.hidden&&state?.streamerPings?.length){
+    const pending=state.streamerPings.filter(value=>!value.acknowledgedAt);
+    notifyStreamerPing(pending.at(-1),pending.length);
+  }
+});
+
+const handlePairingLink = link => {
+  try {
+    const parsed = parsePairing(String(link || ''));
+    server = parsed.server;
+    settingsStorage.setServer(server);
+    $('#pair-server').value = parsed.server;
+    $('#pair-id').value = parsed.id;
+    $('#pair-code').value = parsed.code;
+    $('#connection-dialog').showModal();
+    void pair();
+  } catch (error) {
+    $('#connection-hint').classList.add('error');
+    $('#connection-hint').textContent = error.message;
+    $('#connection-dialog').showModal();
+  }
+};
+
+window.addEventListener('native-pairing', event => handlePairingLink(event.detail));
+
+const resetProductionShell = () => {
+  if (!productionUi) return;
+  $('#home-live-copy').textContent = 'Prêt';
+  $('#home-live-dot-copy').textContent = 'PRÊT';
+  $('#home-duration').textContent = '—';
+  $('#home-title').textContent = 'Aucun live en cours';
+  $('#home-category').textContent = 'Connecte le PC pour charger l’état réel.';
+  $('#home-viewers').textContent = '—';
+  $('#home-chatters').textContent = '—';
+  $('#home-scene-name').textContent = '—';
+  $('#live-status-copy').textContent = 'Prêt';
+  $('#scene-name').textContent = '—';
+  $('#scene-state').textContent = 'OBS HORS LIGNE';
+  selectSceneVisual('');
+  renderChat([]);
+  renderPlanning([]);
+  renderCurrentWeek();
+  renderConnection(credential ? 'PC hors ligne' : 'PC non appairé', 'offline');
+};
 
 const boot=async()=>{
-  renderQuickSounds();renderFullSoundboard();
+  if (productionUi) {
+    document.title='StreamDashboard';
+    $('#preview-badge')?.remove();
+    const name=$('#pair-name'); if(name) name.value='Android Remote';
+  }
   credential=await credentialStorage.get()||'';
   server=settingsStorage.getServer();
+  renderCurrentWeek();
+  resetProductionShell();
+  renderQuickSounds();renderFullSoundboard();
   $('#pair-server').value=server||'';
+  const pendingPairing = localStorage.getItem('streamdashboard.pendingPairing');
+  if (pendingPairing) {
+    localStorage.removeItem('streamdashboard.pendingPairing');
+    handlePairingLink(pendingPairing);
+    return;
+  }
   if(!credential){
     renderConnection('PC non appairé','offline');
     if(isAndroidRuntime())$('#connection-dialog').showModal();

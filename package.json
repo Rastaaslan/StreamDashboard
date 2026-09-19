@@ -14,6 +14,8 @@
     "test": "vitest run",
     "smoke": "tsx scripts/smoke.ts",
     "desktop:dev": "npm run build && electron-forge start",
+    "desktop:preview": "npm run build && electron-forge start -- --ui-preview=desktop-v2",
+    "desktop:legacy": "npm run build && electron-forge start -- --ui-legacy=desktop-v1",
     "desktop:package": "npm run desktop:prepare && npm run desktop:icon && npm run build && electron-forge package --platform=win32 --arch=x64",
     "desktop:make": "npm run desktop:prepare && npm run desktop:icon && npm run build && electron-forge make --platform=win32 --arch=x64",
     "release:check": "npm test && npm run build && npm run security:check && npm run desktop:prepare && npm run desktop:icon",

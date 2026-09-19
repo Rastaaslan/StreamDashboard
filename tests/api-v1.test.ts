@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from 'vitest';
-import { mkdtemp, readFile, rm } from 'node:fs/promises';
+import { access, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import WebSocket from 'ws';
@@ -112,11 +112,15 @@ describe('API publique v1', () => {
     const app = await start();
     const remote = await fetch(`${app.url}/api/v1/settings`, { method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ obsUrl: 'ws://example.com:4455' }) });
     expect(remote.status).toBe(400);
-    const updated = await fetch(`${app.url}/api/v1/settings`, { method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ streamerName: 'Smoke', obsExecutablePath: 'C:\\OBS\\bin\\64bit\\obs64.exe' }) }).then(r => r.json());
-    expect(updated.settings).toMatchObject({ streamerName: 'Smoke', obsExecutablePath: 'C:\\OBS\\bin\\64bit\\obs64.exe', obsUrl: 'ws://127.0.0.1:4455' });
-    const probe = await fetch(`${app.url}/api/v1/obs/test`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ obsUrl: 'wss://evil.example/ws' }) });
+    const updated = await fetch(`${app.url}/api/v1/settings`, { method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ streamerName: 'Smoke', obsExecutablePath: 'C:\\OBS\\bin\\64bit\\obs64.exe', streamerPingRewardIds: ['reward-water', 'reward-stretch'] }) }).then(r => r.json());
+    expect(updated.settings).toMatchObject({ streamerName: 'Smoke', obsExecutablePath: 'C:\\OBS\\bin\\64bit\\obs64.exe', obsUrl: 'ws://127.0.0.1:4455', streamerPingRewardIds: ['reward-water', 'reward-stretch'] });
+    await dashboard!.stop(); dashboard = undefined;
+    dashboard = await startDashboardServer({ port: 0, dataDir, logger: { info() {}, warn() {}, error() {} } });
+    const restarted = await fetch(`${dashboard.url}/api/v1/state`).then(r => r.json());
+    expect(restarted.settings.streamerPingRewardIds).toEqual(['reward-water', 'reward-stretch']);
+    const probe = await fetch(`${dashboard.url}/api/v1/obs/test`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ obsUrl: 'wss://evil.example/ws' }) });
     expect(probe.status).toBe(400);
-    expect((await fetch(`${app.url}/api/v1/diagnostics`)).status).toBe(200);
+    expect((await fetch(`${dashboard.url}/api/v1/diagnostics`)).status).toBe(200);
   });
 
   it('rejette un planning aux dates invalides', async () => {
@@ -141,6 +145,64 @@ describe('API publique v1', () => {
   it('refuse une écoute LAN sans pairing authentifié', async () => {
     dataDir = await mkdtemp(path.join(os.tmpdir(), 'streamdashboard-api-'));
     await expect(startDashboardServer({ port: 0, host: '0.0.0.0', dataDir })).rejects.toThrow(/remote-LAN/);
+  });
+
+  it('gère la bibliothèque Soundboard locale sans exposer le chemin source', async () => {
+    const app = await start(); const library = path.join(dataDir, 'soundboard'); const file = path.join(library, 'bonk.mp3');
+    await writeFile(file, 'fake-audio');
+    const created = await fetch(`${app.url}/api/v1/soundboard/sounds`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ libraryId: 'bonk.mp3', name: 'BONK', category: 'Réactions', volume: .8, cooldownMs: 500, favorite: true, enabled: true, monitoringMode: 'stream' }) });
+    expect(created.status).toBe(201); const snapshot = await created.json();
+    expect(snapshot.sounds[0]).toMatchObject({ name: 'BONK', category: 'Réactions', volume: .8, monitoringMode: 'stream', sourceAvailable: true });
+    expect(JSON.stringify(snapshot)).not.toContain(file); const id = snapshot.sounds[0].id;
+    const edited = await fetch(`${app.url}/api/v1/soundboard/sounds/${id}`, { method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ monitoringMode: 'monitor', volume: .5 }) });
+    expect(await edited.json()).toMatchObject({ sounds: [expect.objectContaining({ id, monitoringMode: 'monitor', volume: .5 })] });
+    expect((await fetch(`${app.url}/api/v1/soundboard/sounds/${id}`, { method: 'DELETE' })).status).toBe(204);
+    await expect(access(file)).rejects.toThrow();
+  });
+
+  it('partage Notes, Checklist et Templates via le Companion canonique', async () => {
+    const app = await start();
+    const initial = await fetch(`${app.url}/api/v1/companion/snapshot`).then(r => r.json());
+    expect(initial.checklist.length).toBeGreaterThan(0);
+
+    const noteCreated = await fetch(`${app.url}/api/v1/companion/notes`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ text: 'Note Desktop' }) }).then(r => r.json());
+    expect(noteCreated.notes).toEqual(expect.arrayContaining([expect.objectContaining({ text: 'Note Desktop', revision: 1 })]));
+    const note = noteCreated.notes.find((value: { text?: string }) => value.text === 'Note Desktop');
+
+    const noteUpdated = await fetch(`${app.url}/api/v1/companion/notes/${note.id}`, { method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ text: 'Note partagée Android' }) }).then(r => r.json());
+    expect(noteUpdated.notes.find((value: { id: string }) => value.id === note.id)).toMatchObject({ text: 'Note partagée Android', revision: 2 });
+
+    const templateCreated = await fetch(`${app.url}/api/v1/companion/templates`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ title: 'FC26', description: 'Club Pro', twitchCategoryId: '1745202732', twitchCategoryName: 'EA SPORTS FC 26', desiredPublication: { local: false, twitch: true, google: false } }) }).then(r => r.json());
+    expect(templateCreated.templates).toEqual(expect.arrayContaining([expect.objectContaining({ title: 'FC26', twitchCategoryName: 'EA SPORTS FC 26' })]));
+
+    const firstCheck = initial.checklist[0];
+    const toggled = await fetch(`${app.url}/api/v1/companion/checklist/${firstCheck.id}`, { method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ label: firstCheck.label, done: !firstCheck.done }) }).then(r => r.json());
+    expect(toggled.checklist.find((value: { id: string }) => value.id === firstCheck.id)?.done).toBe(!firstCheck.done);
+
+    expect((await fetch(`${app.url}/api/v1/companion/notes/${note.id}`, { method: 'DELETE' })).status).toBe(200);
+    const final = await fetch(`${app.url}/api/v1/companion/snapshot`).then(r => r.json());
+    expect(final.notes.some((value: { id: string }) => value.id === note.id)).toBe(false);
+  });
+
+  it('exécute les automatisations génériques via le bus Runtime', async () => {
+    const app = await start();
+    const capabilities = await fetch(`${app.url}/api/v1/automations/capabilities`).then(r => r.json());
+    expect(capabilities.triggers).toContain('twitch.reward.redeemed');
+    expect(capabilities.actions).toEqual(expect.arrayContaining(['soundboard.play', 'obs.scene', 'timer.add']));
+
+    const created = await fetch(`${app.url}/api/v1/automations`, {
+      method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ name: 'Ajoute une minute', enabled: true, trigger: 'test.support', conditions: [{ path: 'amountMinor', operator: 'gte', value: 500 }], actions: [{ type: 'timer.add', payload: { seconds: 60 } }], cooldownMs: 0 }),
+    });
+    expect(created.status).toBe(201);
+
+    expect((await fetch(`${app.url}/api/v1/automations/test`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ amountMinor: 500 }) })).status).toBe(202);
+    await expect.poll(async () => (await fetch(`${app.url}/api/v1/state`).then(r => r.json())).timer.remaining).toBe(360);
+
+    await expect.poll(async () => {
+      const automations = await fetch(`${app.url}/api/v1/automations`).then(r => r.json());
+      return automations.items[0]?.lastResult?.status ?? null;
+    }).toBe('succeeded');
   });
 
   it('arrête le serveur proprement et de façon idempotente', async () => {

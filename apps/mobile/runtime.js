@@ -23,8 +23,9 @@ export function normalizeServer(value) {
     throw new Error('Adresse non autorisée. Utilise uniquement une adresse LAN sans identifiants.');
   }
   const host = url.hostname.toLowerCase();
+  const loopback = host === '127.0.0.1';
   const localHostname = host === 'localhost' || host.endsWith('.local') || (!host.includes('.') && /^[a-z0-9-]+$/i.test(host));
-  if (!isPrivateIpv4(host) && !localHostname) throw new Error('Seule une adresse privée du réseau local est autorisée.');
+  if (!isPrivateIpv4(host) && !loopback && !localHostname) throw new Error('Seule une adresse privée du réseau local est autorisée.');
   if (url.protocol === 'https:' && host !== 'localhost') throw new Error('Le serveur StreamDashboard LAN utilise HTTP.');
   const port = url.port || String(DEFAULT_PORT);
   return `${url.protocol}//${host}:${port}`;

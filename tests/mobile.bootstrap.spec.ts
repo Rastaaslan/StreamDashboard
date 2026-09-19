@@ -13,10 +13,21 @@ test('le bootstrap mobile réel reste navigable lorsque REST est indisponible', 
     });
     const page = await application.firstWindow();
     const origin = await page.evaluate(() => location.origin);
+    // Leave the Desktop renderer before simulating a total REST outage. Otherwise an
+    // in-flight Desktop refresh can observe the intentional route abort and pollute
+    // this mobile-only bootstrap assertion with an unrelated pageerror.
+    await page.goto('about:blank');
     const runtimeErrors: string[] = [];
     page.on('pageerror', error => runtimeErrors.push(error.stack || error.message));
 
     await page.addInitScript(() => {
+      localStorage.clear();
+      localStorage.setItem('streamdashboard.device', 'unreachable-test-device');
+      localStorage.setItem('streamdashboard.companion.v3', JSON.stringify({
+        schemaVersion: 3,
+        checklist: [{ id: 'offline-check', label: 'Checklist hors ligne conservée', done: false }],
+        templates: [],
+      }));
       const original = EventTarget.prototype.addEventListener;
       const counts = new Map<string, number>();
       EventTarget.prototype.addEventListener = function (type, listener, options) {
@@ -28,15 +39,10 @@ test('le bootstrap mobile réel reste navigable lorsque REST est indisponible', 
       };
       Object.defineProperty(window, '__listenerCounts', { value: counts });
     });
-    await page.goto(`${origin}/mobile/`);
-    await page.evaluate(() => {
-      localStorage.clear();
-      localStorage.setItem('streamdashboard.device', 'unreachable-test-device');
-    });
     await page.route('**/api/v1/**', route => route.abort('connectionrefused'));
-    await page.reload();
+    await page.goto(`${origin}/mobile/`);
 
-    await expect(page.locator('#checklist')).toContainText('Checklist vide');
+    await expect(page.locator('#checklist')).toContainText('Checklist hors ligne conservée');
     await expect(page.locator('#templates')).toContainText('Aucun template');
     await expect(page.locator('#connection')).not.toHaveText('Connexion au PC…');
     expect(runtimeErrors).toEqual([]);

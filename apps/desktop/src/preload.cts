@@ -6,6 +6,8 @@ contextBridge.exposeInMainWorld('streamDashboardDesktop', {
   openExternalAuth: (url: string): Promise<boolean> => ipcRenderer.invoke('app:open-external-auth', url),
   openLogs: (): Promise<void> => ipcRenderer.invoke('app:open-logs'),
   ensureObsRunning: (): Promise<{ launched: boolean; detail: string }> => ipcRenderer.invoke('app:ensure-obs-running'),
+  selectSoundFile: (): Promise<string | null> => ipcRenderer.invoke('soundboard:select-file'),
+  importSoundFile: (selectedFile: string): Promise<{ libraryId: string }> => ipcRenderer.invoke('soundboard:import-file', selectedFile),
   minimize: (): void => ipcRenderer.send('app:minimize'),
   close: (): void => ipcRenderer.send('app:close'),
 });

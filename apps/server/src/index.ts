@@ -1,6 +1,6 @@
 import express from 'express';
 import { createServer, type Server } from 'node:http';
-import { mkdir } from 'node:fs/promises';
+import { mkdir, stat, unlink } from 'node:fs/promises';
 import { networkInterfaces } from 'node:os';
 import path from 'node:path';
 import { createHash, randomUUID } from 'node:crypto';
@@ -8,7 +8,7 @@ import { WebSocketServer, type WebSocket } from 'ws';
 import { ObsClient } from '../../../integrations/obs/src/client.js';
 import { TwitchClient } from '../../../integrations/twitch/src/client.js';
 import { TwitchPreflight } from '../../../integrations/twitch/src/preflight.js';
-import { TwitchEventSub, type TwitchChatMessage } from '../../../integrations/twitch/src/eventsub.js';
+import { TwitchEventSub, type TwitchChatMessage, type TwitchRewardRedemption } from '../../../integrations/twitch/src/eventsub.js';
 import { DiscordClient } from '../../../integrations/discord/src/client.js';
 import { expandRecurringItems } from '../../../packages/core/src/recurrence.js';
 import { EventCore } from '../../../packages/core/src/events.js';
@@ -44,18 +44,21 @@ import {
   type TimerState,
   type ControlHubSnapshot,
   type Sound,
+  type StreamerPing,
 } from '../../../packages/contracts/src/index.js';
 import { DashboardCommandService } from './command-service.js';
 import { companionSnapshot, emptyCompanionState, reconcileCompanionBatch, resolveCompanionConflict, type CompanionState, type SyncOperation } from './companion-sync.js';
 import { RemoteAuth, type PersistedRemoteDevice } from './remote-auth.js';
 import { parseRemoteCommand, toRemoteDashboardState } from './remote-policy.js';
 import { SoundboardRuntime, validateSound } from './soundboard-runtime.js';
+import { ObsSoundboardPlayback, ObsSoundboardSetup } from './obs-soundboard.js';
 import { AutomationRuntime } from './automation-runtime.js';
 import type { Automation, Support } from '../../../packages/core/src/live-control-domains.js';
 import { SupportRuntime } from './support-runtime.js';
 import { StreamlabsAdapter } from '../../../integrations/streamlabs/src/adapter.js';
 import type { StreamlabsTransport } from '../../../integrations/streamlabs/src/adapter.js';
 import { StreamlabsSocketTransport } from '../../../integrations/streamlabs/src/socket-transport.js';
+import { StreamlabsOAuthClient } from '../../../integrations/streamlabs/src/oauth.js';
 import { WizeBotAdapter } from '../../../integrations/wizebot/src/adapter.js';
 import type { WizeBotTransport } from '../../../integrations/wizebot/src/adapter.js';
 import { WizeBotHttpTransport } from '../../../integrations/wizebot/src/http-transport.js';
@@ -95,12 +98,14 @@ interface LocalData {
   sounds: Sound[];
   automations: Automation[];
   supports: Support[];
+  streamerPings: StreamerPing[];
 }
 export interface DashboardServerOptions {
   port?: number;
   host?: string;
   remoteEnabled?: boolean;
   dataDir?: string;
+  soundLibraryDir?: string;
   webDir?: string;
   mobileDir?: string;
   secretStore?: SecretStore;
@@ -112,6 +117,8 @@ export interface DashboardServerOptions {
   logger?: Pick<Console, 'info' | 'warn' | 'error'>;
   discordFetch?: typeof fetch;
   streamlabsTransport?: StreamlabsTransport;
+  streamlabsFetch?: typeof fetch;
+  streamlabsRedirectUri?: string;
   wizebotTransport?: WizeBotTransport;
 }
 export interface DashboardServerHandle {
@@ -318,6 +325,7 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
 
   const dataDir = path.resolve(options.dataDir ?? process.env.DATA_DIR ?? path.dirname(process.env.DATA_FILE ?? 'data/dashboard.json'));
   const dataFile = path.resolve(process.env.DATA_FILE ?? path.join(dataDir, 'dashboard.json'));
+  const soundLibraryDir = path.resolve(options.soundLibraryDir ?? path.join(dataDir, 'soundboard'));
   const store = new AtomicJsonStore<LocalData>(dataFile);
   const secrets = options.secretStore ?? new MemorySecretStore();
   const logger = options.logger ?? console;
@@ -343,6 +351,7 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
       chattingScene: undefined,
       startMode: 'intro',
       remoteEnabled: false,
+      streamerPingRewardIds: [],
     },
     twitch: { broadcasterId: '', userName: '', displayName: '' },
     twitchLastSyncedAt: null,
@@ -353,6 +362,7 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
     sounds: [],
     automations: [],
     supports: [],
+    streamerPings: [],
   };
 
   let local = await store.read(defaults);
@@ -383,6 +393,8 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
   local.sounds = Array.isArray(local.sounds) ? local.sounds.flatMap(value => { try { return [validateSound(value)]; } catch { return []; } }) : [];
   local.automations = Array.isArray(local.automations) ? local.automations : [];
   local.supports = Array.isArray(local.supports) ? local.supports : [];
+  local.streamerPings = Array.isArray(local.streamerPings) ? local.streamerPings.filter(value => object(value) && typeof value.id === 'string' && typeof value.rewardId === 'string' && typeof value.rewardTitle === 'string').slice(-50) as StreamerPing[] : [];
+  local.settings.streamerPingRewardIds = Array.isArray(local.settings.streamerPingRewardIds) ? [...new Set(local.settings.streamerPingRewardIds.filter(value => typeof value === 'string' && value.length <= 100))].slice(0, 50) : [];
   if (!Array.isArray(local.checklist)) local.checklist = structuredClone(defaults.checklist);
   else {
     const seen = new Set<string>();
@@ -391,6 +403,12 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
       .map(item => ({ id: String(item.id), label: String(item.label).slice(0, 200), done: item.done === true }))
       .filter(item => { if (seen.has(item.id)) return false; seen.add(item.id); return true; });
     if (!local.checklist.length) local.checklist = structuredClone(defaults.checklist);
+  }
+  {
+    const baseline = reconcileCompanionBatch(local.planning, local.checklist, local.companion, []);
+    local.planning = baseline.planning;
+    local.checklist = baseline.checklist;
+    local.companion = baseline.companion;
   }
 
   const rawSettings: Partial<PersistedSettings & { obsPassword?: string }> = object(local.settings) ? local.settings : {};
@@ -416,6 +434,9 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
       ? rawSettings.primaryMicInput.trim() || undefined : undefined,
     requireTimerOverlayOnStart: rawSettings.requireTimerOverlayOnStart === true,
     remoteEnabled: rawSettings.remoteEnabled === true,
+    streamerPingRewardIds: Array.isArray(rawSettings.streamerPingRewardIds)
+      ? [...new Set(rawSettings.streamerPingRewardIds.filter(value => typeof value === 'string' && value.length <= 100))].slice(0, 50)
+      : [],
     ...(typeof rawSettings.obsPassword === 'string' && rawSettings.obsPassword.length <= 500 ? { obsPassword: rawSettings.obsPassword } : {}),
   };
 
@@ -516,7 +537,7 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
     updateChannel: value => twitch.updateChannelMetadata(value),
   });
   const twitchEventSub = new TwitchEventSub(
-    sessionId => twitch.subscribeChat(sessionId),
+    sessionId => twitch.subscribeEventSub(sessionId),
     message => {
       if (chatMessages.some(item => item.id === message.id)) return;
       chatMessages = [...chatMessages.slice(-199), message];
@@ -528,6 +549,28 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
       eventCore.publish({ type: status === 'CONNECTED' ? 'integration.connected' : status === 'DISCONNECTED' ? 'integration.disconnected' : 'integration.degraded', source: 'twitch-chat', payload: { integration: 'twitch-chat', status, ...(error ? { error } : {}) } });
       broadcast();
     },
+    undefined,
+    (redemption: TwitchRewardRedemption) => {
+      eventCore.publish({ type: 'twitch.reward.redeemed', source: 'twitch', occurredAt: redemption.redeemedAt, correlationId: redemption.id, payload: redemption });
+      if (!(local.settings.streamerPingRewardIds ?? []).includes(redemption.reward.id)) return;
+      if (local.streamerPings.some(ping => ping.id === redemption.id)) return;
+      const ping: StreamerPing = {
+        id: redemption.id,
+        source: 'twitch-reward',
+        rewardId: redemption.reward.id,
+        rewardTitle: redemption.reward.title,
+        rewardCost: redemption.reward.cost,
+        userId: redemption.user.id,
+        userName: redemption.user.displayName || redemption.user.login,
+        userInput: redemption.userInput,
+        createdAt: redemption.redeemedAt,
+        acknowledgedAt: null,
+      };
+      local.streamerPings = [...local.streamerPings.filter(value => value.id !== ping.id), ping].slice(-50);
+      eventCore.publish({ type: 'streamer.ping.received', source: 'twitch', occurredAt: ping.createdAt, correlationId: ping.id, payload: ping });
+      void save().catch(logError);
+      broadcast();
+    },
   );
 
   const app = express();
@@ -536,16 +579,44 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
   const sockets = new WebSocketServer({ noServer: true });
   const socketDevices = new Map<WebSocket, string>();
   const eventCore = new EventCore(250);
-  const soundboard = new SoundboardRuntime(local.sounds, undefined, () => Date.now(), event => {
+  local.sounds = local.sounds.map(sound => ({ ...sound, outputId: 'obs', monitoringMode: sound.monitoringMode ?? 'stream' }));
+  const obsSoundboardSetup = new ObsSoundboardSetup(obs);
+  const soundboard = new SoundboardRuntime(local.sounds, new ObsSoundboardPlayback(obs), () => Date.now(), event => {
     eventCore.publish({ type: event.type, source: 'soundboard', correlationId: event.correlationId, payload: event.payload });
   });
+  let executeAutomationCommand: (command: DashboardCommand) => Promise<void> = async () => { throw new Error('Runtime de commandes indisponible.'); };
   const automation = new AutomationRuntime(local.automations, async (action, context) => {
-    if (action.type !== 'soundboard.play' || typeof action.payload.soundId !== 'string') throw new Error(`Action ${action.type} non supportée.`);
-    const ack = await soundboard.play({ commandId: `${context.correlationId}:${context.automationId}:${context.actionIndex}`, correlationId: context.correlationId, type: 'soundboard.play', origin: 'automation', issuedAt: new Date().toISOString(), payload: { soundId: action.payload.soundId, ...(typeof action.payload.volume === 'number' ? { volume: action.payload.volume } : {}) } });
-    if (ack.status !== 'succeeded') { const error = new Error(ack.message ?? 'Lecture soundboard échouée.'); error.name = ack.errorCode ?? 'SOUNDBOARD_FAILED'; throw error; }
+    if (action.type === 'soundboard.play' && typeof action.payload.soundId === 'string') {
+      const ack = await soundboard.play({ commandId: `${context.correlationId}:${context.automationId}:${context.actionIndex}`, correlationId: context.correlationId, type: 'soundboard.play', origin: 'automation', issuedAt: new Date().toISOString(), payload: { soundId: action.payload.soundId, ...(typeof action.payload.volume === 'number' ? { volume: action.payload.volume } : {}) } });
+      if (ack.status !== 'succeeded') { const error = new Error(ack.message ?? 'Lecture soundboard échouée.'); error.name = ack.errorCode ?? 'SOUNDBOARD_FAILED'; throw error; }
+      return;
+    }
+    if (action.type === 'obs.scene' && typeof action.payload.scene === 'string') return executeAutomationCommand({ type: 'obs.scene', scene: action.payload.scene });
+    if (action.type === 'obs.media.restart' && typeof action.payload.input === 'string') return executeAutomationCommand({ type: 'obs.media.restart', input: action.payload.input });
+    if (action.type === 'timer.add' && typeof action.payload.seconds === 'number') return executeAutomationCommand({ type: 'timer.add', seconds: action.payload.seconds });
+    if (action.type === 'timer.start') return executeAutomationCommand({ type: 'timer.start', ...(typeof action.payload.seconds === 'number' ? { seconds: action.payload.seconds } : {}) });
+    if (action.type === 'timer.pause') return executeAutomationCommand({ type: 'timer.pause' });
+    throw new Error(`Action ${action.type} non supportée.`);
   }, async values => { local.automations = values; await save(); });
   const support = new SupportRuntime(local.supports, async values => { local.supports = values; await save(); }, value => { eventCore.publish({ type: 'support.received', source: value.provider, occurredAt: value.receivedAt, correlationId: `${value.provider}:${value.externalId}`, payload: value }); });
-  const streamlabs = new StreamlabsAdapter(await secrets.getStreamlabsToken?.() ?? process.env.STREAMLABS_SOCKET_TOKEN ?? '', value => support.record(value).then(() => undefined), options.streamlabsTransport ?? new StreamlabsSocketTransport({ logger }), logger);
+  const streamlabsOAuth = new StreamlabsOAuthClient(options.streamlabsFetch ?? fetch);
+  const streamlabsRedirectUri = String(options.streamlabsRedirectUri ?? process.env.STREAMLABS_REDIRECT_URI ?? 'http://127.0.0.1:47832/api/v1/streamlabs/oauth/callback').trim();
+  {
+    let redirect: URL;
+    try { redirect = new URL(streamlabsRedirectUri); } catch { throw new Error('URL de redirection Streamlabs invalide.'); }
+    if (redirect.protocol !== 'http:' || !['127.0.0.1', 'localhost'].includes(redirect.hostname) || redirect.username || redirect.password) throw new Error('La redirection Streamlabs doit rester sur le loopback HTTP local.');
+  }
+  let streamlabsSocketToken = await secrets.getStreamlabsToken?.() ?? process.env.STREAMLABS_SOCKET_TOKEN ?? '';
+  const streamlabsOAuthSecrets = await secrets.getStreamlabsOAuth?.() ?? null;
+  if (!streamlabsSocketToken && streamlabsOAuthSecrets?.accessToken) {
+    try {
+      streamlabsSocketToken = await streamlabsOAuth.socketToken(streamlabsOAuthSecrets.accessToken);
+      await secrets.setStreamlabsToken?.(streamlabsSocketToken);
+    } catch (error) {
+      void Promise.resolve(logger.warn('Impossible de restaurer le Socket Token Streamlabs depuis OAuth.', error)).catch(() => undefined);
+    }
+  }
+  const streamlabs = new StreamlabsAdapter(streamlabsSocketToken, value => support.record(value).then(() => undefined), options.streamlabsTransport ?? new StreamlabsSocketTransport({ logger }), logger);
   const storedWizeBot = await secrets.getWizeBotConfiguration?.() ?? null;
   const environmentWizeBot = process.env.WIZEBOT_API_URL && process.env.WIZEBOT_TOKEN ? { apiBaseUrl: process.env.WIZEBOT_API_URL, token: process.env.WIZEBOT_TOKEN } : null;
   const wizebot = new WizeBotAdapter(storedWizeBot ?? environmentWizeBot, options.wizebotTransport ?? new WizeBotHttpTransport(), logger);
@@ -660,8 +731,9 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
     primaryMicInput: local.settings.primaryMicInput,
     requireTimerOverlayOnStart: local.settings.requireTimerOverlayOnStart === true,
     remoteEnabled: local.settings.remoteEnabled === true,
+    streamerPingRewardIds: [...(local.settings.streamerPingRewardIds ?? [])],
   });
-  const features = ['obs', 'twitch', 'preflight', 'timer', 'planning', 'planning-recurrence', 'discord-planning', 'checklist', 'deck', 'mobile-remote', 'unplanned-live-tracking'];
+  const features = ['obs', 'twitch', 'preflight', 'timer', 'planning', 'planning-recurrence', 'discord-planning', 'checklist', 'deck', 'mobile-remote', 'unplanned-live-tracking', 'streamer-pings'];
   if (googleClientId) features.push('google-calendar', 'unplanned-live-google-sync');
   const capabilities: ServerCapabilities = {
     protocolVersion,
@@ -734,6 +806,7 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
         devices: remoteAuth.list(),
         urls: remoteRuntimeEnabled ? lanUrls(runtimePort) : [],
       },
+      streamerPings: local.streamerPings.filter(ping => !ping.acknowledgedAt).slice(-20),
       controlHub,
       health: {
         dashboard: { ok: true, detail: 'API locale opérationnelle', reconnects: 0 },
@@ -821,6 +894,29 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
     broadcast();
     return snapshot();
   };
+  type CompanionCollectionKind = 'notes' | 'checklist' | 'templates';
+  const companionKinds = new Set<CompanionCollectionKind>(['notes', 'checklist', 'templates']);
+  const mutateCompanionCollection = async (kind: CompanionCollectionKind, action: 'upsert' | 'delete', id: string | undefined, patch: Record<string, unknown> = {}) => plan(async () => {
+    const list = local.companion[kind];
+    const current = id ? list.find(item => item.id === id) : undefined;
+    if (action === 'delete' && !current) { const error = new Error('Élément compagnon introuvable.'); error.name = 'NOT_FOUND'; throw error; }
+    const entityId = id ?? `${kind.slice(0, -1)}-${randomUUID()}`;
+    const reconciled = reconcileCompanionBatch(local.planning, local.checklist, local.companion, [{
+      operationId: `desktop-${randomUUID()}`,
+      type: `${kind}.${action}`,
+      entityId,
+      baseRevision: current?.revision ?? 0,
+      timestamp: new Date().toISOString(),
+      patch,
+    }]);
+    if (reconciled.conflicts.length) throw new Error('Conflit compagnon détecté. Rechargez les données avant de réessayer.');
+    local.planning = reconciled.planning;
+    local.checklist = reconciled.checklist;
+    local.companion = reconciled.companion;
+    await save();
+    broadcast();
+    return companionSnapshot(local.planning, local.companion);
+  });
   const commands = new DashboardCommandService(local, obs, changed, { settings: local.settings, logger });
 
   const refreshGoogleCalendars = async () => {
@@ -956,6 +1052,7 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
     }
     return operation;
   };
+  executeAutomationCommand = async command => { await executeCommand({ ...command, commandId: `auto_${randomUUID()}`, correlationId: `auto_${randomUUID()}` }); };
   const validateTwitch = async () => {
     if (!twitch.state.connected) return;
     if (!await twitch.validateSession()) {
@@ -1219,10 +1316,10 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
       return;
     }
     scheduleRemoteActivitySave();
-    const allowed = (req.method === 'GET' && (['/v1/state', '/v1/control-hub', '/v1/events', '/v1/soundboard', '/v1/automations', '/v1/supports', '/v1/twitch/categories', '/v1/twitch/videos', '/v1/twitch/clips', '/v1/twitch/chatters', '/v1/twitch/moderation/capabilities', '/v1/discord/status', '/v1/discord/guilds'].includes(pathName) || /^\/v1\/discord\/guilds\/\d+\/channels$/.test(pathName)))
+    const allowed = (req.method === 'GET' && (['/v1/state', '/v1/control-hub', '/v1/events', '/v1/soundboard', '/v1/automations', '/v1/automations/capabilities', '/v1/supports', '/v1/twitch/categories', '/v1/twitch/videos', '/v1/twitch/clips', '/v1/twitch/chatters', '/v1/twitch/moderation/capabilities', '/v1/discord/status', '/v1/discord/guilds'].includes(pathName) || /^\/v1\/discord\/guilds\/\d+\/channels$/.test(pathName)))
       || (req.method === 'PUT' && (pathName === '/v1/discord/settings' || /^\/v1\/planning\/[^/]+(?:\/occurrence)?$/.test(pathName) || /^\/v1\/soundboard\/sounds\/[A-Za-z0-9._:-]+$/.test(pathName) || /^\/v1\/automations\/[A-Za-z0-9._:-]+$/.test(pathName)))
       || (req.method === 'DELETE' && (/^\/v1\/planning\/[^/]+(?:\/occurrence)?$/.test(pathName) || /^\/v1\/twitch\/videos\/\d+$/.test(pathName) || /^\/v1\/twitch\/moderation\/(?:messages|bans)\/[A-Za-z0-9_-]+$/.test(pathName) || /^\/v1\/automations\/[A-Za-z0-9._:-]+$/.test(pathName)))
-      || (req.method === 'POST' && (['/v1/commands', '/v1/remote/ws-ticket', '/v1/soundboard/play', '/v1/soundboard/stop', '/v1/automations', '/v1/automations/test', '/v1/twitch/channel', '/v1/twitch/chat/messages', '/v1/twitch/clips', '/v1/twitch/moderation/bans', '/v1/planning', '/v1/companion/sync', '/v1/discord/planning'].includes(pathName) || /^\/v1\/companion\/conflicts\/[^/]+\/resolve$/.test(pathName)));
+      || (req.method === 'POST' && (['/v1/commands', '/v1/remote/ws-ticket', '/v1/soundboard/play', '/v1/soundboard/stop', '/v1/automations', '/v1/automations/test', '/v1/twitch/channel', '/v1/twitch/chat/messages', '/v1/twitch/clips', '/v1/twitch/moderation/bans', '/v1/planning', '/v1/companion/sync', '/v1/discord/planning'].includes(pathName) || /^\/v1\/companion\/conflicts\/[^/]+\/resolve$/.test(pathName) || /^\/v1\/streamer-pings\/[^/]+\/ack$/.test(pathName) || pathName === '/v1/streamer-pings/ack-all'));
     if (!allowed) {
       res.status(403).json({ ok: false, error: { code: 'REMOTE_SCOPE_DENIED', message: 'Cette action n’est pas autorisée depuis la télécommande.' } });
       return;
@@ -1245,7 +1342,65 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
   app.get('/api/v1/health', health);
   app.get('/api/v1/state', (req, res) => res.json(isRemoteRequest(req) ? toRemoteDashboardState(snapshot()) : snapshot()));
   app.get('/api/v1/control-hub', (_req, res) => res.json(snapshot().controlHub));
-  registerLiveControlRoutes({ app, soundboard, automation, support, streamlabs, wizebot, eventCore, secrets, requireLocal, isRemote: isRemoteRequest, save, sounds: () => local.sounds, setSounds: value => { local.sounds = value; }, sessionStartedAt: () => twitchLive.startedAt });
+  app.get('/api/v1/twitch/rewards', async (_req, res, next) => { try { res.json({ items: await twitch.customRewards(), available: twitch.state.redemptionsAvailable === true }); } catch (error) { next(error); } });
+  app.post('/api/v1/streamer-pings/:id/ack', async (req, res, next) => {
+    try {
+      const id = String(req.params.id);
+      const ping = local.streamerPings.find(value => value.id === id);
+      if (!ping) { res.status(404).json({ ok: false, error: { code: 'NOT_FOUND', message: 'Streamer Ping introuvable.' } }); return; }
+      if (!ping.acknowledgedAt) ping.acknowledgedAt = new Date().toISOString();
+      eventCore.publish({ type: 'streamer.ping.acknowledged', source: isRemoteRequest(req) ? 'android' : 'desktop', correlationId: ping.id, payload: { id: ping.id, acknowledgedAt: ping.acknowledgedAt } });
+      await save(); broadcast(); res.json(isRemoteRequest(req) ? toRemoteDashboardState(snapshot()) : snapshot());
+    } catch (error) { next(error); }
+  });
+  app.get('/api/v1/streamer-pings', (req, res) => {
+    if (!requireLocal(req, res)) return;
+    const includeAcknowledged = req.query.all === '1';
+    res.json({ items: local.streamerPings.filter(value => includeAcknowledged || !value.acknowledgedAt).slice(-50).reverse() });
+  });
+  app.post('/api/v1/streamer-pings/ack-all', async (req, res, next) => {
+    try {
+      const acknowledgedAt = new Date().toISOString();
+      const pending = local.streamerPings.filter(value => !value.acknowledgedAt);
+      for (const ping of pending) ping.acknowledgedAt = acknowledgedAt;
+      if (pending.length) eventCore.publish({ type: 'streamer.ping.acknowledged', source: isRemoteRequest(req) ? 'android' : 'desktop', payload: { ids: pending.map(value => value.id), acknowledgedAt } });
+      await save(); broadcast(); res.json(isRemoteRequest(req) ? toRemoteDashboardState(snapshot()) : snapshot());
+    } catch (error) { next(error); }
+  });
+  app.delete('/api/v1/streamer-pings/history', async (req, res, next) => {
+    try {
+      if (!requireLocal(req, res)) return;
+      local.streamerPings = local.streamerPings.filter(value => !value.acknowledgedAt);
+      await save(); broadcast(); res.sendStatus(204);
+    } catch (error) { next(error); }
+  });
+  const soundboardTargetScenes = () => [...new Set([
+    local.settings.modeScenes?.intro, local.settings.modeScenes?.live, local.settings.chattingScene,
+    local.settings.modeScenes?.pause, local.settings.modeScenes?.end,
+  ].filter((value): value is string => typeof value === 'string' && value.trim().length > 0))];
+  const resolveSoundLibraryFile = async (libraryId: string) => {
+    if (!/^[A-Za-z0-9._-]{1,220}$/.test(libraryId) || path.basename(libraryId) !== libraryId) throw new Error('Fichier Soundboard invalide.');
+    const resolved = path.resolve(soundLibraryDir, libraryId);
+    const relative = path.relative(soundLibraryDir, resolved);
+    if (!relative || relative.startsWith('..') || path.isAbsolute(relative)) throw new Error('Fichier Soundboard hors bibliothèque.');
+    const info = await stat(resolved);
+    if (!info.isFile() || info.size > 100 * 1024 * 1024) throw new Error('Fichier Soundboard invalide.');
+    return resolved;
+  };
+  const removeSoundLibraryFile = async (source: string) => {
+    const resolved = path.resolve(source);
+    const relative = path.relative(soundLibraryDir, resolved);
+    if (!relative || relative.startsWith('..') || path.isAbsolute(relative)) return;
+    if (local.sounds.some(sound => path.resolve(sound.source) === resolved)) return;
+    await unlink(resolved).catch(() => undefined);
+  };
+  registerLiveControlRoutes({
+    app, soundboard, automation, support, streamlabs, streamlabsOAuth, streamlabsRedirectUri, wizebot, eventCore, secrets, requireLocal, isRemote: isRemoteRequest, save, broadcast,
+    sounds: () => local.sounds, setSounds: value => { local.sounds = value; }, sessionStartedAt: () => twitchLive.startedAt,
+    resolveSoundLibraryFile, removeSoundLibraryFile,
+    soundboardObsStatus: () => obsSoundboardSetup.status(soundboardTargetScenes()),
+    setupSoundboardObs: () => obsSoundboardSetup.ensure(soundboardTargetScenes()),
+  });
   app.get('/api/v1/twitch/videos', async (req, res, next) => { try { res.json(await twitch.videos(String(req.query.after ?? ''), Number(req.query.first) || 20)); } catch (error) { next(error); } });
   app.delete('/api/v1/twitch/videos/:id', async (req, res, next) => { try { const id = String(req.params.id); if (req.body?.confirmation !== `DELETE ${id}`) { res.status(409).json({ ok: false, error: { code: 'CONFIRM_REQUIRED', message: `Confirmez avec DELETE ${id}.` } }); return; } await twitch.deleteVideo(id); res.sendStatus(204); } catch (error) { next(error); } });
   app.get('/api/v1/twitch/clips', async (req, res, next) => { try { res.json(await twitch.clips(String(req.query.after ?? ''), Number(req.query.first) || 20)); } catch (error) { next(error); } });
@@ -1294,6 +1449,35 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
       const result = await flight; await refreshDiscord(); res.status(201).json({ ok: true, ...result, channelName: discordPublic.channelName });
     } catch (error) { next(error); }
   });
+  app.get('/api/v1/companion/snapshot', (req, res) => {
+    if (!requireLocal(req, res)) return;
+    res.json(companionSnapshot(local.planning, local.companion));
+  });
+  for (const kind of companionKinds) {
+    app.post(`/api/v1/companion/${kind}`, async (req, res, next) => {
+      try {
+        if (!requireLocal(req, res)) return;
+        if (!object(req.body)) throw new Error('Collection compagnon invalide.');
+        const { id: _id, revision: _revision, updatedAt: _updatedAt, ...patch } = req.body;
+        res.status(201).json(await mutateCompanionCollection(kind, 'upsert', undefined, patch));
+      } catch (error) { next(error); }
+    });
+    app.put(`/api/v1/companion/${kind}/:id`, async (req, res, next) => {
+      try {
+        if (!requireLocal(req, res)) return;
+        if (!object(req.body)) throw new Error('Collection compagnon invalide.');
+        const { id: _id, revision: _revision, updatedAt: _updatedAt, ...patch } = req.body;
+        res.json(await mutateCompanionCollection(kind, 'upsert', String(req.params.id), patch));
+      } catch (error) { next(error); }
+    });
+    app.delete(`/api/v1/companion/${kind}/:id`, async (req, res, next) => {
+      try {
+        if (!requireLocal(req, res)) return;
+        res.json(await mutateCompanionCollection(kind, 'delete', String(req.params.id)));
+      } catch (error) { next(error); }
+    });
+  }
+
   app.post('/api/v1/companion/sync', async (req, res, next) => {
     try {
       // Unlike ordinary desktop API calls, sync always requires a paired credential:
@@ -1553,6 +1737,10 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
           local.settings.startMode = input.startMode;
         }
         if (typeof input.remoteEnabled === 'boolean') local.settings.remoteEnabled = input.remoteEnabled;
+        if (input.streamerPingRewardIds !== undefined) {
+          if (!Array.isArray(input.streamerPingRewardIds) || input.streamerPingRewardIds.length > 50 || input.streamerPingRewardIds.some(value => typeof value !== 'string' || !value || value.length > 100)) throw new Error('Récompenses Streamer Ping invalides.');
+          local.settings.streamerPingRewardIds = [...new Set(input.streamerPingRewardIds)];
+        }
         if (input.timerBrowserSource !== undefined) {
           if (typeof input.timerBrowserSource !== 'string' || input.timerBrowserSource.length > 200) throw new Error('Source timer OBS invalide.');
           local.settings.timerBrowserSource = input.timerBrowserSource.trim() || undefined;
@@ -1613,6 +1801,8 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
         void twitch.waitForDeviceAuthorization().then(async () => {
           Object.assign(local.twitch, twitch.publicIdentity());
           await save();
+          twitchEventSub.stop();
+          twitchEventSubStarted = false;
           await validateTwitch();
         }).catch(error => { logError(error); broadcast(); });
       }
@@ -1875,7 +2065,7 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
     ws.send(stateEvent(socketDevices.has(ws)));
   });
 
-  await mkdir(dataDir, { recursive: true });
+  await Promise.all([mkdir(dataDir, { recursive: true }), mkdir(soundLibraryDir, { recursive: true })]);
   await new Promise<void>((resolve, reject) => {
     server.once('error', reject);
     server.listen(requestedPort, host, () => { server.off('error', reject); resolve(); });
@@ -1884,7 +2074,9 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
   const actualPort = typeof address === 'object' && address ? address.port : requestedPort;
   runtimePort = actualPort;
   const unsubscribeObs = obs.onStateChanged(() => {
-    eventCore.publish({ type: obs.state.connected ? 'obs.state.changed' : 'obs.disconnected', source: 'obs', payload: { connected: obs.state.connected, streaming: obs.state.streaming, streamingKnown: obs.state.streamingKnown !== false, scene: obs.state.scene } });
+    const obsPayload = { connected: obs.state.connected, streaming: obs.state.streaming, streamingKnown: obs.state.streamingKnown !== false, scene: obs.state.scene };
+    eventCore.publish({ type: 'obs.state.changed', source: 'obs', payload: obsPayload });
+    if (!obs.state.connected) eventCore.publish({ type: 'obs.disconnected', source: 'obs', payload: obsPayload });
     const currentStreaming = obs.state.streaming;
     if (obs.state.connected) {
       if (!obsConnectionObserved) {

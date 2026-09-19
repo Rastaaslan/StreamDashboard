@@ -24,6 +24,7 @@ describe('intégration Twitch générique', () => {
     expect(String(request?.[0])).toBe('https://id.twitch.tv/oauth2/device');
     const body = String(request?.[1]?.body);
     expect(body).toContain('client_id=client-public');
+    expect(body).toContain('channel%3Aread%3Aredemptions');
     expect(body).not.toMatch(/client_secret|redirect_uri|code_challenge/);
     expect(JSON.stringify(result)).not.toContain('device-secret');
   });

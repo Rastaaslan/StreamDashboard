@@ -4,7 +4,7 @@ import path from 'node:path';
 export { isAllowedExternalAuthUrl, isAllowedGoogleOAuthUrl, isAllowedTwitchUrl } from './security.js';
 import { isAllowedExternalAuthUrl, isSameOrigin } from './security.js';
 
-export function createDashboardWindow(url: string, preload: string) {
+export function createDashboardWindow(url: string, preload: string, title = 'StreamDashboard') {
   const window = new BrowserWindow({
     width: 1440,
     height: 900,
@@ -12,7 +12,7 @@ export function createDashboardWindow(url: string, preload: string) {
     minHeight: 700,
     show: false,
     backgroundColor: '#080a10',
-    title: 'StreamDashboard',
+    title,
     autoHideMenuBar: true,
     webPreferences: {
       preload: path.resolve(preload),

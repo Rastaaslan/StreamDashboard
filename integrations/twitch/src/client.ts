@@ -11,7 +11,8 @@ const CLIPS_SCOPE = 'clips:edit';
 const VIDEOS_SCOPE = 'channel:manage:videos';
 const DELETE_CHAT_SCOPE = 'moderator:manage:chat_messages';
 const BANS_SCOPE = 'moderator:manage:banned_users';
-const REQUESTED_SCOPES = [SCHEDULE_SCOPE, BROADCAST_SCOPE, CHAT_READ_SCOPE, CHAT_WRITE_SCOPE, CHATTERS_SCOPE, CLIPS_SCOPE, VIDEOS_SCOPE, DELETE_CHAT_SCOPE, BANS_SCOPE] as const;
+const REDEMPTIONS_SCOPE = 'channel:read:redemptions';
+const REQUESTED_SCOPES = [SCHEDULE_SCOPE, BROADCAST_SCOPE, CHAT_READ_SCOPE, CHAT_WRITE_SCOPE, CHATTERS_SCOPE, CLIPS_SCOPE, VIDEOS_SCOPE, DELETE_CHAT_SCOPE, BANS_SCOPE, REDEMPTIONS_SCOPE] as const;
 const REQUEST_TIMEOUT_MS = 15_000;
 
 type Credentials = {
@@ -71,6 +72,7 @@ export class TwitchClient {
       error: this.error,
       syncing: this.syncing,
       lastSyncedAt: null,
+      redemptionsAvailable: this.grantedScopes.has(REDEMPTIONS_SCOPE),
       deviceAuthorization: this.pending ? {
         userCode: this.pending.userCode,
         verificationUri: this.pending.verificationUri,
@@ -238,6 +240,23 @@ export class TwitchClient {
   async subscribeChat(sessionId: string) {
     if (!/^[A-Za-z0-9_-]{1,200}$/.test(sessionId)) throw new Error('Session EventSub invalide.');
     return this.api('/eventsub/subscriptions', { method: 'POST', body: JSON.stringify({ type: 'channel.chat.message', version: '1', condition: { broadcaster_user_id: this.credentials.broadcasterId, user_id: this.credentials.broadcasterId }, transport: { method: 'websocket', session_id: sessionId } }) });
+  }
+
+  async subscribeRewardRedemptions(sessionId: string) {
+    if (!/^[A-Za-z0-9_-]{1,200}$/.test(sessionId)) throw new Error('Session EventSub invalide.');
+    this.requireScope(REDEMPTIONS_SCOPE);
+    return this.api('/eventsub/subscriptions', { method: 'POST', body: JSON.stringify({ type: 'channel.channel_points_custom_reward_redemption.add', version: '1', condition: { broadcaster_user_id: this.credentials.broadcasterId }, transport: { method: 'websocket', session_id: sessionId } }) });
+  }
+
+  async subscribeEventSub(sessionId: string) {
+    await this.subscribeChat(sessionId);
+    if (this.grantedScopes.has(REDEMPTIONS_SCOPE)) await this.subscribeRewardRedemptions(sessionId);
+  }
+
+  async customRewards() {
+    this.requireScope(REDEMPTIONS_SCOPE);
+    const value = await this.api<{ data: Array<{ id: string; title: string; prompt: string; cost: number; is_enabled: boolean; is_paused: boolean; is_in_stock: boolean; is_user_input_required: boolean }> }>(`/channel_points/custom_rewards?broadcaster_id=${encodeURIComponent(this.credentials.broadcasterId)}`);
+    return (value.data ?? []).map(reward => ({ id: reward.id, title: reward.title, prompt: reward.prompt, cost: reward.cost, enabled: reward.is_enabled, paused: reward.is_paused, inStock: reward.is_in_stock, userInputRequired: reward.is_user_input_required }));
   }
 
   async validateSession() {

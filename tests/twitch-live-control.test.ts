@@ -1,6 +1,6 @@
 import { describe, expect, it, vi, afterEach } from 'vitest';
 import { TwitchClient } from '../integrations/twitch/src/client.js';
-import { parseChatNotification, TwitchEventSub } from '../integrations/twitch/src/eventsub.js';
+import { parseChatNotification, parseRewardRedemptionNotification, TwitchEventSub } from '../integrations/twitch/src/eventsub.js';
 import { EventEmitter } from 'node:events';
 import type WebSocket from 'ws';
 
@@ -36,6 +36,26 @@ describe('Twitch Live Control', () => {
   it('parse badges, fragments, emotes, reply et bits EventSub', () => {
     const parsed = parseChatNotification({ metadata: { message_type: 'notification', subscription_type: 'channel.chat.message' }, payload: { event: { broadcaster_user_id: '42', chatter_user_id: '2', chatter_user_login: 'user', chatter_user_name: 'User', message_id: 'm1', color: '#FF0000', badges: [{ set_id: 'moderator', id: '1', info: '' }], message: { text: 'GG Kappa', fragments: [{ type: 'text', text: 'GG ' }, { type: 'emote', text: 'Kappa', emote: { id: '25', emote_set_id: '0', owner_id: '0', format: ['static'] } }] }, reply: { parent_message_id: 'p1', parent_message_body: 'Salut', parent_user_id: '3', parent_user_name: 'Other' }, cheer: { bits: 100 } } } }, '2026-09-17T10:00:00Z');
     expect(parsed).toMatchObject({ id: 'm1', chatter: { displayName: 'User', badges: [{ setId: 'moderator' }] }, reply: { parentMessageId: 'p1' }, bits: 100, fragments: [{ type: 'text' }, { emote: { id: '25' } }] });
+  });
+
+  it('parse un redeem de récompense Twitch en événement Streamer Ping exploitable', () => {
+    const parsed = parseRewardRedemptionNotification({
+      metadata: { message_type: 'notification', subscription_type: 'channel.channel_points_custom_reward_redemption.add' },
+      payload: { event: { id: 'redeem-1', broadcaster_user_id: '42', user_id: '2', user_login: 'viewer', user_name: 'Viewer', user_input: 'Maintenant !', status: 'unfulfilled', redeemed_at: '2026-09-19T06:00:00Z', reward: { id: 'reward-water', title: 'Bois de l’eau', prompt: 'Hydrate-toi', cost: 500 } } },
+    });
+    expect(parsed).toMatchObject({ id: 'redeem-1', user: { displayName: 'Viewer' }, reward: { id: 'reward-water', title: 'Bois de l’eau', cost: 500 }, userInput: 'Maintenant !' });
+  });
+
+  it('lit les récompenses après autorisation redemptions', async () => {
+    const responses = [
+      new Response(JSON.stringify({ client_id: 'client', user_id: '42', scopes: ['channel:manage:schedule', 'channel:read:redemptions'] })),
+      new Response(JSON.stringify({ data: [{ id: 'reward-water', title: 'Bois', prompt: '', cost: 500, is_enabled: true, is_paused: false, is_in_stock: true, is_user_input_required: false }] })),
+    ];
+    vi.stubGlobal('fetch', vi.fn(async () => responses.shift()!));
+    const client = new TwitchClient(credentials);
+    expect(await client.validateSession()).toBe(true);
+    expect(client.state.redemptionsAvailable).toBe(true);
+    await expect(client.customRewards()).resolves.toEqual([expect.objectContaining({ id: 'reward-water', title: 'Bois', cost: 500 })]);
   });
 
   it('expose NOT_AUTHORIZED sans scope et appelle les endpoints officiels avec les scopes', async () => {
