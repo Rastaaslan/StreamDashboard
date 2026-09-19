@@ -57,6 +57,7 @@ test('Desktop Preview navigue et émet une commande unique par contrôle', async
     expect(playedDesktopSound).toBe(true);
 
     // Runtime sections in Le Camp are no longer placeholders.
+    await page.locator('[data-view="camp"]').click();
     await page.locator('[data-camp="Préparation"]').click();
     await expect(page.locator('#camp-copy')).toContainText('Checklist avant direct');
     await page.locator('#camp-check-add input[name="label"]').fill('Test checklist Desktop');
