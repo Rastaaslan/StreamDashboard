@@ -82,7 +82,7 @@ public class MainActivity extends Activity {
     setContentView(webView);
     ensurePingNotifications();
     captureDeepLink(getIntent());
-    webView.loadUrl(ORIGIN + (BuildConfig.PREVIEW_MODE ? "/mobile/preview.html" : "/mobile/index.html"));
+    webView.loadUrl(ORIGIN + "/mobile/preview.html" + (BuildConfig.PREVIEW_MODE ? "" : "?runtime=1"));
   }
 
   @Override protected void onNewIntent(Intent intent) {
