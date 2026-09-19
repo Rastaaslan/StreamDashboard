@@ -156,6 +156,49 @@ describe('API publique v1', () => {
     await expect(access(file)).rejects.toThrow();
   });
 
+  it('partage Notes, Checklist et Templates via le Companion canonique', async () => {
+    const app = await start();
+    const initial = await fetch(`${app.url}/api/v1/companion/snapshot`).then(r => r.json());
+    expect(initial.checklist.length).toBeGreaterThan(0);
+
+    const noteCreated = await fetch(`${app.url}/api/v1/companion/notes`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ text: 'Note Desktop' }) }).then(r => r.json());
+    expect(noteCreated.notes).toEqual(expect.arrayContaining([expect.objectContaining({ text: 'Note Desktop', revision: 1 })]));
+    const note = noteCreated.notes.find((value: { text?: string }) => value.text === 'Note Desktop');
+
+    const noteUpdated = await fetch(`${app.url}/api/v1/companion/notes/${note.id}`, { method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ text: 'Note partagée Android' }) }).then(r => r.json());
+    expect(noteUpdated.notes.find((value: { id: string }) => value.id === note.id)).toMatchObject({ text: 'Note partagée Android', revision: 2 });
+
+    const templateCreated = await fetch(`${app.url}/api/v1/companion/templates`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ title: 'FC26', description: 'Club Pro', twitchCategoryId: '1745202732', twitchCategoryName: 'EA SPORTS FC 26', desiredPublication: { local: false, twitch: true, google: false } }) }).then(r => r.json());
+    expect(templateCreated.templates).toEqual(expect.arrayContaining([expect.objectContaining({ title: 'FC26', twitchCategoryName: 'EA SPORTS FC 26' })]));
+
+    const firstCheck = initial.checklist[0];
+    const toggled = await fetch(`${app.url}/api/v1/companion/checklist/${firstCheck.id}`, { method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ label: firstCheck.label, done: !firstCheck.done }) }).then(r => r.json());
+    expect(toggled.checklist.find((value: { id: string }) => value.id === firstCheck.id)?.done).toBe(!firstCheck.done);
+
+    expect((await fetch(`${app.url}/api/v1/companion/notes/${note.id}`, { method: 'DELETE' })).status).toBe(200);
+    const final = await fetch(`${app.url}/api/v1/companion/snapshot`).then(r => r.json());
+    expect(final.notes.some((value: { id: string }) => value.id === note.id)).toBe(false);
+  });
+
+  it('exécute les automatisations génériques via le bus Runtime', async () => {
+    const app = await start();
+    const capabilities = await fetch(`${app.url}/api/v1/automations/capabilities`).then(r => r.json());
+    expect(capabilities.triggers).toContain('twitch.reward.redeemed');
+    expect(capabilities.actions).toEqual(expect.arrayContaining(['soundboard.play', 'obs.scene', 'timer.add']));
+
+    const created = await fetch(`${app.url}/api/v1/automations`, {
+      method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ name: 'Ajoute une minute', enabled: true, trigger: 'test.support', conditions: [{ path: 'amountMinor', operator: 'gte', value: 500 }], actions: [{ type: 'timer.add', payload: { seconds: 60 } }], cooldownMs: 0 }),
+    });
+    expect(created.status).toBe(201);
+
+    expect((await fetch(`${app.url}/api/v1/automations/test`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ amountMinor: 500 }) })).status).toBe(202);
+    await expect.poll(async () => (await fetch(`${app.url}/api/v1/state`).then(r => r.json())).timer.remaining).toBe(360);
+
+    const automations = await fetch(`${app.url}/api/v1/automations`).then(r => r.json());
+    expect(automations.items[0]).toMatchObject({ name: 'Ajoute une minute', lastResult: { status: 'succeeded' } });
+  });
+
   it('arrête le serveur proprement et de façon idempotente', async () => {
     const app = await start(); await app.stop(); await app.stop(); dashboard = undefined;
     expect(app.server.listening).toBe(false);
