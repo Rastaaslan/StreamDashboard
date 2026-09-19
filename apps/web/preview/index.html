@@ -67,6 +67,7 @@
     <label>Catégorie Twitch<input id="event-twitch-category" maxlength="80" autocomplete="off" placeholder="Rechercher une catégorie officielle"><input id="event-twitch-game-id" type="hidden"></label>
     <div id="event-twitch-results" class="category-results"></div>
     <div class="form-grid"><label>Récurrence<select id="event-recurrence"><option value="">Aucune</option><option value="weekly-1">Chaque semaine</option><option value="weekly-2">Toutes les 2 semaines</option><option value="monthly-1">Chaque mois</option></select></label><label>Jusqu’au<input id="event-recurrence-until" type="date"></label></div>
+    <label id="event-scope-wrap" hidden>Portée<select id="event-scope"><option value="occurrence">Cette occurrence uniquement</option><option value="series">Toute la série</option></select></label>
     <div class="checks"><label><input id="event-publish-twitch" type="checkbox"> Publier Twitch</label><label><input id="event-publish-google" type="checkbox"> Publier Google</label></div>
     <label>Description<textarea id="event-description" maxlength="4000"></textarea></label>
     <div id="event-provider-status" class="setup-status" hidden></div>
