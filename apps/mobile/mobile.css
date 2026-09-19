@@ -81,3 +81,5 @@ body[data-density="compact"]{--space-5:16px;--space-6:20px;--space-8:24px}body[d
 .bottom-nav button[data-tab="more"].active{color:var(--lavender)}
 .view[data-view="live"]>.screen-heading{margin-bottom:var(--space-5)}
 .view[data-view="live"]>.live-overview,.view[data-view="live"]>.live-command-grid{margin-bottom:var(--space-5)}
+
+.streamer-ping-dialog{width:min(460px,calc(100vw - 28px));border:1px solid var(--accent,#8f68d8);border-radius:18px;background:#141219;color:inherit;padding:20px}.streamer-ping-dialog::backdrop{background:#000b}.streamer-ping-dialog h2{margin:6px 0 10px}.streamer-ping-dialog p,.streamer-ping-dialog blockquote{margin:8px 0;color:var(--muted)}.streamer-ping-dialog blockquote{padding:10px 12px;border-left:3px solid var(--accent,#8f68d8);background:#1d1924;border-radius:8px}
