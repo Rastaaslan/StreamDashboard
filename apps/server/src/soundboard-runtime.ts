@@ -13,7 +13,7 @@ export interface SoundboardRuntimeEvent {
 
 export interface AudioPlayback {
   outputs(): Promise<AudioOutput[]>;
-  play(input: { file: string; volume: number; outputId: string }): Promise<PlaybackSession>;
+  play(input: { file: string; volume: number; outputId: string; monitoringMode?: 'stream' | 'monitor' }): Promise<PlaybackSession>;
   stop(): Promise<void>;
   readonly available: boolean;
   readonly supportedFormats: readonly string[];
@@ -132,7 +132,7 @@ export class SoundboardRuntime {
 
       if (this.currentPlayback) await this.stop();
       this.lastError = null;
-      const session = await this.audio.play({ file, volume, outputId: sound.outputId });
+      const session = await this.audio.play({ file, volume, outputId: sound.outputId, monitoringMode: sound.monitoringMode });
       const playback = { soundId: sound.id, commandId: correlated.commandId, startedAt: new Date(this.now()).toISOString() };
       this.currentPlayback = playback;
       this.cooldowns.set(sound.id, this.now() + sound.cooldownMs);
@@ -164,7 +164,8 @@ export function validateSound(value: Sound): Sound {
   if (!value.name.trim() || value.name.length > 100 || !value.category.trim() || value.category.length > 80) throw new Error('Nom ou catégorie invalide.');
   if (!value.source.trim() || value.source.length > 1_000 || !value.outputId.trim() || value.outputId.length > 200) throw new Error('Source ou sortie invalide.');
   if (!Number.isFinite(value.volume) || value.volume < 0 || value.volume > 1 || !Number.isInteger(value.cooldownMs) || value.cooldownMs < 0 || value.cooldownMs > 3_600_000) throw new Error('Volume ou cooldown invalide.');
-  return { ...value, name: value.name.trim(), category: value.category.trim(), source: value.source.trim() };
+  if (value.monitoringMode !== undefined && !['stream', 'monitor'].includes(value.monitoringMode)) throw new Error('Mode écoute invalide.');
+  return { ...value, name: value.name.trim(), category: value.category.trim(), source: value.source.trim(), monitoringMode: value.monitoringMode ?? 'stream' };
 }
 
 function runtimeError(code: string, message: string, retryable: boolean) {

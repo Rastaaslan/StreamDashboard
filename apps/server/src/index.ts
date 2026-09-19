@@ -50,6 +50,7 @@ import { companionSnapshot, emptyCompanionState, reconcileCompanionBatch, resolv
 import { RemoteAuth, type PersistedRemoteDevice } from './remote-auth.js';
 import { parseRemoteCommand, toRemoteDashboardState } from './remote-policy.js';
 import { SoundboardRuntime, validateSound } from './soundboard-runtime.js';
+import { ObsSoundboardPlayback } from './obs-soundboard.js';
 import { AutomationRuntime } from './automation-runtime.js';
 import type { Automation, Support } from '../../../packages/core/src/live-control-domains.js';
 import { SupportRuntime } from './support-runtime.js';
@@ -536,7 +537,8 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
   const sockets = new WebSocketServer({ noServer: true });
   const socketDevices = new Map<WebSocket, string>();
   const eventCore = new EventCore(250);
-  const soundboard = new SoundboardRuntime(local.sounds, undefined, () => Date.now(), event => {
+  local.sounds = local.sounds.map(sound => ({ ...sound, outputId: 'obs', monitoringMode: sound.monitoringMode ?? 'stream' }));
+  const soundboard = new SoundboardRuntime(local.sounds, new ObsSoundboardPlayback(obs), () => Date.now(), event => {
     eventCore.publish({ type: event.type, source: 'soundboard', correlationId: event.correlationId, payload: event.payload });
   });
   const automation = new AutomationRuntime(local.automations, async (action, context) => {

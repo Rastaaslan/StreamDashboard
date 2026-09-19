@@ -1,5 +1,7 @@
 import { app, BrowserWindow, dialog, ipcMain, shell } from 'electron';
 import path from 'node:path';
+import { copyFile, mkdir, rename, stat, unlink } from 'node:fs/promises';
+import { randomUUID } from 'node:crypto';
 import { createDashboardWindow, isAllowedExternalAuthUrl, isAllowedTwitchUrl } from './window.js';
 import { startDesktopRuntime, type DesktopRuntime } from './lifecycle.js';
 import { handleSquirrelStartup } from './squirrel.js';
@@ -44,7 +46,9 @@ async function boot(): Promise<void> {
     if (window && !window.isDestroyed()) window.destroy();
     window = null;
     runtime = await startDesktopRuntime();
-    window = createDashboardWindow(runtime.dashboard.url, path.join(import.meta.dirname, 'preload.cjs'));
+    const preview = process.argv.includes('--ui-preview=desktop-v2');
+    const targetUrl = preview ? new URL('/preview/', runtime.dashboard.url).toString() : runtime.dashboard.url;
+    window = createDashboardWindow(targetUrl, path.join(import.meta.dirname, 'preload.cjs'), preview ? 'StreamDashboard Desktop Preview' : 'StreamDashboard');
     stopUpdater = startUpdater(window, runtime.dashboard, runtime.logger, async () => { await cleanupRuntime(); });
     window.webContents.on('render-process-gone', (_event, details) => {
       void Promise.resolve(runtime?.logger.error('Renderer crash', details.reason)).finally(() => { void showStartupError(new Error(`Le renderer StreamDashboard s’est arrêté : ${details.reason}`)); });
@@ -68,6 +72,19 @@ ipcMain.handle('app:open-external-auth', async (_event, url: unknown) => {
 });
 ipcMain.handle('app:open-logs', async () => { if (runtime) await shell.openPath(path.dirname(runtime.logger.file)); });
 ipcMain.handle('app:ensure-obs-running', async () => runtime?.ensureObsRunning() ?? { launched: false, detail: 'StreamDashboard Desktop n’est pas prêt.' });
+const SOUND_EXTENSIONS = new Set(['.wav', '.mp3', '.ogg', '.aac', '.m4a', '.flac']);
+ipcMain.handle('soundboard:select-file', async () => {
+  const result = await dialog.showOpenDialog(window ?? undefined, { title: 'Ajouter un son', properties: ['openFile'], filters: [{ name: 'Audio OBS', extensions: [...SOUND_EXTENSIONS].map(value => value.slice(1)) }] });
+  return result.canceled ? null : result.filePaths[0] ?? null;
+});
+ipcMain.handle('soundboard:import-file', async (_event, source: unknown) => {
+  if (typeof source !== 'string' || !path.isAbsolute(source) || !SOUND_EXTENSIONS.has(path.extname(source).toLowerCase())) throw new Error('Format audio refusé.');
+  const info = await stat(source); if (!info.isFile() || info.size > 100 * 1024 * 1024) throw new Error('Le fichier audio est invalide ou dépasse 100 Mo.');
+  const library = path.join(app.getPath('userData'), 'soundboard'); await mkdir(library, { recursive: true });
+  const destination = path.join(library, `${randomUUID()}${path.extname(source).toLowerCase()}`); const temporary = `${destination}.tmp`;
+  try { await copyFile(source, temporary); await rename(temporary, destination); } catch (error) { await unlink(temporary).catch(() => undefined); throw error; }
+  return { libraryId: path.basename(destination), file: destination };
+});
 ipcMain.on('app:minimize', () => window?.minimize());
 ipcMain.on('app:close', () => window?.close());
 

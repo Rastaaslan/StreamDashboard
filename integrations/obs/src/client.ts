@@ -28,6 +28,7 @@ export class ObsClient {
   private suppressReconnect = false;
   state: ObsState = { connected: false, streaming: false, streamingKnown: false, recording: false, scene: null, scenes: [], inputs: {}, activeAudioInputs: [], mediaInputs: [], browserInputs: [], error: null, obsVersion: null, websocketVersion: null };
   private listeners = new Set<() => void>();
+  private mediaEndedListeners = new Set<(inputName: string) => void>();
   private refreshTimer?: NodeJS.Timeout;
   private refreshPromise?: Promise<void>;
   private refreshRequested = false;
@@ -51,6 +52,9 @@ export class ObsClient {
     for (const event of ['SceneCreated', 'SceneRemoved', 'SceneNameChanged', 'InputCreated', 'InputRemoved', 'InputNameChanged', 'SceneItemCreated', 'SceneItemRemoved', 'SceneItemEnableStateChanged'] as const) {
       this.client.on(event, () => this.scheduleRefresh());
     }
+    this.client.on('MediaInputPlaybackEnded', ({ inputName }) => {
+      for (const listener of this.mediaEndedListeners) listener(String(inputName));
+    });
   }
 
   private clearLiveState(error: string | null) {
@@ -252,6 +256,10 @@ export class ObsClient {
   async stream(start: boolean) { this.requireConnected(); await this.client.call(start ? 'StartStream' : 'StopStream'); }
   async record(start: boolean) { this.requireConnected(); await this.client.call(start ? 'StartRecord' : 'StopRecord'); }
   async restartMedia(inputName: string) { this.requireConnected(); await this.client.call('TriggerMediaInputAction', { inputName, mediaAction: 'OBS_WEBSOCKET_MEDIA_INPUT_ACTION_RESTART' }); }
+  async stopMedia(inputName: string) { this.requireConnected(); await this.client.call('TriggerMediaInputAction', { inputName, mediaAction: 'OBS_WEBSOCKET_MEDIA_INPUT_ACTION_STOP' }); }
+  async setInputSettings(inputName: string, inputSettings: Record<string, unknown>) { this.requireConnected(); await this.client.call('SetInputSettings', { inputName, inputSettings: inputSettings as never, overlay: true }); }
+  async setMonitorType(inputName: string, monitorType: 'OBS_MONITORING_TYPE_NONE' | 'OBS_MONITORING_TYPE_MONITOR_AND_OUTPUT') { this.requireConnected(); await this.client.call('SetInputAudioMonitorType', { inputName, monitorType }); }
+  onMediaEnded(listener: (inputName: string) => void) { this.mediaEndedListeners.add(listener); return () => this.mediaEndedListeners.delete(listener); }
   async refreshBrowserSource(inputName: string) {
     this.requireConnected();
     if (!(this.state.browserInputs ?? []).includes(inputName)) throw new Error(`La source « ${inputName} » n’est pas une Browser Source OBS détectée.`);

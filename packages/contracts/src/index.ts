@@ -76,6 +76,7 @@ export interface Sound {
   cooldownMs: number;
   enabled: boolean;
   outputId: string;
+  monitoringMode?: 'stream' | 'monitor';
 }
 export interface PublicSound extends Omit<Sound, 'source'> { sourceAvailable: boolean }
 export interface AudioOutput { id: string; name: string; isDefault: boolean; selectable: boolean }
