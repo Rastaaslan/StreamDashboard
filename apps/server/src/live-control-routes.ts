@@ -1,10 +1,12 @@
 import type express from 'express';
+import { randomUUID } from 'node:crypto';
 import type { ActionCommand, Sound } from '../../../packages/contracts/src/index.js';
 import type { Automation } from '../../../packages/core/src/live-control-domains.js';
 import type { EventCore } from '../../../packages/core/src/events.js';
 import type { StreamlabsAdapter } from '../../../integrations/streamlabs/src/adapter.js';
 import type { WizeBotAdapter } from '../../../integrations/wizebot/src/adapter.js';
 import type { SecretStore } from './storage.js';
+import type { ObsSoundboardSetupStatus } from './obs-soundboard.js';
 import { validateSound, type SoundboardRuntime } from './soundboard-runtime.js';
 import type { AutomationRuntime } from './automation-runtime.js';
 import type { SupportRuntime } from './support-runtime.js';
@@ -13,6 +15,8 @@ interface Options {
   app: express.Application; soundboard: SoundboardRuntime; automation: AutomationRuntime; support: SupportRuntime; streamlabs: StreamlabsAdapter; wizebot: WizeBotAdapter; eventCore: EventCore; secrets: SecretStore;
   requireLocal(req: express.Request, res: express.Response): boolean; isRemote(req: express.Request): boolean; save(): Promise<void>;
   sounds(): Sound[]; setSounds(value: Sound[]): void; sessionStartedAt(): string | null;
+  resolveSoundLibraryFile(libraryId: string): Promise<string>; removeSoundLibraryFile(source: string): Promise<void>;
+  soundboardObsStatus(): Promise<ObsSoundboardSetupStatus>; setupSoundboardObs(): Promise<ObsSoundboardSetupStatus>;
 }
 const object = (value: unknown): value is Record<string, unknown> => Boolean(value && typeof value === 'object' && !Array.isArray(value));
 
@@ -20,8 +24,49 @@ export function registerLiveControlRoutes(options: Options) {
   const { app, soundboard, automation, support, streamlabs, wizebot, eventCore } = options;
   app.get('/api/v1/events', (req, res) => { const string = (value: unknown, max: number) => typeof value === 'string' && value.length <= max ? value : undefined; res.json({ items: eventCore.recent({ type: string(req.query.type, 120), source: string(req.query.source, 80), correlationId: string(req.query.correlationId, 128), limit: Number(req.query.limit) || 100 }) }); });
   app.get('/api/v1/soundboard', async (_req, res, next) => { try { res.json(await soundboard.snapshot()); } catch (error) { next(error); } });
+  app.get('/api/v1/soundboard/obs/status', async (req, res, next) => { try { if (!options.requireLocal(req, res)) return; res.json(await options.soundboardObsStatus()); } catch (error) { next(error); } });
+  app.post('/api/v1/soundboard/obs/setup', async (req, res, next) => { try { if (!options.requireLocal(req, res)) return; res.json(await options.setupSoundboardObs()); } catch (error) { next(error); } });
   app.put('/api/v1/soundboard/catalog', async (req, res, next) => { try { if (!options.requireLocal(req, res)) return; if (!Array.isArray(req.body?.sounds) || req.body.sounds.length > 500) throw new Error('Catalogue soundboard invalide.'); const sounds = req.body.sounds.map(validateSound); soundboard.replace(sounds); options.setSounds(sounds); await options.save(); res.json(await soundboard.snapshot()); } catch (error) { next(error); } });
-  app.put('/api/v1/soundboard/sounds/:id', async (req, res, next) => { try { const sounds = options.sounds(); const sound = sounds.find(value => value.id === req.params.id); if (!sound) { res.status(404).json({ ok: false, error: { code: 'SOUND_NOT_FOUND', message: 'Son introuvable.' } }); return; } if (!object(req.body) || Object.keys(req.body).some(key => !['name', 'favorite', 'volume', 'enabled', 'cooldownMs', 'category', 'monitoringMode'].includes(key))) throw new Error('Modification soundboard invalide.'); Object.assign(sound, validateSound({ ...sound, ...req.body, outputId: 'obs' })); soundboard.replace(sounds); options.setSounds(sounds); await options.save(); res.json(await soundboard.snapshot()); } catch (error) { next(error); } });
+  app.post('/api/v1/soundboard/sounds', async (req, res, next) => {
+    try {
+      if (!options.requireLocal(req, res)) return;
+      if (!object(req.body) || Object.keys(req.body).some(key => !['libraryId','name','favorite','volume','enabled','cooldownMs','category','monitoringMode'].includes(key))) throw new Error('Nouveau son invalide.');
+      const source = await options.resolveSoundLibraryFile(String(req.body.libraryId ?? ''));
+      const sound = validateSound({
+        id: randomUUID(), source, outputId: 'obs', name: String(req.body.name ?? ''), category: String(req.body.category ?? ''),
+        favorite: req.body.favorite === true, enabled: req.body.enabled !== false, volume: Number(req.body.volume ?? 1),
+        cooldownMs: Number(req.body.cooldownMs ?? 0), monitoringMode: req.body.monitoringMode === 'monitor' ? 'monitor' : 'stream',
+      });
+      const sounds = [...options.sounds(), sound];
+      options.setSounds(sounds); soundboard.replace(sounds); await options.save();
+      res.status(201).json(await soundboard.snapshot());
+    } catch (error) { next(error); }
+  });
+  app.put('/api/v1/soundboard/sounds/:id', async (req, res, next) => {
+    try {
+      const sounds = options.sounds(); const sound = sounds.find(value => value.id === req.params.id);
+      if (!sound) { res.status(404).json({ ok: false, error: { code: 'SOUND_NOT_FOUND', message: 'Son introuvable.' } }); return; }
+      if (!object(req.body) || Object.keys(req.body).some(key => !['libraryId','name','favorite','volume','enabled','cooldownMs','category','monitoringMode'].includes(key))) throw new Error('Modification soundboard invalide.');
+      const previousSource = sound.source;
+      const source = req.body.libraryId === undefined ? previousSource : await options.resolveSoundLibraryFile(String(req.body.libraryId));
+      const { libraryId: _libraryId, ...patch } = req.body;
+      Object.assign(sound, validateSound({ ...sound, ...patch, source, outputId: 'obs' }));
+      soundboard.replace(sounds); options.setSounds(sounds); await options.save();
+      if (source !== previousSource) await options.removeSoundLibraryFile(previousSource);
+      res.json(await soundboard.snapshot());
+    } catch (error) { next(error); }
+  });
+  app.delete('/api/v1/soundboard/sounds/:id', async (req, res, next) => {
+    try {
+      if (!options.requireLocal(req, res)) return;
+      const sounds = options.sounds(); const sound = sounds.find(value => value.id === req.params.id);
+      if (!sound) { res.status(404).json({ ok: false, error: { code: 'SOUND_NOT_FOUND', message: 'Son introuvable.' } }); return; }
+      await soundboard.stop();
+      const nextSounds = sounds.filter(value => value.id !== sound.id);
+      options.setSounds(nextSounds); soundboard.replace(nextSounds); await options.save(); await options.removeSoundLibraryFile(sound.source);
+      res.status(204).end();
+    } catch (error) { next(error); }
+  });
   app.post('/api/v1/soundboard/play', async (req, res, next) => { try { const command: ActionCommand<{ soundId: string; volume?: number }> = { commandId: String(req.body?.commandId ?? ''), correlationId: typeof req.body?.correlationId === 'string' ? req.body.correlationId : undefined, type: 'soundboard.play', origin: options.isRemote(req) ? 'android' : 'desktop', issuedAt: typeof req.body?.issuedAt === 'string' ? req.body.issuedAt : new Date().toISOString(), payload: { soundId: String(req.body?.soundId ?? ''), ...(typeof req.body?.volume === 'number' ? { volume: req.body.volume } : {}) } }; eventCore.publish({ type: 'soundboard.play.requested', source: 'runtime', correlationId: command.correlationId, payload: { commandId: command.commandId, soundId: command.payload.soundId } }); const ack = await soundboard.play(command); eventCore.publish({ type: ack.status === 'succeeded' ? 'soundboard.played' : 'soundboard.failed', source: 'runtime', correlationId: ack.correlationId, payload: ack }); res.status(ack.status === 'succeeded' ? 200 : 409).json(ack); } catch (error) { next(error); } });
   app.post('/api/v1/soundboard/stop', async (_req, res, next) => { try { await soundboard.stop(); res.status(204).end(); } catch (error) { next(error); } });
 
