@@ -72,7 +72,7 @@ test('le bootstrap mobile réel reste navigable lorsque REST est indisponible', 
     await expect(page.locator('#diagnostics')).toHaveJSProperty('open', true);
     await page.locator('#menu-trigger').click();
 
-    await page.getByRole('button', { name: 'Fermer le menu' }).click();
+    await page.locator('[data-tab="home"]').click();
     await expect.poll(activeView).toBe('home');
     expect(runtimeErrors).toEqual([]);
   } finally {
