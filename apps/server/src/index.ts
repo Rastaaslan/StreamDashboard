@@ -599,7 +599,24 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
     throw new Error(`Action ${action.type} non supportée.`);
   }, async values => { local.automations = values; await save(); });
   const support = new SupportRuntime(local.supports, async values => { local.supports = values; await save(); }, value => { eventCore.publish({ type: 'support.received', source: value.provider, occurredAt: value.receivedAt, correlationId: `${value.provider}:${value.externalId}`, payload: value }); });
-  const streamlabs = new StreamlabsAdapter(await secrets.getStreamlabsToken?.() ?? process.env.STREAMLABS_SOCKET_TOKEN ?? '', value => support.record(value).then(() => undefined), options.streamlabsTransport ?? new StreamlabsSocketTransport({ logger }), logger);
+  const streamlabsOAuth = new StreamlabsOAuthClient(options.streamlabsFetch ?? fetch);
+  const streamlabsRedirectUri = String(options.streamlabsRedirectUri ?? process.env.STREAMLABS_REDIRECT_URI ?? 'http://127.0.0.1:47832/api/v1/supports/streamlabs/oauth/callback').trim();
+  {
+    let redirect: URL;
+    try { redirect = new URL(streamlabsRedirectUri); } catch { throw new Error('URL de redirection Streamlabs invalide.'); }
+    if (redirect.protocol !== 'http:' || !['127.0.0.1', 'localhost'].includes(redirect.hostname) || redirect.username || redirect.password) throw new Error('La redirection Streamlabs doit rester sur le loopback HTTP local.');
+  }
+  let streamlabsSocketToken = await secrets.getStreamlabsToken?.() ?? process.env.STREAMLABS_SOCKET_TOKEN ?? '';
+  const streamlabsOAuthSecrets = await secrets.getStreamlabsOAuth?.() ?? null;
+  if (!streamlabsSocketToken && streamlabsOAuthSecrets?.accessToken) {
+    try {
+      streamlabsSocketToken = await streamlabsOAuth.socketToken(streamlabsOAuthSecrets.accessToken);
+      await secrets.setStreamlabsToken?.(streamlabsSocketToken);
+    } catch (error) {
+      void Promise.resolve(logger.warn('Impossible de restaurer le Socket Token Streamlabs depuis OAuth.', error)).catch(() => undefined);
+    }
+  }
+  const streamlabs = new StreamlabsAdapter(streamlabsSocketToken, value => support.record(value).then(() => undefined), options.streamlabsTransport ?? new StreamlabsSocketTransport({ logger }), logger);
   const storedWizeBot = await secrets.getWizeBotConfiguration?.() ?? null;
   const environmentWizeBot = process.env.WIZEBOT_API_URL && process.env.WIZEBOT_TOKEN ? { apiBaseUrl: process.env.WIZEBOT_API_URL, token: process.env.WIZEBOT_TOKEN } : null;
   const wizebot = new WizeBotAdapter(storedWizeBot ?? environmentWizeBot, options.wizebotTransport ?? new WizeBotHttpTransport(), logger);
