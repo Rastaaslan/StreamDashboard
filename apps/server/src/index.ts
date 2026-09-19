@@ -1,6 +1,6 @@
 import express from 'express';
 import { createServer, type Server } from 'node:http';
-import { mkdir } from 'node:fs/promises';
+import { mkdir, stat, unlink } from 'node:fs/promises';
 import { networkInterfaces } from 'node:os';
 import path from 'node:path';
 import { createHash, randomUUID } from 'node:crypto';
@@ -50,7 +50,7 @@ import { companionSnapshot, emptyCompanionState, reconcileCompanionBatch, resolv
 import { RemoteAuth, type PersistedRemoteDevice } from './remote-auth.js';
 import { parseRemoteCommand, toRemoteDashboardState } from './remote-policy.js';
 import { SoundboardRuntime, validateSound } from './soundboard-runtime.js';
-import { ObsSoundboardPlayback } from './obs-soundboard.js';
+import { ObsSoundboardPlayback, ObsSoundboardSetup } from './obs-soundboard.js';
 import { AutomationRuntime } from './automation-runtime.js';
 import type { Automation, Support } from '../../../packages/core/src/live-control-domains.js';
 import { SupportRuntime } from './support-runtime.js';
@@ -102,6 +102,7 @@ export interface DashboardServerOptions {
   host?: string;
   remoteEnabled?: boolean;
   dataDir?: string;
+  soundLibraryDir?: string;
   webDir?: string;
   mobileDir?: string;
   secretStore?: SecretStore;
@@ -319,6 +320,7 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
 
   const dataDir = path.resolve(options.dataDir ?? process.env.DATA_DIR ?? path.dirname(process.env.DATA_FILE ?? 'data/dashboard.json'));
   const dataFile = path.resolve(process.env.DATA_FILE ?? path.join(dataDir, 'dashboard.json'));
+  const soundLibraryDir = path.resolve(options.soundLibraryDir ?? path.join(dataDir, 'soundboard'));
   const store = new AtomicJsonStore<LocalData>(dataFile);
   const secrets = options.secretStore ?? new MemorySecretStore();
   const logger = options.logger ?? console;
@@ -538,6 +540,7 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
   const socketDevices = new Map<WebSocket, string>();
   const eventCore = new EventCore(250);
   local.sounds = local.sounds.map(sound => ({ ...sound, outputId: 'obs', monitoringMode: sound.monitoringMode ?? 'stream' }));
+  const obsSoundboardSetup = new ObsSoundboardSetup(obs);
   const soundboard = new SoundboardRuntime(local.sounds, new ObsSoundboardPlayback(obs), () => Date.now(), event => {
     eventCore.publish({ type: event.type, source: 'soundboard', correlationId: event.correlationId, payload: event.payload });
   });
@@ -1247,7 +1250,33 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
   app.get('/api/v1/health', health);
   app.get('/api/v1/state', (req, res) => res.json(isRemoteRequest(req) ? toRemoteDashboardState(snapshot()) : snapshot()));
   app.get('/api/v1/control-hub', (_req, res) => res.json(snapshot().controlHub));
-  registerLiveControlRoutes({ app, soundboard, automation, support, streamlabs, wizebot, eventCore, secrets, requireLocal, isRemote: isRemoteRequest, save, sounds: () => local.sounds, setSounds: value => { local.sounds = value; }, sessionStartedAt: () => twitchLive.startedAt });
+  const soundboardTargetScenes = () => [...new Set([
+    local.settings.modeScenes?.intro, local.settings.modeScenes?.live, local.settings.chattingScene,
+    local.settings.modeScenes?.pause, local.settings.modeScenes?.end,
+  ].filter((value): value is string => typeof value === 'string' && value.trim().length > 0))];
+  const resolveSoundLibraryFile = async (libraryId: string) => {
+    if (!/^[A-Za-z0-9._-]{1,220}$/.test(libraryId) || path.basename(libraryId) !== libraryId) throw new Error('Fichier Soundboard invalide.');
+    const resolved = path.resolve(soundLibraryDir, libraryId);
+    const relative = path.relative(soundLibraryDir, resolved);
+    if (!relative || relative.startsWith('..') || path.isAbsolute(relative)) throw new Error('Fichier Soundboard hors bibliothèque.');
+    const info = await stat(resolved);
+    if (!info.isFile() || info.size > 100 * 1024 * 1024) throw new Error('Fichier Soundboard invalide.');
+    return resolved;
+  };
+  const removeSoundLibraryFile = async (source: string) => {
+    const resolved = path.resolve(source);
+    const relative = path.relative(soundLibraryDir, resolved);
+    if (!relative || relative.startsWith('..') || path.isAbsolute(relative)) return;
+    if (local.sounds.some(sound => path.resolve(sound.source) === resolved)) return;
+    await unlink(resolved).catch(() => undefined);
+  };
+  registerLiveControlRoutes({
+    app, soundboard, automation, support, streamlabs, wizebot, eventCore, secrets, requireLocal, isRemote: isRemoteRequest, save,
+    sounds: () => local.sounds, setSounds: value => { local.sounds = value; }, sessionStartedAt: () => twitchLive.startedAt,
+    resolveSoundLibraryFile, removeSoundLibraryFile,
+    soundboardObsStatus: () => obsSoundboardSetup.status(soundboardTargetScenes()),
+    setupSoundboardObs: () => obsSoundboardSetup.ensure(soundboardTargetScenes()),
+  });
   app.get('/api/v1/twitch/videos', async (req, res, next) => { try { res.json(await twitch.videos(String(req.query.after ?? ''), Number(req.query.first) || 20)); } catch (error) { next(error); } });
   app.delete('/api/v1/twitch/videos/:id', async (req, res, next) => { try { const id = String(req.params.id); if (req.body?.confirmation !== `DELETE ${id}`) { res.status(409).json({ ok: false, error: { code: 'CONFIRM_REQUIRED', message: `Confirmez avec DELETE ${id}.` } }); return; } await twitch.deleteVideo(id); res.sendStatus(204); } catch (error) { next(error); } });
   app.get('/api/v1/twitch/clips', async (req, res, next) => { try { res.json(await twitch.clips(String(req.query.after ?? ''), Number(req.query.first) || 20)); } catch (error) { next(error); } });
@@ -1877,7 +1906,7 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
     ws.send(stateEvent(socketDevices.has(ws)));
   });
 
-  await mkdir(dataDir, { recursive: true });
+  await Promise.all([mkdir(dataDir, { recursive: true }), mkdir(soundLibraryDir, { recursive: true })]);
   await new Promise<void>((resolve, reject) => {
     server.once('error', reject);
     server.listen(requestedPort, host, () => { server.off('error', reject); resolve(); });
