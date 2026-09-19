@@ -865,6 +865,29 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
     broadcast();
     return snapshot();
   };
+  type CompanionCollectionKind = 'notes' | 'checklist' | 'templates';
+  const companionKinds = new Set<CompanionCollectionKind>(['notes', 'checklist', 'templates']);
+  const mutateCompanionCollection = async (kind: CompanionCollectionKind, action: 'upsert' | 'delete', id: string | undefined, patch: Record<string, unknown> = {}) => plan(async () => {
+    const list = local.companion[kind];
+    const current = id ? list.find(item => item.id === id) : undefined;
+    if (action === 'delete' && !current) { const error = new Error('Élément compagnon introuvable.'); error.name = 'NOT_FOUND'; throw error; }
+    const entityId = id ?? `${kind.slice(0, -1)}-${randomUUID()}`;
+    const reconciled = reconcileCompanionBatch(local.planning, local.checklist, local.companion, [{
+      operationId: `desktop-${randomUUID()}`,
+      type: `${kind}.${action}`,
+      entityId,
+      baseRevision: current?.revision ?? 0,
+      timestamp: new Date().toISOString(),
+      patch,
+    }]);
+    if (reconciled.conflicts.length) throw new Error('Conflit compagnon détecté. Rechargez les données avant de réessayer.');
+    local.planning = reconciled.planning;
+    local.checklist = reconciled.checklist;
+    local.companion = reconciled.companion;
+    await save();
+    broadcast();
+    return companionSnapshot(local.planning, local.companion);
+  });
   const commands = new DashboardCommandService(local, obs, changed, { settings: local.settings, logger });
 
   const refreshGoogleCalendars = async () => {
@@ -1264,10 +1287,10 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
       return;
     }
     scheduleRemoteActivitySave();
-    const allowed = (req.method === 'GET' && (['/v1/state', '/v1/control-hub', '/v1/events', '/v1/soundboard', '/v1/automations', '/v1/supports', '/v1/twitch/categories', '/v1/twitch/videos', '/v1/twitch/clips', '/v1/twitch/chatters', '/v1/twitch/moderation/capabilities', '/v1/discord/status', '/v1/discord/guilds'].includes(pathName) || /^\/v1\/discord\/guilds\/\d+\/channels$/.test(pathName)))
+    const allowed = (req.method === 'GET' && (['/v1/state', '/v1/control-hub', '/v1/events', '/v1/soundboard', '/v1/automations', '/v1/automations/capabilities', '/v1/supports', '/v1/twitch/categories', '/v1/twitch/videos', '/v1/twitch/clips', '/v1/twitch/chatters', '/v1/twitch/moderation/capabilities', '/v1/discord/status', '/v1/discord/guilds'].includes(pathName) || /^\/v1\/discord\/guilds\/\d+\/channels$/.test(pathName)))
       || (req.method === 'PUT' && (pathName === '/v1/discord/settings' || /^\/v1\/planning\/[^/]+(?:\/occurrence)?$/.test(pathName) || /^\/v1\/soundboard\/sounds\/[A-Za-z0-9._:-]+$/.test(pathName) || /^\/v1\/automations\/[A-Za-z0-9._:-]+$/.test(pathName)))
       || (req.method === 'DELETE' && (/^\/v1\/planning\/[^/]+(?:\/occurrence)?$/.test(pathName) || /^\/v1\/twitch\/videos\/\d+$/.test(pathName) || /^\/v1\/twitch\/moderation\/(?:messages|bans)\/[A-Za-z0-9_-]+$/.test(pathName) || /^\/v1\/automations\/[A-Za-z0-9._:-]+$/.test(pathName)))
-      || (req.method === 'POST' && (['/v1/commands', '/v1/remote/ws-ticket', '/v1/soundboard/play', '/v1/soundboard/stop', '/v1/automations', '/v1/automations/test', '/v1/twitch/channel', '/v1/twitch/chat/messages', '/v1/twitch/clips', '/v1/twitch/moderation/bans', '/v1/planning', '/v1/companion/sync', '/v1/discord/planning'].includes(pathName) || /^\/v1\/companion\/conflicts\/[^/]+\/resolve$/.test(pathName) || /^\/v1\/streamer-pings\/[^/]+\/ack$/.test(pathName)));
+      || (req.method === 'POST' && (['/v1/commands', '/v1/remote/ws-ticket', '/v1/soundboard/play', '/v1/soundboard/stop', '/v1/automations', '/v1/automations/test', '/v1/twitch/channel', '/v1/twitch/chat/messages', '/v1/twitch/clips', '/v1/twitch/moderation/bans', '/v1/planning', '/v1/companion/sync', '/v1/discord/planning'].includes(pathName) || /^\/v1\/companion\/conflicts\/[^/]+\/resolve$/.test(pathName) || /^\/v1\/streamer-pings\/[^/]+\/ack$/.test(pathName) || pathName === '/v1/streamer-pings/ack-all'));
     if (!allowed) {
       res.status(403).json({ ok: false, error: { code: 'REMOTE_SCOPE_DENIED', message: 'Cette action n’est pas autorisée depuis la télécommande.' } });
       return;
@@ -1299,6 +1322,27 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
       if (!ping.acknowledgedAt) ping.acknowledgedAt = new Date().toISOString();
       eventCore.publish({ type: 'streamer.ping.acknowledged', source: isRemoteRequest(req) ? 'android' : 'desktop', correlationId: ping.id, payload: { id: ping.id, acknowledgedAt: ping.acknowledgedAt } });
       await save(); broadcast(); res.json(isRemoteRequest(req) ? toRemoteDashboardState(snapshot()) : snapshot());
+    } catch (error) { next(error); }
+  });
+  app.get('/api/v1/streamer-pings', (req, res) => {
+    if (!requireLocal(req, res)) return;
+    const includeAcknowledged = req.query.all === '1';
+    res.json({ items: local.streamerPings.filter(value => includeAcknowledged || !value.acknowledgedAt).slice(-50).reverse() });
+  });
+  app.post('/api/v1/streamer-pings/ack-all', async (req, res, next) => {
+    try {
+      const acknowledgedAt = new Date().toISOString();
+      const pending = local.streamerPings.filter(value => !value.acknowledgedAt);
+      for (const ping of pending) ping.acknowledgedAt = acknowledgedAt;
+      if (pending.length) eventCore.publish({ type: 'streamer.ping.acknowledged', source: isRemoteRequest(req) ? 'android' : 'desktop', payload: { ids: pending.map(value => value.id), acknowledgedAt } });
+      await save(); broadcast(); res.json(isRemoteRequest(req) ? toRemoteDashboardState(snapshot()) : snapshot());
+    } catch (error) { next(error); }
+  });
+  app.delete('/api/v1/streamer-pings/history', async (req, res, next) => {
+    try {
+      if (!requireLocal(req, res)) return;
+      local.streamerPings = local.streamerPings.filter(value => !value.acknowledgedAt);
+      await save(); broadcast(); res.sendStatus(204);
     } catch (error) { next(error); }
   });
   const soundboardTargetScenes = () => [...new Set([
@@ -1376,6 +1420,37 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
       const result = await flight; await refreshDiscord(); res.status(201).json({ ok: true, ...result, channelName: discordPublic.channelName });
     } catch (error) { next(error); }
   });
+  app.get('/api/v1/companion/snapshot', (req, res) => {
+    if (!requireLocal(req, res)) return;
+    res.json(companionSnapshot(local.planning, local.companion));
+  });
+  app.post('/api/v1/companion/:kind', async (req, res, next) => {
+    try {
+      if (!requireLocal(req, res)) return;
+      const kind = String(req.params.kind) as CompanionCollectionKind;
+      if (!companionKinds.has(kind) || !object(req.body)) throw new Error('Collection compagnon invalide.');
+      const { id: _id, revision: _revision, updatedAt: _updatedAt, ...patch } = req.body;
+      res.status(201).json(await mutateCompanionCollection(kind, 'upsert', undefined, patch));
+    } catch (error) { next(error); }
+  });
+  app.put('/api/v1/companion/:kind/:id', async (req, res, next) => {
+    try {
+      if (!requireLocal(req, res)) return;
+      const kind = String(req.params.kind) as CompanionCollectionKind;
+      if (!companionKinds.has(kind) || !object(req.body)) throw new Error('Collection compagnon invalide.');
+      const { id: _id, revision: _revision, updatedAt: _updatedAt, ...patch } = req.body;
+      res.json(await mutateCompanionCollection(kind, 'upsert', String(req.params.id), patch));
+    } catch (error) { next(error); }
+  });
+  app.delete('/api/v1/companion/:kind/:id', async (req, res, next) => {
+    try {
+      if (!requireLocal(req, res)) return;
+      const kind = String(req.params.kind) as CompanionCollectionKind;
+      if (!companionKinds.has(kind)) throw new Error('Collection compagnon invalide.');
+      res.json(await mutateCompanionCollection(kind, 'delete', String(req.params.id)));
+    } catch (error) { next(error); }
+  });
+
   app.post('/api/v1/companion/sync', async (req, res, next) => {
     try {
       // Unlike ordinary desktop API calls, sync always requires a paired credential:
