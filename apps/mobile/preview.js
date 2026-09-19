@@ -515,8 +515,10 @@ const pair=async event=>{
   event?.preventDefault?.();if(pairing)return;pairing=true;
   const hint=$('#connection-hint');hint.classList.remove('error');hint.textContent='Appairage en cours…';
   try{
-    server=isAndroidRuntime()?normalizeServer($('#pair-server').value):settingsStorage.getServer();
-    if(isAndroidRuntime()) settingsStorage.setServer(server);
+    const serverInput=$('#pair-server').value.trim();
+    server=serverInput?normalizeServer(serverInput):settingsStorage.getServer();
+    if(!server)throw new Error('Adresse du PC requise.');
+    settingsStorage.setServer(server);
     const id=$('#pair-id').value.trim(),code=$('#pair-code').value.trim(),name=$('#pair-name').value.trim()||'Android Preview';
     if(!id||!code) throw new Error('ID et code requis.');
     const result=await transport.pair({id,code,name});
