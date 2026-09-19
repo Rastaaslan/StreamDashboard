@@ -4,7 +4,7 @@ const state={
   view:'home',runtime:false,scene:fixture.live.scene,timerRunning:true,seconds:36,
   sounds:structuredClone(fixture.sounds),audio:structuredClone(fixture.audio),live:structuredClone(fixture.live),
   planning:structuredClone(fixture.planning),dashboard:null,soundboard:null,obsSetup:null,search:'',
-  campItem:'Préparation',remotePairing:null
+  campItem:'Préparation',remotePairing:null,twitchRewards:null
 };
 const view=document.querySelector('#view'),title=document.querySelector('#title'),eyebrow=document.querySelector('#eyebrow');
 const commandLog=[]; window.__preview={state,commandLog};
@@ -64,6 +64,7 @@ function applyDashboard(d){
   const inputs=d.obs?.inputs||{};const active=Array.isArray(d.obs?.activeAudioInputs)?d.obs.activeAudioInputs:Object.keys(inputs);
   state.audio=active.filter(name=>inputs[name]).slice(0,6).map(name=>{const input=inputs[name];const db=Number.isFinite(input.volumeDb)?input.volumeDb:-100;return{name,muted:input.muted,volume:Math.round(Math.max(0,Math.min(1,input.volume??0))*100),level:Math.round(Math.max(0,Math.min(100,((db+60)/66)*100))),primary:d.settings?.primaryMicInput===name}});
   state.planning=(d.planning||[]).filter(item=>Date.parse(item.endAtUtc||item.startAtUtc)>Date.now()).sort((a,b)=>Date.parse(a.startAtUtc)-Date.parse(b.startAtUtc)).slice(0,12).map(item=>{const start=new Date(item.startAtUtc);return{raw:item,day:start.toLocaleDateString('fr-FR',{weekday:'long',day:'numeric'}),time:start.toLocaleTimeString('fr-FR',{hour:'2-digit',minute:'2-digit'}),title:item.title,kind:item.category==='live'?'Twitch':item.category==='personal'?'Personnel':'Production'}});
+  syncStreamerPing();
 }
 function formatDuration(seconds){const n=Math.max(0,Math.floor(Number(seconds)||0));return`${String(Math.floor(n/3600)).padStart(2,'0')}:${String(Math.floor(n/60)%60).padStart(2,'0')}:${String(n%60).padStart(2,'0')}`}
 const primaryScenes=['Intro','Gameplay','Chatting','Pause','Fin'];
@@ -106,9 +107,18 @@ function connectionsContent(){
     ${connectionCard('Android',remote.enabled?'Télécommande LAN active':settings.remoteEnabled?'Activation configurée · redémarrage requis':'Télécommande LAN désactivée',`<div class="connection-actions"><button class="secondary" data-connection-action="remote-toggle"${runtimeDisabled()}>${settings.remoteEnabled?'Désactiver au prochain démarrage':'Activer la télécommande'}</button>${remote.enabled?'<button class="action" data-connection-action="remote-pair">Ajouter une télécommande</button>':''}</div>${pairing}<div class="connection-devices">${devices.map(device=>`<span>${esc(device.name||'Android')}<button class="critical" data-revoke-device="${esc(device.id)}">Révoquer</button></span>`).join('')||'<span class="help">Aucune télécommande appairée.</span>'}</div>`)}
   </div>`;
 }
+function streamerPingSettings(){
+  if(!state.runtime)return '<p class="help">Passe en mode Runtime pour choisir les récompenses qui créent un Streamer Ping.</p>';
+  if(!state.dashboard?.twitch?.connected)return '<p class="help">Connecte Twitch pour configurer les Streamer Pings.</p>';
+  if(state.dashboard?.twitch?.redemptionsAvailable!==true)return '<div class="setup-status"><b>Autorisation Twitch manquante</b><p class="help">Reconnecte Twitch une fois pour accorder channel:read:redemptions.</p><button class="action" data-ping-action="reauthorize">Réautoriser Twitch</button></div>';
+  if(state.twitchRewards===null)return '<p class="help">Chargement des récompenses Twitch…</p>';
+  const selected=new Set(state.dashboard?.settings?.streamerPingRewardIds||[]);
+  return `<div class="setup-status"><div class="section-head"><div><b>Streamer Pings</b><span class="label">Choisis les récompenses qui doivent te demander une action.</span></div></div><div class="ping-reward-list">${state.twitchRewards.map(reward=>`<label><input type="checkbox" data-ping-reward="${esc(reward.id)}" ${selected.has(reward.id)?'checked':''}><span><b>${esc(reward.title)}</b><small>${reward.cost} points${reward.prompt?` · ${esc(reward.prompt)}`:''}</small></span></label>`).join('')||'<p class="help">Aucune récompense personnalisée Twitch.</p>'}</div><div class="connection-actions"><button class="action" data-ping-action="save">Enregistrer les Streamer Pings</button></div></div>`;
+}
 function campContent(item){
   if(item==='Connexions')return connectionsContent();
-  const copies={Préparation:'Checklist avant direct · les outils secondaires restent hors du cockpit principal.',Notes:'Les notes restent disponibles depuis le Runtime.',Templates:'Les templates restent disponibles depuis le Runtime.',Soutiens:'Suivi des soutiens et providers.',Automatisations:'Règles automatiques du stream.', 'Médias OBS':'Contrôle des sources média OBS.',Diagnostics:`Build ${state.dashboard?.runtime?.serverVersion||'Preview'} · stateRevision ${state.dashboard?.stateRevision??'—'}`,Réglages:'Réglages avancés du cockpit.'};
+  if(item==='Réglages')return streamerPingSettings();
+  const copies={Préparation:'Checklist avant direct · les outils secondaires restent hors du cockpit principal.',Notes:'Les notes restent disponibles depuis le Runtime.',Templates:'Les templates restent disponibles depuis le Runtime.',Soutiens:'Suivi des soutiens et providers.',Automatisations:'Règles automatiques du stream.', 'Médias OBS':'Contrôle des sources média OBS.',Diagnostics:`Build ${state.dashboard?.runtime?.serverVersion||'Preview'} · stateRevision ${state.dashboard?.stateRevision??'—'}`};
   return `<p>${esc(copies[item]||'')}</p>`;
 }
 function camp(){return`<div class="camp-grid"><section class="section camp-nav">${campItems.map(x=>`<button class="${state.campItem===x?'active':''}" data-camp="${x}">${x}</button>`).join('')}</section><section class="section empty-detail"><p class="eyebrow">LE CAMP</p><h2 id="camp-title">${esc(state.campItem)}</h2><div id="camp-copy">${campContent(state.campItem)}</div></section></div>`}
@@ -127,8 +137,35 @@ function bind(){
   document.querySelector('[data-live-toggle]')?.addEventListener('click',()=>void toggleLive());
   document.querySelector('[data-add-event]')?.addEventListener('click',openEventDialog);
   document.querySelector('[data-sound-search]')?.addEventListener('input',e=>{state.search=e.currentTarget.value;render()});
-  document.querySelectorAll('[data-camp]').forEach(b=>b.onclick=()=>{state.campItem=b.dataset.camp;render()});
+  document.querySelectorAll('[data-camp]').forEach(b=>b.onclick=()=>{state.campItem=b.dataset.camp;render();if(state.campItem==='Réglages')void loadStreamerPingRewards()});
   bindConnections();
+  bindStreamerPingSettings();
+}
+let activeStreamerPingId=null;
+function ensureStreamerPingHost(){
+  let host=document.querySelector('#streamer-ping');
+  if(host)return host;
+  host=document.createElement('section');host.id='streamer-ping';host.className='streamer-ping';host.hidden=true;document.body.append(host);return host;
+}
+function syncStreamerPing(){
+  const host=ensureStreamerPingHost();const ping=(state.dashboard?.streamerPings||[]).find(value=>!value.acknowledgedAt);
+  if(!state.runtime||!ping){host.hidden=true;host.replaceChildren();activeStreamerPingId=null;return}
+  if(activeStreamerPingId===ping.id&&!host.hidden)return;
+  activeStreamerPingId=ping.id;host.hidden=false;
+  host.innerHTML=`<div><span class="eyebrow">STREAMER PING</span><h2>${esc(ping.rewardTitle)}</h2><p><b>${esc(ping.userName)}</b> a utilisé cette récompense${ping.rewardCost?` · ${ping.rewardCost} points`:''}.</p>${ping.userInput?`<p class="ping-input">“${esc(ping.userInput)}”</p>`:''}</div><button class="action" data-ping-ack="${esc(ping.id)}">Vu</button>`;
+  host.querySelector('[data-ping-ack]').onclick=()=>void acknowledgeStreamerPing(ping.id);
+}
+async function acknowledgeStreamerPing(id){
+  try{const next=await request(`/api/v1/streamer-pings/${encodeURIComponent(id)}/ack`,{method:'POST',body:'{}'});applyDashboard(next);render();toast('Streamer Ping acquitté')}catch(error){toast(error.message,true)}
+}
+async function loadStreamerPingRewards(){
+  if(!state.runtime||state.campItem!=='Réglages'||state.dashboard?.twitch?.redemptionsAvailable!==true)return;
+  try{const result=await request('/api/v1/twitch/rewards');state.twitchRewards=result.items||[];render()}catch(error){state.twitchRewards=[];toast(error.message,true);render()}
+}
+function bindStreamerPingSettings(){
+  if(state.view!=='camp'||state.campItem!=='Réglages')return;
+  document.querySelector('[data-ping-action="reauthorize"]')?.addEventListener('click',async()=>{try{const result=await request('/api/v1/twitch/device',{method:'POST',body:'{}'});if(window.streamDashboardDesktop?.openTwitchActivation)await window.streamDashboardDesktop.openTwitchActivation(result.verificationUri);toast(`Code Twitch : ${result.userCode}`)}catch(error){toast(error.message,true)}});
+  document.querySelector('[data-ping-action="save"]')?.addEventListener('click',async()=>{const ids=[...document.querySelectorAll('[data-ping-reward]:checked')].map(input=>input.dataset.pingReward);try{const next=await request('/api/v1/settings',{method:'PUT',body:JSON.stringify({streamerPingRewardIds:ids})});applyDashboard(next);toast('Récompenses Streamer Ping enregistrées');render()}catch(error){toast(error.message,true)}});
 }
 function requireRuntime(){if(state.runtime)return true;toast('Passe en mode Runtime pour utiliser cette connexion.',true);return false}
 async function refreshAfterConnection(message){await refreshRuntime();if(message)toast(message)}
@@ -184,7 +221,7 @@ function openEventDialog(){const date=new Date();document.querySelector('#event-
 document.querySelector('#event-form').onsubmit=async event=>{event.preventDefault();const date=document.querySelector('#event-date').value,start=document.querySelector('#event-start').value,end=document.querySelector('#event-end').value;const startAtUtc=new Date(`${date}T${start}`).toISOString();let endDate=new Date(`${date}T${end}`);if(endDate.getTime()<=Date.parse(startAtUtc))endDate.setDate(endDate.getDate()+1);const item={title:document.querySelector('#event-title').value.trim(),description:document.querySelector('#event-description').value.trim(),startAtUtc,endAtUtc:endDate.toISOString(),category:document.querySelector('#event-category').value,desiredPublication:{local:true,twitch:document.querySelector('#event-category').value==='live',google:false}};if(!state.runtime){state.planning.unshift({day:'Démo',time:start,title:item.title,kind:item.category==='live'?'Twitch':item.category});document.querySelector('#event-dialog').close();render();return}try{await request('/api/v1/planning',{method:'POST',body:JSON.stringify(item)});document.querySelector('#event-dialog').close();event.currentTarget.reset();await refreshRuntime();toast('Événement ajouté')}catch(error){toast(error.message,true)}};
 document.querySelectorAll('[data-close-dialog]').forEach(button=>button.onclick=()=>document.querySelector(`#${button.dataset.closeDialog}`).close());
 document.querySelectorAll('[data-view]').forEach(b=>b.onclick=()=>{state.view=b.dataset.view;render()});
-document.querySelector('#mode').onclick=async e=>{state.runtime=!state.runtime;e.currentTarget.textContent=state.runtime?'Runtime':'Démo';document.querySelector('.preview-mode span').textContent=state.runtime?'APERÇU · RUNTIME PC':'APERÇU · AUCUNE COMMANDE RÉELLE';runtimeUi(state.runtime,state.runtime?'Connexion au Runtime…':'Aucune commande réelle');if(state.runtime)await refreshRuntime();else{closeRuntimeSocket();state.scene=fixture.live.scene;state.sounds=structuredClone(fixture.sounds);state.audio=structuredClone(fixture.audio);state.live=structuredClone(fixture.live);state.planning=structuredClone(fixture.planning);state.dashboard=null;state.remotePairing=null;render()}toast(state.runtime?'Mode Runtime activé':'Mode Démo activé')};
+document.querySelector('#mode').onclick=async e=>{state.runtime=!state.runtime;e.currentTarget.textContent=state.runtime?'Runtime':'Démo';document.querySelector('.preview-mode span').textContent=state.runtime?'APERÇU · RUNTIME PC':'APERÇU · AUCUNE COMMANDE RÉELLE';runtimeUi(state.runtime,state.runtime?'Connexion au Runtime…':'Aucune commande réelle');if(state.runtime){await refreshRuntime();if(state.campItem==='Réglages')await loadStreamerPingRewards()}else{closeRuntimeSocket();state.scene=fixture.live.scene;state.sounds=structuredClone(fixture.sounds);state.audio=structuredClone(fixture.audio);state.live=structuredClone(fixture.live);state.planning=structuredClone(fixture.planning);state.dashboard=null;state.remotePairing=null;render()}toast(state.runtime?'Mode Runtime activé':'Mode Démo activé')};
 window.addEventListener('keydown',e=>{if(e.altKey&&['1','2','3','4'].includes(e.key)){e.preventDefault();state.view=['home','live','sounds','planning'][+e.key-1];render()}});
 setInterval(()=>{if(state.runtime&&state.timerRunning){state.seconds=Math.max(0,state.seconds-1);if(state.view==='live')render()}},1000);
 window.addEventListener('beforeunload',closeRuntimeSocket);
