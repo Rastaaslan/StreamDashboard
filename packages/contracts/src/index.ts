@@ -174,6 +174,19 @@ export interface StreamState { mode: RunMode; running: boolean; startedAt: numbe
 
 export interface ChecklistItem { id: string; label: string; done: boolean }
 
+export interface StreamerPing {
+  id: string;
+  source: 'twitch-reward';
+  rewardId: string;
+  rewardTitle: string;
+  rewardCost: number;
+  userId: string;
+  userName: string;
+  userInput: string;
+  createdAt: string;
+  acknowledgedAt: string | null;
+}
+
 export interface ObsInputState { muted: boolean; volume: number; volumeDb?: number }
 export interface ObsState {
   connected: boolean;
@@ -218,6 +231,8 @@ export interface DashboardSettings {
   requireTimerOverlayOnStart?: boolean;
   /** Persisted preference. Binding to LAN is applied on next desktop startup. */
   remoteEnabled?: boolean;
+  /** Twitch custom reward IDs which should create a persistent Streamer Ping. */
+  streamerPingRewardIds?: string[];
 }
 
 export interface TwitchState {
@@ -230,6 +245,7 @@ export interface TwitchState {
   channelTitle?: string | null;
   gameId?: string | null;
   gameName?: string | null;
+  redemptionsAvailable?: boolean;
   deviceAuthorization: {
     userCode: string;
     verificationUri: string;
@@ -254,7 +270,9 @@ export interface DashboardState {
   discord?: DiscordState;
   preflight?: PreflightState;
   remote?: RemoteState;
+  streamerPings?: StreamerPing[];
   runtime: { serverVersion: string; nodeVersion: string; electronVersion: string | null; platform: string; port: number; logsPath: string | null };
+  streamerPings?: StreamerPing[];
   controlHub?: ControlHubSnapshot;
 }
 
