@@ -117,6 +117,26 @@ describe('Android remote runtime', () => {
     expect(mobileScript).toContain('transport.acknowledgeStreamerPing(id)');
   });
 
+  it('notifie les Streamer Pings quand l’application Android passe en arrière-plan', () => {
+    expect(androidManifest).toContain('android.permission.POST_NOTIFICATIONS');
+    expect(androidActivity).toContain('NotificationChannel');
+    expect(androidActivity).toContain('@JavascriptInterface public void notifyStreamerPing');
+    expect(androidActivity).toContain('PING_CHANNEL_ID');
+    expect(mobileScript).toContain('notifyMobileStreamerPing');
+    expect(mobileScript).toContain('document.hidden');
+    expect(mobileScript).toContain('notifyStreamerPing?.(');
+  });
+
+  it('édite les automatisations avec le vocabulaire Runtime actuel', () => {
+    for (const trigger of ['support.received','twitch.reward.redeemed','streamer.ping.received','stream.started','stream.stopped','obs.state.changed','chat.message.received']) expect(mobileIndex).toContain(`value="${trigger}"`);
+    expect(mobileIndex).not.toContain('twitch.raid');
+    expect(mobileIndex).toContain('id="automation-conditions"');
+    expect(mobileIndex).toContain('id="automation-actions"');
+    expect(mobileScript).toContain('transport.automationCapabilities()');
+    expect(mobileScript).toContain("'obs.scene':'Changer de scène'");
+    expect(mobileScript).toContain("'timer.add':'Ajouter au timer'");
+  });
+
   it('bounds reconnect backoff at ten seconds', () => {
     expect(nextRetry(500)).toBe(1000);
     expect(nextRetry(8000)).toBe(10000);
