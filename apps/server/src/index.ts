@@ -600,7 +600,7 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
   }, async values => { local.automations = values; await save(); });
   const support = new SupportRuntime(local.supports, async values => { local.supports = values; await save(); }, value => { eventCore.publish({ type: 'support.received', source: value.provider, occurredAt: value.receivedAt, correlationId: `${value.provider}:${value.externalId}`, payload: value }); });
   const streamlabsOAuth = new StreamlabsOAuthClient(options.streamlabsFetch ?? fetch);
-  const streamlabsRedirectUri = String(options.streamlabsRedirectUri ?? process.env.STREAMLABS_REDIRECT_URI ?? 'http://127.0.0.1:47832/api/v1/supports/streamlabs/oauth/callback').trim();
+  const streamlabsRedirectUri = String(options.streamlabsRedirectUri ?? process.env.STREAMLABS_REDIRECT_URI ?? 'http://127.0.0.1:47832/api/v1/streamlabs/oauth/callback').trim();
   {
     let redirect: URL;
     try { redirect = new URL(streamlabsRedirectUri); } catch { throw new Error('URL de redirection Streamlabs invalide.'); }
