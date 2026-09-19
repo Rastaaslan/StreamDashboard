@@ -16,7 +16,7 @@ const commandLog=[]; window.__preview={state,commandLog};
 const esc=value=>String(value??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const uid=()=>globalThis.crypto?.randomUUID?.()||`cmd_${Date.now()}_${Math.random().toString(36).slice(2)}`;
 function toast(message,bad=false){const el=document.querySelector('#toast');el.textContent=message;el.classList.toggle('bad',bad);el.classList.add('show');clearTimeout(toast.t);toast.t=setTimeout(()=>el.classList.remove('show'),1800)}
-async function request(path,options={}){const response=await fetch(path,{headers:{'content-type':'application/json',...(options.headers||{})},...options});const body=response.status===204?null:await response.json().catch(()=>({}));if(!response.ok)throw new Error(body?.error?.message||body?.error||`HTTP ${response.status}`);return body}
+async function request(path,options={}){const response=await fetch(path,{headers:{'content-type':'application/json',...(options.headers||{})},...options});const body=response.status===204?null:await response.json().catch(()=>({}));if(!response.ok)throw new Error(body?.error?.message||body?.message||body?.errorCode||body?.error||`HTTP ${response.status}`);return body}
 function record(type,payload={}){commandLog.push({type,payload})}
 let runtimeSocket=null,socketRetry=null;
 const editableFocus=()=>document.activeElement?.matches?.('input,select,textarea');
@@ -259,7 +259,21 @@ function campContent(item){
 }
 function camp(){return`<div class="camp-grid"><section class="section camp-nav">${campItems.map(x=>`<button class="${state.campItem===x?'active':''}" data-camp="${x}">${x}</button>`).join('')}</section><section class="section empty-detail"><p class="eyebrow">LE CAMP</p><h2 id="camp-title">${esc(state.campItem)}</h2><div id="camp-copy">${campContent(state.campItem)}</div></section></div>`}
 function render(){const names={home:['Accueil','COCKPIT'],live:['Live','EN DIRECT'],sounds:['Sons','BIBLIOTHÈQUE'],planning:['Planning','SEMAINE'],camp:['Le Camp','SECONDAIRE']};[title.textContent,eyebrow.textContent]=names[state.view];view.innerHTML=({home,live,sounds:soundboard,planning,camp}[state.view])();document.querySelectorAll('[data-view]').forEach(b=>b.setAttribute('aria-current',b.dataset.view===state.view?'page':'false'));bind()}
-async function playSound(soundId){record('soundboard.play',{soundId});if(!state.runtime){toast('Lecture simulée');return}try{const commandId=uid();const ack=await request('/api/v1/soundboard/play',{method:'POST',body:JSON.stringify({commandId,correlationId:commandId,soundId,issuedAt:new Date().toISOString()})});if(ack.status!=='succeeded')throw new Error(ack.message||'Lecture refusée.');toast('Son envoyé à OBS');await refreshRuntime()}catch(error){toast(error.message,true)}}
+async function ensureObsSoundboardForPlayback(){
+  const currentScene=state.dashboard?.obs?.scene||'';
+  let setup=await request('/api/v1/soundboard/obs/status');
+  if(!setup.connected)throw new Error('OBS est déconnecté. Ouvre OBS puis vérifie la connexion WebSocket.');
+  if(setup.wrongInputKind)throw new Error('La source « StreamDashboard • Soundboard » existe dans OBS mais n’est pas une Media Source.');
+  if(!setup.inputExists||(currentScene&&!setup.attachedScenes?.includes(currentScene))){
+    setup=await request('/api/v1/soundboard/obs/setup',{method:'POST',body:'{}'});
+  }
+  state.obsSetup=setup;
+  if(setup.wrongInputKind)throw new Error('La source « StreamDashboard • Soundboard » existe dans OBS mais n’est pas une Media Source.');
+  if(!setup.inputExists)throw new Error('La Media Source Soundboard OBS n’a pas pu être créée.');
+  if(currentScene&&!setup.attachedScenes?.includes(currentScene))throw new Error(`La Soundboard OBS n’est pas présente dans la scène actuelle « ${currentScene} ». Configure cette scène dans Le Camp → Réglages.`);
+  return setup;
+}
+async function playSound(soundId){record('soundboard.play',{soundId});if(!state.runtime){toast('Lecture simulée');return}try{await ensureObsSoundboardForPlayback();const commandId=uid();const ack=await request('/api/v1/soundboard/play',{method:'POST',body:JSON.stringify({commandId,correlationId:commandId,soundId,issuedAt:new Date().toISOString()})});if(ack.status!=='succeeded')throw new Error(ack.message||'Lecture refusée.');toast('Son envoyé à OBS');await refreshRuntime()}catch(error){toast(error.message,true)}}
 async function toggleLive(){if(!state.runtime){record(state.live.active?'session.stop':'session.start');state.live.active=!state.live.active;render();return}try{if(state.live.active){if(!confirm('Arrêter réellement le live ?'))return;await dashboardCommand({type:'session.stop'},'session.stop');}else{if(!confirm('Démarrer réellement le live ?'))return;await dashboardCommand({type:'session.prepare'},'session.prepare');try{await dashboardCommand({type:'session.start'},'session.start')}catch(error){if(confirm(`${error.message}\n\nDémarrer quand même ?`))await dashboardCommand({type:'session.start',force:true},'session.start');else throw error}}await refreshRuntime()}catch(error){toast(error.message,true)}}
 
 async function mutateCompanion(kind,method,id,payload){
