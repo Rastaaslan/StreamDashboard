@@ -114,9 +114,13 @@ describe('API publique v1', () => {
     expect(remote.status).toBe(400);
     const updated = await fetch(`${app.url}/api/v1/settings`, { method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ streamerName: 'Smoke', obsExecutablePath: 'C:\\OBS\\bin\\64bit\\obs64.exe', streamerPingRewardIds: ['reward-water', 'reward-stretch'] }) }).then(r => r.json());
     expect(updated.settings).toMatchObject({ streamerName: 'Smoke', obsExecutablePath: 'C:\\OBS\\bin\\64bit\\obs64.exe', obsUrl: 'ws://127.0.0.1:4455', streamerPingRewardIds: ['reward-water', 'reward-stretch'] });
-    const probe = await fetch(`${app.url}/api/v1/obs/test`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ obsUrl: 'wss://evil.example/ws' }) });
+    await dashboard!.stop(); dashboard = undefined;
+    dashboard = await startDashboardServer({ port: 0, dataDir, logger: { info() {}, warn() {}, error() {} } });
+    const restarted = await fetch(`${dashboard.url}/api/v1/state`).then(r => r.json());
+    expect(restarted.settings.streamerPingRewardIds).toEqual(['reward-water', 'reward-stretch']);
+    const probe = await fetch(`${dashboard.url}/api/v1/obs/test`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ obsUrl: 'wss://evil.example/ws' }) });
     expect(probe.status).toBe(400);
-    expect((await fetch(`${app.url}/api/v1/diagnostics`)).status).toBe(200);
+    expect((await fetch(`${dashboard.url}/api/v1/diagnostics`)).status).toBe(200);
   });
 
   it('rejette un planning aux dates invalides', async () => {
