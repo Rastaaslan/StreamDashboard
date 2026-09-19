@@ -74,7 +74,10 @@ ipcMain.handle('app:open-logs', async () => { if (runtime) await shell.openPath(
 ipcMain.handle('app:ensure-obs-running', async () => runtime?.ensureObsRunning() ?? { launched: false, detail: 'StreamDashboard Desktop n’est pas prêt.' });
 const SOUND_EXTENSIONS = new Set(['.wav', '.mp3', '.ogg', '.aac', '.m4a', '.flac']);
 ipcMain.handle('soundboard:select-file', async () => {
-  const result = await dialog.showOpenDialog(window ?? undefined, { title: 'Ajouter un son', properties: ['openFile'], filters: [{ name: 'Audio OBS', extensions: [...SOUND_EXTENSIONS].map(value => value.slice(1)) }] });
+  const options = { title: 'Ajouter un son', properties: ['openFile'] as const, filters: [{ name: 'Audio OBS', extensions: [...SOUND_EXTENSIONS].map(value => value.slice(1)) }] };
+  const result = window && !window.isDestroyed()
+    ? await dialog.showOpenDialog(window, options)
+    : await dialog.showOpenDialog(options);
   return result.canceled ? null : result.filePaths[0] ?? null;
 });
 ipcMain.handle('soundboard:import-file', async (_event, source: unknown) => {
@@ -83,7 +86,7 @@ ipcMain.handle('soundboard:import-file', async (_event, source: unknown) => {
   const library = path.join(app.getPath('userData'), 'soundboard'); await mkdir(library, { recursive: true });
   const destination = path.join(library, `${randomUUID()}${path.extname(source).toLowerCase()}`); const temporary = `${destination}.tmp`;
   try { await copyFile(source, temporary); await rename(temporary, destination); } catch (error) { await unlink(temporary).catch(() => undefined); throw error; }
-  return { libraryId: path.basename(destination), file: destination };
+  return { libraryId: path.basename(destination) };
 });
 ipcMain.on('app:minimize', () => window?.minimize());
 ipcMain.on('app:close', () => window?.close());
