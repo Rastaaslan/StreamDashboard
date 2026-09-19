@@ -8,7 +8,7 @@ import { WebSocketServer, type WebSocket } from 'ws';
 import { ObsClient } from '../../../integrations/obs/src/client.js';
 import { TwitchClient } from '../../../integrations/twitch/src/client.js';
 import { TwitchPreflight } from '../../../integrations/twitch/src/preflight.js';
-import { TwitchEventSub, type TwitchChatMessage } from '../../../integrations/twitch/src/eventsub.js';
+import { TwitchEventSub, type TwitchChatMessage, type TwitchRewardRedemption } from '../../../integrations/twitch/src/eventsub.js';
 import { DiscordClient } from '../../../integrations/discord/src/client.js';
 import { expandRecurringItems } from '../../../packages/core/src/recurrence.js';
 import { EventCore } from '../../../packages/core/src/events.js';
@@ -44,6 +44,7 @@ import {
   type TimerState,
   type ControlHubSnapshot,
   type Sound,
+  type StreamerPing,
 } from '../../../packages/contracts/src/index.js';
 import { DashboardCommandService } from './command-service.js';
 import { companionSnapshot, emptyCompanionState, reconcileCompanionBatch, resolveCompanionConflict, type CompanionState, type SyncOperation } from './companion-sync.js';
@@ -96,6 +97,7 @@ interface LocalData {
   sounds: Sound[];
   automations: Automation[];
   supports: Support[];
+  streamerPings: StreamerPing[];
 }
 export interface DashboardServerOptions {
   port?: number;
@@ -346,6 +348,7 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
       chattingScene: undefined,
       startMode: 'intro',
       remoteEnabled: false,
+      streamerPingRewardIds: [],
     },
     twitch: { broadcasterId: '', userName: '', displayName: '' },
     twitchLastSyncedAt: null,
@@ -356,6 +359,7 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
     sounds: [],
     automations: [],
     supports: [],
+    streamerPings: [],
   };
 
   let local = await store.read(defaults);
@@ -386,6 +390,8 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
   local.sounds = Array.isArray(local.sounds) ? local.sounds.flatMap(value => { try { return [validateSound(value)]; } catch { return []; } }) : [];
   local.automations = Array.isArray(local.automations) ? local.automations : [];
   local.supports = Array.isArray(local.supports) ? local.supports : [];
+  local.streamerPings = Array.isArray(local.streamerPings) ? local.streamerPings.filter(value => object(value) && typeof value.id === 'string' && typeof value.rewardId === 'string' && typeof value.rewardTitle === 'string').slice(-50) as StreamerPing[] : [];
+  local.settings.streamerPingRewardIds = Array.isArray(local.settings.streamerPingRewardIds) ? [...new Set(local.settings.streamerPingRewardIds.filter(value => typeof value === 'string' && value.length <= 100))].slice(0, 50) : [];
   if (!Array.isArray(local.checklist)) local.checklist = structuredClone(defaults.checklist);
   else {
     const seen = new Set<string>();
@@ -519,7 +525,7 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
     updateChannel: value => twitch.updateChannelMetadata(value),
   });
   const twitchEventSub = new TwitchEventSub(
-    sessionId => twitch.subscribeChat(sessionId),
+    sessionId => twitch.subscribeEventSub(sessionId),
     message => {
       if (chatMessages.some(item => item.id === message.id)) return;
       chatMessages = [...chatMessages.slice(-199), message];
@@ -529,6 +535,27 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
     (status, error) => {
       chatStatus = status;
       eventCore.publish({ type: status === 'CONNECTED' ? 'integration.connected' : status === 'DISCONNECTED' ? 'integration.disconnected' : 'integration.degraded', source: 'twitch-chat', payload: { integration: 'twitch-chat', status, ...(error ? { error } : {}) } });
+      broadcast();
+    },
+    undefined,
+    (redemption: TwitchRewardRedemption) => {
+      if (!(local.settings.streamerPingRewardIds ?? []).includes(redemption.reward.id)) return;
+      if (local.streamerPings.some(ping => ping.id === redemption.id)) return;
+      const ping: StreamerPing = {
+        id: redemption.id,
+        source: 'twitch-reward',
+        rewardId: redemption.reward.id,
+        rewardTitle: redemption.reward.title,
+        rewardCost: redemption.reward.cost,
+        userId: redemption.user.id,
+        userName: redemption.user.displayName || redemption.user.login,
+        userInput: redemption.userInput,
+        createdAt: redemption.redeemedAt,
+        acknowledgedAt: null,
+      };
+      local.streamerPings = [...local.streamerPings.filter(value => value.id !== ping.id), ping].slice(-50);
+      eventCore.publish({ type: 'streamer.ping.received', source: 'twitch', occurredAt: ping.createdAt, correlationId: ping.id, payload: ping });
+      void save().catch(logError);
       broadcast();
     },
   );
@@ -665,8 +692,9 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
     primaryMicInput: local.settings.primaryMicInput,
     requireTimerOverlayOnStart: local.settings.requireTimerOverlayOnStart === true,
     remoteEnabled: local.settings.remoteEnabled === true,
+    streamerPingRewardIds: [...(local.settings.streamerPingRewardIds ?? [])],
   });
-  const features = ['obs', 'twitch', 'preflight', 'timer', 'planning', 'planning-recurrence', 'discord-planning', 'checklist', 'deck', 'mobile-remote', 'unplanned-live-tracking'];
+  const features = ['obs', 'twitch', 'preflight', 'timer', 'planning', 'planning-recurrence', 'discord-planning', 'checklist', 'deck', 'mobile-remote', 'unplanned-live-tracking', 'streamer-pings'];
   if (googleClientId) features.push('google-calendar', 'unplanned-live-google-sync');
   const capabilities: ServerCapabilities = {
     protocolVersion,
@@ -739,6 +767,7 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
         devices: remoteAuth.list(),
         urls: remoteRuntimeEnabled ? lanUrls(runtimePort) : [],
       },
+      streamerPings: local.streamerPings.filter(ping => !ping.acknowledgedAt).slice(-20),
       controlHub,
       health: {
         dashboard: { ok: true, detail: 'API locale opérationnelle', reconnects: 0 },
@@ -1227,7 +1256,7 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
     const allowed = (req.method === 'GET' && (['/v1/state', '/v1/control-hub', '/v1/events', '/v1/soundboard', '/v1/automations', '/v1/supports', '/v1/twitch/categories', '/v1/twitch/videos', '/v1/twitch/clips', '/v1/twitch/chatters', '/v1/twitch/moderation/capabilities', '/v1/discord/status', '/v1/discord/guilds'].includes(pathName) || /^\/v1\/discord\/guilds\/\d+\/channels$/.test(pathName)))
       || (req.method === 'PUT' && (pathName === '/v1/discord/settings' || /^\/v1\/planning\/[^/]+(?:\/occurrence)?$/.test(pathName) || /^\/v1\/soundboard\/sounds\/[A-Za-z0-9._:-]+$/.test(pathName) || /^\/v1\/automations\/[A-Za-z0-9._:-]+$/.test(pathName)))
       || (req.method === 'DELETE' && (/^\/v1\/planning\/[^/]+(?:\/occurrence)?$/.test(pathName) || /^\/v1\/twitch\/videos\/\d+$/.test(pathName) || /^\/v1\/twitch\/moderation\/(?:messages|bans)\/[A-Za-z0-9_-]+$/.test(pathName) || /^\/v1\/automations\/[A-Za-z0-9._:-]+$/.test(pathName)))
-      || (req.method === 'POST' && (['/v1/commands', '/v1/remote/ws-ticket', '/v1/soundboard/play', '/v1/soundboard/stop', '/v1/automations', '/v1/automations/test', '/v1/twitch/channel', '/v1/twitch/chat/messages', '/v1/twitch/clips', '/v1/twitch/moderation/bans', '/v1/planning', '/v1/companion/sync', '/v1/discord/planning'].includes(pathName) || /^\/v1\/companion\/conflicts\/[^/]+\/resolve$/.test(pathName)));
+      || (req.method === 'POST' && (['/v1/commands', '/v1/remote/ws-ticket', '/v1/soundboard/play', '/v1/soundboard/stop', '/v1/automations', '/v1/automations/test', '/v1/twitch/channel', '/v1/twitch/chat/messages', '/v1/twitch/clips', '/v1/twitch/moderation/bans', '/v1/planning', '/v1/companion/sync', '/v1/discord/planning'].includes(pathName) || /^\/v1\/companion\/conflicts\/[^/]+\/resolve$/.test(pathName) || /^\/v1\/streamer-pings\/[^/]+\/ack$/.test(pathName)));
     if (!allowed) {
       res.status(403).json({ ok: false, error: { code: 'REMOTE_SCOPE_DENIED', message: 'Cette action n’est pas autorisée depuis la télécommande.' } });
       return;
@@ -1250,6 +1279,17 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
   app.get('/api/v1/health', health);
   app.get('/api/v1/state', (req, res) => res.json(isRemoteRequest(req) ? toRemoteDashboardState(snapshot()) : snapshot()));
   app.get('/api/v1/control-hub', (_req, res) => res.json(snapshot().controlHub));
+  app.get('/api/v1/twitch/rewards', async (_req, res, next) => { try { res.json({ items: await twitch.customRewards(), available: twitch.state.redemptionsAvailable === true }); } catch (error) { next(error); } });
+  app.post('/api/v1/streamer-pings/:id/ack', async (req, res, next) => {
+    try {
+      const id = String(req.params.id);
+      const ping = local.streamerPings.find(value => value.id === id);
+      if (!ping) { res.status(404).json({ ok: false, error: { code: 'NOT_FOUND', message: 'Streamer Ping introuvable.' } }); return; }
+      if (!ping.acknowledgedAt) ping.acknowledgedAt = new Date().toISOString();
+      eventCore.publish({ type: 'streamer.ping.acknowledged', source: isRemoteRequest(req) ? 'android' : 'desktop', correlationId: ping.id, payload: { id: ping.id, acknowledgedAt: ping.acknowledgedAt } });
+      await save(); broadcast(); res.json(isRemoteRequest(req) ? toRemoteDashboardState(snapshot()) : snapshot());
+    } catch (error) { next(error); }
+  });
   const soundboardTargetScenes = () => [...new Set([
     local.settings.modeScenes?.intro, local.settings.modeScenes?.live, local.settings.chattingScene,
     local.settings.modeScenes?.pause, local.settings.modeScenes?.end,
@@ -1584,6 +1624,10 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
           local.settings.startMode = input.startMode;
         }
         if (typeof input.remoteEnabled === 'boolean') local.settings.remoteEnabled = input.remoteEnabled;
+        if (input.streamerPingRewardIds !== undefined) {
+          if (!Array.isArray(input.streamerPingRewardIds) || input.streamerPingRewardIds.length > 50 || input.streamerPingRewardIds.some(value => typeof value !== 'string' || !value || value.length > 100)) throw new Error('Récompenses Streamer Ping invalides.');
+          local.settings.streamerPingRewardIds = [...new Set(input.streamerPingRewardIds)];
+        }
         if (input.timerBrowserSource !== undefined) {
           if (typeof input.timerBrowserSource !== 'string' || input.timerBrowserSource.length > 200) throw new Error('Source timer OBS invalide.');
           local.settings.timerBrowserSource = input.timerBrowserSource.trim() || undefined;
