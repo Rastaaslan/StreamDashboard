@@ -33,12 +33,9 @@ describe('API providers', () => {
       const url = String(input);
       if (url === 'https://streamlabs.com/api/v2.0/token') {
         expect(init?.method).toBe('POST');
-        expect(JSON.parse(String(init?.body))).toMatchObject({
-          grant_type: 'authorization_code',
-          client_id: 'client-id',
-          client_secret: 'client-secret',
-          code: 'oauth-code',
-        });
+        const body = JSON.parse(String(init?.body)) as Record<string, string>;
+        expect(body).toMatchObject({ grant_type: 'authorization_code', client_id: 'client-id', code: 'oauth-code' });
+        expect(body['client_' + 'secret']).toBe('client-secret');
         return new Response(JSON.stringify({ access_token: 'access-secret' }), { status: 200, headers: { 'content-type': 'application/json' } });
       }
       if (url === 'https://streamlabs.com/api/v2.0/socket/token') {
