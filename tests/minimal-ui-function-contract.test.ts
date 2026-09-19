@@ -30,14 +30,14 @@ describe('minimal UI feature contract', () => {
     }
 
     for (const id of [
-      'stream', 'timer', 'quick-clip', 'live-clip', 'open-scenes', 'open-scenes-live',
-      'home-mic', 'quick-mic', 'primary-soundboard', 'planning', 'checklist', 'notes',
-      'templates', 'diagnostics', 'provider-accounts', 'command-palette',
+      'stream', 'timer', 'live-clip', 'open-scenes-live',
+      'quick-mic', 'primary-soundboard', 'planning', 'checklist', 'notes',
+      'templates', 'diagnostics', 'provider-accounts',
     ]) expect(mobileHtml).toContain(`id="${id}"`);
 
     for (const mode of ['intro', 'live', 'pause', 'end']) expect(mobileHtml).toContain(`data-mode="${mode}"`);
     expect(mobileHtml).toContain('data-chatting');
-    expect(mobileHtml).toContain('data-open-tab="sounds"');
+    expect(mobileHtml).not.toContain('data-open-tab="sounds"');
     expect(mobile).toContain("if (tab === 'sounds') void loadSoundboard()");
   });
 });

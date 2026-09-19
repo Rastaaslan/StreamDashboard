@@ -18,7 +18,7 @@ describe('Android remote runtime', () => {
     expect(remotePolicy).toContain("new Set(['intro', 'live', 'pause', 'end'])");
   });
   it('expose le preset Chatting sans créer de RunMode ni accepter une scène arbitraire', () => {
-    expect(mobileIndex).toContain('<button data-chatting>CHATTING</button>');
+    expect(mobileIndex).toContain('data-chatting>Chatting</button>');
     expect(mobileScript).toContain("command({ type: 'scene.chatting' })");
     expect(mobileScript).toContain("next.mode === 'live'");
     expect(mobileScript).toContain("next.obs.scene === next.settings.chattingScene");
