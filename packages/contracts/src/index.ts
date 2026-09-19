@@ -272,7 +272,6 @@ export interface DashboardState {
   remote?: RemoteState;
   streamerPings?: StreamerPing[];
   runtime: { serverVersion: string; nodeVersion: string; electronVersion: string | null; platform: string; port: number; logsPath: string | null };
-  streamerPings?: StreamerPing[];
   controlHub?: ControlHubSnapshot;
 }
 
@@ -290,6 +289,7 @@ export interface RemoteDashboardState {
   google?: Pick<GoogleCalendarState, 'configured' | 'connected'>;
   discord?: DiscordState;
   preflight?: PreflightState;
+  streamerPings?: StreamerPing[];
   controlHub?: ControlHubSnapshot;
 }
 
