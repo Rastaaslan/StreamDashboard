@@ -401,6 +401,12 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
       .filter(item => { if (seen.has(item.id)) return false; seen.add(item.id); return true; });
     if (!local.checklist.length) local.checklist = structuredClone(defaults.checklist);
   }
+  {
+    const baseline = reconcileCompanionBatch(local.planning, local.checklist, local.companion, []);
+    local.planning = baseline.planning;
+    local.checklist = baseline.checklist;
+    local.companion = baseline.companion;
+  }
 
   const rawSettings: Partial<PersistedSettings & { obsPassword?: string }> = object(local.settings) ? local.settings : {};
   local.settings = {
