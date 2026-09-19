@@ -5,7 +5,25 @@ import { devFixtureName } from '../apps/mobile/dev-fixtures.js';
 describe('Android preview', () => {
   it('autorise les fixtures sur l’origine WebViewAssetLoader', () => {
     expect(devFixtureName({ hostname: 'appassets.androidplatform.net', search: '?fixture=live&preview=1' })).toBe('live');
+    it('nettoie complètement la release des valeurs de maquette et de l’ancien appairage', () => {
+    const preview = readFileSync('apps/mobile/preview.html', 'utf8');
+    const previewScript = readFileSync('apps/mobile/preview.js', 'utf8');
+    const legacy = readFileSync('apps/mobile/index.html', 'utf8');
+    const legacyScript = readFileSync('apps/mobile/mobile.js', 'utf8');
+
+    for (const sample of ['In Sound Mind', 'Mimi', 'Fred', 'BONK', 'CREEPER', 'VICTOIRE', 'FC 26 · FC Peace', 'Polymatheia', '02:14:32']) {
+      expect(preview).not.toContain(sample);
+    }
+    expect(preview).toContain('Aucun live en cours');
+    expect(preview).toContain('PC non appairé');
+    expect(previewScript).toContain("productionUi ? 'streamdashboard.quickSoundSelections' : 'streamdashboard.preview.quickSoundSelections'");
+    expect(legacy).not.toContain('data-settings-target="pairing"');
+    expect(legacyScript).toContain('openCanonicalPairing');
+    expect(legacyScript).toContain("localStorage.setItem('streamdashboard.pendingPairing'");
+    expect(previewScript).toContain("localStorage.getItem('streamdashboard.pendingPairing')");
   });
+
+});
 
   it('promote la V2 comme UI Android release tout en gardant le mode preview', () => {
     const activity = readFileSync('android/app/src/main/java/com/rastaaslan/streamdashboard/remote/MainActivity.java', 'utf8');
