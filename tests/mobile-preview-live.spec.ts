@@ -28,9 +28,16 @@ test('preview figé pilote réellement scènes et soundboard via HTTP sans dépe
     await page.route('**/api/v1/remote/ws-ticket',route=>route.fulfill({status:503,contentType:'application/json',body:JSON.stringify({error:{message:'ws intentionally unavailable'}})}));
     await page.route('**/api/v1/commands',async route=>{const body=route.request().postDataJSON();commands.push(body);route.fulfill({status:200,contentType:'application/json',body:JSON.stringify({ok:true,state:{...state,obs:{...state.obs,scene:body.mode==='pause'?'Pause':state.obs.scene}},commandType:body.type})});});
     await page.route('**/api/v1/soundboard/play',async route=>{sounds.push(route.request().postDataJSON());route.fulfill({status:200,contentType:'application/json',body:JSON.stringify({status:'succeeded',commandId:sounds.at(-1).commandId})});});
-    await page.goto(`${origin}/mobile/preview.html`);
-    await page.evaluate(()=>localStorage.setItem('streamdashboard.device','test-device-credential'));
-    await page.reload();
+    let paired = false;
+    await page.route('**/api/v1/remote/pair', async route => {
+      paired = true;
+      expect(route.request().postDataJSON()).toMatchObject({ id: 'pair-1', code: '123456' });
+      await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ credential: 'test-device-credential', deviceId: 'device-v2' }) });
+    });
+    await page.goto(`${origin}/mobile/preview.html?runtime=1`);
+    await page.evaluate(link => window.dispatchEvent(new CustomEvent('native-pairing', { detail: link })), `streamdashboard://pair?v=1&server=${encodeURIComponent(origin)}&id=pair-1&code=123456`);
+    await expect.poll(()=>paired).toBe(true);
+    await expect(page.locator('#connection-dialog')).not.toBeVisible();
 
     await expect(page.locator('#home-title')).toHaveText('Test Live');
     await expect(page.locator('#home-viewers')).toHaveText('17');
