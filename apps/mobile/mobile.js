@@ -72,6 +72,7 @@ const commandController = createCommandController({
 let noteTimer;
 const note = value => { const message = $('message'); message.textContent = String(value || ''); clearTimeout(noteTimer); if (value) noteTimer = setTimeout(() => { message.textContent = ''; }, 4_000); };
 let activeMobileStreamerPingId = null;
+const notifiedMobileStreamerPingIds = new Set();
 function ensureMobileStreamerPingDialog() {
   return $('streamer-ping-dialog');
 }
@@ -86,19 +87,30 @@ $('streamer-ping-ack').onclick = async () => {
     note('Streamer Ping acquitté.');
   } catch (error) { note(error.message); }
 };
+function notifyMobileStreamerPing(ping, pendingCount) {
+  if (!ping || !document.hidden || notifiedMobileStreamerPingIds.has(ping.id)) return;
+  notifiedMobileStreamerPingIds.add(ping.id);
+  const message = `${ping.userName || 'Viewer'} · ${ping.rewardCost || 0} points${pendingCount > 1 ? ` · ${pendingCount} pings en attente` : ''}`;
+  globalThis.StreamDashboardNative?.notifyStreamerPing?.(ping.id, ping.rewardTitle || 'Streamer Ping', message);
+}
 function syncMobileStreamerPing(pings = []) {
-  const ping = pings.find(value => !value.acknowledgedAt);
+  const pending = pings.filter(value => !value.acknowledgedAt);
+  const ping = pending[0];
   const dialog = ensureMobileStreamerPingDialog();
   if (!ping) {
     activeMobileStreamerPingId = null;
     if (dialog.open) dialog.close();
     return;
   }
-  if (activeMobileStreamerPingId === ping.id && dialog.open) return;
+  notifyMobileStreamerPing(ping, pending.length);
+  if (activeMobileStreamerPingId === ping.id && dialog.open) {
+    const label = dialog.querySelector('.console-label'); if (label) label.textContent = `STREAMER PING · 1/${pending.length}`;
+    return;
+  }
   activeMobileStreamerPingId = ping.id;
   const content = dialog.querySelector('.streamer-ping-content');
   content.replaceChildren(
-    text('small', 'STREAMER PING', 'console-label'),
+    text('small', `STREAMER PING · 1/${pending.length}`, 'console-label'),
     text('h2', ping.rewardTitle || 'Récompense Twitch'),
     text('p', `${ping.userName || 'Viewer'} a utilisé cette récompense${ping.rewardCost ? ` · ${ping.rewardCost} points` : ''}.`),
     ...(ping.userInput ? [text('blockquote', ping.userInput)] : []),
@@ -950,7 +962,13 @@ async function start() {
     $('android-options').hidden = false;
     $('pair-server').value = server;
     if (!server) { showPairing(true); setConnectionMode(resolveMode({ pcAvailable: false, internetAvailable: navigator.onLine })); render(offlineState()); return; }
-    document.addEventListener('visibilitychange', () => { if (!document.hidden) { ws?.close(); void connect(); } });
+    document.addEventListener('visibilitychange', () => {
+      if (!document.hidden) { ws?.close(); void connect(); }
+      else if (state?.streamerPings?.length) {
+        const pending = state.streamerPings.filter(value => !value.acknowledgedAt);
+        notifyMobileStreamerPing(pending[0], pending.length);
+      }
+    });
   } else {
     $('server-label').hidden = true;
     $('link-label').hidden = true;
