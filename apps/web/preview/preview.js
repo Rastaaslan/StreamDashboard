@@ -260,6 +260,107 @@ function camp(){return`<div class="camp-grid"><section class="section camp-nav">
 function render(){const names={home:['Accueil','COCKPIT'],live:['Live','EN DIRECT'],sounds:['Sons','BIBLIOTHÈQUE'],planning:['Planning','SEMAINE'],camp:['Le Camp','SECONDAIRE']};[title.textContent,eyebrow.textContent]=names[state.view];view.innerHTML=({home,live,sounds:soundboard,planning,camp}[state.view])();document.querySelectorAll('[data-view]').forEach(b=>b.setAttribute('aria-current',b.dataset.view===state.view?'page':'false'));bind()}
 async function playSound(soundId){record('soundboard.play',{soundId});if(!state.runtime){toast('Lecture simulée');return}try{const commandId=uid();const ack=await request('/api/v1/soundboard/play',{method:'POST',body:JSON.stringify({commandId,correlationId:commandId,soundId,issuedAt:new Date().toISOString()})});if(ack.status!=='succeeded')throw new Error(ack.message||'Lecture refusée.');toast('Son envoyé à OBS');await refreshRuntime()}catch(error){toast(error.message,true)}}
 async function toggleLive(){if(!state.runtime){record(state.live.active?'session.stop':'session.start');state.live.active=!state.live.active;render();return}try{if(state.live.active){if(!confirm('Arrêter réellement le live ?'))return;await dashboardCommand({type:'session.stop'},'session.stop');}else{if(!confirm('Démarrer réellement le live ?'))return;await dashboardCommand({type:'session.prepare'},'session.prepare');try{await dashboardCommand({type:'session.start'},'session.start')}catch(error){if(confirm(`${error.message}\n\nDémarrer quand même ?`))await dashboardCommand({type:'session.start',force:true},'session.start');else throw error}}await refreshRuntime()}catch(error){toast(error.message,true)}}
+
+async function mutateCompanion(kind,method,id,payload){
+  if(!requireRuntime())return null;
+  const path=id?`/api/v1/companion/${encodeURIComponent(kind)}/${encodeURIComponent(id)}`:`/api/v1/companion/${encodeURIComponent(kind)}`;
+  state.companion=await request(path,{method,body:method==='DELETE'?undefined:JSON.stringify(payload||{})});
+  await refreshRuntime();return state.companion;
+}
+async function searchCategory(inputId,hiddenId,resultsId){
+  const input=document.querySelector(inputId),hidden=document.querySelector(hiddenId),results=document.querySelector(resultsId);
+  const query=input?.value.trim();if(!query||query.length<2)return toast('Saisis au moins 2 caractères.',true);
+  const values=await request(`/api/v1/twitch/categories?q=${encodeURIComponent(query)}`);
+  results.replaceChildren(...values.map(value=>new Option(value.name,value.id)));results.hidden=false;results.size=Math.min(8,Math.max(2,values.length));
+  results.onchange=()=>{const option=results.selectedOptions[0];if(!option)return;hidden.value=option.value;input.value=option.textContent;results.hidden=true};
+  if(!values.length)toast('Aucune catégorie Twitch trouvée.',true);
+}
+function resetAutomationEditor(){
+  state.automationEditor={id:'',name:'',trigger:'support.received',conditions:[],actions:[{type:'soundboard.play',payload:{soundId:state.sounds?.[0]?.id||''}}],cooldownMs:30000,enabled:true};
+}
+function readAutomationEditor(){
+  const form=document.querySelector('#camp-automation-form');if(!form)return state.automationEditor;
+  const conditions=[...form.querySelectorAll('[data-condition-row]')].map(row=>{
+    const operator=row.querySelector('[data-condition-operator]').value;const raw=row.querySelector('[data-condition-value]').value;
+    const value=operator==='gte'?Number(raw):raw==='true'?true:raw==='false'?false:raw;
+    return{path:row.querySelector('[data-condition-path]').value.trim(),operator,value};
+  }).filter(value=>value.path);
+  const actions=[...form.querySelectorAll('[data-action-row]')].map(row=>{
+    const type=row.querySelector('[data-action-type]').value;const payload={};
+    row.querySelectorAll('[data-action-param]').forEach(input=>{const key=input.dataset.actionParam;payload[key]=['seconds','volume'].includes(key)?Number(input.value):input.value});
+    return{type,payload};
+  });
+  return{id:state.automationEditor.id,name:String(new FormData(form).get('name')||'').trim(),trigger:String(new FormData(form).get('trigger')||'support.received'),conditions,actions,cooldownMs:Math.round(Number(new FormData(form).get('cooldown')||0)*1000),enabled:new FormData(form).get('enabled')==='on'};
+}
+function bindCampSections(){
+  if(state.view!=='camp'||!state.runtime)return;
+  if(state.campItem==='Préparation'){
+    document.querySelector('#camp-check-add')?.addEventListener('submit',async event=>{event.preventDefault();const label=String(new FormData(event.currentTarget).get('label')||'').trim();if(!label)return;try{await mutateCompanion('checklist','POST',null,{label,done:false});await loadCompanion();render();toast('Élément ajouté')}catch(error){toast(error.message,true)}});
+    document.querySelectorAll('[data-check-toggle]').forEach(button=>button.onclick=async()=>{const item=(state.companion?.checklist||[]).find(value=>value.id===button.dataset.checkToggle);if(!item)return;try{await mutateCompanion('checklist','PUT',item.id,{label:item.label,done:!item.done});await loadCompanion();render()}catch(error){toast(error.message,true)}});
+    document.querySelectorAll('[data-check-delete]').forEach(button=>button.onclick=async()=>{if(!confirm('Supprimer cet élément de checklist ?'))return;try{await mutateCompanion('checklist','DELETE',button.dataset.checkDelete);await loadCompanion();render()}catch(error){toast(error.message,true)}});
+    document.querySelector('[data-camp-action="prepare"]')?.addEventListener('click',async()=>{try{await dashboardCommand({type:'session.prepare'});await refreshRuntime();toast('Préparation exécutée')}catch(error){toast(error.message,true)}});
+    document.querySelector('[data-camp-action="check-reset"]')?.addEventListener('click',async()=>{try{for(const item of state.companion?.checklist||[])if(item.done)await mutateCompanion('checklist','PUT',item.id,{label:item.label,done:false});await loadCompanion();render();toast('Checklist réinitialisée')}catch(error){toast(error.message,true)}});
+  }
+  if(state.campItem==='Notes'){
+    document.querySelector('#camp-note-add')?.addEventListener('submit',async event=>{event.preventDefault();const text=String(new FormData(event.currentTarget).get('text')||'').trim();if(!text)return;try{await mutateCompanion('notes','POST',null,{text});await loadCompanion();render();toast('Note ajoutée')}catch(error){toast(error.message,true)}});
+    document.querySelectorAll('[data-note-save]').forEach(button=>button.onclick=async()=>{const text=document.querySelector(`[data-note-value="${CSS.escape(button.dataset.noteSave)}"]`)?.value.trim();if(!text)return;try{await mutateCompanion('notes','PUT',button.dataset.noteSave,{text});await loadCompanion();render();toast('Note enregistrée')}catch(error){toast(error.message,true)}});
+    document.querySelectorAll('[data-note-delete]').forEach(button=>button.onclick=async()=>{if(!confirm('Supprimer cette note ?'))return;try{await mutateCompanion('notes','DELETE',button.dataset.noteDelete);await loadCompanion();render()}catch(error){toast(error.message,true)}});
+  }
+  if(state.campItem==='Templates'){
+    document.querySelector('[data-template-category-search]')?.addEventListener('click',()=>void searchCategory('#camp-template-category','#camp-template-category-id','#camp-template-category-results').catch(error=>toast(error.message,true)));
+    document.querySelectorAll('[data-template-edit]').forEach(button=>button.onclick=()=>{state.templateEditor=structuredClone((state.companion?.templates||[]).find(value=>value.id===button.dataset.templateEdit)||null);render()});
+    document.querySelector('[data-template-new]')?.addEventListener('click',()=>{state.templateEditor=null;render()});
+    document.querySelectorAll('[data-template-use]').forEach(button=>button.onclick=()=>{const template=(state.companion?.templates||[]).find(value=>value.id===button.dataset.templateUse);state.view='planning';render();openEventDialog(null,template)});
+    document.querySelectorAll('[data-template-delete]').forEach(button=>button.onclick=async()=>{if(!confirm('Supprimer ce template ?'))return;try{await mutateCompanion('templates','DELETE',button.dataset.templateDelete);state.templateEditor=null;await loadCompanion();render()}catch(error){toast(error.message,true)}});
+    document.querySelector('#camp-template-form')?.addEventListener('submit',async event=>{event.preventDefault();const form=new FormData(event.currentTarget);const id=String(form.get('id')||'');const twitch=form.get('publishTwitch')==='on';const google=form.get('publishGoogle')==='on';const categoryId=String(form.get('categoryId')||'');if(twitch&&!categoryId)return toast('Choisis une catégorie Twitch officielle.',true);const payload={title:String(form.get('title')||'').trim(),description:String(form.get('description')||'').trim(),twitchCategoryId:twitch?categoryId:'',twitchCategoryName:twitch?String(form.get('categoryName')||'').trim():'',desiredPublication:{local:false,twitch,google}};try{await mutateCompanion('templates',id?'PUT':'POST',id||null,payload);state.templateEditor=null;await loadCompanion();render();toast('Template enregistré')}catch(error){toast(error.message,true)}});
+  }
+  if(state.campItem==='Soutiens'){
+    document.querySelector('[data-camp-action="supports-refresh"]')?.addEventListener('click',()=>void loadSupports().then(render).catch(error=>toast(error.message,true)));
+    document.querySelector('[data-camp-action="supports-test"]')?.addEventListener('click',async()=>{try{await request('/api/v1/supports/streamlabs/test',{method:'POST',body:'{}'});await loadSupports();render();toast('Soutien test ajouté')}catch(error){toast(error.message,true)}});
+  }
+  if(state.campItem==='Automatisations'){
+    document.querySelectorAll('[data-auto-edit]').forEach(button=>button.onclick=()=>{const value=(state.automations?.items||[]).find(item=>item.id===button.dataset.autoEdit);if(value){state.automationEditor=structuredClone(value);render()}});
+    document.querySelectorAll('[data-auto-delete]').forEach(button=>button.onclick=async()=>{if(!confirm('Supprimer cette automatisation ?'))return;try{await request(`/api/v1/automations/${encodeURIComponent(button.dataset.autoDelete)}`,{method:'DELETE'});resetAutomationEditor();await loadAutomations();render()}catch(error){toast(error.message,true)}});
+    document.querySelectorAll('[data-auto-toggle]').forEach(button=>button.onclick=async()=>{const value=(state.automations?.items||[]).find(item=>item.id===button.dataset.autoToggle);if(!value)return;try{await request(`/api/v1/automations/${encodeURIComponent(value.id)}`,{method:'PUT',body:JSON.stringify({...value,enabled:!value.enabled})});await loadAutomations();render()}catch(error){toast(error.message,true)}});
+    document.querySelector('[data-auto-new]')?.addEventListener('click',()=>{resetAutomationEditor();render()});
+    document.querySelector('[data-condition-add]')?.addEventListener('click',()=>{state.automationEditor=readAutomationEditor();state.automationEditor.conditions.push({path:'',operator:'eq',value:''});render()});
+    document.querySelectorAll('[data-condition-remove]').forEach(button=>button.onclick=()=>{state.automationEditor=readAutomationEditor();state.automationEditor.conditions.splice(Number(button.dataset.conditionRemove),1);render()});
+    document.querySelector('[data-action-add]')?.addEventListener('click',()=>{state.automationEditor=readAutomationEditor();state.automationEditor.actions.push({type:'soundboard.play',payload:{soundId:state.sounds?.[0]?.id||''}});render()});
+    document.querySelectorAll('[data-action-remove]').forEach(button=>button.onclick=()=>{state.automationEditor=readAutomationEditor();state.automationEditor.actions.splice(Number(button.dataset.actionRemove),1);if(!state.automationEditor.actions.length)state.automationEditor.actions.push({type:'soundboard.play',payload:{}});render()});
+    document.querySelectorAll('[data-action-type]').forEach((select,index)=>select.onchange=()=>{state.automationEditor=readAutomationEditor();state.automationEditor.actions[index]={type:select.value,payload:{}};render()});
+    document.querySelector('#camp-automation-form')?.addEventListener('submit',async event=>{event.preventDefault();const value=readAutomationEditor();if(!value.name)return toast('Donne un nom à la règle.',true);try{await request(value.id?`/api/v1/automations/${encodeURIComponent(value.id)}`:'/api/v1/automations',{method:value.id?'PUT':'POST',body:JSON.stringify(value)});resetAutomationEditor();await loadAutomations();render();toast('Automatisation enregistrée')}catch(error){toast(error.message,true)}});
+  }
+  if(state.campItem==='Médias OBS'){
+    document.querySelectorAll('[data-media-restart]').forEach(button=>button.onclick=()=>void dashboardCommand({type:'obs.media.restart',input:button.dataset.mediaRestart}).then(()=>toast('Média relancé')).catch(error=>toast(error.message,true)));
+    document.querySelectorAll('[data-browser-refresh]').forEach(button=>button.onclick=()=>void dashboardCommand({type:'obs.browser.refresh',input:button.dataset.browserRefresh}).then(()=>toast('Browser Source rafraîchie')).catch(error=>toast(error.message,true)));
+  }
+  if(state.campItem==='Diagnostics')document.querySelector('[data-camp-action="diagnostics-refresh"]')?.addEventListener('click',()=>void loadDiagnostics().then(render).catch(error=>toast(error.message,true)));
+  if(state.campItem==='Réglages'){
+    document.querySelector('#camp-general-settings')?.addEventListener('submit',async event=>{event.preventDefault();const form=new FormData(event.currentTarget);const payload={streamerName:String(form.get('streamerName')||'').trim(),startMode:String(form.get('startMode')||'intro'),primaryMicInput:String(form.get('primaryMicInput')||''),chattingScene:String(form.get('chattingScene')||''),timerBrowserSource:String(form.get('timerBrowserSource')||''),confirmStop:form.get('confirmStop')==='on',launchObs:form.get('launchObs')==='on',requireTimerOverlayOnStart:form.get('requireTimerOverlayOnStart')==='on',modeScenes:{intro:String(form.get('sceneIntro')||''),live:String(form.get('sceneLive')||''),pause:String(form.get('scenePause')||''),end:String(form.get('sceneEnd')||'')}};try{const next=await request('/api/v1/settings',{method:'PUT',body:JSON.stringify(payload)});applyDashboard(next);render();toast('Réglages enregistrés')}catch(error){toast(error.message,true)}});
+    document.querySelector('[data-twitch-category-search]')?.addEventListener('click',()=>void searchCategory('#camp-twitch-category','#camp-twitch-game-id','#camp-twitch-category-results').catch(error=>toast(error.message,true)));
+    document.querySelector('#camp-twitch-live-settings')?.addEventListener('submit',async event=>{event.preventDefault();const form=new FormData(event.currentTarget);try{const next=await request('/api/v1/twitch/channel',{method:'POST',body:JSON.stringify({title:String(form.get('title')||'').trim(),gameId:String(form.get('gameId')||''),gameName:String(form.get('gameName')||'').trim()})});applyDashboard(next);render();toast('Informations Twitch mises à jour')}catch(error){toast(error.message,true)}});
+  }
+}
+async function blobBase64(blob){const bytes=new Uint8Array(await blob.arrayBuffer());let binary='';for(let offset=0;offset<bytes.length;offset+=0x8000)binary+=String.fromCharCode(...bytes.subarray(offset,offset+0x8000));return btoa(binary)}
+async function exportPlanning(publishDiscord=false){
+  if(!state.dashboard)return;
+  try{
+    const result=await buildPlanningPng(state.dashboard.planning||[],state.dashboard.settings?.streamerName||'StreamDashboard',{period:state.planningPeriod,noteEnabled:false});
+    if(publishDiscord){
+      const posted=await request('/api/v1/discord/planning',{method:'POST',body:JSON.stringify({imageBase64:await blobBase64(result.blob),filename:result.fileName})});toast(`Planning publié dans #${posted.channelName||'Discord'}`);
+    }else{
+      const url=URL.createObjectURL(result.blob),link=document.createElement('a');link.href=url;link.download=result.fileName;link.click();setTimeout(()=>URL.revokeObjectURL(url),1000);toast('Planning exporté');
+    }
+  }catch(error){toast(error.message,true)}
+}
+function bindPlanning(){
+  if(state.view!=='planning')return;
+  document.querySelector('[data-planning-filter]')?.addEventListener('change',event=>{state.planningFilter=event.currentTarget.value;render()});
+  document.querySelector('[data-planning-period]')?.addEventListener('change',event=>{state.planningPeriod=event.currentTarget.value});
+  document.querySelector('[data-planning-export]')?.addEventListener('click',()=>void exportPlanning(false));
+  document.querySelector('[data-planning-discord]')?.addEventListener('click',()=>void exportPlanning(true));
+  document.querySelectorAll('[data-event-index]').forEach(button=>button.onclick=()=>openEventDialog(state.visiblePlanning?.[Number(button.dataset.eventIndex)]?.raw));
+}
 function bind(){
   document.querySelectorAll('[data-scene]').forEach(b=>b.onclick=async()=>{const label=b.dataset.scene;record('obs.scene.set',{sceneName:label});if(!state.runtime){state.scene=label;toast(`Scène ${label}`);render();return}try{await dashboardCommand(sceneCommand(label));await refreshRuntime();toast(`Scène ${label}`)}catch(error){toast(error.message,true)}});
   document.querySelectorAll('[data-sound]').forEach(b=>b.onclick=()=>void playSound(b.dataset.sound));
@@ -270,10 +371,12 @@ function bind(){
   document.querySelectorAll('[data-add-sound]').forEach(b=>b.onclick=()=>openSoundDialog());
   document.querySelector('[data-obs-setup]')?.addEventListener('click',()=>void openObsSetup());
   document.querySelector('[data-live-toggle]')?.addEventListener('click',()=>void toggleLive());
-  document.querySelector('[data-add-event]')?.addEventListener('click',openEventDialog);
+  document.querySelector('[data-add-event]')?.addEventListener('click',()=>openEventDialog());
   document.querySelector('[data-sound-search]')?.addEventListener('input',e=>{state.search=e.currentTarget.value;render()});
-  document.querySelectorAll('[data-camp]').forEach(b=>b.onclick=()=>{state.campItem=b.dataset.camp;render();if(state.campItem==='Réglages')void loadStreamerPingRewards()});
+  document.querySelectorAll('[data-camp]').forEach(b=>b.onclick=()=>{state.campItem=b.dataset.camp;render();void loadCampData(state.campItem)});
+  bindPlanning();
   bindConnections();
+  bindCampSections();
   bindStreamerPingSettings();
 }
 let activeStreamerPingId=null;
