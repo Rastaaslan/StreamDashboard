@@ -12,6 +12,23 @@ test('Desktop Preview navigue et émet une commande unique par contrôle', async
     const before=await page.evaluate(()=>(window as any).__preview.commandLog.length);await page.locator('[data-view="sounds"]').click();await page.locator('[data-sound="bonk"]').click();
     expect(await page.evaluate(()=>(window as any).__preview.commandLog.slice(-1)[0])).toMatchObject({type:'soundboard.play',payload:{soundId:'bonk'}});expect(await page.evaluate(()=>(window as any).__preview.commandLog.length)).toBe(before+1);
     await page.locator('[data-add-sound]').first().click(); await expect(page.locator('#sound-dialog')).toBeVisible(); await page.locator('[data-close-dialog="sound-dialog"]').click();
-    await page.locator('[data-view="sounds"]').click(); await page.locator('[data-obs-setup]').click(); await expect(page.locator('#obs-setup-dialog')).toContainText('StreamDashboard • Soundboard');
+    await page.locator('[data-view="sounds"]').click(); await page.locator('[data-obs-setup]').click(); await expect(page.locator('#obs-setup-dialog')).toContainText('StreamDashboard • Soundboard'); await page.locator('[data-close-dialog="obs-setup-dialog"]').click();
+
+    await page.locator('[data-view="camp"]').click(); await page.locator('[data-camp="Connexions"]').click();
+    for (const service of ['OBS','Twitch','Google Calendar','Discord','Streamlabs','WizeBot','Android']) await expect(page.locator('#camp-copy')).toContainText(service);
+    await expect(page.locator('[data-connection-action="obs-test"]')).toBeDisabled();
+
+    let testedObs = false;
+    await page.route('**/api/v1/obs/test', async route => {
+      testedObs = true;
+      expect(route.request().postDataJSON()).toMatchObject({ obsUrl: 'ws://127.0.0.1:4455' });
+      await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ ok: true, obsVersion: '31.0.0' }) });
+    });
+    await page.locator('#mode').click(); await expect(page.locator('#runtime-status')).toHaveText('Runtime PC');
+    await page.locator('[data-view="camp"]').click(); await page.locator('[data-camp="Connexions"]').click();
+    await expect(page.locator('[data-connection-action="obs-test"]')).toBeEnabled();
+    await page.locator('[data-connection-action="obs-test"]').click();
+    await expect(page.locator('#toast')).toContainText('OBS connecté · v31.0.0');
+    expect(testedObs).toBe(true);
   } finally {await app.close();await rm(profile,{recursive:true,force:true})}
 });
