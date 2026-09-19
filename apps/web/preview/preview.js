@@ -455,8 +455,100 @@ document.querySelector('#sound-delete').onclick=async()=>{const id=document.quer
 async function openObsSetup(){document.querySelector('#obs-setup-dialog').showModal();const host=document.querySelector('#obs-setup-status');if(!state.runtime){host.innerHTML='<p><b>Démo</b></p><p>Créera ou réparera la Media Source « StreamDashboard • Soundboard » dans Intro, Gameplay, Chatting, Pause et Fin.</p>';return}host.textContent='Vérification OBS…';try{state.obsSetup=await request('/api/v1/soundboard/obs/status');renderObsSetupStatus()}catch(error){host.textContent=error.message}}
 function renderObsSetupStatus(){const s=state.obsSetup,host=document.querySelector('#obs-setup-status');if(!s){host.textContent='État indisponible.';return}host.innerHTML=`<p><b>${s.ready?'Prêt':'Configuration requise'}</b></p><p>Source : ${esc(s.inputExists?s.inputName:'à créer')}</p><p>Scènes cibles : ${esc(s.targetScenes.join(', ')||'aucune')}</p><p>Déjà raccordées : ${esc(s.attachedScenes.join(', ')||'aucune')}</p>${s.missingScenes.length?`<p class="warning">Scènes configurées absentes d’OBS : ${esc(s.missingScenes.join(', '))}</p>`:''}${s.wrongInputKind?'<p class="warning">Une source du même nom existe avec un type incompatible.</p>':''}`}
 document.querySelector('#obs-setup-form').onsubmit=async event=>{event.preventDefault();if(!state.runtime)return toast('Passe en mode Runtime pour modifier OBS.');try{state.obsSetup=await request('/api/v1/soundboard/obs/setup',{method:'POST',body:'{}'});renderObsSetupStatus();toast(state.obsSetup.ready?'Soundboard OBS prête':'Réparation partielle terminée')}catch(error){toast(error.message,true);await openObsSetup()}};
-function openEventDialog(){const date=new Date();document.querySelector('#event-date').value=date.toISOString().slice(0,10);document.querySelector('#event-dialog').showModal()}
-document.querySelector('#event-form').onsubmit=async event=>{event.preventDefault();const date=document.querySelector('#event-date').value,start=document.querySelector('#event-start').value,end=document.querySelector('#event-end').value;const startAtUtc=new Date(`${date}T${start}`).toISOString();let endDate=new Date(`${date}T${end}`);if(endDate.getTime()<=Date.parse(startAtUtc))endDate.setDate(endDate.getDate()+1);const item={title:document.querySelector('#event-title').value.trim(),description:document.querySelector('#event-description').value.trim(),startAtUtc,endAtUtc:endDate.toISOString(),category:document.querySelector('#event-category').value,desiredPublication:{local:true,twitch:document.querySelector('#event-category').value==='live',google:false}};if(!state.runtime){state.planning.unshift({day:'Démo',time:start,title:item.title,kind:item.category==='live'?'Twitch':item.category});document.querySelector('#event-dialog').close();render();return}try{await request('/api/v1/planning',{method:'POST',body:JSON.stringify(item)});document.querySelector('#event-dialog').close();event.currentTarget.reset();await refreshRuntime();toast('Événement ajouté')}catch(error){toast(error.message,true)}};
+const localDate=value=>{const date=new Date(value);return Number.isFinite(+date)?`${date.getFullYear()}-${String(date.getMonth()+1).padStart(2,'0')}-${String(date.getDate()).padStart(2,'0')}`:''};
+const localTime=value=>{const date=new Date(value);return Number.isFinite(+date)?`${String(date.getHours()).padStart(2,'0')}:${String(date.getMinutes()).padStart(2,'0')}`:''};
+const recurrenceValue=rule=>!rule?'':rule.frequency==='monthly'?'monthly-1':`weekly-${rule.interval||1}`;
+function eventCanonical(item){const id=item?.seriesId||item?.id;return (state.dashboard?.planning||[]).find(value=>value.id===id)||item}
+function populateEventTemplates(selected=''){
+  const select=document.querySelector('#event-template');const templates=state.companion?.templates||[];
+  select.replaceChildren(new Option('Aucun',''),...templates.map(template=>new Option(template.title||'Template',template.id)));select.value=selected;
+}
+function populateEventForm(item,scope='item'){
+  const form=document.querySelector('#event-form'),source=item||{};form.reset();
+  document.querySelector('#event-id').value=source.id||'';
+  document.querySelector('#event-series-id').value=source.seriesId||'';
+  document.querySelector('#event-occurrence-key').value=source.occurrenceKey||'';
+  document.querySelector('#event-title').value=source.title||'';
+  document.querySelector('#event-description').value=source.description||'';
+  document.querySelector('#event-category').value=source.category||'live';
+  document.querySelector('#event-date').value=source.startAtUtc?localDate(source.startAtUtc):localDate(new Date());
+  document.querySelector('#event-start').value=source.startAtUtc?localTime(source.startAtUtc):'20:30';
+  document.querySelector('#event-end').value=source.endAtUtc?localTime(source.endAtUtc):'23:30';
+  document.querySelector('#event-twitch-category').value=source.twitchCategoryName||'';
+  document.querySelector('#event-twitch-game-id').value=source.twitchCategoryId||'';
+  document.querySelector('#event-twitch-results').replaceChildren();
+  document.querySelector('#event-recurrence').value=recurrenceValue(source.recurrence);
+  document.querySelector('#event-recurrence-until').value=source.recurrence?.until?localDate(source.recurrence.until):'';
+  document.querySelector('#event-publish-twitch').checked=source.desiredPublication?.twitch===true;
+  document.querySelector('#event-publish-google').checked=source.desiredPublication?.google===true;
+  const occurrence=Boolean(state.eventEdit?.occurrence?.seriesId);
+  document.querySelector('#event-scope-wrap').hidden=!occurrence;
+  document.querySelector('#event-scope').value=scope==='series'?'series':'occurrence';
+  document.querySelector('#event-recurrence').disabled=occurrence&&scope!=='series';
+  document.querySelector('#event-recurrence-until').disabled=occurrence&&scope!=='series';
+  document.querySelector('#event-dialog-title').textContent=source.id?'Modifier l’événement':'Nouvel événement';
+  document.querySelector('#event-delete').hidden=!source.id;
+  document.querySelector('#event-submit').textContent=source.id?'Enregistrer':'Ajouter';
+  renderEventProviderStatus(eventCanonical(source));
+}
+function renderEventProviderStatus(item){
+  const host=document.querySelector('#event-provider-status');if(!item?.id){host.hidden=true;host.replaceChildren();return}
+  const providers=['twitch','google'].flatMap(provider=>{const link=item.providers?.[provider];if(!link)return[];return[{provider,link}]});
+  const conflict=item.conflict;
+  if(!providers.length&&!conflict){host.hidden=true;host.replaceChildren();return}
+  host.hidden=false;host.innerHTML=`${providers.map(({provider,link})=>`<div class="provider-line"><b>${provider==='twitch'?'Twitch':'Google'}</b><span>${esc(link.status||'—')}${link.lastError?` · ${esc(link.lastError)}`:''}</span>${['error','conflict'].includes(link.status)?`<button type="button" class="secondary" data-provider-retry="${provider}">Réessayer</button>`:''}</div>`).join('')}${conflict?`<div class="provider-line warning"><b>Conflit ${esc(conflict.provider)}</b><span>Choisis la version à conserver.</span><button type="button" class="secondary" data-provider-conflict="${esc(conflict.provider)}" data-strategy="local">Garder StreamDashboard</button><button type="button" class="secondary" data-provider-conflict="${esc(conflict.provider)}" data-strategy="remote">Garder distant</button></div>`:''}`;
+  host.querySelectorAll('[data-provider-retry]').forEach(button=>button.onclick=async()=>{try{const id=eventCanonical(state.eventEdit?.scope==='series'?state.eventEdit?.series:state.eventEdit?.occurrence)?.id||item.id;const next=await request(`/api/v1/planning/${encodeURIComponent(id)}/retry/${encodeURIComponent(button.dataset.providerRetry)}`,{method:'POST',body:JSON.stringify({confirmRecurring:true})});applyDashboard(next);toast('Synchronisation relancée');document.querySelector('#event-dialog').close();render()}catch(error){toast(error.message,true)}});
+  host.querySelectorAll('[data-provider-conflict]').forEach(button=>button.onclick=async()=>{try{const id=item.id;const next=await request(`/api/v1/planning/${encodeURIComponent(id)}/conflict/${encodeURIComponent(button.dataset.providerConflict)}`,{method:'POST',body:JSON.stringify({strategy:button.dataset.strategy})});applyDashboard(next);toast('Conflit résolu');document.querySelector('#event-dialog').close();render()}catch(error){toast(error.message,true)}});
+}
+async function searchEventCategory(){
+  const input=document.querySelector('#event-twitch-category'),hidden=document.querySelector('#event-twitch-game-id'),host=document.querySelector('#event-twitch-results');const query=input.value.trim();
+  hidden.value='';if(query.length<2){host.replaceChildren();return}
+  try{const values=await request(`/api/v1/twitch/categories?q=${encodeURIComponent(query)}`);host.replaceChildren(...values.slice(0,8).map(value=>{const button=document.createElement('button');button.type='button';button.className='secondary';button.textContent=value.name;button.onclick=()=>{input.value=value.name;hidden.value=value.id;host.replaceChildren()};return button}))}catch(error){toast(error.message,true)}
+}
+async function openEventDialog(item=null,template=null){
+  if(state.runtime&&!state.companion)await loadCompanion().catch(()=>undefined);
+  populateEventTemplates(template?.id||'');
+  state.eventEdit=item?{occurrence:item,series:item.seriesId?eventCanonical(item):item,scope:item.seriesId?'occurrence':'item'}:null;
+  const seed=item||template||{category:'live',desiredPublication:{local:true,twitch:false,google:false}};
+  populateEventForm(seed,state.eventEdit?.scope||'item');
+  if(template){document.querySelector('#event-title').value=template.title||'';document.querySelector('#event-description').value=template.description||'';document.querySelector('#event-twitch-category').value=template.twitchCategoryName||'';document.querySelector('#event-twitch-game-id').value=template.twitchCategoryId||'';document.querySelector('#event-publish-twitch').checked=template.desiredPublication?.twitch===true;document.querySelector('#event-publish-google').checked=template.desiredPublication?.google===true}
+  document.querySelector('#event-dialog').showModal();
+}
+let eventCategoryTimer;
+document.querySelector('#event-twitch-category').oninput=()=>{clearTimeout(eventCategoryTimer);eventCategoryTimer=setTimeout(()=>void searchEventCategory(),300)};
+document.querySelector('#event-template').onchange=()=>{const template=(state.companion?.templates||[]).find(value=>value.id===document.querySelector('#event-template').value);if(!template)return;document.querySelector('#event-title').value=template.title||'';document.querySelector('#event-description').value=template.description||'';document.querySelector('#event-twitch-category').value=template.twitchCategoryName||'';document.querySelector('#event-twitch-game-id').value=template.twitchCategoryId||'';document.querySelector('#event-publish-twitch').checked=template.desiredPublication?.twitch===true;document.querySelector('#event-publish-google').checked=template.desiredPublication?.google===true};
+document.querySelector('#event-scope').onchange=()=>{if(!state.eventEdit)return;const scope=document.querySelector('#event-scope').value;state.eventEdit.scope=scope;populateEventForm(scope==='series'?state.eventEdit.series:state.eventEdit.occurrence,scope);document.querySelector('#event-scope').value=scope};
+function recurrenceFromEventForm(){
+  const value=document.querySelector('#event-recurrence').value;if(!value)return undefined;
+  const [frequency,interval]=value.split('-');const until=document.querySelector('#event-recurrence-until').value;
+  return{frequency,interval:Number(interval),timeZone:Intl.DateTimeFormat().resolvedOptions().timeZone||'Europe/Paris',...(until?{until:new Date(`${until}T23:59:59`).toISOString()}:{})};
+}
+document.querySelector('#event-form').onsubmit=async event=>{
+  event.preventDefault();const date=document.querySelector('#event-date').value,start=document.querySelector('#event-start').value,end=document.querySelector('#event-end').value;
+  const startDate=new Date(`${date}T${start}`),endDate=new Date(`${date}T${end}`);if(endDate<=startDate)endDate.setDate(endDate.getDate()+1);
+  const category=document.querySelector('#event-category').value,publishTwitch=document.querySelector('#event-publish-twitch').checked,publishGoogle=document.querySelector('#event-publish-google').checked,gameId=document.querySelector('#event-twitch-game-id').value,gameName=document.querySelector('#event-twitch-category').value.trim();
+  if(publishTwitch&&!gameId)return toast('Choisis une catégorie Twitch officielle.',true);
+  const item={title:document.querySelector('#event-title').value.trim(),description:document.querySelector('#event-description').value.trim(),startAtUtc:startDate.toISOString(),endAtUtc:endDate.toISOString(),category,twitchCategoryId:gameId||undefined,twitchCategoryName:gameName||undefined,desiredPublication:{local:true,twitch:publishTwitch,google:publishGoogle}};
+  if(!state.runtime){state.planning.unshift({raw:{...item,id:`demo-${Date.now()}`},day:'Démo',time:start,title:item.title,kind:category==='live'?'Twitch':category});document.querySelector('#event-dialog').close();render();return}
+  try{
+    if(!state.eventEdit){
+      item.recurrence=recurrenceFromEventForm();await request('/api/v1/planning',{method:'POST',body:JSON.stringify(item)});
+    }else if(state.eventEdit.scope==='occurrence'&&state.eventEdit.occurrence?.seriesId){
+      await request(`/api/v1/planning/${encodeURIComponent(state.eventEdit.occurrence.seriesId)}/occurrence`,{method:'PUT',body:JSON.stringify({occurrenceKey:state.eventEdit.occurrence.occurrenceKey,patch:item})});
+    }else{
+      const source=state.eventEdit.scope==='series'?state.eventEdit.series:state.eventEdit.occurrence;item.recurrence=recurrenceFromEventForm()||null;await request(`/api/v1/planning/${encodeURIComponent(source.id)}`,{method:'PUT',body:JSON.stringify({...item,confirmRecurring:true})});
+    }
+    document.querySelector('#event-dialog').close();state.eventEdit=null;event.currentTarget.reset();await refreshRuntime();toast('Événement enregistré');
+  }catch(error){toast(error.message,true)}
+};
+document.querySelector('#event-delete').onclick=async()=>{
+  if(!state.eventEdit||!confirm('Supprimer cet événement ?'))return;
+  try{
+    if(state.eventEdit.scope==='occurrence'&&state.eventEdit.occurrence?.seriesId)await request(`/api/v1/planning/${encodeURIComponent(state.eventEdit.occurrence.seriesId)}/occurrence`,{method:'DELETE',body:JSON.stringify({occurrenceKey:state.eventEdit.occurrence.occurrenceKey})});
+    else{const source=state.eventEdit.scope==='series'?state.eventEdit.series:state.eventEdit.occurrence;await request(`/api/v1/planning/${encodeURIComponent(source.id)}?confirmRecurring=true`,{method:'DELETE',body:'{}'})}
+    document.querySelector('#event-dialog').close();state.eventEdit=null;await refreshRuntime();toast('Événement supprimé');
+  }catch(error){toast(error.message,true)}
+};
 document.querySelectorAll('[data-close-dialog]').forEach(button=>button.onclick=()=>document.querySelector(`#${button.dataset.closeDialog}`).close());
 document.querySelectorAll('[data-view]').forEach(b=>b.onclick=()=>{state.view=b.dataset.view;render()});
 document.querySelector('#mode').onclick=async e=>{state.runtime=!state.runtime;e.currentTarget.textContent=state.runtime?'Runtime':'Démo';document.querySelector('.preview-mode span').textContent=state.runtime?'APERÇU · RUNTIME PC':'APERÇU · AUCUNE COMMANDE RÉELLE';runtimeUi(state.runtime,state.runtime?'Connexion au Runtime…':'Aucune commande réelle');if(state.runtime){await refreshRuntime();if(state.campItem==='Réglages')await loadStreamerPingRewards()}else{closeRuntimeSocket();state.scene=fixture.live.scene;state.sounds=structuredClone(fixture.sounds);state.audio=structuredClone(fixture.audio);state.live=structuredClone(fixture.live);state.planning=structuredClone(fixture.planning);state.dashboard=null;state.remotePairing=null;state.twitchRewards=null;syncStreamerPing();render()}toast(state.runtime?'Mode Runtime activé':'Mode Démo activé')};
