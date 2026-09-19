@@ -326,14 +326,65 @@ function renderSoundboard() {
   renderCommandSounds();
 }
 let automationState = [];
-async function loadAutomations() { if (companionMode !== CompanionMode.ONLINE_PC) { $('automation-list').replaceChildren(text('p', 'PC hors ligne · automatisations en lecture locale indisponibles.', 'muted')); return; } try { const result = await transport.automations(); automationState = result.items || []; renderAutomations(); } catch (error) { note(error.message); } }
-function automationPayload(value = {}) { const amount = Number($('automation-amount').value); return { name: $('automation-name').value.trim(), enabled: $('automation-enabled').checked, trigger: $('automation-trigger').value, conditions: Number.isSafeInteger(amount) && amount > 0 ? [{ path: 'amountMinor', operator: 'gte', value: amount }] : [], actions: [{ type: 'soundboard.play', payload: { soundId: $('automation-sound').value } }], cooldownMs: Math.round(Number($('automation-cooldown').value) * 1_000), ...value }; }
-function resetAutomationForm() { $('automation-id').value = ''; $('automation-name').value = ''; $('automation-enabled').checked = true; $('automation-trigger').value = 'support.received'; $('automation-amount').value = '500'; $('automation-cooldown').value = '30'; }
+let automationCapabilities = { triggers: ['support.received','test.support','twitch.reward.redeemed','streamer.ping.received','stream.started','stream.stopped','obs.state.changed','chat.message.received'], actions: ['soundboard.play','obs.scene','obs.media.restart','timer.add','timer.start','timer.pause'] };
+const automationTriggerLabels = { 'support.received':'Soutien reçu','test.support':'Test soutien','twitch.reward.redeemed':'Récompense Twitch','streamer.ping.received':'Streamer Ping','stream.started':'Début du live','stream.stopped':'Fin du live','obs.state.changed':'État OBS','chat.message.received':'Message chat' };
+const automationActionLabels = { 'soundboard.play':'Jouer un son','obs.scene':'Changer de scène','obs.media.restart':'Relancer un média OBS','timer.add':'Ajouter au timer','timer.start':'Démarrer le timer','timer.pause':'Mettre le timer en pause' };
+const defaultAutomationDraft = () => ({ id:'', name:'', enabled:true, trigger:'support.received', conditions:[], actions:[{ type:'soundboard.play', payload:{ soundId:soundboardState?.sounds?.[0]?.id || '' } }], cooldownMs:30000 });
+let automationDraft = defaultAutomationDraft();
+async function loadAutomations() {
+  if (companionMode !== CompanionMode.ONLINE_PC) { $('automation-list').replaceChildren(text('p', 'PC hors ligne · automatisations en lecture locale indisponibles.', 'muted')); return; }
+  try {
+    const [result, capabilities] = await Promise.all([transport.automations(), transport.automationCapabilities()]);
+    automationState = result.items || []; automationCapabilities = capabilities || automationCapabilities;
+    renderAutomations(); renderAutomationEditor();
+  } catch (error) { note(error.message); }
+}
+function automationConditionRow(condition = {}, index = 0) {
+  const row = document.createElement('div'); row.className = 'automation-editor-row'; row.dataset.conditionIndex = String(index);
+  const path = document.createElement('input'); path.placeholder = 'Chemin, ex. reward.id'; path.value = condition.path || ''; path.dataset.conditionPath = '';
+  const operator = document.createElement('select'); operator.dataset.conditionOperator = ''; operator.append(new Option('=', 'eq'), new Option('≥', 'gte')); operator.value = condition.operator || 'eq';
+  const value = document.createElement('input'); value.placeholder = 'Valeur'; value.value = String(condition.value ?? ''); value.dataset.conditionValue = '';
+  const remove = text('button','×','danger-button'); remove.type='button'; remove.onclick=()=>{ automationDraft=readAutomationEditor(); automationDraft.conditions.splice(index,1); renderAutomationEditor(); };
+  row.append(path,operator,value,remove); return row;
+}
+function automationActionParameters(action, row) {
+  const payload=action.payload||{}, type=action.type;
+  const addParam=(key,node)=>{node.dataset.actionParam=key;row.append(node);};
+  if(type==='soundboard.play'){const select=document.createElement('select'); for(const sound of soundboardState?.sounds||[])select.append(new Option(sound.name,sound.id));select.value=payload.soundId||'';addParam('soundId',select);const volume=document.createElement('input');volume.type='number';volume.min='0';volume.max='1.5';volume.step='.05';volume.value=String(payload.volume??1);addParam('volume',volume);}
+  else if(type==='obs.scene'){const select=document.createElement('select');for(const scene of state?.obs?.scenes||[])select.append(new Option(scene,scene));select.value=payload.scene||'';addParam('scene',select);}
+  else if(type==='obs.media.restart'){const select=document.createElement('select');for(const input of state?.obs?.mediaInputs||[])select.append(new Option(input,input));select.value=payload.input||'';addParam('input',select);}
+  else if(type==='timer.add'||type==='timer.start'){const seconds=document.createElement('input');seconds.type='number';seconds.min=type==='timer.start'?'1':'-86400';seconds.max='86400';seconds.value=String(payload.seconds??(type==='timer.start'?300:60));addParam('seconds',seconds);}
+}
+function automationActionRow(action = {}, index = 0) {
+  const row=document.createElement('div');row.className='automation-editor-row';row.dataset.actionIndex=String(index);
+  const type=document.createElement('select');type.dataset.actionType='';for(const value of automationCapabilities.actions||[])type.append(new Option(automationActionLabels[value]||value,value));type.value=action.type||'soundboard.play';
+  type.onchange=()=>{automationDraft=readAutomationEditor();automationDraft.actions[index]={type:type.value,payload:{}};renderAutomationEditor();};
+  row.append(type);automationActionParameters({type:type.value,payload:action.payload||{}},row);
+  const remove=text('button','×','danger-button');remove.type='button';remove.onclick=()=>{automationDraft=readAutomationEditor();automationDraft.actions.splice(index,1);if(!automationDraft.actions.length)automationDraft.actions.push({type:'soundboard.play',payload:{}});renderAutomationEditor();};row.append(remove);return row;
+}
+function readAutomationEditor() {
+  const conditions=[...$('automation-conditions').querySelectorAll('[data-condition-index]')].map(row=>{const operator=row.querySelector('[data-condition-operator]').value,raw=row.querySelector('[data-condition-value]').value;return{path:row.querySelector('[data-condition-path]').value.trim(),operator,value:operator==='gte'?Number(raw):raw==='true'?true:raw==='false'?false:raw};}).filter(value=>value.path);
+  const actions=[...$('automation-actions').querySelectorAll('[data-action-index]')].map(row=>{const type=row.querySelector('[data-action-type]').value,payload={};row.querySelectorAll('[data-action-param]').forEach(input=>{payload[input.dataset.actionParam]=['seconds','volume'].includes(input.dataset.actionParam)?Number(input.value):input.value;});return{type,payload};});
+  return { id:$('automation-id').value, name:$('automation-name').value.trim(), enabled:$('automation-enabled').checked, trigger:$('automation-trigger').value, conditions, actions, cooldownMs:Math.round(Number($('automation-cooldown').value||0)*1000) };
+}
+function setAutomationDraft(value) { automationDraft={...defaultAutomationDraft(),...structuredClone(value),conditions:structuredClone(value?.conditions||[]),actions:structuredClone(value?.actions?.length?value.actions:[{type:'soundboard.play',payload:{}}])};renderAutomationEditor(); }
+function resetAutomationForm() { setAutomationDraft(defaultAutomationDraft()); }
+function renderAutomationEditor() {
+  $('automation-id').value=automationDraft.id||'';$('automation-name').value=automationDraft.name||'';$('automation-enabled').checked=automationDraft.enabled!==false;$('automation-trigger').value=automationDraft.trigger||'support.received';$('automation-cooldown').value=String((automationDraft.cooldownMs||0)/1000);
+  $('automation-conditions').replaceChildren(...(automationDraft.conditions||[]).map(automationConditionRow));
+  if(!$('automation-conditions').children.length)$('automation-conditions').append(text('p','Aucune condition · chaque événement correspondant déclenche la règle.','muted'));
+  $('automation-actions').replaceChildren(...(automationDraft.actions||[]).map(automationActionRow));
+}
+function automationPayload(value = null) { const payload=readAutomationEditor(); return value ? {...payload,...value} : payload; }
 function renderAutomations() {
-  const sounds = soundboardState?.sounds || []; $('automation-sound').replaceChildren(...sounds.map(sound => new Option(sound.name, sound.id)));
-  const container = $('automation-list'); container.replaceChildren();
-  for (const automation of automationState) { const row = document.createElement('div'); row.className = 'automation-row'; row.append(text('b', `${automation.enabled ? '●' : '○'} ${automation.name}`), text('small', `${automation.trigger} · dernier résultat : ${automation.lastResult?.status || 'jamais'}`, automation.lastResult?.status === 'failed' ? 'danger' : 'muted')); const actions = document.createElement('div'); const edit = text('button', 'ÉDITER'); edit.type = 'button'; edit.onclick = () => { $('automation-id').value = automation.id; $('automation-name').value = automation.name; $('automation-enabled').checked = automation.enabled; $('automation-trigger').value = automation.trigger; $('automation-amount').value = String(automation.conditions.find(value => value.path === 'amountMinor')?.value ?? 0); $('automation-sound').value = automation.actions[0]?.payload?.soundId || ''; $('automation-cooldown').value = String(automation.cooldownMs / 1_000); }; const toggle = text('button', automation.enabled ? 'OFF' : 'ON'); toggle.type = 'button'; toggle.onclick = async () => { try { await transport.updateAutomation(automation.id, automationPayload({ name: automation.name, enabled: !automation.enabled, trigger: automation.trigger, conditions: automation.conditions, actions: automation.actions, cooldownMs: automation.cooldownMs })); await loadAutomations(); } catch (error) { note(error.message); } }; const remove = text('button', 'SUPPR.'); remove.type = 'button'; remove.onclick = async () => { if (!confirm(`Supprimer l’automatisation « ${automation.name} » ?`)) return; try { await transport.deleteAutomation(automation.id); await loadAutomations(); } catch (error) { note(error.message); } }; actions.append(edit, toggle, remove); row.append(actions); container.append(row); }
-  if (!container.children.length) container.append(text('p', 'Aucune automatisation.', 'muted'));
+  const container=$('automation-list');container.replaceChildren();
+  for(const automation of automationState){
+    const row=document.createElement('div');row.className='automation-row';row.append(text('b',`${automation.enabled?'●':'○'} ${automation.name}`),text('small',`${automationTriggerLabels[automation.trigger]||automation.trigger} · ${automation.actions.length} action${automation.actions.length>1?'s':''} · ${automation.lastResult?.status||'jamais'}`,automation.lastResult?.status==='failed'?'danger':'muted'));
+    const actions=document.createElement('div');const edit=text('button','ÉDITER');edit.type='button';edit.onclick=()=>setAutomationDraft(automation);
+    const toggle=text('button',automation.enabled?'OFF':'ON');toggle.type='button';toggle.onclick=async()=>{try{await transport.updateAutomation(automation.id,{name:automation.name,enabled:!automation.enabled,trigger:automation.trigger,conditions:automation.conditions,actions:automation.actions,cooldownMs:automation.cooldownMs});await loadAutomations();}catch(error){note(error.message);}};
+    const remove=text('button','SUPPR.');remove.type='button';remove.onclick=async()=>{if(!confirm(`Supprimer l’automatisation « ${automation.name} » ?`))return;try{await transport.deleteAutomation(automation.id);if(automationDraft.id===automation.id)resetAutomationForm();await loadAutomations();}catch(error){note(error.message);}};actions.append(edit,toggle,remove);row.append(actions);container.append(row);
+  }
+  if(!container.children.length)container.append(text('p','Aucune automatisation.','muted'));
 }
 let supportState = null;
 const money = (amountMinor, currency) => new Intl.NumberFormat('fr-FR', { style: 'currency', currency }).format(amountMinor / 100);
