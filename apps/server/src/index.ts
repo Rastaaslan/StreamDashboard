@@ -915,6 +915,7 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
     broadcast();
     return snapshot();
   };
+  const responseState = (req: express.Request, value: DashboardState) => isRemoteRequest(req) ? toRemoteDashboardState(value) : value;
   type CompanionCollectionKind = 'notes' | 'checklist' | 'templates';
   const companionKinds = new Set<CompanionCollectionKind>(['notes', 'checklist', 'templates']);
   const mutateCompanionCollection = async (kind: CompanionCollectionKind, action: 'upsert' | 'delete', id: string | undefined, patch: Record<string, unknown> = {}) => plan(async () => {
@@ -1723,7 +1724,7 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
       local.companion.eventRevisions[id] = (local.companion.eventRevisions[id] ?? 1) + 1;
       local.companion.serverRevision++;
       invalidatePreflight();
-      res.json(await changed());
+      res.json(responseState(req, await changed()));
     } catch (error) { next(error); }
   };
 
@@ -1734,7 +1735,7 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
       if (!['twitch', 'google'].includes(provider)) throw new Error('Provider invalide.');
       await plan(async () => planning().retry(id, provider as 'twitch' | 'google', { confirmRecurring: req.body?.confirmRecurring === true }));
       if (provider === 'google') googleError = null;
-      res.json(await changed());
+      res.json(responseState(req, await changed()));
     } catch (error) { next(error); }
   };
 
@@ -1747,7 +1748,7 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
       await plan(async () => planning().resolveConflict(id, provider as 'twitch' | 'google', strategy as 'local' | 'remote'));
       if (provider === 'google') googleError = null;
       invalidatePreflight();
-      res.json(await changed());
+      res.json(responseState(req, await changed()));
     } catch (error) { next(error); }
   };
 
@@ -1774,7 +1775,7 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
       local.companion.tombstones[id] = { id, revision: oldRevision + 1, updatedAt: new Date().toISOString() };
       delete local.companion.eventHistory[id]; local.companion.serverRevision++;
       invalidatePreflight();
-      res.json(await changed());
+      res.json(responseState(req, await changed()));
     } catch (error) { next(error); }
   };
 
@@ -1794,7 +1795,7 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
       }
       await plan(async () => planning().update(series.id, { title: series.title, description: series.description, startAtUtc: series.startAtUtc, endAtUtc: series.endAtUtc, allDay: series.allDay, category: series.category, kind: series.kind, twitchCategoryId: series.twitchCategoryId, twitchCategoryName: series.twitchCategoryName, recurrence }));
       local.companion.eventRevisions[series.id] = (local.companion.eventRevisions[series.id] ?? 1) + 1; local.companion.serverRevision++;
-      res.json(await changed());
+      res.json(responseState(req, await changed()));
     } catch (error) { next(error); }
   };
 
@@ -1896,7 +1897,7 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
       }
     } catch (error) { next(error); }
   });
-  app.post(['/api/twitch/disconnect', '/api/v1/twitch/disconnect'], async (_req, res, next) => {
+  app.post(['/api/twitch/disconnect', '/api/v1/twitch/disconnect'], async (req, res, next) => {
     try {
       await twitch.disconnect();
       local.twitch = { broadcasterId: '', userName: '', displayName: '' };
@@ -1904,7 +1905,7 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
       twitchEventSub.stop(); twitchEventSubStarted = false; chatMessages = []; chatStatus = 'DISCONNECTED'; twitchChatters = { items: [], total: 0, cursor: null };
       twitchLive = { isLive: false, title: null, category: null, categoryId: null, startedAt: null, viewerCount: null, thumbnailUrl: null };
       invalidatePreflight();
-      res.json(await changed());
+      res.json(responseState(req, await changed()));
     } catch (error) { next(error); }
   });
   app.post(['/api/twitch/sync', '/api/v1/twitch/sync'], async (_req, res, next) => {
@@ -1960,14 +1961,14 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
       res.json(await changed());
     } catch (error) { next(error); }
   });
-  app.post('/api/v1/google/disconnect', async (_req, res, next) => {
+  app.post('/api/v1/google/disconnect', async (req, res, next) => {
     try {
       googleOAuthAttempt = null;
       await google.disconnect();
       googleCalendars = [];
       googleError = null;
       local.google = { targetCalendarId: null, lastSyncedAt: null };
-      res.json(await changed());
+      res.json(responseState(req, await changed()));
     } catch (error) { next(error); }
   });
   app.post('/api/v1/google/sync', async (_req, res, next) => {
