@@ -299,13 +299,11 @@ function renderManagedConnections(hub) {
     if (provider.id === 'obs' && capabilities.has('test')) actions.append(connectionButton('Tester', 'obs-test'));
     if (provider.id === 'twitch') {
       if (status === 'CONNECTED') {
-        actions.append(connectionButton('Synchroniser', 'twitch-sync'));
         if (capabilities.has('disconnect')) actions.append(connectionButton('Déconnecter', 'twitch-disconnect', 'secondary danger-button'));
       } else if (capabilities.has('connect')) actions.append(connectionButton('Connecter', 'twitch-connect'));
     }
     if (provider.id === 'google') {
       if (status === 'CONNECTED') {
-        actions.append(connectionButton('Synchroniser', 'google-sync'));
         if (capabilities.has('disconnect')) actions.append(connectionButton('Déconnecter', 'google-disconnect', 'secondary danger-button'));
       } else {
         copy.append(text('small', 'La connexion initiale Google du PC doit être autorisée depuis le PC.', 'muted'));
@@ -339,12 +337,8 @@ $('hub-integrations').addEventListener('click', async event => {
       note(`Twitch · code ${result.userCode}`);
     } else if (action === 'twitch-disconnect') {
       render(await transport.twitchDisconnect()); note('Twitch déconnecté.');
-    } else if (action === 'twitch-sync') {
-      render(await transport.twitchSync()); note('Twitch synchronisé.');
     } else if (action === 'google-disconnect') {
       render(await transport.googleDisconnect()); note('Google Calendar déconnecté.');
-    } else if (action === 'google-sync') {
-      render(await transport.googleSync()); note('Google Calendar synchronisé.');
     }
     await loadProductProfile();
   } catch (error) { note(error.message); }
