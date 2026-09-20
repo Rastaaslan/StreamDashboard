@@ -1412,6 +1412,7 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
   const soundboardTargetScenes = () => [...new Set([
     local.settings.modeScenes?.intro, local.settings.modeScenes?.live, local.settings.chattingScene,
     local.settings.modeScenes?.pause, local.settings.modeScenes?.end,
+    ...productProfile.obs.scenes.map(item => item.scene),
   ].filter((value): value is string => typeof value === 'string' && value.trim().length > 0))];
   const resolveSoundLibraryFile = async (libraryId: string) => {
     if (!/^[A-Za-z0-9._-]{1,220}$/.test(libraryId) || path.basename(libraryId) !== libraryId) throw new Error('Fichier Soundboard invalide.');
