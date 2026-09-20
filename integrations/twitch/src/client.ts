@@ -298,7 +298,7 @@ export class TwitchClient {
   }
 
   async subscribeEventSub(sessionId: string) {
-    await this.subscribeChat(sessionId);
+    if (this.grantedScopes.has(CHAT_READ_SCOPE)) await this.subscribeChat(sessionId);
     if (this.grantedScopes.has(REDEMPTIONS_SCOPE)) await this.subscribeRewardRedemptions(sessionId);
   }
 
