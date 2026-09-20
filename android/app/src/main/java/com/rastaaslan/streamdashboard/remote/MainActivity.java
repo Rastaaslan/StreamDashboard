@@ -8,6 +8,7 @@ import android.Manifest;
 import android.content.Intent;
 import android.content.pm.PackageManager;
 import android.content.ClipData;
+import android.content.ClipboardManager;
 import android.graphics.Color;
 import android.net.Uri;
 import android.os.Bundle;
@@ -222,6 +223,13 @@ public class MainActivity extends Activity {
           catch (Exception ignored) { }
         });
       } catch (Exception ignored) { }
+    }
+    @JavascriptInterface public void copyText(String label, String value) {
+      if (value == null || value.length() > 500) return;
+      runOnUiThread(() -> {
+        ClipboardManager clipboard = (ClipboardManager)getSystemService(CLIPBOARD_SERVICE);
+        if (clipboard != null) clipboard.setPrimaryClip(ClipData.newPlainText(label == null ? "StreamDashboard" : label, value));
+      });
     }
     @JavascriptInterface public void notifyStreamerPing(String id, String title, String message) {
       if (BuildConfig.PREVIEW_MODE) return;
