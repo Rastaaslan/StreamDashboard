@@ -650,6 +650,22 @@ function renderPlanning(items) {
   for (const item of pagination.items) {
     const row = document.createElement('div');
     row.className = 'planning-row';
+    row.tabIndex = 0;
+    row.setAttribute('role', 'button');
+    row.setAttribute('aria-label', `Ouvrir ${item.title}`);
+    const openItem = () => {
+      if (item.editable === false) { note('Cet événement est en lecture seule.'); return; }
+      openMobileEditor(item, item.occurrenceKey ? 'occurrence' : item.seriesId ? 'series' : 'event');
+    };
+    row.addEventListener('click', event => {
+      if (event.target.closest('button,summary,details,input,select,textarea,a,label')) return;
+      openItem();
+    });
+    row.addEventListener('keydown', event => {
+      if (!['Enter',' '].includes(event.key)) return;
+      event.preventDefault();
+      openItem();
+    });
     const when = planningWhenParts(item);
     const whenBlock = document.createElement('div'); whenBlock.className = 'planning-when'; whenBlock.append(text('strong', when.date), text('small', when.time));
     row.append(whenBlock, text('b', item.title));
@@ -690,9 +706,27 @@ function renderPlanning(items) {
 }
 
 function openMobileEditor(item, scope) {
-  mobileEditing = { item, scope }; if ($('slot-dialog-title')) $('slot-dialog-title').textContent = scope === 'occurrence' ? 'Modifier cette occurrence' : 'Modifier l’événement'; const form = $('slot-form'); const start = new Date(item.startAtUtc); const end = new Date(item.endAtUtc);
-  form.elements.title.value = item.title; form.elements.date.value = start.toISOString().slice(0, 10); form.elements.start.value = start.toTimeString().slice(0, 5); form.elements.end.value = end.toTimeString().slice(0, 5); form.elements.category.value = item.category || 'live'; form.elements.description.value = item.description || '';
-  form.elements.recurrence.value = item.recurrence ? `${item.recurrence.frequency}-${item.recurrence.interval}` : ''; form.elements.recurrenceUntil.value = item.recurrence?.until?.slice(0, 10) || ''; form.elements.recurrence.disabled = scope === 'occurrence'; form.elements.recurrenceUntil.disabled = scope === 'occurrence'; selectPlanningPage('main'); $('slot-dialog').showModal();
+  mobileEditing = { item, scope };
+  if ($('slot-dialog-title')) $('slot-dialog-title').textContent = scope === 'occurrence' ? 'Modifier cette occurrence' : scope === 'series' ? 'Modifier toute la série' : 'Modifier l’événement';
+  const form = $('slot-form');
+  const start = new Date(item.startAtUtc), end = new Date(item.endAtUtc);
+  form.elements.title.value = item.title;
+  form.elements.date.value = start.toISOString().slice(0, 10);
+  form.elements.start.value = start.toTimeString().slice(0, 5);
+  form.elements.end.value = end.toTimeString().slice(0, 5);
+  form.elements.category.value = item.category || 'live';
+  form.elements.description.value = item.description || '';
+  form.elements.twitch.checked = item.desiredPublication?.twitch === true;
+  form.elements.google.checked = item.desiredPublication?.google === true;
+  $('slot-twitch-game-id').value = item.twitchCategoryId || '';
+  $('slot-twitch-category').value = item.twitchCategoryName || '';
+  form.elements.recurrence.value = item.recurrence ? `${item.recurrence.frequency}-${item.recurrence.interval}` : '';
+  form.elements.recurrenceUntil.value = item.recurrence?.until?.slice(0, 10) || '';
+  form.elements.recurrence.disabled = scope === 'occurrence';
+  form.elements.recurrenceUntil.disabled = scope === 'occurrence';
+  selectPlanningPage('main');
+  updatePlanningProviderReadiness();
+  $('slot-dialog').showModal();
 }
 async function removeMobileOccurrence(item) {
   if (!confirm(`Supprimer uniquement cette occurrence de « ${item.title} » ?`)) return;
@@ -1254,7 +1288,13 @@ $('slot-form').onsubmit = async event => {
       if (companionMode === CompanionMode.ONLINE_PC) render(await transport.updateOccurrence(mobileEditing.item.seriesId, mobileEditing.item.occurrenceKey, patch));
       else { const canonical = companion.snapshot().planning.find(item => item.id === mobileEditing.item.seriesId); const nextRecurrence = structuredClone(canonical.recurrence); nextRecurrence.exceptions ||= {}; nextRecurrence.exceptions[mobileEditing.item.occurrenceKey] = { patch }; companion.updateEvent(canonical.id, { recurrence: nextRecurrence }, canonical.revision); render(offlineState()); }
     } else if (mobileEditing?.scope === 'series') {
-      const seriesId = mobileEditing.item.seriesId; if (companionMode === CompanionMode.ONLINE_PC) render(await transport.updatePlanning(seriesId, value)); else { const canonical = companion.snapshot().planning.find(item => item.id === seriesId); companion.updateEvent(seriesId, value, canonical.revision); render(offlineState()); }
+      const seriesId = mobileEditing.item.seriesId || mobileEditing.item.id;
+      if (companionMode === CompanionMode.ONLINE_PC) render(await transport.updatePlanning(seriesId, value));
+      else { const canonical = companion.snapshot().planning.find(item => item.id === seriesId); companion.updateEvent(seriesId, value, canonical.revision); render(offlineState()); }
+    } else if (mobileEditing?.scope === 'event') {
+      const id = mobileEditing.item.id;
+      if (companionMode === CompanionMode.ONLINE_PC) render(await transport.updatePlanning(id, value));
+      else { const canonical = companion.snapshot().planning.find(item => item.id === id); companion.updateEvent(id, value, canonical.revision); render(offlineState()); }
     } else if (companionMode === CompanionMode.ONLINE_PC) { const next = await transport.createPlanning(value); companion.replaceServerSnapshot(next); render(next); }
     else { const created=companion.createEvent(value).item; render(offlineState()); if(companionMode===CompanionMode.ONLINE_STANDALONE) void syncEventProviders(created,'create'); }
     mobileEditing = null; event.currentTarget.elements.recurrence.disabled = false; event.currentTarget.elements.recurrenceUntil.disabled = false; $('slot-dialog').close(); event.currentTarget.reset(); note(companionMode === CompanionMode.ONLINE_PC ? 'Planning enregistré.' : 'Créneau enregistré · À synchroniser.');
