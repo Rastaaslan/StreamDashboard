@@ -414,6 +414,7 @@ async function loadModerationCapabilities() {
       const missing = Object.entries(moderationCapabilities.requiredScopes || {}).filter(([action]) => moderationCapabilities[action] === false).map(([, scope]) => scope);
       $('moderation-state').textContent = missing.length ? `Fonctions Twitch partielles · reconnecte Twitch pour : ${[...new Set(missing)].join(', ')}` : 'Autorisations Twitch à jour';
       applyTwitchActionCapabilities();
+      updatePlanningProviderReadiness();
       renderHubChat(state?.controlHub?.chat?.messages || []);
       return moderationCapabilities;
     } catch (error) {
@@ -584,6 +585,61 @@ async function loadClips(append = false) {
   try { const container = $('clip-list'); if (!append) container.replaceChildren(text('p', 'Chargement des clips…', 'muted')); const result = await transport.twitchClips(append ? clipCursor : ''); if (!append) container.replaceChildren(); for (const clip of result.items || []) { const card = document.createElement('article'); card.className = 'resource-card'; card.append(text('b', clip.title), text('small', `${clip.creatorName} · ${clip.viewCount} vues · ${clip.duration}s`, 'muted'), resourceLink(clip.url)); container.append(card); } clipCursor = result.cursor; $('more-clips').hidden = !clipCursor; if (!container.children.length) container.append(text('p', 'Aucun clip disponible.', 'empty-copy')); } catch (error) { note(error.message); }
 }
 
+const planningProviderNames = { twitch: 'Twitch', google: 'Google' };
+const planningProviderStatusNames = { synced: 'Synchronisé', pending: 'En attente', error: 'Erreur', 'not-published': 'Non publié', conflict: 'Conflit' };
+async function retryPlanningProvider(item, provider) {
+  if (companionMode !== CompanionMode.ONLINE_PC) return;
+  try {
+    const id = item.seriesId || item.id;
+    const next = await transport.retryPlanningProvider(id, provider);
+    render(next);
+    note(`${planningProviderNames[provider] || provider} · nouvelle tentative effectuée.`);
+  } catch (error) { note(error.message); }
+}
+function renderOnlinePlanningProviders(item, row) {
+  if (companionMode !== CompanionMode.ONLINE_PC || item.occurrenceKey) return;
+  for (const provider of ['twitch','google']) {
+    if (item.desiredPublication?.[provider] !== true) continue;
+    const link = item.providers?.[provider];
+    const status = link?.status || 'pending';
+    const block = document.createElement('div');
+    block.className = `planning-provider-state provider-${status}`;
+    const head = document.createElement('div');
+    head.append(text('b', planningProviderNames[provider]), text('span', planningProviderStatusNames[status] || status, 'muted'));
+    block.append(head);
+    if (link?.lastError) block.append(text('small', link.lastError, 'danger'));
+    if (status === 'error') {
+      const retry = text('button', 'Réessayer', 'secondary');
+      retry.type = 'button';
+      retry.onclick = () => void retryPlanningProvider(item, provider);
+      block.append(retry);
+    } else if (status === 'conflict' || item.conflict?.provider === provider) {
+      block.append(text('small', 'Conflit distant · résolution à effectuer sur le PC.', 'muted'));
+    }
+    row.append(block);
+  }
+  if (item.syncError) row.append(text('small', item.syncError, 'danger planning-sync-error'));
+}
+function updatePlanningProviderReadiness() {
+  const copy = $('planning-provider-readiness');
+  if (!copy) return;
+  if (companionMode === CompanionMode.ONLINE_STANDALONE) {
+    copy.textContent = 'Publication autonome selon les comptes connectés sur ce téléphone.';
+    return;
+  }
+  if (companionMode !== CompanionMode.ONLINE_PC || !state) {
+    copy.textContent = 'Connecte le PC pour vérifier la disponibilité des publications.';
+    return;
+  }
+  const issues = [];
+  if (!state.twitch?.connected) issues.push('Twitch non connecté');
+  else if (moderationCapabilities?.schedule === false) issues.push('Twitch à reconnecter pour le planning');
+  const google = state.google;
+  if (google?.configured === false) issues.push('Google non provisionné sur ce PC');
+  else if (!google?.connected) issues.push('Google à connecter sur le PC');
+  else if (!google?.targetCalendarId) issues.push('Calendrier Google cible à choisir sur le PC');
+  copy.textContent = issues.length ? issues.join(' · ') : 'Twitch et Google sont prêts.';
+}
 function renderPlanning(items) {
   const container = $('planning');
   container.replaceChildren();
@@ -616,6 +672,7 @@ function renderPlanning(items) {
       const remove = text('button', 'Supprimer'); remove.type = 'button'; remove.onclick = () => { if (!confirm(`Supprimer « ${item.title} » ?`)) return; const result = companion.deleteEvent(item.id, item.revision); if (result.conflict) note('Ce live a été modifié sur un autre appareil.'); else { render(offlineState()); void syncEventProviders(item, 'delete'); } };
       row.append(status, retryButton, edit, remove);
     }
+    renderOnlinePlanningProviders(item, row);
     container.append(row);
   }
   if (!pagination.total) container.append(text('p', 'Aucun événement.', 'muted'));
@@ -670,6 +727,7 @@ function render(next) {
   renderDeck(next.obs.mediaInputs);
   renderControlHub(next.controlHub);
   renderPlanning(next.planning);
+  updatePlanningProviderReadiness();
   const discordConfigured = companionMode === CompanionMode.ONLINE_PC && next.discord?.configured === true;
   $('discord-destination').textContent = companionMode !== CompanionMode.ONLINE_PC
     ? 'Connexion PC requise pour publier sur Discord.'
