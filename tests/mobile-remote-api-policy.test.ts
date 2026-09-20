@@ -17,7 +17,7 @@ describe('contrat API télécommande Mobile', () => {
     ['GET','/v1/twitch/chatters'],['POST','/v1/twitch/chat/messages'],['GET','/v1/twitch/moderation/capabilities'],
     ['DELETE','/v1/twitch/moderation/messages/msg_1'],['POST','/v1/twitch/moderation/bans'],['DELETE','/v1/twitch/moderation/bans/42'],
     ['POST','/v1/commands'],['POST','/v1/remote/ws-ticket'],
-    ['POST','/v1/planning'],['PUT','/v1/planning/event-1'],['DELETE','/v1/planning/event-1'],['PUT','/v1/planning/event-1/occurrence'],['DELETE','/v1/planning/event-1/occurrence'],
+    ['POST','/v1/planning'],['PUT','/v1/planning/event-1'],['DELETE','/v1/planning/event-1'],['PUT','/v1/planning/event-1/occurrence'],['DELETE','/v1/planning/event-1/occurrence'],['POST','/v1/planning/event-1/retry/twitch'],['POST','/v1/planning/event-1/retry/google'],
     ['GET','/v1/discord/status'],['GET','/v1/discord/guilds'],['GET','/v1/discord/guilds/123/channels'],['PUT','/v1/discord/settings'],['POST','/v1/discord/planning'],
     ['POST','/v1/streamer-pings/ping-1/ack'],['POST','/v1/streamer-pings/ack-all'],
     ['POST','/v1/companion/sync'],['POST','/v1/companion/conflicts/op-1/resolve'],
