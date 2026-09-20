@@ -9,6 +9,7 @@ const serverSource = readFileSync(new URL('../apps/server/src/index.ts', import.
 const templatesFeature = readFileSync(new URL('../apps/mobile/features/templates.js', import.meta.url), 'utf8');
 const remotePolicy = readFileSync(new URL('../apps/server/src/remote-policy.ts', import.meta.url), 'utf8');
 const androidActivity = readFileSync(new URL('../android/app/src/main/java/com/rastaaslan/streamdashboard/remote/MainActivity.java', import.meta.url), 'utf8');
+const androidProviderBridge = readFileSync(new URL('../android/app/src/main/java/com/rastaaslan/streamdashboard/remote/ProviderBridge.java', import.meta.url), 'utf8');
 const androidManifest = readFileSync(new URL('../android/app/src/main/AndroidManifest.xml', import.meta.url), 'utf8');
 const androidFilePaths = readFileSync(new URL('../android/app/src/main/res/xml/file_paths.xml', import.meta.url), 'utf8');
 
@@ -88,6 +89,18 @@ describe('Android remote runtime', () => {
     expect(androidActivity).toContain('import android.webkit.WebChromeClient;');
     expect(androidActivity).toContain('webView.setWebChromeClient(new WebChromeClient());');
   });
+  it('ouvre seulement les ressources Twitch HTTPS dans le navigateur système', () => {
+    expect(androidActivity).toContain('isAllowedExternalUri');
+    expect(androidActivity).toContain('host.equals("twitch.tv") || host.endsWith(".twitch.tv")');
+    expect(androidActivity).toContain('startActivity(new Intent(Intent.ACTION_VIEW, uri))');
+    expect(androidActivity).not.toContain('if (!"https".equalsIgnoreCase(uri.getScheme())) return;');
+  });
+
+  it('retourne le bon provider dans les statuts autonomes Android', () => {
+    expect(androidProviderBridge).toContain('provider.equals("google") ? "Google" : "Twitch"');
+    expect(androidProviderBridge).toContain('label + " autonome non configuré"');
+  });
+
   it.each([
     ['192.168.1.10', 'http://192.168.1.10:47832'],
     ['192.168.1.10:47832', 'http://192.168.1.10:47832'],
