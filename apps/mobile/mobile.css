@@ -60,3 +60,5 @@ dialog{width:min(540px,calc(100vw - 20px));max-height:88vh;border:1px solid var(
 #mic-config-dialog .dialog-actions,#scene-config-dialog .dialog-actions{margin-top:16px}
 
 .inline-config-action{width:auto;min-height:42px;margin:0 0 12px;padding:7px 11px}
+
+.compatibility-warning{margin:0 0 18px;padding:11px 12px;border:1px solid color-mix(in srgb,var(--danger) 45%,var(--border));border-radius:var(--radius);background:color-mix(in srgb,var(--danger) 8%,var(--surface));color:var(--text);font-size:.82rem;line-height:1.4}
