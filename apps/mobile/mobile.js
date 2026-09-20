@@ -154,9 +154,13 @@ const remaining = () => !state
 const dbValue = input => Number.isFinite(input.volumeDb)
   ? input.volumeDb
   : input.volume > 0 ? 20 * Math.log10(input.volume) : -100;
-const formatPlanningDate = item => item.allDay
-  ? `${new Date(item.startAtUtc).toLocaleDateString('fr-FR', { dateStyle: 'medium', timeZone: 'UTC' })} · toute la journée`
-  : new Date(item.startAtUtc).toLocaleString('fr-FR');
+const planningWhenParts = item => {
+  const value = new Date(item.startAtUtc);
+  return item.allDay
+    ? { date: value.toLocaleDateString('fr-FR', { day: '2-digit', month: 'short', timeZone: 'UTC' }), time: 'Toute la journée' }
+    : { date: value.toLocaleDateString('fr-FR', { day: '2-digit', month: 'short' }), time: value.toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' }) };
+};
+const formatPlanningDate = item => { const when = planningWhenParts(item); return `${when.date} · ${when.time}`; };
 
 function remoteButtons(disabled) {
   document.querySelectorAll('button[data-command],button[data-mode],button[data-chatting],button[data-media],button[data-mute],#stream')
@@ -343,7 +347,14 @@ const newCommandId = () => globalThis.crypto?.randomUUID?.() || `${deviceId || '
 async function loadSoundboard() {
   if (companionMode !== CompanionMode.ONLINE_PC) { soundboardState = null; $('sounds-pc-state').textContent = 'PC hors ligne'; $('soundboard-state').textContent = 'PC StreamDashboard hors ligne. Les sons redeviendront disponibles à la reconnexion.'; renderSoundboard(); return; }
   $('soundboard-state').textContent = 'Chargement des sons…';
-  try { soundboardState = await transport.soundboard(); $('sounds-pc-state').textContent = 'PC connecté'; $('soundboard-state').textContent = soundboardState.available ? (soundboardState.currentPlayback ? 'Lecture en cours…' : `${soundboardState.sounds.length} sons · ${soundboardState.supportsExplicitOutputSelection ? 'sorties audio sélectionnables' : 'sortie système par défaut'}`) : 'Le moteur audio du PC est indisponible.'; renderSoundboard(); }
+  try {
+    soundboardState = await transport.soundboard();
+    $('sounds-pc-state').textContent = 'PC connecté';
+    const count = soundboardState.sounds.length;
+    const output = soundboardState.outputs?.find(value => value.isDefault)?.name || soundboardState.outputs?.[0]?.name || 'Mix audio';
+    $('soundboard-state').textContent = soundboardState.available ? (soundboardState.currentPlayback ? 'Lecture en cours…' : `${count} ${count === 1 ? 'son' : 'sons'} · ${output}`) : 'Le moteur audio du PC est indisponible.';
+    renderSoundboard();
+  }
   catch (error) { $('soundboard-state').textContent = error.message; }
 }
 function renderSoundboard() {
@@ -460,14 +471,19 @@ function renderPlanning(items) {
   for (const item of pagination.items) {
     const row = document.createElement('div');
     row.className = 'planning-row';
-    row.append(text('b', item.title), text('span', formatPlanningDate(item)));
-    if (item.recurrence) row.append(text('small', recurrenceSummary(item), 'muted'));
+    const when = planningWhenParts(item);
+    const whenBlock = document.createElement('div'); whenBlock.className = 'planning-when'; whenBlock.append(text('strong', when.date), text('small', when.time));
+    row.append(whenBlock, text('b', item.title));
+    if (item.recurrence) row.append(text('small', recurrenceSummary(item), 'muted planning-recurrence'));
     if (item.occurrenceKey) {
+      const actions = document.createElement('details'); actions.className = 'planning-actions';
+      const summary = text('summary', 'Actions'); summary.setAttribute('aria-label', `Actions pour ${item.title}`);
       const editOne = text('button', 'Modifier cette occurrence'); editOne.type = 'button'; editOne.onclick = () => openMobileEditor(item, 'occurrence');
       const editSeries = text('button', 'Modifier toute la série'); editSeries.type = 'button'; editSeries.onclick = () => openMobileEditor(item, 'series');
-      const deleteOne = text('button', 'Supprimer cette occurrence'); deleteOne.type = 'button'; deleteOne.onclick = () => void removeMobileOccurrence(item);
-      const deleteSeries = text('button', 'Supprimer toute la série'); deleteSeries.type = 'button'; deleteSeries.onclick = () => void removeMobileSeries(item);
-      row.append(editOne, editSeries, deleteOne, deleteSeries);
+      const deleteOne = text('button', 'Supprimer cette occurrence', 'danger-button'); deleteOne.type = 'button'; deleteOne.onclick = () => void removeMobileOccurrence(item);
+      const deleteSeries = text('button', 'Supprimer toute la série', 'danger-button'); deleteSeries.type = 'button'; deleteSeries.onclick = () => void removeMobileSeries(item);
+      actions.append(summary, editOne, editSeries, deleteOne, deleteSeries);
+      row.append(actions);
     }
     if (companionMode !== CompanionMode.ONLINE_PC && !item.occurrenceKey) {
       const statuses = Object.entries(item.desiredPublication || {}).filter(([provider, enabled]) => enabled && ['twitch','google'].includes(provider)).map(([provider]) => `${provider === 'twitch' ? 'Twitch' : 'Google'} · ${(item.providerLinks?.[provider]?.status || 'pending').toUpperCase()}`).join('  ');
