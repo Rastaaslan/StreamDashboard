@@ -68,4 +68,15 @@ describe('Desktop V2 promu en production', () => {
     expect(renderer).toContain('publicObsMediaInputs');
     expect(renderer).toContain('const media=publicObsMediaInputs(obs.mediaInputs)');
   });
+  it('fait de Sons une bibliothèque autonome avec filtres et volume maître', () => {
+    expect(renderer).toContain('data-sound-category');
+    expect(renderer).toContain('data-sound-favorites');
+    expect(renderer).toContain('data-sound-master');
+    expect(renderer).toContain('streamdashboard.desktopSoundboardVolume');
+    expect(renderer).toContain("'/api/v1/soundboard/volume'");
+    expect(renderer).toContain('sound.volume??1)*state.soundMasterVolume');
+    expect(css).toContain('.soundboard-workspace');
+    expect(css).toContain('.soundboard-filters');
+    expect(css).toContain('.sound-master');
+  });
 });
