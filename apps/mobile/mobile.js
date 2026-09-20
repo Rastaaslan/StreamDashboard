@@ -57,6 +57,27 @@ let server = settingsStorage.getServer();
 let state = null;
 let productProfile = null;
 let connectionProjection = [];
+let runtimeCapabilities = null;
+const runtimeFeatureLabels = {
+  'mobile-profile-presentation': 'profil et apparence',
+  'mobile-live-control-config': 'configuration Micro / scènes',
+  'mobile-provider-actions': 'gestion des connexions',
+  'soundboard-live-volume': 'volume Soundboard en cours de lecture',
+};
+const runtimeSupports = feature => runtimeCapabilities?.features?.includes(feature) === true;
+function requireRuntimeFeature(feature) {
+  if (runtimeSupports(feature)) return true;
+  const label = runtimeFeatureLabels[feature] || feature;
+  note(`Mets à jour StreamDashboard sur le PC pour utiliser : ${label}.`);
+  return false;
+}
+function updateRuntimeCompatibility() {
+  const banner = $('runtime-compatibility');
+  if (!runtimeCapabilities) { banner.hidden = true; return; }
+  const missing = Object.keys(runtimeFeatureLabels).filter(feature => !runtimeSupports(feature));
+  banner.hidden = missing.length === 0;
+  if (missing.length) banner.textContent = `Runtime PC ${runtimeCapabilities.serverVersion || 'ancien'} · mise à jour recommandée pour : ${missing.map(feature => runtimeFeatureLabels[feature]).join(', ')}.`;
+}
 let profileLoaded = false;
 let lastProfileSyncAt = 0;
 let pairingInFlight = false;
@@ -296,20 +317,23 @@ function renderManagedConnections(hub) {
     if (provider.message) copy.append(text('small', provider.message, 'muted'));
     const actions = document.createElement('div'); actions.className = 'connection-actions';
     const capabilities = new Set(provider.capabilities || []);
-    if (provider.id === 'obs' && capabilities.has('test')) actions.append(connectionButton('Tester', 'obs-test'));
-    if (provider.id === 'twitch') {
+    const canManageConnections = runtimeSupports('mobile-provider-actions');
+    if (canManageConnections && provider.id === 'obs' && capabilities.has('test')) actions.append(connectionButton('Tester', 'obs-test'));
+    if (canManageConnections && provider.id === 'twitch') {
       if (status === 'CONNECTED') {
         if (capabilities.has('disconnect')) actions.append(connectionButton('Déconnecter', 'twitch-disconnect', 'secondary danger-button'));
       } else if (capabilities.has('connect')) actions.append(connectionButton('Connecter', 'twitch-connect'));
     }
     if (provider.id === 'google') {
-      if (status === 'CONNECTED') {
+      if (canManageConnections && status === 'CONNECTED') {
         if (capabilities.has('disconnect')) actions.append(connectionButton('Déconnecter', 'google-disconnect', 'secondary danger-button'));
-      } else {
+      } else if (status !== 'CONNECTED') {
         copy.append(text('small', 'La connexion initiale Google du PC doit être autorisée depuis le PC.', 'muted'));
       }
     }
-    if (!actions.children.length && ['discord','streamlabs','wizebot'].includes(provider.id) && provider.mode === 'custom') {
+    if (!canManageConnections && ['obs','twitch','google'].includes(provider.id)) {
+      copy.append(text('small', 'Mets à jour StreamDashboard sur le PC pour gérer cette connexion depuis le téléphone.', 'muted'));
+    } else if (!actions.children.length && ['discord','streamlabs','wizebot'].includes(provider.id) && provider.mode === 'custom') {
       copy.append(text('small', 'Configuration locale à effectuer sur le PC.', 'muted'));
     }
     row.append(dot, copy, actions);
@@ -326,6 +350,7 @@ async function openExternalUrl(url) {
 $('hub-integrations').addEventListener('click', async event => {
   const action = event.target.closest('[data-connection-action]')?.dataset.connectionAction;
   if (!action) return;
+  if (!requireRuntimeFeature('mobile-provider-actions')) return;
   if (companionMode !== CompanionMode.ONLINE_PC) { note('PC requis pour gérer cette connexion.'); return; }
   try {
     if (action === 'obs-test') {
@@ -685,6 +710,10 @@ async function getWsTicket() {
 async function fetchState() {
   // REST state is the authority for whether the PC command channel is reachable.
   // Companion sync must never gate remote-control availability.
+  if (!runtimeCapabilities) {
+    runtimeCapabilities = await transport.capabilities().catch(() => ({ protocolVersion: 0, serverVersion: '', features: [] }));
+    updateRuntimeCompatibility();
+  }
   const next = await transport.state();
   if (!profileLoaded) { profileLoaded = true; await loadProductProfile().catch(() => { profileLoaded = false; }); }
   if (!companion.snapshot().pending.length) companion.replaceServerSnapshot(next);
@@ -890,6 +919,7 @@ const availableAudioInputs = () => {
   return [...new Set([...active, ...all])];
 };
 function openPrimaryMicConfig() {
+  if (!requireRuntimeFeature('mobile-live-control-config')) return;
   if (companionMode !== CompanionMode.ONLINE_PC || !state?.obs?.connected) { note('Connecte OBS pour choisir le micro principal.'); return; }
   const select = $('primary-mic-select');
   const inputs = availableAudioInputs();
@@ -900,6 +930,7 @@ function openPrimaryMicConfig() {
   $('mic-config-dialog').showModal();
 }
 function openSceneConfig(mode) {
+  if (!requireRuntimeFeature('mobile-live-control-config')) return;
   if (companionMode !== CompanionMode.ONLINE_PC || !state?.obs?.connected) { note('Connecte OBS pour choisir une scène.'); return; }
   const scenes = state.obs.scenes || [];
   const select = $('scene-config-select');
@@ -927,6 +958,7 @@ async function handleModeAction(mode) {
 }
 $('mic-config-form').onsubmit = async event => {
   event.preventDefault();
+  if (!requireRuntimeFeature('mobile-live-control-config')) return;
   try {
     const next = await transport.updateLiveControl({ primaryMicInput: $('primary-mic-select').value });
     $('mic-config-dialog').close();
@@ -938,6 +970,7 @@ $('close-mic-config').onclick = () => $('mic-config-dialog').close();
 $('configure-primary-mic').onclick = openPrimaryMicConfig;
 $('scene-config-form').onsubmit = async event => {
   event.preventDefault();
+  if (!requireRuntimeFeature('mobile-live-control-config')) return;
   try {
     const mode = $('scene-config-mode').value;
     const next = await transport.updateLiveControl({ mode, scene: $('scene-config-select').value });
@@ -999,6 +1032,7 @@ for (const id of ['appearance-theme-input','appearance-preset-input','appearance
 $('profile-appearance-form').onsubmit = async event => {
   event.preventDefault();
   if (companionMode !== CompanionMode.ONLINE_PC || !productProfile) { note('Connecte le téléphone au PC pour enregistrer le profil partagé.'); return; }
+  if (!requireRuntimeFeature('mobile-profile-presentation')) return;
   try {
     const value = {
       profile: {
@@ -1025,10 +1059,18 @@ $('profile-appearance-form').onsubmit = async event => {
   } catch (error) { note(error.message); }
 };
 async function loadProductProfile() {
-  const [result, connections] = await Promise.all([transport.profile(), transport.connections()]); productProfile = result.profile; connectionProjection = connections.items || []; lastProfileSyncAt = Date.now();
-  uxPreferences = { ...uxPreferences, ...productProfile.appearance }; applyUxPreferences();
-  populateProfileAppearanceForm();
-  applyModuleProjection(productProfile.modules || {});
+  const [result, connections] = await Promise.all([
+    runtimeSupports('mobile-profile-presentation') ? transport.profile() : Promise.resolve(null),
+    runtimeSupports('mobile-provider-actions') ? transport.connections() : Promise.resolve({ items: [] }),
+  ]);
+  if (result?.profile) {
+    productProfile = result.profile;
+    uxPreferences = { ...uxPreferences, ...productProfile.appearance }; applyUxPreferences();
+    populateProfileAppearanceForm();
+    applyModuleProjection(productProfile.modules || {});
+  }
+  connectionProjection = connections.items || [];
+  lastProfileSyncAt = Date.now();
   renderManagedConnections(state?.controlHub);
 }
 function applyModuleProjection(enabled) {
@@ -1206,7 +1248,7 @@ $('sound-volume').oninput = event => {
   soundboardMasterVolume = Math.max(0, Math.min(1, Number(event.target.value) / 100));
   localStorage.setItem(soundboardVolumeKey, String(soundboardMasterVolume));
   clearTimeout(soundboardVolumeTimer);
-  if (companionMode !== CompanionMode.ONLINE_PC || soundboardState?.supportsVolume !== true || !soundboardState?.currentPlayback) return;
+  if (companionMode !== CompanionMode.ONLINE_PC || soundboardState?.supportsVolume !== true || !soundboardState?.currentPlayback || !runtimeSupports('soundboard-live-volume')) return;
   const current = soundboardState.sounds?.find(sound => sound.id === soundboardState.currentPlayback.soundId);
   const effectiveVolume = Math.max(0, Math.min(1, (current?.volume ?? 1) * soundboardMasterVolume));
   soundboardVolumeTimer = setTimeout(async () => {
