@@ -98,3 +98,17 @@ dialog{background:var(--panel)}
   .cockpit-secondary{grid-template-columns:1fr}
   .event{grid-template-columns:110px minmax(0,1fr) 18px}.event .kind{grid-column:2}.event i{grid-column:3;grid-row:1/span 2}
 }
+
+
+/* Desktop Soundboard workspace */
+.soundboard-hero{display:flex;align-items:center;justify-content:space-between;gap:28px;padding:8px 2px 20px;border-bottom:1px solid var(--line)}
+.soundboard-hero h2{margin:5px 0 3px;font-size:26px}.soundboard-hero p{margin:0;color:var(--muted)}
+.soundboard-playback{display:grid;grid-template-columns:auto auto;align-items:center;gap:2px 10px;min-width:220px}.soundboard-playback .label{grid-column:1/-1;margin:0}.soundboard-playback b{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.soundboard-playback button{grid-row:2;grid-column:2}
+.soundboard-library{display:grid;gap:18px}.soundboard-filters{display:grid;grid-template-columns:minmax(220px,1fr) 190px auto auto;gap:9px;align-items:center}
+.soundboard-filters input[type="search"],.soundboard-filters select{min-height:44px;border:1px solid var(--line);border-radius:var(--radius);background:var(--raised);color:var(--text);padding:0 12px}
+.favorite-filter{display:flex;align-items:center;gap:7px;white-space:nowrap;color:var(--muted)}.favorite-filter input{width:auto}
+.sound-master{display:grid;grid-template-columns:minmax(0,1fr) 50px;gap:12px;align-items:center;padding:10px 0;border-top:1px solid var(--line);border-bottom:1px solid var(--line)}
+.sound-master label{display:grid;grid-template-columns:110px minmax(0,1fr);align-items:center;gap:12px;color:var(--muted)}.sound-master input{width:100%}.sound-master b{text-align:right;font-variant-numeric:tabular-nums}
+.soundboard-advanced{border-top:1px solid var(--line);padding-top:12px}.soundboard-advanced summary{cursor:pointer;color:var(--muted);font-size:12px}.soundboard-advanced>div{display:flex;align-items:center;justify-content:space-between;gap:16px;padding-top:10px}.soundboard-advanced p{margin:0;max-width:650px}
+.empty-library{display:grid;place-items:center;min-height:160px;color:var(--muted)}.empty-library b{color:var(--text)}
+@media(max-width:1000px){.soundboard-filters{grid-template-columns:1fr 180px}.favorite-filter,.soundboard-filters .action{justify-self:start}.soundboard-hero{align-items:flex-start}}
