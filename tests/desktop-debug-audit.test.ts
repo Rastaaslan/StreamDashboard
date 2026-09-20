@@ -51,4 +51,9 @@ describe('audit debug Desktop', () => {
     expect(renderer).toContain("state.dashboard?.discord?.connected?'':'disabled'");
     expect(renderer).toContain("values.provider?.status==='CONNECTED'?'':'disabled'");
   });
+  it('affiche réellement le Runtime hors ligne quand son chargement échoue', () => {
+    expect(renderer).toContain("runtimeUi(false,'Runtime indisponible')");
+    expect(renderer).not.toContain("runtimeUi(true,'Runtime indisponible')");
+  });
+
 });
