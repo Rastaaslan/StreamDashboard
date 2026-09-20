@@ -49,3 +49,12 @@ dialog{width:min(540px,calc(100vw - 20px));max-height:88vh;border:1px solid var(
   #provider-accounts .companion-row{display:grid;grid-template-columns:1fr}
   #provider-accounts .companion-row>div{justify-content:flex-start}
 }
+
+
+/* Contextual configuration affordances */
+.configuration-needed{border-color:color-mix(in srgb,var(--accent) 38%,var(--border))!important}
+.configuration-needed small,.configuration-needed b{color:var(--accent)}
+.mode-list button>span{display:grid;gap:2px;min-width:0}
+.mode-list button small{display:block;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--muted);font-size:.75rem;font-weight:500}
+#mic-config-dialog select,#scene-config-dialog select{width:100%}
+#mic-config-dialog .dialog-actions,#scene-config-dialog .dialog-actions{margin-top:16px}
