@@ -20,6 +20,13 @@ describe('Twitch Live Control mobile', () => {
     expect(transport).toContain('confirmation: `DELETE ${id}`');
   });
 
+  it('désactive les actions Twitch quand les scopes optionnels sont absents', () => {
+    expect(mobile).toContain('ensureTwitchCapabilities');
+    for (const capability of ['chatWrite','chatters','createClip','deleteVideo','updateChannel','schedule']) expect(mobile).toContain(capability);
+    for (const scope of ['user:write:chat','moderator:read:chatters','clips:edit','channel:manage:videos','channel:manage:broadcast','channel:manage:schedule']) expect(mobile).toContain(scope);
+    expect(mobile).toContain('Fonctions Twitch partielles · reconnecte Twitch');
+  });
+
   it('conserve un message PC hors ligne explicite', () => {
     expect(mobile).toContain('PC hors ligne. Le message n’a pas été envoyé.');
     expect(mobile).toContain('PC hors ligne. Les VOD Twitch ne peuvent pas être chargées via le PC.');
