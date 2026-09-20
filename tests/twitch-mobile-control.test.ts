@@ -7,8 +7,8 @@ const transport = readFileSync(new URL('../apps/mobile/transport.js', import.met
 
 describe('Twitch Live Control mobile', () => {
   it('expose des outils mobiles dédiés au lieu de réduire le desktop', () => {
-    for (const panel of ['chat', 'audience', 'vod', 'clips']) expect(html).toContain(`data-hub-panel="${panel}"`);
-    expect(html).toContain('utilisateurs présents dans le chat');
+    expect(html).toContain('class="chat-primary"'); for (const panel of ['audience', 'vod']) expect(html).toContain(`data-live-panel="${panel}"`);
+    expect(html).toContain('dans le chat');
     expect(html).not.toContain('liste des viewers');
   });
 

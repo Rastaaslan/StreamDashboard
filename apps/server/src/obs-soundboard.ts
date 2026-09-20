@@ -57,6 +57,10 @@ export class ObsSoundboardPlayback implements AudioPlayback {
     await this.obs.stopMedia(this.inputName);
     this.finish?.();
   }
+  async setVolume(volume: number) {
+    if (!this.obs.state.connected) throw obsUnavailable();
+    await this.obs.volume(this.inputName, volume);
+  }
 }
 
 export class ObsSoundboardSetup {

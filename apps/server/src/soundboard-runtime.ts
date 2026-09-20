@@ -15,6 +15,7 @@ export interface AudioPlayback {
   outputs(): Promise<AudioOutput[]>;
   play(input: { file: string; volume: number; outputId: string; monitoringMode?: 'stream' | 'monitor' }): Promise<PlaybackSession>;
   stop(): Promise<void>;
+  setVolume?(volume: number): Promise<void>;
   readonly available: boolean;
   readonly supportedFormats: readonly string[];
   readonly supportsVolume: boolean;
@@ -156,6 +157,12 @@ export class SoundboardRuntime {
     this.currentPlayback = null;
     await this.audio.stop();
     if (playback) this.publish({ type: 'playback.stopped', payload: { ...playback, stoppedAt: new Date(this.now()).toISOString() } });
+  }
+
+  async setVolume(volume: number) {
+    if (!Number.isFinite(volume) || volume < 0 || volume > 1) throw runtimeError('SOUND_VOLUME_INVALID', 'Volume invalide.', false);
+    if (!this.audio.supportsVolume || typeof this.audio.setVolume !== 'function') throw runtimeError('AUDIO_VOLUME_UNSUPPORTED', 'Le backend audio actif ne permet pas de régler le volume en direct.', false);
+    await this.audio.setVolume(volume);
   }
 }
 

@@ -4,7 +4,6 @@ import { readFileSync } from 'node:fs';
 const desktopHtml = readFileSync(new URL('../apps/web/index.html', import.meta.url), 'utf8');
 const desktop = readFileSync(new URL('../apps/web/app.js', import.meta.url), 'utf8');
 const mobileHtml = readFileSync(new URL('../apps/mobile/index.html', import.meta.url), 'utf8');
-const mobile = readFileSync(new URL('../apps/mobile/mobile.js', import.meta.url), 'utf8');
 
 describe('efficient UI contract', () => {
   it('keeps desktop high-frequency actions one click away and contextual', () => {
@@ -26,16 +25,14 @@ describe('efficient UI contract', () => {
     expect(desktop).toContain("d: 'deck'");
   });
 
-  it('keeps mobile instant commands globally one tap away', () => {
-    expect(mobileHtml).toContain('id="command-trigger"');
-    expect(mobile).toContain("commandTrigger.className = 'command-trigger'");
-    expect(mobile).not.toContain('streamMenu?.append(commandTrigger)');
-    expect(mobile).toContain("$('command-trigger').onclick");
+  it('keeps mobile primary actions contextual instead of global', () => {
+    expect(mobileHtml).not.toContain('id="command-trigger"');
+    for (const action of ['live-stream', 'open-scenes-live', 'quick-mic', 'live-clip']) expect(mobileHtml).toContain(`id="${action}"`);
   });
 
   it('keeps secondary mobile features within two taps without restoring visual clutter', () => {
-    for (const target of ['sounds', 'prepare', 'settings']) expect(mobileHtml).toContain(`data-open-tab="${target}"`);
-    for (const critical of ['quick-clip', 'live-clip', 'open-scenes-live', 'quick-mic']) {
+    for (const target of ['prepare', 'settings']) expect(mobileHtml).toContain(`data-open-tab="${target}"`);
+    for (const critical of ['live-clip', 'open-scenes-live', 'quick-mic']) {
       expect(mobileHtml).toContain(`id="${critical}"`);
     }
   });

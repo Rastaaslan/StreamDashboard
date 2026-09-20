@@ -93,6 +93,15 @@ describe('SoundboardRuntime', () => {
     expect((await new SoundboardRuntime([sound(wav, .8)], noVolume).play(command())).errorCode).toBe('AUDIO_VOLUME_UNSUPPORTED');
   });
 
+  it('ajuste le volume en direct quand le backend le supporte', async () => {
+    const setVolume = vi.fn(async () => undefined);
+    const runtime = new SoundboardRuntime([], backend({ setVolume }));
+    await runtime.setVolume(.35);
+    expect(setVolume).toHaveBeenCalledWith(.35);
+    await expect(runtime.setVolume(2)).rejects.toMatchObject({ name: 'SOUND_VOLUME_INVALID' });
+    await expect(new SoundboardRuntime([], backend({ supportsVolume: false })).setVolume(.5)).rejects.toMatchObject({ name: 'AUDIO_VOLUME_UNSUPPORTED' });
+  });
+
   it('Stop publie playback.stopped et empêche un finished tardif', async () => {
     const file = await fixture();
     let finish!: () => void;
