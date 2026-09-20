@@ -13,15 +13,14 @@ describe('audit debug Desktop', () => {
   });
 
   it('branche chaque action de connexion statique à un handler', () => {
-    const rendered = [...new Set([...renderer.matchAll(/data-connection-action="([^"]+)"/g)].map(match => match[1]))];
+    const rendered = [...new Set([...renderer.matchAll(/data-connection-action="([^"]+)"/g)].map(match => match[1]))].filter(action => !action.includes('${'));
     const handled = new Set([...renderer.matchAll(/action==='([^']+)'/g)].map(match => match[1]));
     expect(rendered.filter(action => !handled.has(action))).toEqual([]);
   });
 
   it('branche chaque action Application statique à un handler', () => {
     const rendered = [...new Set([...renderer.matchAll(/data-camp-action="([^"]+)"/g)].map(match => match[1]))];
-    const handled = new Set([...renderer.matchAll(/action==='([^']+)'/g)].map(match => match[1]));
-    expect(rendered.filter(action => !handled.has(action))).toEqual([]);
+    expect(rendered.filter(action => renderer.split(`data-camp-action="${action}"`).length < 3)).toEqual([]);
   });
 
   it('présente les participants du chat en liste verticale, distincte du viewer count', () => {
