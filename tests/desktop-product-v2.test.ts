@@ -5,6 +5,7 @@ const main = readFileSync(new URL('../apps/desktop/src/main.ts', import.meta.url
 const html = readFileSync(new URL('../apps/web/preview/index.html', import.meta.url), 'utf8');
 const renderer = readFileSync(new URL('../apps/web/preview/preview.js', import.meta.url), 'utf8');
 const css = readFileSync(new URL('../apps/web/preview/preview.css', import.meta.url), 'utf8');
+const server = readFileSync(new URL('../apps/server/src/index.ts', import.meta.url), 'utf8');
 
 describe('Desktop V2 promu en production', () => {
   it('est bien le shell chargé par Electron et possède une CSP', () => {
@@ -72,6 +73,11 @@ describe('Desktop V2 promu en production', () => {
     expect(renderer).toContain("state.productProfile?.profile?.displayName||state.dashboard?.settings?.streamerName");
     expect(renderer).toContain("state.productProfile?.profile?.displayName||state.dashboard.settings?.streamerName");
     expect(renderer).not.toContain('Nom local<input name="streamerName"');
+  });
+
+  it('raccorde aussi la Soundboard OBS aux scènes personnalisées du profil', () => {
+    expect(server).toContain('...productProfile.obs.scenes.map(item => item.scene)');
+    expect(server).toContain('soundboardTargetScenes');
   });
 
   it('rend les scènes et actions rapides réellement configurables par profil', () => {
