@@ -1336,7 +1336,7 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
     }
     scheduleRemoteActivitySave();
     const allowed = (req.method === 'GET' && (['/v1/state', '/v1/profile', '/v1/connections', '/v1/control-hub', '/v1/events', '/v1/soundboard', '/v1/automations', '/v1/automations/capabilities', '/v1/supports', '/v1/twitch/categories', '/v1/twitch/videos', '/v1/twitch/clips', '/v1/twitch/chatters', '/v1/twitch/moderation/capabilities', '/v1/discord/status', '/v1/discord/guilds'].includes(pathName) || /^\/v1\/discord\/guilds\/\d+\/channels$/.test(pathName)))
-      || (req.method === 'PUT' && (pathName === '/v1/profile/presentation' || pathName === '/v1/discord/settings' || /^\/v1\/planning\/[^/]+(?:\/occurrence)?$/.test(pathName) || /^\/v1\/soundboard\/sounds\/[A-Za-z0-9._:-]+$/.test(pathName) || /^\/v1\/automations\/[A-Za-z0-9._:-]+$/.test(pathName)))
+      || (req.method === 'PUT' && (pathName === '/v1/profile/presentation' || pathName === '/v1/settings/live-control' || pathName === '/v1/discord/settings' || /^\/v1\/planning\/[^/]+(?:\/occurrence)?$/.test(pathName) || /^\/v1\/soundboard\/sounds\/[A-Za-z0-9._:-]+$/.test(pathName) || /^\/v1\/automations\/[A-Za-z0-9._:-]+$/.test(pathName)))
       || (req.method === 'DELETE' && (/^\/v1\/planning\/[^/]+(?:\/occurrence)?$/.test(pathName) || /^\/v1\/twitch\/videos\/\d+$/.test(pathName) || /^\/v1\/twitch\/moderation\/(?:messages|bans)\/[A-Za-z0-9_-]+$/.test(pathName) || /^\/v1\/automations\/[A-Za-z0-9._:-]+$/.test(pathName)))
       || (req.method === 'POST' && (['/v1/commands', '/v1/remote/ws-ticket', '/v1/obs/test', '/v1/soundboard/play', '/v1/soundboard/stop', '/v1/twitch/device', '/v1/twitch/disconnect', '/v1/twitch/sync', '/v1/google/disconnect', '/v1/google/sync', '/v1/automations', '/v1/automations/test', '/v1/twitch/channel', '/v1/twitch/chat/messages', '/v1/twitch/clips', '/v1/twitch/moderation/bans', '/v1/planning', '/v1/companion/sync', '/v1/discord/planning'].includes(pathName) || /^\/v1\/companion\/conflicts\/[^/]+\/resolve$/.test(pathName) || /^\/v1\/streamer-pings\/[^/]+\/ack$/.test(pathName) || pathName === '/v1/streamer-pings/ack-all'));
     if (!allowed) {
@@ -1378,6 +1378,36 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
       productProfile = validated;
       broadcast();
       res.json({ profile: productProfile, modules: resolveModules(productProfile) });
+    } catch (error) { next(error); }
+  });
+  app.put('/api/v1/settings/live-control', async (req, res, next) => {
+    try {
+      if (!object(req.body) || Object.keys(req.body).some(key => !['primaryMicInput','mode','scene'].includes(key))) throw new Error('Réglage Live invalide.');
+      const next = await configure(async () => {
+        if (req.body.primaryMicInput !== undefined) {
+          if (typeof req.body.primaryMicInput !== 'string' || req.body.primaryMicInput.length > 200) throw new Error('Micro principal OBS invalide.');
+          const input = req.body.primaryMicInput.trim();
+          if (input && obs.state.connected && !Object.prototype.hasOwnProperty.call(obs.state.inputs, input)) throw new Error('Choisissez une source audio OBS disponible.');
+          local.settings.primaryMicInput = input || undefined;
+        }
+        if (req.body.mode !== undefined || req.body.scene !== undefined) {
+          const mode = String(req.body.mode ?? '');
+          const scene = String(req.body.scene ?? '').trim();
+          if (!['intro','live','chatting','pause','end'].includes(mode) || scene.length > 200) throw new Error('Mapping de scène invalide.');
+          if (scene && obs.state.connected && !obs.state.scenes.includes(scene)) throw new Error('Choisissez une scène OBS disponible.');
+          if (mode === 'chatting') local.settings.chattingScene = scene || undefined;
+          else {
+            const mapped = { ...local.settings.modeScenes };
+            if (scene) mapped[mode as keyof typeof mapped] = scene;
+            else delete mapped[mode as keyof typeof mapped];
+            local.settings.modeScenes = mapped;
+          }
+        }
+        await save();
+        broadcast();
+        return snapshot();
+      });
+      res.json(isRemoteRequest(req) ? toRemoteDashboardState(next) : next);
     } catch (error) { next(error); }
   });
   app.put('/api/v1/profile', async (req, res, next) => { try { if (!requireLocal(req, res)) return; const nextProfile = validateProductProfile(req.body); await profileStore.save(nextProfile); productProfile = nextProfile; broadcast(); res.json({ profile: productProfile, modules: resolveModules(productProfile) }); } catch (error) { next(error); } });
