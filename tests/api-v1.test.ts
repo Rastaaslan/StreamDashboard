@@ -154,6 +154,24 @@ describe('API publique v1', () => {
     })).resolves.toBeUndefined();
   });
 
+  it('autorise les preflights Android pour les mutations Mobile authentifiées', async () => {
+    const app = await start();
+    const origin = 'http://appassets.androidplatform.net';
+    const response = await fetch(`${app.url}/api/v1/settings/live-control`, {
+      method: 'OPTIONS',
+      headers: {
+        Origin: origin,
+        'Access-Control-Request-Method': 'PUT',
+        'Access-Control-Request-Headers': 'authorization,content-type',
+      },
+    });
+    expect(response.status).toBe(204);
+    expect(response.headers.get('access-control-allow-origin')).toBe(origin);
+    expect(response.headers.get('access-control-allow-methods')).toContain('PUT');
+    expect(response.headers.get('access-control-allow-methods')).toContain('DELETE');
+    expect(response.headers.get('access-control-allow-headers')?.toLowerCase()).toContain('authorization');
+  });
+
   it('refuse une origine WebSocket étrangère ou un faux port local', async () => {
     const app = await start(); const wsUrl = app.url.replace('http:', 'ws:') + '/ws/v1';
     await wsRejected(wsUrl, 'https://evil.example');
