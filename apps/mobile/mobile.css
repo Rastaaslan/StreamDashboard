@@ -58,3 +58,5 @@ dialog{width:min(540px,calc(100vw - 20px));max-height:88vh;border:1px solid var(
 .mode-list button small{display:block;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--muted);font-size:.75rem;font-weight:500}
 #mic-config-dialog select,#scene-config-dialog select{width:100%}
 #mic-config-dialog .dialog-actions,#scene-config-dialog .dialog-actions{margin-top:16px}
+
+.inline-config-action{width:auto;min-height:42px;margin:0 0 12px;padding:7px 11px}
