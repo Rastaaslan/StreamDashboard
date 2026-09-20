@@ -2108,8 +2108,9 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
 
   const obsTest: express.RequestHandler = async (req, res, next) => {
     try {
-      const url = req.body.obsUrl !== undefined ? normalizeObsUrl(String(req.body.obsUrl).trim()) : local.settings.obsUrl;
-      const password = Object.prototype.hasOwnProperty.call(req.body, 'obsPassword') ? String(req.body.obsPassword ?? '') : currentObsPassword;
+      const remote = isRemoteRequest(req);
+      const url = remote ? local.settings.obsUrl : req.body.obsUrl !== undefined ? normalizeObsUrl(String(req.body.obsUrl).trim()) : local.settings.obsUrl;
+      const password = remote ? currentObsPassword : Object.prototype.hasOwnProperty.call(req.body, 'obsPassword') ? String(req.body.obsPassword ?? '') : currentObsPassword;
       res.json(await obs.test(url, password));
     } catch (error) { next(error); }
   };
