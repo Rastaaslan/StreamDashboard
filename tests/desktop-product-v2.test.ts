@@ -109,7 +109,7 @@ describe('Desktop V2 promu en production', () => {
     expect(renderer).toContain('streamdashboard.desktopSoundboardVolume');
     expect(renderer).toContain("'/api/v1/soundboard/volume'");
     expect(renderer).toContain('(sound?.volume??1)*state.soundMasterVolume');
-    expect(css).toContain('.soundboard-workspace');
+    expect(css).toContain('.soundboard-hero');
     expect(css).toContain('.soundboard-filters');
     expect(css).toContain('.sound-master');
   });
