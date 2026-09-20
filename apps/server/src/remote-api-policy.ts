@@ -38,6 +38,7 @@ export function isRemoteApiAllowed(method: string, pathName: string) {
   }
   if (verb === 'POST') {
     return POST_EXACT.has(pathName)
+      || /^\/v1\/planning\/[^/]+\/retry\/(?:twitch|google)$/.test(pathName)
       || /^\/v1\/companion\/conflicts\/[^/]+\/resolve$/.test(pathName)
       || /^\/v1\/streamer-pings\/[^/]+\/ack$/.test(pathName);
   }
