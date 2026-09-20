@@ -3,10 +3,24 @@ import { expandRecurringItems } from '/mobile/shared/recurrence.js';
 import { buildPlanningPng } from '/mobile/planning-export.js';
 
 const officialRuntime=new URLSearchParams(location.search).get('runtime')==='1';
+const demoProductProfile={
+  version:1,
+  profile:{displayName:'Streamer',channelName:'',language:'fr'},
+  modules:{obs:true,twitch:true,planning:true,notes:true,checklist:true,templates:true,automations:true,soundboard:true,streamerPings:true,googleCalendar:false,discord:false,streamlabs:false,wizebot:false},
+  appearance:{theme:'system',preset:'minimal',accent:'#2474e5',density:'normal',radius:'medium',textScale:'normal'},
+  mobile:{notifications:true,haptics:true},
+  providers:{twitch:{mode:'official'},google:{mode:'official'},discord:{mode:'official'},streamlabs:{mode:'custom'},wizebot:{mode:'custom'}},
+  onboarding:{completed:false},
+  obs:{scenes:[],quickActions:[]}
+};
+const demoModuleStates=[
+  ['obs','OBS'],['twitch','Twitch'],['planning','Planning'],['notes','Notes'],['checklist','Avant le live'],['templates','Modèles de live'],['automations','Automatisations'],['soundboard','Sons'],['streamerPings','Alertes viewers'],['googleCalendar','Google Calendar'],['discord','Discord'],['streamlabs','Streamlabs'],['wizebot','WizeBot']
+].map(([id,label])=>({id,label,enabled:demoProductProfile.modules[id],availability:'available',dependencies:[],capabilities:[],blockedBy:[]}));
 const state={
   view:'home',runtime:officialRuntime,scene:fixture.live.scene,timerRunning:true,seconds:36,
   sounds:structuredClone(fixture.sounds),audio:structuredClone(fixture.audio),live:structuredClone(fixture.live),
   planning:structuredClone(fixture.planning),dashboard:null,soundboard:null,obsSetup:null,search:'',
+  productProfile:structuredClone(demoProductProfile),moduleStates:structuredClone(demoModuleStates),connections:[],
   campItem:'Préparation',remotePairing:null,twitchRewards:null,companion:null,supports:null,automations:null,automationCapabilities:null,streamlabsOAuth:null,
   diagnostics:null,pingHistory:null,planningFilter:'upcoming',planningPeriod:'this-week',eventEdit:null,
   automationEditor:{id:'',name:'',trigger:'support.received',conditions:[],actions:[{type:'soundboard.play',payload:{}}],cooldownMs:30000,enabled:true},templateEditor:null
@@ -15,6 +29,37 @@ const view=document.querySelector('#view'),title=document.querySelector('#title'
 const commandLog=[]; window.__preview={state,commandLog};
 const esc=value=>String(value??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const uid=()=>globalThis.crypto?.randomUUID?.()||`cmd_${Date.now()}_${Math.random().toString(36).slice(2)}`;
+const viewModules={live:['obs'],sounds:['soundboard'],planning:['planning']};
+const campRequirements={
+  'Préparation':['checklist'],'Notes':['notes'],'Templates':['templates'],'Soutiens':['streamlabs'],
+  'Automatisations':['automations'],'Médias OBS':['obs'],'Connexions':[],'Personnalisation':[],'Réglages':[],'Diagnostics':[]
+};
+const moduleEnabled=id=>state.productProfile?.modules?.[id]!==false;
+const viewEnabled=id=>!viewModules[id]||viewModules[id].some(moduleEnabled);
+const campItemEnabled=item=>!campRequirements[item]||campRequirements[item].length===0||campRequirements[item].some(moduleEnabled);
+function applyProductAppearance(){
+  const appearance=state.productProfile?.appearance||demoProductProfile.appearance;
+  for(const key of ['theme','preset','density','radius'])document.documentElement.dataset[key]=appearance[key]||demoProductProfile.appearance[key];
+  document.documentElement.style.setProperty('--product-accent',appearance.accent||demoProductProfile.appearance.accent);
+  document.documentElement.style.setProperty('--product-font-scale',appearance.textScale==='large'?'1.15':appearance.textScale==='small'?'.9':'1');
+}
+function projectProductShell(){
+  document.querySelectorAll('[data-view]').forEach(button=>{
+    if(button.dataset.view==='camp'||button.dataset.view==='home')button.hidden=false;
+    else button.hidden=!viewEnabled(button.dataset.view);
+  });
+  if(!viewEnabled(state.view))state.view='home';
+  const context=state.productProfile?.profile?.channelName||state.productProfile?.profile?.displayName||'Desktop';
+  const brand=document.querySelector('#brand-context');if(brand)brand.textContent=state.runtime?context:`${context} · Aperçu`;
+  const preview=document.querySelector('#preview-mode');if(preview)preview.hidden=state.runtime;
+  document.title=state.runtime?'StreamDashboard':'StreamDashboard Desktop Preview';
+}
+function applyProduct(product,connections=[]){
+  if(product?.profile)state.productProfile=structuredClone(product.profile);
+  if(Array.isArray(product?.modules))state.moduleStates=structuredClone(product.modules);
+  state.connections=Array.isArray(connections)?structuredClone(connections):structuredClone(connections?.items||[]);
+  applyProductAppearance();projectProductShell();
+}
 function toast(message,bad=false){const el=document.querySelector('#toast');el.textContent=message;el.classList.toggle('bad',bad);el.classList.add('show');clearTimeout(toast.t);toast.t=setTimeout(()=>el.classList.remove('show'),1800)}
 async function request(path,options={}){const response=await fetch(path,{headers:{'content-type':'application/json',...(options.headers||{})},...options});const body=response.status===204?null:await response.json().catch(()=>({}));if(!response.ok)throw new Error(body?.error?.message||body?.message||body?.errorCode||body?.error||`HTTP ${response.status}`);return body}
 function record(type,payload={}){commandLog.push({type,payload})}
@@ -51,9 +96,14 @@ async function dashboardCommand(command,logType='dashboard.command',logPayload=c
 async function refreshRuntime(){
   if(!state.runtime)return;
   try{
-    const [dashboard,soundboard,setup]=await Promise.all([
-      request('/api/v1/state'),request('/api/v1/soundboard'),request('/api/v1/soundboard/obs/status').catch(()=>null)
+    const [dashboard,soundboard,setup,product,connections]=await Promise.all([
+      request('/api/v1/state'),
+      request('/api/v1/soundboard'),
+      request('/api/v1/soundboard/obs/status').catch(()=>null),
+      request('/api/v1/profile'),
+      request('/api/v1/connections')
     ]);
+    applyProduct(product,connections);
     applyDashboard(dashboard);state.soundboard=soundboard;state.sounds=soundboard.sounds||[];state.obsSetup=setup;
     runtimeUi(true,dashboard.obs?.connected?'OBS connecté':'Runtime connecté · OBS hors ligne');connectRuntimeSocket();render();
   }catch(error){runtimeUi(true,'Runtime indisponible');toast(error.message,true)}
