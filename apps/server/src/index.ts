@@ -753,7 +753,7 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
     remoteEnabled: local.settings.remoteEnabled === true,
     streamerPingRewardIds: [...(local.settings.streamerPingRewardIds ?? [])],
   });
-  const features = ['obs', 'twitch', 'preflight', 'timer', 'planning', 'planning-recurrence', 'discord-planning', 'checklist', 'deck', 'mobile-remote', 'unplanned-live-tracking', 'streamer-pings'];
+  const features = ['obs', 'twitch', 'preflight', 'timer', 'planning', 'planning-recurrence', 'discord-planning', 'checklist', 'deck', 'mobile-remote', 'unplanned-live-tracking', 'streamer-pings', 'mobile-profile-presentation', 'mobile-live-control-config', 'mobile-provider-actions', 'soundboard-live-volume'];
   if (googleClientId) features.push('google-calendar', 'unplanned-live-google-sync');
   const capabilities: ServerCapabilities = {
     protocolVersion,
