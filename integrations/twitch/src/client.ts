@@ -388,7 +388,6 @@ export class TwitchClient {
 
   async createSegment(item: CalendarItem) {
     if (!this.state.connected) throw new Error('Connectez Twitch avant de modifier son planning.');
-    this.requireScope(SCHEDULE_SCOPE);
     this.validateScheduleItem(item);
     const exact = (await this.scheduleSegments()).filter(segment => this.sameIdentity(item, segment) && this.sameCategory(item, segment));
     if (exact.length > 1) throw new Error('Plusieurs segments Twitch identiques existent déjà. Synchronisez puis choisissez explicitement celui à conserver.');
@@ -398,7 +397,6 @@ export class TwitchClient {
 
   async updateSegment(id: string, item: CalendarItem) {
     if (!this.state.connected) throw new Error('Connectez Twitch avant de modifier son planning.');
-    this.requireScope(SCHEDULE_SCOPE);
     const duration = this.validateScheduleItem(item);
     await this.api(`/schedule/segment?broadcaster_id=${encodeURIComponent(this.credentials.broadcasterId)}&id=${encodeURIComponent(id)}`, {
       method: 'PATCH',
@@ -414,7 +412,6 @@ export class TwitchClient {
 
   async deleteSegment(id: string) {
     if (!this.state.connected) throw new Error('Connectez Twitch avant de modifier son planning.');
-    this.requireScope(SCHEDULE_SCOPE);
     await this.api(`/schedule/segment?broadcaster_id=${encodeURIComponent(this.credentials.broadcasterId)}&id=${encodeURIComponent(id)}`, { method: 'DELETE' });
   }
 
@@ -426,7 +423,6 @@ export class TwitchClient {
 
   private async performSync(items: CalendarItem[]) {
     if (!this.state.connected) throw new Error('Connectez Twitch avant de synchroniser le planning.');
-    this.requireScope(SCHEDULE_SCOPE);
     const generation = this.generation;
     this.syncing = true;
     try {
