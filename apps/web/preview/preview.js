@@ -131,7 +131,13 @@ function formatDuration(seconds){const n=Math.max(0,Math.floor(Number(seconds)||
 const primaryScenes=['Intro','Gameplay','Chatting','Pause','Fin'];
 const OBS_SOUNDBOARD_INPUT='StreamDashboard • Soundboard';
 const publicObsMediaInputs=values=>(values||[]).filter(input=>input!==OBS_SOUNDBOARD_INPUT);
-const scenes=()=>`<div class="scene-grid">${primaryScenes.map(name=>`<button class="scene ${logicalScene(state.scene)===name?'active':''}" data-scene="${name}" aria-pressed="${logicalScene(state.scene)===name}">${name}</button>`).join('')}</div>`;
+const sceneEntries=()=>{
+  const custom=state.productProfile?.obs?.scenes||[];
+  if(custom.length)return custom.map(item=>({label:item.label,scene:item.scene,custom:true}));
+  return primaryScenes.map(label=>({label,scene:null,custom:false}));
+};
+const sceneActive=entry=>entry.custom?state.scene===entry.scene:logicalScene(state.scene)===entry.label;
+const scenes=()=>`<div class="scene-grid">${sceneEntries().map(entry=>`<button class="scene ${sceneActive(entry)?'active':''}" data-scene="${esc(entry.label)}" aria-pressed="${sceneActive(entry)}">${esc(entry.label)}</button>`).join('')}</div>`;
 function filteredSounds(){const query=state.search.trim().toLowerCase();return(state.sounds||[]).filter(sound=>(!query||String(sound.name).toLowerCase().includes(query)||String(sound.category).toLowerCase().includes(query))&&(!state.soundCategory||sound.category===state.soundCategory)&&(!state.soundFavorites||sound.favorite===true))}
 const sounds=(editable=false)=>Object.entries(filteredSounds().reduce((groups,s)=>{(groups[s.category||'Sans catégorie']??=[]).push(s);return groups},{})).map(([category,items])=>`<div class="group"><h3>${esc(category)}</h3><div class="pads">${items.map(s=>`<div class="sound-item"><button class="pad ${s.sourceAvailable===false?'missing':''}" data-sound="${esc(s.id)}" ${s.enabled===false?'disabled':''}>${esc(s.name)}${s.sourceAvailable===false?' · absent':''}</button>${editable?`<button class="edit-sound" data-edit-sound="${esc(s.id)}" aria-label="Modifier ${esc(s.name)}">•••</button>`:''}</div>`).join('')}</div></div>`).join('');
 function onboardingCard(){
@@ -170,6 +176,11 @@ function chatMessages(){
   if(!messages.length)return'<div class="empty-chat"><b>Le chat est calme</b><span>Les nouveaux messages apparaîtront ici.</span></div>';
   return messages.slice(-80).map(message=>`<article class="desktop-chat-row"><div><b>${esc(message.chatter?.displayName||'Viewer')}</b><time>${esc(new Date(message.receivedAt||Date.now()).toLocaleTimeString('fr-FR',{hour:'2-digit',minute:'2-digit'}))}</time></div><p>${esc(message.text||'')}</p></article>`).join('');
 }
+function liveQuickActions(){
+  const actions=state.productProfile?.obs?.quickActions||[];if(!actions.length)return'';
+  const labels={clip:'Créer un clip','timer+60':'+1 min','mute-main':'Micro principal'};
+  return `<div class="live-quick-actions">${actions.map(action=>`<button class="secondary" data-profile-quick-action="${esc(action)}">${esc(labels[action]||action)}</button>`).join('')}</div>`;
+}
 function live(){
   const audience=state.dashboard?.controlHub?.audience||{},chat=state.dashboard?.controlHub?.chat||{};
   const twitchPanel=moduleEnabled('twitch')?`<aside class="section live-chat-panel">
@@ -185,6 +196,7 @@ function live(){
         <div class="live-hero-actions">${moduleEnabled('twitch')?`<span><b>${esc(state.live.viewers??'—')}</b><small>viewers</small></span>`:''}<button class="${state.live.active?'critical':'action'}" data-live-toggle>${state.live.active?'Arrêter':'Démarrer'}</button></div>
       </section>
       ${twitchLiveSettingsContent()}
+      ${liveQuickActions()}
       <section class="section"><div class="section-head"><div><h2>Scènes</h2><span class="label">Active · ${esc(state.scene)}</span></div></div>${scenes()}</section>
       <div class="cockpit-secondary">
         <section class="section"><div class="section-head"><h2>Audio</h2><span class="label">Sources actives</span></div>${state.audio.map((a,i)=>`<div class="audio-row"><b>${esc(a.name)}${a.primary?' · principal':''}</b><button data-mute="${i}" aria-label="${a.muted?'Réactiver':'Couper'} ${esc(a.name)}">${a.muted?'OFF':'ON'}</button><div class="meter"><i style="width:${a.level}%"></i></div><span>${a.volume}%</span></div>`).join('')||'<p class="label">Aucune source audio active.</p>'}</section>
@@ -445,6 +457,15 @@ function personalizationContent(){
         ${modules.map(module=>`<label class="module-toggle"><input type="checkbox" data-profile-module="${esc(module.id)}" ${profile.modules?.[module.id]!==false?'checked':''}><span><b>${esc(module.label)}</b>${module.blockedBy?.length?`<small>Dépend de ${esc(module.blockedBy.join(', '))}</small>`:''}</span></label>`).join('')}
       </div>
 
+      <div class="section-head product-section-head"><div><b>Raccourcis OBS</b><span class="label">Scènes et actions visibles dans le cockpit Live</span></div></div>
+      <div id="profile-scenes" class="profile-scenes">
+        ${(profile.obs?.scenes||[]).map(item=>`<div class="profile-scene-row"><input data-profile-scene-label maxlength="40" value="${esc(item.label)}" placeholder="Libellé"><input data-profile-scene-name maxlength="120" value="${esc(item.scene)}" placeholder="Scène OBS"><button type="button" class="critical" data-profile-scene-remove aria-label="Supprimer cette scène">×</button></div>`).join('')}
+      </div>
+      <button type="button" class="secondary" data-profile-scene-add>+ Ajouter une scène rapide</button>
+      <div class="quick-action-grid">
+        ${[['clip','Créer un clip'],['timer+60','Ajouter 1 min au timer'],['mute-main','Couper / réactiver le micro principal']].map(([id,label])=>`<label><input type="checkbox" data-profile-quick="${id}" ${profile.obs?.quickActions?.includes(id)?'checked':''}> ${label}</label>`).join('')}
+      </div>
+
       <details class="more-details provider-modes">
         <summary>Modes de connexion avancés</summary>
         <p class="help">Le mode officiel vise les utilisateurs standards. Le mode personnalisé reste disponible pour les installations avancées.</p>
@@ -489,6 +510,16 @@ function bindProductPersonalization(){
     if(input.checked)for(const dependency of profileModuleDependencies[id]||[]){const required=form.querySelector(`[data-profile-module="${dependency}"]`);if(required)required.checked=true}
     else for(const [dependent,requirements] of Object.entries(profileModuleDependencies))if(requirements.includes(id)){const child=form.querySelector(`[data-profile-module="${dependent}"]`);if(child)child.checked=false}
   }));
+  const scenesHost=form.querySelector('#profile-scenes');
+  scenesHost?.addEventListener('click',event=>{const button=event.target.closest('[data-profile-scene-remove]');if(button)button.closest('.profile-scene-row')?.remove()});
+  form.querySelector('[data-profile-scene-add]')?.addEventListener('click',()=>{
+    if(!scenesHost||scenesHost.children.length>=20)return;
+    const row=document.createElement('div');row.className='profile-scene-row';
+    const label=document.createElement('input');label.dataset.profileSceneLabel='';label.maxLength=40;label.placeholder='Libellé';
+    const scene=document.createElement('input');scene.dataset.profileSceneName='';scene.maxLength=120;scene.placeholder='Scène OBS';
+    const remove=document.createElement('button');remove.type='button';remove.className='critical';remove.dataset.profileSceneRemove='';remove.setAttribute('aria-label','Supprimer cette scène');remove.textContent='×';
+    row.append(label,scene,remove);scenesHost.append(row);label.focus();
+  });
   form.querySelector('[data-profile-export]')?.addEventListener('click',()=>void exportProductProfileYaml().catch(error=>toast(error.message,true)));
   form.querySelector('[data-profile-import]')?.addEventListener('change',event=>void importProductProfileYaml(event.currentTarget.files?.[0]).catch(error=>toast(error.message,true)));
   form.addEventListener('submit',async event=>{
@@ -497,6 +528,10 @@ function bindProductPersonalization(){
     next.profile={displayName:String(data.get('displayName')||'').trim()||'Streamer',channelName:String(data.get('channelName')||'').trim(),language:String(data.get('language')||'fr').trim()||'fr'};
     const modules={...next.modules};form.querySelectorAll('[data-profile-module]').forEach(input=>{modules[input.dataset.profileModule]=input.checked});next.modules=normalizedProfileModules(modules);
     next.appearance={theme:String(data.get('theme')),preset:String(data.get('preset')),accent:String(data.get('accent')),density:String(data.get('density')),radius:String(data.get('radius')),textScale:String(data.get('textScale'))};
+    next.obs={
+      scenes:[...form.querySelectorAll('.profile-scene-row')].map(row=>({label:String(row.querySelector('[data-profile-scene-label]')?.value||'').trim(),scene:String(row.querySelector('[data-profile-scene-name]')?.value||'').trim()})).filter(item=>item.label&&item.scene).slice(0,20),
+      quickActions:[...form.querySelectorAll('[data-profile-quick]:checked')].map(input=>input.dataset.profileQuick)
+    };
     for(const provider of ['twitch','google','discord','streamlabs','wizebot'])next.providers[provider]={mode:String(data.get(`provider-${provider}`))};
     next.onboarding={completed:true};
     try{
@@ -654,7 +689,7 @@ function bindLiveTwitchSettings(){
   document.querySelector('#live-twitch-settings')?.addEventListener('submit',async event=>{event.preventDefault();const form=new FormData(event.currentTarget);try{const next=await request('/api/v1/twitch/channel',{method:'POST',body:JSON.stringify({title:String(form.get('title')||'').trim(),gameId:String(form.get('gameId')||''),gameName:String(form.get('gameName')||'').trim()})});applyDashboard(next);render();toast('Informations Twitch mises à jour')}catch(error){toast(error.message,true)}});
 }
 function bind(){
-  document.querySelectorAll('[data-scene]').forEach(b=>b.onclick=async()=>{const label=b.dataset.scene;record('obs.scene.set',{sceneName:label});if(!state.runtime){state.scene=label;toast(`Scène ${label}`);render();return}try{await dashboardCommand(sceneCommand(label));await refreshRuntime();toast(`Scène ${label}`)}catch(error){toast(error.message,true)}});
+  document.querySelectorAll('[data-scene]').forEach(b=>b.onclick=async()=>{const label=b.dataset.scene,entry=sceneEntries().find(value=>value.label===label),target=entry?.scene||label,command=entry?.custom?{type:'obs.scene',scene:entry.scene}:sceneCommand(label);record('obs.scene.set',{sceneName:target});if(!state.runtime){state.scene=target;toast(`Scène ${label}`);render();return}try{await dashboardCommand(command);await refreshRuntime();toast(`Scène ${label}`)}catch(error){toast(error.message,true)}});
   document.querySelectorAll('[data-sound]').forEach(b=>b.onclick=()=>void playSound(b.dataset.sound));
   document.querySelectorAll('[data-edit-sound]').forEach(b=>b.onclick=event=>{event.stopPropagation();openSoundDialog(b.dataset.editSound)});
   document.querySelectorAll('[data-mute]').forEach(b=>b.onclick=async()=>{const a=state.audio[+b.dataset.mute];if(!a)return;record('obs.audio.mute',{inputName:a.name,muted:!a.muted});if(!state.runtime){a.muted=!a.muted;render();return}try{await dashboardCommand({type:'obs.mute',input:a.name,muted:!a.muted});await refreshRuntime()}catch(error){toast(error.message,true)}});
@@ -671,6 +706,12 @@ function bind(){
   document.querySelectorAll('[data-go-view]').forEach(button=>button.addEventListener('click',()=>{state.view=button.dataset.goView;render()}));
   document.querySelectorAll('[data-open-camp]').forEach(button=>button.addEventListener('click',()=>{state.view='camp';state.campItem=button.dataset.openCamp;render();void loadCampData(state.campItem)}));
   document.querySelector('[data-live-clip]')?.addEventListener('click',async()=>{if(!state.runtime)return toast('Clip simulé');try{await request('/api/v1/twitch/clips',{method:'POST',body:'{}'});toast('Clip Twitch demandé')}catch(error){toast(error.message,true)}});
+  document.querySelectorAll('[data-profile-quick-action]').forEach(button=>button.addEventListener('click',async()=>{
+    const action=button.dataset.profileQuickAction;
+    if(action==='clip'){if(!state.runtime)return toast('Clip simulé');try{await request('/api/v1/twitch/clips',{method:'POST',body:'{}'});toast('Clip Twitch demandé')}catch(error){toast(error.message,true)};return}
+    if(action==='timer+60'){if(!state.runtime){state.seconds+=60;render();return}try{await dashboardCommand({type:'timer.add',seconds:60});await refreshRuntime()}catch(error){toast(error.message,true)};return}
+    if(action==='mute-main'){const input=state.audio.find(value=>value.primary)||state.audio[0];if(!input)return toast('Aucun micro principal actif.',true);if(!state.runtime){input.muted=!input.muted;render();return}try{await dashboardCommand({type:'obs.mute',input:input.name,muted:!input.muted});await refreshRuntime()}catch(error){toast(error.message,true)}}
+  }));
   document.querySelector('#desktop-chat-form')?.addEventListener('submit',async event=>{event.preventDefault();const input=event.currentTarget.elements.namedItem('message'),message=String(input?.value||'').trim();if(!message)return;if(!state.runtime)return toast('Message simulé');try{await request('/api/v1/twitch/chat/messages',{method:'POST',body:JSON.stringify({message})});input.value='';toast('Message envoyé')}catch(error){toast(error.message,true)}});
   document.querySelector('[data-add-event]')?.addEventListener('click',()=>openEventDialog());
   document.querySelector('[data-sound-search]')?.addEventListener('input',e=>{state.search=e.currentTarget.value;render()});
