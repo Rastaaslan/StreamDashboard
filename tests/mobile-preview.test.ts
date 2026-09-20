@@ -11,7 +11,7 @@ describe('Android preview', () => {
     const activity = readFileSync('android/app/src/main/java/com/rastaaslan/streamdashboard/remote/MainActivity.java', 'utf8');
     const preview = readFileSync('apps/mobile/preview.html', 'utf8');
     const previewScript = readFileSync('apps/mobile/preview.js', 'utf8');
-    expect(activity).toContain('"/mobile/preview.html" + (BuildConfig.PREVIEW_MODE ? "" : "?runtime=1")');
+    expect(activity).toContain('"/mobile/index.html"');
     for (const target of ['data-nav="home"', 'data-nav="live"', 'data-nav="sounds"', 'data-nav="planning"']) expect(preview).toContain(target);
     expect(preview).toContain('APERÇU • UI V2');
     expect(previewScript).toContain("get('runtime') === '1'");

@@ -63,6 +63,9 @@ import { WizeBotAdapter } from '../../../integrations/wizebot/src/adapter.js';
 import type { WizeBotTransport } from '../../../integrations/wizebot/src/adapter.js';
 import { WizeBotHttpTransport } from '../../../integrations/wizebot/src/http-transport.js';
 import { registerLiveControlRoutes } from './live-control-routes.js';
+import { ProductProfileStore } from './profile-store.js';
+import { validateProductProfile, type ProductProfile } from '../../../packages/core/src/product-profile.js';
+import { resolveModules } from '../../../packages/core/src/module-registry.js';
 import {
   AtomicJsonStore,
   DASHBOARD_SCHEMA_VERSION,
@@ -105,6 +108,7 @@ export interface DashboardServerOptions {
   host?: string;
   remoteEnabled?: boolean;
   dataDir?: string;
+  profileFile?: string;
   soundLibraryDir?: string;
   webDir?: string;
   mobileDir?: string;
@@ -326,6 +330,9 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
   const dataDir = path.resolve(options.dataDir ?? process.env.DATA_DIR ?? path.dirname(process.env.DATA_FILE ?? 'data/dashboard.json'));
   const dataFile = path.resolve(process.env.DATA_FILE ?? path.join(dataDir, 'dashboard.json'));
   const soundLibraryDir = path.resolve(options.soundLibraryDir ?? path.join(dataDir, 'soundboard'));
+  const profileFile = path.resolve(options.profileFile ?? path.join(dataDir, 'streamdashboard.yaml'));
+  const profileExisted = await stat(profileFile).then(() => true).catch(() => false);
+  const profileStore = new ProductProfileStore(profileFile);
   const store = new AtomicJsonStore<LocalData>(dataFile);
   const secrets = options.secretStore ?? new MemorySecretStore();
   const logger = options.logger ?? console;
@@ -478,6 +485,17 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
   }
   if (requiresSchemaMigration || migratedTokens || migratedObsPassword) await store.write(local);
 
+  let productProfile: ProductProfile = await profileStore.load();
+  if (!profileExisted) {
+    productProfile.profile.displayName = local.settings.streamerName;
+    productProfile.profile.channelName = local.twitch.displayName || local.twitch.userName;
+    productProfile.modules.googleCalendar = Boolean(options.googleClientId ?? process.env.GOOGLE_CLIENT_ID);
+    productProfile.modules.discord = Boolean(await secrets.getDiscordToken() || process.env.DISCORD_BOT_TOKEN);
+    productProfile.modules.streamlabs = Boolean(await secrets.getStreamlabsToken?.() || await secrets.getStreamlabsOAuth?.());
+    productProfile.modules.wizebot = Boolean(await secrets.getWizeBotConfiguration?.());
+    await profileStore.save(productProfile);
+  }
+
   let errors: Array<{ at: string; message: string }> = [];
   const logError = (error: unknown) => {
     const message = error instanceof Error ? error.message : String(error);
@@ -491,8 +509,9 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
   const discordClient = () => new DiscordClient(discordToken, options.discordFetch ?? fetch);
   const obs = new ObsClient(local.settings.obsUrl, currentObsPassword, { logger });
   const savedTokens = await secrets.getTwitchTokens() ?? {};
+  const twitchClientId = options.twitchClientId ?? process.env.TWITCH_CLIENT_ID ?? '';
   const twitch = new TwitchClient({
-    clientId: options.twitchClientId ?? process.env.TWITCH_CLIENT_ID ?? '',
+    clientId: twitchClientId,
     accessToken: savedTokens.accessToken ?? '',
     refreshToken: savedTokens.refreshToken ?? '',
     ...local.twitch,
@@ -1341,6 +1360,22 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
   });
   app.get('/api/v1/health', health);
   app.get('/api/v1/state', (req, res) => res.json(isRemoteRequest(req) ? toRemoteDashboardState(snapshot()) : snapshot()));
+  app.get('/api/v1/profile', (_req, res) => res.json({ profile: productProfile, modules: resolveModules(productProfile) }));
+  app.put('/api/v1/profile', async (req, res, next) => { try { if (!requireLocal(req, res)) return; const nextProfile = validateProductProfile(req.body); await profileStore.save(nextProfile); productProfile = nextProfile; broadcast(); res.json({ profile: productProfile, modules: resolveModules(productProfile) }); } catch (error) { next(error); } });
+  app.get('/api/v1/profile/export', async (req, res, next) => { try { if (!requireLocal(req, res)) return; res.attachment('streamdashboard.streamdashboard.yaml'); res.setHeader('Content-Type', 'application/yaml; charset=utf-8'); res.send(await profileStore.export()); } catch (error) { next(error); } });
+  app.post('/api/v1/profile/import', async (req, res, next) => { try { if (!requireLocal(req, res)) return; const content = String(req.body?.content ?? ''); if (!content || content.length > 256_000) throw new Error('Fichier profil invalide.'); const imported = await profileStore.import(content); productProfile = imported.profile; broadcast(); res.json({ profile: productProfile, modules: resolveModules(productProfile), backup: imported.backup ? path.basename(imported.backup) : null }); } catch (error) { next(error); } });
+  app.get('/api/v1/connections', async (_req, res) => {
+    const status = (connected: boolean, available = true, error?: string | null) => !available ? 'unavailable' : error ? 'error' : connected ? 'connected' : 'disconnected';
+    const integrationStatus = (value: string) => ({ CONNECTED: 'connected', CONNECTING: 'connecting', DISCONNECTED: 'disconnected', NOT_CONFIGURED: 'disconnected', NOT_SUPPORTED: 'unavailable', DEGRADED: 'error', ERROR: 'error' })[value] ?? 'unavailable';
+    res.json({ items: [
+      { id: 'obs', label: 'OBS', status: status(obs.state.connected), mode: 'custom', requiresReauth: false, capabilities: ['test','configure','scenes','audio'] },
+      { id: 'twitch', label: 'Twitch', status: status(twitch.state.connected, Boolean(twitchClientId), twitch.state.error), mode: productProfile.providers.twitch.mode, requiresReauth: false, capabilities: twitchClientId ? ['connect','disconnect','test','chat','audience','clips'] : [], ...(!twitchClientId ? { message: 'Configuration mainteneur requise' } : {}) },
+      { id: 'google', label: 'Google Calendar', status: status(google.connected, Boolean(googleClientId), googleError), mode: productProfile.providers.google.mode, requiresReauth: false, capabilities: googleClientId ? ['connect','disconnect','test','calendar'] : [], ...(!googleClientId ? { message: 'Configuration mainteneur requise' } : {}) },
+      { id: 'discord', label: 'Discord', status: productProfile.providers.discord.mode === 'official' ? 'unavailable' : status(discordPublic.connected, true, discordPublic.error), mode: productProfile.providers.discord.mode, requiresReauth: false, capabilities: productProfile.providers.discord.mode === 'custom' ? ['configure','disconnect','test','publish'] : [], ...(productProfile.providers.discord.mode === 'official' ? { message: 'Service officiel non encore déployé' } : {}) },
+      { id: 'streamlabs', label: 'Streamlabs', status: productProfile.providers.streamlabs.mode === 'custom' ? integrationStatus(streamlabs.state().status) : 'unavailable', mode: productProfile.providers.streamlabs.mode, requiresReauth: false, capabilities: productProfile.providers.streamlabs.mode === 'custom' ? ['configure','disconnect','test','donations'] : [], ...(productProfile.providers.streamlabs.mode !== 'custom' ? { message: 'Mode officiel non implémenté' } : {}) },
+      { id: 'wizebot', label: 'WizeBot', status: productProfile.providers.wizebot.mode === 'custom' ? integrationStatus(wizebot.state().status) : 'unavailable', mode: productProfile.providers.wizebot.mode, requiresReauth: false, capabilities: productProfile.providers.wizebot.mode === 'custom' ? ['configure','disconnect','test','events'] : [], ...(productProfile.providers.wizebot.mode !== 'custom' ? { message: 'Mode officiel non implémenté' } : {}) },
+    ] });
+  });
   app.get('/api/v1/control-hub', (_req, res) => res.json(snapshot().controlHub));
   app.get('/api/v1/twitch/rewards', async (_req, res, next) => { try { res.json({ items: await twitch.customRewards(), available: twitch.state.redemptionsAvailable === true }); } catch (error) { next(error); } });
   app.post('/api/v1/streamer-pings/:id/ack', async (req, res, next) => {

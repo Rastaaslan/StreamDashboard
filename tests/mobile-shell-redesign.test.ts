@@ -13,9 +13,9 @@ describe('Android Mobile 2.3 focus surface', () => {
     expect(missing).toEqual([]);
   });
 
-  it('expose quatre destinations stables et regroupe le secondaire sous Plus', () => {
-    const tabs = [...html.matchAll(/<button data-tab="([^"]+)"/g)].map(match => match[1]);
-    expect(tabs).toEqual(['home', 'live', 'planning', 'more']);
+  it('expose cinq destinations stables et regroupe le secondaire sous Plus', () => {
+    const tabs = [...html.matchAll(/<button\b[^>]*\bdata-tab="([^"]+)"[^>]*>/g)].map(match => match[1]);
+    expect(tabs).toEqual(['home', 'live', 'sounds', 'planning', 'more']);
     expect(html).toContain('id="menu-trigger"');
     expect(html).toContain('data-view="more"');
     expect(html).toContain('id="command-trigger"');
@@ -47,13 +47,13 @@ describe('Android Mobile 2.3 focus surface', () => {
   });
 
   it('remplace l’ancien CSS par un design system accessible', () => {
-    for (const token of ['--surface-1:', '--surface-2:', '--surface-3:', '--text-secondary:', '--violet:', '--ember:', '--lavender:', '--warning:', '--line:', '--space-8:', '--motion-normal:']) expect(css).toContain(token);
+    for (const token of ['--background:', '--surface:', '--text:', '--muted:', '--border:', '--accent:', '--radius:', '--spacing:', '--font-scale:']) expect(css).toContain(token);
     expect(css).toContain('min-height:44px');
     expect(css).toContain(':focus-visible');
     expect(css).toContain('prefers-reduced-motion:reduce');
     expect(html).not.toContain('mobile-shell.css');
     expect(css).toContain('gap:var(--space-4);row-gap:var(--space-4)');
-    expect(css).toContain('grid-template-columns:repeat(4,minmax(0,1fr))');
+    expect(css).toContain('grid-template-columns:repeat(5,minmax(0,1fr))');
     expect(css).toContain('@keyframes campfire-live');
   });
 
@@ -66,24 +66,25 @@ describe('Android Mobile 2.3 focus surface', () => {
   });
 
   it('garde les fonctions secondaires accessibles sans dupliquer l’appairage', () => {
-    for (const feature of ['Checklist', 'Notes', 'Templates', 'Automatisations', 'Soutiens', 'VOD &amp; Clips', 'Réglages', 'Diagnostics']) expect(html).toContain(feature);
+    for (const feature of ['Checklist', 'Notes', 'Modèles de live', 'Automatisations', 'Dons et soutiens', 'Vidéos et clips', 'Réglages', 'État technique']) expect(html).toContain(feature);
     expect(html).not.toContain('data-settings-target="pairing"');
     expect(mobile).toContain('openCanonicalPairing');
     expect(html).toContain('id="scene-sheet"');
     expect(html).toContain('id="direct-mic-state"');
   });
 
-  it('propose des préférences locales de focus, mouvement et densité', () => {
-    for (const id of ['focus-toggle', 'ui-preferences', 'focus-mode', 'reduce-motion', 'ui-density']) expect(html).toContain(`id="${id}"`);
+  it('sépare les préférences locales de l’apparence canonique en lecture seule', () => {
+    for (const id of ['focus-toggle', 'ui-preferences', 'focus-mode', 'reduce-motion', 'appearance-theme', 'appearance-details']) expect(html).toContain(`id="${id}"`);
     expect(mobile).toContain('streamdashboard.mobileUx');
     expect(html).toMatch(/id="ui-preferences"[\s\S]*id="focus-mode"[\s\S]*id="android-options"/);
     expect(mobile).toContain("$('focus-toggle').onclick");
     expect(css).toContain('.focus-mode .focus-secondary');
     expect(css).toContain('.reduce-motion *');
-    expect(css).toContain('body[data-density="comfort"]');
+    expect(html).toContain('Apparence gérée depuis StreamDashboard sur le PC.');
+    expect(mobile).toContain('JSON.stringify({ focus: uxPreferences.focus, reducedMotion: uxPreferences.reducedMotion })');
   });
 
-  it('sépare Checklist, Notes et Templates en intentions exclusives', () => {
+  it('sépare Avant le live, Notes et Modèles de live en intentions exclusives', () => {
     for (const tab of ['checklist', 'notes', 'templates']) {
       expect(html).toContain(`data-prepare-tab="${tab}"`);
       expect(html).toContain(`data-prepare-panel="${tab}"`);
@@ -110,5 +111,18 @@ describe('Android Mobile 2.3 focus surface', () => {
     expect(devFixtureName({ hostname: 'stream.example', search: '?fixture=live' } as Location)).toBeNull();
     expect(createMobileFixture('live').state.controlHub.audience.viewerCount).toBe(17);
     expect(createMobileFixture('offline').state.obs.streaming).toBe(false);
+  });
+
+  it('valide le nouveau vocabulaire produit sans réintroduire les anciens termes', () => {
+    for (const label of ['+ Ajouter', 'Modèles de live', 'Avant le live', 'Accueil', 'Live', 'Sons', 'Planning', 'Plus']) expect(html).toContain(label);
+    expect(html).not.toContain('+ ÉVÉNEMENT');
+  });
+
+  it('garde les capacités Live dans le shell canonique et applique la projection modules/apparence', () => {
+    for (const id of ['live-duration','live-viewers','live-chatters','hub-chat','chat-form','audience-list','live-clip','open-scenes-live','quick-mic','timer','twitch-title','twitch-category','audio','deck','support-history','automation-list']) expect(html).toContain(`id="${id}"`);
+    expect(mobile).toContain('loadProductProfile');
+    expect(mobile).toContain("document.querySelectorAll('[data-module]')");
+    expect(mobile).toContain("window.StreamDashboardHandleBack");
+    expect(mobile).not.toContain("location.href = './preview.html?runtime=1'");
   });
 });

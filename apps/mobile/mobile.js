@@ -52,6 +52,10 @@ $('menu-trigger')?.addEventListener('click', event => {
 let credential = '';
 let server = settingsStorage.getServer();
 let state = null;
+let productProfile = null;
+let connectionProjection = [];
+let profileLoaded = false;
+let lastProfileSyncAt = 0;
 let pairingInFlight = false;
 let ws = null;
 let retry = 500;
@@ -173,7 +177,7 @@ function setConnectionMode(mode) {
 
 function openCanonicalPairing(pendingLink = '') {
   if (pendingLink) localStorage.setItem('streamdashboard.pendingPairing', pendingLink);
-  location.href = './preview.html?runtime=1';
+  showPairing(true);
 }
 
 function showPairing(show) {
@@ -275,9 +279,10 @@ function renderControlHub(hub) {
   $('home-live-status').textContent = isLive ? `${degraded ? '!' : '●'} En direct` : companionMode === CompanionMode.ONLINE_PC ? '○ Prêt' : '○ Hors ligne'; $('home-live-status').className = `live-line ${isLive ? degraded ? 'danger' : 'ok' : ''}`; $('home-duration').textContent = duration;
   $('direct-scene').textContent = state?.obs?.scene || 'Aucune scène'; $('direct-twitch-state').textContent = humanProviderStatus(hub?.integrations?.twitch?.status || 'DISCONNECTED');
   $('live-workspace-status').textContent = $('home-live-status').textContent; $('live-workspace-status').className = $('home-live-status').className; $('live-duration').textContent = duration; $('live-viewers').textContent = $('hub-viewers').textContent; $('live-chatters').textContent = $('hub-chatters').textContent; $('live-scene').textContent = state?.obs?.scene || '—';
-  const labels = { runtime: 'PC', obs: 'OBS', twitch: 'Twitch', discord: 'Discord', streamlabs: 'Streamlabs', wizebot: 'WizeBot' };
-  for (const [key, label] of Object.entries(labels)) {
-    const status = hub?.integrations?.[key]?.status || 'DISCONNECTED';
+  const projected = connectionProjection.length ? connectionProjection : Object.entries({ obs: 'OBS', twitch: 'Twitch', discord: 'Discord', streamlabs: 'Streamlabs', wizebot: 'WizeBot' }).map(([id, label]) => ({ id, label, status: (hub?.integrations?.[id]?.status || 'DISCONNECTED').toLowerCase() }));
+  for (const provider of projected) {
+    if (productProfile?.modules?.[provider.id === 'google' ? 'googleCalendar' : provider.id] === false) continue;
+    const status = String(provider.status || 'unavailable').toUpperCase().replace('REAUTH-REQUIRED', 'REAUTH_REQUIRED'); const label = provider.label;
     const row = document.createElement('div');
     row.className = 'integration-card';
     const dot = text('i', '', `provider-dot status-${status.toLowerCase()}`);
@@ -296,7 +301,7 @@ function renderControlHub(hub) {
 }
 
 const formatClock = seconds => { const value = Math.max(0, Math.floor(seconds)); return `${String(Math.floor(value / 3600)).padStart(2, '0')}:${String(Math.floor(value / 60) % 60).padStart(2, '0')}:${String(value % 60).padStart(2, '0')}`; };
-const humanProviderStatus = status => ({ CONNECTED: 'Connecté', CONNECTING: 'Connexion…', DEGRADED: 'Connexion instable', ERROR: 'Erreur', NOT_CONFIGURED: 'À configurer', DISCONNECTED: 'Déconnecté' })[status] || 'Indisponible';
+const humanProviderStatus = status => ({ CONNECTED: 'Connecté', CONNECTING: 'Connexion…', DEGRADED: 'Connexion instable', ERROR: 'Erreur', REAUTH_REQUIRED: 'Autorisation nécessaire', UNAVAILABLE: 'Indisponible', NOT_CONFIGURED: 'À configurer', DISCONNECTED: 'Déconnecté' })[status] || 'Indisponible';
 const humanActivity = event => event.type === 'support.received' ? `Soutien · ${event.payload?.displayName || 'Anonyme'}` : event.type === 'stream.started' ? 'Le live a démarré' : event.type === 'stream.stopped' ? 'Le live est terminé' : event.type === 'chat.message.received' ? `Chat · ${event.payload?.chatter?.displayName || 'nouveau message'}` : event.type === 'streamer.ping.received' ? `Ping · ${event.payload?.rewardTitle || 'récompense Twitch'}` : event.type === 'streamer.ping.acknowledged' ? 'Streamer Ping acquitté' : event.type === 'soundboard.played' ? 'Son joué' : event.type === 'automation.triggered' ? 'Automatisation exécutée' : event.type.replaceAll('.', ' · ');
 
 let moderationCapabilities = null;
@@ -508,6 +513,7 @@ function render(next) {
   if (!next) return;
   if (!acceptsSnapshot(state, next)) return;
   state = next;
+  if (companionMode === CompanionMode.ONLINE_PC && Date.now() - lastProfileSyncAt > 5_000) void loadProductProfile().catch(() => undefined);
   syncMobileStreamerPing(next.streamerPings || []);
   if (companionMode === CompanionMode.ONLINE_PC) $('pc').textContent = 'Connecté';
   $('obs').textContent = next.obs.connected ? 'Prêt' : 'Déconnecté';
@@ -515,7 +521,7 @@ function render(next) {
   $('live').textContent = next.obs.streaming ? 'Live' : 'Hors ligne';
   $('live').className = next.obs.streaming ? 'ok' : '';
   $('next').textContent = next.nextLive ? `${next.nextLive.title} · ${formatPlanningDate(next.nextLive)}` : 'Aucun live planifié';
-  $('stream').textContent = next.obs.streaming ? 'ARRÊTER LE LIVE' : 'DÉMARRER LE LIVE';
+  $('stream').textContent = next.obs.streaming ? 'ARRÊTER LE LIVE' : 'DÉMARRER LE LIVE'; $('live-stream').textContent = $('stream').textContent;
   renderAudio(next.obs.inputs, next.obs.activeAudioInputs);
   if (document.activeElement !== $('twitch-title')) $('twitch-title').value = next.twitch?.channelTitle || '';
   if (document.activeElement !== $('twitch-category')) $('twitch-category').value = next.twitch?.gameName || '';
@@ -529,7 +535,7 @@ function render(next) {
   $('timer').textContent = formatDuration(remaining());
   if (companionMode === CompanionMode.ONLINE_PC) showPairing(false);
   remoteButtons(companionMode !== CompanionMode.ONLINE_PC);
-  $('stream').disabled = !next.obs.connected;
+  $('stream').disabled = !next.obs.connected; $('live-stream').disabled = $('stream').disabled;
   $('quick-clip').disabled = !next.twitch?.connected || !next.obs.streaming;
   const chattingActive = next.mode === 'live' && Boolean(next.settings.chattingScene) && next.obs.scene === next.settings.chattingScene;
   document.querySelectorAll('[data-mode]').forEach(button => {
@@ -584,6 +590,7 @@ async function fetchState() {
   // REST state is the authority for whether the PC command channel is reachable.
   // Companion sync must never gate remote-control availability.
   const next = await transport.state();
+  if (!profileLoaded) { profileLoaded = true; await loadProductProfile().catch(() => { profileLoaded = false; }); }
   if (!companion.snapshot().pending.length) companion.replaceServerSnapshot(next);
   companionMode = CompanionMode.ONLINE_PC;
   render(next);
@@ -755,17 +762,10 @@ if ($('edit-server')) $('edit-server').onclick = () => { if (legacyMode) openCan
 $('keep-awake').onchange = () => globalThis.StreamDashboardNative?.setKeepAwake?.($('keep-awake').checked);
 
 function organizeMobileShell() {
-  const home = document.querySelector('[data-view="home"]'); const live = document.querySelector('[data-view="live"]'); const sounds = $('primary-soundboard'); const moreAutomations = $('more-automations'); const tools = home.querySelector('.hub-tools'); const streamMenu = document.querySelector('[data-view="more"] .more-group:nth-of-type(2)');
-  const legacyControls = document.createElement('details'); legacyControls.className = 'legacy-live-controls'; const legacySummary = document.createElement('summary'); legacySummary.textContent = 'Contrôles avancés'; legacyControls.append(legacySummary);
-  for (const selector of ['#twitch-editor', '#audio', '#deck', '.modes', '.timer', '#stream']) { const node = document.querySelector(selector); if (node) legacyControls.append(node); }
-  if (legacyControls.children.length > 1) streamMenu?.append(legacyControls);
-  if (tools) { live.append(tools); const controlTab = document.createElement('button'); controlTab.type = 'button'; controlTab.dataset.hubTool = 'control'; controlTab.textContent = 'CONTRÔLE'; tools.querySelector('.hub-tool-tabs')?.prepend(controlTab); const controlPanel = document.createElement('div'); controlPanel.className = 'hub-tool-panel'; controlPanel.dataset.hubPanel = 'control'; controlPanel.append(live.querySelector('.live-overview'), live.querySelector('.live-command-grid')); tools.querySelector('.hub-tool-tabs')?.after(controlPanel); }
-  const soundPanel = document.querySelector('[data-hub-panel="soundboard"]'); if (soundPanel) { soundPanel.hidden = false; sounds.append(soundPanel); }
+  const sounds = $('primary-soundboard');
+  const soundPanel = document.querySelector('[data-hub-panel="soundboard"]');
+  if (soundPanel) { soundPanel.hidden = false; sounds.append(soundPanel); }
   document.querySelector('[data-hub-tool="soundboard"]')?.remove();
-  const automationPanel = document.querySelector('[data-hub-panel="automations"]'); if (automationPanel) { automationPanel.hidden = false; moreAutomations.append(automationPanel); }
-  document.querySelector('[data-hub-tool="automations"]')?.remove();
-  // Keep instant commands globally one tap away. The command palette is an
-  // efficiency surface, not a secondary settings tool.
   const commandTrigger = $('command-trigger'); commandTrigger.className = 'command-trigger';
   const message = $('message'); document.body.append(message); message.className = 'app-toast';
 }
@@ -783,7 +783,7 @@ document.addEventListener('click', event => {
   const diagnostics = $('diagnostics');
   diagnostics.open = target === 'diagnostics';
   if (target === 'pairing') showPairing(true);
-  requestAnimationFrame(() => (target === 'diagnostics' ? diagnostics : target === 'preferences' ? $('ui-preferences') : $('pairing')).scrollIntoView({ block: 'start' }));
+  requestAnimationFrame(() => (target === 'diagnostics' ? diagnostics : target === 'preferences' ? $('ui-preferences') : target === 'connections' ? $('mobile-connections') : $('pairing')).scrollIntoView({ block: 'start' }));
 });
 const recentCommandsKey = 'streamdashboard.mobileRecentCommands';
 let recentCommands = []; try { recentCommands = JSON.parse(localStorage.getItem(recentCommandsKey) || '[]').slice(0, 6); } catch { recentCommands = []; }
@@ -799,16 +799,37 @@ $('command-palette').onclick = event => { if (event.target === $('command-palett
 $('command-search').oninput = event => { const query = event.target.value.trim().toLocaleLowerCase(); document.querySelectorAll('#command-palette [data-palette-action]').forEach(button => { button.hidden = !button.textContent.toLocaleLowerCase().includes(query); }); };
 renderCommandRecents();
 $('open-automations').onclick = () => { $('more-automations').classList.toggle('expanded'); void loadSoundboard().then(loadAutomations); };
-$('return-v2').onclick = () => { location.href = './preview.html?runtime=1'; };
+$('return-v2').onclick = () => activateView('settings'); $('live-stream').onclick = () => $('stream').click();
 $('quick-clip').onclick = () => void createQuickClip().catch(error => note(`Impossible de créer le clip. ${error.message}`)); $('live-clip').onclick = $('quick-clip').onclick; $('quick-mic').onclick = () => void togglePrimaryMic().catch(error => note(error.message)); $('home-mic').onclick = $('quick-mic').onclick; const openScenes = () => $('scene-sheet').showModal(); $('open-scenes').onclick = openScenes; $('open-scenes-live').onclick = openScenes; $('home-scene-link').onclick = openScenes; $('close-scenes').onclick = () => $('scene-sheet').close(); $('scene-sheet').onclick = event => { if (event.target === $('scene-sheet')) $('scene-sheet').close(); }; $('scene-sheet').querySelectorAll('[data-mode],[data-chatting]').forEach(button => button.addEventListener('click', () => $('scene-sheet').close())); $('refresh-sounds').onclick = () => void loadSoundboard();
 const savedTab = localStorage.getItem('streamdashboard.mobileTab'); selectTab(['home', 'live', 'sounds', 'planning', 'more', 'prepare', 'settings'].includes(savedTab) ? savedTab : 'home');
 
 
-const preferenceKey = 'streamdashboard.mobileUx'; let uxPreferences = { focus: false, reducedMotion: false, density: 'comfort' }; try { uxPreferences = { ...uxPreferences, ...JSON.parse(localStorage.getItem(preferenceKey) || '{}') }; } catch { /* use calm defaults */ }
-function applyUxPreferences() { document.body.classList.toggle('focus-mode', uxPreferences.focus); document.body.classList.toggle('reduce-motion', uxPreferences.reducedMotion); document.body.dataset.density = uxPreferences.density; $('focus-mode').checked = uxPreferences.focus; $('reduce-motion').checked = uxPreferences.reducedMotion; $('ui-density').value = uxPreferences.density; localStorage.setItem(preferenceKey, JSON.stringify(uxPreferences)); }
+const preferenceKey = 'streamdashboard.mobileUx';
+const appearanceDefaults = { theme: 'system', preset: 'minimal', accent: '#2474e5', density: 'normal', radius: 'medium', textScale: 'normal' };
+let uxPreferences = { focus: false, reducedMotion: false, ...appearanceDefaults };
+try { const local = JSON.parse(localStorage.getItem(preferenceKey) || '{}'); uxPreferences.focus = local.focus === true; uxPreferences.reducedMotion = local.reducedMotion === true; } catch { /* use accessible device defaults */ }
+function applyUxPreferences() {
+  document.body.classList.toggle('focus-mode', uxPreferences.focus); document.body.classList.toggle('reduce-motion', uxPreferences.reducedMotion);
+  for (const key of ['theme', 'preset', 'density', 'radius']) document.body.dataset[key] = uxPreferences[key];
+  document.documentElement.style.setProperty('--accent', uxPreferences.accent); document.documentElement.style.setProperty('--font-scale', uxPreferences.textScale === 'large' ? '1.16' : uxPreferences.textScale === 'small' ? '.9' : '1');
+  $('focus-mode').checked = uxPreferences.focus; $('reduce-motion').checked = uxPreferences.reducedMotion;
+  const themeLabels = { system: 'Système', light: 'Clair', dark: 'Sombre', oled: 'OLED' }; const presetLabels = { minimal: 'Minimal', soft: 'Doux', compact: 'Compact', contrast: 'Contrasté' };
+  $('appearance-theme').textContent = `${themeLabels[uxPreferences.theme] || uxPreferences.theme} · ${presetLabels[uxPreferences.preset] || uxPreferences.preset}`;
+  $('appearance-details').textContent = `Densité ${uxPreferences.density} · Texte ${uxPreferences.textScale}`;
+  localStorage.setItem(preferenceKey, JSON.stringify({ focus: uxPreferences.focus, reducedMotion: uxPreferences.reducedMotion }));
+}
 function setFocusPreference(value) { uxPreferences.focus = value; applyUxPreferences(); $('focus-toggle').setAttribute('aria-pressed', String(value)); $('focus-toggle').textContent = value ? 'Focus actif' : 'Focus'; }
-$('focus-mode').onchange = event => setFocusPreference(event.target.checked); $('focus-toggle').onclick = () => setFocusPreference(!uxPreferences.focus); $('reduce-motion').onchange = event => { uxPreferences.reducedMotion = event.target.checked; applyUxPreferences(); }; $('ui-density').onchange = event => { uxPreferences.density = event.target.value; applyUxPreferences(); }; applyUxPreferences(); setFocusPreference(uxPreferences.focus);
-
+$('focus-mode').onchange = event => setFocusPreference(event.target.checked); $('focus-toggle').onclick = () => setFocusPreference(!uxPreferences.focus); $('reduce-motion').onchange = event => { uxPreferences.reducedMotion = event.target.checked; applyUxPreferences(); };
+async function loadProductProfile() {
+  const [result, connections] = await Promise.all([transport.profile(), transport.connections()]); productProfile = result.profile; connectionProjection = connections.items || []; lastProfileSyncAt = Date.now();
+  uxPreferences = { ...uxPreferences, ...productProfile.appearance }; applyUxPreferences();
+  applyModuleProjection(productProfile.modules || {});
+}
+function applyModuleProjection(enabled) {
+  document.querySelectorAll('[data-module]').forEach(node => { node.hidden = !node.dataset.module.split(',').some(id => enabled[id] !== false); });
+  const active = document.querySelector('[data-view].active'); if (active?.hidden) activateView('home');
+}
+applyUxPreferences(); setFocusPreference(uxPreferences.focus);
 const preparationKey = 'streamdashboard.mobilePreparationTab';
 function selectPreparationTab(tab, remember = true) { const selected = ['checklist', 'notes', 'templates'].includes(tab) ? tab : 'checklist'; document.querySelectorAll('[data-prepare-tab]').forEach(button => { const active = button.dataset.prepareTab === selected; button.classList.toggle('active', active); button.setAttribute('aria-selected', String(active)); }); document.querySelectorAll('[data-prepare-panel]').forEach(panel => { panel.hidden = panel.dataset.preparePanel !== selected; }); if (remember) localStorage.setItem(preparationKey, selected); }
 document.querySelector('.prepare-tabs').onclick = event => { const tab = event.target.closest('[data-prepare-tab]')?.dataset.prepareTab; if (tab) selectPreparationTab(tab); };

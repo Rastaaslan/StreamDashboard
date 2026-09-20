@@ -25,13 +25,14 @@ describe('Android remote runtime', () => {
     expect(remotePolicy).toContain("case 'scene.chatting'");
     expect(remotePolicy).not.toContain("case 'obs.scene'");
   });
-  it('présente quatre destinations et un menu secondaire sans reconnecter le WebSocket', () => {
-    for (const tab of ['home', 'live', 'planning', 'more']) expect(mobileIndex).toContain(`data-tab="${tab}"`);
-    expect(mobileIndex).toContain('data-open-tab="sounds"');
+  it('présente cinq destinations et un menu secondaire sans reconnecter le WebSocket', () => {
+    for (const tab of ['home', 'live', 'sounds', 'planning', 'more']) expect(mobileIndex).toContain(`data-tab="${tab}"`);
+    expect(mobileIndex).toContain('Modèles de live');
+    expect(mobileIndex).toContain('Avant le live');
     expect(mobileIndex).toContain('id="menu-trigger"');
     expect(mobileScript).toContain("localStorage.setItem('streamdashboard.mobileTab', tab)");
     expect(mobileScript).not.toMatch(/selectTab[\s\S]{0,300}(connect\(|location\.reload)/);
-    expect(mobileIndex).toContain('+ ÉVÉNEMENT');
+    expect(mobileIndex).toContain('+ Ajouter');
   });
   it('propose les trois périodes d’export et une note éditoriale persistante', () => {
     for (const period of ['today', 'this-week', 'next-week']) expect(mobileIndex).toContain(`value="${period}"`);

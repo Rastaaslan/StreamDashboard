@@ -36,7 +36,7 @@ function closeTemplateDialog() {
 
 function openTemplateDialog(template) {
   editingId = template?.id || null;
-  $('template-dialog-title').textContent = template ? 'Modifier le template' : 'Nouveau template';
+  $('template-dialog-title').textContent = template ? 'Modifier le modèle' : 'Nouveau modèle';
   $('template-name').value = template?.title || '';
   $('template-description').value = template?.description || '';
   $('template-twitch-category').value = template?.twitchCategoryName || '';
@@ -90,12 +90,12 @@ function applyTemplate(template, { openPlanning = true } = {}) {
     queueMicrotask(() => {
       populateTemplate(template);
       if ($('event-template')) $('event-template').value = template.id;
-      notify(`Template « ${template.title} » appliqué. Ajuste la périodicité si besoin.`);
+      notify(`Modèle « ${template.title} » appliqué. Ajuste la périodicité si besoin.`);
     });
     return;
   }
   populateTemplate(template);
-  notify(`Template « ${template.title} » appliqué. La périodicité reste libre.`);
+  notify(`Modèle « ${template.title} » appliqué. La périodicité reste libre.`);
 }
 
 function templateSubtitle(template) {
@@ -145,7 +145,7 @@ function renderTemplates() {
     row.append(summary, actions);
     root.append(row);
   }
-  if (!templates.length) root.append(text('p', 'Aucun template d’événement pour le moment.', 'muted'));
+  if (!templates.length) root.append(text('p', 'Aucun modèle de live d’événement pour le moment.', 'muted'));
   refreshTemplateSelect();
   observer?.observe(root, { childList: true });
 }

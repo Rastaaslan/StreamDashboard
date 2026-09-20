@@ -43,7 +43,7 @@ test('le bootstrap mobile réel reste navigable lorsque REST est indisponible', 
     await page.goto(`${origin}/mobile/`);
 
     await expect(page.locator('#checklist')).toContainText('Checklist hors ligne conservée');
-    await expect(page.locator('#templates')).toContainText('Aucun template');
+    await expect(page.locator('#templates')).toContainText('Aucun modèle de live');
     await expect(page.locator('#connection')).not.toHaveText('Connexion au PC…');
     expect(runtimeErrors).toEqual([]);
     expect(await page.evaluate(() => {
@@ -55,10 +55,10 @@ test('le bootstrap mobile réel reste navigable lorsque REST est indisponible', 
     await page.locator('#menu-trigger').click();
     await expect.poll(activeView).toBe('more');
 
-    for (const section of ['Checklist', 'Notes', 'Templates']) {
+    for (const section of ['Avant le live', 'Notes', 'Modèles de live']) {
       await page.getByRole('button', { name: new RegExp(`^${section}`) }).click();
       await expect.poll(activeView).toBe('prepare');
-      await expect(page.locator(`[data-prepare-panel="${section.toLowerCase()}"]`)).toBeVisible();
+      await expect(page.locator(`[data-prepare-panel="${section === 'Avant le live' ? 'checklist' : section === 'Modèles de live' ? 'templates' : 'notes'}"]`)).toBeVisible();
       await page.locator('#menu-trigger').click();
     }
 
@@ -67,7 +67,7 @@ test('le bootstrap mobile réel reste navigable lorsque REST est indisponible', 
     await expect(page.locator('#ui-preferences')).toBeVisible();
     await page.locator('#menu-trigger').click();
 
-    await page.getByRole('button', { name: /^Diagnostics/ }).click();
+    await page.getByRole('button', { name: /^État technique/ }).click();
     await expect.poll(activeView).toBe('settings');
     await expect(page.locator('#diagnostics')).toHaveJSProperty('open', true);
     await page.locator('#menu-trigger').click();

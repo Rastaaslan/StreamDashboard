@@ -10,7 +10,11 @@ describe('Desktop Campfire console', () => {
     for (const page of ['Accueil', 'Planning', 'Préparation', 'Réglages']) expect(app).toContain(`'${page}'`);
     expect(app).not.toContain("['connections', 'Connexions'");
     expect(app).toContain('function connections()');
-    expect(app).toContain('return `${connections()}<form class="panel settings"');
+    expect(app).toContain('function productSettings()');
+    expect(app).toContain('PROFIL STREAMDASHBOARD');
+    expect(app).toContain('MODULES');
+    expect(app).toContain('Profil et apparence');
+    expect(app).toContain('${productSettings()}${connections()}');
     expect(app).toContain('data-value="live"');
     expect(html).toContain('<aside aria-label="Navigation principale">');
     expect(html).not.toContain('bottom-nav');
@@ -35,8 +39,8 @@ describe('Desktop Campfire console', () => {
     expect(app).toContain('id="event-dialog"');
   });
 
-  it('définit la console Campfire Purple et un focus local', () => {
-    for (const token of ['--bg-0:', '--surface-1:', '--purple-deep:', '--purple-ember:', '--purple-core:', '--text-primary:']) expect(css).toContain(token);
+  it('définit une base produit neutre, personnalisable, et un focus local', () => {
+    for (const token of ['--background:', '--surface:', '--text:', '--muted:', '--border:', '--product-accent:', '--radius:', '--spacing:']) expect(css).toContain(token);
     expect(html).toContain('id="desktop-focus"');
     expect(app).toContain('streamdashboard.desktopFocus');
     expect(css).toContain('.desktop-focus');

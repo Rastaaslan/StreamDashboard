@@ -4,10 +4,11 @@ import os from 'node:os';
 import path from 'node:path';
 import WebSocket from 'ws';
 import { startDashboardServer, type DashboardServerHandle } from '../apps/server/src/index.js';
+import { MemorySecretStore } from '../apps/server/src/storage.js';
 
 let dashboard: DashboardServerHandle | undefined; let dataDir = '';
 afterEach(async () => { if (dashboard) await dashboard.stop(); if (dataDir) await rm(dataDir, { recursive: true, force: true }); dashboard = undefined; dataDir = ''; });
-async function start() { dataDir = await mkdtemp(path.join(os.tmpdir(), 'streamdashboard-api-')); dashboard = await startDashboardServer({ port: 0, dataDir, logger: { info() {}, warn() {}, error() {} } }); return dashboard; }
+async function start(options: Parameters<typeof startDashboardServer>[0] = {}) { dataDir = await mkdtemp(path.join(os.tmpdir(), 'streamdashboard-api-')); dashboard = await startDashboardServer({ port: 0, dataDir, logger: { info() {}, warn() {}, error() {} }, ...options }); return dashboard; }
 async function wsRejected(url: string, origin: string) {
   await expect(new Promise<void>((resolve, reject) => {
     const ws = new WebSocket(url, { origin });
@@ -18,9 +19,13 @@ async function wsRejected(url: string, origin: string) {
 
 describe('API publique v1', () => {
   it('annonce protocole, capacités et état sans secrets', async () => {
-    const app = await start();
+    const app = await start({ twitchClientId: '' });
     const capabilities = await fetch(`${app.url}/api/v1/capabilities`).then(r => r.json());
     const stateText = await fetch(`${app.url}/api/v1/state`).then(r => r.text());
+    const connections = await fetch(`${app.url}/api/v1/connections`).then(r => r.json());
+    expect(connections.items.find((item: { id: string }) => item.id === 'obs')).toMatchObject({ mode: 'custom', capabilities: ['test','configure','scenes','audio'] });
+    expect(connections.items.find((item: { id: string }) => item.id === 'twitch')).toMatchObject({ status: 'unavailable', mode: 'official', capabilities: [], message: 'Configuration mainteneur requise' });
+    expect(connections.items.find((item: { id: string }) => item.id === 'discord')).toMatchObject({ status: 'unavailable', mode: 'official', capabilities: [] });
     expect(capabilities).toMatchObject({ protocolVersion: 1, accessMode: 'desktop-local' });
     expect(stateText).not.toMatch(/accessToken|refreshToken|deviceCode|obsPassword\"/);
     const event = await new Promise<string>((resolve, reject) => { const ws = new WebSocket(app.url.replace('http:', 'ws:') + '/ws/v1'); ws.on('message', data => { const text = data.toString(); if (text.includes('state.updated')) { ws.close(); resolve(text); } }); ws.on('error', reject); });
@@ -31,6 +36,44 @@ describe('API publique v1', () => {
     expect(csp).toContain('ws://127.0.0.1:*');
     expect(csp).not.toContain('connect-src *');
     expect(response.headers.get('x-frame-options')).toBe('DENY');
+  });
+
+  it('annonce Twitch disponible quand un Client ID officiel est provisionné', async () => {
+    const app = await start({ twitchClientId: 'test-client-id' });
+    const connections = await fetch(`${app.url}/api/v1/connections`).then(r => r.json());
+    expect(connections.items.find((item: { id: string }) => item.id === 'twitch')).toMatchObject({
+      status: 'disconnected',
+      mode: 'official',
+      capabilities: ['connect','disconnect','test','chat','audience','clips'],
+    });
+  });
+
+  it('persiste, exporte et réimporte le profil YAML canonique après restart', async () => {
+    const app = await start();
+    const initial = await fetch(`${app.url}/api/v1/profile`).then(response => response.json());
+    initial.profile.profile.displayName = 'Profil persistant';
+    initial.profile.onboarding.completed = true;
+    expect((await fetch(`${app.url}/api/v1/profile`, { method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify(initial.profile) })).status).toBe(200);
+    const exported = await fetch(`${app.url}/api/v1/profile/export`); const yaml = await exported.text();
+    expect(exported.headers.get('content-type')).toContain('application/yaml');
+    expect(exported.headers.get('content-disposition')).toContain('streamdashboard.streamdashboard.yaml');
+    expect(yaml).toMatch(/^version: 1\nprofile:\n/); expect(yaml.trimStart()).not.toMatch(/^\{/);
+    const invalid = await fetch(`${app.url}/api/v1/profile/import`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ content: 'version: 1\nprofile:\n  accessToken: nope' }) });
+    expect(invalid.status).toBe(400);
+    const imported = await fetch(`${app.url}/api/v1/profile/import`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ content: yaml }) }).then(response => response.json());
+    expect(imported.backup).toMatch(/backup/);
+    await dashboard!.stop(); dashboard = undefined; dashboard = await startDashboardServer({ port: 0, dataDir, logger: { info() {}, warn() {}, error() {} } });
+    expect(await fetch(`${dashboard.url}/api/v1/profile`).then(response => response.json())).toMatchObject({ profile: { profile: { displayName: 'Profil persistant' }, onboarding: { completed: true } } });
+  });
+
+  it('migre une installation sans profil sans déplacer ni perdre les secrets providers', async () => {
+    dataDir = await mkdtemp(path.join(os.tmpdir(), 'streamdashboard-migration-'));
+    await writeFile(path.join(dataDir, 'dashboard.json'), JSON.stringify({ schemaVersion: 6, settings: { streamerName: 'Ancienne chaîne' }, twitch: { displayName: 'LegacyChannel' } }));
+    const secrets = new MemorySecretStore(); await secrets.setTwitchTokens({ accessToken: 'twitch-a', refreshToken: 'twitch-r' }); await secrets.setDiscordToken('discord-secret'); await secrets.setGoogleTokens?.({ accessToken: 'google-a', refreshToken: 'google-r' }); await secrets.setStreamlabsToken?.('streamlabs-secret'); await secrets.setWizeBotConfiguration?.({ apiBaseUrl: 'https://example.test/', token: 'wize-secret' });
+    dashboard = await startDashboardServer({ port: 0, dataDir, secretStore: secrets, googleClientId: 'google-client', streamlabsTransport: { connect: async () => async () => undefined }, wizebotTransport: { status: async () => ({ name: 'Legacy', connected: true }) }, logger: { info() {}, warn() {}, error() {} } });
+    const product = await fetch(`${dashboard.url}/api/v1/profile`).then(response => response.json());
+    expect(product.profile).toMatchObject({ version: 1, profile: { displayName: 'Ancienne chaîne', channelName: 'LegacyChannel' }, modules: { twitch: true, googleCalendar: true, discord: true, streamlabs: true, wizebot: true } });
+    expect(await secrets.getTwitchTokens()).toEqual({ accessToken: 'twitch-a', refreshToken: 'twitch-r' }); expect(await secrets.getDiscordToken()).toBe('discord-secret'); expect(await secrets.getStreamlabsToken?.()).toBe('streamlabs-secret'); expect((await secrets.getWizeBotConfiguration?.())?.token).toBe('wize-secret');
   });
 
   it('expose un cockpit mobile honnête et des événements bornés', async () => {
