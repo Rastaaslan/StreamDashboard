@@ -127,6 +127,8 @@ function applyDashboard(d){
 }
 function formatDuration(seconds){const n=Math.max(0,Math.floor(Number(seconds)||0));return`${String(Math.floor(n/3600)).padStart(2,'0')}:${String(Math.floor(n/60)%60).padStart(2,'0')}:${String(n%60).padStart(2,'0')}`}
 const primaryScenes=['Intro','Gameplay','Chatting','Pause','Fin'];
+const OBS_SOUNDBOARD_INPUT='StreamDashboard • Soundboard';
+const publicObsMediaInputs=values=>(values||[]).filter(input=>input!==OBS_SOUNDBOARD_INPUT);
 const scenes=()=>`<div class="scene-grid">${primaryScenes.map(name=>`<button class="scene ${logicalScene(state.scene)===name?'active':''}" data-scene="${name}" aria-pressed="${logicalScene(state.scene)===name}">${name}</button>`).join('')}</div>`;
 function filteredSounds(){const query=state.search.trim().toLowerCase();return(state.sounds||[]).filter(s=>!query||String(s.name).toLowerCase().includes(query)||String(s.category).toLowerCase().includes(query))}
 const sounds=(editable=false)=>Object.entries(filteredSounds().reduce((groups,s)=>{(groups[s.category||'Sans catégorie']??=[]).push(s);return groups},{})).map(([category,items])=>`<div class="group"><h3>${esc(category)}</h3><div class="pads">${items.map(s=>`<div class="sound-item"><button class="pad ${s.sourceAvailable===false?'missing':''}" data-sound="${esc(s.id)}" ${s.enabled===false?'disabled':''}>${esc(s.name)}${s.sourceAvailable===false?' · absent':''}</button>${editable?`<button class="edit-sound" data-edit-sound="${esc(s.id)}" aria-label="Modifier ${esc(s.name)}">•••</button>`:''}</div>`).join('')}</div></div>`).join('');
@@ -134,20 +136,60 @@ function onboardingCard(){
   if(state.productProfile?.onboarding?.completed!==false)return'';
   return `<section class="section onboarding-card"><div><span class="eyebrow">PREMIER DÉMARRAGE</span><h2>Configure StreamDashboard à ton image</h2><p class="help">Choisis les modules, l’apparence et les modes de connexion. Rien ne bloque l’utilisation du cockpit.</p></div><button class="action" data-open-personalization>Configurer</button></section>`;
 }
+const nextLiveCopy=()=>{
+  const item=state.dashboard?.nextLive;if(!item)return{title:'Aucun live planifié',when:'Ajoute ton prochain live depuis Planning'};
+  const start=new Date(item.startAtUtc);return{title:item.title||'Live',when:start.toLocaleString('fr-FR',{weekday:'short',day:'numeric',month:'short',hour:'2-digit',minute:'2-digit'})};
+};
+const checklistCopy=()=>{
+  const items=state.dashboard?.checklist||[];const done=items.filter(item=>item.done).length;
+  return items.length?`${done}/${items.length} prêts`:'Aucune checklist';
+};
 function home(){
-  const stats=[
-    `<div><span class="live-pill">${state.live.active?'● LIVE':'○ PRÊT'}</span><strong class="value">${esc(state.live.duration)}</strong><span class="label">${esc(state.live.title)} · ${esc(state.live.category)}</span></div>`,
-    moduleEnabled('twitch')?`<div><span class="label">Viewers</span><b class="value">${esc(state.live.viewers??'—')}</b></div><div><span class="label">Chat</span><b class="value">${esc(state.live.chatters??'—')}</b></div>`:'',
-    moduleEnabled('obs')?`<div><span class="label">OBS</span><b>${state.runtime?(state.dashboard?.obs?.connected?'Connecté':'Hors ligne'):'Démo'}</b></div>`:'',
-    moduleEnabled('twitch')?`<div><span class="label">Twitch</span><b>${state.runtime?(state.dashboard?.twitch?.connected?'Connecté':'Déconnecté'):'Démo'}</b></div>`:''
+  const next=nextLiveCopy(),obsConnected=state.dashboard?.obs?.connected===true,twitchConnected=state.dashboard?.twitch?.connected===true;
+  const canStream=moduleEnabled('obs');
+  const health=[
+    moduleEnabled('obs')?`<div><span class="label">OBS</span><b class="${obsConnected?'ok-copy':'warning-copy'}">${obsConnected?'Connecté':'À connecter'}</b></div>`:'',
+    moduleEnabled('twitch')?`<div><span class="label">Twitch</span><b class="${twitchConnected?'ok-copy':'warning-copy'}">${twitchConnected?'Connecté':'À connecter'}</b></div>`:'',
+    moduleEnabled('checklist')?`<div><span class="label">Préparation</span><b>${esc(checklistCopy())}</b></div>`:'',
+    `<div><span class="label">Prochain live</span><b>${esc(next.when)}</b></div>`
   ].join('');
-  const sceneSection=moduleEnabled('obs')?`<section class="section"><div class="section-head"><h2>Scènes principales</h2><span class="label">Active · ${esc(state.scene)}</span></div>${scenes()}</section>`:'';
-  const soundSection=moduleEnabled('soundboard')?`<section class="section"><div class="section-head"><h2>Sons rapides</h2><button class="secondary" data-add-sound>+ Ajouter un son rapide</button></div><div class="sound-groups">${sounds(false)||'<p class="label">Aucun son.</p>'}</div></section>`:'';
-  return`<div class="stack">${onboardingCard()}<section class="status-strip">${stats}</section>${sceneSection}${soundSection}</div>`
+  return`<div class="stack">
+    ${onboardingCard()}
+    <section class="home-hero">
+      <div class="home-live-copy"><span class="live-pill">${state.live.active?'● EN DIRECT':'○ PRÊT'}</span><h2>${esc(state.live.title||'Prêt à streamer')}</h2><p>${esc(state.live.category||'—')}${state.live.active?` · ${esc(state.live.duration)}`:''}</p></div>
+      ${canStream?`<button class="${state.live.active?'critical':'action'} home-primary" data-live-toggle>${state.live.active?'Arrêter le live':'Démarrer le live'}</button>`:''}
+    </section>
+    <section class="section home-next"><div><span class="eyebrow">À VENIR</span><h2>${esc(next.title)}</h2><p class="help">${esc(next.when)}</p></div>${moduleEnabled('planning')?'<button class="secondary" data-go-view="planning">Ouvrir le planning</button>':''}</section>
+    <section class="section"><div class="section-head"><h2>État de préparation</h2>${moduleEnabled('checklist')?'<button class="secondary" data-open-camp="Préparation">Préparer</button>':''}</div><div class="readiness-grid">${health}</div></section>
+  </div>`
+}
+function chatMessages(){
+  const messages=state.dashboard?.controlHub?.chat?.messages||[];
+  if(!messages.length)return'<div class="empty-chat"><b>Le chat est calme</b><span>Les nouveaux messages apparaîtront ici.</span></div>';
+  return messages.slice(-80).map(message=>`<article class="desktop-chat-row"><div><b>${esc(message.chatter?.displayName||'Viewer')}</b><time>${esc(new Date(message.receivedAt||Date.now()).toLocaleTimeString('fr-FR',{hour:'2-digit',minute:'2-digit'}))}</time></div><p>${esc(message.text||'')}</p></article>`).join('');
 }
 function live(){
-  const twitchStats=moduleEnabled('twitch')?`<div><span class="label">Viewers</span><b class="value">${esc(state.live.viewers??'—')}</b></div><div><span class="label">Chat</span><b class="value">${esc(state.live.chatters??'—')}</b></div>`:'';
-  return`<div class="cockpit"><section class="status-strip wide"><div><span class="live-pill">${state.live.active?'● LIVE':'○ PRÊT'}</span><b class="value">${esc(state.live.duration)}</b></div>${twitchStats}<div><span class="label">Scène</span><b>${esc(state.scene)}</b></div><div><button class="critical" data-live-toggle>${state.live.active?'Arrêter le live':'Démarrer le live'}</button></div></section><section class="section wide"><div class="section-head"><h2>Scènes</h2></div>${scenes()}</section><section class="section"><div class="section-head"><h2>Audio</h2><span class="label">Sources actives</span></div>${state.audio.map((a,i)=>`<div class="audio-row"><b>${esc(a.name)}${a.primary?' · principal':''}</b><button data-mute="${i}" aria-label="${a.muted?'Réactiver':'Couper'} ${esc(a.name)}">${a.muted?'OFF':'ON'}</button><div class="meter"><i style="width:${a.level}%"></i></div><span>${a.volume}%</span></div>`).join('')||'<p class="label">Aucune source audio active.</p>'}</section><section class="section timer"><div class="section-head"><h2>Timer</h2></div><b class="timer-value">${formatDuration(state.seconds)}</b><div class="timer-actions"><button class="action" data-timer="minus">−1 min</button><button class="action" data-timer="toggle">${state.timerRunning?'Pause':'Play'}</button><button class="action" data-timer="plus">+1 min</button><button class="action" data-timer="reset">Reset</button></div></section></div>`
+  const audience=state.dashboard?.controlHub?.audience||{},chat=state.dashboard?.controlHub?.chat||{};
+  const twitchPanel=moduleEnabled('twitch')?`<aside class="section live-chat-panel">
+    <div class="section-head"><div><h2>Chat</h2><span class="label">${chat.connected?'Connecté':'Hors ligne'} · ${Number.isInteger(audience.viewerCount)?audience.viewerCount:'—'} viewers</span></div><button class="secondary compact-button" data-live-clip>Créer un clip</button></div>
+    <div class="desktop-chat-list">${chatMessages()}</div>
+    <form id="desktop-chat-form" class="desktop-chat-compose"><input name="message" maxlength="500" placeholder="Écrire dans le chat…" autocomplete="off" ${chat.connected?'':'disabled'}><button class="action" ${chat.connected?'':'disabled'}>Envoyer</button></form>
+    <details class="audience-details"><summary>Audience · ${(audience.chatters||[]).length} présents</summary><div class="audience-list">${(audience.chatters||[]).slice(0,100).map(person=>`<span><b>${esc(person.displayName)}</b><small>${esc(person.role||'viewer')}</small></span>`).join('')||'<span class="help">Aucun chatter chargé.</span>'}</div></details>
+  </aside>`:'';
+  return`<div class="live-desktop-grid">
+    <div class="live-main stack">
+      <section class="live-hero-desktop">
+        <div><span class="live-pill">${state.live.active?'● EN DIRECT':'○ PRÊT'}</span><h2>${esc(state.live.title||'Prêt à streamer')}</h2><p>${esc(state.live.category||'—')} · ${esc(state.live.duration)}</p></div>
+        <div class="live-hero-actions">${moduleEnabled('twitch')?`<span><b>${esc(state.live.viewers??'—')}</b><small>viewers</small></span>`:''}<button class="${state.live.active?'critical':'action'}" data-live-toggle>${state.live.active?'Arrêter':'Démarrer'}</button></div>
+      </section>
+      <section class="section"><div class="section-head"><div><h2>Scènes</h2><span class="label">Active · ${esc(state.scene)}</span></div></div>${scenes()}</section>
+      <div class="cockpit-secondary">
+        <section class="section"><div class="section-head"><h2>Audio</h2><span class="label">Sources actives</span></div>${state.audio.map((a,i)=>`<div class="audio-row"><b>${esc(a.name)}${a.primary?' · principal':''}</b><button data-mute="${i}" aria-label="${a.muted?'Réactiver':'Couper'} ${esc(a.name)}">${a.muted?'OFF':'ON'}</button><div class="meter"><i style="width:${a.level}%"></i></div><span>${a.volume}%</span></div>`).join('')||'<p class="label">Aucune source audio active.</p>'}</section>
+        <section class="section timer"><div class="section-head"><h2>Timer</h2></div><b class="timer-value">${formatDuration(state.seconds)}</b><div class="timer-actions"><button class="action" data-timer="minus">−1 min</button><button class="action" data-timer="toggle">${state.timerRunning?'Pause':'Play'}</button><button class="action" data-timer="plus">+1 min</button><button class="action" data-timer="reset">Reset</button></div></section>
+      </div>
+    </div>
+    ${twitchPanel}
+  </div>`
 }
 function soundboard(){const setup=state.obsSetup;const label=state.runtime?(setup?.ready?'OBS Soundboard · prête':setup?.connected?'OBS Soundboard · à configurer':'OBS Soundboard · OBS hors ligne'):'OBS Soundboard · Démo';return`<section class="section"><div class="section-head"><div><h2>Soundboard</h2><span class="label">${label} · une lecture à la fois</span></div><div><button class="secondary" data-obs-setup>Configurer dans OBS</button> <button class="critical" data-stop>Stop</button></div></div><div class="toolbar"><input type="search" value="${esc(state.search)}" placeholder="Rechercher un son" aria-label="Rechercher un son" data-sound-search><button class="action" data-add-sound>+ Ajouter un son</button></div><div class="sound-groups">${sounds(true)||'<p class="label">Bibliothèque vide.</p>'}</div></section>`}
 function planningItems(){
@@ -162,7 +204,14 @@ function providerCopy(item){
 }
 function planning(){
   const items=planningItems();state.visiblePlanning=items;
-  return `<section class="section"><div class="section-head planning-head"><div><h2>Planning</h2><span class="label">${state.planningFilter==='past'?'Historique':state.planningFilter==='all'?'Tous les événements':'Planning à venir'}</span></div><div class="planning-tools"><select data-planning-filter aria-label="Filtrer le planning"><option value="upcoming" ${state.planningFilter==='upcoming'?'selected':''}>À venir</option><option value="past" ${state.planningFilter==='past'?'selected':''}>Passés</option><option value="all" ${state.planningFilter==='all'?'selected':''}>Tous</option></select><select data-planning-period aria-label="Période d’export"><option value="today" ${state.planningPeriod==='today'?'selected':''}>Aujourd’hui</option><option value="this-week" ${state.planningPeriod==='this-week'?'selected':''}>Cette semaine</option><option value="next-week" ${state.planningPeriod==='next-week'?'selected':''}>Semaine prochaine</option></select><button class="secondary" data-planning-export>Exporter</button>${moduleEnabled('discord')?`<button class="secondary" data-planning-discord ${state.dashboard?.discord?.configured?'':'disabled'}>Publier Discord</button>`:''}<button class="action" data-add-event>+ Nouvel événement</button></div></div><div class="agenda">${items.slice(0,40).map((e,index)=>`<button class="event" data-event-index="${index}"><b>${esc(e.day)}</b><span>${esc(e.time)}</span><strong>${esc(e.title)}</strong><span class="kind">${esc([e.kind,providerCopy(e.raw)].filter(Boolean).join(' · '))}</span></button>`).join('')||'<p class="label">Aucun événement pour ce filtre.</p>'}</div></section>`;
+  return `<section class="section planning-surface">
+    <div class="section-head planning-head">
+      <div><h2>Planning</h2><span class="label">${state.planningFilter==='past'?'Historique':state.planningFilter==='all'?'Tous les événements':'Planning à venir'}</span></div>
+      <button class="action" data-add-event>+ Nouvel événement</button>
+    </div>
+    <div class="planning-primary-tools"><select data-planning-filter aria-label="Filtrer le planning"><option value="upcoming" ${state.planningFilter==='upcoming'?'selected':''}>À venir</option><option value="past" ${state.planningFilter==='past'?'selected':''}>Passés</option><option value="all" ${state.planningFilter==='all'?'selected':''}>Tous</option></select><details class="planning-more"><summary>Partager & exporter</summary><div><select data-planning-period aria-label="Période d’export"><option value="today" ${state.planningPeriod==='today'?'selected':''}>Aujourd’hui</option><option value="this-week" ${state.planningPeriod==='this-week'?'selected':''}>Cette semaine</option><option value="next-week" ${state.planningPeriod==='next-week'?'selected':''}>Semaine prochaine</option></select><button class="secondary" data-planning-export>Exporter l’image</button>${moduleEnabled('discord')?`<button class="secondary" data-planning-discord ${state.dashboard?.discord?.configured?'':'disabled'}>Publier sur Discord</button>`:''}</div></details></div>
+    <div class="agenda">${items.slice(0,40).map((e,index)=>`<button class="event" data-event-index="${index}"><span class="event-when"><b>${esc(e.day)}</b><small>${esc(e.time)}</small></span><strong>${esc(e.title)}</strong><span class="kind">${esc([e.kind,providerCopy(e.raw)].filter(Boolean).join(' · '))}</span><i>›</i></button>`).join('')||'<p class="label">Aucun événement pour ce filtre.</p>'}</div>
+  </section>`;
 }
 const campGroups=[
   {label:'PRÉPARER',items:['Préparation','Notes','Templates']},
@@ -286,7 +335,7 @@ function actionFields(action,index){
   const type=action.type||'soundboard.play',payload=action.payload||{};
   if(type==='soundboard.play')return `<select data-action-param="soundId">${(state.sounds||[]).map(sound=>`<option value="${esc(sound.id)}" ${payload.soundId===sound.id?'selected':''}>${esc(sound.name)}</option>`).join('')}</select><input data-action-param="volume" type="number" min="0" max="1.5" step=".05" value="${esc(payload.volume??1)}" aria-label="Volume">`;
   if(type==='obs.scene')return `<select data-action-param="scene">${(state.dashboard?.obs?.scenes||[]).map(scene=>`<option value="${esc(scene)}" ${payload.scene===scene?'selected':''}>${esc(scene)}</option>`).join('')}</select>`;
-  if(type==='obs.media.restart')return `<select data-action-param="input">${(state.dashboard?.obs?.mediaInputs||[]).map(input=>`<option value="${esc(input)}" ${payload.input===input?'selected':''}>${esc(input)}</option>`).join('')}</select>`;
+  if(type==='obs.media.restart')return `<select data-action-param="input">${publicObsMediaInputs(state.dashboard?.obs?.mediaInputs).map(input=>`<option value="${esc(input)}" ${payload.input===input?'selected':''}>${esc(input)}</option>`).join('')}</select>`;
   if(type==='timer.add')return `<input data-action-param="seconds" type="number" min="-86400" max="86400" value="${esc(payload.seconds??60)}" aria-label="Secondes">`;
   if(type==='timer.start')return `<input data-action-param="seconds" type="number" min="1" max="86400" value="${esc(payload.seconds??300)}" aria-label="Durée en secondes">`;
   return '<span class="help">Aucun paramètre.</span>';
@@ -302,7 +351,7 @@ function automationsContent(){
   return `<div class="connection-stack"><div class="camp-list">${(state.automations.items||[]).map(auto=>`<article class="setup-status"><div class="section-head"><div><b>${auto.enabled?'●':'○'} ${esc(auto.name)}</b><span class="label">${esc(triggerLabels[auto.trigger]||auto.trigger)} · ${auto.lastResult?.status||'jamais exécutée'}</span></div><div class="connection-actions"><button class="secondary" data-auto-edit="${esc(auto.id)}">Modifier</button><button class="secondary" data-auto-toggle="${esc(auto.id)}">${auto.enabled?'Désactiver':'Activer'}</button><button class="critical" data-auto-delete="${esc(auto.id)}">Supprimer</button></div></div></article>`).join('')||'<p class="help">Aucune automatisation.</p>'}</div><form id="camp-automation-form" class="setup-status"><div class="section-head"><b>${editor.id?'Modifier l’automatisation':'Nouvelle automatisation'}</b><button type="button" class="secondary" data-auto-new>Nouvelle</button></div><label class="label">Nom<input name="name" maxlength="120" value="${esc(editor.name||'')}" required></label><label class="label">Quand<select name="trigger">${triggers.map(trigger=>`<option value="${esc(trigger)}" ${editor.trigger===trigger?'selected':''}>${esc(triggerLabels[trigger]||trigger)}</option>`).join('')}</select></label><div class="section-head"><b>Conditions</b><button type="button" class="secondary" data-condition-add>+ Condition</button></div><div id="automation-conditions">${(editor.conditions||[]).map(conditionRow).join('')||'<p class="help">Aucune condition : chaque événement correspondant déclenchera la règle.</p>'}</div><div class="section-head"><b>Actions</b><button type="button" class="secondary" data-action-add>+ Action</button></div><div id="automation-actions">${(editor.actions||[]).map(actionRow).join('')}</div><div class="form-grid"><label class="label">Cooldown (s)<input name="cooldown" type="number" min="0" max="86400" value="${Math.round((editor.cooldownMs||0)/1000)}"></label><label class="checks"><input name="enabled" type="checkbox" ${editor.enabled?'checked':''}> Activée</label></div><button class="action">Enregistrer l’automatisation</button></form></div>`;
 }
 function mediaContent(){
-  const obs=state.dashboard?.obs||{};const media=obs.mediaInputs||[],browsers=obs.browserInputs||[];
+  const obs=state.dashboard?.obs||{};const media=publicObsMediaInputs(obs.mediaInputs),browsers=obs.browserInputs||[];
   return `<div class="connection-stack"><div class="setup-status"><div class="section-head"><b>Sources média OBS</b><span class="label">${media.length}</span></div><div class="pads">${media.map(input=>`<button class="pad" data-media-restart="${esc(input)}">${esc(input)}</button>`).join('')||'<p class="help">Aucune Media Source active.</p>'}</div></div><div class="setup-status"><div class="section-head"><b>Browser Sources</b><span class="label">${browsers.length}</span></div><div class="pads">${browsers.map(input=>`<button class="pad" data-browser-refresh="${esc(input)}">${esc(input)}</button>`).join('')||'<p class="help">Aucune Browser Source détectée.</p>'}</div></div></div>`;
 }
 function diagnosticsContent(){
@@ -574,6 +623,10 @@ function bind(){
   document.querySelector('[data-obs-setup]')?.addEventListener('click',()=>void openObsSetup());
   document.querySelector('[data-live-toggle]')?.addEventListener('click',()=>void toggleLive());
   document.querySelector('[data-open-personalization]')?.addEventListener('click',()=>{state.view='camp';state.campItem='Personnalisation';render()});
+  document.querySelectorAll('[data-go-view]').forEach(button=>button.addEventListener('click',()=>{state.view=button.dataset.goView;render()}));
+  document.querySelectorAll('[data-open-camp]').forEach(button=>button.addEventListener('click',()=>{state.view='camp';state.campItem=button.dataset.openCamp;render();void loadCampData(state.campItem)}));
+  document.querySelector('[data-live-clip]')?.addEventListener('click',async()=>{if(!state.runtime)return toast('Clip simulé');try{await request('/api/v1/twitch/clips',{method:'POST',body:'{}'});toast('Clip Twitch demandé')}catch(error){toast(error.message,true)}});
+  document.querySelector('#desktop-chat-form')?.addEventListener('submit',async event=>{event.preventDefault();const input=event.currentTarget.elements.namedItem('message'),message=String(input?.value||'').trim();if(!message)return;if(!state.runtime)return toast('Message simulé');try{await request('/api/v1/twitch/chat/messages',{method:'POST',body:JSON.stringify({message})});input.value='';toast('Message envoyé')}catch(error){toast(error.message,true)}});
   document.querySelector('[data-add-event]')?.addEventListener('click',()=>openEventDialog());
   document.querySelector('[data-sound-search]')?.addEventListener('input',e=>{state.search=e.currentTarget.value;render()});
   document.querySelectorAll('[data-camp]').forEach(b=>b.onclick=()=>{state.campItem=b.dataset.camp;render();void loadCampData(state.campItem)});
