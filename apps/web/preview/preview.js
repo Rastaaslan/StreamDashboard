@@ -119,7 +119,7 @@ async function refreshRuntime(){
     applyDashboard(dashboard);state.soundboard=soundboard;state.sounds=soundboard.sounds||[];state.obsSetup=setup;
     await loadTwitchCapabilities();
     runtimeUi(true,dashboard.obs?.connected?'OBS connecté':'Runtime connecté · OBS hors ligne');connectRuntimeSocket();render();
-  }catch(error){runtimeUi(true,'Runtime indisponible');toast(error.message,true)}
+  }catch(error){runtimeUi(false,'Runtime indisponible');toast(error.message,true)}
 }
 function applyDashboard(d){
   state.dashboard=d;state.scene=d.obs?.scene||'—';state.timerRunning=d.timer?.running===true;state.seconds=Math.max(0,Math.ceil(Number(d.timer?.remaining)||0));
