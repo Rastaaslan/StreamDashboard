@@ -710,10 +710,11 @@ async function getWsTicket() {
 async function fetchState() {
   // REST state is the authority for whether the PC command channel is reachable.
   // Companion sync must never gate remote-control availability.
-  if (!runtimeCapabilities) {
-    runtimeCapabilities = await transport.capabilities().catch(() => ({ protocolVersion: 0, serverVersion: '', features: [] }));
-    updateRuntimeCompatibility();
-  }
+  const previousCapabilityKey = runtimeCapabilities ? `${runtimeCapabilities.serverVersion || ''}|${(runtimeCapabilities.features || []).join(',')}` : '';
+  runtimeCapabilities = await transport.capabilities().catch(() => ({ protocolVersion: 0, serverVersion: '', features: [] }));
+  const nextCapabilityKey = `${runtimeCapabilities.serverVersion || ''}|${(runtimeCapabilities.features || []).join(',')}`;
+  if (previousCapabilityKey !== nextCapabilityKey) profileLoaded = false;
+  updateRuntimeCompatibility();
   const next = await transport.state();
   if (!profileLoaded) { profileLoaded = true; await loadProductProfile().catch(() => { profileLoaded = false; }); }
   if (!companion.snapshot().pending.length) companion.replaceServerSnapshot(next);
@@ -1031,8 +1032,9 @@ for (const id of ['appearance-theme-input','appearance-preset-input','appearance
 }
 $('profile-appearance-form').onsubmit = async event => {
   event.preventDefault();
-  if (companionMode !== CompanionMode.ONLINE_PC || !productProfile) { note('Connecte le téléphone au PC pour enregistrer le profil partagé.'); return; }
+  if (companionMode !== CompanionMode.ONLINE_PC) { note('Connecte le téléphone au PC pour enregistrer le profil partagé.'); return; }
   if (!requireRuntimeFeature('mobile-profile-presentation')) return;
+  if (!productProfile) { note('Le profil partagé n’a pas pu être chargé depuis le PC.'); return; }
   try {
     const value = {
       profile: {
