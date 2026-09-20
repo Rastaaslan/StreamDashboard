@@ -1081,15 +1081,20 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
     } else {
       const metadata = await twitch.getChannelMetadata();
       twitchChannel = { title: metadata.title, gameId: metadata.gameId, gameName: metadata.gameName };
-      [twitchLive, twitchChatters] = await Promise.all([twitch.getLiveState(), twitch.chatters()]);
-      if (!twitchEventSubStarted) { twitchEventSubStarted = true; twitchEventSub.start(); }
+      const capabilities = twitch.controlCapabilities();
+      twitchLive = await twitch.getLiveState();
+      twitchChatters = capabilities.chatters ? await twitch.chatters() : { items: [], total: 0, cursor: null };
+      if (!capabilities.chatRead) chatStatus = 'DISCONNECTED';
+      if (!twitchEventSubStarted && (capabilities.chatRead || capabilities.redemptions)) { twitchEventSubStarted = true; twitchEventSub.start(); }
     }
     broadcast();
   };
   const refreshTwitchLive = async () => {
     if (!twitch.state.connected) return;
     try {
-      const [live, chatters] = await Promise.all([twitch.getLiveState(), twitch.chatters()]);
+      const capabilities = twitch.controlCapabilities();
+      const live = await twitch.getLiveState();
+      const chatters = capabilities.chatters ? await twitch.chatters() : { items: [], total: 0, cursor: null };
       const liveChanged = live.isLive !== twitchLive.isLive;
       twitchLive = live;
       twitchChatters = chatters;
