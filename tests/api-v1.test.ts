@@ -66,6 +66,29 @@ describe('API publique v1', () => {
     expect(await fetch(`${dashboard.url}/api/v1/profile`).then(response => response.json())).toMatchObject({ profile: { profile: { displayName: 'Profil persistant' }, onboarding: { completed: true } } });
   });
 
+  it('borne l’édition Mobile du profil à la présentation et à l’apparence', async () => {
+    const app = await start();
+    const updated = await fetch(`${app.url}/api/v1/profile/presentation`, {
+      method: 'PUT',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        profile: { displayName: 'Mobile', channelName: 'Chaîne Mobile', language: 'fr' },
+        appearance: { theme: 'oled', preset: 'compact', accent: '#663399', density: 'compact', radius: 'round', textScale: 'large' },
+      }),
+    });
+    expect(updated.status).toBe(200);
+    expect(await updated.json()).toMatchObject({ profile: { profile: { displayName: 'Mobile', channelName: 'Chaîne Mobile' }, appearance: { theme: 'oled', preset: 'compact', accent: '#663399', density: 'compact', radius: 'round', textScale: 'large' } } });
+
+    const forbidden = await fetch(`${app.url}/api/v1/profile/presentation`, {
+      method: 'PUT',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ modules: { twitch: false } }),
+    });
+    expect(forbidden.status).toBe(400);
+    const current = await fetch(`${app.url}/api/v1/profile`).then(response => response.json());
+    expect(current.profile.modules.twitch).toBe(true);
+  });
+
   it('migre une installation sans profil sans déplacer ni perdre les secrets providers', async () => {
     dataDir = await mkdtemp(path.join(os.tmpdir(), 'streamdashboard-migration-'));
     await writeFile(path.join(dataDir, 'dashboard.json'), JSON.stringify({ schemaVersion: 6, settings: { streamerName: 'Ancienne chaîne' }, twitch: { displayName: 'LegacyChannel' } }));
