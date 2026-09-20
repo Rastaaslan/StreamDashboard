@@ -521,7 +521,7 @@ function renderAutomations() {
 }
 let supportState = null;
 const money = (amountMinor, currency) => new Intl.NumberFormat('fr-FR', { style: 'currency', currency }).format(amountMinor / 100);
-async function loadSupports() { if (companionMode !== CompanionMode.ONLINE_PC) { $('support-provider').textContent = 'PC hors ligne · historique conservé sur le PC.'; return; } try { supportState = await transport.supports(); $('support-provider').textContent = supportState.provider.status === 'NOT_CONFIGURED' ? 'Streamlabs n’est pas encore connecté.' : `Streamlabs · ${humanProviderStatus(supportState.provider.status)}`; renderSupports(); } catch (error) { note(error.message); } }
+async function loadSupports() { if (companionMode !== CompanionMode.ONLINE_PC) { $('support-provider').textContent = 'PC hors ligne · historique conservé sur le PC.'; return; } try { supportState = await transport.supports(); $('support-provider').textContent = supportState.provider.status === 'NOT_CONFIGURED' ? 'Streamlabs non configuré · configure-le sur le PC.' : `Streamlabs · ${humanProviderStatus(supportState.provider.status)}`; renderSupports(); } catch (error) { note(error.message); } }
 function renderSupports() {
   if (!supportState) return; const totals = $('support-totals'); totals.replaceChildren();
   for (const [key, label] of [['session', 'LIVE'], ['day', 'AUJOURD’HUI'], ['month', 'CE MOIS']]) { const values = supportState.totals[key] || {}; const card = document.createElement('div'); card.className = 'support-total'; card.append(text('small', label), ...Object.entries(values).map(([currency, amount]) => text('b', money(amount, currency)))); if (!Object.keys(values).length) card.append(text('b', '—')); totals.append(card); }
@@ -633,8 +633,14 @@ function render(next) {
   renderDeck(next.obs.mediaInputs);
   renderControlHub(next.controlHub);
   renderPlanning(next.planning);
-  $('discord-destination').textContent = companionMode === CompanionMode.ONLINE_PC ? `Discord · ${next.discord?.channelName ? `#${next.discord.channelName}` : 'à configurer'}` : 'Connexion PC requise pour publier sur Discord.';
-  $('publish-discord').disabled = companionMode !== CompanionMode.ONLINE_PC || !next.discord?.configured;
+  const discordConfigured = companionMode === CompanionMode.ONLINE_PC && next.discord?.configured === true;
+  $('discord-destination').textContent = companionMode !== CompanionMode.ONLINE_PC
+    ? 'Connexion PC requise pour publier sur Discord.'
+    : discordConfigured
+      ? `Discord · ${next.discord?.channelName ? `#${next.discord.channelName}` : 'destination à choisir'}`
+      : 'Discord · configuration initiale à faire sur le PC';
+  $('publish-discord').disabled = !discordConfigured;
+  for (const id of ['discord-guild','discord-channel','discord-message']) $(id).disabled = !discordConfigured;
   $('timer').textContent = formatDuration(remaining());
   if (companionMode === CompanionMode.ONLINE_PC) showPairing(false);
   remoteButtons(companionMode !== CompanionMode.ONLINE_PC);
@@ -869,13 +875,15 @@ $('export-planning').onclick = async () => {
 const blobBase64 = async blob => { const bytes = new Uint8Array(await blob.arrayBuffer()); let binary = ''; for (let i = 0; i < bytes.length; i += 0x8000) binary += String.fromCharCode(...bytes.subarray(i, i + 0x8000)); return btoa(binary); };
 async function loadDiscordGuilds() {
   if (companionMode !== CompanionMode.ONLINE_PC) { note('Connexion PC requise pour publier sur Discord.'); return; }
+  if (state?.discord?.configured !== true) { note('Configure d’abord Discord sur le PC.'); return; }
   try { const guilds = await transport.discordGuilds(); $('discord-guild').replaceChildren(new Option('Choisir…', ''), ...guilds.map(value => new Option(value.name, value.id))); if (state.discord?.guildId) $('discord-guild').value = state.discord.guildId; $('discord-guild').dispatchEvent(new Event('change')); } catch (error) { note(error.message); }
 }
 $('discord-guild').onfocus = () => { if ($('discord-guild').options.length < 2) void loadDiscordGuilds(); };
-$('discord-guild').onchange = async () => { const guildId = $('discord-guild').value; if (!guildId) return; try { const channels = await transport.discordChannels(guildId); $('discord-channel').replaceChildren(new Option('Choisir…', ''), ...channels.map(value => new Option(`#${value.name}`, value.id))); if (state.discord?.channelId) $('discord-channel').value = state.discord.channelId; } catch (error) { note(error.message); } };
-$('discord-channel').onchange = async () => { try { await transport.discordSettings({ guildId: $('discord-guild').value, channelId: $('discord-channel').value, defaultMessage: $('discord-message').value }); note('Destination Discord enregistrée.'); } catch (error) { note(error.message); } };
+$('discord-guild').onchange = async () => { const guildId = $('discord-guild').value; if (!guildId || state?.discord?.configured !== true) return; try { const channels = await transport.discordChannels(guildId); $('discord-channel').replaceChildren(new Option('Choisir…', ''), ...channels.map(value => new Option(`#${value.name}`, value.id))); if (state.discord?.channelId) $('discord-channel').value = state.discord.channelId; } catch (error) { note(error.message); } };
+$('discord-channel').onchange = async () => { if (state?.discord?.configured !== true) { note('Configure d’abord Discord sur le PC.'); return; } try { await transport.discordSettings({ guildId: $('discord-guild').value, channelId: $('discord-channel').value, defaultMessage: $('discord-message').value }); note('Destination Discord enregistrée.'); } catch (error) { note(error.message); } };
 $('publish-discord').onclick = async () => {
   if (companionMode !== CompanionMode.ONLINE_PC) { note('Connexion PC requise pour publier sur Discord.'); return; }
+  if (state?.discord?.configured !== true) { note('Configure d’abord Discord sur le PC.'); return; }
   try {
     note('Génération du planning…'); const { buildPlanningPng } = await import('./planning-export.js');
     const resolveArtwork = async item => { const cached = recentCategories.find(category => category.id === item.twitchCategoryId)?.box_art_url; if (cached) return cached; const response = await providerSync.searchCategories(companionMode, item.twitchCategoryName || '', recentCategories, value => transport.searchTwitch(value)); return (response.items || response).find(category => category.id === item.twitchCategoryId)?.box_art_url; };
