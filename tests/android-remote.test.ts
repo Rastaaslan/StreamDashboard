@@ -4,6 +4,8 @@ import { apiUrl, nextRetry, normalizeServer, parsePairing, websocketUrl } from '
 
 const mobileIndex = readFileSync(new URL('../apps/mobile/index.html', import.meta.url), 'utf8');
 const mobileScript = readFileSync(new URL('../apps/mobile/mobile.js', import.meta.url), 'utf8');
+const mobileTransport = readFileSync(new URL('../apps/mobile/transport.js', import.meta.url), 'utf8');
+const serverSource = readFileSync(new URL('../apps/server/src/index.ts', import.meta.url), 'utf8');
 const templatesFeature = readFileSync(new URL('../apps/mobile/features/templates.js', import.meta.url), 'utf8');
 const remotePolicy = readFileSync(new URL('../apps/server/src/remote-policy.ts', import.meta.url), 'utf8');
 const androidActivity = readFileSync(new URL('../android/app/src/main/java/com/rastaaslan/streamdashboard/remote/MainActivity.java', import.meta.url), 'utf8');
@@ -126,6 +128,28 @@ describe('Android remote runtime', () => {
     expect(mobileScript).toContain('notifyMobileStreamerPing');
     expect(mobileScript).toContain('document.hidden');
     expect(mobileScript).toContain('notifyStreamerPing?.(');
+  });
+
+  it('permet de modifier le profil et l’apparence partagés depuis Mobile', () => {
+    for (const id of ['profile-appearance-form','profile-display-name','profile-channel-name','appearance-theme-input','appearance-preset-input','appearance-accent-input','appearance-density-input','appearance-radius-input','appearance-text-scale-input']) expect(mobileIndex).toContain(`id="${id}"`);
+    expect(mobileScript).toContain('transport.updateProfilePresentation(value)');
+    expect(mobileScript).toContain('populateProfileAppearanceForm');
+    expect(mobileScript).toContain('previewProfileAppearance');
+    expect(mobileTransport).toContain("'/api/v1/profile/presentation'");
+    expect(serverSource).toContain("pathName === '/v1/profile/presentation'");
+    expect(serverSource).toContain("Object.keys(req.body).some(key => !['profile','appearance'].includes(key))");
+  });
+
+  it('gère les connexions sûres du PC depuis Mobile sans exposer les secrets locaux', () => {
+    for (const action of ['obs-test','twitch-connect','twitch-disconnect','twitch-sync','google-disconnect','google-sync']) expect(mobileScript).toContain(`'${action}'`);
+    expect(mobileTransport).toContain("'/api/v1/connections'");
+    expect(mobileTransport).toContain("'/api/v1/obs/test'");
+    expect(mobileTransport).toContain("'/api/v1/twitch/device'");
+    expect(mobileTransport).toContain("'/api/v1/google/sync'");
+    expect(mobileScript).toContain('La connexion initiale Google du PC doit être autorisée depuis le PC.');
+    expect(mobileScript).toContain('Configuration locale à effectuer sur le PC.');
+    expect(androidActivity).toContain('@JavascriptInterface public void openExternal');
+    expect(androidActivity).toContain('Intent.ACTION_VIEW');
   });
 
   it('édite les automatisations avec le vocabulaire Runtime actuel', () => {
