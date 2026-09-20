@@ -390,7 +390,7 @@ const humanProviderStatus = status => ({ CONNECTED: 'Connecté', CONNECTING: 'Co
 const humanActivity = event => event.type === 'support.received' ? `Soutien · ${event.payload?.displayName || 'Anonyme'}` : event.type === 'stream.started' ? 'Le live a démarré' : event.type === 'stream.stopped' ? 'Le live est terminé' : event.type === 'chat.message.received' ? `Chat · ${event.payload?.chatter?.displayName || 'nouveau message'}` : event.type === 'streamer.ping.received' ? `Ping · ${event.payload?.rewardTitle || 'récompense Twitch'}` : event.type === 'streamer.ping.acknowledged' ? 'Streamer Ping acquitté' : event.type === 'soundboard.played' ? 'Son joué' : event.type === 'automation.triggered' ? 'Automatisation exécutée' : event.type.replaceAll('.', ' · ');
 
 let moderationCapabilities = null;
-let twitchCapabilitiesLoading = false;
+let twitchCapabilitiesFlight = null;
 const twitchCapability = name => moderationCapabilities?.[name] !== false;
 function applyTwitchActionCapabilities() {
   const connected = state?.twitch?.connected === true;
@@ -406,17 +406,26 @@ function applyTwitchActionCapabilities() {
   if ($('template-publish-twitch')) $('template-publish-twitch').title = twitchCapability('schedule') ? '' : 'Reconnecte Twitch pour autoriser la publication du planning.';
 }
 async function loadModerationCapabilities() {
-  if (companionMode !== CompanionMode.ONLINE_PC || state?.twitch?.connected !== true || twitchCapabilitiesLoading) return;
-  twitchCapabilitiesLoading = true;
-  try {
-    moderationCapabilities = await transport.twitchModerationCapabilities();
-    const missing = Object.entries(moderationCapabilities.requiredScopes || {}).filter(([action]) => moderationCapabilities[action] === false).map(([, scope]) => scope);
-    $('moderation-state').textContent = missing.length ? `Fonctions Twitch partielles · reconnecte Twitch pour : ${[...new Set(missing)].join(', ')}` : 'Autorisations Twitch à jour';
-    applyTwitchActionCapabilities();
-    renderHubChat(state?.controlHub?.chat?.messages || []);
-  } catch (error) {
-    $('moderation-state').textContent = error.message;
-  } finally { twitchCapabilitiesLoading = false; }
+  if (companionMode !== CompanionMode.ONLINE_PC || state?.twitch?.connected !== true) return moderationCapabilities;
+  if (twitchCapabilitiesFlight) return twitchCapabilitiesFlight;
+  twitchCapabilitiesFlight = (async () => {
+    try {
+      moderationCapabilities = await transport.twitchModerationCapabilities();
+      const missing = Object.entries(moderationCapabilities.requiredScopes || {}).filter(([action]) => moderationCapabilities[action] === false).map(([, scope]) => scope);
+      $('moderation-state').textContent = missing.length ? `Fonctions Twitch partielles · reconnecte Twitch pour : ${[...new Set(missing)].join(', ')}` : 'Autorisations Twitch à jour';
+      applyTwitchActionCapabilities();
+      renderHubChat(state?.controlHub?.chat?.messages || []);
+      return moderationCapabilities;
+    } catch (error) {
+      $('moderation-state').textContent = error.message;
+      return null;
+    }
+  })().finally(() => { twitchCapabilitiesFlight = null; });
+  return twitchCapabilitiesFlight;
+}
+async function ensureTwitchCapabilities() {
+  if (state?.twitch?.connected !== true) return null;
+  return moderationCapabilities || await loadModerationCapabilities();
 }
 function renderHubChat(messages) {
   const container = $('hub-chat'); container.replaceChildren();
@@ -430,7 +439,7 @@ function renderHubChat(messages) {
     row.append(header);
     if (message.reply) row.append(text('div', `↳ ${message.reply.parentUserName}: ${message.reply.parentMessageBody}`, 'chat-reply'));
     row.append(text('div', `${message.text}${message.bits ? ` · ${message.bits} bits` : ''}`));
-    const menu = document.createElement('details'); menu.className = 'message-menu'; const summary = text('summary', 'Actions'); summary.setAttribute('aria-label', `Actions pour le message de ${message.chatter?.displayName || message.chatter?.login}`); const tools = document.createElement('div'); tools.className = 'inline-actions'; const reply = text('button', 'Répondre'); reply.type = 'button'; reply.onclick = () => { menu.open = false; $('chat-reply-context').hidden = false; $('chat-reply-context').textContent = `Réponse à ${message.chatter?.displayName || message.chatter?.login}`; $('chat-reply-context').dataset.messageId = message.id; $('chat-message').focus(); }; const moderation = (label, capability, run) => { const button = text('button', label); button.type = 'button'; button.disabled = !moderationCapabilities?.[capability]; button.title = button.disabled ? `NOT_AUTHORIZED · ${moderationCapabilities?.requiredScopes?.[capability] || 'scope Twitch requis'}` : ''; button.onclick = async () => { try { await run(); menu.open = false; note(`${label} confirmé par Twitch.`); } catch (error) { note(error.message); } }; return button; }; tools.append(reply, moderation('Supprimer', 'deleteMessage', () => transport.deleteTwitchMessage(message.id)), moderation('Timeout', 'timeout', () => transport.moderateTwitchUser({ userId: message.chatter.id, duration: 600, reason: 'Modération StreamDashboard' })), moderation('Ban', 'ban', () => transport.moderateTwitchUser({ userId: message.chatter.id, reason: 'Modération StreamDashboard' }))); menu.append(summary, tools); row.append(menu);
+    const menu = document.createElement('details'); menu.className = 'message-menu'; const summary = text('summary', 'Actions'); summary.setAttribute('aria-label', `Actions pour le message de ${message.chatter?.displayName || message.chatter?.login}`); const tools = document.createElement('div'); tools.className = 'inline-actions'; const reply = text('button', 'Répondre'); reply.type = 'button'; reply.disabled = moderationCapabilities?.chatWrite === false; reply.title = reply.disabled ? `Reconnecte Twitch pour accorder ${moderationCapabilities.requiredScopes?.chatWrite || 'user:write:chat'}.` : ''; reply.onclick = () => { menu.open = false; $('chat-reply-context').hidden = false; $('chat-reply-context').textContent = `Réponse à ${message.chatter?.displayName || message.chatter?.login}`; $('chat-reply-context').dataset.messageId = message.id; $('chat-message').focus(); }; const moderation = (label, capability, run) => { const button = text('button', label); button.type = 'button'; button.disabled = !moderationCapabilities?.[capability]; button.title = button.disabled ? `NOT_AUTHORIZED · ${moderationCapabilities?.requiredScopes?.[capability] || 'scope Twitch requis'}` : ''; button.onclick = async () => { try { await run(); menu.open = false; note(`${label} confirmé par Twitch.`); } catch (error) { note(error.message); } }; return button; }; tools.append(reply, moderation('Supprimer', 'deleteMessage', () => transport.deleteTwitchMessage(message.id)), moderation('Timeout', 'timeout', () => transport.moderateTwitchUser({ userId: message.chatter.id, duration: 600, reason: 'Modération StreamDashboard' })), moderation('Ban', 'ban', () => transport.moderateTwitchUser({ userId: message.chatter.id, reason: 'Modération StreamDashboard' }))); menu.append(summary, tools); row.append(menu);
     container.append(row);
   }
   if (!container.children.length) container.append(text('p', 'Aucun message reçu pour le moment.', 'muted'));
@@ -674,7 +683,7 @@ function render(next) {
   remoteButtons(companionMode !== CompanionMode.ONLINE_PC);
   $('stream').disabled = !next.obs.connected; $('live-stream').disabled = $('stream').disabled;
   if (!next.twitch?.connected) moderationCapabilities = null;
-  else if (!moderationCapabilities && !twitchCapabilitiesLoading) void loadModerationCapabilities();
+  else if (!moderationCapabilities && !twitchCapabilitiesFlight) void loadModerationCapabilities();
   applyTwitchActionCapabilities();
   const chattingActive = next.mode === 'live' && Boolean(next.settings.chattingScene) && next.obs.scene === next.settings.chattingScene;
   const availableScenes = next.obs.scenes || [];
@@ -949,7 +958,7 @@ document.addEventListener('click', event => {
           : $('pairing');
   requestAnimationFrame(() => destination.scrollIntoView({ block: 'start' }));
 });
-async function createQuickClip() { if (companionMode !== CompanionMode.ONLINE_PC) throw new Error('PC requis.'); if (moderationCapabilities?.createClip === false) throw new Error(`Reconnecte Twitch pour accorder ${moderationCapabilities.requiredScopes?.createClip || 'clips:edit'}.`); const clip = await transport.createTwitchClip(); globalThis.StreamDashboardNative?.haptic?.('light'); note(`Clip créé · ${clip.id}`); }
+async function createQuickClip() { if (companionMode !== CompanionMode.ONLINE_PC) throw new Error('PC requis.'); await ensureTwitchCapabilities(); if (moderationCapabilities?.createClip === false) throw new Error(`Reconnecte Twitch pour accorder ${moderationCapabilities.requiredScopes?.createClip || 'clips:edit'}.`); const clip = await transport.createTwitchClip(); globalThis.StreamDashboardNative?.haptic?.('light'); note(`Clip créé · ${clip.id}`); }
 async function togglePrimaryMic() { const value = primaryMicCommand(state); const confirmed = await command(value, { reconcile: next => next.obs?.inputs?.[value.input]?.muted === value.muted }); if (!confirmed) throw new Error('Commande non confirmée par le PC.'); }
 const configuredScene = mode => mode === 'chatting' ? state?.settings?.chattingScene : state?.settings?.modeScenes?.[mode];
 const availableAudioInputs = () => {
@@ -1175,6 +1184,7 @@ $('slot-form').onsubmit = async event => {
   event.preventDefault(); const form = new FormData(event.currentTarget);
   const date = form.get('date'); const startAtUtc = new Date(`${date}T${form.get('start')}`).toISOString(); const endAtUtc = new Date(`${date}T${form.get('end')}`).toISOString();
   try {
+    if (form.get('twitch') === 'on') await ensureTwitchCapabilities();
     if (form.get('twitch') === 'on' && moderationCapabilities?.schedule === false) throw new Error(`Reconnecte Twitch pour accorder ${moderationCapabilities.requiredScopes?.schedule || 'channel:manage:schedule'}.`);
     if (form.get('twitch') === 'on' && !$('slot-twitch-game-id').value) throw new Error('Sélectionnez une catégorie Twitch officielle.');
     const recurrenceValue = String(form.get('recurrence') || ''); const [frequency, interval] = recurrenceValue.split('-'); const untilDate = String(form.get('recurrenceUntil') || '');
@@ -1206,6 +1216,7 @@ function attachCategoryPicker(inputId, gameIdId, resultsId) {
 attachCategoryPicker('twitch-category','twitch-game-id','twitch-results');
 attachCategoryPicker('slot-twitch-category','slot-twitch-game-id','slot-twitch-results');
 $('save-twitch').onclick = async () => {
+  await ensureTwitchCapabilities();
   if (moderationCapabilities?.updateChannel === false) { note(`Reconnecte Twitch pour accorder ${moderationCapabilities.requiredScopes?.updateChannel || 'channel:manage:broadcast'}.`); return; }
   try {
     const next = await transport.updateTwitch({ title: $('twitch-title').value, gameId: $('twitch-game-id').value, gameName: $('twitch-category').value });
@@ -1278,7 +1289,7 @@ function openLiveTool(tool) {
   if (tool === 'vod') { void loadVods(); void loadClips(); }
   if (tool === 'automations') void loadSoundboard().then(loadAutomations);
   if (tool === 'supports') void loadSupports();
-  if (tool === 'audience') { void loadMoreChatters(true); void loadModerationCapabilities(); }
+  if (tool === 'audience') { void ensureTwitchCapabilities().then(() => loadMoreChatters(true)); }
 }
 $('close-live-tool').onclick = () => $('live-tools-sheet').close();
 $('live-tools-sheet').onclick = event => { if (event.target === $('live-tools-sheet')) $('live-tools-sheet').close(); };
@@ -1315,8 +1326,8 @@ $('diagnostics').ontoggle = () => { if ($('diagnostics').open) void loadDiagnost
 $('refresh-vods').onclick = () => void loadVods();
 $('more-vods').onclick = () => void loadVods(true);
 $('more-clips').onclick = () => void loadClips(true);
-$('create-clip').onclick = async () => { if (companionMode !== CompanionMode.ONLINE_PC) { note('PC hors ligne.'); return; } if (moderationCapabilities?.createClip === false) { note(`Reconnecte Twitch pour accorder ${moderationCapabilities.requiredScopes?.createClip || 'clips:edit'}.`); return; } try { const clip = await transport.createTwitchClip(); note(`Clip accepté par Twitch (${clip.id}). Il sera disponible après traitement.`); await loadClips(); } catch (error) { note(error.message); } };
-$('chat-form').onsubmit = async event => { event.preventDefault(); const message = $('chat-message').value.trim(); if (!message) return; if (companionMode !== CompanionMode.ONLINE_PC) { note('PC hors ligne. Le message n’a pas été envoyé.'); return; } if (moderationCapabilities?.chatWrite === false) { note(`Reconnecte Twitch pour accorder ${moderationCapabilities.requiredScopes?.chatWrite || 'user:write:chat'}.`); return; } try { const replyParentMessageId = $('chat-reply-context').dataset.messageId; await transport.sendTwitchChat({ message, ...(replyParentMessageId ? { replyParentMessageId } : {}) }); $('chat-message').value = ''; $('chat-reply-context').hidden = true; delete $('chat-reply-context').dataset.messageId; note('Message confirmé par Twitch.'); } catch (error) { note(error.message); } };
+$('create-clip').onclick = async () => { if (companionMode !== CompanionMode.ONLINE_PC) { note('PC hors ligne.'); return; } await ensureTwitchCapabilities(); if (moderationCapabilities?.createClip === false) { note(`Reconnecte Twitch pour accorder ${moderationCapabilities.requiredScopes?.createClip || 'clips:edit'}.`); return; } try { const clip = await transport.createTwitchClip(); note(`Clip accepté par Twitch (${clip.id}). Il sera disponible après traitement.`); await loadClips(); } catch (error) { note(error.message); } };
+$('chat-form').onsubmit = async event => { event.preventDefault(); const message = $('chat-message').value.trim(); if (!message) return; if (companionMode !== CompanionMode.ONLINE_PC) { note('PC hors ligne. Le message n’a pas été envoyé.'); return; } await ensureTwitchCapabilities(); if (moderationCapabilities?.chatWrite === false) { note(`Reconnecte Twitch pour accorder ${moderationCapabilities.requiredScopes?.chatWrite || 'user:write:chat'}.`); return; } try { const replyParentMessageId = $('chat-reply-context').dataset.messageId; await transport.sendTwitchChat({ message, ...(replyParentMessageId ? { replyParentMessageId } : {}) }); $('chat-message').value = ''; $('chat-reply-context').hidden = true; delete $('chat-reply-context').dataset.messageId; note('Message confirmé par Twitch.'); } catch (error) { note(error.message); } };
 $('unban-user').onclick = async () => { const userId = $('unban-user-id').value.trim(); if (!moderationCapabilities?.unban) { note(`NOT_AUTHORIZED · ${moderationCapabilities?.requiredScopes?.unban || 'scope Twitch requis'}`); return; } try { await transport.unbanTwitchUser(userId); $('unban-user-id').value = ''; note('UNBAN confirmé par Twitch.'); } catch (error) { note(error.message); } };
 
 if ('serviceWorker' in navigator && window.isSecureContext) {
