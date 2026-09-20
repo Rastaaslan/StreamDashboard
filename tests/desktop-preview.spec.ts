@@ -6,7 +6,7 @@ test('Desktop Preview navigue et émet une commande unique par contrôle', async
   const profile=await mkdtemp(path.join(os.tmpdir(),'streamdashboard-preview-'));
   const app=await electron.launch({args:[path.resolve('.'),'--ui-preview=desktop-v2'],env:{...process.env,NODE_ENV:'test',APPDATA:profile,XDG_CONFIG_HOME:profile}});
   try { const page=await app.firstWindow(); await expect(page).toHaveTitle('StreamDashboard Desktop Preview'); await expect(page.locator('html')).toHaveAttribute('data-app-ready','true');
-    for(const [view,label] of [['home','Accueil'],['live','Live'],['sounds','Sons'],['planning','Planning'],['camp','Le Camp']]){await page.locator(`[data-view="${view}"]`).click();await expect(page.locator('#title')).toHaveText(label)}
+    for(const [view,label] of [['home','Accueil'],['live','Live'],['sounds','Sons'],['planning','Planning'],['camp','Application']]){await page.locator(`[data-view="${view}"]`).click();await expect(page.locator('#title')).toHaveText(label)}
     await page.locator('[data-view="live"]').click();
     for(const scene of ['Intro','Gameplay','Chatting','Pause','Fin']){const before=await page.evaluate(()=>(window as any).__preview.commandLog.length);await page.locator(`[data-scene="${scene}"]`).click();expect(await page.evaluate(()=>(window as any).__preview.commandLog.length)).toBe(before+1)}
     const before=await page.evaluate(()=>(window as any).__preview.commandLog.length);await page.locator('[data-view="sounds"]').click();await page.locator('[data-sound="bonk"]').click();
@@ -14,8 +14,12 @@ test('Desktop Preview navigue et émet une commande unique par contrôle', async
     await page.locator('[data-add-sound]').first().click(); await expect(page.locator('#sound-dialog')).toBeVisible(); await page.locator('[data-close-dialog="sound-dialog"]').click();
     await page.locator('[data-view="sounds"]').click(); await page.locator('[data-obs-setup]').click(); await expect(page.locator('#obs-setup-dialog')).toContainText('StreamDashboard • Soundboard'); await page.locator('[data-close-dialog="obs-setup-dialog"]').click();
 
-    await page.locator('[data-view="camp"]').click(); await page.locator('[data-camp="Connexions"]').click();
-    for (const service of ['OBS','Twitch','Google Calendar','Discord','Streamlabs','WizeBot','Android']) await expect(page.locator('#camp-copy')).toContainText(service);
+    await page.locator('[data-view="camp"]').click(); await expect(page.locator('#title')).toHaveText('Application');
+    await page.locator('[data-camp="Personnalisation"]').click();
+    await expect(page.locator('#product-profile-form')).toBeVisible();
+    await expect(page.locator('#camp-copy')).toContainText('Profil StreamDashboard');
+    await page.locator('[data-camp="Connexions"]').click();
+    for (const service of ['OBS','Twitch','Android']) await expect(page.locator('#camp-copy')).toContainText(service);
     await expect(page.locator('[data-connection-action="obs-test"]')).toBeDisabled();
 
     let testedObs = false;
