@@ -9,9 +9,13 @@ import {
 
 const REMOTE_MODES = new Set(['intro', 'live', 'pause', 'end']);
 
+type RemotePlanningProvider = Pick<NonNullable<NonNullable<CalendarItem['providers']>['twitch']>, 'status' | 'lastError' | 'lastSyncedAt' | 'deletedRemotely'>;
 type RemotePlanningItem = Pick<CalendarItem,
-  'id' | 'title' | 'description' | 'startAtUtc' | 'endAtUtc' | 'allDay' | 'category' | 'kind' | 'source' | 'editable' | 'twitchCategoryId' | 'twitchCategoryName' | 'desiredPublication' | 'recurrence' | 'seriesId' | 'occurrenceKey'
->;
+  'id' | 'title' | 'description' | 'startAtUtc' | 'endAtUtc' | 'allDay' | 'category' | 'kind' | 'source' | 'editable' | 'twitchCategoryId' | 'twitchCategoryName' | 'desiredPublication' | 'recurrence' | 'seriesId' | 'occurrenceKey' | 'syncError'
+> & {
+  providers?: Partial<Record<'twitch' | 'google', RemotePlanningProvider>>;
+  conflict?: Pick<NonNullable<CalendarItem['conflict']>, 'provider' | 'detectedAt'>;
+};
 type ExtendedRemoteDashboardState = Omit<RemoteDashboardState, 'planning' | 'nextLive'> & {
   planning: RemotePlanningItem[];
   nextLive: RemotePlanningItem | null;
@@ -72,6 +76,14 @@ export function toRemoteDashboardState(state: DashboardState): ExtendedRemoteDas
     ...(item.twitchCategoryId !== undefined ? { twitchCategoryId: item.twitchCategoryId } : {}),
     ...(item.twitchCategoryName !== undefined ? { twitchCategoryName: item.twitchCategoryName } : {}),
     ...(item.desiredPublication !== undefined ? { desiredPublication: { ...item.desiredPublication } } : {}),
+    ...(item.syncError !== undefined ? { syncError: item.syncError } : {}),
+    ...(item.providers !== undefined ? { providers: Object.fromEntries(Object.entries(item.providers).map(([provider, link]) => [provider, link ? {
+      status: link.status,
+      ...(link.lastError !== undefined ? { lastError: link.lastError } : {}),
+      ...(link.lastSyncedAt !== undefined ? { lastSyncedAt: link.lastSyncedAt } : {}),
+      ...(link.deletedRemotely !== undefined ? { deletedRemotely: link.deletedRemotely } : {}),
+    } : undefined]).filter(([, link]) => link !== undefined)) as RemotePlanningItem['providers'] } : {}),
+    ...(item.conflict !== undefined ? { conflict: { provider: item.conflict.provider, detectedAt: item.conflict.detectedAt } } : {}),
     ...(item.recurrence !== undefined ? { recurrence: structuredClone(item.recurrence) } : {}),
     ...(item.seriesId !== undefined ? { seriesId: item.seriesId } : {}),
     ...(item.occurrenceKey !== undefined ? { occurrenceKey: item.occurrenceKey } : {}),
@@ -103,7 +115,7 @@ export function toRemoteDashboardState(state: DashboardState): ExtendedRemoteDas
       gameName: state.twitch.gameName,
       error: state.twitch.error,
     },
-    ...(state.google ? { google: { configured: state.google.configured, connected: state.google.connected } } : {}),
+    ...(state.google ? { google: { configured: state.google.configured, connected: state.google.connected, targetCalendarId: state.google.targetCalendarId } } : {}),
     ...(state.discord ? { discord: structuredClone(state.discord) } : {}),
     ...(state.preflight ? { preflight: { ...state.preflight } } : {}),
     ...(state.streamerPings ? { streamerPings: state.streamerPings.map(ping => ({ ...ping })) } : {}),
