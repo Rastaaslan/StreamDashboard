@@ -39,7 +39,7 @@ test('Electron réel démarre, persiste, impose une instance et arrête son back
       await expect(window.locator('#title')).toHaveText(title);
       await expect(window.locator('#view')).not.toBeEmpty();
     }
-    for (const tool of ['Préparation','Notes','Templates','Soutiens','Automatisations','Médias OBS','Connexions','Personnalisation','Diagnostics','Réglages']) {
+    for (const tool of ['Préparation','Notes','Templates','Soutiens','Alertes viewers','Automatisations','Médias OBS','Connexions','Personnalisation','Diagnostics','Réglages']) {
       const control = window.locator(`[data-camp="${tool}"]`);
       if (await control.count()) {
         await control.click();
