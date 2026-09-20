@@ -1927,7 +1927,7 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
       res.json(await changed());
     } catch (error) { next(error); }
   });
-  app.post('/api/v1/google/disconnect', async (req, res, next) => {
+  app.post('/api/v1/google/disconnect', async (_req, res, next) => {
     try {
       googleOAuthAttempt = null;
       await google.disconnect();
@@ -1937,7 +1937,7 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
       res.json(await changed());
     } catch (error) { next(error); }
   });
-  app.post('/api/v1/google/sync', async (req, res, next) => {
+  app.post('/api/v1/google/sync', async (_req, res, next) => {
     try {
       res.json(await plan(async () => {
         if (!google.connected) throw new Error('Connectez Google Calendar avant de synchroniser.');
