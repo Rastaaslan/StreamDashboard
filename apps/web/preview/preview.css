@@ -120,3 +120,14 @@ dialog{background:var(--panel)}
 .live-twitch-settings>summary::-webkit-details-marker{display:none}.live-twitch-settings>summary span{display:grid;gap:2px}.live-twitch-settings>summary small{color:var(--muted);font-weight:400}.live-twitch-settings>summary i{color:var(--muted);font-style:normal;transition:.15s}
 .live-twitch-settings[open]>summary{border-bottom:1px solid var(--line)}.live-twitch-settings[open]>summary i{transform:rotate(90deg)}
 .live-twitch-settings form{padding:var(--section-pad)}.live-twitch-settings form>label{display:grid;gap:6px;margin-bottom:12px}.live-twitch-settings input,.live-twitch-settings select{min-height:44px;border:1px solid var(--line);border-radius:var(--radius);background:var(--raised);color:var(--text);padding:0 12px}
+
+
+/* Profile-driven OBS shortcuts */
+.profile-scenes{display:grid;gap:7px;margin:4px 0 9px}
+.profile-scene-row{display:grid;grid-template-columns:minmax(130px,.7fr) minmax(180px,1.3fr) 44px;gap:8px;align-items:center}
+.profile-scene-row input{min-height:42px;border:1px solid var(--line);border-radius:var(--radius);background:var(--raised);color:var(--text);padding:0 10px}
+.profile-scene-row button{min-height:42px}.quick-action-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;margin-top:12px}
+.quick-action-grid label{display:flex!important;align-items:center;gap:8px;margin:0!important;padding:10px 12px;border:1px solid var(--line);border-radius:var(--radius);background:var(--panel);color:var(--muted)!important}
+.quick-action-grid input{width:auto!important;min-height:0!important}
+.live-quick-actions{display:flex;flex-wrap:wrap;gap:8px;margin-top:-6px}.live-quick-actions button{min-height:38px;padding:0 12px}
+@media(max-width:900px){.quick-action-grid{grid-template-columns:1fr}.profile-scene-row{grid-template-columns:1fr 1fr 44px}}
