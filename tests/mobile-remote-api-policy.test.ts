@@ -9,7 +9,7 @@ describe('contrat API télécommande Mobile', () => {
     ['GET','/v1/soundboard'],['POST','/v1/soundboard/play'],['POST','/v1/soundboard/volume'],['POST','/v1/soundboard/stop'],['PUT','/v1/soundboard/sounds/bonk'],
     ['GET','/v1/automations'],['GET','/v1/automations/capabilities'],['POST','/v1/automations'],['POST','/v1/automations/test'],['PUT','/v1/automations/a1'],['DELETE','/v1/automations/a1'],
     ['GET','/v1/supports'],
-    ['POST','/v1/twitch/device'],['POST','/v1/twitch/disconnect'],['GET','/v1/twitch/categories'],['POST','/v1/twitch/channel'],
+    ['POST','/v1/twitch/device'],['POST','/v1/twitch/disconnect'],['POST','/v1/google/disconnect'],['GET','/v1/twitch/categories'],['POST','/v1/twitch/channel'],
     ['GET','/v1/twitch/videos'],['DELETE','/v1/twitch/videos/123'],['GET','/v1/twitch/clips'],['POST','/v1/twitch/clips'],
     ['GET','/v1/twitch/chatters'],['POST','/v1/twitch/chat/messages'],['GET','/v1/twitch/moderation/capabilities'],
     ['DELETE','/v1/twitch/moderation/messages/msg_1'],['POST','/v1/twitch/moderation/bans'],['DELETE','/v1/twitch/moderation/bans/42'],
