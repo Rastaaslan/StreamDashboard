@@ -34,7 +34,7 @@ const uid=()=>globalThis.crypto?.randomUUID?.()||`cmd_${Date.now()}_${Math.rando
 const viewModules={live:['obs'],sounds:['soundboard'],planning:['planning']};
 const campRequirements={
   'Préparation':['checklist'],'Notes':['notes'],'Templates':['templates'],'Soutiens':['streamlabs'],
-  'Automatisations':['automations'],'Médias OBS':['obs'],'Connexions':[],'Personnalisation':[],'Réglages':[],'Diagnostics':[]
+  'Automatisations':['automations'],'Médias OBS':['obs'],'Alertes viewers':['streamerPings'],'Connexions':[],'Personnalisation':[],'Réglages':[],'Diagnostics':[]
 };
 const moduleEnabled=id=>state.productProfile?.modules?.[id]!==false;
 const viewEnabled=id=>!viewModules[id]||viewModules[id].some(moduleEnabled);
@@ -75,7 +75,7 @@ function connectRuntimeSocket(){
   if(!state.runtime||runtimeSocket&&runtimeSocket.readyState<2)return;
   const socket=new WebSocket(`${location.protocol==='https:'?'wss':'ws'}://${location.host}/ws/v1`);runtimeSocket=socket;
   socket.onopen=()=>runtimeUi(true,state.dashboard?.obs?.connected?'OBS connecté · temps réel':'Runtime connecté · temps réel');
-  socket.onmessage=event=>{try{const message=JSON.parse(event.data);if(message.type==='state.updated'&&message.data){applyDashboard(message.data);if(!editableFocus()){render();if(state.campItem==='Réglages'&&state.twitchRewards===null&&state.dashboard?.twitch?.redemptionsAvailable===true)void loadStreamerPingRewards()}}}catch{/* événement invalide ignoré */}};
+  socket.onmessage=event=>{try{const message=JSON.parse(event.data);if(message.type==='state.updated'&&message.data){applyDashboard(message.data);if(!editableFocus()){render();if(state.campItem==='Alertes viewers'&&state.twitchRewards===null&&state.dashboard?.twitch?.redemptionsAvailable===true)void loadStreamerPingRewards()}}}catch{/* événement invalide ignoré */}};
   socket.onclose=()=>{if(runtimeSocket===socket)runtimeSocket=null;if(!state.runtime)return;runtimeUi(true,'Runtime connecté · reconnexion temps réel…');socketRetry=setTimeout(connectRuntimeSocket,1500)};
   socket.onerror=()=>socket.close();
 }
@@ -184,6 +184,7 @@ function live(){
         <div><span class="live-pill">${state.live.active?'● EN DIRECT':'○ PRÊT'}</span><h2>${esc(state.live.title||'Prêt à streamer')}</h2><p>${esc(state.live.category||'—')} · ${esc(state.live.duration)}</p></div>
         <div class="live-hero-actions">${moduleEnabled('twitch')?`<span><b>${esc(state.live.viewers??'—')}</b><small>viewers</small></span>`:''}<button class="${state.live.active?'critical':'action'}" data-live-toggle>${state.live.active?'Arrêter':'Démarrer'}</button></div>
       </section>
+      ${twitchLiveSettingsContent()}
       <section class="section"><div class="section-head"><div><h2>Scènes</h2><span class="label">Active · ${esc(state.scene)}</span></div></div>${scenes()}</section>
       <div class="cockpit-secondary">
         <section class="section"><div class="section-head"><h2>Audio</h2><span class="label">Sources actives</span></div>${state.audio.map((a,i)=>`<div class="audio-row"><b>${esc(a.name)}${a.primary?' · principal':''}</b><button data-mute="${i}" aria-label="${a.muted?'Réactiver':'Couper'} ${esc(a.name)}">${a.muted?'OFF':'ON'}</button><div class="meter"><i style="width:${a.level}%"></i></div><span>${a.volume}%</span></div>`).join('')||'<p class="label">Aucune source audio active.</p>'}</section>
@@ -238,7 +239,7 @@ function planning(){
 }
 const campGroups=[
   {label:'PRÉPARER',items:['Préparation','Notes','Templates']},
-  {label:'COMMUNAUTÉ',items:['Soutiens']},
+  {label:'COMMUNAUTÉ',items:['Soutiens','Alertes viewers']},
   {label:'AUTOMATISER',items:['Automatisations','Médias OBS']},
   {label:'APPLICATION',items:['Connexions','Personnalisation','Réglages','Diagnostics']}
 ];
@@ -321,7 +322,7 @@ async function loadCampData(item=state.campItem){
     else if(item==='Automatisations')await loadAutomations();
     else if(item==='Connexions')state.streamlabsOAuth=await request('/api/v1/supports/streamlabs/oauth/status');
     else if(item==='Diagnostics')await loadDiagnostics();
-    else if(item==='Réglages'){
+    else if(item==='Alertes viewers'){
       await Promise.all([loadPingHistory(),state.dashboard?.twitch?.redemptionsAvailable===true?request('/api/v1/twitch/rewards').then(result=>{state.twitchRewards=result.items||[]}):Promise.resolve()]);
     }
     if(state.view==='camp'&&state.campItem===item&&!editableFocus())render();
@@ -382,10 +383,15 @@ function diagnosticsContent(){
   const runtime=d.runtime||{};const events=state.diagnostics?.events||[];
   return `<div class="connection-stack"><div class="support-summary"><article class="setup-status"><span class="label">Version</span><b>${esc(runtime.version||state.dashboard?.runtime?.serverVersion||'—')}</b></article><article class="setup-status"><span class="label">Uptime</span><b>${Math.round(Number(runtime.uptime)||0)} s</b></article><article class="setup-status"><span class="label">State revision</span><b>${state.dashboard?.stateRevision??'—'}</b></article></div><div class="connection-actions"><button class="secondary" data-camp-action="diagnostics-refresh">Rafraîchir</button></div>${(d.errors||[]).length?`<div class="setup-status"><b>Erreurs Runtime</b>${d.errors.slice(-10).reverse().map(error=>`<p class="warning">${esc(error.message||error)}</p>`).join('')}</div>`:''}<div class="camp-list">${events.slice().reverse().slice(0,50).map(event=>`<div class="diagnostic-line"><time>${esc(new Date(event.occurredAt).toLocaleTimeString('fr-FR'))}</time><b>${esc(event.type)}</b><span>${esc(event.source)}</span></div>`).join('')||'<p class="help">Aucun événement récent.</p>'}</div></div>`;
 }
+function twitchLiveSettingsContent(){
+  if(!moduleEnabled('twitch'))return'';
+  const twitch=state.dashboard?.twitch||{};
+  return `<details class="section live-twitch-settings"><summary><span><b>Informations Twitch</b><small>${twitch.connected?'Connecté':'Déconnecté'} · titre et catégorie</small></span><i>›</i></summary><form id="live-twitch-settings"><label class="label">Titre<input name="title" maxlength="140" value="${esc(twitch.channelTitle||'')}" ${twitch.connected?'':'disabled'}></label><div class="toolbar"><input id="live-twitch-category" name="gameName" maxlength="80" value="${esc(twitch.gameName||'')}" placeholder="Catégorie Twitch" ${twitch.connected?'':'disabled'}><input id="live-twitch-game-id" name="gameId" type="hidden" value="${esc(twitch.gameId||'')}"><button type="button" class="secondary" data-live-twitch-category-search ${twitch.connected?'':'disabled'}>Rechercher</button></div><select id="live-twitch-category-results" hidden></select><button class="action" ${twitch.connected?'':'disabled'}>Mettre à jour Twitch</button></form></details>`;
+}
 function generalSettingsContent(){
-  const settings=state.dashboard?.settings||{},obs=state.dashboard?.obs||{},twitch=state.dashboard?.twitch||{};
+  const settings=state.dashboard?.settings||{},obs=state.dashboard?.obs||{};
   const sceneOptions=value=>`<option value="">—</option>${(obs.scenes||[]).map(scene=>`<option value="${esc(scene)}" ${value===scene?'selected':''}>${esc(scene)}</option>`).join('')}`;
-  return `<div class="connection-stack"><form id="camp-general-settings" class="setup-status"><div class="section-head"><b>Application & OBS</b><span class="label">Réglages fonctionnels</span></div><label class="label">Nom affiché<input name="streamerName" maxlength="80" value="${esc(settings.streamerName||'')}"></label><div class="form-grid"><label class="label">Mode de démarrage<select name="startMode"><option value="intro" ${settings.startMode!=='live'?'selected':''}>Intro</option><option value="live" ${settings.startMode==='live'?'selected':''}>Live</option></select></label><label class="label">Micro principal<select name="primaryMicInput"><option value="">—</option>${Object.keys(obs.inputs||{}).map(input=>`<option value="${esc(input)}" ${settings.primaryMicInput===input?'selected':''}>${esc(input)}</option>`).join('')}</select></label></div><div class="form-grid"><label class="label">Scène Intro<select name="sceneIntro">${sceneOptions(settings.modeScenes?.intro)}</select></label><label class="label">Scène Gameplay<select name="sceneLive">${sceneOptions(settings.modeScenes?.live)}</select></label><label class="label">Scène Chatting<select name="chattingScene">${sceneOptions(settings.chattingScene)}</select></label><label class="label">Scène Pause<select name="scenePause">${sceneOptions(settings.modeScenes?.pause)}</select></label><label class="label">Scène Fin<select name="sceneEnd">${sceneOptions(settings.modeScenes?.end)}</select></label><label class="label">Timer Browser Source<select name="timerBrowserSource"><option value="">—</option>${(obs.browserInputs||[]).map(input=>`<option value="${esc(input)}" ${settings.timerBrowserSource===input?'selected':''}>${esc(input)}</option>`).join('')}</select></label></div><div class="checks"><label><input name="confirmStop" type="checkbox" ${settings.confirmStop?'checked':''}> Confirmation avant arrêt</label><label><input name="launchObs" type="checkbox" ${settings.launchObs?'checked':''}> Lancer OBS avec StreamDashboard</label><label><input name="requireTimerOverlayOnStart" type="checkbox" ${settings.requireTimerOverlayOnStart?'checked':''}> Exiger le timer au démarrage</label></div><button class="action">Enregistrer les réglages</button></form><form id="camp-twitch-live-settings" class="setup-status"><div class="section-head"><b>Informations Twitch</b><span class="label">${twitch.connected?'Connecté':'Déconnecté'}</span></div><label class="label">Titre<input name="title" maxlength="140" value="${esc(twitch.channelTitle||'')}" ${twitch.connected?'':'disabled'}></label><div class="toolbar"><input id="camp-twitch-category" name="gameName" maxlength="80" value="${esc(twitch.gameName||'')}" placeholder="Catégorie Twitch" ${twitch.connected?'':'disabled'}><input id="camp-twitch-game-id" name="gameId" type="hidden" value="${esc(twitch.gameId||'')}"><button type="button" class="secondary" data-twitch-category-search ${twitch.connected?'':'disabled'}>Rechercher</button></div><select id="camp-twitch-category-results" hidden></select><button class="action" ${twitch.connected?'':'disabled'}>Mettre à jour Twitch</button></form></div>`;
+  return `<div class="connection-stack"><form id="camp-general-settings" class="setup-status"><div class="section-head"><b>Desktop & OBS</b><span class="label">Réglages locaux à cet ordinateur</span></div><label class="label">Nom local<input name="streamerName" maxlength="80" value="${esc(settings.streamerName||'')}"></label><div class="form-grid"><label class="label">Mode de démarrage<select name="startMode"><option value="intro" ${settings.startMode!=='live'?'selected':''}>Intro</option><option value="live" ${settings.startMode==='live'?'selected':''}>Live</option></select></label><label class="label">Micro principal<select name="primaryMicInput"><option value="">—</option>${Object.keys(obs.inputs||{}).map(input=>`<option value="${esc(input)}" ${settings.primaryMicInput===input?'selected':''}>${esc(input)}</option>`).join('')}</select></label></div><div class="form-grid"><label class="label">Scène Intro<select name="sceneIntro">${sceneOptions(settings.modeScenes?.intro)}</select></label><label class="label">Scène Gameplay<select name="sceneLive">${sceneOptions(settings.modeScenes?.live)}</select></label><label class="label">Scène Chatting<select name="chattingScene">${sceneOptions(settings.chattingScene)}</select></label><label class="label">Scène Pause<select name="scenePause">${sceneOptions(settings.modeScenes?.pause)}</select></label><label class="label">Scène Fin<select name="sceneEnd">${sceneOptions(settings.modeScenes?.end)}</select></label><label class="label">Timer Browser Source<select name="timerBrowserSource"><option value="">—</option>${(obs.browserInputs||[]).map(input=>`<option value="${esc(input)}" ${settings.timerBrowserSource===input?'selected':''}>${esc(input)}</option>`).join('')}</select></label></div><div class="checks"><label><input name="confirmStop" type="checkbox" ${settings.confirmStop?'checked':''}> Confirmation avant arrêt</label><label><input name="launchObs" type="checkbox" ${settings.launchObs?'checked':''}> Lancer OBS avec StreamDashboard</label><label><input name="requireTimerOverlayOnStart" type="checkbox" ${settings.requireTimerOverlayOnStart?'checked':''}> Exiger le timer au démarrage</label></div><button class="action">Enregistrer les réglages</button></form></div>`;
 }
 function pingHistoryContent(){
   const history=state.pingHistory||[];const pending=history.filter(ping=>!ping.acknowledgedAt).length;
@@ -490,9 +496,7 @@ function bindProductPersonalization(){
     }catch(error){toast(error.message,true)}
   });
 }
-function settingsContent(){
-  return `${generalSettingsContent()}${moduleEnabled('streamerPings')?`<div class="connection-stack">${streamerPingSettings()}${pingHistoryContent()}</div>`:''}`;
-}
+function settingsContent(){return generalSettingsContent()}
 function campContent(item){
   if(item==='Personnalisation')return personalizationContent();
   if(!state.runtime&&item!=='Connexions')return '<p class="help">Passe en mode Runtime pour utiliser les données réelles de cette section.</p>';
@@ -500,6 +504,7 @@ function campContent(item){
   if(item==='Notes')return notesContent();
   if(item==='Templates')return templatesContent();
   if(item==='Soutiens')return supportsContent();
+  if(item==='Alertes viewers')return `<div class="connection-stack">${streamerPingSettings()}${pingHistoryContent()}</div>`;
   if(item==='Automatisations')return automationsContent();
   if(item==='Médias OBS')return mediaContent();
   if(item==='Connexions')return connectionsContent();
@@ -611,8 +616,6 @@ function bindCampSections(){
   if(state.campItem==='Diagnostics')document.querySelector('[data-camp-action="diagnostics-refresh"]')?.addEventListener('click',()=>void loadDiagnostics().then(render).catch(error=>toast(error.message,true)));
   if(state.campItem==='Réglages'){
     document.querySelector('#camp-general-settings')?.addEventListener('submit',async event=>{event.preventDefault();const form=new FormData(event.currentTarget);const payload={streamerName:String(form.get('streamerName')||'').trim(),startMode:String(form.get('startMode')||'intro'),primaryMicInput:String(form.get('primaryMicInput')||''),chattingScene:String(form.get('chattingScene')||''),timerBrowserSource:String(form.get('timerBrowserSource')||''),confirmStop:form.get('confirmStop')==='on',launchObs:form.get('launchObs')==='on',requireTimerOverlayOnStart:form.get('requireTimerOverlayOnStart')==='on',modeScenes:{intro:String(form.get('sceneIntro')||''),live:String(form.get('sceneLive')||''),pause:String(form.get('scenePause')||''),end:String(form.get('sceneEnd')||'')}};try{const next=await request('/api/v1/settings',{method:'PUT',body:JSON.stringify(payload)});applyDashboard(next);render();toast('Réglages enregistrés')}catch(error){toast(error.message,true)}});
-    document.querySelector('[data-twitch-category-search]')?.addEventListener('click',()=>void searchCategory('#camp-twitch-category','#camp-twitch-game-id','#camp-twitch-category-results').catch(error=>toast(error.message,true)));
-    document.querySelector('#camp-twitch-live-settings')?.addEventListener('submit',async event=>{event.preventDefault();const form=new FormData(event.currentTarget);try{const next=await request('/api/v1/twitch/channel',{method:'POST',body:JSON.stringify({title:String(form.get('title')||'').trim(),gameId:String(form.get('gameId')||''),gameName:String(form.get('gameName')||'').trim()})});applyDashboard(next);render();toast('Informations Twitch mises à jour')}catch(error){toast(error.message,true)}});
   }
 }
 async function blobBase64(blob){const bytes=new Uint8Array(await blob.arrayBuffer());let binary='';for(let offset=0;offset<bytes.length;offset+=0x8000)binary+=String.fromCharCode(...bytes.subarray(offset,offset+0x8000));return btoa(binary)}
@@ -634,6 +637,11 @@ function bindPlanning(){
   document.querySelector('[data-planning-export]')?.addEventListener('click',()=>void exportPlanning(false));
   document.querySelector('[data-planning-discord]')?.addEventListener('click',()=>void exportPlanning(true));
   document.querySelectorAll('[data-event-index]').forEach(button=>button.onclick=()=>openEventDialog(state.visiblePlanning?.[Number(button.dataset.eventIndex)]?.raw));
+}
+function bindLiveTwitchSettings(){
+  if(state.view!=='live'||!moduleEnabled('twitch'))return;
+  document.querySelector('[data-live-twitch-category-search]')?.addEventListener('click',()=>void searchCategory('#live-twitch-category','#live-twitch-game-id','#live-twitch-category-results').catch(error=>toast(error.message,true)));
+  document.querySelector('#live-twitch-settings')?.addEventListener('submit',async event=>{event.preventDefault();const form=new FormData(event.currentTarget);try{const next=await request('/api/v1/twitch/channel',{method:'POST',body:JSON.stringify({title:String(form.get('title')||'').trim(),gameId:String(form.get('gameId')||''),gameName:String(form.get('gameName')||'').trim()})});applyDashboard(next);render();toast('Informations Twitch mises à jour')}catch(error){toast(error.message,true)}});
 }
 function bind(){
   document.querySelectorAll('[data-scene]').forEach(b=>b.onclick=async()=>{const label=b.dataset.scene;record('obs.scene.set',{sceneName:label});if(!state.runtime){state.scene=label;toast(`Scène ${label}`);render();return}try{await dashboardCommand(sceneCommand(label));await refreshRuntime();toast(`Scène ${label}`)}catch(error){toast(error.message,true)}});
@@ -661,6 +669,7 @@ function bind(){
   bindConnections();
   bindCampSections();
   bindStreamerPingSettings();
+  bindLiveTwitchSettings();
 }
 let activeStreamerPingId=null;
 function ensureStreamerPingHost(){
@@ -677,14 +686,14 @@ function syncStreamerPing(){
   host.querySelector('[data-ping-ack]').onclick=()=>void acknowledgeStreamerPing(ping.id);
 }
 async function acknowledgeStreamerPing(id){
-  try{const next=await request(`/api/v1/streamer-pings/${encodeURIComponent(id)}/ack`,{method:'POST',body:'{}'});applyDashboard(next);if(state.campItem==='Réglages')await loadPingHistory();render();toast('Streamer Ping acquitté')}catch(error){toast(error.message,true)}
+  try{const next=await request(`/api/v1/streamer-pings/${encodeURIComponent(id)}/ack`,{method:'POST',body:'{}'});applyDashboard(next);if(state.campItem==='Alertes viewers')await loadPingHistory();render();toast('Streamer Ping acquitté')}catch(error){toast(error.message,true)}
 }
 async function loadStreamerPingRewards(){
-  if(!state.runtime||state.campItem!=='Réglages'||state.dashboard?.twitch?.redemptionsAvailable!==true)return;
+  if(!state.runtime||state.campItem!=='Alertes viewers'||state.dashboard?.twitch?.redemptionsAvailable!==true)return;
   try{const result=await request('/api/v1/twitch/rewards');state.twitchRewards=result.items||[];render()}catch(error){state.twitchRewards=[];toast(error.message,true);render()}
 }
 function bindStreamerPingSettings(){
-  if(state.view!=='camp'||state.campItem!=='Réglages')return;
+  if(state.view!=='camp'||state.campItem!=='Alertes viewers')return;
   document.querySelector('[data-ping-action="reauthorize"]')?.addEventListener('click',async()=>{try{const result=await request('/api/v1/twitch/device',{method:'POST',body:'{}'});if(window.streamDashboardDesktop?.openTwitchActivation)await window.streamDashboardDesktop.openTwitchActivation(result.verificationUri);toast(`Code Twitch : ${result.userCode}`)}catch(error){toast(error.message,true)}});
   document.querySelector('[data-ping-action="save"]')?.addEventListener('click',async()=>{const ids=[...document.querySelectorAll('[data-ping-reward]:checked')].map(input=>input.dataset.pingReward);try{const next=await request('/api/v1/settings',{method:'PUT',body:JSON.stringify({streamerPingRewardIds:ids})});applyDashboard(next);toast('Récompenses Streamer Ping enregistrées');render()}catch(error){toast(error.message,true)}});
   document.querySelector('[data-ping-action="ack-all"]')?.addEventListener('click',async()=>{try{const next=await request('/api/v1/streamer-pings/ack-all',{method:'POST',body:'{}'});applyDashboard(next);await loadPingHistory();render();toast('Tous les Streamer Pings sont vus')}catch(error){toast(error.message,true)}});
@@ -839,7 +848,7 @@ document.querySelector('#event-delete').onclick=async()=>{
 };
 document.querySelectorAll('[data-close-dialog]').forEach(button=>button.onclick=()=>document.querySelector(`#${button.dataset.closeDialog}`).close());
 document.querySelectorAll('[data-view]').forEach(b=>b.onclick=()=>{state.view=b.dataset.view;render()});
-document.querySelector('#mode').onclick=async e=>{state.runtime=!state.runtime;e.currentTarget.textContent=state.runtime?'Runtime':'Démo';document.querySelector('.preview-mode span').textContent=state.runtime?'APERÇU · RUNTIME PC':'APERÇU · AUCUNE COMMANDE RÉELLE';runtimeUi(state.runtime,state.runtime?'Connexion au Runtime…':'Aucune commande réelle');if(state.runtime){await refreshRuntime();if(state.campItem==='Réglages')await loadStreamerPingRewards()}else{closeRuntimeSocket();state.scene=fixture.live.scene;state.sounds=structuredClone(fixture.sounds);state.audio=structuredClone(fixture.audio);state.live=structuredClone(fixture.live);state.planning=structuredClone(fixture.planning);state.dashboard=null;state.remotePairing=null;state.twitchRewards=null;applyProduct({profile:structuredClone(demoProductProfile),modules:structuredClone(demoModuleStates)},[]);syncStreamerPing();render()}toast(state.runtime?'Mode Runtime activé':'Mode Démo activé')};
+document.querySelector('#mode').onclick=async e=>{state.runtime=!state.runtime;e.currentTarget.textContent=state.runtime?'Runtime':'Démo';document.querySelector('.preview-mode span').textContent=state.runtime?'APERÇU · RUNTIME PC':'APERÇU · AUCUNE COMMANDE RÉELLE';runtimeUi(state.runtime,state.runtime?'Connexion au Runtime…':'Aucune commande réelle');if(state.runtime){await refreshRuntime();if(state.campItem==='Alertes viewers')await loadStreamerPingRewards()}else{closeRuntimeSocket();state.scene=fixture.live.scene;state.sounds=structuredClone(fixture.sounds);state.audio=structuredClone(fixture.audio);state.live=structuredClone(fixture.live);state.planning=structuredClone(fixture.planning);state.dashboard=null;state.remotePairing=null;state.twitchRewards=null;applyProduct({profile:structuredClone(demoProductProfile),modules:structuredClone(demoModuleStates)},[]);syncStreamerPing();render()}toast(state.runtime?'Mode Runtime activé':'Mode Démo activé')};
 window.addEventListener('keydown',e=>{if(e.altKey&&['1','2','3','4'].includes(e.key)){e.preventDefault();state.view=['home','live','sounds','planning'][+e.key-1];render()}});
 setInterval(()=>{if(state.runtime&&state.timerRunning){state.seconds=Math.max(0,state.seconds-1);if(state.view==='live')render()}},1000);
 window.addEventListener('beforeunload',closeRuntimeSocket);
