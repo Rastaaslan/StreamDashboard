@@ -5,7 +5,7 @@ const windowSource = readFileSync(new URL('../apps/desktop/src/window.ts', impor
 const mainSource = readFileSync(new URL('../apps/desktop/src/main.ts', import.meta.url), 'utf8');
 const html = readFileSync(new URL('../apps/web/index.html', import.meta.url), 'utf8');
 const renderer = readFileSync(new URL('../apps/web/app.js', import.meta.url), 'utf8');
-const promotedHtml = readFileSync(new URL('../apps/web/preview/index.html', import.meta.url), 'utf8');
+const promotedHtml = readFileSync(new URL('../apps/web/desktop/index.html', import.meta.url), 'utf8');
 describe('sécurité hôte Electron', () => {
   it('active toutes les protections BrowserWindow', () => {
     expect(windowSource).toContain('nodeIntegration: false'); expect(windowSource).toContain('contextIsolation: true');
