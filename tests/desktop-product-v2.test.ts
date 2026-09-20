@@ -50,6 +50,14 @@ describe('Desktop V2 promu en production', () => {
     for (const group of ['PRÉPARER', 'COMMUNAUTÉ', 'AUTOMATISER', 'APPLICATION']) expect(renderer).toContain(group);
     for (const item of ['Préparation','Notes','Templates','Soutiens','Alertes viewers','Automatisations','Médias OBS','Connexions','Personnalisation','Réglages','Diagnostics']) expect(renderer).toContain(item);
   });
+  it('présente les chatters comme une liste verticale distincte des viewers', () => {
+    expect(renderer).toContain('Participants du chat ·');
+    expect(renderer).toContain("viewer:'Chatteur'");
+    expect(renderer).toContain("broadcaster:'Streamer'");
+    expect(renderer).not.toContain('Audience · ${(audience.chatters||[]).length} présents');
+    expect(css).toContain('.audience-list{display:grid;grid-template-columns:1fr');
+    expect(css).toContain('grid-template-columns:minmax(0,1fr) auto');
+  });
   it('reconstruit Accueil, Live et Planning autour de leur intention principale', () => {
     expect(renderer).toContain('const nextLiveCopy=');
     expect(renderer).toContain('État de préparation');
