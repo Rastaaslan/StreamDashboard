@@ -115,7 +115,7 @@ export function toRemoteDashboardState(state: DashboardState): ExtendedRemoteDas
       gameName: state.twitch.gameName,
       error: state.twitch.error,
     },
-    ...(state.google ? { google: { configured: state.google.configured, connected: state.google.connected, targetCalendarId: state.google.targetCalendarId } } : {}),
+    ...(state.google ? { google: { configured: state.google.configured, connected: state.google.connected, targetConfigured: Boolean(state.google.targetCalendarId) } } : {}),
     ...(state.discord ? { discord: structuredClone(state.discord) } : {}),
     ...(state.preflight ? { preflight: { ...state.preflight } } : {}),
     ...(state.streamerPings ? { streamerPings: state.streamerPings.map(ping => ({ ...ping })) } : {}),
