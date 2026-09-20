@@ -89,6 +89,32 @@ describe('API publique v1', () => {
     expect(current.profile.modules.twitch).toBe(true);
   });
 
+  it('borne la configuration contextuelle Mobile aux mappings Live non sensibles', async () => {
+    const app = await start();
+    const mic = await fetch(`${app.url}/api/v1/settings/live-control`, {
+      method: 'PUT',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ primaryMicInput: 'Mic USB' }),
+    });
+    expect(mic.status).toBe(200);
+    expect(await mic.json()).toMatchObject({ settings: { primaryMicInput: 'Mic USB' } });
+
+    const scene = await fetch(`${app.url}/api/v1/settings/live-control`, {
+      method: 'PUT',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ mode: 'chatting', scene: 'Chatting' }),
+    });
+    expect(scene.status).toBe(200);
+    expect(await scene.json()).toMatchObject({ settings: { chattingScene: 'Chatting' } });
+
+    const forbidden = await fetch(`${app.url}/api/v1/settings/live-control`, {
+      method: 'PUT',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ obsUrl: 'ws://127.0.0.1:4455' }),
+    });
+    expect(forbidden.status).toBe(400);
+  });
+
   it('migre une installation sans profil sans déplacer ni perdre les secrets providers', async () => {
     dataDir = await mkdtemp(path.join(os.tmpdir(), 'streamdashboard-migration-'));
     await writeFile(path.join(dataDir, 'dashboard.json'), JSON.stringify({ schemaVersion: 6, settings: { streamerName: 'Ancienne chaîne' }, twitch: { displayName: 'LegacyChannel' } }));
