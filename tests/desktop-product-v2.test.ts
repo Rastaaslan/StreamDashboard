@@ -56,7 +56,7 @@ describe('Desktop V2 promu en production', () => {
     expect(renderer).not.toContain('<h2>Scènes principales</h2><span class="label">Active');
     expect(renderer).toContain('id="desktop-chat-form"');
     expect(renderer).toContain('data-live-clip');
-    expect(renderer).toContain('Audience ·');
+    expect(renderer).toContain('Participants du chat ·');
     expect(renderer).toContain('class="planning-more"');
     expect(renderer).toContain('Partager & exporter');
     expect(css).toContain('.live-desktop-grid');
