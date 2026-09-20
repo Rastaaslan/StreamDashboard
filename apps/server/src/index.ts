@@ -565,8 +565,9 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
       broadcast();
     },
     (status, error) => {
-      chatStatus = status;
-      eventCore.publish({ type: status === 'CONNECTED' ? 'integration.connected' : status === 'DISCONNECTED' ? 'integration.disconnected' : 'integration.degraded', source: 'twitch-chat', payload: { integration: 'twitch-chat', status, ...(error ? { error } : {}) } });
+      const chatEnabled = twitch.controlCapabilities().chatRead;
+      chatStatus = chatEnabled ? status : 'DISCONNECTED';
+      if (chatEnabled) eventCore.publish({ type: status === 'CONNECTED' ? 'integration.connected' : status === 'DISCONNECTED' ? 'integration.disconnected' : 'integration.degraded', source: 'twitch-chat', payload: { integration: 'twitch-chat', status, ...(error ? { error } : {}) } });
       broadcast();
     },
     undefined,
