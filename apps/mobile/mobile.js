@@ -169,7 +169,7 @@ function remoteButtons(disabled) {
 
 function offlineState() {
   const cache = companion.snapshot();
-  return { at: cache.lastServerSyncAt || new Date().toISOString(), mode: 'idle', timer: { running: false, remaining: 300, deadline: null }, planning: cache.planning, checklist: cache.checklist, nextLive: null, obs: { connected: false, streaming: false, scene: null, inputs: {}, activeAudioInputs: [], mediaInputs: [] }, settings: { confirmStop: true, streamerName: cache.streamerName, modeScenes: {} }, twitch: { connected: false }, google: { connected: false } };
+  return { at: cache.lastServerSyncAt || new Date().toISOString(), mode: 'idle', timer: { running: false, remaining: 300, deadline: null }, planning: cache.planning, checklist: cache.checklist, nextLive: null, obs: { connected: false, streaming: false, scene: null, scenes: [], inputs: {}, activeAudioInputs: [], mediaInputs: [] }, settings: { confirmStop: true, streamerName: cache.streamerName, modeScenes: {} }, twitch: { connected: false }, google: { connected: false } };
 }
 
 function setConnectionMode(mode) {
@@ -601,7 +601,7 @@ function render(next) {
   syncMobileStreamerPing(next.streamerPings || []);
   if (companionMode === CompanionMode.ONLINE_PC) $('pc').textContent = 'Connecté';
   $('obs').textContent = next.obs.connected ? 'Prêt' : 'Déconnecté';
-  const primaryMic = next.settings.primaryMicInput; const micMuted = primaryMic ? next.obs.inputs?.[primaryMic]?.muted : null; $('direct-mic-state').textContent = primaryMic ? (micMuted === null || micMuted === undefined ? 'Introuvable' : micMuted ? 'Coupé' : 'Ouvert') : 'Non configuré'; $('direct-mic-dot').textContent = primaryMic && micMuted === false ? '●' : '○'; $('direct-mic-dot').className = primaryMic && micMuted === false ? 'ok' : 'muted';
+  const primaryMic = next.settings.primaryMicInput; const micMuted = primaryMic ? next.obs.inputs?.[primaryMic]?.muted : null; const micMissing = !primaryMic || micMuted === null || micMuted === undefined; $('direct-mic-state').textContent = primaryMic ? (micMissing ? 'Introuvable · toucher pour configurer' : micMuted ? 'Coupé' : 'Ouvert') : 'Non configuré · toucher pour configurer'; $('direct-mic-dot').textContent = primaryMic && micMuted === false ? '●' : '○'; $('direct-mic-dot').className = primaryMic && micMuted === false ? 'ok' : 'muted'; $('quick-mic').classList.toggle('configuration-needed', micMissing); $('quick-mic').setAttribute('aria-label', micMissing ? 'Configurer le micro principal' : `${micMuted ? 'Réactiver' : 'Couper'} le micro principal`);
   $('live').textContent = next.obs.streaming ? 'Live' : 'Hors ligne';
   $('live').className = next.obs.streaming ? 'ok' : '';
   $('next').textContent = next.nextLive ? `${next.nextLive.title} · ${formatPlanningDate(next.nextLive)}` : 'Aucun live planifié';
@@ -622,11 +622,26 @@ function render(next) {
   $('stream').disabled = !next.obs.connected; $('live-stream').disabled = $('stream').disabled;
   $('live-clip').disabled = !next.twitch?.connected || !next.obs.streaming;
   const chattingActive = next.mode === 'live' && Boolean(next.settings.chattingScene) && next.obs.scene === next.settings.chattingScene;
+  const availableScenes = next.obs.scenes || [];
   document.querySelectorAll('[data-mode]').forEach(button => {
+    const mode = button.dataset.mode;
+    const mapped = next.settings.modeScenes?.[mode] || '';
+    const missing = !mapped || !availableScenes.includes(mapped);
     button.disabled = !next.obs.connected;
     button.classList.toggle('active', button.dataset.mode === next.mode && !(button.dataset.mode === 'live' && chattingActive));
+    button.classList.toggle('configuration-needed', missing);
+    const status = document.querySelector(`[data-mode-status="${mode}"]`);
+    if (status) status.textContent = !mapped ? 'Non configuré · toucher pour choisir' : missing ? `${mapped} · introuvable` : mapped;
   });
-  document.querySelectorAll('[data-chatting]').forEach(button => { button.disabled = !next.obs.connected || !next.settings.chattingScene; button.classList.toggle('active', chattingActive); });
+  document.querySelectorAll('[data-chatting]').forEach(button => {
+    const mapped = next.settings.chattingScene || '';
+    const missing = !mapped || !availableScenes.includes(mapped);
+    button.disabled = !next.obs.connected;
+    button.classList.toggle('active', chattingActive);
+    button.classList.toggle('configuration-needed', missing);
+    const status = document.querySelector('[data-mode-status="chatting"]');
+    if (status) status.textContent = !mapped ? 'Non configuré · toucher pour choisir' : missing ? `${mapped} · introuvable` : mapped;
+  });
 }
 
 function tickTimer() {
@@ -874,9 +889,72 @@ document.addEventListener('click', event => {
 });
 async function createQuickClip() { if (companionMode !== CompanionMode.ONLINE_PC) throw new Error('PC requis.'); const clip = await transport.createTwitchClip(); globalThis.StreamDashboardNative?.haptic?.('light'); note(`Clip créé · ${clip.id}`); }
 async function togglePrimaryMic() { const value = primaryMicCommand(state); const confirmed = await command(value, { reconcile: next => next.obs?.inputs?.[value.input]?.muted === value.muted }); if (!confirmed) throw new Error('Commande non confirmée par le PC.'); }
+const configuredScene = mode => mode === 'chatting' ? state?.settings?.chattingScene : state?.settings?.modeScenes?.[mode];
+const availableAudioInputs = () => {
+  const active = state?.obs?.activeAudioInputs || [];
+  const all = Object.keys(state?.obs?.inputs || {});
+  return [...new Set([...active, ...all])];
+};
+function openPrimaryMicConfig() {
+  if (companionMode !== CompanionMode.ONLINE_PC || !state?.obs?.connected) { note('Connecte OBS pour choisir le micro principal.'); return; }
+  const select = $('primary-mic-select');
+  const inputs = availableAudioInputs();
+  select.replaceChildren(new Option('Aucun micro principal', ''), ...inputs.map(name => new Option(name, name)));
+  select.value = inputs.includes(state.settings.primaryMicInput) ? state.settings.primaryMicInput : '';
+  $('primary-mic-empty').hidden = inputs.length > 0;
+  $('save-primary-mic').disabled = inputs.length === 0 && !state.settings.primaryMicInput;
+  $('mic-config-dialog').showModal();
+}
+function openSceneConfig(mode) {
+  if (companionMode !== CompanionMode.ONLINE_PC || !state?.obs?.connected) { note('Connecte OBS pour choisir une scène.'); return; }
+  const scenes = state.obs.scenes || [];
+  const select = $('scene-config-select');
+  const labels = { intro: 'Intro', live: 'Live · Gameplay', chatting: 'Chatting', pause: 'Pause', end: 'Fin' };
+  $('scene-config-mode').value = mode;
+  $('scene-config-title').textContent = `Configurer · ${labels[mode] || mode}`;
+  select.replaceChildren(new Option('Aucune scène', ''), ...scenes.map(name => new Option(name, name)));
+  const current = configuredScene(mode) || '';
+  select.value = scenes.includes(current) ? current : '';
+  $('scene-config-empty').hidden = scenes.length > 0;
+  $('save-scene-config').disabled = scenes.length === 0 && !current;
+  if ($('live-tools-sheet').open) $('live-tools-sheet').close();
+  $('scene-config-dialog').showModal();
+}
+async function handlePrimaryMic() {
+  const configured = state?.settings?.primaryMicInput;
+  if (!configured || !state?.obs?.inputs?.[configured]) { openPrimaryMicConfig(); return; }
+  await togglePrimaryMic();
+}
+async function handleModeAction(mode) {
+  const scene = configuredScene(mode);
+  if (!scene || !(state?.obs?.scenes || []).includes(scene)) { openSceneConfig(mode); return; }
+  if (mode === 'chatting') await command({ type: 'scene.chatting' });
+  else await command({ type: 'mode.set', mode });
+}
+$('mic-config-form').onsubmit = async event => {
+  event.preventDefault();
+  try {
+    const next = await transport.updateLiveControl({ primaryMicInput: $('primary-mic-select').value });
+    $('mic-config-dialog').close();
+    render(next);
+    note($('primary-mic-select').value ? 'Micro principal configuré.' : 'Micro principal désactivé.');
+  } catch (error) { note(error.message); }
+};
+$('close-mic-config').onclick = () => $('mic-config-dialog').close();
+$('scene-config-form').onsubmit = async event => {
+  event.preventDefault();
+  try {
+    const mode = $('scene-config-mode').value;
+    const next = await transport.updateLiveControl({ mode, scene: $('scene-config-select').value });
+    $('scene-config-dialog').close();
+    render(next);
+    note($('scene-config-select').value ? 'Scène associée.' : 'Association supprimée.');
+  } catch (error) { note(error.message); }
+};
+$('close-scene-config').onclick = () => $('scene-config-dialog').close();
 $('open-automations').onclick = () => openLiveTool('automations');
 $('live-stream').onclick = () => $('stream').click();
-$('live-clip').onclick = () => void createQuickClip().catch(error => note(`Impossible de créer le clip. ${error.message}`)); $('quick-mic').onclick = () => void togglePrimaryMic().catch(error => note(error.message)); $('open-scenes-live').onclick = () => openLiveTool('scenes'); $('refresh-sounds').onclick = () => void loadSoundboard();
+$('live-clip').onclick = () => void createQuickClip().catch(error => note(`Impossible de créer le clip. ${error.message}`)); $('quick-mic').onclick = () => void handlePrimaryMic().catch(error => note(error.message)); $('open-scenes-live').onclick = () => openLiveTool('scenes'); $('refresh-sounds').onclick = () => void loadSoundboard();
 const savedTab = localStorage.getItem('streamdashboard.mobileTab'); selectTab(['home', 'live', 'sounds', 'planning', 'more', 'prepare', 'settings'].includes(savedTab) ? savedTab : 'home');
 
 
@@ -1073,9 +1151,9 @@ document.addEventListener('click', event => {
     if (button.dataset.seconds) value.seconds = Number(button.dataset.seconds);
     void command(value);
   } else if (button.dataset.mode) {
-    void command({ type: 'mode.set', mode: button.dataset.mode });
+    void handleModeAction(button.dataset.mode);
   } else if (button.hasAttribute('data-chatting')) {
-    void command({ type: 'scene.chatting' });
+    void handleModeAction('chatting');
   } else if (button.dataset.media) {
     void command({ type: 'obs.media.restart', input: button.dataset.media });
   } else if (button.dataset.mute && state?.obs.inputs?.[button.dataset.mute]) {
@@ -1125,7 +1203,7 @@ function openLiveTool(tool) {
 }
 $('close-live-tool').onclick = () => $('live-tools-sheet').close();
 $('live-tools-sheet').onclick = event => { if (event.target === $('live-tools-sheet')) $('live-tools-sheet').close(); };
-$('live-tools-sheet').querySelectorAll('[data-mode],[data-chatting]').forEach(button => button.addEventListener('click', () => $('live-tools-sheet').close()));
+$('live-tools-sheet').querySelectorAll('[data-mode],[data-chatting]').forEach(button => button.addEventListener('click', () => { const mode = button.dataset.mode || 'chatting'; const scene = configuredScene(mode); if (scene && (state?.obs?.scenes || []).includes(scene) && $('live-tools-sheet').open) $('live-tools-sheet').close(); }));
 $('audience-search').oninput = () => renderAudience(state?.controlHub?.audience);
 $('more-chatters').onclick = () => void loadMoreChatters();
 $('sound-search').oninput = renderSoundboard; $('sound-category').onchange = renderSoundboard; $('sound-favorites').onchange = renderSoundboard;
