@@ -213,6 +213,16 @@ public class MainActivity extends Activity {
       Vibrator vibrator = (Vibrator)getSystemService(VIBRATOR_SERVICE);
       if (vibrator != null) vibrator.vibrate(VibrationEffect.createOneShot("strong".equals(strength) ? 45 : 18, VibrationEffect.DEFAULT_AMPLITUDE));
     }
+    @JavascriptInterface public void openExternal(String value) {
+      try {
+        Uri uri = Uri.parse(value);
+        if (!"https".equalsIgnoreCase(uri.getScheme())) return;
+        runOnUiThread(() -> {
+          try { startActivity(new Intent(Intent.ACTION_VIEW, uri)); }
+          catch (Exception ignored) { }
+        });
+      } catch (Exception ignored) { }
+    }
     @JavascriptInterface public void notifyStreamerPing(String id, String title, String message) {
       if (BuildConfig.PREVIEW_MODE) return;
       if (Build.VERSION.SDK_INT >= 33 && checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) return;
