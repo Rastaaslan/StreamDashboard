@@ -58,6 +58,11 @@ describe('Android remote runtime', () => {
     expect(templatesFeature).toContain('La périodicité reste libre');
     expect(templatesFeature).toContain('Créer un événement');
   });
+  it('autorise le volume Soundboard en direct depuis une télécommande appairée', () => {
+    expect(mobileTransport).toContain("'/api/v1/soundboard/volume'");
+    expect(serverSource).toContain("import { isRemoteApiAllowed } from './remote-api-policy.js'");
+  });
+
   it('répare le démarrage live Android avec préparation et confirmation de bypass checklist', () => {
     expect(mobileScript).toContain("command({ type: 'session.prepare' })");
     expect(mobileScript).toContain("command({ type: 'session.start', force: requiresBypass }");
@@ -155,12 +160,14 @@ describe('Android remote runtime', () => {
     expect(serverSource).toContain("Object.keys(req.body).some(key => !['profile','appearance'].includes(key))");
   });
 
-  it('gère les connexions sûres du PC depuis Mobile sans exposer les secrets locaux', () => {
-    for (const action of ['obs-test','twitch-connect','twitch-disconnect','twitch-sync','google-disconnect','google-sync']) expect(mobileScript).toContain(`'${action}'`);
+  it('gère les connexions sûres du PC depuis Mobile sans confondre connexion et synchro planning', () => {
+    for (const action of ['obs-test','twitch-connect','twitch-disconnect','google-disconnect']) expect(mobileScript).toContain(`'${action}'`);
+    for (const action of ['twitch-sync','google-sync']) expect(mobileScript).not.toContain(`'${action}'`);
     expect(mobileTransport).toContain("'/api/v1/connections'");
     expect(mobileTransport).toContain("'/api/v1/obs/test'");
     expect(mobileTransport).toContain("'/api/v1/twitch/device'");
-    expect(mobileTransport).toContain("'/api/v1/google/sync'");
+    expect(mobileTransport).not.toContain("'/api/v1/twitch/sync'");
+    expect(mobileTransport).not.toContain("'/api/v1/google/sync'");
     expect(mobileScript).toContain('La connexion initiale Google du PC doit être autorisée depuis le PC.');
     expect(mobileScript).toContain('Configuration locale à effectuer sur le PC.');
     expect(androidActivity).toContain('@JavascriptInterface public void openExternal');
