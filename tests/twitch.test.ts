@@ -186,6 +186,22 @@ describe('intégration Twitch générique', () => {
     expect(persisted).toEqual([{ accessToken: 'fresh-access', refreshToken: 'fresh-refresh' }]);
   });
 
+  it('expose les scopes Twitch optionnels sans invalider une connexion planning historique', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify(validSession))));
+    const client = new TwitchClient({ ...empty, clientId: 'id', accessToken: 'token', broadcasterId: '42' });
+    expect(await client.validateSession()).toBe(true);
+    expect(client.controlCapabilities()).toMatchObject({
+      schedule: true,
+      chatWrite: false,
+      chatters: false,
+      createClip: false,
+      deleteVideo: false,
+      updateChannel: false,
+    });
+    await expect(client.createClip()).rejects.toThrow(/clips:edit/);
+    await expect(client.sendChatMessage('bonjour')).rejects.toThrow(/user:write:chat/);
+  });
+
   it('déconnecte une session qui a perdu le scope de planning', async () => {
     const persisted: Array<Record<string, string> | null> = [];
     vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify({ client_id: 'id', user_id: '42', login: 'streamer', scopes: [] }))));
