@@ -358,8 +358,9 @@ $('hub-integrations').addEventListener('click', async event => {
       note(`OBS connecté · v${result.obsVersion || '?'}`);
     } else if (action === 'twitch-connect') {
       const result = await transport.twitchDevice();
+      globalThis.StreamDashboardNative?.copyText?.('Code Twitch', result.userCode);
       await openExternalUrl(result.verificationUri);
-      note(`Twitch · code ${result.userCode}`);
+      note(`Twitch · code ${result.userCode} copié`);
     } else if (action === 'twitch-disconnect') {
       render(await transport.twitchDisconnect()); note('Twitch déconnecté.');
     } else if (action === 'google-disconnect') {
