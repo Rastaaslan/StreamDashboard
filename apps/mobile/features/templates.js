@@ -122,8 +122,9 @@ function renderTemplates() {
 
     const actions = document.createElement('div');
     actions.className = 'template-actions';
-    const use = text('button', 'CRÉER UN ÉVÉNEMENT');
+    const use = text('button', 'Créer un événement');
     use.type = 'button';
+    use.className = 'template-use';
     use.onclick = () => applyTemplate(template);
     const edit = text('button', 'Modifier');
     edit.type = 'button';
