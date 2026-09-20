@@ -93,6 +93,7 @@ export function createTransport(getServer, getCredential) {
     searchTwitch: query => request(`/api/v1/twitch/categories?q=${encodeURIComponent(query)}`, { headers: { authorization: `Device ${getCredential()}` } }),
     updateTwitch: value => request('/api/v1/twitch/channel', { method: 'POST', headers: authHeaders(), body: JSON.stringify(value) }),
     createPlanning: value => request('/api/v1/planning', { method: 'POST', headers: authHeaders(), body: JSON.stringify(value) }),
+    retryPlanningProvider: (id, provider) => request(`/api/v1/planning/${encodeURIComponent(id)}/retry/${encodeURIComponent(provider)}`, { method: 'POST', headers: authHeaders(), body: '{}' }),
     updatePlanning: async (id, value) => {
       try { return await request(`/api/v1/planning/${encodeURIComponent(id)}`, { method: 'PUT', headers: authHeaders(), body: JSON.stringify(value) }); }
       catch (error) { if (!shouldFallbackPlanning(error)) throw error; return planningFallback(id, value, false); }
