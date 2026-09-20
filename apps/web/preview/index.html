@@ -2,26 +2,28 @@
 <html lang="fr">
 <head>
   <meta charset="utf-8">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; connect-src 'self' ws: wss:; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; object-src 'none'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'">
   <meta name="viewport" content="width=device-width,initial-scale=1">
-  <title>StreamDashboard Desktop Preview</title>
+  <meta name="theme-color" content="#101214">
+  <title>StreamDashboard</title>
   <link rel="stylesheet" href="preview.css">
 </head>
 <body>
 <a class="skip" href="#content">Aller au contenu</a>
 <div class="shell">
   <aside>
-    <div class="brand"><span class="ember" aria-hidden="true"></span><div><strong>StreamDashboard</strong><small>Desktop Preview</small></div></div>
+    <div class="brand"><span class="ember" aria-hidden="true"></span><div><strong>StreamDashboard</strong><small id="brand-context">Desktop</small></div></div>
     <nav aria-label="Navigation principale">
       <button data-view="home" aria-current="page">Accueil <kbd>Alt+1</kbd></button>
       <button data-view="live">Live <kbd>Alt+2</kbd></button>
       <button data-view="sounds">Sons <kbd>Alt+3</kbd></button>
       <button data-view="planning">Planning <kbd>Alt+4</kbd></button>
     </nav>
-    <button class="camp" data-view="camp"><span>Le Camp</span><small>Outils & réglages</small></button>
+    <button class="camp" data-view="camp"><span>Application</span><small>Préparer · connecter · personnaliser</small></button>
     <div class="connection"><span class="dot" id="runtime-dot"></span><span><b id="runtime-status">Mode Démo</b><small id="runtime-copy">Aucune commande réelle</small></span></div>
   </aside>
   <main id="content" tabindex="-1">
-    <header><div><p class="eyebrow" id="eyebrow">COCKPIT</p><h1 id="title">Accueil</h1></div><div class="preview-mode"><button id="mode" aria-label="Changer le mode Preview">Démo</button><span>APERÇU · AUCUNE COMMANDE RÉELLE</span></div></header>
+    <header><div><p class="eyebrow" id="eyebrow">COCKPIT</p><h1 id="title">Accueil</h1></div><div class="preview-mode" id="preview-mode"><button id="mode" aria-label="Changer le mode de démonstration">Démo</button><span>APERÇU · AUCUNE COMMANDE RÉELLE</span></div></header>
     <div id="view" aria-live="polite"></div>
   </main>
 </div>
