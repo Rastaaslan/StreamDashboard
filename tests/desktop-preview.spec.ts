@@ -12,7 +12,7 @@ test('Desktop Preview navigue et émet une commande unique par contrôle', async
     const before=await page.evaluate(()=>(window as any).__preview.commandLog.length);await page.locator('[data-view="sounds"]').click();await page.locator('[data-sound="bonk"]').click();
     expect(await page.evaluate(()=>(window as any).__preview.commandLog.slice(-1)[0])).toMatchObject({type:'soundboard.play',payload:{soundId:'bonk'}});expect(await page.evaluate(()=>(window as any).__preview.commandLog.length)).toBe(before+1);
     await page.locator('[data-add-sound]').first().click(); await expect(page.locator('#sound-dialog')).toBeVisible(); await page.locator('[data-close-dialog="sound-dialog"]').click();
-    await page.locator('[data-view="sounds"]').click(); await page.locator('[data-obs-setup]').click(); await expect(page.locator('#obs-setup-dialog')).toContainText('StreamDashboard • Soundboard'); await page.locator('[data-close-dialog="obs-setup-dialog"]').click();
+    await page.locator('[data-view="sounds"]').click(); await page.locator('.soundboard-advanced summary').click(); await page.locator('[data-obs-setup]').click(); await expect(page.locator('#obs-setup-dialog')).toContainText('StreamDashboard • Soundboard'); await page.locator('[data-close-dialog="obs-setup-dialog"]').click();
 
     await page.locator('[data-view="camp"]').click(); await expect(page.locator('#title')).toHaveText('Application');
     await page.locator('[data-camp="Personnalisation"]').click();
