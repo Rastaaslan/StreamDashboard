@@ -26,3 +26,26 @@ dialog{width:min(540px,calc(100vw - 20px));max-height:88vh;border:1px solid var(
 .audience-summary{display:grid;grid-template-columns:auto 1fr;align-items:baseline;gap:2px 10px;margin-bottom:20px}.audience-summary b{font-size:1.7rem}.audience-summary span{color:var(--muted)}.moderation-unban{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:8px;margin-top:20px}.mode-list{display:grid}.mode-list button,.disclosure-row{display:flex;align-items:center;justify-content:space-between;width:100%;min-height:58px;padding:10px 0;border-radius:0;border-bottom:1px solid var(--border);background:transparent;color:var(--text);text-align:left}.mode-list button.active{color:var(--accent)}.sheet-actions{display:flex;gap:8px;margin-bottom:18px}.sheet-actions>*{flex:1}
 .view[data-view="planning"] .section-heading{align-items:flex-start}.view[data-view="planning"] .section-heading>div{flex:1;min-width:0}.view[data-view="planning"] .section-heading p{max-width:34ch;margin:4px 0 0;overflow-wrap:normal}.view[data-view="planning"] #add-slot{flex:0 0 auto;width:auto;min-height:44px;padding:8px 12px;white-space:nowrap}.planning-toolbar{display:flex;justify-content:flex-end;gap:8px;margin:8px 0 16px}.editor-dialog{inset:0;width:100%;max-width:720px;height:100%;max-height:none;margin:0 auto;border:0;border-radius:0;padding:max(24px,env(safe-area-inset-top)) max(18px,env(safe-area-inset-right)) max(18px,env(safe-area-inset-bottom)) max(18px,env(safe-area-inset-left));background:var(--background)}.editor-header{display:grid;grid-template-columns:48px minmax(0,1fr) auto;align-items:center;gap:8px;min-height:62px;border-bottom:1px solid var(--border)}.editor-header h2{margin:0;text-align:center;font-size:1rem}.form-page{margin-top:20px}.form-page[hidden]{display:none}.disclosure-row{margin-top:22px}.disclosure-row span{display:grid;gap:2px}.disclosure-row small{color:var(--muted);font-weight:500}.page-back{margin-bottom:10px}.provider-summary{padding:14px 0;border-bottom:1px solid var(--border)}.full-button{width:100%}
 @media(max-width:360px){.timer-display{font-size:2.8rem}.timer-actions{grid-template-columns:1fr 1fr}.timer-actions button:first-child{grid-column:1/-1}.timer-presets{grid-template-columns:repeat(2,minmax(0,1fr))}.tool-launcher-list>button{min-height:62px}.workspace-sheet{height:92vh}}
+
+
+/* Mobile profile + connection management */
+#profile-appearance-form{display:grid;gap:12px}
+#profile-appearance-form>.form-grid{margin:0}
+#profile-appearance-form button[type="submit"]{margin-top:4px}
+#profile-appearance .appearance-preview{margin-top:4px}
+#mobile-connections .integration-list{display:grid}
+.connection-manage-card{grid-template-columns:14px minmax(0,1fr);gap:10px 12px;padding:12px 0}
+.connection-manage-card>.connection-copy{display:grid;gap:2px}
+.connection-manage-card>.connection-actions{grid-column:2;display:flex;flex-wrap:wrap;gap:8px}
+.connection-manage-card>.connection-actions button{min-height:40px;width:auto;padding:7px 11px}
+.connection-copy small{line-height:1.35}
+#provider-accounts .companion-row{align-items:flex-start}
+#provider-accounts .companion-row>div{display:flex;flex-wrap:wrap;justify-content:flex-end;gap:8px}
+#provider-accounts .companion-row button{min-height:40px;width:auto;padding:7px 10px}
+#appearance-accent-input{padding:4px;min-height:48px}
+@media(max-width:360px){
+  .connection-manage-card>.connection-actions{display:grid;grid-template-columns:1fr 1fr}
+  .connection-manage-card>.connection-actions button{width:100%}
+  #provider-accounts .companion-row{display:grid;grid-template-columns:1fr}
+  #provider-accounts .companion-row>div{justify-content:flex-start}
+}
