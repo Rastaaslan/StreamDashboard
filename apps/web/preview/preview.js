@@ -19,12 +19,14 @@ const demoModuleStates=[
 const state={
   view:'home',runtime:officialRuntime,scene:fixture.live.scene,timerRunning:true,seconds:36,
   sounds:structuredClone(fixture.sounds),audio:structuredClone(fixture.audio),live:structuredClone(fixture.live),
-  planning:structuredClone(fixture.planning),dashboard:null,soundboard:null,obsSetup:null,search:'',
+  planning:structuredClone(fixture.planning),dashboard:null,soundboard:null,obsSetup:null,search:'',soundCategory:'',soundFavorites:false,
+  soundMasterVolume:Math.max(0,Math.min(1,Number(localStorage.getItem('streamdashboard.desktopSoundboardVolume')??1)||1)),
   productProfile:structuredClone(demoProductProfile),moduleStates:structuredClone(demoModuleStates),connections:[],
   campItem:'Préparation',remotePairing:null,twitchRewards:null,companion:null,supports:null,automations:null,automationCapabilities:null,streamlabsOAuth:null,
   diagnostics:null,pingHistory:null,planningFilter:'upcoming',planningPeriod:'this-week',eventEdit:null,
   automationEditor:{id:'',name:'',trigger:'support.received',conditions:[],actions:[{type:'soundboard.play',payload:{}}],cooldownMs:30000,enabled:true},templateEditor:null
 };
+if(localStorage.getItem('streamdashboard.desktopSoundboardVolume')==='0')state.soundMasterVolume=0;
 const view=document.querySelector('#view'),title=document.querySelector('#title'),eyebrow=document.querySelector('#eyebrow');
 const commandLog=[]; window.__preview={state,commandLog};
 const esc=value=>String(value??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -130,7 +132,7 @@ const primaryScenes=['Intro','Gameplay','Chatting','Pause','Fin'];
 const OBS_SOUNDBOARD_INPUT='StreamDashboard • Soundboard';
 const publicObsMediaInputs=values=>(values||[]).filter(input=>input!==OBS_SOUNDBOARD_INPUT);
 const scenes=()=>`<div class="scene-grid">${primaryScenes.map(name=>`<button class="scene ${logicalScene(state.scene)===name?'active':''}" data-scene="${name}" aria-pressed="${logicalScene(state.scene)===name}">${name}</button>`).join('')}</div>`;
-function filteredSounds(){const query=state.search.trim().toLowerCase();return(state.sounds||[]).filter(s=>!query||String(s.name).toLowerCase().includes(query)||String(s.category).toLowerCase().includes(query))}
+function filteredSounds(){const query=state.search.trim().toLowerCase();return(state.sounds||[]).filter(sound=>(!query||String(sound.name).toLowerCase().includes(query)||String(sound.category).toLowerCase().includes(query))&&(!state.soundCategory||sound.category===state.soundCategory)&&(!state.soundFavorites||sound.favorite===true))}
 const sounds=(editable=false)=>Object.entries(filteredSounds().reduce((groups,s)=>{(groups[s.category||'Sans catégorie']??=[]).push(s);return groups},{})).map(([category,items])=>`<div class="group"><h3>${esc(category)}</h3><div class="pads">${items.map(s=>`<div class="sound-item"><button class="pad ${s.sourceAvailable===false?'missing':''}" data-sound="${esc(s.id)}" ${s.enabled===false?'disabled':''}>${esc(s.name)}${s.sourceAvailable===false?' · absent':''}</button>${editable?`<button class="edit-sound" data-edit-sound="${esc(s.id)}" aria-label="Modifier ${esc(s.name)}">•••</button>`:''}</div>`).join('')}</div></div>`).join('');
 function onboardingCard(){
   if(state.productProfile?.onboarding?.completed!==false)return'';
@@ -191,7 +193,28 @@ function live(){
     ${twitchPanel}
   </div>`
 }
-function soundboard(){const setup=state.obsSetup;const label=state.runtime?(setup?.ready?'OBS Soundboard · prête':setup?.connected?'OBS Soundboard · à configurer':'OBS Soundboard · OBS hors ligne'):'OBS Soundboard · Démo';return`<section class="section"><div class="section-head"><div><h2>Soundboard</h2><span class="label">${label} · une lecture à la fois</span></div><div><button class="secondary" data-obs-setup>Configurer dans OBS</button> <button class="critical" data-stop>Stop</button></div></div><div class="toolbar"><input type="search" value="${esc(state.search)}" placeholder="Rechercher un son" aria-label="Rechercher un son" data-sound-search><button class="action" data-add-sound>+ Ajouter un son</button></div><div class="sound-groups">${sounds(true)||'<p class="label">Bibliothèque vide.</p>'}</div></section>`}
+function soundboard(){
+  const setup=state.obsSetup,soundsList=state.sounds||[],categories=[...new Set(soundsList.map(sound=>sound.category).filter(Boolean))].sort((a,b)=>a.localeCompare(b,'fr'));
+  const playback=state.soundboard?.currentPlayback,current=soundsList.find(sound=>sound.id===playback?.soundId);
+  const label=state.runtime?(setup?.ready?'Mix OBS prêt':setup?.connected?'Configuration OBS à terminer':'OBS hors ligne'):'Mode Démo';
+  return`<div class="stack soundboard-workspace">
+    <section class="soundboard-hero">
+      <div><span class="eyebrow">BIBLIOTHÈQUE</span><h2>Soundboard</h2><p>${esc(label)} · ${soundsList.length} ${soundsList.length===1?'son':'sons'}</p></div>
+      <div class="soundboard-playback"><span class="label">Lecture</span><b>${esc(current?.name||'Aucune')}</b><button class="critical" data-stop ${playback||!state.runtime?'':'disabled'}>Stop</button></div>
+    </section>
+    <section class="section soundboard-library">
+      <div class="soundboard-filters">
+        <input type="search" value="${esc(state.search)}" placeholder="Rechercher un son" aria-label="Rechercher un son" data-sound-search>
+        <select data-sound-category aria-label="Catégorie"><option value="">Toutes les catégories</option>${categories.map(category=>`<option value="${esc(category)}" ${state.soundCategory===category?'selected':''}>${esc(category)}</option>`).join('')}</select>
+        <label class="favorite-filter"><input type="checkbox" data-sound-favorites ${state.soundFavorites?'checked':''}> Favoris</label>
+        <button class="action" data-add-sound>+ Ajouter un son</button>
+      </div>
+      <div class="sound-master"><label><span>Volume général</span><input type="range" min="0" max="100" value="${Math.round(state.soundMasterVolume*100)}" data-sound-master aria-label="Volume général de la Soundboard"></label><b>${Math.round(state.soundMasterVolume*100)}%</b></div>
+      <div class="sound-groups">${sounds(true)||'<div class="empty-library"><b>Aucun son</b><span>Modifie les filtres ou ajoute un son à la bibliothèque.</span></div>'}</div>
+      <details class="soundboard-advanced"><summary>Configuration OBS</summary><div><p class="help">StreamDashboard utilise une Media Source interne dédiée dans OBS. Elle reste masquée des médias utilisateur.</p><button class="secondary" data-obs-setup>Vérifier / réparer la Soundboard OBS</button></div></details>
+    </section>
+  </div>`
+}
 function planningItems(){
   const now=Date.now();
   return (state.planning||[]).filter(entry=>state.planningFilter==='all'||(state.planningFilter==='past'?Date.parse(entry.raw.endAtUtc)<now:Date.parse(entry.raw.endAtUtc)>=now));
@@ -506,7 +529,7 @@ async function ensureObsSoundboardForPlayback(){
   if(currentScene&&!setup.attachedScenes?.includes(currentScene))throw new Error(`La Soundboard OBS n’est pas présente dans la scène actuelle « ${currentScene} ». Configure cette scène dans Application → Réglages.`);
   return setup;
 }
-async function playSound(soundId){record('soundboard.play',{soundId});if(!state.runtime){toast('Lecture simulée');return}try{await ensureObsSoundboardForPlayback();const commandId=uid();const ack=await request('/api/v1/soundboard/play',{method:'POST',body:JSON.stringify({commandId,correlationId:commandId,soundId,issuedAt:new Date().toISOString()})});if(ack.status!=='succeeded')throw new Error(ack.message||'Lecture refusée.');toast('Son envoyé à OBS');await refreshRuntime()}catch(error){toast(error.message,true)}}
+async function playSound(soundId){record('soundboard.play',{soundId});const sound=(state.sounds||[]).find(value=>value.id===soundId),volume=Math.max(0,Math.min(1,(sound?.volume??1)*state.soundMasterVolume));if(!state.runtime){toast('Lecture simulée');return}try{await ensureObsSoundboardForPlayback();const commandId=uid();const ack=await request('/api/v1/soundboard/play',{method:'POST',body:JSON.stringify({commandId,correlationId:commandId,soundId,volume,issuedAt:new Date().toISOString()})});if(ack.status!=='succeeded')throw new Error(ack.message||'Lecture refusée.');toast('Son envoyé à OBS');await refreshRuntime()}catch(error){toast(error.message,true)}}
 async function toggleLive(){if(!state.runtime){record(state.live.active?'session.stop':'session.start');state.live.active=!state.live.active;render();return}try{if(state.live.active){if(!confirm('Arrêter réellement le live ?'))return;await dashboardCommand({type:'session.stop'},'session.stop');}else{if(!confirm('Démarrer réellement le live ?'))return;await dashboardCommand({type:'session.prepare'},'session.prepare');try{await dashboardCommand({type:'session.start'},'session.start')}catch(error){if(confirm(`${error.message}\n\nDémarrer quand même ?`))await dashboardCommand({type:'session.start',force:true},'session.start');else throw error}}await refreshRuntime()}catch(error){toast(error.message,true)}}
 
 async function mutateCompanion(kind,method,id,payload){
@@ -618,9 +641,13 @@ function bind(){
   document.querySelectorAll('[data-edit-sound]').forEach(b=>b.onclick=event=>{event.stopPropagation();openSoundDialog(b.dataset.editSound)});
   document.querySelectorAll('[data-mute]').forEach(b=>b.onclick=async()=>{const a=state.audio[+b.dataset.mute];if(!a)return;record('obs.audio.mute',{inputName:a.name,muted:!a.muted});if(!state.runtime){a.muted=!a.muted;render();return}try{await dashboardCommand({type:'obs.mute',input:a.name,muted:!a.muted});await refreshRuntime()}catch(error){toast(error.message,true)}});
   document.querySelectorAll('[data-timer]').forEach(b=>b.onclick=async()=>{const action=b.dataset.timer;record(`timer.${action}`);if(!state.runtime){if(action==='toggle')state.timerRunning=!state.timerRunning;if(action==='plus')state.seconds+=60;if(action==='minus')state.seconds=Math.max(0,state.seconds-60);if(action==='reset'){state.seconds=0;state.timerRunning=false}render();return}const command=action==='toggle'?{type:state.timerRunning?'timer.pause':'timer.start'}:action==='plus'?{type:'timer.add',seconds:60}:action==='minus'?{type:'timer.add',seconds:-60}:{type:'timer.reset'};try{await dashboardCommand(command);await refreshRuntime()}catch(error){toast(error.message,true)}});
-  document.querySelector('[data-stop]')?.addEventListener('click',async()=>{record('soundboard.stop');if(!state.runtime){toast('Lecture arrêtée');return}try{await request('/api/v1/soundboard/stop',{method:'POST',body:'{}'});toast('Lecture arrêtée');await refreshRuntime()}catch(error){toast(error.message,true)}});
+  document.querySelector('[data-stop]')?.addEventListener('click',async()=>{record('soundboard.stop');if(!state.runtime){toast('Lecture arrêtée');return}try{state.soundboard=await request('/api/v1/soundboard/stop',{method:'POST',body:'{}'});state.sounds=state.soundboard?.sounds||state.sounds;toast('Lecture arrêtée');render()}catch(error){toast(error.message,true)}});
   document.querySelectorAll('[data-add-sound]').forEach(b=>b.onclick=()=>openSoundDialog());
   document.querySelector('[data-obs-setup]')?.addEventListener('click',()=>void openObsSetup());
+  document.querySelector('[data-sound-category]')?.addEventListener('change',event=>{state.soundCategory=event.currentTarget.value;render()});
+  document.querySelector('[data-sound-favorites]')?.addEventListener('change',event=>{state.soundFavorites=event.currentTarget.checked;render()});
+  document.querySelector('[data-sound-master]')?.addEventListener('input',event=>{state.soundMasterVolume=Math.max(0,Math.min(1,Number(event.currentTarget.value)/100));localStorage.setItem('streamdashboard.desktopSoundboardVolume',String(state.soundMasterVolume));event.currentTarget.closest('.sound-master')?.querySelector('b')?.replaceChildren(`${Math.round(state.soundMasterVolume*100)}%`)});
+  document.querySelector('[data-sound-master]')?.addEventListener('change',async()=>{if(!state.runtime||!state.soundboard?.currentPlayback)return;const current=(state.sounds||[]).find(sound=>sound.id===state.soundboard.currentPlayback.soundId);try{state.soundboard=await request('/api/v1/soundboard/volume',{method:'POST',body:JSON.stringify({volume:Math.max(0,Math.min(1,(current?.volume??1)*state.soundMasterVolume))})})}catch(error){toast(error.message,true)}});
   document.querySelector('[data-live-toggle]')?.addEventListener('click',()=>void toggleLive());
   document.querySelector('[data-open-personalization]')?.addEventListener('click',()=>{state.view='camp';state.campItem='Personnalisation';render()});
   document.querySelectorAll('[data-go-view]').forEach(button=>button.addEventListener('click',()=>{state.view=button.dataset.goView;render()}));
