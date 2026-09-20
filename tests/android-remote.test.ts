@@ -160,6 +160,17 @@ describe('Android remote runtime', () => {
     expect(serverSource).toContain("Object.keys(req.body).some(key => !['profile','appearance'].includes(key))");
   });
 
+  it('détecte les capacités du Runtime PC avant d’utiliser les fonctions Mobile récentes', () => {
+    expect(mobileIndex).toContain('id="runtime-compatibility"');
+    expect(mobileTransport).toContain("capabilities: () => request('/api/v1/capabilities')");
+    for (const feature of ['mobile-profile-presentation','mobile-live-control-config','mobile-provider-actions','soundboard-live-volume']) {
+      expect(mobileScript).toContain(feature);
+      expect(serverSource).toContain(feature);
+    }
+    expect(mobileScript).toContain('Mets à jour StreamDashboard sur le PC pour utiliser');
+    expect(mobileScript).toContain('updateRuntimeCompatibility');
+  });
+
   it('gère les connexions sûres du PC depuis Mobile sans confondre connexion et synchro planning', () => {
     for (const action of ['obs-test','twitch-connect','twitch-disconnect','google-disconnect']) expect(mobileScript).toContain(`'${action}'`);
     for (const action of ['twitch-sync','google-sync']) expect(mobileScript).not.toContain(`'${action}'`);
@@ -171,7 +182,18 @@ describe('Android remote runtime', () => {
     expect(mobileScript).toContain('La connexion initiale Google du PC doit être autorisée depuis le PC.');
     expect(mobileScript).toContain('Configuration locale à effectuer sur le PC.');
     expect(androidActivity).toContain('@JavascriptInterface public void openExternal');
+    expect(androidActivity).toContain('@JavascriptInterface public void copyText');
+    expect(androidActivity).toContain('ClipboardManager');
     expect(androidActivity).toContain('Intent.ACTION_VIEW');
+    expect(mobileScript).toContain("copyText?.('Code Twitch', result.userCode)");
+  });
+
+  it('rend explicites les réglages qui restent volontairement locaux au PC', () => {
+    expect(mobileScript).toContain('Discord · configuration initiale à faire sur le PC');
+    expect(mobileScript).toContain('Configure d’abord Discord sur le PC.');
+    expect(mobileScript).toContain('Streamlabs non configuré · configure-le sur le PC.');
+    expect(mobileScript).toContain('Indisponible dans cette version');
+    expect(mobileScript).not.toContain(":'Non configuré'; $('twitch-standalone-auth')");
   });
 
   it('édite les automatisations avec le vocabulaire Runtime actuel', () => {
