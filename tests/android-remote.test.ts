@@ -131,7 +131,7 @@ describe('Android remote runtime', () => {
   });
 
   it('rend les contrôles Live configurables directement depuis leur état manquant', () => {
-    for (const id of ['mic-config-dialog','mic-config-form','primary-mic-select','scene-config-dialog','scene-config-form','scene-config-select']) expect(mobileIndex).toContain(`id="${id}"`);
+    for (const id of ['mic-config-dialog','mic-config-form','primary-mic-select','configure-primary-mic','scene-config-dialog','scene-config-form','scene-config-select']) expect(mobileIndex).toContain(`id="${id}"`);
     for (const mode of ['intro','live','chatting','pause','end']) expect(mobileIndex).toContain(`data-mode-status="${mode}"`);
     expect(mobileScript).toContain('function openPrimaryMicConfig()');
     expect(mobileScript).toContain('function openSceneConfig(mode)');
