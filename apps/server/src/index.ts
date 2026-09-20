@@ -1489,7 +1489,7 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
   app.post('/api/v1/twitch/clips', async (_req, res, next) => { try { res.status(202).json(await twitch.createClip()); } catch (error) { next(error); } });
   app.get('/api/v1/twitch/chatters', async (req, res, next) => { try { res.json(await twitch.chatters(String(req.query.after ?? ''), Number(req.query.first) || 100)); } catch (error) { next(error); } });
   app.post('/api/v1/twitch/chat/messages', async (req, res, next) => { try { res.status(201).json(await twitch.sendChatMessage(String(req.body?.message ?? ''), typeof req.body?.replyParentMessageId === 'string' ? req.body.replyParentMessageId : undefined)); } catch (error) { next(error); } });
-  app.get('/api/v1/twitch/moderation/capabilities', (_req, res) => res.json(twitch.moderationCapabilities()));
+  app.get('/api/v1/twitch/moderation/capabilities', (_req, res) => res.json(twitch.controlCapabilities()));
   app.delete('/api/v1/twitch/moderation/messages/:id', async (req, res, next) => { try { await twitch.deleteChatMessage(String(req.params.id)); res.status(204).end(); } catch (error) { next(error); } });
   app.post('/api/v1/twitch/moderation/bans', async (req, res, next) => { try { await twitch.banUser(String(req.body?.userId ?? ''), { ...(req.body?.duration !== undefined ? { duration: Number(req.body.duration) } : {}), ...(typeof req.body?.reason === 'string' ? { reason: req.body.reason } : {}) }); res.status(204).end(); } catch (error) { next(error); } });
   app.delete('/api/v1/twitch/moderation/bans/:userId', async (req, res, next) => { try { await twitch.unbanUser(String(req.params.userId)); res.status(204).end(); } catch (error) { next(error); } });
