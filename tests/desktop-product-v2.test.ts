@@ -68,6 +68,12 @@ describe('Desktop V2 promu en production', () => {
     expect(renderer).toContain('publicObsMediaInputs');
     expect(renderer).toContain('const media=publicObsMediaInputs(obs.mediaInputs)');
   });
+  it('utilise l’identité du ProductProfile comme source canonique côté Desktop', () => {
+    expect(renderer).toContain("state.productProfile?.profile?.displayName||state.dashboard?.settings?.streamerName");
+    expect(renderer).toContain("state.productProfile?.profile?.displayName||state.dashboard.settings?.streamerName");
+    expect(renderer).not.toContain('Nom local<input name="streamerName"');
+  });
+
   it('rend les scènes et actions rapides réellement configurables par profil', () => {
     expect(renderer).toContain('const sceneEntries=');
     expect(renderer).toContain('state.productProfile?.obs?.scenes');
