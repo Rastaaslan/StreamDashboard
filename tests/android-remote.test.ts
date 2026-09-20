@@ -194,6 +194,13 @@ describe('Android remote runtime', () => {
     expect(mobileScript).toContain('updateRuntimeCompatibility');
   });
 
+  it('ne permet au test OBS Mobile que de tester la configuration déjà stockée sur le PC', () => {
+    expect(serverSource).toContain('const remote = isRemoteRequest(req)');
+    expect(serverSource).toContain('const url = remote ? local.settings.obsUrl');
+    expect(serverSource).toContain('const password = remote ? currentObsPassword');
+    expect(mobileTransport).toContain("testObs: () => request('/api/v1/obs/test'");
+  });
+
   it('gère les connexions sûres du PC depuis Mobile sans confondre connexion et synchro planning', () => {
     for (const action of ['obs-test','twitch-connect','twitch-disconnect','google-disconnect']) expect(mobileScript).toContain(`'${action}'`);
     for (const action of ['twitch-sync','google-sync']) expect(mobileScript).not.toContain(`'${action}'`);
