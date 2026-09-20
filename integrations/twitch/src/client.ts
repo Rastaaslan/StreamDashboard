@@ -193,6 +193,7 @@ export class TwitchClient {
 
   async createClip() {
     this.requireConnected();
+    this.requireScope(CLIPS_SCOPE);
     const value = await this.api<{ data: Array<{ id: string; edit_url: string }> }>(`/clips?broadcaster_id=${encodeURIComponent(this.credentials.broadcasterId)}`, { method: 'POST' });
     const clip = value.data[0];
     if (!clip) throw new Error('Twitch n’a renvoyé aucun clip.');
@@ -201,12 +202,14 @@ export class TwitchClient {
 
   async chatters(after = '', first = 100) {
     this.requireConnected();
+    this.requireScope(CHATTERS_SCOPE);
     const value = await this.api<{ data: Array<{ user_id: string; user_login: string; user_name: string }>; pagination?: { cursor?: string }; total?: number }>(`/chat/chatters?broadcaster_id=${encodeURIComponent(this.credentials.broadcasterId)}&moderator_id=${encodeURIComponent(this.credentials.broadcasterId)}&first=${Math.min(1_000, Math.max(1, first))}${after ? `&after=${encodeURIComponent(after)}` : ''}`);
     return { items: value.data.map(user => ({ id: user.user_id, login: user.user_login, displayName: user.user_name })), total: value.total ?? value.data.length, cursor: value.pagination?.cursor ?? null };
   }
 
   async sendChatMessage(message: string, replyParentMessageId?: string) {
     this.requireConnected();
+    this.requireScope(CHAT_WRITE_SCOPE);
     const normalized = message.trim();
     if (!normalized || normalized.length > 500) throw new Error('Le message Twitch doit contenir entre 1 et 500 caractères.');
     const value = await this.api<{ data: Array<{ message_id: string; is_sent: boolean; drop_reason?: { code: string; message: string } }> }>('/chat/messages', { method: 'POST', body: JSON.stringify({ broadcaster_id: this.credentials.broadcasterId, sender_id: this.credentials.broadcasterId, message: normalized, ...(replyParentMessageId ? { reply_parent_message_id: replyParentMessageId } : {}) }) });
@@ -215,7 +218,52 @@ export class TwitchClient {
     return { messageId: result.message_id };
   }
 
-  moderationCapabilities() { return { deleteMessage: this.grantedScopes.has(DELETE_CHAT_SCOPE), timeout: this.grantedScopes.has(BANS_SCOPE), ban: this.grantedScopes.has(BANS_SCOPE), unban: this.grantedScopes.has(BANS_SCOPE), requiredScopes: { deleteMessage: DELETE_CHAT_SCOPE, timeout: BANS_SCOPE, ban: BANS_SCOPE, unban: BANS_SCOPE } }; }
+  controlCapabilities() {
+    return {
+      chatRead: this.grantedScopes.has(CHAT_READ_SCOPE),
+      chatWrite: this.grantedScopes.has(CHAT_WRITE_SCOPE),
+      chatters: this.grantedScopes.has(CHATTERS_SCOPE),
+      createClip: this.grantedScopes.has(CLIPS_SCOPE),
+      deleteVideo: this.grantedScopes.has(VIDEOS_SCOPE),
+      updateChannel: this.grantedScopes.has(BROADCAST_SCOPE),
+      schedule: this.grantedScopes.has(SCHEDULE_SCOPE),
+      redemptions: this.grantedScopes.has(REDEMPTIONS_SCOPE),
+      deleteMessage: this.grantedScopes.has(DELETE_CHAT_SCOPE),
+      timeout: this.grantedScopes.has(BANS_SCOPE),
+      ban: this.grantedScopes.has(BANS_SCOPE),
+      unban: this.grantedScopes.has(BANS_SCOPE),
+      requiredScopes: {
+        chatRead: CHAT_READ_SCOPE,
+        chatWrite: CHAT_WRITE_SCOPE,
+        chatters: CHATTERS_SCOPE,
+        createClip: CLIPS_SCOPE,
+        deleteVideo: VIDEOS_SCOPE,
+        updateChannel: BROADCAST_SCOPE,
+        schedule: SCHEDULE_SCOPE,
+        redemptions: REDEMPTIONS_SCOPE,
+        deleteMessage: DELETE_CHAT_SCOPE,
+        timeout: BANS_SCOPE,
+        ban: BANS_SCOPE,
+        unban: BANS_SCOPE,
+      },
+    };
+  }
+
+  moderationCapabilities() {
+    const capabilities = this.controlCapabilities();
+    return {
+      deleteMessage: capabilities.deleteMessage,
+      timeout: capabilities.timeout,
+      ban: capabilities.ban,
+      unban: capabilities.unban,
+      requiredScopes: {
+        deleteMessage: DELETE_CHAT_SCOPE,
+        timeout: BANS_SCOPE,
+        ban: BANS_SCOPE,
+        unban: BANS_SCOPE,
+      },
+    };
+  }
 
   async deleteChatMessage(messageId: string) {
     this.requireScope(DELETE_CHAT_SCOPE);
@@ -238,6 +286,7 @@ export class TwitchClient {
   }
 
   async subscribeChat(sessionId: string) {
+    this.requireScope(CHAT_READ_SCOPE);
     if (!/^[A-Za-z0-9_-]{1,200}$/.test(sessionId)) throw new Error('Session EventSub invalide.');
     return this.api('/eventsub/subscriptions', { method: 'POST', body: JSON.stringify({ type: 'channel.chat.message', version: '1', condition: { broadcaster_user_id: this.credentials.broadcasterId, user_id: this.credentials.broadcasterId }, transport: { method: 'websocket', session_id: sessionId } }) });
   }
@@ -323,6 +372,7 @@ export class TwitchClient {
 
   async updateChannelMetadata(value: { title: string; gameId: string }) {
     if (!this.state.connected) throw new Error('Connectez Twitch avant de préparer le live.');
+    this.requireScope(BROADCAST_SCOPE);
     try {
       await this.api(`/channels?broadcaster_id=${encodeURIComponent(this.credentials.broadcasterId)}`, {
         method: 'PATCH',
@@ -338,6 +388,7 @@ export class TwitchClient {
 
   async createSegment(item: CalendarItem) {
     if (!this.state.connected) throw new Error('Connectez Twitch avant de modifier son planning.');
+    this.requireScope(SCHEDULE_SCOPE);
     this.validateScheduleItem(item);
     const exact = (await this.scheduleSegments()).filter(segment => this.sameIdentity(item, segment) && this.sameCategory(item, segment));
     if (exact.length > 1) throw new Error('Plusieurs segments Twitch identiques existent déjà. Synchronisez puis choisissez explicitement celui à conserver.');
@@ -347,6 +398,7 @@ export class TwitchClient {
 
   async updateSegment(id: string, item: CalendarItem) {
     if (!this.state.connected) throw new Error('Connectez Twitch avant de modifier son planning.');
+    this.requireScope(SCHEDULE_SCOPE);
     const duration = this.validateScheduleItem(item);
     await this.api(`/schedule/segment?broadcaster_id=${encodeURIComponent(this.credentials.broadcasterId)}&id=${encodeURIComponent(id)}`, {
       method: 'PATCH',
@@ -362,6 +414,7 @@ export class TwitchClient {
 
   async deleteSegment(id: string) {
     if (!this.state.connected) throw new Error('Connectez Twitch avant de modifier son planning.');
+    this.requireScope(SCHEDULE_SCOPE);
     await this.api(`/schedule/segment?broadcaster_id=${encodeURIComponent(this.credentials.broadcasterId)}&id=${encodeURIComponent(id)}`, { method: 'DELETE' });
   }
 
@@ -373,6 +426,7 @@ export class TwitchClient {
 
   private async performSync(items: CalendarItem[]) {
     if (!this.state.connected) throw new Error('Connectez Twitch avant de synchroniser le planning.');
+    this.requireScope(SCHEDULE_SCOPE);
     const generation = this.generation;
     this.syncing = true;
     try {
