@@ -54,7 +54,7 @@ describe('Android remote runtime', () => {
     expect(mobileIndex).toContain('name="recurrenceUntil"');
     expect(templatesFeature).toContain('applyTemplate(template');
     expect(templatesFeature).toContain('La périodicité reste libre');
-    expect(templatesFeature).toContain('CRÉER UN ÉVÉNEMENT');
+    expect(templatesFeature).toContain('Créer un événement');
   });
   it('répare le démarrage live Android avec préparation et confirmation de bypass checklist', () => {
     expect(mobileScript).toContain("command({ type: 'session.prepare' })");
