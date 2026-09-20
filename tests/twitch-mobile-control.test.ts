@@ -4,6 +4,8 @@ import { readFileSync } from 'node:fs';
 const html = readFileSync(new URL('../apps/mobile/index.html', import.meta.url), 'utf8');
 const mobile = readFileSync(new URL('../apps/mobile/mobile.js', import.meta.url), 'utf8');
 const transport = readFileSync(new URL('../apps/mobile/transport.js', import.meta.url), 'utf8');
+const server = readFileSync(new URL('../apps/server/src/index.ts', import.meta.url), 'utf8');
+const twitchClient = readFileSync(new URL('../integrations/twitch/src/client.ts', import.meta.url), 'utf8');
 
 describe('Twitch Live Control mobile', () => {
   it('expose des outils mobiles dédiés au lieu de réduire le desktop', () => {
@@ -25,6 +27,14 @@ describe('Twitch Live Control mobile', () => {
     for (const capability of ['chatWrite','chatters','createClip','deleteVideo','updateChannel','schedule']) expect(mobile).toContain(capability);
     for (const scope of ['user:write:chat','moderator:read:chatters','clips:edit','channel:manage:videos','channel:manage:broadcast','channel:manage:schedule']) expect(mobile).toContain(scope);
     expect(mobile).toContain('Fonctions Twitch partielles · reconnecte Twitch');
+  });
+
+  it('garde les scopes Twitch optionnels réellement optionnels côté Runtime', () => {
+    expect(server).toContain('twitchChatters = capabilities.chatters ? await twitch.chatters() : { items: [], total: 0, cursor: null }');
+    expect(server).toContain('if (!capabilities.chatRead) chatStatus = \'DISCONNECTED\'');
+    expect(server).toContain('capabilities.chatRead || capabilities.redemptions');
+    expect(twitchClient).toContain('if (this.grantedScopes.has(CHAT_READ_SCOPE)) await this.subscribeChat(sessionId)');
+    expect(twitchClient).toContain('if (this.grantedScopes.has(REDEMPTIONS_SCOPE)) await this.subscribeRewardRedemptions(sessionId)');
   });
 
   it('conserve un message PC hors ligne explicite', () => {
