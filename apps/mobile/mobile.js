@@ -273,6 +273,82 @@ function renderDeck(media) {
   if (!container.children.length) container.append(text('p', 'Aucun média OBS détecté.', 'muted'));
 }
 
+function connectionButton(label, action, className = 'secondary') {
+  const button = text('button', label, className);
+  button.type = 'button';
+  button.dataset.connectionAction = action;
+  return button;
+}
+function renderManagedConnections(hub) {
+  const integrations = $('hub-integrations');
+  integrations.replaceChildren();
+  const fallback = Object.entries({ obs: 'OBS', twitch: 'Twitch', discord: 'Discord', streamlabs: 'Streamlabs', wizebot: 'WizeBot' }).map(([id, label]) => ({ id, label, status: (hub?.integrations?.[id]?.status || 'DISCONNECTED').toLowerCase(), capabilities: [] }));
+  const projected = connectionProjection.length ? connectionProjection : fallback;
+  for (const provider of projected) {
+    const moduleId = provider.id === 'google' ? 'googleCalendar' : provider.id;
+    if (productProfile?.modules?.[moduleId] === false) continue;
+    const status = String(provider.status || 'unavailable').toUpperCase().replace('REAUTH-REQUIRED', 'REAUTH_REQUIRED');
+    const row = document.createElement('article');
+    row.className = 'integration-card connection-manage-card';
+    const dot = text('i', '', `provider-dot status-${status.toLowerCase()}`);
+    const copy = document.createElement('div'); copy.className = 'connection-copy';
+    copy.append(text('b', provider.label), text('small', `${humanProviderStatus(status)}${provider.mode ? ` · ${provider.mode === 'official' ? 'Officiel' : 'Personnalisé'}` : ''}`, 'muted'));
+    if (provider.message) copy.append(text('small', provider.message, 'muted'));
+    const actions = document.createElement('div'); actions.className = 'connection-actions';
+    const capabilities = new Set(provider.capabilities || []);
+    if (provider.id === 'obs' && capabilities.has('test')) actions.append(connectionButton('Tester', 'obs-test'));
+    if (provider.id === 'twitch') {
+      if (status === 'CONNECTED') {
+        actions.append(connectionButton('Synchroniser', 'twitch-sync'));
+        if (capabilities.has('disconnect')) actions.append(connectionButton('Déconnecter', 'twitch-disconnect', 'secondary danger-button'));
+      } else if (capabilities.has('connect')) actions.append(connectionButton('Connecter', 'twitch-connect'));
+    }
+    if (provider.id === 'google') {
+      if (status === 'CONNECTED') {
+        actions.append(connectionButton('Synchroniser', 'google-sync'));
+        if (capabilities.has('disconnect')) actions.append(connectionButton('Déconnecter', 'google-disconnect', 'secondary danger-button'));
+      } else {
+        copy.append(text('small', 'La connexion initiale Google du PC doit être autorisée depuis le PC.', 'muted'));
+      }
+    }
+    if (!actions.children.length && ['discord','streamlabs','wizebot'].includes(provider.id) && provider.mode === 'custom') {
+      copy.append(text('small', 'Configuration locale à effectuer sur le PC.', 'muted'));
+    }
+    row.append(dot, copy, actions);
+    integrations.append(row);
+  }
+  if (!integrations.children.length) integrations.append(text('p', 'Aucune connexion active pour les modules actuels.', 'muted'));
+}
+async function openExternalUrl(url) {
+  if (!/^https:\/\//i.test(String(url || ''))) throw new Error('Lien externe invalide.');
+  if (globalThis.StreamDashboardNative?.openExternal) { globalThis.StreamDashboardNative.openExternal(url); return; }
+  const opened = window.open(url, '_blank', 'noopener,noreferrer');
+  if (!opened) throw new Error('Impossible d’ouvrir le navigateur.');
+}
+$('hub-integrations').addEventListener('click', async event => {
+  const action = event.target.closest('[data-connection-action]')?.dataset.connectionAction;
+  if (!action) return;
+  if (companionMode !== CompanionMode.ONLINE_PC) { note('PC requis pour gérer cette connexion.'); return; }
+  try {
+    if (action === 'obs-test') {
+      const result = await transport.testObs();
+      note(`OBS connecté · v${result.obsVersion || '?'}`);
+    } else if (action === 'twitch-connect') {
+      const result = await transport.twitchDevice();
+      await openExternalUrl(result.verificationUri);
+      note(`Twitch · code ${result.userCode}`);
+    } else if (action === 'twitch-disconnect') {
+      render(await transport.twitchDisconnect()); note('Twitch déconnecté.');
+    } else if (action === 'twitch-sync') {
+      render(await transport.twitchSync()); note('Twitch synchronisé.');
+    } else if (action === 'google-disconnect') {
+      render(await transport.googleDisconnect()); note('Google Calendar déconnecté.');
+    } else if (action === 'google-sync') {
+      render(await transport.googleSync()); note('Google Calendar synchronisé.');
+    }
+    await loadProductProfile();
+  } catch (error) { note(error.message); }
+});
 function renderControlHub(hub) {
   const integrations = $('hub-integrations');
   integrations.replaceChildren();
@@ -284,16 +360,7 @@ function renderControlHub(hub) {
   $('home-live-status').textContent = isLive ? `${degraded ? '!' : '●'} En direct` : companionMode === CompanionMode.ONLINE_PC ? '○ Prêt' : '○ Hors ligne'; $('home-live-status').className = `live-line ${isLive ? degraded ? 'danger' : 'ok' : ''}`; $('home-duration').textContent = duration;
   $('direct-scene').textContent = state?.obs?.scene || 'Aucune scène'; $('direct-twitch-state').textContent = humanProviderStatus(hub?.integrations?.twitch?.status || 'DISCONNECTED'); $('obs-status-detail').textContent = state?.obs?.connected ? 'Connecté' : 'Indisponible'; $('twitch-status-detail').textContent = $('direct-twitch-state').textContent;
   $('live-workspace-status').textContent = $('home-live-status').textContent; $('live-workspace-status').className = $('home-live-status').className; $('live-duration').textContent = duration; $('live-viewers').textContent = $('hub-viewers').textContent; $('live-chatters').textContent = $('hub-chatters').textContent; $('live-scene').textContent = state?.obs?.scene || '—';
-  const projected = connectionProjection.length ? connectionProjection : Object.entries({ obs: 'OBS', twitch: 'Twitch', discord: 'Discord', streamlabs: 'Streamlabs', wizebot: 'WizeBot' }).map(([id, label]) => ({ id, label, status: (hub?.integrations?.[id]?.status || 'DISCONNECTED').toLowerCase() }));
-  for (const provider of projected) {
-    if (productProfile?.modules?.[provider.id === 'google' ? 'googleCalendar' : provider.id] === false) continue;
-    const status = String(provider.status || 'unavailable').toUpperCase().replace('REAUTH-REQUIRED', 'REAUTH_REQUIRED'); const label = provider.label;
-    const row = document.createElement('div');
-    row.className = 'integration-card';
-    const dot = text('i', '', `provider-dot status-${status.toLowerCase()}`);
-    row.append(dot, text('span', label), text('small', humanProviderStatus(status), 'muted'));
-    integrations.append(row);
-  }
+  renderManagedConnections(hub);
   renderHubChat(hub?.chat?.messages || []);
   renderAudience(hub?.audience);
 }
@@ -798,12 +865,17 @@ document.addEventListener('click', event => {
   const diagnostics = $('diagnostics');
   diagnostics.open = target === 'diagnostics';
   if (target === 'pairing') showPairing(true);
-  requestAnimationFrame(() => (target === 'diagnostics' ? diagnostics : target === 'preferences' ? $('ui-preferences') : target === 'connections' ? $('mobile-connections') : $('pairing')).scrollIntoView({ block: 'start' }));
+  const destination = target === 'diagnostics' ? diagnostics
+    : target === 'profile' ? $('profile-appearance')
+      : target === 'preferences' ? $('ui-preferences')
+        : target === 'connections' ? $('mobile-connections')
+          : $('pairing');
+  requestAnimationFrame(() => destination.scrollIntoView({ block: 'start' }));
 });
 async function createQuickClip() { if (companionMode !== CompanionMode.ONLINE_PC) throw new Error('PC requis.'); const clip = await transport.createTwitchClip(); globalThis.StreamDashboardNative?.haptic?.('light'); note(`Clip créé · ${clip.id}`); }
 async function togglePrimaryMic() { const value = primaryMicCommand(state); const confirmed = await command(value, { reconcile: next => next.obs?.inputs?.[value.input]?.muted === value.muted }); if (!confirmed) throw new Error('Commande non confirmée par le PC.'); }
 $('open-automations').onclick = () => openLiveTool('automations');
-$('return-v2').onclick = () => activateView('settings'); $('live-stream').onclick = () => $('stream').click();
+$('live-stream').onclick = () => $('stream').click();
 $('live-clip').onclick = () => void createQuickClip().catch(error => note(`Impossible de créer le clip. ${error.message}`)); $('quick-mic').onclick = () => void togglePrimaryMic().catch(error => note(error.message)); $('open-scenes-live').onclick = () => openLiveTool('scenes'); $('refresh-sounds').onclick = () => void loadSoundboard();
 const savedTab = localStorage.getItem('streamdashboard.mobileTab'); selectTab(['home', 'live', 'sounds', 'planning', 'more', 'prepare', 'settings'].includes(savedTab) ? savedTab : 'home');
 
@@ -824,10 +896,67 @@ function applyUxPreferences() {
 }
 function setFocusPreference(value) { uxPreferences.focus = value; applyUxPreferences(); }
 $('focus-mode').onchange = event => setFocusPreference(event.target.checked); $('reduce-motion').onchange = event => { uxPreferences.reducedMotion = event.target.checked; applyUxPreferences(); };
+function populateProfileAppearanceForm() {
+  if (!productProfile) return;
+  $('profile-display-name').value = productProfile.profile?.displayName || '';
+  $('profile-channel-name').value = productProfile.profile?.channelName || '';
+  $('appearance-theme-input').value = productProfile.appearance?.theme || appearanceDefaults.theme;
+  $('appearance-preset-input').value = productProfile.appearance?.preset || appearanceDefaults.preset;
+  $('appearance-accent-input').value = productProfile.appearance?.accent || appearanceDefaults.accent;
+  $('appearance-density-input').value = productProfile.appearance?.density || appearanceDefaults.density;
+  $('appearance-radius-input').value = productProfile.appearance?.radius || appearanceDefaults.radius;
+  $('appearance-text-scale-input').value = productProfile.appearance?.textScale || appearanceDefaults.textScale;
+}
+function previewProfileAppearance() {
+  uxPreferences = {
+    ...uxPreferences,
+    theme: $('appearance-theme-input').value,
+    preset: $('appearance-preset-input').value,
+    accent: $('appearance-accent-input').value,
+    density: $('appearance-density-input').value,
+    radius: $('appearance-radius-input').value,
+    textScale: $('appearance-text-scale-input').value,
+  };
+  applyUxPreferences();
+}
+for (const id of ['appearance-theme-input','appearance-preset-input','appearance-accent-input','appearance-density-input','appearance-radius-input','appearance-text-scale-input']) {
+  $(id).addEventListener('input', previewProfileAppearance);
+  $(id).addEventListener('change', previewProfileAppearance);
+}
+$('profile-appearance-form').onsubmit = async event => {
+  event.preventDefault();
+  if (companionMode !== CompanionMode.ONLINE_PC || !productProfile) { note('Connecte le téléphone au PC pour enregistrer le profil partagé.'); return; }
+  try {
+    const value = {
+      profile: {
+        displayName: $('profile-display-name').value.trim() || 'Streamer',
+        channelName: $('profile-channel-name').value.trim(),
+        language: productProfile.profile?.language || 'fr',
+      },
+      appearance: {
+        theme: $('appearance-theme-input').value,
+        preset: $('appearance-preset-input').value,
+        accent: $('appearance-accent-input').value,
+        density: $('appearance-density-input').value,
+        radius: $('appearance-radius-input').value,
+        textScale: $('appearance-text-scale-input').value,
+      },
+    };
+    const result = await transport.updateProfilePresentation(value);
+    productProfile = result.profile;
+    uxPreferences = { ...uxPreferences, ...productProfile.appearance };
+    applyUxPreferences();
+    populateProfileAppearanceForm();
+    applyModuleProjection(productProfile.modules || {});
+    note('Profil et apparence enregistrés.');
+  } catch (error) { note(error.message); }
+};
 async function loadProductProfile() {
   const [result, connections] = await Promise.all([transport.profile(), transport.connections()]); productProfile = result.profile; connectionProjection = connections.items || []; lastProfileSyncAt = Date.now();
   uxPreferences = { ...uxPreferences, ...productProfile.appearance }; applyUxPreferences();
+  populateProfileAppearanceForm();
   applyModuleProjection(productProfile.modules || {});
+  renderManagedConnections(state?.controlHub);
 }
 function applyModuleProjection(enabled) {
   document.querySelectorAll('[data-module]').forEach(node => { const unavailable = !node.dataset.module.split(',').some(id => enabled[id] !== false); node.dataset.moduleUnavailable = String(unavailable); if (node.matches('[data-live-panel]')) { if (unavailable) node.hidden = true; } else node.hidden = unavailable; });
