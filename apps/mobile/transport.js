@@ -55,6 +55,7 @@ export function createTransport(getServer, getCredential) {
     request,
     authHeaders,
     state,
+    capabilities: () => request('/api/v1/capabilities'),
     profile: () => request('/api/v1/profile', { headers: { authorization: `Device ${getCredential()}` } }),
     updateProfilePresentation: value => request('/api/v1/profile/presentation', { method: 'PUT', headers: authHeaders(), body: JSON.stringify(value) }),
     updateLiveControl: value => request('/api/v1/settings/live-control', { method: 'PUT', headers: authHeaders(), body: JSON.stringify(value) }),
