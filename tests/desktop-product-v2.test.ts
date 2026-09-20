@@ -1,0 +1,52 @@
+import { describe, expect, it } from 'vitest';
+import { readFileSync } from 'node:fs';
+
+const main = readFileSync(new URL('../apps/desktop/src/main.ts', import.meta.url), 'utf8');
+const html = readFileSync(new URL('../apps/web/preview/index.html', import.meta.url), 'utf8');
+const renderer = readFileSync(new URL('../apps/web/preview/preview.js', import.meta.url), 'utf8');
+const css = readFileSync(new URL('../apps/web/preview/preview.css', import.meta.url), 'utf8');
+
+describe('Desktop V2 promu en production', () => {
+  it('est bien le shell chargé par Electron et possède une CSP', () => {
+    expect(main).toContain("'/preview/?runtime=1'");
+    expect(html).toContain('Content-Security-Policy');
+    expect(html).toContain("script-src 'self'");
+    expect(html).toContain('id="brand-context"');
+    expect(html).toContain('>Application<');
+  });
+
+  it('consomme le ProductProfile partagé au lieu d’une configuration parallèle', () => {
+    expect(renderer).toContain("request('/api/v1/profile')");
+    expect(renderer).toContain("request('/api/v1/connections')");
+    expect(renderer).toContain('applyProductAppearance');
+    expect(renderer).toContain('projectProductShell');
+    expect(renderer).toContain('data-profile-module');
+    expect(renderer).toContain("campItem==='Personnalisation'");
+    expect(renderer).toContain("'/api/v1/profile/export'");
+    expect(renderer).toContain("'/api/v1/profile/import'");
+  });
+
+  it('projette modules, dépendances, providers et onboarding sans bloquer le cockpit', () => {
+    expect(renderer).toContain("soundboard:['obs']");
+    expect(renderer).toContain("streamerPings:['twitch']");
+    expect(renderer).toContain("googleCalendar:['planning']");
+    expect(renderer).toContain('connectionModuleByName');
+    expect(renderer).toContain('onboardingCard');
+    expect(renderer).toContain('Rien ne bloque l’utilisation du cockpit');
+    expect(renderer).toContain("next.onboarding={completed:true}");
+  });
+
+  it('applique les tokens de personnalisation au shell réel', () => {
+    for (const token of ['--product-accent:', '--product-font-scale:', '--radius:', '--section-pad:', '--layout-gap:']) expect(css).toContain(token);
+    for (const theme of ['data-theme="light"', 'data-theme="dark"', 'data-theme="oled"']) expect(css).toContain(theme);
+    expect(css).toContain('data-density="compact"');
+    expect(css).toContain('data-radius="round"');
+    expect(css).toContain('.module-grid');
+    expect(css).toContain('.camp-nav-group');
+  });
+
+  it('organise Application par intention tout en conservant les domaines existants', () => {
+    for (const group of ['PRÉPARER', 'COMMUNAUTÉ', 'AUTOMATISER', 'APPLICATION']) expect(renderer).toContain(group);
+    for (const item of ['Préparation','Notes','Templates','Soutiens','Automatisations','Médias OBS','Connexions','Personnalisation','Réglages','Diagnostics']) expect(renderer).toContain(item);
+  });
+});
