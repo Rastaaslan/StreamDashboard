@@ -1070,8 +1070,8 @@ $('profile-appearance-form').onsubmit = async event => {
 };
 async function loadProductProfile() {
   const [result, connections] = await Promise.all([
-    runtimeSupports('mobile-profile-presentation') ? transport.profile() : Promise.resolve(null),
-    runtimeSupports('mobile-provider-actions') ? transport.connections() : Promise.resolve({ items: [] }),
+    transport.profile().catch(() => null),
+    transport.connections().catch(() => ({ items: [] })),
   ]);
   if (result?.profile) {
     productProfile = result.profile;
