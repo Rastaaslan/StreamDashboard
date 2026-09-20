@@ -1,5 +1,8 @@
 import { describe, expect, it } from 'vitest';
+import { readFileSync } from 'node:fs';
 import { isRemoteApiAllowed } from '../apps/server/src/remote-api-policy.js';
+
+const transportSource = readFileSync(new URL('../apps/mobile/transport.js', import.meta.url), 'utf8');
 
 describe('contrat API télécommande Mobile', () => {
   const allowed: Array<[string,string]> = [
@@ -22,6 +25,19 @@ describe('contrat API télécommande Mobile', () => {
 
   it.each(allowed)('autorise %s %s', (method,path) => {
     expect(isRemoteApiAllowed(method,path)).toBe(true);
+  });
+
+  it('autorise automatiquement chaque route statique authentifiée utilisée par transport.js', () => {
+    const publicRoutes = new Set(['/api/v1/capabilities','/api/v1/remote/pair']);
+    const requests = [...transportSource.matchAll(/request\('([^']+)'\s*,?([^\n]*)/g)]
+      .map(match => {
+        const endpoint = match[1];
+        const method = match[2].match(/method:\s*'([A-Z]+)'/)?.[1] || 'GET';
+        return { endpoint, method };
+      })
+      .filter(value => value.endpoint.startsWith('/api/v1/') && !publicRoutes.has(value.endpoint));
+    const denied = requests.filter(({ endpoint, method }) => !isRemoteApiAllowed(method, endpoint.replace(/^\/api/, '')));
+    expect(denied).toEqual([]);
   });
 
   it.each([
