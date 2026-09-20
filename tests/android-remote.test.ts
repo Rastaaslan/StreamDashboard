@@ -163,6 +163,16 @@ describe('Android remote runtime', () => {
     expect(remotePolicy).toContain('scenes: [...state.obs.scenes]');
   });
 
+  it('affiche les erreurs provider du Planning connecté et permet un retry explicite', () => {
+    expect(mobileIndex).toContain('id="planning-provider-readiness"');
+    expect(mobileScript).toContain('renderOnlinePlanningProviders');
+    expect(mobileScript).toContain('transport.retryPlanningProvider');
+    expect(mobileScript).toContain('Conflit distant · résolution à effectuer sur le PC.');
+    expect(mobileTransport).toContain('/retry/');
+    expect(remotePolicy).toContain("providers?: Partial<Record<'twitch' | 'google'");
+    expect(remotePolicy).toContain('lastError: link.lastError');
+  });
+
   it('permet de modifier le profil et l’apparence partagés depuis Mobile', () => {
     for (const id of ['profile-appearance-form','profile-display-name','profile-channel-name','appearance-theme-input','appearance-preset-input','appearance-accent-input','appearance-density-input','appearance-radius-input','appearance-text-scale-input']) expect(mobileIndex).toContain(`id="${id}"`);
     expect(mobileScript).toContain('transport.updateProfilePresentation(value)');
