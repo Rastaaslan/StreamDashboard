@@ -941,6 +941,7 @@ $('mic-config-form').onsubmit = async event => {
   } catch (error) { note(error.message); }
 };
 $('close-mic-config').onclick = () => $('mic-config-dialog').close();
+$('configure-primary-mic').onclick = openPrimaryMicConfig;
 $('scene-config-form').onsubmit = async event => {
   event.preventDefault();
   try {
