@@ -15,13 +15,13 @@ const androidFilePaths = readFileSync(new URL('../android/app/src/main/res/xml/f
 describe('Android remote runtime', () => {
   it('expose Pause avec les quatre modes et conserve le flux mode.set partagé', () => {
     for (const mode of ['intro', 'live', 'pause', 'end']) expect(mobileIndex).toContain(`data-mode="${mode}"`);
-    expect(mobileScript).toContain("command({ type: 'mode.set', mode: button.dataset.mode })");
+    expect(mobileScript).toContain('handleModeAction(button.dataset.mode)');
     expect(mobileScript).toContain("button.dataset.mode === next.mode && !(button.dataset.mode === 'live' && chattingActive)");
     expect(remotePolicy).toContain("new Set(['intro', 'live', 'pause', 'end'])");
   });
   it('expose le preset Chatting sans créer de RunMode ni accepter une scène arbitraire', () => {
     expect(mobileIndex).toMatch(/data-chatting[^>]*>[\s\S]*?Chatting/);
-    expect(mobileScript).toContain("command({ type: 'scene.chatting' })");
+    expect(mobileScript).toContain("if (mode === 'chatting') await command({ type: 'scene.chatting' })");
     expect(mobileScript).toContain("next.mode === 'live'");
     expect(mobileScript).toContain("next.obs.scene === next.settings.chattingScene");
     expect(remotePolicy).toContain("case 'scene.chatting'");
@@ -128,6 +128,21 @@ describe('Android remote runtime', () => {
     expect(mobileScript).toContain('notifyMobileStreamerPing');
     expect(mobileScript).toContain('document.hidden');
     expect(mobileScript).toContain('notifyStreamerPing?.(');
+  });
+
+  it('rend les contrôles Live configurables directement depuis leur état manquant', () => {
+    for (const id of ['mic-config-dialog','mic-config-form','primary-mic-select','scene-config-dialog','scene-config-form','scene-config-select']) expect(mobileIndex).toContain(`id="${id}"`);
+    for (const mode of ['intro','live','chatting','pause','end']) expect(mobileIndex).toContain(`data-mode-status="${mode}"`);
+    expect(mobileScript).toContain('function openPrimaryMicConfig()');
+    expect(mobileScript).toContain('function openSceneConfig(mode)');
+    expect(mobileScript).toContain("transport.updateLiveControl({ primaryMicInput: $('primary-mic-select').value })");
+    expect(mobileScript).toContain("transport.updateLiveControl({ mode, scene: $('scene-config-select').value })");
+    expect(mobileScript).toContain("Non configuré · toucher pour configurer");
+    expect(mobileScript).toContain("Non configuré · toucher pour choisir");
+    expect(mobileTransport).toContain("'/api/v1/settings/live-control'");
+    expect(serverSource).toContain("pathName === '/v1/settings/live-control'");
+    expect(serverSource).toContain("Object.keys(req.body).some(key => !['primaryMicInput','mode','scene'].includes(key))");
+    expect(remotePolicy).toContain('scenes: [...state.obs.scenes]');
   });
 
   it('permet de modifier le profil et l’apparence partagés depuis Mobile', () => {
