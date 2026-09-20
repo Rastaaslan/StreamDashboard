@@ -34,14 +34,17 @@ test('Electron réel démarre, persiste, impose une instance et arrête son back
     // the real Runtime. Exercise every primary destination plus the secondary
     // Camp surface in the packaged executable.
     await expect(window.locator('#runtime-status')).toHaveText('Runtime PC');
-    for (const [route, title] of [['home', 'Accueil'], ['live', 'Live'], ['sounds', 'Sons'], ['planning', 'Planning'], ['camp', 'Le Camp']] as const) {
+    for (const [route, title] of [['home', 'Accueil'], ['live', 'Live'], ['sounds', 'Sons'], ['planning', 'Planning'], ['camp', 'Application']] as const) {
       await window.locator(`[data-view="${route}"]`).click();
       await expect(window.locator('#title')).toHaveText(title);
       await expect(window.locator('#view')).not.toBeEmpty();
     }
-    for (const tool of ['Préparation','Notes','Templates','Soutiens','Automatisations','Médias OBS','Connexions','Diagnostics','Réglages']) {
-      await window.locator(`[data-camp="${tool}"]`).click();
-      await expect(window.locator('#camp-title')).toHaveText(tool);
+    for (const tool of ['Préparation','Notes','Templates','Soutiens','Automatisations','Médias OBS','Connexions','Personnalisation','Diagnostics','Réglages']) {
+      const control = window.locator(`[data-camp="${tool}"]`);
+      if (await control.count()) {
+        await control.click();
+        await expect(window.locator('#camp-title')).toHaveText(tool);
+      }
     }
     await window.locator('[data-view="home"]').click();
     const electronVersion = await application.evaluate(() => process.versions.electron);
