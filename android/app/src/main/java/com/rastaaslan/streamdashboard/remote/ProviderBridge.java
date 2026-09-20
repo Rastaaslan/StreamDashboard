@@ -52,7 +52,7 @@ public final class ProviderBridge {
   }
 
   private void notifyAuth(String provider, boolean connected) { activity.runOnUiThread(() -> ((MainActivity)activity).dispatchProviderAuth(provider, connected)); }
-  private String status(String provider, String clientId) { try { return new JSONObject().put("ok", true).put("configured", !clientId.isEmpty()).put("connected", !credentials.get(provider).isEmpty()).put("message", clientId.isEmpty() ? "Google autonome non configuré" : JSONObject.NULL).toString(); } catch (Exception e) { return failure("INTERNAL", "État indisponible."); } }
+  private String status(String provider, String clientId) { try { String label = provider.equals("google") ? "Google" : "Twitch"; return new JSONObject().put("ok", true).put("configured", !clientId.isEmpty()).put("connected", !credentials.get(provider).isEmpty()).put("message", clientId.isEmpty() ? label + " autonome non configuré" : JSONObject.NULL).toString(); } catch (Exception e) { return failure("INTERNAL", "État indisponible."); } }
   private String authorize(String provider, String clientId, String endpoint, String scopes) {
     if (clientId.isEmpty()) return failure("NOT_CONFIGURED", provider.equals("google") ? "Google autonome non configuré" : "Twitch autonome non configuré");
     try {
