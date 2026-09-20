@@ -1338,8 +1338,19 @@ async function refreshProviderAccounts() {
   $('provider-accounts').hidden = false;
   const adapter = createNativeProviderAdapter();
   for (const provider of ['twitch','google']) {
-    try { const status=await adapter.status(provider); $(`${provider}-standalone-status`).textContent=status.configured?(status.connected?'Connecté':'Déconnecté'):'Non configuré'; $(`${provider}-standalone-auth`).disabled=!status.configured; $(`${provider}-standalone-logout`).hidden=!status.connected; }
-    catch { $(`${provider}-standalone-status`).textContent='Indisponible'; }
+    try {
+      const status = await adapter.status(provider);
+      const auth = $(`${provider}-standalone-auth`);
+      const logout = $(`${provider}-standalone-logout`);
+      $(`${provider}-standalone-status`).textContent = status.configured ? (status.connected ? 'Connecté' : 'Déconnecté') : 'Indisponible dans cette version';
+      auth.hidden = !status.configured;
+      auth.disabled = !status.configured;
+      logout.hidden = !status.connected;
+    } catch {
+      $(`${provider}-standalone-status`).textContent = 'Indisponible';
+      $(`${provider}-standalone-auth`).hidden = true;
+      $(`${provider}-standalone-logout`).hidden = true;
+    }
   }
 }
 for (const provider of ['twitch','google']) {
