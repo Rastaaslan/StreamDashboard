@@ -47,7 +47,7 @@ describe('Desktop V2 promu en production', () => {
 
   it('organise Application par intention tout en conservant les domaines existants', () => {
     for (const group of ['PRÉPARER', 'COMMUNAUTÉ', 'AUTOMATISER', 'APPLICATION']) expect(renderer).toContain(group);
-    for (const item of ['Préparation','Notes','Templates','Soutiens','Automatisations','Médias OBS','Connexions','Personnalisation','Réglages','Diagnostics']) expect(renderer).toContain(item);
+    for (const item of ['Préparation','Notes','Templates','Soutiens','Alertes viewers','Automatisations','Médias OBS','Connexions','Personnalisation','Réglages','Diagnostics']) expect(renderer).toContain(item);
   });
   it('reconstruit Accueil, Live et Planning autour de leur intention principale', () => {
     expect(renderer).toContain('function nextLiveCopy');
@@ -68,6 +68,15 @@ describe('Desktop V2 promu en production', () => {
     expect(renderer).toContain('publicObsMediaInputs');
     expect(renderer).toContain('const media=publicObsMediaInputs(obs.mediaInputs)');
   });
+  it('replace les fonctions Twitch et Streamer Pings dans leur contexte naturel', () => {
+    expect(renderer).toContain("items:['Soutiens','Alertes viewers']");
+    expect(renderer).toContain("item==='Alertes viewers'");
+    expect(renderer).toContain('id="live-twitch-settings"');
+    expect(renderer).toContain('data-live-twitch-category-search');
+    expect(renderer).not.toContain('id="camp-twitch-live-settings"');
+    expect(css).toContain('.live-twitch-settings');
+  });
+
   it('fait de Sons une bibliothèque autonome avec filtres et volume maître', () => {
     expect(renderer).toContain('data-sound-category');
     expect(renderer).toContain('data-sound-favorites');
