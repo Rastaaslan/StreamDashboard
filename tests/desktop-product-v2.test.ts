@@ -50,7 +50,7 @@ describe('Desktop V2 promu en production', () => {
     for (const item of ['Préparation','Notes','Templates','Soutiens','Alertes viewers','Automatisations','Médias OBS','Connexions','Personnalisation','Réglages','Diagnostics']) expect(renderer).toContain(item);
   });
   it('reconstruit Accueil, Live et Planning autour de leur intention principale', () => {
-    expect(renderer).toContain('function nextLiveCopy');
+    expect(renderer).toContain('const nextLiveCopy=');
     expect(renderer).toContain('État de préparation');
     expect(renderer).not.toContain('<h2>Scènes principales</h2><span class="label">Active');
     expect(renderer).toContain('id="desktop-chat-form"');
@@ -83,7 +83,7 @@ describe('Desktop V2 promu en production', () => {
     expect(renderer).toContain('data-sound-master');
     expect(renderer).toContain('streamdashboard.desktopSoundboardVolume');
     expect(renderer).toContain("'/api/v1/soundboard/volume'");
-    expect(renderer).toContain('sound.volume??1)*state.soundMasterVolume');
+    expect(renderer).toContain('(sound?.volume??1)*state.soundMasterVolume');
     expect(css).toContain('.soundboard-workspace');
     expect(css).toContain('.soundboard-filters');
     expect(css).toContain('.sound-master');
