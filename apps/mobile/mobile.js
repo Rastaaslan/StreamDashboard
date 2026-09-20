@@ -86,7 +86,7 @@ const commandController = createCommandController({
   onMessage: value => note(value),
 });
 let noteTimer;
-const note = value => { const message = $('message'); message.textContent = String(value || ''); clearTimeout(noteTimer); if (value) noteTimer = setTimeout(() => { message.textContent = ''; }, 4_000); };
+const note = value => { const message = $('message'); message.textContent = String(value || ''); clearTimeout(noteTimer); if (value) noteTimer = setTimeout(() => { message.textContent = ''; }, 2_500); };
 let activeMobileStreamerPingId = null;
 const notifiedMobileStreamerPingIds = new Set();
 function ensureMobileStreamerPingDialog() {
