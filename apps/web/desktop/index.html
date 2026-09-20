@@ -1,0 +1,83 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; connect-src 'self' ws: wss:; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; object-src 'none'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="theme-color" content="#101214">
+  <title>StreamDashboard</title>
+  <link rel="stylesheet" href="desktop.css">
+</head>
+<body>
+<a class="skip" href="#content">Aller au contenu</a>
+<div class="shell">
+  <aside>
+    <div class="brand"><span class="ember" aria-hidden="true"></span><div><strong>StreamDashboard</strong><small id="brand-context">Desktop</small></div></div>
+    <nav aria-label="Navigation principale">
+      <button data-view="home" aria-current="page">Accueil <kbd>Alt+1</kbd></button>
+      <button data-view="live">Live <kbd>Alt+2</kbd></button>
+      <button data-view="sounds">Sons <kbd>Alt+3</kbd></button>
+      <button data-view="planning">Planning <kbd>Alt+4</kbd></button>
+    </nav>
+    <button class="camp" data-view="camp"><span>Application</span><small>Préparer · connecter · personnaliser</small></button>
+    <div class="connection"><span class="dot" id="runtime-dot"></span><span><b id="runtime-status">Mode Démo</b><small id="runtime-copy">Aucune commande réelle</small></span></div>
+  </aside>
+  <main id="content" tabindex="-1">
+    <header><div><p class="eyebrow" id="eyebrow">COCKPIT</p><h1 id="title">Accueil</h1></div><div class="preview-mode" id="preview-mode"><button id="mode" aria-label="Changer le mode de démonstration">Démo</button><span>APERÇU · AUCUNE COMMANDE RÉELLE</span></div></header>
+    <div id="view" aria-live="polite"></div>
+  </main>
+</div>
+
+<dialog id="sound-dialog">
+  <form id="sound-form">
+    <input type="hidden" id="sound-id">
+    <h2 id="sound-dialog-title">Ajouter un son</h2>
+    <label>Fichier<div class="file-row"><button type="button" class="secondary" id="sound-file-button">Choisir un fichier</button><span id="sound-file-copy">Aucun fichier choisi</span></div></label>
+    <label>Nom<input id="sound-name" maxlength="100" required></label>
+    <label>Catégorie<input id="sound-category" maxlength="80" required list="sound-categories"></label>
+    <datalist id="sound-categories"><option>Réactions</option><option>Minecraft</option><option>Alertes</option><option>Memes</option></datalist>
+    <div class="form-grid">
+      <label>Volume (%)<input id="sound-volume" type="number" min="0" max="100" step="1" value="100" required></label>
+      <label>Cooldown (s)<input id="sound-cooldown" type="number" min="0" max="3600" step="1" value="0" required></label>
+    </div>
+    <label>Écoute<select id="sound-monitoring"><option value="stream">Stream uniquement</option><option value="monitor">Stream + casque</option></select></label>
+    <div class="checks"><label><input id="sound-favorite" type="checkbox"> Favori</label><label><input id="sound-enabled" type="checkbox" checked> Activé</label></div>
+    <p class="help">Le fichier est copié dans la bibliothèque gérée par StreamDashboard. Son chemin d’origine n’est jamais envoyé au téléphone.</p>
+    <div class="dialog-actions"><button type="button" class="critical" id="sound-delete" hidden>Supprimer</button><span></span><button type="button" class="secondary" data-close-dialog="sound-dialog">Annuler</button><button type="submit" class="action">Enregistrer</button></div>
+  </form>
+</dialog>
+
+<dialog id="obs-setup-dialog">
+  <form id="obs-setup-form">
+    <h2>Configurer la Soundboard dans OBS</h2>
+    <p class="help">StreamDashboard vérifie la Media Source <b>StreamDashboard • Soundboard</b> et l’ajoute uniquement aux scènes configurées qui la nécessitent. L’opération est idempotente et ne duplique pas les sources.</p>
+    <div id="obs-setup-status" class="setup-status"></div>
+    <div class="dialog-actions"><span></span><span></span><button type="button" class="secondary" data-close-dialog="obs-setup-dialog">Fermer</button><button type="submit" class="action">Configurer / réparer</button></div>
+  </form>
+</dialog>
+
+<dialog id="event-dialog">
+  <form id="event-form">
+    <input type="hidden" id="event-id">
+    <input type="hidden" id="event-series-id">
+    <input type="hidden" id="event-occurrence-key">
+    <h2 id="event-dialog-title">Nouvel événement</h2>
+    <label>Template<select id="event-template"><option value="">Aucun</option></select></label>
+    <label>Titre<input id="event-title" maxlength="140" required></label>
+    <div class="form-grid"><label>Date<input id="event-date" type="date" required></label><label>Type<select id="event-category"><option value="live">Live</option><option value="production">Production</option><option value="personal">Personnel</option></select></label></div>
+    <div class="form-grid"><label>Début<input id="event-start" type="time" required value="20:30"></label><label>Fin<input id="event-end" type="time" required value="23:30"></label></div>
+    <label>Catégorie Twitch<input id="event-twitch-category" maxlength="80" autocomplete="off" placeholder="Rechercher une catégorie officielle"><input id="event-twitch-game-id" type="hidden"></label>
+    <div id="event-twitch-results" class="category-results"></div>
+    <div class="form-grid"><label>Récurrence<select id="event-recurrence"><option value="">Aucune</option><option value="weekly-1">Chaque semaine</option><option value="weekly-2">Toutes les 2 semaines</option><option value="monthly-1">Chaque mois</option></select></label><label>Jusqu’au<input id="event-recurrence-until" type="date"></label></div>
+    <label id="event-scope-wrap" hidden>Portée<select id="event-scope"><option value="occurrence">Cette occurrence uniquement</option><option value="series">Toute la série</option></select></label>
+    <div class="checks"><label><input id="event-publish-twitch" type="checkbox"> Publier Twitch</label><label><input id="event-publish-google" type="checkbox"> Publier Google</label></div>
+    <label>Description<textarea id="event-description" maxlength="4000"></textarea></label>
+    <div id="event-provider-status" class="setup-status" hidden></div>
+    <div class="dialog-actions"><button type="button" class="critical" id="event-delete" hidden>Supprimer</button><span></span><button type="button" class="secondary" data-close-dialog="event-dialog">Annuler</button><button type="submit" class="action" id="event-submit">Enregistrer</button></div>
+  </form>
+</dialog>
+
+<div id="toast" role="status" aria-live="polite"></div>
+<script type="module" src="desktop.js"></script>
+</body>
+</html>
