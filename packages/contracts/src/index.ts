@@ -286,7 +286,7 @@ export interface RemoteDashboardState {
   obs: Pick<ObsState, 'connected' | 'streaming' | 'streamingKnown' | 'scene' | 'scenes' | 'inputs' | 'activeAudioInputs' | 'mediaInputs'>;
   settings: Pick<DashboardSettings, 'confirmStop' | 'streamerName' | 'modeScenes' | 'chattingScene' | 'primaryMicInput' | 'requireTimerOverlayOnStart'>;
   twitch: Pick<TwitchState, 'connected' | 'channelTitle' | 'gameId' | 'gameName' | 'error'>;
-  google?: Pick<GoogleCalendarState, 'configured' | 'connected'>;
+  google?: Pick<GoogleCalendarState, 'configured' | 'connected' | 'targetCalendarId'>;
   discord?: DiscordState;
   preflight?: PreflightState;
   streamerPings?: StreamerPing[];
