@@ -62,3 +62,16 @@ dialog{width:min(540px,calc(100vw - 20px));max-height:88vh;border:1px solid var(
 .inline-config-action{width:auto;min-height:42px;margin:0 0 12px;padding:7px 11px}
 
 .compatibility-warning{margin:0 0 18px;padding:11px 12px;border:1px solid color-mix(in srgb,var(--danger) 45%,var(--border));border-radius:var(--radius);background:color-mix(in srgb,var(--danger) 8%,var(--surface));color:var(--text);font-size:.82rem;line-height:1.4}
+
+
+/* Planning provider outcomes */
+.planning-provider-state{grid-column:2/-1;display:grid;gap:5px;padding:8px 0 0;border-top:1px solid var(--border)}
+.planning-provider-state>div{display:flex;align-items:center;justify-content:space-between;gap:10px}
+.planning-provider-state>div b{font-size:.82rem}.planning-provider-state>div span{font-size:.74rem}
+.planning-provider-state>small{line-height:1.35;overflow-wrap:anywhere}
+.planning-provider-state>button{justify-self:start;width:auto;min-height:38px;padding:6px 10px}
+.provider-synced>div span{color:var(--success)}
+.provider-error>div span,.provider-conflict>div span{color:var(--danger)}
+.planning-sync-error{grid-column:2/-1;overflow-wrap:anywhere}
+#planning-provider-readiness{display:block;margin-top:8px;line-height:1.35}
+@media(max-width:360px){.planning-provider-state,.planning-sync-error{grid-column:1/-1}}
