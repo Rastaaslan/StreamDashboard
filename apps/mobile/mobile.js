@@ -637,7 +637,7 @@ function updatePlanningProviderReadiness() {
   const google = state.google;
   if (google?.configured === false) issues.push('Google non provisionné sur ce PC');
   else if (!google?.connected) issues.push('Google à connecter sur le PC');
-  else if (!google?.targetCalendarId) issues.push('Calendrier Google cible à choisir sur le PC');
+  else if (!google?.targetConfigured) issues.push('Calendrier Google cible à choisir sur le PC');
   copy.textContent = issues.length ? issues.join(' · ') : 'Twitch et Google sont prêts.';
 }
 function renderPlanning(items) {
