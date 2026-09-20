@@ -49,4 +49,23 @@ describe('Desktop V2 promu en production', () => {
     for (const group of ['PRÉPARER', 'COMMUNAUTÉ', 'AUTOMATISER', 'APPLICATION']) expect(renderer).toContain(group);
     for (const item of ['Préparation','Notes','Templates','Soutiens','Automatisations','Médias OBS','Connexions','Personnalisation','Réglages','Diagnostics']) expect(renderer).toContain(item);
   });
+  it('reconstruit Accueil, Live et Planning autour de leur intention principale', () => {
+    expect(renderer).toContain('function nextLiveCopy');
+    expect(renderer).toContain('État de préparation');
+    expect(renderer).not.toContain('<h2>Scènes principales</h2><span class="label">Active');
+    expect(renderer).toContain('id="desktop-chat-form"');
+    expect(renderer).toContain('data-live-clip');
+    expect(renderer).toContain('Audience ·');
+    expect(renderer).toContain('class="planning-more"');
+    expect(renderer).toContain('Partager & exporter');
+    expect(css).toContain('.live-desktop-grid');
+    expect(css).toContain('.desktop-chat-list');
+    expect(css).toContain('.home-hero');
+  });
+
+  it('ne réexpose pas la Media Source interne de la Soundboard dans les médias utilisateur', () => {
+    expect(renderer).toContain("OBS_SOUNDBOARD_INPUT='StreamDashboard • Soundboard'");
+    expect(renderer).toContain('publicObsMediaInputs');
+    expect(renderer).toContain('const media=publicObsMediaInputs(obs.mediaInputs)');
+  });
 });
