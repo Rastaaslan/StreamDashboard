@@ -56,7 +56,7 @@ export function createTransport(getServer, getCredential) {
     authHeaders,
     state,
     profile: () => request('/api/v1/profile', { headers: { authorization: `Device ${getCredential()}` } }),
-    updateProfile: value => request('/api/v1/profile', { method: 'PUT', headers: authHeaders(), body: JSON.stringify(value) }),
+    updateProfilePresentation: value => request('/api/v1/profile/presentation', { method: 'PUT', headers: authHeaders(), body: JSON.stringify(value) }),
     connections: () => request('/api/v1/connections', { headers: { authorization: `Device ${getCredential()}` } }),
     testObs: () => request('/api/v1/obs/test', { method: 'POST', headers: authHeaders(), body: '{}' }),
     twitchDevice: () => request('/api/v1/twitch/device', { method: 'POST', headers: authHeaders(), body: '{}' }),
