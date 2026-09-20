@@ -144,10 +144,17 @@ function planning(){
   const items=planningItems();state.visiblePlanning=items;
   return `<section class="section"><div class="section-head planning-head"><div><h2>Planning</h2><span class="label">${state.planningFilter==='past'?'Historique':state.planningFilter==='all'?'Tous les événements':'Planning à venir'}</span></div><div class="planning-tools"><select data-planning-filter aria-label="Filtrer le planning"><option value="upcoming" ${state.planningFilter==='upcoming'?'selected':''}>À venir</option><option value="past" ${state.planningFilter==='past'?'selected':''}>Passés</option><option value="all" ${state.planningFilter==='all'?'selected':''}>Tous</option></select><select data-planning-period aria-label="Période d’export"><option value="today" ${state.planningPeriod==='today'?'selected':''}>Aujourd’hui</option><option value="this-week" ${state.planningPeriod==='this-week'?'selected':''}>Cette semaine</option><option value="next-week" ${state.planningPeriod==='next-week'?'selected':''}>Semaine prochaine</option></select><button class="secondary" data-planning-export>Exporter</button><button class="secondary" data-planning-discord ${state.dashboard?.discord?.configured?'':'disabled'}>Publier Discord</button><button class="action" data-add-event>+ Nouvel événement</button></div></div><div class="agenda">${items.slice(0,40).map((e,index)=>`<button class="event" data-event-index="${index}"><b>${esc(e.day)}</b><span>${esc(e.time)}</span><strong>${esc(e.title)}</strong><span class="kind">${esc([e.kind,providerCopy(e.raw)].filter(Boolean).join(' · '))}</span></button>`).join('')||'<p class="label">Aucun événement pour ce filtre.</p>'}</div></section>`;
 }
-const campItems=['Préparation','Notes','Templates','Soutiens','Automatisations','Médias OBS','Connexions','Diagnostics','Réglages'];
+const campGroups=[
+  {label:'PRÉPARER',items:['Préparation','Notes','Templates']},
+  {label:'COMMUNAUTÉ',items:['Soutiens']},
+  {label:'AUTOMATISER',items:['Automatisations','Médias OBS']},
+  {label:'APPLICATION',items:['Connexions','Personnalisation','Réglages','Diagnostics']}
+];
+const campItems=campGroups.flatMap(group=>group.items);
 const connectionLabel=status=>({CONNECTED:'Connecté',CONNECTING:'Connexion…',DISCONNECTED:'Déconnecté',NOT_CONFIGURED:'À configurer',NOT_SUPPORTED:'Non disponible',DEGRADED:'Connexion instable',ERROR:'Erreur'})[status]||'À configurer';
 const runtimeDisabled=()=>state.runtime?'':' disabled';
-function connectionCard(name,status,content=''){return`<article class="setup-status connection-card"><div class="section-head"><b>${esc(name)}</b><span class="label">${esc(status)}</span></div>${content}</article>`}
+const connectionModuleByName={OBS:'obs',Twitch:'twitch','Google Calendar':'googleCalendar',Discord:'discord',Streamlabs:'streamlabs',WizeBot:'wizebot'};
+function connectionCard(name,status,content=''){const module=connectionModuleByName[name];if(module&&!moduleEnabled(module))return'';return`<article class="setup-status connection-card"><div class="section-head"><b>${esc(name)}</b><span class="label">${esc(status)}</span></div>${content}</article>`}
 function connectionsContent(){
   const d=state.dashboard||{};const integrations=d.controlHub?.integrations||{};const streamlabs=integrations.streamlabs||{status:'NOT_CONFIGURED'};const wizebot=integrations.wizebot||{status:'NOT_CONFIGURED'};
   const twitch=d.twitch||{};const google=d.google||{};const discord=d.discord||{};const remote=d.remote||{};const settings=d.settings||{};
@@ -292,10 +299,110 @@ function pingHistoryContent(){
   const history=state.pingHistory||[];const pending=history.filter(ping=>!ping.acknowledgedAt).length;
   return `<div class="setup-status"><div class="section-head"><div><b>Historique Streamer Pings</b><span class="label">${pending} en attente · ${history.length} conservés</span></div><div class="connection-actions"><button class="secondary" data-ping-action="ack-all" ${pending?'':'disabled'}>Tout marquer vu</button><button class="critical" data-ping-action="clear-history">Effacer les acquittés</button></div></div><div class="camp-list">${history.slice(0,20).map(ping=>`<div class="camp-row"><span><b>${esc(ping.rewardTitle)}</b><small>${esc(ping.userName)} · ${esc(new Date(ping.createdAt).toLocaleString('fr-FR'))}</small></span><span class="${ping.acknowledgedAt?'label':'kind'}">${ping.acknowledgedAt?'Vu':'En attente'}</span></div>`).join('')||'<p class="help">Aucun Streamer Ping enregistré.</p>'}</div></div>`;
 }
+const profileModuleDependencies={soundboard:['obs'],streamerPings:['twitch'],googleCalendar:['planning']};
+function normalizedProfileModules(modules){
+  const next={...modules};
+  for(const [id,dependencies] of Object.entries(profileModuleDependencies))if(next[id])for(const dependency of dependencies)next[dependency]=true;
+  return next;
+}
+function profileModuleStates(profile){
+  const source=state.moduleStates?.length?state.moduleStates:demoModuleStates;
+  return source.map(module=>({...module,enabled:profile.modules?.[module.id]!==false}));
+}
+function personalizationContent(){
+  const profile=state.productProfile||demoProductProfile,appearance=profile.appearance||demoProductProfile.appearance;
+  const modules=profileModuleStates(profile);
+  const providerOptions=id=>`<option value="official" ${profile.providers?.[id]?.mode!=='custom'?'selected':''}>Officiel</option><option value="custom" ${profile.providers?.[id]?.mode==='custom'?'selected':''}>Personnalisé / auto-hébergé</option>`;
+  return `<div class="connection-stack product-settings">
+    <form id="product-profile-form" class="setup-status">
+      <div class="section-head"><div><b>Profil StreamDashboard</b><span class="label">Partagé entre les interfaces</span></div></div>
+      <div class="form-grid">
+        <label class="label">Nom affiché<input name="displayName" maxlength="80" value="${esc(profile.profile?.displayName||'')}"></label>
+        <label class="label">Chaîne / espace<input name="channelName" maxlength="120" value="${esc(profile.profile?.channelName||'')}"></label>
+      </div>
+      <label class="label">Langue<input name="language" maxlength="12" value="${esc(profile.profile?.language||'fr')}"></label>
+
+      <div class="section-head product-section-head"><div><b>Apparence</b><span class="label">Neutre par défaut, personnalisable</span></div></div>
+      <div class="appearance-grid">
+        <label class="label">Thème<select name="theme"><option value="system" ${appearance.theme==='system'?'selected':''}>Système</option><option value="light" ${appearance.theme==='light'?'selected':''}>Clair</option><option value="dark" ${appearance.theme==='dark'?'selected':''}>Sombre</option><option value="oled" ${appearance.theme==='oled'?'selected':''}>OLED</option></select></label>
+        <label class="label">Preset<select name="preset"><option value="minimal" ${appearance.preset==='minimal'?'selected':''}>Minimal</option><option value="soft" ${appearance.preset==='soft'?'selected':''}>Doux</option><option value="compact" ${appearance.preset==='compact'?'selected':''}>Compact</option><option value="contrast" ${appearance.preset==='contrast'?'selected':''}>Contraste</option></select></label>
+        <label class="label">Couleur principale<input name="accent" type="color" value="${esc(appearance.accent||'#2474e5')}"></label>
+        <label class="label">Densité<select name="density"><option value="compact" ${appearance.density==='compact'?'selected':''}>Compacte</option><option value="normal" ${appearance.density==='normal'?'selected':''}>Normale</option><option value="comfort" ${appearance.density==='comfort'?'selected':''}>Confort</option></select></label>
+        <label class="label">Arrondis<select name="radius"><option value="square" ${appearance.radius==='square'?'selected':''}>Carrés</option><option value="medium" ${appearance.radius==='medium'?'selected':''}>Moyens</option><option value="round" ${appearance.radius==='round'?'selected':''}>Arrondis</option></select></label>
+        <label class="label">Taille du texte<select name="textScale"><option value="small" ${appearance.textScale==='small'?'selected':''}>Petite</option><option value="normal" ${appearance.textScale==='normal'?'selected':''}>Normale</option><option value="large" ${appearance.textScale==='large'?'selected':''}>Grande</option></select></label>
+      </div>
+
+      <div class="section-head product-section-head"><div><b>Modules</b><span class="label">Les modules désactivés disparaissent de l’interface</span></div></div>
+      <div class="module-grid">
+        ${modules.map(module=>`<label class="module-toggle"><input type="checkbox" data-profile-module="${esc(module.id)}" ${profile.modules?.[module.id]!==false?'checked':''}><span><b>${esc(module.label)}</b>${module.blockedBy?.length?`<small>Dépend de ${esc(module.blockedBy.join(', '))}</small>`:''}</span></label>`).join('')}
+      </div>
+
+      <details class="more-details provider-modes">
+        <summary>Modes de connexion avancés</summary>
+        <p class="help">Le mode officiel vise les utilisateurs standards. Le mode personnalisé reste disponible pour les installations avancées.</p>
+        <div class="form-grid">
+          <label class="label">Twitch<select name="provider-twitch">${providerOptions('twitch')}</select></label>
+          <label class="label">Google<select name="provider-google">${providerOptions('google')}</select></label>
+          <label class="label">Discord<select name="provider-discord">${providerOptions('discord')}</select></label>
+          <label class="label">Streamlabs<select name="provider-streamlabs">${providerOptions('streamlabs')}</select></label>
+          <label class="label">WizeBot<select name="provider-wizebot">${providerOptions('wizebot')}</select></label>
+        </div>
+      </details>
+
+      <div class="profile-actions">
+        <button type="button" class="secondary" data-profile-export>Exporter YAML</button>
+        <label class="profile-import secondary">Importer YAML<input type="file" accept=".yaml,.yml,.streamdashboard.yaml,text/yaml,application/yaml" data-profile-import></label>
+        <span></span>
+        <button class="action">Enregistrer</button>
+      </div>
+    </form>
+  </div>`;
+}
+async function exportProductProfileYaml(){
+  if(!state.runtime){toast('Export disponible en mode Runtime.');return}
+  const response=await fetch('/api/v1/profile/export');
+  if(!response.ok)throw new Error('Export du profil impossible.');
+  const blob=await response.blob(),url=URL.createObjectURL(blob),link=document.createElement('a');
+  link.href=url;link.download='streamdashboard.streamdashboard.yaml';link.click();setTimeout(()=>URL.revokeObjectURL(url),1000);
+  toast('Profil YAML exporté');
+}
+async function importProductProfileYaml(file){
+  if(!file)return;
+  if(!state.runtime){toast('Import disponible en mode Runtime.',true);return}
+  const product=await request('/api/v1/profile/import',{method:'POST',body:JSON.stringify({content:await file.text()})});
+  const connections=await request('/api/v1/connections');
+  applyProduct(product,connections);render();toast(product.backup?'Profil importé · sauvegarde créée':'Profil importé');
+}
+function bindProductPersonalization(){
+  if(state.view!=='camp'||state.campItem!=='Personnalisation')return;
+  const form=document.querySelector('#product-profile-form');if(!form)return;
+  form.querySelectorAll('[data-profile-module]').forEach(input=>input.addEventListener('change',()=>{
+    const id=input.dataset.profileModule;
+    if(input.checked)for(const dependency of profileModuleDependencies[id]||[]){const required=form.querySelector(`[data-profile-module="${dependency}"]`);if(required)required.checked=true}
+    else for(const [dependent,requirements] of Object.entries(profileModuleDependencies))if(requirements.includes(id)){const child=form.querySelector(`[data-profile-module="${dependent}"]`);if(child)child.checked=false}
+  }));
+  form.querySelector('[data-profile-export]')?.addEventListener('click',()=>void exportProductProfileYaml().catch(error=>toast(error.message,true)));
+  form.querySelector('[data-profile-import]')?.addEventListener('change',event=>void importProductProfileYaml(event.currentTarget.files?.[0]).catch(error=>toast(error.message,true)));
+  form.addEventListener('submit',async event=>{
+    event.preventDefault();
+    const data=new FormData(form),next=structuredClone(state.productProfile||demoProductProfile);
+    next.profile={displayName:String(data.get('displayName')||'').trim()||'Streamer',channelName:String(data.get('channelName')||'').trim(),language:String(data.get('language')||'fr').trim()||'fr'};
+    const modules={...next.modules};form.querySelectorAll('[data-profile-module]').forEach(input=>{modules[input.dataset.profileModule]=input.checked});next.modules=normalizedProfileModules(modules);
+    next.appearance={theme:String(data.get('theme')),preset:String(data.get('preset')),accent:String(data.get('accent')),density:String(data.get('density')),radius:String(data.get('radius')),textScale:String(data.get('textScale'))};
+    for(const provider of ['twitch','google','discord','streamlabs','wizebot'])next.providers[provider]={mode:String(data.get(`provider-${provider}`))};
+    next.onboarding={completed:true};
+    try{
+      if(state.runtime){const product=await request('/api/v1/profile',{method:'PUT',body:JSON.stringify(next)});const connections=await request('/api/v1/connections');applyProduct(product,connections)}
+      else applyProduct({profile:next,modules:profileModuleStates(next)},[]);
+      render();toast('Personnalisation enregistrée');
+    }catch(error){toast(error.message,true)}
+  });
+}
 function settingsContent(){
   return `${generalSettingsContent()}<div class="connection-stack">${streamerPingSettings()}${pingHistoryContent()}</div>`;
 }
 function campContent(item){
+  if(item==='Personnalisation')return personalizationContent();
   if(!state.runtime&&item!=='Connexions')return '<p class="help">Passe en mode Runtime pour utiliser les données réelles de cette section.</p>';
   if(item==='Préparation')return preparationContent();
   if(item==='Notes')return notesContent();
@@ -308,8 +415,14 @@ function campContent(item){
   if(item==='Réglages')return settingsContent();
   return '';
 }
-function camp(){return`<div class="camp-grid"><section class="section camp-nav">${campItems.map(x=>`<button class="${state.campItem===x?'active':''}" data-camp="${x}">${x}</button>`).join('')}</section><section class="section empty-detail"><p class="eyebrow">LE CAMP</p><h2 id="camp-title">${esc(state.campItem)}</h2><div id="camp-copy">${campContent(state.campItem)}</div></section></div>`}
-function render(){const names={home:['Accueil','COCKPIT'],live:['Live','EN DIRECT'],sounds:['Sons','BIBLIOTHÈQUE'],planning:['Planning','SEMAINE'],camp:['Le Camp','SECONDAIRE']};[title.textContent,eyebrow.textContent]=names[state.view];view.innerHTML=({home,live,sounds:soundboard,planning,camp}[state.view])();document.querySelectorAll('[data-view]').forEach(b=>b.setAttribute('aria-current',b.dataset.view===state.view?'page':'false'));bind()}
+function visibleCampItems(){return campItems.filter(campItemEnabled)}
+function ensureCampItem(){const visible=visibleCampItems();if(!visible.includes(state.campItem))state.campItem=visible[0]||'Personnalisation'}
+function camp(){
+  ensureCampItem();
+  const navigation=campGroups.map(group=>{const items=group.items.filter(campItemEnabled);return items.length?`<div class="camp-nav-group"><span class="camp-nav-label">${group.label}</span>${items.map(item=>`<button class="${state.campItem===item?'active':''}" data-camp="${item}">${item}</button>`).join('')}</div>`:''}).join('');
+  return`<div class="camp-grid"><section class="section camp-nav">${navigation}</section><section class="section empty-detail"><p class="eyebrow">APPLICATION</p><h2 id="camp-title">${esc(state.campItem)}</h2><div id="camp-copy">${campContent(state.campItem)}</div></section></div>`
+}
+function render(){projectProductShell();if(state.view==='camp')ensureCampItem();const names={home:['Accueil','COCKPIT'],live:['Live','EN DIRECT'],sounds:['Sons','BIBLIOTHÈQUE'],planning:['Planning','PLANNING'],camp:['Application','CONFIGURATION']};[title.textContent,eyebrow.textContent]=names[state.view];view.innerHTML=({home,live,sounds:soundboard,planning,camp}[state.view])();document.querySelectorAll('[data-view]').forEach(b=>b.setAttribute('aria-current',b.dataset.view===state.view?'page':'false'));bind()}
 async function ensureObsSoundboardForPlayback(){
   const currentScene=state.dashboard?.obs?.scene||'';
   let setup=await request('/api/v1/soundboard/obs/status');
@@ -321,7 +434,7 @@ async function ensureObsSoundboardForPlayback(){
   state.obsSetup=setup;
   if(setup.wrongInputKind)throw new Error('La source « StreamDashboard • Soundboard » existe dans OBS mais n’est pas une Media Source.');
   if(!setup.inputExists)throw new Error('La Media Source Soundboard OBS n’a pas pu être créée.');
-  if(currentScene&&!setup.attachedScenes?.includes(currentScene))throw new Error(`La Soundboard OBS n’est pas présente dans la scène actuelle « ${currentScene} ». Configure cette scène dans Le Camp → Réglages.`);
+  if(currentScene&&!setup.attachedScenes?.includes(currentScene))throw new Error(`La Soundboard OBS n’est pas présente dans la scène actuelle « ${currentScene} ». Configure cette scène dans Application → Réglages.`);
   return setup;
 }
 async function playSound(soundId){record('soundboard.play',{soundId});if(!state.runtime){toast('Lecture simulée');return}try{await ensureObsSoundboardForPlayback();const commandId=uid();const ack=await request('/api/v1/soundboard/play',{method:'POST',body:JSON.stringify({commandId,correlationId:commandId,soundId,issuedAt:new Date().toISOString()})});if(ack.status!=='succeeded')throw new Error(ack.message||'Lecture refusée.');toast('Son envoyé à OBS');await refreshRuntime()}catch(error){toast(error.message,true)}}
@@ -359,7 +472,9 @@ function readAutomationEditor(){
   return{id:state.automationEditor.id,name:String(new FormData(form).get('name')||'').trim(),trigger:String(new FormData(form).get('trigger')||'support.received'),conditions,actions,cooldownMs:Math.round(Number(new FormData(form).get('cooldown')||0)*1000),enabled:new FormData(form).get('enabled')==='on'};
 }
 function bindCampSections(){
-  if(state.view!=='camp'||!state.runtime)return;
+  if(state.view!=='camp')return;
+  if(state.campItem==='Personnalisation'){bindProductPersonalization();return}
+  if(!state.runtime)return;
   if(state.campItem==='Préparation'){
     document.querySelector('#camp-check-add')?.addEventListener('submit',async event=>{event.preventDefault();const label=String(new FormData(event.currentTarget).get('label')||'').trim();if(!label)return;try{await mutateCompanion('checklist','POST',null,{label,done:false});await loadCompanion();render();toast('Élément ajouté')}catch(error){toast(error.message,true)}});
     document.querySelectorAll('[data-check-toggle]').forEach(button=>button.onclick=async()=>{const item=(state.companion?.checklist||[]).find(value=>value.id===button.dataset.checkToggle);if(!item)return;try{await mutateCompanion('checklist','PUT',item.id,{label:item.label,done:!item.done});await loadCompanion();render()}catch(error){toast(error.message,true)}});
@@ -623,16 +738,13 @@ document.querySelector('#event-delete').onclick=async()=>{
 };
 document.querySelectorAll('[data-close-dialog]').forEach(button=>button.onclick=()=>document.querySelector(`#${button.dataset.closeDialog}`).close());
 document.querySelectorAll('[data-view]').forEach(b=>b.onclick=()=>{state.view=b.dataset.view;render()});
-document.querySelector('#mode').onclick=async e=>{state.runtime=!state.runtime;e.currentTarget.textContent=state.runtime?'Runtime':'Démo';document.querySelector('.preview-mode span').textContent=state.runtime?'APERÇU · RUNTIME PC':'APERÇU · AUCUNE COMMANDE RÉELLE';runtimeUi(state.runtime,state.runtime?'Connexion au Runtime…':'Aucune commande réelle');if(state.runtime){await refreshRuntime();if(state.campItem==='Réglages')await loadStreamerPingRewards()}else{closeRuntimeSocket();state.scene=fixture.live.scene;state.sounds=structuredClone(fixture.sounds);state.audio=structuredClone(fixture.audio);state.live=structuredClone(fixture.live);state.planning=structuredClone(fixture.planning);state.dashboard=null;state.remotePairing=null;state.twitchRewards=null;syncStreamerPing();render()}toast(state.runtime?'Mode Runtime activé':'Mode Démo activé')};
+document.querySelector('#mode').onclick=async e=>{state.runtime=!state.runtime;e.currentTarget.textContent=state.runtime?'Runtime':'Démo';document.querySelector('.preview-mode span').textContent=state.runtime?'APERÇU · RUNTIME PC':'APERÇU · AUCUNE COMMANDE RÉELLE';runtimeUi(state.runtime,state.runtime?'Connexion au Runtime…':'Aucune commande réelle');if(state.runtime){await refreshRuntime();if(state.campItem==='Réglages')await loadStreamerPingRewards()}else{closeRuntimeSocket();state.scene=fixture.live.scene;state.sounds=structuredClone(fixture.sounds);state.audio=structuredClone(fixture.audio);state.live=structuredClone(fixture.live);state.planning=structuredClone(fixture.planning);state.dashboard=null;state.remotePairing=null;state.twitchRewards=null;applyProduct({profile:structuredClone(demoProductProfile),modules:structuredClone(demoModuleStates)},[]);syncStreamerPing();render()}toast(state.runtime?'Mode Runtime activé':'Mode Démo activé')};
 window.addEventListener('keydown',e=>{if(e.altKey&&['1','2','3','4'].includes(e.key)){e.preventDefault();state.view=['home','live','sounds','planning'][+e.key-1];render()}});
 setInterval(()=>{if(state.runtime&&state.timerRunning){state.seconds=Math.max(0,state.seconds-1);if(state.view==='live')render()}},1000);
 window.addEventListener('beforeunload',closeRuntimeSocket);
 document.documentElement.dataset.appReady='true';
-render();
+applyProductAppearance();projectProductShell();render();
 if(officialRuntime){
-  document.querySelector('#mode').hidden=true;
-  document.querySelector('.brand small').textContent='Desktop';
-  document.querySelector('.preview-mode span').textContent='RUNTIME PC';
   runtimeUi(true,'Connexion au Runtime…');
   void refreshRuntime().then(()=>{if(state.view==='camp')void loadCampData(state.campItem)});
 }else runtimeUi(false,'Aucune commande réelle');
