@@ -27,6 +27,7 @@ describe('API publique v1', () => {
     expect(connections.items.find((item: { id: string }) => item.id === 'twitch')).toMatchObject({ status: 'unavailable', mode: 'official', capabilities: [], message: 'Configuration mainteneur requise' });
     expect(connections.items.find((item: { id: string }) => item.id === 'discord')).toMatchObject({ status: 'unavailable', mode: 'official', capabilities: [] });
     expect(capabilities).toMatchObject({ protocolVersion: 1, accessMode: 'desktop-local' });
+    for (const feature of ['mobile-profile-presentation','mobile-live-control-config','mobile-provider-actions','soundboard-live-volume']) expect(capabilities.features).toContain(feature);
     expect(stateText).not.toMatch(/accessToken|refreshToken|deviceCode|obsPassword\"/);
     const event = await new Promise<string>((resolve, reject) => { const ws = new WebSocket(app.url.replace('http:', 'ws:') + '/ws/v1'); ws.on('message', data => { const text = data.toString(); if (text.includes('state.updated')) { ws.close(); resolve(text); } }); ws.on('error', reject); });
     expect(event).not.toMatch(/accessToken|refreshToken|deviceCode|obsPassword\"/);
