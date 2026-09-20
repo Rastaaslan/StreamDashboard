@@ -8,6 +8,7 @@ const mobileTransport = readFileSync(new URL('../apps/mobile/transport.js', impo
 const serverSource = readFileSync(new URL('../apps/server/src/index.ts', import.meta.url), 'utf8');
 const templatesFeature = readFileSync(new URL('../apps/mobile/features/templates.js', import.meta.url), 'utf8');
 const remotePolicy = readFileSync(new URL('../apps/server/src/remote-policy.ts', import.meta.url), 'utf8');
+const remoteApiPolicy = readFileSync(new URL('../apps/server/src/remote-api-policy.ts', import.meta.url), 'utf8');
 const androidActivity = readFileSync(new URL('../android/app/src/main/java/com/rastaaslan/streamdashboard/remote/MainActivity.java', import.meta.url), 'utf8');
 const androidProviderBridge = readFileSync(new URL('../android/app/src/main/java/com/rastaaslan/streamdashboard/remote/ProviderBridge.java', import.meta.url), 'utf8');
 const androidManifest = readFileSync(new URL('../android/app/src/main/AndroidManifest.xml', import.meta.url), 'utf8');
@@ -158,7 +159,7 @@ describe('Android remote runtime', () => {
     expect(mobileScript).toContain("Non configuré · toucher pour configurer");
     expect(mobileScript).toContain("Non configuré · toucher pour choisir");
     expect(mobileTransport).toContain("'/api/v1/settings/live-control'");
-    expect(serverSource).toContain("pathName === '/v1/settings/live-control'");
+    expect(remoteApiPolicy).toContain("'/v1/settings/live-control'");
     expect(serverSource).toContain("Object.keys(req.body).some(key => !['primaryMicInput','mode','scene'].includes(key))");
     expect(remotePolicy).toContain('scenes: [...state.obs.scenes]');
   });
@@ -179,7 +180,7 @@ describe('Android remote runtime', () => {
     expect(mobileScript).toContain('populateProfileAppearanceForm');
     expect(mobileScript).toContain('previewProfileAppearance');
     expect(mobileTransport).toContain("'/api/v1/profile/presentation'");
-    expect(serverSource).toContain("pathName === '/v1/profile/presentation'");
+    expect(remoteApiPolicy).toContain("'/v1/profile/presentation'");
     expect(serverSource).toContain("Object.keys(req.body).some(key => !['profile','appearance'].includes(key))");
   });
 
