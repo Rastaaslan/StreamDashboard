@@ -1336,7 +1336,7 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
     }
     scheduleRemoteActivitySave();
     const allowed = (req.method === 'GET' && (['/v1/state', '/v1/profile', '/v1/connections', '/v1/control-hub', '/v1/events', '/v1/soundboard', '/v1/automations', '/v1/automations/capabilities', '/v1/supports', '/v1/twitch/categories', '/v1/twitch/videos', '/v1/twitch/clips', '/v1/twitch/chatters', '/v1/twitch/moderation/capabilities', '/v1/discord/status', '/v1/discord/guilds'].includes(pathName) || /^\/v1\/discord\/guilds\/\d+\/channels$/.test(pathName)))
-      || (req.method === 'PUT' && (pathName === '/v1/profile' || pathName === '/v1/discord/settings' || /^\/v1\/planning\/[^/]+(?:\/occurrence)?$/.test(pathName) || /^\/v1\/soundboard\/sounds\/[A-Za-z0-9._:-]+$/.test(pathName) || /^\/v1\/automations\/[A-Za-z0-9._:-]+$/.test(pathName)))
+      || (req.method === 'PUT' && (pathName === '/v1/profile/presentation' || pathName === '/v1/discord/settings' || /^\/v1\/planning\/[^/]+(?:\/occurrence)?$/.test(pathName) || /^\/v1\/soundboard\/sounds\/[A-Za-z0-9._:-]+$/.test(pathName) || /^\/v1\/automations\/[A-Za-z0-9._:-]+$/.test(pathName)))
       || (req.method === 'DELETE' && (/^\/v1\/planning\/[^/]+(?:\/occurrence)?$/.test(pathName) || /^\/v1\/twitch\/videos\/\d+$/.test(pathName) || /^\/v1\/twitch\/moderation\/(?:messages|bans)\/[A-Za-z0-9_-]+$/.test(pathName) || /^\/v1\/automations\/[A-Za-z0-9._:-]+$/.test(pathName)))
       || (req.method === 'POST' && (['/v1/commands', '/v1/remote/ws-ticket', '/v1/obs/test', '/v1/soundboard/play', '/v1/soundboard/stop', '/v1/twitch/device', '/v1/twitch/disconnect', '/v1/twitch/sync', '/v1/google/disconnect', '/v1/google/sync', '/v1/automations', '/v1/automations/test', '/v1/twitch/channel', '/v1/twitch/chat/messages', '/v1/twitch/clips', '/v1/twitch/moderation/bans', '/v1/planning', '/v1/companion/sync', '/v1/discord/planning'].includes(pathName) || /^\/v1\/companion\/conflicts\/[^/]+\/resolve$/.test(pathName) || /^\/v1\/streamer-pings\/[^/]+\/ack$/.test(pathName) || pathName === '/v1/streamer-pings/ack-all'));
     if (!allowed) {
@@ -1361,7 +1361,26 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
   app.get('/api/v1/health', health);
   app.get('/api/v1/state', (req, res) => res.json(isRemoteRequest(req) ? toRemoteDashboardState(snapshot()) : snapshot()));
   app.get('/api/v1/profile', (_req, res) => res.json({ profile: productProfile, modules: resolveModules(productProfile) }));
-  app.put('/api/v1/profile', async (req, res, next) => { try { const nextProfile = validateProductProfile(req.body); await profileStore.save(nextProfile); productProfile = nextProfile; broadcast(); res.json({ profile: productProfile, modules: resolveModules(productProfile) }); } catch (error) { next(error); } });
+  app.put('/api/v1/profile/presentation', async (req, res, next) => {
+    try {
+      if (!object(req.body) || Object.keys(req.body).some(key => !['profile','appearance'].includes(key))) throw new Error('Présentation du profil invalide.');
+      const nextProfile = structuredClone(productProfile);
+      if (object(req.body.profile)) {
+        if (Object.keys(req.body.profile).some(key => !['displayName','channelName','language'].includes(key))) throw new Error('Profil visible invalide.');
+        nextProfile.profile = { ...nextProfile.profile, ...req.body.profile };
+      }
+      if (object(req.body.appearance)) {
+        if (Object.keys(req.body.appearance).some(key => !['theme','preset','accent','density','radius','textScale'].includes(key))) throw new Error('Apparence invalide.');
+        nextProfile.appearance = { ...nextProfile.appearance, ...req.body.appearance };
+      }
+      const validated = validateProductProfile(nextProfile);
+      await profileStore.save(validated);
+      productProfile = validated;
+      broadcast();
+      res.json({ profile: productProfile, modules: resolveModules(productProfile) });
+    } catch (error) { next(error); }
+  });
+  app.put('/api/v1/profile', async (req, res, next) => { try { if (!requireLocal(req, res)) return; const nextProfile = validateProductProfile(req.body); await profileStore.save(nextProfile); productProfile = nextProfile; broadcast(); res.json({ profile: productProfile, modules: resolveModules(productProfile) }); } catch (error) { next(error); } });
   app.get('/api/v1/profile/export', async (req, res, next) => { try { if (!requireLocal(req, res)) return; res.attachment('streamdashboard.streamdashboard.yaml'); res.setHeader('Content-Type', 'application/yaml; charset=utf-8'); res.send(await profileStore.export()); } catch (error) { next(error); } });
   app.post('/api/v1/profile/import', async (req, res, next) => { try { if (!requireLocal(req, res)) return; const content = String(req.body?.content ?? ''); if (!content || content.length > 256_000) throw new Error('Fichier profil invalide.'); const imported = await profileStore.import(content); productProfile = imported.profile; broadcast(); res.json({ profile: productProfile, modules: resolveModules(productProfile), backup: imported.backup ? path.basename(imported.backup) : null }); } catch (error) { next(error); } });
   app.get('/api/v1/connections', async (_req, res) => {
