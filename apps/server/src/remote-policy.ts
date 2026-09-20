@@ -90,6 +90,7 @@ export function toRemoteDashboardState(state: DashboardState): ExtendedRemoteDas
       streaming: state.obs.streaming,
       streamingKnown: state.obs.streamingKnown,
       scene: state.obs.scene,
+      scenes: [...state.obs.scenes],
       inputs: structuredClone(state.obs.inputs),
       activeAudioInputs: [...state.obs.activeAudioInputs],
       mediaInputs: [...state.obs.mediaInputs],
