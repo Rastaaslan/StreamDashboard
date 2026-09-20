@@ -68,6 +68,19 @@ describe('Desktop V2 promu en production', () => {
     expect(renderer).toContain('publicObsMediaInputs');
     expect(renderer).toContain('const media=publicObsMediaInputs(obs.mediaInputs)');
   });
+  it('rend les scènes et actions rapides réellement configurables par profil', () => {
+    expect(renderer).toContain('const sceneEntries=');
+    expect(renderer).toContain('state.productProfile?.obs?.scenes');
+    expect(renderer).toContain("type:'obs.scene',scene:entry.scene");
+    expect(renderer).toContain('data-profile-scene-label');
+    expect(renderer).toContain('data-profile-scene-name');
+    expect(renderer).toContain('data-profile-quick');
+    expect(renderer).toContain('data-profile-quick-action');
+    expect(renderer).toContain("quickActions:[...form.querySelectorAll('[data-profile-quick]:checked')]");
+    expect(css).toContain('.profile-scene-row');
+    expect(css).toContain('.live-quick-actions');
+  });
+
   it('replace les fonctions Twitch et Streamer Pings dans leur contexte naturel', () => {
     expect(renderer).toContain("items:['Soutiens','Alertes viewers']");
     expect(renderer).toContain("item==='Alertes viewers'");
