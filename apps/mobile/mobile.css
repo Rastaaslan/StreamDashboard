@@ -75,3 +75,9 @@ dialog{width:min(540px,calc(100vw - 20px));max-height:88vh;border:1px solid var(
 .planning-sync-error{grid-column:2/-1;overflow-wrap:anywhere}
 #planning-provider-readiness{display:block;margin-top:8px;line-height:1.35}
 @media(max-width:360px){.planning-provider-state,.planning-sync-error{grid-column:1/-1}}
+
+
+/* Interactive planning rows */
+.planning-row[role="button"]{cursor:pointer;outline:none}
+.planning-row[role="button"]:focus-visible{box-shadow:inset 3px 0 var(--accent);padding-left:8px}
+.planning-row[role="button"]:active{background:color-mix(in srgb,var(--accent) 5%,transparent)}
