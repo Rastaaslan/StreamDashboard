@@ -21,7 +21,7 @@ const state={
   sounds:structuredClone(fixture.sounds),audio:structuredClone(fixture.audio),live:structuredClone(fixture.live),
   planning:structuredClone(fixture.planning),dashboard:null,soundboard:null,obsSetup:null,search:'',soundCategory:'',soundFavorites:false,
   soundMasterVolume:Math.max(0,Math.min(1,Number(localStorage.getItem('streamdashboard.desktopSoundboardVolume')??1)||1)),
-  productProfile:structuredClone(demoProductProfile),moduleStates:structuredClone(demoModuleStates),connections:[],
+  productProfile:structuredClone(demoProductProfile),moduleStates:structuredClone(demoModuleStates),connections:[],twitchCapabilities:null,
   campItem:'Préparation',remotePairing:null,twitchRewards:null,companion:null,supports:null,automations:null,automationCapabilities:null,streamlabsOAuth:null,
   diagnostics:null,pingHistory:null,planningFilter:'upcoming',planningPeriod:'this-week',eventEdit:null,
   automationEditor:{id:'',name:'',trigger:'support.received',conditions:[],actions:[{type:'soundboard.play',payload:{}}],cooldownMs:30000,enabled:true},templateEditor:null
@@ -70,12 +70,19 @@ async function request(path,options={}){const response=await fetch(path,{headers
 function record(type,payload={}){commandLog.push({type,payload})}
 let runtimeSocket=null,socketRetry=null;
 const editableFocus=()=>document.activeElement?.matches?.('input,select,textarea');
+const twitchCapability=name=>state.runtime?state.twitchCapabilities?.[name]===true:true;
+const twitchScope=name=>state.twitchCapabilities?.requiredScopes?.[name]||'autorisation Twitch';
+async function loadTwitchCapabilities(){
+  if(!state.runtime||state.dashboard?.twitch?.connected!==true){state.twitchCapabilities=null;return null}
+  try{state.twitchCapabilities=await request('/api/v1/twitch/moderation/capabilities');return state.twitchCapabilities}
+  catch{state.twitchCapabilities=null;return null}
+}
 function closeRuntimeSocket(){if(socketRetry){clearTimeout(socketRetry);socketRetry=null}const socket=runtimeSocket;runtimeSocket=null;if(socket&&socket.readyState<2)socket.close()}
 function connectRuntimeSocket(){
   if(!state.runtime||runtimeSocket&&runtimeSocket.readyState<2)return;
   const socket=new WebSocket(`${location.protocol==='https:'?'wss':'ws'}://${location.host}/ws/v1`);runtimeSocket=socket;
   socket.onopen=()=>runtimeUi(true,state.dashboard?.obs?.connected?'OBS connecté · temps réel':'Runtime connecté · temps réel');
-  socket.onmessage=event=>{try{const message=JSON.parse(event.data);if(message.type==='state.updated'&&message.data){applyDashboard(message.data);if(!editableFocus()){render();if(state.campItem==='Alertes viewers'&&state.twitchRewards===null&&state.dashboard?.twitch?.redemptionsAvailable===true)void loadStreamerPingRewards()}}}catch{/* événement invalide ignoré */}};
+  socket.onmessage=event=>{try{const message=JSON.parse(event.data);if(message.type==='state.updated'&&message.data){const wasConnected=state.dashboard?.twitch?.connected===true;applyDashboard(message.data);const connected=state.dashboard?.twitch?.connected===true;if(!connected)state.twitchCapabilities=null;else if(!wasConnected||!state.twitchCapabilities)void loadTwitchCapabilities().then(()=>{if(!editableFocus())render()});if(!editableFocus()){render();if(state.campItem==='Alertes viewers'&&state.twitchRewards===null&&state.dashboard?.twitch?.redemptionsAvailable===true)void loadStreamerPingRewards()}}}catch{/* événement invalide ignoré */}};
   socket.onclose=()=>{if(runtimeSocket===socket)runtimeSocket=null;if(!state.runtime)return;runtimeUi(true,'Runtime connecté · reconnexion temps réel…');socketRetry=setTimeout(connectRuntimeSocket,1500)};
   socket.onerror=()=>socket.close();
 }
@@ -110,6 +117,7 @@ async function refreshRuntime(){
     ]);
     applyProduct(product,connections);
     applyDashboard(dashboard);state.soundboard=soundboard;state.sounds=soundboard.sounds||[];state.obsSetup=setup;
+    await loadTwitchCapabilities();
     runtimeUi(true,dashboard.obs?.connected?'OBS connecté':'Runtime connecté · OBS hors ligne');connectRuntimeSocket();render();
   }catch(error){runtimeUi(true,'Runtime indisponible');toast(error.message,true)}
 }
@@ -186,10 +194,12 @@ function audienceRoleLabel(role){
 }
 function live(){
   const audience=state.dashboard?.controlHub?.audience||{},chat=state.dashboard?.controlHub?.chat||{};
+  const canChat=chat.connected&&twitchCapability('chatWrite'),canClip=state.dashboard?.twitch?.connected===true&&twitchCapability('createClip');
+  const chatState=chat.connected?(canChat?'Connecté':'Lecture seule · reconnecte Twitch'):'Hors ligne';
   const twitchPanel=moduleEnabled('twitch')?`<aside class="section live-chat-panel">
-    <div class="section-head"><div><h2>Chat</h2><span class="label">${chat.connected?'Connecté':'Hors ligne'} · ${Number.isInteger(audience.viewerCount)?audience.viewerCount:'—'} viewers</span></div><button class="secondary compact-button" data-live-clip>Créer un clip</button></div>
+    <div class="section-head"><div><h2>Chat</h2><span class="label">${chatState} · ${Number.isInteger(audience.viewerCount)?audience.viewerCount:'—'} viewers</span></div><button class="secondary compact-button" data-live-clip ${canClip?'':'disabled'} title="${canClip?'':`Reconnecte Twitch pour accorder ${esc(twitchScope('createClip'))}`}">Créer un clip</button></div>
     <div class="desktop-chat-list">${chatMessages()}</div>
-    <form id="desktop-chat-form" class="desktop-chat-compose"><input name="message" maxlength="500" placeholder="Écrire dans le chat…" autocomplete="off" ${chat.connected?'':'disabled'}><button class="action" ${chat.connected?'':'disabled'}>Envoyer</button></form>
+    <form id="desktop-chat-form" class="desktop-chat-compose"><input name="message" maxlength="500" placeholder="Écrire dans le chat…" autocomplete="off" ${canChat?'':'disabled'}><button class="action" ${canChat?'':'disabled'}>Envoyer</button></form>
     <details class="audience-details"><summary>Participants du chat · ${(audience.chatters||[]).length}</summary><div class="audience-list">${(audience.chatters||[]).slice(0,100).map(person=>`<span><b>${esc(person.displayName)}</b><small>${esc(audienceRoleLabel(person.role))}</small></span>`).join('')||'<span class="help">Aucun participant au chat.</span>'}</div></details>
   </aside>`:'';
   return`<div class="live-desktop-grid">
@@ -410,8 +420,9 @@ function diagnosticsContent(){
 }
 function twitchLiveSettingsContent(){
   if(!moduleEnabled('twitch'))return'';
-  const twitch=state.dashboard?.twitch||{};
-  return `<details class="section live-twitch-settings"><summary><span><b>Informations Twitch</b><small>${twitch.connected?'Connecté':'Déconnecté'} · titre et catégorie</small></span><i>›</i></summary><form id="live-twitch-settings"><label class="label">Titre<input name="title" maxlength="140" value="${esc(twitch.channelTitle||'')}" ${twitch.connected?'':'disabled'}></label><div class="toolbar"><input id="live-twitch-category" name="gameName" maxlength="80" value="${esc(twitch.gameName||'')}" placeholder="Catégorie Twitch" ${twitch.connected?'':'disabled'}><input id="live-twitch-game-id" name="gameId" type="hidden" value="${esc(twitch.gameId||'')}"><button type="button" class="secondary" data-live-twitch-category-search ${twitch.connected?'':'disabled'}>Rechercher</button></div><select id="live-twitch-category-results" hidden></select><button class="action" ${twitch.connected?'':'disabled'}>Mettre à jour Twitch</button></form></details>`;
+  const twitch=state.dashboard?.twitch||{},canUpdate=twitch.connected&&twitchCapability('updateChannel');
+  const status=!twitch.connected?'Déconnecté':canUpdate?'Connecté':'Reconnecte Twitch · autorisation titre/catégorie manquante';
+  return `<details class="section live-twitch-settings"><summary><span><b>Informations Twitch</b><small>${status}</small></span><i>›</i></summary><form id="live-twitch-settings"><label class="label">Titre<input name="title" maxlength="140" value="${esc(twitch.channelTitle||'')}" ${canUpdate?'':'disabled'}></label><div class="toolbar"><input id="live-twitch-category" name="gameName" maxlength="80" value="${esc(twitch.gameName||'')}" placeholder="Catégorie Twitch" ${canUpdate?'':'disabled'}><input id="live-twitch-game-id" name="gameId" type="hidden" value="${esc(twitch.gameId||'')}"><button type="button" class="secondary" data-live-twitch-category-search ${canUpdate?'':'disabled'}>Rechercher</button></div><select id="live-twitch-category-results" hidden></select><button class="action" ${canUpdate?'':'disabled'}>Mettre à jour Twitch</button></form></details>`;
 }
 function generalSettingsContent(){
   const settings=state.dashboard?.settings||{},obs=state.dashboard?.obs||{};
@@ -689,7 +700,7 @@ function bindPlanning(){
 function bindLiveTwitchSettings(){
   if(state.view!=='live'||!moduleEnabled('twitch'))return;
   document.querySelector('[data-live-twitch-category-search]')?.addEventListener('click',()=>void searchCategory('#live-twitch-category','#live-twitch-game-id','#live-twitch-category-results').catch(error=>toast(error.message,true)));
-  document.querySelector('#live-twitch-settings')?.addEventListener('submit',async event=>{event.preventDefault();const form=new FormData(event.currentTarget);try{const next=await request('/api/v1/twitch/channel',{method:'POST',body:JSON.stringify({title:String(form.get('title')||'').trim(),gameId:String(form.get('gameId')||''),gameName:String(form.get('gameName')||'').trim()})});applyDashboard(next);render();toast('Informations Twitch mises à jour')}catch(error){toast(error.message,true)}});
+  document.querySelector('#live-twitch-settings')?.addEventListener('submit',async event=>{event.preventDefault();if(!twitchCapability('updateChannel'))return toast(`Reconnecte Twitch pour accorder ${twitchScope('updateChannel')}.`,true);const form=new FormData(event.currentTarget);try{const next=await request('/api/v1/twitch/channel',{method:'POST',body:JSON.stringify({title:String(form.get('title')||'').trim(),gameId:String(form.get('gameId')||''),gameName:String(form.get('gameName')||'').trim()})});applyDashboard(next);render();toast('Informations Twitch mises à jour')}catch(error){toast(error.message,true)}});
 }
 function bind(){
   document.querySelectorAll('[data-scene]').forEach(b=>b.onclick=async()=>{const label=b.dataset.scene,entry=sceneEntries().find(value=>value.label===label),target=entry?.scene||label,command=entry?.custom?{type:'obs.scene',scene:entry.scene}:sceneCommand(label);record('obs.scene.set',{sceneName:target});if(!state.runtime){state.scene=target;toast(`Scène ${label}`);render();return}try{await dashboardCommand(command);await refreshRuntime();toast(`Scène ${label}`)}catch(error){toast(error.message,true)}});
@@ -708,14 +719,14 @@ function bind(){
   document.querySelector('[data-open-personalization]')?.addEventListener('click',()=>{state.view='camp';state.campItem='Personnalisation';render()});
   document.querySelectorAll('[data-go-view]').forEach(button=>button.addEventListener('click',()=>{state.view=button.dataset.goView;render()}));
   document.querySelectorAll('[data-open-camp]').forEach(button=>button.addEventListener('click',()=>{state.view='camp';state.campItem=button.dataset.openCamp;render();void loadCampData(state.campItem)}));
-  document.querySelector('[data-live-clip]')?.addEventListener('click',async()=>{if(!state.runtime)return toast('Clip simulé');try{await request('/api/v1/twitch/clips',{method:'POST',body:'{}'});toast('Clip Twitch demandé')}catch(error){toast(error.message,true)}});
+  document.querySelector('[data-live-clip]')?.addEventListener('click',async()=>{if(!state.runtime)return toast('Clip simulé');if(!twitchCapability('createClip'))return toast(`Reconnecte Twitch pour accorder ${twitchScope('createClip')}.`,true);try{await request('/api/v1/twitch/clips',{method:'POST',body:'{}'});toast('Clip Twitch demandé')}catch(error){toast(error.message,true)}});
   document.querySelectorAll('[data-profile-quick-action]').forEach(button=>button.addEventListener('click',async()=>{
     const action=button.dataset.profileQuickAction;
-    if(action==='clip'){if(!state.runtime)return toast('Clip simulé');try{await request('/api/v1/twitch/clips',{method:'POST',body:'{}'});toast('Clip Twitch demandé')}catch(error){toast(error.message,true)};return}
+    if(action==='clip'){if(!state.runtime)return toast('Clip simulé');if(!twitchCapability('createClip'))return toast(`Reconnecte Twitch pour accorder ${twitchScope('createClip')}.`,true);try{await request('/api/v1/twitch/clips',{method:'POST',body:'{}'});toast('Clip Twitch demandé')}catch(error){toast(error.message,true)};return}
     if(action==='timer+60'){if(!state.runtime){state.seconds+=60;render();return}try{await dashboardCommand({type:'timer.add',seconds:60});await refreshRuntime()}catch(error){toast(error.message,true)};return}
     if(action==='mute-main'){const input=state.audio.find(value=>value.primary)||state.audio[0];if(!input)return toast('Aucun micro principal actif.',true);if(!state.runtime){input.muted=!input.muted;render();return}try{await dashboardCommand({type:'obs.mute',input:input.name,muted:!input.muted});await refreshRuntime()}catch(error){toast(error.message,true)}}
   }));
-  document.querySelector('#desktop-chat-form')?.addEventListener('submit',async event=>{event.preventDefault();const input=event.currentTarget.elements.namedItem('message'),message=String(input?.value||'').trim();if(!message)return;if(!state.runtime)return toast('Message simulé');try{await request('/api/v1/twitch/chat/messages',{method:'POST',body:JSON.stringify({message})});input.value='';toast('Message envoyé')}catch(error){toast(error.message,true)}});
+  document.querySelector('#desktop-chat-form')?.addEventListener('submit',async event=>{event.preventDefault();const input=event.currentTarget.elements.namedItem('message'),message=String(input?.value||'').trim();if(!message)return;if(!state.runtime)return toast('Message simulé');if(!twitchCapability('chatWrite'))return toast(`Reconnecte Twitch pour accorder ${twitchScope('chatWrite')}.`,true);try{await request('/api/v1/twitch/chat/messages',{method:'POST',body:JSON.stringify({message})});input.value='';toast('Message envoyé')}catch(error){toast(error.message,true)}});
   document.querySelector('[data-add-event]')?.addEventListener('click',()=>openEventDialog());
   document.querySelector('[data-sound-search]')?.addEventListener('input',e=>{state.search=e.currentTarget.value;render()});
   document.querySelectorAll('[data-camp]').forEach(b=>b.onclick=()=>{state.campItem=b.dataset.camp;render();void loadCampData(state.campItem)});
