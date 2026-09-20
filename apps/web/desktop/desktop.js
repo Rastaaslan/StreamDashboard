@@ -181,13 +181,16 @@ function liveQuickActions(){
   const labels={clip:'Créer un clip','timer+60':'+1 min','mute-main':'Micro principal'};
   return `<div class="live-quick-actions">${actions.map(action=>`<button class="secondary" data-profile-quick-action="${esc(action)}">${esc(labels[action]||action)}</button>`).join('')}</div>`;
 }
+function audienceRoleLabel(role){
+  return ({ broadcaster:'Streamer', moderator:'Modérateur', vip:'VIP', viewer:'Chatteur' })[role] || 'Chatteur';
+}
 function live(){
   const audience=state.dashboard?.controlHub?.audience||{},chat=state.dashboard?.controlHub?.chat||{};
   const twitchPanel=moduleEnabled('twitch')?`<aside class="section live-chat-panel">
     <div class="section-head"><div><h2>Chat</h2><span class="label">${chat.connected?'Connecté':'Hors ligne'} · ${Number.isInteger(audience.viewerCount)?audience.viewerCount:'—'} viewers</span></div><button class="secondary compact-button" data-live-clip>Créer un clip</button></div>
     <div class="desktop-chat-list">${chatMessages()}</div>
     <form id="desktop-chat-form" class="desktop-chat-compose"><input name="message" maxlength="500" placeholder="Écrire dans le chat…" autocomplete="off" ${chat.connected?'':'disabled'}><button class="action" ${chat.connected?'':'disabled'}>Envoyer</button></form>
-    <details class="audience-details"><summary>Audience · ${(audience.chatters||[]).length} présents</summary><div class="audience-list">${(audience.chatters||[]).slice(0,100).map(person=>`<span><b>${esc(person.displayName)}</b><small>${esc(person.role||'viewer')}</small></span>`).join('')||'<span class="help">Aucun chatter chargé.</span>'}</div></details>
+    <details class="audience-details"><summary>Participants du chat · ${(audience.chatters||[]).length}</summary><div class="audience-list">${(audience.chatters||[]).slice(0,100).map(person=>`<span><b>${esc(person.displayName)}</b><small>${esc(audienceRoleLabel(person.role))}</small></span>`).join('')||'<span class="help">Aucun participant au chat.</span>'}</div></details>
   </aside>`:'';
   return`<div class="live-desktop-grid">
     <div class="live-main stack">
