@@ -5,11 +5,13 @@ const windowSource = readFileSync(new URL('../apps/desktop/src/window.ts', impor
 const mainSource = readFileSync(new URL('../apps/desktop/src/main.ts', import.meta.url), 'utf8');
 const html = readFileSync(new URL('../apps/web/index.html', import.meta.url), 'utf8');
 const renderer = readFileSync(new URL('../apps/web/app.js', import.meta.url), 'utf8');
+const promotedHtml = readFileSync(new URL('../apps/web/preview/index.html', import.meta.url), 'utf8');
 describe('sécurité hôte Electron', () => {
   it('active toutes les protections BrowserWindow', () => {
     expect(windowSource).toContain('nodeIntegration: false'); expect(windowSource).toContain('contextIsolation: true');
     expect(windowSource).toContain('sandbox: true'); expect(windowSource).toContain('webSecurity: true'); expect(html).toContain('Content-Security-Policy');
-    expect(html).toContain("script-src 'self'"); expect(renderer).not.toContain('onclick="');
+    expect(html).toContain("script-src 'self'"); expect(promotedHtml).toContain('Content-Security-Policy'); expect(promotedHtml).toContain("script-src 'self'");
+    expect(renderer).not.toContain('onclick="');
   });
   it('n’autorise que les URL HTTPS Twitch externes', () => {
     expect(isAllowedTwitchUrl('https://www.twitch.tv/activate')).toBe(true);
