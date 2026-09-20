@@ -2,14 +2,14 @@ import { describe, expect, it } from 'vitest';
 import { readFileSync } from 'node:fs';
 
 const main = readFileSync(new URL('../apps/desktop/src/main.ts', import.meta.url), 'utf8');
-const html = readFileSync(new URL('../apps/web/preview/index.html', import.meta.url), 'utf8');
-const renderer = readFileSync(new URL('../apps/web/preview/preview.js', import.meta.url), 'utf8');
-const css = readFileSync(new URL('../apps/web/preview/preview.css', import.meta.url), 'utf8');
+const html = readFileSync(new URL('../apps/web/desktop/index.html', import.meta.url), 'utf8');
+const renderer = readFileSync(new URL('../apps/web/desktop/desktop.js', import.meta.url), 'utf8');
+const css = readFileSync(new URL('../apps/web/desktop/desktop.css', import.meta.url), 'utf8');
 const server = readFileSync(new URL('../apps/server/src/index.ts', import.meta.url), 'utf8');
 
 describe('Desktop V2 promu en production', () => {
   it('est bien le shell chargé par Electron et possède une CSP', () => {
-    expect(main).toContain("'/preview/?runtime=1'");
+    expect(main).toContain("'/desktop/?runtime=1'");
     expect(html).toContain('Content-Security-Policy');
     expect(html).toContain("script-src 'self'");
     expect(html).toContain('id="brand-context"');
