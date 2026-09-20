@@ -245,9 +245,19 @@ const campGroups=[
 ];
 const campItems=campGroups.flatMap(group=>group.items);
 const connectionLabel=status=>({CONNECTED:'Connecté',CONNECTING:'Connexion…',DISCONNECTED:'Déconnecté',NOT_CONFIGURED:'À configurer',NOT_SUPPORTED:'Non disponible',DEGRADED:'Connexion instable',ERROR:'Erreur'})[status]||'À configurer';
+const normalizedConnectionLabel=status=>({connected:'Connecté',connecting:'Connexion…',disconnected:'Déconnecté','reauth-required':'Réautorisation requise',error:'Erreur',unavailable:'Non disponible'})[status]||'À configurer';
 const runtimeDisabled=()=>state.runtime?'':' disabled';
 const connectionModuleByName={OBS:'obs',Twitch:'twitch','Google Calendar':'googleCalendar',Discord:'discord',Streamlabs:'streamlabs',WizeBot:'wizebot'};
-function connectionCard(name,status,content=''){const module=connectionModuleByName[name];if(module&&!moduleEnabled(module))return'';return`<article class="setup-status connection-card"><div class="section-head"><b>${esc(name)}</b><span class="label">${esc(status)}</span></div>${content}</article>`}
+const connectionIdByName={OBS:'obs',Twitch:'twitch','Google Calendar':'google',Discord:'discord',Streamlabs:'streamlabs',WizeBot:'wizebot'};
+function connectionCard(name,status,content=''){
+  const module=connectionModuleByName[name];if(module&&!moduleEnabled(module))return'';
+  const normalized=state.connections?.find(value=>value.id===connectionIdByName[name]);
+  const resolvedStatus=normalized?normalizedConnectionLabel(normalized.status):status;
+  const mode=normalized?.mode?` · ${normalized.mode==='official'?'Officiel':'Personnalisé'}`:'';
+  const blocked=normalized?.status==='unavailable'&&!(normalized.capabilities||[]).length;
+  const message=normalized?.message?`<p class="help provider-message">${esc(normalized.message)}</p>`:'';
+  return`<article class="setup-status connection-card"><div class="section-head"><b>${esc(name)}</b><span class="label">${esc(resolvedStatus+mode)}</span></div>${blocked?(message||'<p class="help">Ce provider n’est pas disponible dans cette configuration.</p>'):`${message}${content}`}</article>`
+}
 function connectionsContent(){
   const d=state.dashboard||{};const integrations=d.controlHub?.integrations||{};const streamlabs=integrations.streamlabs||{status:'NOT_CONFIGURED'};const wizebot=integrations.wizebot||{status:'NOT_CONFIGURED'};
   const twitch=d.twitch||{};const google=d.google||{};const discord=d.discord||{};const remote=d.remote||{};const settings=d.settings||{};
