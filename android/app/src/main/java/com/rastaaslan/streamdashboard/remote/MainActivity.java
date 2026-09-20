@@ -50,6 +50,13 @@ public class MainActivity extends Activity {
   // still reach the authenticated cleartext LAN Runtime without mixed-content exceptions.
   private static final String ORIGIN = "http://" + APP_HOST;
   private static final String PING_CHANNEL_ID = "streamer-pings";
+  private static boolean isAllowedExternalUri(Uri uri) {
+    if (uri == null || !"https".equalsIgnoreCase(uri.getScheme())) return false;
+    String host = uri.getHost();
+    if (host == null) return false;
+    host = host.toLowerCase(java.util.Locale.ROOT);
+    return host.equals("twitch.tv") || host.endsWith(".twitch.tv");
+  }
   private static final int NOTIFICATION_PERMISSION_REQUEST = 7001;
   private WebView webView;
   private ProviderBridge providerBridge;
@@ -182,7 +189,12 @@ public class MainActivity extends Activity {
 
     @Override public boolean shouldOverrideUrlLoading(WebView view, WebResourceRequest request) {
       Uri uri = request.getUrl();
-      return !("http".equals(uri.getScheme()) && APP_HOST.equals(uri.getHost()) && uri.getPath() != null && uri.getPath().startsWith("/mobile/"));
+      boolean local = "http".equals(uri.getScheme()) && APP_HOST.equals(uri.getHost()) && uri.getPath() != null && uri.getPath().startsWith("/mobile/");
+      if (local) return false;
+      if (isAllowedExternalUri(uri)) {
+        try { startActivity(new Intent(Intent.ACTION_VIEW, uri)); } catch (Exception ignored) { }
+      }
+      return true;
     }
   }
 
@@ -217,7 +229,7 @@ public class MainActivity extends Activity {
     @JavascriptInterface public void openExternal(String value) {
       try {
         Uri uri = Uri.parse(value);
-        if (!"https".equalsIgnoreCase(uri.getScheme())) return;
+        if (!isAllowedExternalUri(uri)) return;
         runOnUiThread(() -> {
           try { startActivity(new Intent(Intent.ACTION_VIEW, uri)); }
           catch (Exception ignored) { }
