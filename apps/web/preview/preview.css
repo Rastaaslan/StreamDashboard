@@ -112,3 +112,11 @@ dialog{background:var(--panel)}
 .soundboard-advanced{border-top:1px solid var(--line);padding-top:12px}.soundboard-advanced summary{cursor:pointer;color:var(--muted);font-size:12px}.soundboard-advanced>div{display:flex;align-items:center;justify-content:space-between;gap:16px;padding-top:10px}.soundboard-advanced p{margin:0;max-width:650px}
 .empty-library{display:grid;place-items:center;min-height:160px;color:var(--muted)}.empty-library b{color:var(--text)}
 @media(max-width:1000px){.soundboard-filters{grid-template-columns:1fr 180px}.favorite-filter,.soundboard-filters .action{justify-self:start}.soundboard-hero{align-items:flex-start}}
+
+
+/* Contextual Twitch information in Live */
+.live-twitch-settings{padding:0!important;overflow:hidden}
+.live-twitch-settings>summary{display:flex;align-items:center;justify-content:space-between;gap:16px;min-height:54px;padding:0 var(--section-pad);cursor:pointer;list-style:none}
+.live-twitch-settings>summary::-webkit-details-marker{display:none}.live-twitch-settings>summary span{display:grid;gap:2px}.live-twitch-settings>summary small{color:var(--muted);font-weight:400}.live-twitch-settings>summary i{color:var(--muted);font-style:normal;transition:.15s}
+.live-twitch-settings[open]>summary{border-bottom:1px solid var(--line)}.live-twitch-settings[open]>summary i{transform:rotate(90deg)}
+.live-twitch-settings form{padding:var(--section-pad)}.live-twitch-settings form>label{display:grid;gap:6px;margin-bottom:12px}.live-twitch-settings input,.live-twitch-settings select{min-height:44px;border:1px solid var(--line);border-radius:var(--radius);background:var(--raised);color:var(--text);padding:0 12px}
