@@ -1,4 +1,4 @@
-const CACHE = 'streamdashboard-mobile-v11';
+const CACHE = 'streamdashboard-mobile-v12';
 const PATHS = new Set([
   '/mobile/',
   '/mobile/index.html',

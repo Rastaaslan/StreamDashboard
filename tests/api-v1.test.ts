@@ -27,6 +27,7 @@ describe('API publique v1', () => {
     expect(connections.items.find((item: { id: string }) => item.id === 'twitch')).toMatchObject({ status: 'unavailable', mode: 'official', capabilities: [], message: 'Configuration mainteneur requise' });
     expect(connections.items.find((item: { id: string }) => item.id === 'discord')).toMatchObject({ status: 'unavailable', mode: 'official', capabilities: [] });
     expect(capabilities).toMatchObject({ protocolVersion: 1, accessMode: 'desktop-local' });
+    for (const feature of ['mobile-profile-presentation','mobile-live-control-config','mobile-provider-actions','soundboard-live-volume']) expect(capabilities.features).toContain(feature);
     expect(stateText).not.toMatch(/accessToken|refreshToken|deviceCode|obsPassword\"/);
     const event = await new Promise<string>((resolve, reject) => { const ws = new WebSocket(app.url.replace('http:', 'ws:') + '/ws/v1'); ws.on('message', data => { const text = data.toString(); if (text.includes('state.updated')) { ws.close(); resolve(text); } }); ws.on('error', reject); });
     expect(event).not.toMatch(/accessToken|refreshToken|deviceCode|obsPassword\"/);
@@ -66,6 +67,55 @@ describe('API publique v1', () => {
     expect(await fetch(`${dashboard.url}/api/v1/profile`).then(response => response.json())).toMatchObject({ profile: { profile: { displayName: 'Profil persistant' }, onboarding: { completed: true } } });
   });
 
+  it('borne l’édition Mobile du profil à la présentation et à l’apparence', async () => {
+    const app = await start();
+    const updated = await fetch(`${app.url}/api/v1/profile/presentation`, {
+      method: 'PUT',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        profile: { displayName: 'Mobile', channelName: 'Chaîne Mobile', language: 'fr' },
+        appearance: { theme: 'oled', preset: 'compact', accent: '#663399', density: 'compact', radius: 'round', textScale: 'large' },
+      }),
+    });
+    expect(updated.status).toBe(200);
+    expect(await updated.json()).toMatchObject({ profile: { profile: { displayName: 'Mobile', channelName: 'Chaîne Mobile' }, appearance: { theme: 'oled', preset: 'compact', accent: '#663399', density: 'compact', radius: 'round', textScale: 'large' } } });
+
+    const forbidden = await fetch(`${app.url}/api/v1/profile/presentation`, {
+      method: 'PUT',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ modules: { twitch: false } }),
+    });
+    expect(forbidden.status).toBe(400);
+    const current = await fetch(`${app.url}/api/v1/profile`).then(response => response.json());
+    expect(current.profile.modules.twitch).toBe(true);
+  });
+
+  it('borne la configuration contextuelle Mobile aux mappings Live non sensibles', async () => {
+    const app = await start();
+    const mic = await fetch(`${app.url}/api/v1/settings/live-control`, {
+      method: 'PUT',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ primaryMicInput: 'Mic USB' }),
+    });
+    expect(mic.status).toBe(200);
+    expect(await mic.json()).toMatchObject({ settings: { primaryMicInput: 'Mic USB' } });
+
+    const scene = await fetch(`${app.url}/api/v1/settings/live-control`, {
+      method: 'PUT',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ mode: 'chatting', scene: 'Chatting' }),
+    });
+    expect(scene.status).toBe(200);
+    expect(await scene.json()).toMatchObject({ settings: { chattingScene: 'Chatting' } });
+
+    const forbidden = await fetch(`${app.url}/api/v1/settings/live-control`, {
+      method: 'PUT',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ obsUrl: 'ws://127.0.0.1:4455' }),
+    });
+    expect(forbidden.status).toBe(400);
+  });
+
   it('migre une installation sans profil sans déplacer ni perdre les secrets providers', async () => {
     dataDir = await mkdtemp(path.join(os.tmpdir(), 'streamdashboard-migration-'));
     await writeFile(path.join(dataDir, 'dashboard.json'), JSON.stringify({ schemaVersion: 6, settings: { streamerName: 'Ancienne chaîne' }, twitch: { displayName: 'LegacyChannel' } }));
@@ -102,6 +152,24 @@ describe('API publique v1', () => {
       ws.on('open', () => { ws.close(); resolve(); });
       ws.on('error', reject);
     })).resolves.toBeUndefined();
+  });
+
+  it('autorise les preflights Android pour les mutations Mobile authentifiées', async () => {
+    const app = await start();
+    const origin = 'http://appassets.androidplatform.net';
+    const response = await fetch(`${app.url}/api/v1/settings/live-control`, {
+      method: 'OPTIONS',
+      headers: {
+        Origin: origin,
+        'Access-Control-Request-Method': 'PUT',
+        'Access-Control-Request-Headers': 'authorization,content-type',
+      },
+    });
+    expect(response.status).toBe(204);
+    expect(response.headers.get('access-control-allow-origin')).toBe(origin);
+    expect(response.headers.get('access-control-allow-methods')).toContain('PUT');
+    expect(response.headers.get('access-control-allow-methods')).toContain('DELETE');
+    expect(response.headers.get('access-control-allow-headers')?.toLowerCase()).toContain('authorization');
   });
 
   it('refuse une origine WebSocket étrangère ou un faux port local', async () => {

@@ -57,6 +57,27 @@ let server = settingsStorage.getServer();
 let state = null;
 let productProfile = null;
 let connectionProjection = [];
+let runtimeCapabilities = null;
+const runtimeFeatureLabels = {
+  'mobile-profile-presentation': 'profil et apparence',
+  'mobile-live-control-config': 'configuration Micro / scènes',
+  'mobile-provider-actions': 'gestion des connexions',
+  'soundboard-live-volume': 'volume Soundboard en cours de lecture',
+};
+const runtimeSupports = feature => runtimeCapabilities?.features?.includes(feature) === true;
+function requireRuntimeFeature(feature) {
+  if (runtimeSupports(feature)) return true;
+  const label = runtimeFeatureLabels[feature] || feature;
+  note(`Mets à jour StreamDashboard sur le PC pour utiliser : ${label}.`);
+  return false;
+}
+function updateRuntimeCompatibility() {
+  const banner = $('runtime-compatibility');
+  if (!runtimeCapabilities) { banner.hidden = true; return; }
+  const missing = Object.keys(runtimeFeatureLabels).filter(feature => !runtimeSupports(feature));
+  banner.hidden = missing.length === 0;
+  if (missing.length) banner.textContent = `Runtime PC ${runtimeCapabilities.serverVersion || 'ancien'} · mise à jour recommandée pour : ${missing.map(feature => runtimeFeatureLabels[feature]).join(', ')}.`;
+}
 let profileLoaded = false;
 let lastProfileSyncAt = 0;
 let pairingInFlight = false;
@@ -169,7 +190,7 @@ function remoteButtons(disabled) {
 
 function offlineState() {
   const cache = companion.snapshot();
-  return { at: cache.lastServerSyncAt || new Date().toISOString(), mode: 'idle', timer: { running: false, remaining: 300, deadline: null }, planning: cache.planning, checklist: cache.checklist, nextLive: null, obs: { connected: false, streaming: false, scene: null, inputs: {}, activeAudioInputs: [], mediaInputs: [] }, settings: { confirmStop: true, streamerName: cache.streamerName, modeScenes: {} }, twitch: { connected: false }, google: { connected: false } };
+  return { at: cache.lastServerSyncAt || new Date().toISOString(), mode: 'idle', timer: { running: false, remaining: 300, deadline: null }, planning: cache.planning, checklist: cache.checklist, nextLive: null, obs: { connected: false, streaming: false, scene: null, scenes: [], inputs: {}, activeAudioInputs: [], mediaInputs: [] }, settings: { confirmStop: true, streamerName: cache.streamerName, modeScenes: {} }, twitch: { connected: false }, google: { connected: false } };
 }
 
 function setConnectionMode(mode) {
@@ -273,6 +294,81 @@ function renderDeck(media) {
   if (!container.children.length) container.append(text('p', 'Aucun média OBS détecté.', 'muted'));
 }
 
+function connectionButton(label, action, className = 'secondary') {
+  const button = text('button', label, className);
+  button.type = 'button';
+  button.dataset.connectionAction = action;
+  return button;
+}
+function renderManagedConnections(hub) {
+  const integrations = $('hub-integrations');
+  integrations.replaceChildren();
+  const fallback = Object.entries({ obs: 'OBS', twitch: 'Twitch', discord: 'Discord', streamlabs: 'Streamlabs', wizebot: 'WizeBot' }).map(([id, label]) => ({ id, label, status: (hub?.integrations?.[id]?.status || 'DISCONNECTED').toLowerCase(), capabilities: [] }));
+  const projected = connectionProjection.length ? connectionProjection : fallback;
+  for (const provider of projected) {
+    const moduleId = provider.id === 'google' ? 'googleCalendar' : provider.id;
+    if (productProfile?.modules?.[moduleId] === false) continue;
+    const status = String(provider.status || 'unavailable').toUpperCase().replace('REAUTH-REQUIRED', 'REAUTH_REQUIRED');
+    const row = document.createElement('article');
+    row.className = 'integration-card connection-manage-card';
+    const dot = text('i', '', `provider-dot status-${status.toLowerCase()}`);
+    const copy = document.createElement('div'); copy.className = 'connection-copy';
+    copy.append(text('b', provider.label), text('small', `${humanProviderStatus(status)}${provider.mode ? ` · ${provider.mode === 'official' ? 'Officiel' : 'Personnalisé'}` : ''}`, 'muted'));
+    if (provider.message) copy.append(text('small', provider.message, 'muted'));
+    const actions = document.createElement('div'); actions.className = 'connection-actions';
+    const capabilities = new Set(provider.capabilities || []);
+    const canManageConnections = runtimeSupports('mobile-provider-actions');
+    if (canManageConnections && provider.id === 'obs' && capabilities.has('test')) actions.append(connectionButton('Tester', 'obs-test'));
+    if (canManageConnections && provider.id === 'twitch') {
+      if (status === 'CONNECTED') {
+        if (capabilities.has('disconnect')) actions.append(connectionButton('Déconnecter', 'twitch-disconnect', 'secondary danger-button'));
+      } else if (capabilities.has('connect')) actions.append(connectionButton('Connecter', 'twitch-connect'));
+    }
+    if (provider.id === 'google') {
+      if (canManageConnections && status === 'CONNECTED') {
+        if (capabilities.has('disconnect')) actions.append(connectionButton('Déconnecter', 'google-disconnect', 'secondary danger-button'));
+      } else if (status !== 'CONNECTED') {
+        copy.append(text('small', 'La connexion initiale Google du PC doit être autorisée depuis le PC.', 'muted'));
+      }
+    }
+    if (!canManageConnections && ['obs','twitch','google'].includes(provider.id)) {
+      copy.append(text('small', 'Mets à jour StreamDashboard sur le PC pour gérer cette connexion depuis le téléphone.', 'muted'));
+    } else if (!actions.children.length && ['discord','streamlabs','wizebot'].includes(provider.id) && provider.mode === 'custom') {
+      copy.append(text('small', 'Configuration locale à effectuer sur le PC.', 'muted'));
+    }
+    row.append(dot, copy, actions);
+    integrations.append(row);
+  }
+  if (!integrations.children.length) integrations.append(text('p', 'Aucune connexion active pour les modules actuels.', 'muted'));
+}
+async function openExternalUrl(url) {
+  if (!/^https:\/\//i.test(String(url || ''))) throw new Error('Lien externe invalide.');
+  if (globalThis.StreamDashboardNative?.openExternal) { globalThis.StreamDashboardNative.openExternal(url); return; }
+  const opened = window.open(url, '_blank', 'noopener,noreferrer');
+  if (!opened) throw new Error('Impossible d’ouvrir le navigateur.');
+}
+$('hub-integrations').addEventListener('click', async event => {
+  const action = event.target.closest('[data-connection-action]')?.dataset.connectionAction;
+  if (!action) return;
+  if (!requireRuntimeFeature('mobile-provider-actions')) return;
+  if (companionMode !== CompanionMode.ONLINE_PC) { note('PC requis pour gérer cette connexion.'); return; }
+  try {
+    if (action === 'obs-test') {
+      const result = await transport.testObs();
+      note(`OBS connecté · v${result.obsVersion || '?'}`);
+    } else if (action === 'twitch-connect') {
+      const result = await transport.twitchDevice();
+      globalThis.StreamDashboardNative?.copyText?.('Code Twitch', result.userCode);
+      await openExternalUrl(result.verificationUri);
+      note(`Twitch · code ${result.userCode} copié`);
+    } else if (action === 'twitch-disconnect') {
+      render(await transport.twitchDisconnect()); note('Twitch déconnecté.');
+    } else if (action === 'google-disconnect') {
+      render(await transport.googleDisconnect()); note('Google Calendar déconnecté.');
+    }
+    await loadProductProfile();
+  } catch (error) { note(error.message); }
+});
 function renderControlHub(hub) {
   const integrations = $('hub-integrations');
   integrations.replaceChildren();
@@ -284,16 +380,7 @@ function renderControlHub(hub) {
   $('home-live-status').textContent = isLive ? `${degraded ? '!' : '●'} En direct` : companionMode === CompanionMode.ONLINE_PC ? '○ Prêt' : '○ Hors ligne'; $('home-live-status').className = `live-line ${isLive ? degraded ? 'danger' : 'ok' : ''}`; $('home-duration').textContent = duration;
   $('direct-scene').textContent = state?.obs?.scene || 'Aucune scène'; $('direct-twitch-state').textContent = humanProviderStatus(hub?.integrations?.twitch?.status || 'DISCONNECTED'); $('obs-status-detail').textContent = state?.obs?.connected ? 'Connecté' : 'Indisponible'; $('twitch-status-detail').textContent = $('direct-twitch-state').textContent;
   $('live-workspace-status').textContent = $('home-live-status').textContent; $('live-workspace-status').className = $('home-live-status').className; $('live-duration').textContent = duration; $('live-viewers').textContent = $('hub-viewers').textContent; $('live-chatters').textContent = $('hub-chatters').textContent; $('live-scene').textContent = state?.obs?.scene || '—';
-  const projected = connectionProjection.length ? connectionProjection : Object.entries({ obs: 'OBS', twitch: 'Twitch', discord: 'Discord', streamlabs: 'Streamlabs', wizebot: 'WizeBot' }).map(([id, label]) => ({ id, label, status: (hub?.integrations?.[id]?.status || 'DISCONNECTED').toLowerCase() }));
-  for (const provider of projected) {
-    if (productProfile?.modules?.[provider.id === 'google' ? 'googleCalendar' : provider.id] === false) continue;
-    const status = String(provider.status || 'unavailable').toUpperCase().replace('REAUTH-REQUIRED', 'REAUTH_REQUIRED'); const label = provider.label;
-    const row = document.createElement('div');
-    row.className = 'integration-card';
-    const dot = text('i', '', `provider-dot status-${status.toLowerCase()}`);
-    row.append(dot, text('span', label), text('small', humanProviderStatus(status), 'muted'));
-    integrations.append(row);
-  }
+  renderManagedConnections(hub);
   renderHubChat(hub?.chat?.messages || []);
   renderAudience(hub?.audience);
 }
@@ -303,7 +390,44 @@ const humanProviderStatus = status => ({ CONNECTED: 'Connecté', CONNECTING: 'Co
 const humanActivity = event => event.type === 'support.received' ? `Soutien · ${event.payload?.displayName || 'Anonyme'}` : event.type === 'stream.started' ? 'Le live a démarré' : event.type === 'stream.stopped' ? 'Le live est terminé' : event.type === 'chat.message.received' ? `Chat · ${event.payload?.chatter?.displayName || 'nouveau message'}` : event.type === 'streamer.ping.received' ? `Ping · ${event.payload?.rewardTitle || 'récompense Twitch'}` : event.type === 'streamer.ping.acknowledged' ? 'Streamer Ping acquitté' : event.type === 'soundboard.played' ? 'Son joué' : event.type === 'automation.triggered' ? 'Automatisation exécutée' : event.type.replaceAll('.', ' · ');
 
 let moderationCapabilities = null;
-async function loadModerationCapabilities() { if (companionMode !== CompanionMode.ONLINE_PC) return; try { moderationCapabilities = await transport.twitchModerationCapabilities(); const missing = Object.entries(moderationCapabilities.requiredScopes || {}).filter(([action]) => !moderationCapabilities[action]).map(([, scope]) => scope); $('moderation-state').textContent = missing.length ? `Modération partielle · autorisations manquantes : ${[...new Set(missing)].join(', ')}` : 'Modération Twitch autorisée'; renderHubChat(state?.controlHub?.chat?.messages || []); } catch (error) { $('moderation-state').textContent = error.message; } }
+let twitchCapabilitiesFlight = null;
+const twitchCapability = name => moderationCapabilities?.[name] !== false;
+function applyTwitchActionCapabilities() {
+  const connected = state?.twitch?.connected === true;
+  const chatWritable = connected && twitchCapability('chatWrite');
+  $('chat-message').disabled = !chatWritable;
+  $('chat-form').querySelector('button').disabled = !chatWritable;
+  $('live-clip').disabled = !connected || !state?.obs?.streaming || !twitchCapability('createClip');
+  $('create-clip').disabled = !connected || !twitchCapability('createClip');
+  $('more-chatters').disabled = !connected || !twitchCapability('chatters');
+  $('save-twitch').disabled = !connected || !twitchCapability('updateChannel');
+  const twitchPublish = $('slot-form').elements.namedItem('twitch');
+  if (twitchPublish) twitchPublish.title = twitchCapability('schedule') ? '' : 'Reconnecte Twitch pour autoriser la publication du planning.';
+  if ($('template-publish-twitch')) $('template-publish-twitch').title = twitchCapability('schedule') ? '' : 'Reconnecte Twitch pour autoriser la publication du planning.';
+}
+async function loadModerationCapabilities() {
+  if (companionMode !== CompanionMode.ONLINE_PC || state?.twitch?.connected !== true) return moderationCapabilities;
+  if (twitchCapabilitiesFlight) return twitchCapabilitiesFlight;
+  twitchCapabilitiesFlight = (async () => {
+    try {
+      moderationCapabilities = await transport.twitchModerationCapabilities();
+      const missing = Object.entries(moderationCapabilities.requiredScopes || {}).filter(([action]) => moderationCapabilities[action] === false).map(([, scope]) => scope);
+      $('moderation-state').textContent = missing.length ? `Fonctions Twitch partielles · reconnecte Twitch pour : ${[...new Set(missing)].join(', ')}` : 'Autorisations Twitch à jour';
+      applyTwitchActionCapabilities();
+      updatePlanningProviderReadiness();
+      renderHubChat(state?.controlHub?.chat?.messages || []);
+      return moderationCapabilities;
+    } catch (error) {
+      $('moderation-state').textContent = error.message;
+      return null;
+    }
+  })().finally(() => { twitchCapabilitiesFlight = null; });
+  return twitchCapabilitiesFlight;
+}
+async function ensureTwitchCapabilities() {
+  if (state?.twitch?.connected !== true) return null;
+  return moderationCapabilities || await loadModerationCapabilities();
+}
 function renderHubChat(messages) {
   const container = $('hub-chat'); container.replaceChildren();
   for (const message of messages.slice(-100)) {
@@ -316,7 +440,7 @@ function renderHubChat(messages) {
     row.append(header);
     if (message.reply) row.append(text('div', `↳ ${message.reply.parentUserName}: ${message.reply.parentMessageBody}`, 'chat-reply'));
     row.append(text('div', `${message.text}${message.bits ? ` · ${message.bits} bits` : ''}`));
-    const menu = document.createElement('details'); menu.className = 'message-menu'; const summary = text('summary', 'Actions'); summary.setAttribute('aria-label', `Actions pour le message de ${message.chatter?.displayName || message.chatter?.login}`); const tools = document.createElement('div'); tools.className = 'inline-actions'; const reply = text('button', 'Répondre'); reply.type = 'button'; reply.onclick = () => { menu.open = false; $('chat-reply-context').hidden = false; $('chat-reply-context').textContent = `Réponse à ${message.chatter?.displayName || message.chatter?.login}`; $('chat-reply-context').dataset.messageId = message.id; $('chat-message').focus(); }; const moderation = (label, capability, run) => { const button = text('button', label); button.type = 'button'; button.disabled = !moderationCapabilities?.[capability]; button.title = button.disabled ? `NOT_AUTHORIZED · ${moderationCapabilities?.requiredScopes?.[capability] || 'scope Twitch requis'}` : ''; button.onclick = async () => { try { await run(); menu.open = false; note(`${label} confirmé par Twitch.`); } catch (error) { note(error.message); } }; return button; }; tools.append(reply, moderation('Supprimer', 'deleteMessage', () => transport.deleteTwitchMessage(message.id)), moderation('Timeout', 'timeout', () => transport.moderateTwitchUser({ userId: message.chatter.id, duration: 600, reason: 'Modération StreamDashboard' })), moderation('Ban', 'ban', () => transport.moderateTwitchUser({ userId: message.chatter.id, reason: 'Modération StreamDashboard' }))); menu.append(summary, tools); row.append(menu);
+    const menu = document.createElement('details'); menu.className = 'message-menu'; const summary = text('summary', 'Actions'); summary.setAttribute('aria-label', `Actions pour le message de ${message.chatter?.displayName || message.chatter?.login}`); const tools = document.createElement('div'); tools.className = 'inline-actions'; const reply = text('button', 'Répondre'); reply.type = 'button'; reply.disabled = moderationCapabilities?.chatWrite === false; reply.title = reply.disabled ? `Reconnecte Twitch pour accorder ${moderationCapabilities.requiredScopes?.chatWrite || 'user:write:chat'}.` : ''; reply.onclick = () => { menu.open = false; $('chat-reply-context').hidden = false; $('chat-reply-context').textContent = `Réponse à ${message.chatter?.displayName || message.chatter?.login}`; $('chat-reply-context').dataset.messageId = message.id; $('chat-message').focus(); }; const moderation = (label, capability, run) => { const button = text('button', label); button.type = 'button'; button.disabled = !moderationCapabilities?.[capability]; button.title = button.disabled ? `NOT_AUTHORIZED · ${moderationCapabilities?.requiredScopes?.[capability] || 'scope Twitch requis'}` : ''; button.onclick = async () => { try { await run(); menu.open = false; note(`${label} confirmé par Twitch.`); } catch (error) { note(error.message); } }; return button; }; tools.append(reply, moderation('Supprimer', 'deleteMessage', () => transport.deleteTwitchMessage(message.id)), moderation('Timeout', 'timeout', () => transport.moderateTwitchUser({ userId: message.chatter.id, duration: 600, reason: 'Modération StreamDashboard' })), moderation('Ban', 'ban', () => transport.moderateTwitchUser({ userId: message.chatter.id, reason: 'Modération StreamDashboard' }))); menu.append(summary, tools); row.append(menu);
     container.append(row);
   }
   if (!container.children.length) container.append(text('p', 'Aucun message reçu pour le moment.', 'muted'));
@@ -333,7 +457,7 @@ function renderAudience(audience) {
   }
 }
 let chatterCursor = null;
-async function loadMoreChatters(reset = false) { if (companionMode !== CompanionMode.ONLINE_PC) return; try { const result = await transport.twitchChatters(reset ? '' : chatterCursor); chatterCursor = result.cursor; const known = new Set(state.controlHub.audience.chatters.map(value => value.id)); for (const chatter of result.items || []) if (!known.has(chatter.id)) state.controlHub.audience.chatters.push({ id: chatter.id, displayName: chatter.displayName, role: 'viewer' }); $('more-chatters').hidden = !chatterCursor; renderAudience(state.controlHub.audience); } catch (error) { note(error.message); } }
+async function loadMoreChatters(reset = false) { if (companionMode !== CompanionMode.ONLINE_PC) return; if (moderationCapabilities?.chatters === false) { note(`Reconnecte Twitch pour accorder ${moderationCapabilities.requiredScopes?.chatters || 'moderator:read:chatters'}.`); return; } try { const result = await transport.twitchChatters(reset ? '' : chatterCursor); chatterCursor = result.cursor; const known = new Set(state.controlHub.audience.chatters.map(value => value.id)); for (const chatter of result.items || []) if (!known.has(chatter.id)) state.controlHub.audience.chatters.push({ id: chatter.id, displayName: chatter.displayName, role: 'viewer' }); $('more-chatters').hidden = !chatterCursor; renderAudience(state.controlHub.audience); } catch (error) { note(error.message); } }
 
 let vodCursor = null, clipCursor = null;
 let soundboardState = null;
@@ -435,7 +559,7 @@ function renderAutomations() {
 }
 let supportState = null;
 const money = (amountMinor, currency) => new Intl.NumberFormat('fr-FR', { style: 'currency', currency }).format(amountMinor / 100);
-async function loadSupports() { if (companionMode !== CompanionMode.ONLINE_PC) { $('support-provider').textContent = 'PC hors ligne · historique conservé sur le PC.'; return; } try { supportState = await transport.supports(); $('support-provider').textContent = supportState.provider.status === 'NOT_CONFIGURED' ? 'Streamlabs n’est pas encore connecté.' : `Streamlabs · ${humanProviderStatus(supportState.provider.status)}`; renderSupports(); } catch (error) { note(error.message); } }
+async function loadSupports() { if (companionMode !== CompanionMode.ONLINE_PC) { $('support-provider').textContent = 'PC hors ligne · historique conservé sur le PC.'; return; } try { supportState = await transport.supports(); $('support-provider').textContent = supportState.provider.status === 'NOT_CONFIGURED' ? 'Streamlabs non configuré · configure-le sur le PC.' : `Streamlabs · ${humanProviderStatus(supportState.provider.status)}`; renderSupports(); } catch (error) { note(error.message); } }
 function renderSupports() {
   if (!supportState) return; const totals = $('support-totals'); totals.replaceChildren();
   for (const [key, label] of [['session', 'LIVE'], ['day', 'AUJOURD’HUI'], ['month', 'CE MOIS']]) { const values = supportState.totals[key] || {}; const card = document.createElement('div'); card.className = 'support-total'; card.append(text('small', label), ...Object.entries(values).map(([currency, amount]) => text('b', money(amount, currency)))); if (!Object.keys(values).length) card.append(text('b', '—')); totals.append(card); }
@@ -451,7 +575,7 @@ async function loadVods(append = false) {
     for (const vod of result.items || []) {
       const card = document.createElement('article'); card.className = 'resource-card'; card.append(text('b', vod.title), text('small', `${new Date(vod.createdAt).toLocaleDateString('fr-FR')} · ${vod.duration} · ${vod.viewCount} vues`, 'muted'));
       const actions = document.createElement('div'); actions.className = 'resource-actions'; actions.append(resourceLink(vod.url));
-      const remove = text('button', 'SUPPRIMER', 'danger-button'); remove.type = 'button'; remove.onclick = async () => { if (prompt(`Suppression définitive. Saisissez DELETE ${vod.id}`) !== `DELETE ${vod.id}`) return; try { await transport.deleteTwitchVideo(vod.id); card.remove(); note('VOD supprimée après confirmation Twitch.'); } catch (error) { note(error.message); } }; actions.append(remove); card.append(actions); container.append(card);
+      const remove = text('button', 'SUPPRIMER', 'danger-button'); remove.type = 'button'; remove.disabled = moderationCapabilities?.deleteVideo === false; remove.title = remove.disabled ? `Reconnecte Twitch pour accorder ${moderationCapabilities.requiredScopes?.deleteVideo || 'channel:manage:videos'}.` : ''; remove.onclick = async () => { if (prompt(`Suppression définitive. Saisissez DELETE ${vod.id}`) !== `DELETE ${vod.id}`) return; try { await transport.deleteTwitchVideo(vod.id); card.remove(); note('VOD supprimée après confirmation Twitch.'); } catch (error) { note(error.message); } }; actions.append(remove); card.append(actions); container.append(card);
     }
     vodCursor = result.cursor; $('more-vods').hidden = !vodCursor; if (!container.children.length) container.append(text('p', 'Aucune VOD disponible.', 'empty-copy'));
   } catch (error) { note(error.message); }
@@ -461,6 +585,61 @@ async function loadClips(append = false) {
   try { const container = $('clip-list'); if (!append) container.replaceChildren(text('p', 'Chargement des clips…', 'muted')); const result = await transport.twitchClips(append ? clipCursor : ''); if (!append) container.replaceChildren(); for (const clip of result.items || []) { const card = document.createElement('article'); card.className = 'resource-card'; card.append(text('b', clip.title), text('small', `${clip.creatorName} · ${clip.viewCount} vues · ${clip.duration}s`, 'muted'), resourceLink(clip.url)); container.append(card); } clipCursor = result.cursor; $('more-clips').hidden = !clipCursor; if (!container.children.length) container.append(text('p', 'Aucun clip disponible.', 'empty-copy')); } catch (error) { note(error.message); }
 }
 
+const planningProviderNames = { twitch: 'Twitch', google: 'Google' };
+const planningProviderStatusNames = { synced: 'Synchronisé', pending: 'En attente', error: 'Erreur', 'not-published': 'Non publié', conflict: 'Conflit' };
+async function retryPlanningProvider(item, provider) {
+  if (companionMode !== CompanionMode.ONLINE_PC) return;
+  try {
+    const id = item.seriesId || item.id;
+    const next = await transport.retryPlanningProvider(id, provider);
+    render(next);
+    note(`${planningProviderNames[provider] || provider} · nouvelle tentative effectuée.`);
+  } catch (error) { note(error.message); }
+}
+function renderOnlinePlanningProviders(item, row) {
+  if (companionMode !== CompanionMode.ONLINE_PC || item.occurrenceKey) return;
+  for (const provider of ['twitch','google']) {
+    if (item.desiredPublication?.[provider] !== true) continue;
+    const link = item.providers?.[provider];
+    const status = link?.status || 'pending';
+    const block = document.createElement('div');
+    block.className = `planning-provider-state provider-${status}`;
+    const head = document.createElement('div');
+    head.append(text('b', planningProviderNames[provider]), text('span', planningProviderStatusNames[status] || status, 'muted'));
+    block.append(head);
+    if (link?.lastError) block.append(text('small', link.lastError, 'danger'));
+    if (status === 'error') {
+      const retry = text('button', 'Réessayer', 'secondary');
+      retry.type = 'button';
+      retry.onclick = () => void retryPlanningProvider(item, provider);
+      block.append(retry);
+    } else if (status === 'conflict' || item.conflict?.provider === provider) {
+      block.append(text('small', 'Conflit distant · résolution à effectuer sur le PC.', 'muted'));
+    }
+    row.append(block);
+  }
+  if (item.syncError) row.append(text('small', item.syncError, 'danger planning-sync-error'));
+}
+function updatePlanningProviderReadiness() {
+  const copy = $('planning-provider-readiness');
+  if (!copy) return;
+  if (companionMode === CompanionMode.ONLINE_STANDALONE) {
+    copy.textContent = 'Publication autonome selon les comptes connectés sur ce téléphone.';
+    return;
+  }
+  if (companionMode !== CompanionMode.ONLINE_PC || !state) {
+    copy.textContent = 'Connecte le PC pour vérifier la disponibilité des publications.';
+    return;
+  }
+  const issues = [];
+  if (!state.twitch?.connected) issues.push('Twitch non connecté');
+  else if (moderationCapabilities?.schedule === false) issues.push('Twitch à reconnecter pour le planning');
+  const google = state.google;
+  if (google?.configured === false) issues.push('Google non provisionné sur ce PC');
+  else if (!google?.connected) issues.push('Google à connecter sur le PC');
+  else if (!google?.targetConfigured) issues.push('Calendrier Google cible à choisir sur le PC');
+  copy.textContent = issues.length ? issues.join(' · ') : 'Twitch et Google sont prêts.';
+}
 function renderPlanning(items) {
   const container = $('planning');
   container.replaceChildren();
@@ -471,6 +650,22 @@ function renderPlanning(items) {
   for (const item of pagination.items) {
     const row = document.createElement('div');
     row.className = 'planning-row';
+    row.tabIndex = 0;
+    row.setAttribute('role', 'button');
+    row.setAttribute('aria-label', `Ouvrir ${item.title}`);
+    const openItem = () => {
+      if (item.editable === false) { note('Cet événement est en lecture seule.'); return; }
+      openMobileEditor(item, item.occurrenceKey ? 'occurrence' : item.seriesId ? 'series' : 'event');
+    };
+    row.addEventListener('click', event => {
+      if (event.target.closest('button,summary,details,input,select,textarea,a,label')) return;
+      openItem();
+    });
+    row.addEventListener('keydown', event => {
+      if (!['Enter',' '].includes(event.key)) return;
+      event.preventDefault();
+      openItem();
+    });
     const when = planningWhenParts(item);
     const whenBlock = document.createElement('div'); whenBlock.className = 'planning-when'; whenBlock.append(text('strong', when.date), text('small', when.time));
     row.append(whenBlock, text('b', item.title));
@@ -493,6 +688,7 @@ function renderPlanning(items) {
       const remove = text('button', 'Supprimer'); remove.type = 'button'; remove.onclick = () => { if (!confirm(`Supprimer « ${item.title} » ?`)) return; const result = companion.deleteEvent(item.id, item.revision); if (result.conflict) note('Ce live a été modifié sur un autre appareil.'); else { render(offlineState()); void syncEventProviders(item, 'delete'); } };
       row.append(status, retryButton, edit, remove);
     }
+    renderOnlinePlanningProviders(item, row);
     container.append(row);
   }
   if (!pagination.total) container.append(text('p', 'Aucun événement.', 'muted'));
@@ -510,9 +706,27 @@ function renderPlanning(items) {
 }
 
 function openMobileEditor(item, scope) {
-  mobileEditing = { item, scope }; if ($('slot-dialog-title')) $('slot-dialog-title').textContent = scope === 'occurrence' ? 'Modifier cette occurrence' : 'Modifier l’événement'; const form = $('slot-form'); const start = new Date(item.startAtUtc); const end = new Date(item.endAtUtc);
-  form.elements.title.value = item.title; form.elements.date.value = start.toISOString().slice(0, 10); form.elements.start.value = start.toTimeString().slice(0, 5); form.elements.end.value = end.toTimeString().slice(0, 5); form.elements.category.value = item.category || 'live'; form.elements.description.value = item.description || '';
-  form.elements.recurrence.value = item.recurrence ? `${item.recurrence.frequency}-${item.recurrence.interval}` : ''; form.elements.recurrenceUntil.value = item.recurrence?.until?.slice(0, 10) || ''; form.elements.recurrence.disabled = scope === 'occurrence'; form.elements.recurrenceUntil.disabled = scope === 'occurrence'; selectPlanningPage('main'); $('slot-dialog').showModal();
+  mobileEditing = { item, scope };
+  if ($('slot-dialog-title')) $('slot-dialog-title').textContent = scope === 'occurrence' ? 'Modifier cette occurrence' : scope === 'series' ? 'Modifier toute la série' : 'Modifier l’événement';
+  const form = $('slot-form');
+  const start = new Date(item.startAtUtc), end = new Date(item.endAtUtc);
+  form.elements.title.value = item.title;
+  form.elements.date.value = start.toISOString().slice(0, 10);
+  form.elements.start.value = start.toTimeString().slice(0, 5);
+  form.elements.end.value = end.toTimeString().slice(0, 5);
+  form.elements.category.value = item.category || 'live';
+  form.elements.description.value = item.description || '';
+  form.elements.twitch.checked = item.desiredPublication?.twitch === true;
+  form.elements.google.checked = item.desiredPublication?.google === true;
+  $('slot-twitch-game-id').value = item.twitchCategoryId || '';
+  $('slot-twitch-category').value = item.twitchCategoryName || '';
+  form.elements.recurrence.value = item.recurrence ? `${item.recurrence.frequency}-${item.recurrence.interval}` : '';
+  form.elements.recurrenceUntil.value = item.recurrence?.until?.slice(0, 10) || '';
+  form.elements.recurrence.disabled = scope === 'occurrence';
+  form.elements.recurrenceUntil.disabled = scope === 'occurrence';
+  selectPlanningPage('main');
+  updatePlanningProviderReadiness();
+  $('slot-dialog').showModal();
 }
 async function removeMobileOccurrence(item) {
   if (!confirm(`Supprimer uniquement cette occurrence de « ${item.title} » ?`)) return;
@@ -534,7 +748,7 @@ function render(next) {
   syncMobileStreamerPing(next.streamerPings || []);
   if (companionMode === CompanionMode.ONLINE_PC) $('pc').textContent = 'Connecté';
   $('obs').textContent = next.obs.connected ? 'Prêt' : 'Déconnecté';
-  const primaryMic = next.settings.primaryMicInput; const micMuted = primaryMic ? next.obs.inputs?.[primaryMic]?.muted : null; $('direct-mic-state').textContent = primaryMic ? (micMuted === null || micMuted === undefined ? 'Introuvable' : micMuted ? 'Coupé' : 'Ouvert') : 'Non configuré'; $('direct-mic-dot').textContent = primaryMic && micMuted === false ? '●' : '○'; $('direct-mic-dot').className = primaryMic && micMuted === false ? 'ok' : 'muted';
+  const primaryMic = next.settings.primaryMicInput; const micMuted = primaryMic ? next.obs.inputs?.[primaryMic]?.muted : null; const micMissing = !primaryMic || micMuted === null || micMuted === undefined; $('direct-mic-state').textContent = primaryMic ? (micMissing ? 'Introuvable · toucher pour configurer' : micMuted ? 'Coupé' : 'Ouvert') : 'Non configuré · toucher pour configurer'; $('direct-mic-dot').textContent = primaryMic && micMuted === false ? '●' : '○'; $('direct-mic-dot').className = primaryMic && micMuted === false ? 'ok' : 'muted'; $('quick-mic').classList.toggle('configuration-needed', micMissing); $('quick-mic').setAttribute('aria-label', micMissing ? 'Configurer le micro principal' : `${micMuted ? 'Réactiver' : 'Couper'} le micro principal`);
   $('live').textContent = next.obs.streaming ? 'Live' : 'Hors ligne';
   $('live').className = next.obs.streaming ? 'ok' : '';
   $('next').textContent = next.nextLive ? `${next.nextLive.title} · ${formatPlanningDate(next.nextLive)}` : 'Aucun live planifié';
@@ -547,19 +761,43 @@ function render(next) {
   renderDeck(next.obs.mediaInputs);
   renderControlHub(next.controlHub);
   renderPlanning(next.planning);
-  $('discord-destination').textContent = companionMode === CompanionMode.ONLINE_PC ? `Discord · ${next.discord?.channelName ? `#${next.discord.channelName}` : 'à configurer'}` : 'Connexion PC requise pour publier sur Discord.';
-  $('publish-discord').disabled = companionMode !== CompanionMode.ONLINE_PC || !next.discord?.configured;
+  updatePlanningProviderReadiness();
+  const discordConfigured = companionMode === CompanionMode.ONLINE_PC && next.discord?.configured === true;
+  $('discord-destination').textContent = companionMode !== CompanionMode.ONLINE_PC
+    ? 'Connexion PC requise pour publier sur Discord.'
+    : discordConfigured
+      ? `Discord · ${next.discord?.channelName ? `#${next.discord.channelName}` : 'destination à choisir'}`
+      : 'Discord · configuration initiale à faire sur le PC';
+  $('publish-discord').disabled = !discordConfigured;
+  for (const id of ['discord-guild','discord-channel','discord-message']) $(id).disabled = !discordConfigured;
   $('timer').textContent = formatDuration(remaining());
   if (companionMode === CompanionMode.ONLINE_PC) showPairing(false);
   remoteButtons(companionMode !== CompanionMode.ONLINE_PC);
   $('stream').disabled = !next.obs.connected; $('live-stream').disabled = $('stream').disabled;
-  $('live-clip').disabled = !next.twitch?.connected || !next.obs.streaming;
+  if (!next.twitch?.connected) moderationCapabilities = null;
+  else if (!moderationCapabilities && !twitchCapabilitiesFlight) void loadModerationCapabilities();
+  applyTwitchActionCapabilities();
   const chattingActive = next.mode === 'live' && Boolean(next.settings.chattingScene) && next.obs.scene === next.settings.chattingScene;
+  const availableScenes = next.obs.scenes || [];
   document.querySelectorAll('[data-mode]').forEach(button => {
+    const mode = button.dataset.mode;
+    const mapped = next.settings.modeScenes?.[mode] || '';
+    const missing = !mapped || !availableScenes.includes(mapped);
     button.disabled = !next.obs.connected;
     button.classList.toggle('active', button.dataset.mode === next.mode && !(button.dataset.mode === 'live' && chattingActive));
+    button.classList.toggle('configuration-needed', missing);
+    const status = document.querySelector(`[data-mode-status="${mode}"]`);
+    if (status) status.textContent = !mapped ? 'Non configuré · toucher pour choisir' : missing ? `${mapped} · introuvable` : mapped;
   });
-  document.querySelectorAll('[data-chatting]').forEach(button => { button.disabled = !next.obs.connected || !next.settings.chattingScene; button.classList.toggle('active', chattingActive); });
+  document.querySelectorAll('[data-chatting]').forEach(button => {
+    const mapped = next.settings.chattingScene || '';
+    const missing = !mapped || !availableScenes.includes(mapped);
+    button.disabled = !next.obs.connected;
+    button.classList.toggle('active', chattingActive);
+    button.classList.toggle('configuration-needed', missing);
+    const status = document.querySelector('[data-mode-status="chatting"]');
+    if (status) status.textContent = !mapped ? 'Non configuré · toucher pour choisir' : missing ? `${mapped} · introuvable` : mapped;
+  });
 }
 
 function tickTimer() {
@@ -609,6 +847,11 @@ async function getWsTicket() {
 async function fetchState() {
   // REST state is the authority for whether the PC command channel is reachable.
   // Companion sync must never gate remote-control availability.
+  const previousCapabilityKey = runtimeCapabilities ? `${runtimeCapabilities.serverVersion || ''}|${(runtimeCapabilities.features || []).join(',')}` : '';
+  runtimeCapabilities = await transport.capabilities().catch(() => ({ protocolVersion: 0, serverVersion: '', features: [] }));
+  const nextCapabilityKey = `${runtimeCapabilities.serverVersion || ''}|${(runtimeCapabilities.features || []).join(',')}`;
+  if (previousCapabilityKey !== nextCapabilityKey) profileLoaded = false;
+  updateRuntimeCompatibility();
   const next = await transport.state();
   if (!profileLoaded) { profileLoaded = true; await loadProductProfile().catch(() => { profileLoaded = false; }); }
   if (!companion.snapshot().pending.length) companion.replaceServerSnapshot(next);
@@ -763,13 +1006,15 @@ $('export-planning').onclick = async () => {
 const blobBase64 = async blob => { const bytes = new Uint8Array(await blob.arrayBuffer()); let binary = ''; for (let i = 0; i < bytes.length; i += 0x8000) binary += String.fromCharCode(...bytes.subarray(i, i + 0x8000)); return btoa(binary); };
 async function loadDiscordGuilds() {
   if (companionMode !== CompanionMode.ONLINE_PC) { note('Connexion PC requise pour publier sur Discord.'); return; }
+  if (state?.discord?.configured !== true) { note('Configure d’abord Discord sur le PC.'); return; }
   try { const guilds = await transport.discordGuilds(); $('discord-guild').replaceChildren(new Option('Choisir…', ''), ...guilds.map(value => new Option(value.name, value.id))); if (state.discord?.guildId) $('discord-guild').value = state.discord.guildId; $('discord-guild').dispatchEvent(new Event('change')); } catch (error) { note(error.message); }
 }
 $('discord-guild').onfocus = () => { if ($('discord-guild').options.length < 2) void loadDiscordGuilds(); };
-$('discord-guild').onchange = async () => { const guildId = $('discord-guild').value; if (!guildId) return; try { const channels = await transport.discordChannels(guildId); $('discord-channel').replaceChildren(new Option('Choisir…', ''), ...channels.map(value => new Option(`#${value.name}`, value.id))); if (state.discord?.channelId) $('discord-channel').value = state.discord.channelId; } catch (error) { note(error.message); } };
-$('discord-channel').onchange = async () => { try { await transport.discordSettings({ guildId: $('discord-guild').value, channelId: $('discord-channel').value, defaultMessage: $('discord-message').value }); note('Destination Discord enregistrée.'); } catch (error) { note(error.message); } };
+$('discord-guild').onchange = async () => { const guildId = $('discord-guild').value; if (!guildId || state?.discord?.configured !== true) return; try { const channels = await transport.discordChannels(guildId); $('discord-channel').replaceChildren(new Option('Choisir…', ''), ...channels.map(value => new Option(`#${value.name}`, value.id))); if (state.discord?.channelId) $('discord-channel').value = state.discord.channelId; } catch (error) { note(error.message); } };
+$('discord-channel').onchange = async () => { if (state?.discord?.configured !== true) { note('Configure d’abord Discord sur le PC.'); return; } try { await transport.discordSettings({ guildId: $('discord-guild').value, channelId: $('discord-channel').value, defaultMessage: $('discord-message').value }); note('Destination Discord enregistrée.'); } catch (error) { note(error.message); } };
 $('publish-discord').onclick = async () => {
   if (companionMode !== CompanionMode.ONLINE_PC) { note('Connexion PC requise pour publier sur Discord.'); return; }
+  if (state?.discord?.configured !== true) { note('Configure d’abord Discord sur le PC.'); return; }
   try {
     note('Génération du planning…'); const { buildPlanningPng } = await import('./planning-export.js');
     const resolveArtwork = async item => { const cached = recentCategories.find(category => category.id === item.twitchCategoryId)?.box_art_url; if (cached) return cached; const response = await providerSync.searchCategories(companionMode, item.twitchCategoryName || '', recentCategories, value => transport.searchTwitch(value)); return (response.items || response).find(category => category.id === item.twitchCategoryId)?.box_art_url; };
@@ -798,13 +1043,86 @@ document.addEventListener('click', event => {
   const diagnostics = $('diagnostics');
   diagnostics.open = target === 'diagnostics';
   if (target === 'pairing') showPairing(true);
-  requestAnimationFrame(() => (target === 'diagnostics' ? diagnostics : target === 'preferences' ? $('ui-preferences') : target === 'connections' ? $('mobile-connections') : $('pairing')).scrollIntoView({ block: 'start' }));
+  const destination = target === 'diagnostics' ? diagnostics
+    : target === 'profile' ? $('profile-appearance')
+      : target === 'preferences' ? $('ui-preferences')
+        : target === 'connections' ? $('mobile-connections')
+          : $('pairing');
+  requestAnimationFrame(() => destination.scrollIntoView({ block: 'start' }));
 });
-async function createQuickClip() { if (companionMode !== CompanionMode.ONLINE_PC) throw new Error('PC requis.'); const clip = await transport.createTwitchClip(); globalThis.StreamDashboardNative?.haptic?.('light'); note(`Clip créé · ${clip.id}`); }
+async function createQuickClip() { if (companionMode !== CompanionMode.ONLINE_PC) throw new Error('PC requis.'); await ensureTwitchCapabilities(); if (moderationCapabilities?.createClip === false) throw new Error(`Reconnecte Twitch pour accorder ${moderationCapabilities.requiredScopes?.createClip || 'clips:edit'}.`); const clip = await transport.createTwitchClip(); globalThis.StreamDashboardNative?.haptic?.('light'); note(`Clip créé · ${clip.id}`); }
 async function togglePrimaryMic() { const value = primaryMicCommand(state); const confirmed = await command(value, { reconcile: next => next.obs?.inputs?.[value.input]?.muted === value.muted }); if (!confirmed) throw new Error('Commande non confirmée par le PC.'); }
+const configuredScene = mode => mode === 'chatting' ? state?.settings?.chattingScene : state?.settings?.modeScenes?.[mode];
+const availableAudioInputs = () => {
+  const active = state?.obs?.activeAudioInputs || [];
+  const all = Object.keys(state?.obs?.inputs || {});
+  return [...new Set([...active, ...all])];
+};
+function openPrimaryMicConfig() {
+  if (!requireRuntimeFeature('mobile-live-control-config')) return;
+  if (companionMode !== CompanionMode.ONLINE_PC || !state?.obs?.connected) { note('Connecte OBS pour choisir le micro principal.'); return; }
+  const select = $('primary-mic-select');
+  const inputs = availableAudioInputs();
+  select.replaceChildren(new Option('Aucun micro principal', ''), ...inputs.map(name => new Option(name, name)));
+  select.value = inputs.includes(state.settings.primaryMicInput) ? state.settings.primaryMicInput : '';
+  $('primary-mic-empty').hidden = inputs.length > 0;
+  $('save-primary-mic').disabled = inputs.length === 0 && !state.settings.primaryMicInput;
+  $('mic-config-dialog').showModal();
+}
+function openSceneConfig(mode) {
+  if (!requireRuntimeFeature('mobile-live-control-config')) return;
+  if (companionMode !== CompanionMode.ONLINE_PC || !state?.obs?.connected) { note('Connecte OBS pour choisir une scène.'); return; }
+  const scenes = state.obs.scenes || [];
+  const select = $('scene-config-select');
+  const labels = { intro: 'Intro', live: 'Live · Gameplay', chatting: 'Chatting', pause: 'Pause', end: 'Fin' };
+  $('scene-config-mode').value = mode;
+  $('scene-config-title').textContent = `Configurer · ${labels[mode] || mode}`;
+  select.replaceChildren(new Option('Aucune scène', ''), ...scenes.map(name => new Option(name, name)));
+  const current = configuredScene(mode) || '';
+  select.value = scenes.includes(current) ? current : '';
+  $('scene-config-empty').hidden = scenes.length > 0;
+  $('save-scene-config').disabled = scenes.length === 0 && !current;
+  if ($('live-tools-sheet').open) $('live-tools-sheet').close();
+  $('scene-config-dialog').showModal();
+}
+async function handlePrimaryMic() {
+  const configured = state?.settings?.primaryMicInput;
+  if (!configured || !state?.obs?.inputs?.[configured]) { openPrimaryMicConfig(); return; }
+  await togglePrimaryMic();
+}
+async function handleModeAction(mode) {
+  const scene = configuredScene(mode);
+  if (!scene || !(state?.obs?.scenes || []).includes(scene)) { openSceneConfig(mode); return; }
+  if (mode === 'chatting') await command({ type: 'scene.chatting' });
+  else await command({ type: 'mode.set', mode });
+}
+$('mic-config-form').onsubmit = async event => {
+  event.preventDefault();
+  if (!requireRuntimeFeature('mobile-live-control-config')) return;
+  try {
+    const next = await transport.updateLiveControl({ primaryMicInput: $('primary-mic-select').value });
+    $('mic-config-dialog').close();
+    render(next);
+    note($('primary-mic-select').value ? 'Micro principal configuré.' : 'Micro principal désactivé.');
+  } catch (error) { note(error.message); }
+};
+$('close-mic-config').onclick = () => $('mic-config-dialog').close();
+$('configure-primary-mic').onclick = openPrimaryMicConfig;
+$('scene-config-form').onsubmit = async event => {
+  event.preventDefault();
+  if (!requireRuntimeFeature('mobile-live-control-config')) return;
+  try {
+    const mode = $('scene-config-mode').value;
+    const next = await transport.updateLiveControl({ mode, scene: $('scene-config-select').value });
+    $('scene-config-dialog').close();
+    render(next);
+    note($('scene-config-select').value ? 'Scène associée.' : 'Association supprimée.');
+  } catch (error) { note(error.message); }
+};
+$('close-scene-config').onclick = () => $('scene-config-dialog').close();
 $('open-automations').onclick = () => openLiveTool('automations');
-$('return-v2').onclick = () => activateView('settings'); $('live-stream').onclick = () => $('stream').click();
-$('live-clip').onclick = () => void createQuickClip().catch(error => note(`Impossible de créer le clip. ${error.message}`)); $('quick-mic').onclick = () => void togglePrimaryMic().catch(error => note(error.message)); $('open-scenes-live').onclick = () => openLiveTool('scenes'); $('refresh-sounds').onclick = () => void loadSoundboard();
+$('live-stream').onclick = () => $('stream').click();
+$('live-clip').onclick = () => void createQuickClip().catch(error => note(`Impossible de créer le clip. ${error.message}`)); $('quick-mic').onclick = () => void handlePrimaryMic().catch(error => note(error.message)); $('open-scenes-live').onclick = () => openLiveTool('scenes'); $('refresh-sounds').onclick = () => void loadSoundboard();
 const savedTab = localStorage.getItem('streamdashboard.mobileTab'); selectTab(['home', 'live', 'sounds', 'planning', 'more', 'prepare', 'settings'].includes(savedTab) ? savedTab : 'home');
 
 
@@ -824,10 +1142,77 @@ function applyUxPreferences() {
 }
 function setFocusPreference(value) { uxPreferences.focus = value; applyUxPreferences(); }
 $('focus-mode').onchange = event => setFocusPreference(event.target.checked); $('reduce-motion').onchange = event => { uxPreferences.reducedMotion = event.target.checked; applyUxPreferences(); };
+function populateProfileAppearanceForm() {
+  if (!productProfile) return;
+  $('profile-display-name').value = productProfile.profile?.displayName || '';
+  $('profile-channel-name').value = productProfile.profile?.channelName || '';
+  $('appearance-theme-input').value = productProfile.appearance?.theme || appearanceDefaults.theme;
+  $('appearance-preset-input').value = productProfile.appearance?.preset || appearanceDefaults.preset;
+  $('appearance-accent-input').value = productProfile.appearance?.accent || appearanceDefaults.accent;
+  $('appearance-density-input').value = productProfile.appearance?.density || appearanceDefaults.density;
+  $('appearance-radius-input').value = productProfile.appearance?.radius || appearanceDefaults.radius;
+  $('appearance-text-scale-input').value = productProfile.appearance?.textScale || appearanceDefaults.textScale;
+}
+function previewProfileAppearance() {
+  uxPreferences = {
+    ...uxPreferences,
+    theme: $('appearance-theme-input').value,
+    preset: $('appearance-preset-input').value,
+    accent: $('appearance-accent-input').value,
+    density: $('appearance-density-input').value,
+    radius: $('appearance-radius-input').value,
+    textScale: $('appearance-text-scale-input').value,
+  };
+  applyUxPreferences();
+}
+for (const id of ['appearance-theme-input','appearance-preset-input','appearance-accent-input','appearance-density-input','appearance-radius-input','appearance-text-scale-input']) {
+  $(id).addEventListener('input', previewProfileAppearance);
+  $(id).addEventListener('change', previewProfileAppearance);
+}
+$('profile-appearance-form').onsubmit = async event => {
+  event.preventDefault();
+  if (companionMode !== CompanionMode.ONLINE_PC) { note('Connecte le téléphone au PC pour enregistrer le profil partagé.'); return; }
+  if (!requireRuntimeFeature('mobile-profile-presentation')) return;
+  if (!productProfile) { note('Le profil partagé n’a pas pu être chargé depuis le PC.'); return; }
+  try {
+    const value = {
+      profile: {
+        displayName: $('profile-display-name').value.trim() || 'Streamer',
+        channelName: $('profile-channel-name').value.trim(),
+        language: productProfile.profile?.language || 'fr',
+      },
+      appearance: {
+        theme: $('appearance-theme-input').value,
+        preset: $('appearance-preset-input').value,
+        accent: $('appearance-accent-input').value,
+        density: $('appearance-density-input').value,
+        radius: $('appearance-radius-input').value,
+        textScale: $('appearance-text-scale-input').value,
+      },
+    };
+    const result = await transport.updateProfilePresentation(value);
+    productProfile = result.profile;
+    uxPreferences = { ...uxPreferences, ...productProfile.appearance };
+    applyUxPreferences();
+    populateProfileAppearanceForm();
+    applyModuleProjection(productProfile.modules || {});
+    note('Profil et apparence enregistrés.');
+  } catch (error) { note(error.message); }
+};
 async function loadProductProfile() {
-  const [result, connections] = await Promise.all([transport.profile(), transport.connections()]); productProfile = result.profile; connectionProjection = connections.items || []; lastProfileSyncAt = Date.now();
-  uxPreferences = { ...uxPreferences, ...productProfile.appearance }; applyUxPreferences();
-  applyModuleProjection(productProfile.modules || {});
+  const [result, connections] = await Promise.all([
+    transport.profile().catch(() => null),
+    transport.connections().catch(() => ({ items: [] })),
+  ]);
+  if (result?.profile) {
+    productProfile = result.profile;
+    uxPreferences = { ...uxPreferences, ...productProfile.appearance }; applyUxPreferences();
+    populateProfileAppearanceForm();
+    applyModuleProjection(productProfile.modules || {});
+  }
+  connectionProjection = connections.items || [];
+  lastProfileSyncAt = Date.now();
+  renderManagedConnections(state?.controlHub);
 }
 function applyModuleProjection(enabled) {
   document.querySelectorAll('[data-module]').forEach(node => { const unavailable = !node.dataset.module.split(',').some(id => enabled[id] !== false); node.dataset.moduleUnavailable = String(unavailable); if (node.matches('[data-live-panel]')) { if (unavailable) node.hidden = true; } else node.hidden = unavailable; });
@@ -891,6 +1276,8 @@ $('slot-form').onsubmit = async event => {
   event.preventDefault(); const form = new FormData(event.currentTarget);
   const date = form.get('date'); const startAtUtc = new Date(`${date}T${form.get('start')}`).toISOString(); const endAtUtc = new Date(`${date}T${form.get('end')}`).toISOString();
   try {
+    if (form.get('twitch') === 'on') await ensureTwitchCapabilities();
+    if (form.get('twitch') === 'on' && moderationCapabilities?.schedule === false) throw new Error(`Reconnecte Twitch pour accorder ${moderationCapabilities.requiredScopes?.schedule || 'channel:manage:schedule'}.`);
     if (form.get('twitch') === 'on' && !$('slot-twitch-game-id').value) throw new Error('Sélectionnez une catégorie Twitch officielle.');
     const recurrenceValue = String(form.get('recurrence') || ''); const [frequency, interval] = recurrenceValue.split('-'); const untilDate = String(form.get('recurrenceUntil') || '');
     const recurrence = recurrenceValue ? { frequency, interval: Number(interval), timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone || 'Europe/Paris', until: untilDate ? new Date(`${untilDate}T23:59:59`).toISOString() : null, exceptions: {} } : undefined;
@@ -901,7 +1288,13 @@ $('slot-form').onsubmit = async event => {
       if (companionMode === CompanionMode.ONLINE_PC) render(await transport.updateOccurrence(mobileEditing.item.seriesId, mobileEditing.item.occurrenceKey, patch));
       else { const canonical = companion.snapshot().planning.find(item => item.id === mobileEditing.item.seriesId); const nextRecurrence = structuredClone(canonical.recurrence); nextRecurrence.exceptions ||= {}; nextRecurrence.exceptions[mobileEditing.item.occurrenceKey] = { patch }; companion.updateEvent(canonical.id, { recurrence: nextRecurrence }, canonical.revision); render(offlineState()); }
     } else if (mobileEditing?.scope === 'series') {
-      const seriesId = mobileEditing.item.seriesId; if (companionMode === CompanionMode.ONLINE_PC) render(await transport.updatePlanning(seriesId, value)); else { const canonical = companion.snapshot().planning.find(item => item.id === seriesId); companion.updateEvent(seriesId, value, canonical.revision); render(offlineState()); }
+      const seriesId = mobileEditing.item.seriesId || mobileEditing.item.id;
+      if (companionMode === CompanionMode.ONLINE_PC) render(await transport.updatePlanning(seriesId, value));
+      else { const canonical = companion.snapshot().planning.find(item => item.id === seriesId); companion.updateEvent(seriesId, value, canonical.revision); render(offlineState()); }
+    } else if (mobileEditing?.scope === 'event') {
+      const id = mobileEditing.item.id;
+      if (companionMode === CompanionMode.ONLINE_PC) render(await transport.updatePlanning(id, value));
+      else { const canonical = companion.snapshot().planning.find(item => item.id === id); companion.updateEvent(id, value, canonical.revision); render(offlineState()); }
     } else if (companionMode === CompanionMode.ONLINE_PC) { const next = await transport.createPlanning(value); companion.replaceServerSnapshot(next); render(next); }
     else { const created=companion.createEvent(value).item; render(offlineState()); if(companionMode===CompanionMode.ONLINE_STANDALONE) void syncEventProviders(created,'create'); }
     mobileEditing = null; event.currentTarget.elements.recurrence.disabled = false; event.currentTarget.elements.recurrenceUntil.disabled = false; $('slot-dialog').close(); event.currentTarget.reset(); note(companionMode === CompanionMode.ONLINE_PC ? 'Planning enregistré.' : 'Créneau enregistré · À synchroniser.');
@@ -921,6 +1314,8 @@ function attachCategoryPicker(inputId, gameIdId, resultsId) {
 attachCategoryPicker('twitch-category','twitch-game-id','twitch-results');
 attachCategoryPicker('slot-twitch-category','slot-twitch-game-id','slot-twitch-results');
 $('save-twitch').onclick = async () => {
+  await ensureTwitchCapabilities();
+  if (moderationCapabilities?.updateChannel === false) { note(`Reconnecte Twitch pour accorder ${moderationCapabilities.requiredScopes?.updateChannel || 'channel:manage:broadcast'}.`); return; }
   try {
     const next = await transport.updateTwitch({ title: $('twitch-title').value, gameId: $('twitch-game-id').value, gameName: $('twitch-category').value });
     render(next); note('Informations Twitch enregistrées.');
@@ -944,9 +1339,9 @@ document.addEventListener('click', event => {
     if (button.dataset.seconds) value.seconds = Number(button.dataset.seconds);
     void command(value);
   } else if (button.dataset.mode) {
-    void command({ type: 'mode.set', mode: button.dataset.mode });
+    void handleModeAction(button.dataset.mode);
   } else if (button.hasAttribute('data-chatting')) {
-    void command({ type: 'scene.chatting' });
+    void handleModeAction('chatting');
   } else if (button.dataset.media) {
     void command({ type: 'obs.media.restart', input: button.dataset.media });
   } else if (button.dataset.mute && state?.obs.inputs?.[button.dataset.mute]) {
@@ -992,11 +1387,11 @@ function openLiveTool(tool) {
   if (tool === 'vod') { void loadVods(); void loadClips(); }
   if (tool === 'automations') void loadSoundboard().then(loadAutomations);
   if (tool === 'supports') void loadSupports();
-  if (tool === 'audience') { void loadMoreChatters(true); void loadModerationCapabilities(); }
+  if (tool === 'audience') { void ensureTwitchCapabilities().then(() => loadMoreChatters(true)); }
 }
 $('close-live-tool').onclick = () => $('live-tools-sheet').close();
 $('live-tools-sheet').onclick = event => { if (event.target === $('live-tools-sheet')) $('live-tools-sheet').close(); };
-$('live-tools-sheet').querySelectorAll('[data-mode],[data-chatting]').forEach(button => button.addEventListener('click', () => $('live-tools-sheet').close()));
+$('live-tools-sheet').querySelectorAll('[data-mode],[data-chatting]').forEach(button => button.addEventListener('click', () => { const mode = button.dataset.mode || 'chatting'; const scene = configuredScene(mode); if (scene && (state?.obs?.scenes || []).includes(scene) && $('live-tools-sheet').open) $('live-tools-sheet').close(); }));
 $('audience-search').oninput = () => renderAudience(state?.controlHub?.audience);
 $('more-chatters').onclick = () => void loadMoreChatters();
 $('sound-search').oninput = renderSoundboard; $('sound-category').onchange = renderSoundboard; $('sound-favorites').onchange = renderSoundboard;
@@ -1004,7 +1399,7 @@ $('sound-volume').oninput = event => {
   soundboardMasterVolume = Math.max(0, Math.min(1, Number(event.target.value) / 100));
   localStorage.setItem(soundboardVolumeKey, String(soundboardMasterVolume));
   clearTimeout(soundboardVolumeTimer);
-  if (companionMode !== CompanionMode.ONLINE_PC || soundboardState?.supportsVolume !== true || !soundboardState?.currentPlayback) return;
+  if (companionMode !== CompanionMode.ONLINE_PC || soundboardState?.supportsVolume !== true || !soundboardState?.currentPlayback || !runtimeSupports('soundboard-live-volume')) return;
   const current = soundboardState.sounds?.find(sound => sound.id === soundboardState.currentPlayback.soundId);
   const effectiveVolume = Math.max(0, Math.min(1, (current?.volume ?? 1) * soundboardMasterVolume));
   soundboardVolumeTimer = setTimeout(async () => {
@@ -1029,8 +1424,8 @@ $('diagnostics').ontoggle = () => { if ($('diagnostics').open) void loadDiagnost
 $('refresh-vods').onclick = () => void loadVods();
 $('more-vods').onclick = () => void loadVods(true);
 $('more-clips').onclick = () => void loadClips(true);
-$('create-clip').onclick = async () => { if (companionMode !== CompanionMode.ONLINE_PC) { note('PC hors ligne.'); return; } try { const clip = await transport.createTwitchClip(); note(`Clip accepté par Twitch (${clip.id}). Il sera disponible après traitement.`); await loadClips(); } catch (error) { note(error.message); } };
-$('chat-form').onsubmit = async event => { event.preventDefault(); const message = $('chat-message').value.trim(); if (!message) return; if (companionMode !== CompanionMode.ONLINE_PC) { note('PC hors ligne. Le message n’a pas été envoyé.'); return; } try { const replyParentMessageId = $('chat-reply-context').dataset.messageId; await transport.sendTwitchChat({ message, ...(replyParentMessageId ? { replyParentMessageId } : {}) }); $('chat-message').value = ''; $('chat-reply-context').hidden = true; delete $('chat-reply-context').dataset.messageId; note('Message confirmé par Twitch.'); } catch (error) { note(error.message); } };
+$('create-clip').onclick = async () => { if (companionMode !== CompanionMode.ONLINE_PC) { note('PC hors ligne.'); return; } await ensureTwitchCapabilities(); if (moderationCapabilities?.createClip === false) { note(`Reconnecte Twitch pour accorder ${moderationCapabilities.requiredScopes?.createClip || 'clips:edit'}.`); return; } try { const clip = await transport.createTwitchClip(); note(`Clip accepté par Twitch (${clip.id}). Il sera disponible après traitement.`); await loadClips(); } catch (error) { note(error.message); } };
+$('chat-form').onsubmit = async event => { event.preventDefault(); const message = $('chat-message').value.trim(); if (!message) return; if (companionMode !== CompanionMode.ONLINE_PC) { note('PC hors ligne. Le message n’a pas été envoyé.'); return; } await ensureTwitchCapabilities(); if (moderationCapabilities?.chatWrite === false) { note(`Reconnecte Twitch pour accorder ${moderationCapabilities.requiredScopes?.chatWrite || 'user:write:chat'}.`); return; } try { const replyParentMessageId = $('chat-reply-context').dataset.messageId; await transport.sendTwitchChat({ message, ...(replyParentMessageId ? { replyParentMessageId } : {}) }); $('chat-message').value = ''; $('chat-reply-context').hidden = true; delete $('chat-reply-context').dataset.messageId; note('Message confirmé par Twitch.'); } catch (error) { note(error.message); } };
 $('unban-user').onclick = async () => { const userId = $('unban-user-id').value.trim(); if (!moderationCapabilities?.unban) { note(`NOT_AUTHORIZED · ${moderationCapabilities?.requiredScopes?.unban || 'scope Twitch requis'}`); return; } try { await transport.unbanTwitchUser(userId); $('unban-user-id').value = ''; note('UNBAN confirmé par Twitch.'); } catch (error) { note(error.message); } };
 
 if ('serviceWorker' in navigator && window.isSecureContext) {
@@ -1083,8 +1478,19 @@ async function refreshProviderAccounts() {
   $('provider-accounts').hidden = false;
   const adapter = createNativeProviderAdapter();
   for (const provider of ['twitch','google']) {
-    try { const status=await adapter.status(provider); $(`${provider}-standalone-status`).textContent=status.configured?(status.connected?'Connecté':'Déconnecté'):'Non configuré'; $(`${provider}-standalone-auth`).disabled=!status.configured; $(`${provider}-standalone-logout`).hidden=!status.connected; }
-    catch { $(`${provider}-standalone-status`).textContent='Indisponible'; }
+    try {
+      const status = await adapter.status(provider);
+      const auth = $(`${provider}-standalone-auth`);
+      const logout = $(`${provider}-standalone-logout`);
+      $(`${provider}-standalone-status`).textContent = status.configured ? (status.connected ? 'Connecté' : 'Déconnecté') : 'Indisponible dans cette version';
+      auth.hidden = !status.configured;
+      auth.disabled = !status.configured;
+      logout.hidden = !status.connected;
+    } catch {
+      $(`${provider}-standalone-status`).textContent = 'Indisponible';
+      $(`${provider}-standalone-auth`).hidden = true;
+      $(`${provider}-standalone-logout`).hidden = true;
+    }
   }
 }
 for (const provider of ['twitch','google']) {

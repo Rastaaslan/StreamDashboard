@@ -8,6 +8,7 @@ import android.Manifest;
 import android.content.Intent;
 import android.content.pm.PackageManager;
 import android.content.ClipData;
+import android.content.ClipboardManager;
 import android.graphics.Color;
 import android.net.Uri;
 import android.os.Bundle;
@@ -49,6 +50,13 @@ public class MainActivity extends Activity {
   // still reach the authenticated cleartext LAN Runtime without mixed-content exceptions.
   private static final String ORIGIN = "http://" + APP_HOST;
   private static final String PING_CHANNEL_ID = "streamer-pings";
+  private static boolean isAllowedExternalUri(Uri uri) {
+    if (uri == null || !"https".equalsIgnoreCase(uri.getScheme())) return false;
+    String host = uri.getHost();
+    if (host == null) return false;
+    host = host.toLowerCase(java.util.Locale.ROOT);
+    return host.equals("twitch.tv") || host.endsWith(".twitch.tv");
+  }
   private static final int NOTIFICATION_PERMISSION_REQUEST = 7001;
   private WebView webView;
   private ProviderBridge providerBridge;
@@ -181,7 +189,12 @@ public class MainActivity extends Activity {
 
     @Override public boolean shouldOverrideUrlLoading(WebView view, WebResourceRequest request) {
       Uri uri = request.getUrl();
-      return !("http".equals(uri.getScheme()) && APP_HOST.equals(uri.getHost()) && uri.getPath() != null && uri.getPath().startsWith("/mobile/"));
+      boolean local = "http".equals(uri.getScheme()) && APP_HOST.equals(uri.getHost()) && uri.getPath() != null && uri.getPath().startsWith("/mobile/");
+      if (local) return false;
+      if (isAllowedExternalUri(uri)) {
+        try { startActivity(new Intent(Intent.ACTION_VIEW, uri)); } catch (Exception ignored) { }
+      }
+      return true;
     }
   }
 
@@ -212,6 +225,23 @@ public class MainActivity extends Activity {
     @JavascriptInterface public void haptic(String strength) {
       Vibrator vibrator = (Vibrator)getSystemService(VIBRATOR_SERVICE);
       if (vibrator != null) vibrator.vibrate(VibrationEffect.createOneShot("strong".equals(strength) ? 45 : 18, VibrationEffect.DEFAULT_AMPLITUDE));
+    }
+    @JavascriptInterface public void openExternal(String value) {
+      try {
+        Uri uri = Uri.parse(value);
+        if (!isAllowedExternalUri(uri)) return;
+        runOnUiThread(() -> {
+          try { startActivity(new Intent(Intent.ACTION_VIEW, uri)); }
+          catch (Exception ignored) { }
+        });
+      } catch (Exception ignored) { }
+    }
+    @JavascriptInterface public void copyText(String label, String value) {
+      if (value == null || value.length() > 500) return;
+      runOnUiThread(() -> {
+        ClipboardManager clipboard = (ClipboardManager)getSystemService(CLIPBOARD_SERVICE);
+        if (clipboard != null) clipboard.setPrimaryClip(ClipData.newPlainText(label == null ? "StreamDashboard" : label, value));
+      });
     }
     @JavascriptInterface public void notifyStreamerPing(String id, String title, String message) {
       if (BuildConfig.PREVIEW_MODE) return;

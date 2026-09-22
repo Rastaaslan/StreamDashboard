@@ -15,22 +15,30 @@ describe('Twitch Live Control', () => {
 
   it('pagine et mappe VOD, clips et chatters via Helix', async () => {
     const responses = [
+      { client_id: 'client', user_id: '42', login: 'streamer', scopes: ['channel:manage:schedule', 'moderator:read:chatters'] },
       { data: [{ id: '1', title: 'VOD', description: '', created_at: '2026-09-17T10:00:00Z', published_at: '2026-09-17T10:00:00Z', url: 'https://twitch.tv/videos/1', thumbnail_url: 'https://cdn/vod.jpg', view_count: 12, duration: '1h2m', type: 'archive' }], pagination: { cursor: 'next' } },
       { data: [{ id: 'clip', title: 'GG', url: 'https://clips.twitch.tv/clip', embed_url: 'https://clips.twitch.tv/embed?clip=clip', broadcaster_name: 'Streamer', creator_name: 'User', created_at: '2026-09-17T10:00:00Z', thumbnail_url: 'https://cdn/clip.jpg', duration: 30, video_id: '1', vod_offset: 42, view_count: 9 }], pagination: {} },
       { data: [{ user_id: '2', user_login: 'user', user_name: 'User' }], total: 1, pagination: {} },
     ];
     vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify(responses.shift()))));
     const client = new TwitchClient(credentials);
+    expect(await client.validateSession()).toBe(true);
     expect(await client.videos()).toMatchObject({ items: [{ id: '1', type: 'archive' }], cursor: 'next' });
     expect(await client.clips()).toMatchObject({ items: [{ id: 'clip', videoId: '1', vodOffset: 42 }] });
     expect(await client.chatters()).toMatchObject({ items: [{ id: '2', displayName: 'User' }], total: 1 });
   });
 
   it('envoie un message et ne prétend pas réussir lorsque Twitch le refuse', async () => {
-    const fetch = vi.fn(async (_input: string | URL | Request, _init?: RequestInit) => new Response(JSON.stringify({ data: [{ message_id: 'm1', is_sent: true }] })));
+    const responses = [
+      new Response(JSON.stringify({ client_id: 'client', user_id: '42', login: 'streamer', scopes: ['channel:manage:schedule', 'user:write:chat'] })),
+      new Response(JSON.stringify({ data: [{ message_id: 'm1', is_sent: true }] })),
+    ];
+    const fetch = vi.fn(async (_input: string | URL | Request, _init?: RequestInit) => responses.shift()!);
     vi.stubGlobal('fetch', fetch);
-    await expect(new TwitchClient(credentials).sendChatMessage('Bonjour')).resolves.toEqual({ messageId: 'm1' });
-    expect(JSON.parse(String(fetch.mock.calls[0]?.[1]?.body))).toMatchObject({ broadcaster_id: '42', sender_id: '42', message: 'Bonjour' });
+    const client = new TwitchClient(credentials);
+    expect(await client.validateSession()).toBe(true);
+    await expect(client.sendChatMessage('Bonjour')).resolves.toEqual({ messageId: 'm1' });
+    expect(JSON.parse(String(fetch.mock.calls[1]?.[1]?.body))).toMatchObject({ broadcaster_id: '42', sender_id: '42', message: 'Bonjour' });
   });
 
   it('parse badges, fragments, emotes, reply et bits EventSub', () => {
