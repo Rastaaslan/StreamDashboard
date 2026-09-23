@@ -21,7 +21,7 @@ const state={
   sounds:structuredClone(fixture.sounds),audio:structuredClone(fixture.audio),live:structuredClone(fixture.live),
   planning:structuredClone(fixture.planning),dashboard:null,soundboard:null,obsSetup:null,search:'',soundCategory:'',soundFavorites:false,
   soundMasterVolume:Math.max(0,Math.min(1,Number(localStorage.getItem('streamdashboard.desktopSoundboardVolume')??1)||1)),
-  productProfile:structuredClone(demoProductProfile),moduleStates:structuredClone(demoModuleStates),connections:[],
+  productProfile:structuredClone(demoProductProfile),moduleStates:structuredClone(demoModuleStates),connections:[],twitchCapabilities:null,
   campItem:'Préparation',remotePairing:null,twitchRewards:null,companion:null,supports:null,automations:null,automationCapabilities:null,streamlabsOAuth:null,
   diagnostics:null,pingHistory:null,planningFilter:'upcoming',planningPeriod:'this-week',eventEdit:null,
   automationEditor:{id:'',name:'',trigger:'support.received',conditions:[],actions:[{type:'soundboard.play',payload:{}}],cooldownMs:30000,enabled:true},templateEditor:null
@@ -70,12 +70,19 @@ async function request(path,options={}){const response=await fetch(path,{headers
 function record(type,payload={}){commandLog.push({type,payload})}
 let runtimeSocket=null,socketRetry=null;
 const editableFocus=()=>document.activeElement?.matches?.('input,select,textarea');
+const twitchCapability=name=>state.runtime?state.twitchCapabilities?.[name]===true:true;
+const twitchScope=name=>state.twitchCapabilities?.requiredScopes?.[name]||'autorisation Twitch';
+async function loadTwitchCapabilities(){
+  if(!state.runtime||state.dashboard?.twitch?.connected!==true){state.twitchCapabilities=null;return null}
+  try{state.twitchCapabilities=await request('/api/v1/twitch/moderation/capabilities');return state.twitchCapabilities}
+  catch{state.twitchCapabilities=null;return null}
+}
 function closeRuntimeSocket(){if(socketRetry){clearTimeout(socketRetry);socketRetry=null}const socket=runtimeSocket;runtimeSocket=null;if(socket&&socket.readyState<2)socket.close()}
 function connectRuntimeSocket(){
   if(!state.runtime||runtimeSocket&&runtimeSocket.readyState<2)return;
   const socket=new WebSocket(`${location.protocol==='https:'?'wss':'ws'}://${location.host}/ws/v1`);runtimeSocket=socket;
   socket.onopen=()=>runtimeUi(true,state.dashboard?.obs?.connected?'OBS connecté · temps réel':'Runtime connecté · temps réel');
-  socket.onmessage=event=>{try{const message=JSON.parse(event.data);if(message.type==='state.updated'&&message.data){applyDashboard(message.data);if(!editableFocus()){render();if(state.campItem==='Alertes viewers'&&state.twitchRewards===null&&state.dashboard?.twitch?.redemptionsAvailable===true)void loadStreamerPingRewards()}}}catch{/* événement invalide ignoré */}};
+  socket.onmessage=event=>{try{const message=JSON.parse(event.data);if(message.type==='state.updated'&&message.data){const wasConnected=state.dashboard?.twitch?.connected===true;applyDashboard(message.data);const connected=state.dashboard?.twitch?.connected===true;if(!connected)state.twitchCapabilities=null;else if(!wasConnected||!state.twitchCapabilities)void loadTwitchCapabilities().then(()=>{if(!editableFocus())render()});if(!editableFocus()){render();if(state.campItem==='Alertes viewers'&&state.twitchRewards===null&&state.dashboard?.twitch?.redemptionsAvailable===true)void loadStreamerPingRewards()}}}catch{/* événement invalide ignoré */}};
   socket.onclose=()=>{if(runtimeSocket===socket)runtimeSocket=null;if(!state.runtime)return;runtimeUi(true,'Runtime connecté · reconnexion temps réel…');socketRetry=setTimeout(connectRuntimeSocket,1500)};
   socket.onerror=()=>socket.close();
 }
@@ -110,8 +117,9 @@ async function refreshRuntime(){
     ]);
     applyProduct(product,connections);
     applyDashboard(dashboard);state.soundboard=soundboard;state.sounds=soundboard.sounds||[];state.obsSetup=setup;
+    await loadTwitchCapabilities();
     runtimeUi(true,dashboard.obs?.connected?'OBS connecté':'Runtime connecté · OBS hors ligne');connectRuntimeSocket();render();
-  }catch(error){runtimeUi(true,'Runtime indisponible');toast(error.message,true)}
+  }catch(error){runtimeUi(false,'Runtime indisponible');toast(error.message,true)}
 }
 function applyDashboard(d){
   state.dashboard=d;state.scene=d.obs?.scene||'—';state.timerRunning=d.timer?.running===true;state.seconds=Math.max(0,Math.ceil(Number(d.timer?.remaining)||0));
@@ -181,13 +189,18 @@ function liveQuickActions(){
   const labels={clip:'Créer un clip','timer+60':'+1 min','mute-main':'Micro principal'};
   return `<div class="live-quick-actions">${actions.map(action=>`<button class="secondary" data-profile-quick-action="${esc(action)}">${esc(labels[action]||action)}</button>`).join('')}</div>`;
 }
+function audienceRoleLabel(role){
+  return ({ broadcaster:'Streamer', moderator:'Modérateur', vip:'VIP', viewer:'Chatteur' })[role] || 'Chatteur';
+}
 function live(){
   const audience=state.dashboard?.controlHub?.audience||{},chat=state.dashboard?.controlHub?.chat||{};
+  const canChat=chat.connected&&twitchCapability('chatWrite'),canClip=state.live.active&&state.dashboard?.twitch?.connected===true&&twitchCapability('createClip');
+  const chatState=chat.connected?(canChat?'Connecté':'Lecture seule · reconnecte Twitch'):'Hors ligne';
   const twitchPanel=moduleEnabled('twitch')?`<aside class="section live-chat-panel">
-    <div class="section-head"><div><h2>Chat</h2><span class="label">${chat.connected?'Connecté':'Hors ligne'} · ${Number.isInteger(audience.viewerCount)?audience.viewerCount:'—'} viewers</span></div><button class="secondary compact-button" data-live-clip>Créer un clip</button></div>
+    <div class="section-head"><div><h2>Chat</h2><span class="label">${chatState} · ${Number.isInteger(audience.viewerCount)?audience.viewerCount:'—'} viewers</span></div><button class="secondary compact-button" data-live-clip ${canClip?'':'disabled'} title="${canClip?'':state.live.active?`Reconnecte Twitch pour accorder ${esc(twitchScope('createClip'))}`:'Le live doit être démarré pour créer un clip'}">Créer un clip</button></div>
     <div class="desktop-chat-list">${chatMessages()}</div>
-    <form id="desktop-chat-form" class="desktop-chat-compose"><input name="message" maxlength="500" placeholder="Écrire dans le chat…" autocomplete="off" ${chat.connected?'':'disabled'}><button class="action" ${chat.connected?'':'disabled'}>Envoyer</button></form>
-    <details class="audience-details"><summary>Audience · ${(audience.chatters||[]).length} présents</summary><div class="audience-list">${(audience.chatters||[]).slice(0,100).map(person=>`<span><b>${esc(person.displayName)}</b><small>${esc(person.role||'viewer')}</small></span>`).join('')||'<span class="help">Aucun chatter chargé.</span>'}</div></details>
+    <form id="desktop-chat-form" class="desktop-chat-compose"><input name="message" maxlength="500" placeholder="Écrire dans le chat…" autocomplete="off" ${canChat?'':'disabled'}><button class="action" ${canChat?'':'disabled'}>Envoyer</button></form>
+    <details class="audience-details"><summary>Participants du chat · ${(audience.chatters||[]).length}</summary><div class="audience-list">${(audience.chatters||[]).slice(0,100).map(person=>`<span><b>${esc(person.displayName)}</b><small>${esc(audienceRoleLabel(person.role))}</small></span>`).join('')||'<span class="help">Aucun participant au chat.</span>'}</div></details>
   </aside>`:'';
   return`<div class="live-desktop-grid">
     <div class="live-main stack">
@@ -245,7 +258,7 @@ function planning(){
       <div><h2>Planning</h2><span class="label">${state.planningFilter==='past'?'Historique':state.planningFilter==='all'?'Tous les événements':'Planning à venir'}</span></div>
       <button class="action" data-add-event>+ Nouvel événement</button>
     </div>
-    <div class="planning-primary-tools"><select data-planning-filter aria-label="Filtrer le planning"><option value="upcoming" ${state.planningFilter==='upcoming'?'selected':''}>À venir</option><option value="past" ${state.planningFilter==='past'?'selected':''}>Passés</option><option value="all" ${state.planningFilter==='all'?'selected':''}>Tous</option></select><details class="planning-more"><summary>Partager & exporter</summary><div><select data-planning-period aria-label="Période d’export"><option value="today" ${state.planningPeriod==='today'?'selected':''}>Aujourd’hui</option><option value="this-week" ${state.planningPeriod==='this-week'?'selected':''}>Cette semaine</option><option value="next-week" ${state.planningPeriod==='next-week'?'selected':''}>Semaine prochaine</option></select><button class="secondary" data-planning-export>Exporter l’image</button>${moduleEnabled('discord')?`<button class="secondary" data-planning-discord ${state.dashboard?.discord?.configured?'':'disabled'}>Publier sur Discord</button>`:''}</div></details></div>
+    <div class="planning-primary-tools"><select data-planning-filter aria-label="Filtrer le planning"><option value="upcoming" ${state.planningFilter==='upcoming'?'selected':''}>À venir</option><option value="past" ${state.planningFilter==='past'?'selected':''}>Passés</option><option value="all" ${state.planningFilter==='all'?'selected':''}>Tous</option></select><details class="planning-more"><summary>Partager & exporter</summary><div><select data-planning-period aria-label="Période d’export"><option value="today" ${state.planningPeriod==='today'?'selected':''}>Aujourd’hui</option><option value="this-week" ${state.planningPeriod==='this-week'?'selected':''}>Cette semaine</option><option value="next-week" ${state.planningPeriod==='next-week'?'selected':''}>Semaine prochaine</option></select><button class="secondary" data-planning-export>Exporter l’image</button>${moduleEnabled('discord')?`<button class="secondary" data-planning-discord ${state.dashboard?.discord?.connected?'':'disabled'} title="${state.dashboard?.discord?.connected?'':'Discord doit être connecté.'}">Publier sur Discord</button>`:''}</div></details></div>
     <div class="agenda">${items.slice(0,40).map((e,index)=>`<button class="event" data-event-index="${index}"><span class="event-when"><b>${esc(e.day)}</b><small>${esc(e.time)}</small></span><strong>${esc(e.title)}</strong><span class="kind">${esc([e.kind,providerCopy(e.raw)].filter(Boolean).join(' · '))}</span><i>›</i></button>`).join('')||'<p class="label">Aucun événement pour ce filtre.</p>'}</div>
   </section>`;
 }
@@ -276,7 +289,7 @@ function connectionsContent(){
   const deviceCode=twitch.deviceAuthorization? `<div class="device-code"><span class="label">Code Twitch</span><b>${esc(twitch.deviceAuthorization.userCode)}</b></div>`:'';
   const calendars=Array.isArray(google.calendars)?google.calendars:[];const target=google.targetCalendarId||'';
   const googleControls=!google.configured?'<p class="help">Google Calendar n’est pas configuré dans cette distribution.</p>':google.connected?
-    `<div class="toolbar"><select id="preview-google-calendar"${runtimeDisabled()}><option value="">Choisir le calendrier…</option>${calendars.map(item=>`<option value="${esc(item.id)}" ${target===item.id?'selected':''} ${item.writable?'':'disabled'}>${esc(item.summary)}${item.writable?'':' · lecture seule'}</option>`).join('')}</select><button class="secondary" data-connection-action="google-sync"${runtimeDisabled()}>Synchroniser</button><button class="critical" data-connection-action="google-disconnect"${runtimeDisabled()}>Déconnecter</button></div>`:
+    `<div class="toolbar"><select id="preview-google-calendar"${runtimeDisabled()}><option value="">Choisir le calendrier…</option>${calendars.map(item=>`<option value="${esc(item.id)}" ${target===item.id?'selected':''} ${item.writable?'':'disabled'}>${esc(item.summary)}${item.writable?'':' · lecture seule'}</option>`).join('')}</select><button class="secondary" data-connection-action="google-sync" ${target?'':'disabled'} title="${target?'':'Choisis d’abord un calendrier Google cible.'}"${runtimeDisabled()}>Synchroniser</button><button class="critical" data-connection-action="google-disconnect"${runtimeDisabled()}>Déconnecter</button></div>`:
     `<button class="action" data-connection-action="google-connect"${runtimeDisabled()}>Connecter Google Calendar</button>`;
   const devices=Array.isArray(remote.devices)?remote.devices.filter(item=>!item.revokedAt):[];
   const pairing=state.remotePairing?`<div class="device-code"><span class="label">ID de pairing</span><b>${esc(state.remotePairing.id)}</b><span class="label">Code</span><b>${esc(state.remotePairing.code)}</b></div>`:'';
@@ -372,7 +385,7 @@ function supportsContent(){
   if(!values)return '<p class="help">Chargement des soutiens…</p>';
   const totals=values.totals||{};
   const totalBlock=key=>Object.entries(totals[key]||{}).map(([currency,amount])=>euro(amount,currency)).join(' · ')||'—';
-  return `<div class="connection-stack"><div class="support-summary"><article class="setup-status"><span class="label">Session</span><b>${esc(totalBlock('session'))}</b></article><article class="setup-status"><span class="label">Aujourd’hui</span><b>${esc(totalBlock('day'))}</b></article><article class="setup-status"><span class="label">Ce mois</span><b>${esc(totalBlock('month'))}</b></article></div><div class="connection-actions"><button class="secondary" data-camp-action="supports-refresh">Rafraîchir</button><button class="secondary" data-camp-action="supports-test">Test interne 1 €</button><button class="action" data-camp-action="supports-test-real">Test réel Streamlabs 1 €</button></div><div class="camp-list">${(values.history||[]).slice().reverse().slice(0,50).map(support=>`<div class="camp-row"><span><b>${esc(support.displayName||'Anonyme')}</b><small>${esc(support.message||'')}</small></span><strong>${esc(euro(support.amountMinor,support.currency))}</strong></div>`).join('')||'<p class="help">Aucun soutien enregistré.</p>'}</div></div>`;
+  return `<div class="connection-stack"><div class="support-summary"><article class="setup-status"><span class="label">Session</span><b>${esc(totalBlock('session'))}</b></article><article class="setup-status"><span class="label">Aujourd’hui</span><b>${esc(totalBlock('day'))}</b></article><article class="setup-status"><span class="label">Ce mois</span><b>${esc(totalBlock('month'))}</b></article></div><div class="connection-actions"><button class="secondary" data-camp-action="supports-refresh">Rafraîchir</button><button class="secondary" data-camp-action="supports-test">Test interne 1 €</button><button class="action" data-camp-action="supports-test-real" ${values.provider?.status==='CONNECTED'?'':'disabled'} title="${values.provider?.status==='CONNECTED'?'':'Connecte Streamlabs avant le test réel.'}">Test réel Streamlabs 1 €</button></div><div class="camp-list">${(values.history||[]).slice().reverse().slice(0,50).map(support=>`<div class="camp-row"><span><b>${esc(support.displayName||'Anonyme')}</b><small>${esc(support.message||'')}</small></span><strong>${esc(euro(support.amountMinor,support.currency))}</strong></div>`).join('')||'<p class="help">Aucun soutien enregistré.</p>'}</div></div>`;
 }
 function conditionRow(condition={},index=0){
   return `<div class="automation-row-fields" data-condition-row="${index}"><input data-condition-path value="${esc(condition.path||'')}" placeholder="Chemin, ex. reward.id"><select data-condition-operator><option value="eq" ${condition.operator==='eq'?'selected':''}>=</option><option value="gte" ${condition.operator==='gte'?'selected':''}>≥</option></select><input data-condition-value value="${esc(condition.value??'')}" placeholder="Valeur"><button type="button" class="critical" data-condition-remove="${index}">×</button></div>`;
@@ -407,8 +420,9 @@ function diagnosticsContent(){
 }
 function twitchLiveSettingsContent(){
   if(!moduleEnabled('twitch'))return'';
-  const twitch=state.dashboard?.twitch||{};
-  return `<details class="section live-twitch-settings"><summary><span><b>Informations Twitch</b><small>${twitch.connected?'Connecté':'Déconnecté'} · titre et catégorie</small></span><i>›</i></summary><form id="live-twitch-settings"><label class="label">Titre<input name="title" maxlength="140" value="${esc(twitch.channelTitle||'')}" ${twitch.connected?'':'disabled'}></label><div class="toolbar"><input id="live-twitch-category" name="gameName" maxlength="80" value="${esc(twitch.gameName||'')}" placeholder="Catégorie Twitch" ${twitch.connected?'':'disabled'}><input id="live-twitch-game-id" name="gameId" type="hidden" value="${esc(twitch.gameId||'')}"><button type="button" class="secondary" data-live-twitch-category-search ${twitch.connected?'':'disabled'}>Rechercher</button></div><select id="live-twitch-category-results" hidden></select><button class="action" ${twitch.connected?'':'disabled'}>Mettre à jour Twitch</button></form></details>`;
+  const twitch=state.dashboard?.twitch||{},canUpdate=twitch.connected&&twitchCapability('updateChannel');
+  const status=!twitch.connected?'Déconnecté':canUpdate?'Connecté':'Reconnecte Twitch · autorisation titre/catégorie manquante';
+  return `<details class="section live-twitch-settings"><summary><span><b>Informations Twitch</b><small>${status}</small></span><i>›</i></summary><form id="live-twitch-settings"><label class="label">Titre<input name="title" maxlength="140" value="${esc(twitch.channelTitle||'')}" ${canUpdate?'':'disabled'}></label><div class="toolbar"><input id="live-twitch-category" name="gameName" maxlength="80" value="${esc(twitch.gameName||'')}" placeholder="Catégorie Twitch" ${canUpdate?'':'disabled'}><input id="live-twitch-game-id" name="gameId" type="hidden" value="${esc(twitch.gameId||'')}"><button type="button" class="secondary" data-live-twitch-category-search ${canUpdate?'':'disabled'}>Rechercher</button></div><select id="live-twitch-category-results" hidden></select><button class="action" ${canUpdate?'':'disabled'}>Mettre à jour Twitch</button></form></details>`;
 }
 function generalSettingsContent(){
   const settings=state.dashboard?.settings||{},obs=state.dashboard?.obs||{};
@@ -686,7 +700,7 @@ function bindPlanning(){
 function bindLiveTwitchSettings(){
   if(state.view!=='live'||!moduleEnabled('twitch'))return;
   document.querySelector('[data-live-twitch-category-search]')?.addEventListener('click',()=>void searchCategory('#live-twitch-category','#live-twitch-game-id','#live-twitch-category-results').catch(error=>toast(error.message,true)));
-  document.querySelector('#live-twitch-settings')?.addEventListener('submit',async event=>{event.preventDefault();const form=new FormData(event.currentTarget);try{const next=await request('/api/v1/twitch/channel',{method:'POST',body:JSON.stringify({title:String(form.get('title')||'').trim(),gameId:String(form.get('gameId')||''),gameName:String(form.get('gameName')||'').trim()})});applyDashboard(next);render();toast('Informations Twitch mises à jour')}catch(error){toast(error.message,true)}});
+  document.querySelector('#live-twitch-settings')?.addEventListener('submit',async event=>{event.preventDefault();if(!twitchCapability('updateChannel'))return toast(`Reconnecte Twitch pour accorder ${twitchScope('updateChannel')}.`,true);const form=new FormData(event.currentTarget);try{const next=await request('/api/v1/twitch/channel',{method:'POST',body:JSON.stringify({title:String(form.get('title')||'').trim(),gameId:String(form.get('gameId')||''),gameName:String(form.get('gameName')||'').trim()})});applyDashboard(next);render();toast('Informations Twitch mises à jour')}catch(error){toast(error.message,true)}});
 }
 function bind(){
   document.querySelectorAll('[data-scene]').forEach(b=>b.onclick=async()=>{const label=b.dataset.scene,entry=sceneEntries().find(value=>value.label===label),target=entry?.scene||label,command=entry?.custom?{type:'obs.scene',scene:entry.scene}:sceneCommand(label);record('obs.scene.set',{sceneName:target});if(!state.runtime){state.scene=target;toast(`Scène ${label}`);render();return}try{await dashboardCommand(command);await refreshRuntime();toast(`Scène ${label}`)}catch(error){toast(error.message,true)}});
@@ -705,14 +719,14 @@ function bind(){
   document.querySelector('[data-open-personalization]')?.addEventListener('click',()=>{state.view='camp';state.campItem='Personnalisation';render()});
   document.querySelectorAll('[data-go-view]').forEach(button=>button.addEventListener('click',()=>{state.view=button.dataset.goView;render()}));
   document.querySelectorAll('[data-open-camp]').forEach(button=>button.addEventListener('click',()=>{state.view='camp';state.campItem=button.dataset.openCamp;render();void loadCampData(state.campItem)}));
-  document.querySelector('[data-live-clip]')?.addEventListener('click',async()=>{if(!state.runtime)return toast('Clip simulé');try{await request('/api/v1/twitch/clips',{method:'POST',body:'{}'});toast('Clip Twitch demandé')}catch(error){toast(error.message,true)}});
+  document.querySelector('[data-live-clip]')?.addEventListener('click',async()=>{if(!state.runtime)return toast('Clip simulé');if(!state.live.active)return toast('Le live doit être démarré pour créer un clip.',true);if(!twitchCapability('createClip'))return toast(`Reconnecte Twitch pour accorder ${twitchScope('createClip')}.`,true);try{await request('/api/v1/twitch/clips',{method:'POST',body:'{}'});toast('Clip Twitch demandé')}catch(error){toast(error.message,true)}});
   document.querySelectorAll('[data-profile-quick-action]').forEach(button=>button.addEventListener('click',async()=>{
     const action=button.dataset.profileQuickAction;
-    if(action==='clip'){if(!state.runtime)return toast('Clip simulé');try{await request('/api/v1/twitch/clips',{method:'POST',body:'{}'});toast('Clip Twitch demandé')}catch(error){toast(error.message,true)};return}
+    if(action==='clip'){if(!state.runtime)return toast('Clip simulé');if(!twitchCapability('createClip'))return toast(`Reconnecte Twitch pour accorder ${twitchScope('createClip')}.`,true);try{await request('/api/v1/twitch/clips',{method:'POST',body:'{}'});toast('Clip Twitch demandé')}catch(error){toast(error.message,true)};return}
     if(action==='timer+60'){if(!state.runtime){state.seconds+=60;render();return}try{await dashboardCommand({type:'timer.add',seconds:60});await refreshRuntime()}catch(error){toast(error.message,true)};return}
     if(action==='mute-main'){const input=state.audio.find(value=>value.primary)||state.audio[0];if(!input)return toast('Aucun micro principal actif.',true);if(!state.runtime){input.muted=!input.muted;render();return}try{await dashboardCommand({type:'obs.mute',input:input.name,muted:!input.muted});await refreshRuntime()}catch(error){toast(error.message,true)}}
   }));
-  document.querySelector('#desktop-chat-form')?.addEventListener('submit',async event=>{event.preventDefault();const input=event.currentTarget.elements.namedItem('message'),message=String(input?.value||'').trim();if(!message)return;if(!state.runtime)return toast('Message simulé');try{await request('/api/v1/twitch/chat/messages',{method:'POST',body:JSON.stringify({message})});input.value='';toast('Message envoyé')}catch(error){toast(error.message,true)}});
+  document.querySelector('#desktop-chat-form')?.addEventListener('submit',async event=>{event.preventDefault();const input=event.currentTarget.elements.namedItem('message'),message=String(input?.value||'').trim();if(!message)return;if(!state.runtime)return toast('Message simulé');if(!twitchCapability('chatWrite'))return toast(`Reconnecte Twitch pour accorder ${twitchScope('chatWrite')}.`,true);try{await request('/api/v1/twitch/chat/messages',{method:'POST',body:JSON.stringify({message})});input.value='';toast('Message envoyé')}catch(error){toast(error.message,true)}});
   document.querySelector('[data-add-event]')?.addEventListener('click',()=>openEventDialog());
   document.querySelector('[data-sound-search]')?.addEventListener('input',e=>{state.search=e.currentTarget.value;render()});
   document.querySelectorAll('[data-camp]').forEach(b=>b.onclick=()=>{state.campItem=b.dataset.camp;render();void loadCampData(state.campItem)});
@@ -745,7 +759,7 @@ async function loadStreamerPingRewards(){
 }
 function bindStreamerPingSettings(){
   if(state.view!=='camp'||state.campItem!=='Alertes viewers')return;
-  document.querySelector('[data-ping-action="reauthorize"]')?.addEventListener('click',async()=>{try{const result=await request('/api/v1/twitch/device',{method:'POST',body:'{}'});if(window.streamDashboardDesktop?.openTwitchActivation)await window.streamDashboardDesktop.openTwitchActivation(result.verificationUri);toast(`Code Twitch : ${result.userCode}`)}catch(error){toast(error.message,true)}});
+  document.querySelector('[data-ping-action="reauthorize"]')?.addEventListener('click',async()=>{try{state.twitchCapabilities=null;const result=await request('/api/v1/twitch/device',{method:'POST',body:'{}'});if(window.streamDashboardDesktop?.openTwitchActivation)await window.streamDashboardDesktop.openTwitchActivation(result.verificationUri);toast(`Code Twitch : ${result.userCode}`)}catch(error){toast(error.message,true)}});
   document.querySelector('[data-ping-action="save"]')?.addEventListener('click',async()=>{const ids=[...document.querySelectorAll('[data-ping-reward]:checked')].map(input=>input.dataset.pingReward);try{const next=await request('/api/v1/settings',{method:'PUT',body:JSON.stringify({streamerPingRewardIds:ids})});applyDashboard(next);toast('Récompenses Streamer Ping enregistrées');render()}catch(error){toast(error.message,true)}});
   document.querySelector('[data-ping-action="ack-all"]')?.addEventListener('click',async()=>{try{const next=await request('/api/v1/streamer-pings/ack-all',{method:'POST',body:'{}'});applyDashboard(next);await loadPingHistory();render();toast('Tous les Streamer Pings sont vus')}catch(error){toast(error.message,true)}});
   document.querySelector('[data-ping-action="clear-history"]')?.addEventListener('click',async()=>{if(!confirm('Effacer les Streamer Pings déjà acquittés ?'))return;try{await request('/api/v1/streamer-pings/history',{method:'DELETE'});await loadPingHistory();render();toast('Historique nettoyé')}catch(error){toast(error.message,true)}});
@@ -773,7 +787,7 @@ function bindConnections(){
       const action=button.dataset.connectionAction;
       if(action==='obs-launch'){const result=await window.streamDashboardDesktop?.ensureObsRunning?.();toast(result?.detail||'Demande de lancement OBS envoyée');return}
       if(action==='obs-test'){const form=document.querySelector('#preview-obs-form');const data=new FormData(form);const password=String(data.get('obsPassword')||'');const result=await request('/api/v1/obs/test',{method:'POST',body:JSON.stringify({obsUrl:String(data.get('obsUrl')||'').trim(),...(password?{obsPassword:password}:{})})});toast(`OBS connecté · v${result.obsVersion||'?'}`);return}
-      if(action==='twitch-connect'){const result=await request('/api/v1/twitch/device',{method:'POST',body:'{}'});if(window.streamDashboardDesktop?.openTwitchActivation)await window.streamDashboardDesktop.openTwitchActivation(result.verificationUri);toast(`Code Twitch : ${result.userCode}`);await refreshRuntime();return}
+      if(action==='twitch-connect'){state.twitchCapabilities=null;const result=await request('/api/v1/twitch/device',{method:'POST',body:'{}'});if(window.streamDashboardDesktop?.openTwitchActivation)await window.streamDashboardDesktop.openTwitchActivation(result.verificationUri);toast(`Code Twitch : ${result.userCode}`);await refreshRuntime();return}
       if(action==='twitch-disconnect'){const next=await request('/api/v1/twitch/disconnect',{method:'POST',body:'{}'});applyDashboard(next);toast('Twitch déconnecté');render();return}
       if(action==='twitch-sync'){const next=await request('/api/v1/twitch/sync',{method:'POST',body:'{}'});applyDashboard(next);toast('Planning Twitch synchronisé');render();return}
       if(action==='google-connect'){const result=await request('/api/v1/google/oauth/start',{method:'POST',body:'{}'});if(window.streamDashboardDesktop?.openExternalAuth)await window.streamDashboardDesktop.openExternalAuth(result.authorizationUrl);toast('Connexion Google ouverte dans le navigateur');return}
