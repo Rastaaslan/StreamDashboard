@@ -49,7 +49,7 @@ export interface StructuredError {
 }
 
 export interface ControlHubSnapshot {
-  live: { isLive: boolean; title: string | null; category: string | null; startedAt: string | null; durationSeconds: number | null; viewerCount: number | null };
+  live: { thumbnailUrl?: string | null; categoryId?: string | null; isLive: boolean; title: string | null; category: string | null; startedAt: string | null; durationSeconds: number | null; viewerCount: number | null };
   audience: { viewerCount: number | null; chatters: Array<{ id: string; displayName: string; role: 'broadcaster' | 'moderator' | 'vip' | 'viewer' }> };
   activity: EventEnvelope[];
   integrations: Record<'runtime' | 'obs' | 'twitch' | 'discord' | 'streamlabs' | 'wizebot', IntegrationState>;
@@ -235,7 +235,13 @@ export interface DashboardSettings {
   streamerPingRewardIds?: string[];
 }
 
+export type TwitchControlAction = 'chatRead' | 'chatWrite' | 'chatters' | 'createClip' | 'deleteVideo' | 'updateChannel' | 'schedule' | 'redemptions' | 'deleteMessage' | 'timeout' | 'ban' | 'unban';
+export type TwitchControlCapabilities = Record<TwitchControlAction, boolean> & {
+  requiredScopes: Record<TwitchControlAction, string>;
+};
+
 export interface TwitchState {
+  capabilities?: TwitchControlCapabilities;
   connected: boolean;
   userName: string | null;
   displayName: string | null;
@@ -283,9 +289,9 @@ export interface RemoteDashboardState {
   timer: TimerState;
   planning: Array<Pick<CalendarItem, 'id' | 'title' | 'startAtUtc' | 'endAtUtc' | 'allDay' | 'category' | 'kind' | 'source' | 'twitchCategoryId' | 'twitchCategoryName' | 'desiredPublication' | 'recurrence' | 'seriesId' | 'occurrenceKey'>>;
   nextLive: Pick<CalendarItem, 'id' | 'title' | 'startAtUtc' | 'endAtUtc' | 'allDay' | 'category' | 'kind' | 'source' | 'twitchCategoryId' | 'twitchCategoryName' | 'desiredPublication'> | null;
-  obs: Pick<ObsState, 'connected' | 'streaming' | 'streamingKnown' | 'scene' | 'scenes' | 'inputs' | 'activeAudioInputs' | 'mediaInputs'>;
-  settings: Pick<DashboardSettings, 'confirmStop' | 'streamerName' | 'modeScenes' | 'chattingScene' | 'primaryMicInput' | 'requireTimerOverlayOnStart'>;
-  twitch: Pick<TwitchState, 'connected' | 'channelTitle' | 'gameId' | 'gameName' | 'error'>;
+  obs: Pick<ObsState, 'connected' | 'streaming' | 'streamingKnown' | 'scene' | 'scenes' | 'inputs' | 'activeAudioInputs' | 'mediaInputs' | 'browserInputs'>;
+  settings: Pick<DashboardSettings, 'confirmStop' | 'streamerName' | 'modeScenes' | 'chattingScene' | 'primaryMicInput' | 'requireTimerOverlayOnStart' | 'startMode' | 'timerBrowserSource'>;
+  twitch: Pick<TwitchState, 'connected' | 'channelTitle' | 'gameId' | 'gameName' | 'error' | 'capabilities'>;
   google?: { configured: boolean; connected: boolean; targetConfigured: boolean };
   discord?: DiscordState;
   preflight?: PreflightState;

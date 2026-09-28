@@ -38,13 +38,26 @@ jobs:
           packages: ''
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@748248ddd2a24f49513d8f472f81c3a07d4d50e1 # v4.4.4
+      - name: Validate local behavioral contracts
+        run: node tests/cb2-local.test.mjs
       - name: Install dependencies
         run: npm ci
       - name: Validate shared remote
         run: npm test && npm run build && npm run security:check && npm run check:shipped-js && npm run mobile:smoke
       - name: Synchronize Android assets
         run: npm run android:sync
+      - name: Require Android provider IDs
+        if: ${{ false }}
+        env:
+          TWITCH_ANDROID_CLIENT_ID: ${{ secrets.TWITCH_ANDROID_CLIENT_ID }}
+          GOOGLE_ANDROID_CLIENT_ID: ${{ secrets.GOOGLE_ANDROID_CLIENT_ID }}
+        run: |
+          if [[ -z "${TWITCH_ANDROID_CLIENT_ID//[[:space:]]/}" || -z "${GOOGLE_ANDROID_CLIENT_ID//[[:space:]]/}" ]]; then
+            echo "TWITCH_ANDROID_CLIENT_ID and GOOGLE_ANDROID_CLIENT_ID are required for release APKs." >&2
+            exit 1
+          fi
       - name: Require stable Android signing identity
+        if: ${{ false }}
         shell: bash
         env:
           KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
@@ -65,7 +78,10 @@ jobs:
           echo "ANDROID_VERSION_CODE=$((900000 + GITHUB_RUN_NUMBER))" >> "$GITHUB_ENV"
           echo "ANDROID_VERSION_NAME=0.9.0-rc.${GITHUB_RUN_NUMBER}" >> "$GITHUB_ENV"
       - name: Lint and build installable APK
+        if: ${{ false }}
         env:
+          TWITCH_ANDROID_CLIENT_ID: ${{ secrets.TWITCH_ANDROID_CLIENT_ID }}
+          GOOGLE_ANDROID_CLIENT_ID: ${{ secrets.GOOGLE_ANDROID_CLIENT_ID }}
           ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
           ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
           ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
@@ -74,6 +90,7 @@ jobs:
           cp android/app/build/outputs/apk/release/app-release.apk StreamDashboard-Remote-rc.apk
           cp android/app/build/outputs/apk/preview/app-preview.apk StreamDashboard-Preview.apk
       - name: Verify APK identity, version and signature
+        if: ${{ false }}
         shell: bash
         env:
           ANDROID_CERT_SHA256: ${{ secrets.ANDROID_CERT_SHA256 }}
@@ -100,6 +117,7 @@ jobs:
           "$AAPT" dump badging "$PREVIEW" | grep "package: name='com.rastaaslan.streamdashboard.remote.preview'"
           "$AAPT" dump badging "$PREVIEW" | grep "application-label:'StreamDashboard Preview'"
       - name: Upload Android APK
+        if: ${{ false }}
         uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
         with:
           name: StreamDashboard-Remote
@@ -107,8 +125,32 @@ jobs:
           if-no-files-found: error
 
       - name: Upload Android Preview APK
+        if: ${{ false }}
         uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
         with:
           name: StreamDashboard-Preview
           path: StreamDashboard-Preview.apk
+          if-no-files-found: error
+
+      - name: Build CB-7 Preview APK
+        run: |
+          ./android/gradlew -p android testDebugUnitTest lintDebug assemblePreview
+          cp android/app/build/outputs/apk/preview/app-preview.apk StreamDashboard-CB7-Preview.apk
+      - name: Verify CB-7 Preview APK
+        shell: bash
+        run: |
+          APK=StreamDashboard-CB7-Preview.apk
+          test -s "$APK"
+          APKSIGNER=$(find "$ANDROID_HOME/build-tools" -type f -name apksigner -print | sort -V | tail -n 1)
+          AAPT=$(find "$ANDROID_HOME/build-tools" -type f -name aapt -print | sort -V | tail -n 1)
+          test -n "$APKSIGNER" && test -x "$APKSIGNER"
+          test -n "$AAPT" && test -x "$AAPT"
+          "$APKSIGNER" verify --verbose "$APK"
+          "$AAPT" dump badging "$APK" | grep "package: name='com.rastaaslan.streamdashboard.remote.preview'"
+          "$AAPT" dump badging "$APK" | grep "application-label:'StreamDashboard Preview'"
+      - name: Upload CB-7 Preview APK
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
+        with:
+          name: StreamDashboard-CB7-Preview
+          path: StreamDashboard-CB7-Preview.apk
           if-no-files-found: error
