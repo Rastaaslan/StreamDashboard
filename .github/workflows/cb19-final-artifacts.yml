@@ -26,8 +26,10 @@ jobs:
           git apply --binary "$RUNNER_TEMP/cb19.patch"
           git apply --check .github/build/cb28-port-hotfix.patch
           git apply .github/build/cb28-port-hotfix.patch
-          git apply --3way .github/build/cb29-connections.patch
-          git apply --3way .github/build/cb30-planning.patch
+          git apply --check .github/build/cb29-connections.patch
+          git apply .github/build/cb29-connections.patch
+          git apply --check .github/build/cb30-planning.patch
+          git apply .github/build/cb30-planning.patch
 
       - name: Setup Node
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
@@ -73,8 +75,10 @@ jobs:
           git apply --binary "$RUNNER_TEMP/cb19.patch"
           git apply --check .github/build/cb28-port-hotfix.patch
           git apply .github/build/cb28-port-hotfix.patch
-          git apply --3way .github/build/cb29-connections.patch
-          git apply --3way .github/build/cb30-planning.patch
+          git apply --check .github/build/cb29-connections.patch
+          git apply .github/build/cb29-connections.patch
+          git apply --check .github/build/cb30-planning.patch
+          git apply .github/build/cb30-planning.patch
 
       - name: Setup Node
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
