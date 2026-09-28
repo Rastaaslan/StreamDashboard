@@ -13,6 +13,8 @@ const androidActivity = readFileSync(new URL('../android/app/src/main/java/com/r
 const androidProviderBridge = readFileSync(new URL('../android/app/src/main/java/com/rastaaslan/streamdashboard/remote/ProviderBridge.java', import.meta.url), 'utf8');
 const androidManifest = readFileSync(new URL('../android/app/src/main/AndroidManifest.xml', import.meta.url), 'utf8');
 const androidFilePaths = readFileSync(new URL('../android/app/src/main/res/xml/file_paths.xml', import.meta.url), 'utf8');
+const androidGradle = readFileSync(new URL('../android/app/build.gradle', import.meta.url), 'utf8');
+const androidWorkflow = readFileSync(new URL('../.github/workflows/android.yml', import.meta.url), 'utf8');
 
 describe('Android remote runtime', () => {
   it('expose Pause avec les quatre modes et conserve le flux mode.set partagé', () => {
@@ -217,6 +219,15 @@ describe('Android remote runtime', () => {
     expect(androidActivity).toContain('ClipboardManager');
     expect(androidActivity).toContain('Intent.ACTION_VIEW');
     expect(mobileScript).toContain("copyText?.('Code Twitch', result.userCode)");
+  });
+
+  it('refuse de publier un APK Android avec les connexions autonomes désactivées', () => {
+    for (const variable of ['TWITCH_ANDROID_CLIENT_ID','GOOGLE_ANDROID_CLIENT_ID']) {
+      expect(androidGradle).toContain(`System.getenv('${variable}')`);
+      expect(androidWorkflow).toContain(`${{ secrets.${variable} }}`);
+      expect(androidWorkflow).toContain(`echo "${variable}=${variable}" >> "$GITHUB_ENV"`);
+    }
+    expect(androidWorkflow).toContain('Refusing to publish an APK with disabled provider login.');
   });
 
   it('rend explicites les réglages qui restent volontairement locaux au PC', () => {
