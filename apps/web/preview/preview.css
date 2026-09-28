@@ -78,7 +78,7 @@ dialog{background:var(--panel)}
 .empty-chat{display:grid;place-items:center;align-content:center;gap:4px;height:100%;color:var(--muted);text-align:center}.empty-chat b{color:var(--text)}
 .desktop-chat-compose{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:8px}.desktop-chat-compose input{min-height:42px;border:1px solid var(--line);border-radius:var(--radius);background:var(--raised);color:var(--text);padding:0 12px}
 .audience-details{border-top:1px solid var(--line);padding-top:10px}.audience-details summary{cursor:pointer;color:var(--muted);font-size:12px}
-.audience-list{display:grid;grid-template-columns:1fr 1fr;gap:5px 12px;max-height:180px;overflow:auto;margin-top:9px}.audience-list>span{display:flex;justify-content:space-between;gap:8px}.audience-list small{color:var(--muted)}
+.audience-list{display:grid;grid-template-columns:1fr;gap:0;max-height:220px;overflow:auto;margin-top:9px}.audience-list>span{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:center;gap:14px;min-height:36px;padding:7px 0;border-bottom:1px solid var(--line)}.audience-list>span:last-child{border-bottom:0}.audience-list b{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.audience-list small{color:var(--muted);white-space:nowrap}
 
 .planning-surface{min-height:420px}.planning-primary-tools{display:flex;align-items:flex-start;gap:10px;margin-bottom:16px}.planning-primary-tools>select{min-width:140px}
 .planning-more{position:relative}.planning-more>summary{display:flex;align-items:center;min-height:44px;padding:0 13px;border:1px dashed var(--line);border-radius:var(--radius);color:var(--muted);cursor:pointer;list-style:none}.planning-more>summary::-webkit-details-marker{display:none}
@@ -131,3 +131,8 @@ dialog{background:var(--panel)}
 .quick-action-grid input{width:auto!important;min-height:0!important}
 .live-quick-actions{display:flex;flex-wrap:wrap;gap:8px;margin-top:-6px}.live-quick-actions button{min-height:38px;padding:0 12px}
 @media(max-width:900px){.quick-action-grid{grid-template-columns:1fr}.profile-scene-row{grid-template-columns:1fr 1fr 44px}}
+
+/* Sidebar Application shortcut */
+.camp{display:grid!important;grid-template-columns:1fr;align-content:center;justify-items:start;gap:2px;padding:9px 13px!important}
+.camp>span{font-weight:700;line-height:1.15}
+.camp>small{display:block;max-width:100%;font-size:10px;line-height:1.25;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
