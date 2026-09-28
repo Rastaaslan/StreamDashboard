@@ -64,7 +64,7 @@ function desktop() {
   let openButtons = [];
   const get = id => { if (!nodes.has(id)) nodes.set(id, element()); return nodes.get(id); };
   const scope = vm.createContext({ fixture, diagnosePrelive, diagnosticLabels, structuredClone, URLSearchParams, Date,
-    expandRecurringItems: items => items, buildPlanningPng: () => {},
+    createThumbnail: () => element(), expandRecurringItems: items => items, buildPlanningPng: () => {},
     location: { search: '', protocol: 'http:', host: 'localhost' }, localStorage: { getItem: () => null, setItem() {} },
     document: { querySelector: get, querySelectorAll: selector => {
       if(selector !== '[data-open-camp]') return [];

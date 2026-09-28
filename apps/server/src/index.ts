@@ -1,12 +1,12 @@
 import express from 'express';
 import { createServer, type Server } from 'node:http';
 import { mkdir, stat, unlink } from 'node:fs/promises';
-import { networkInterfaces } from 'node:os';
+import { hostname, networkInterfaces } from 'node:os';
 import path from 'node:path';
 import { createHash, randomUUID } from 'node:crypto';
 import { WebSocketServer, type WebSocket } from 'ws';
 import { ObsClient } from '../../../integrations/obs/src/client.js';
-import { TwitchClient } from '../../../integrations/twitch/src/client.js';
+import { TwitchClient, TwitchHttpError } from '../../../integrations/twitch/src/client.js';
 import { TwitchPreflight } from '../../../integrations/twitch/src/preflight.js';
 import { TwitchEventSub, type TwitchChatMessage, type TwitchRewardRedemption } from '../../../integrations/twitch/src/eventsub.js';
 import { DiscordClient } from '../../../integrations/discord/src/client.js';
@@ -27,6 +27,7 @@ import {
   findScheduledLiveForStart,
   findUnplannedDraft,
 } from '../../../packages/core/src/live-planning.js';
+import { assertProviderCreationCertain } from '../../../packages/core/src/provider-identity.js';
 import { PlanningOrchestrator, type PlanningProvider } from '../../../packages/core/src/planning.js';
 import {
   parseCommand,
@@ -47,8 +48,9 @@ import {
   type StreamerPing,
 } from '../../../packages/contracts/src/index.js';
 import { DashboardCommandService } from './command-service.js';
+import { drainCompanionProviders, resolveCompanionDeletion } from './companion-providers.js';
 import { companionSnapshot, emptyCompanionState, reconcileCompanionBatch, resolveCompanionConflict, type CompanionState, type SyncOperation } from './companion-sync.js';
-import { RemoteAuth, type PersistedRemoteDevice } from './remote-auth.js';
+import { RemoteAuth, type PersistedRemoteDevice, type PersistedPairing } from './remote-auth.js';
 import { parseRemoteCommand, toRemoteDashboardState } from './remote-policy.js';
 import { isRemoteApiAllowed } from './remote-api-policy.js';
 import { SoundboardRuntime, validateSound } from './soundboard-runtime.js';
@@ -87,6 +89,8 @@ interface TwitchIdentity {
 }
 interface GoogleLocalState { targetCalendarId: string | null; lastSyncedAt: string | null }
 interface LocalData {
+  commandReceipts?: Record<string, string>;
+  commandReceiptOrder?: string[];
   schemaVersion: number;
   mode: RunMode;
   timer: TimerState;
@@ -97,6 +101,7 @@ interface LocalData {
   twitchLastSyncedAt: string | null;
   google: GoogleLocalState;
   remoteDevices: PersistedRemoteDevice[];
+  remotePairings?: PersistedPairing[];
   companion: CompanionState;
   discord: DiscordSettings;
   sounds: Sound[];
@@ -174,9 +179,11 @@ function modeScenes(value: unknown): DashboardSettings['modeScenes'] {
 function sanitizeProviderLink(value: unknown): ProviderLink | undefined {
   if (!object(value) || !PROVIDER_STATUSES.has(String(value.status))) return undefined;
   const link: ProviderLink = { status: value.status as ProviderLink['status'] };
-  for (const key of ['remoteId', 'calendarId', 'remoteRevision', 'lastError'] as const) {
+  for (const key of ['remoteId', 'calendarId', 'remoteRevision', 'fingerprint', 'lastError'] as const) {
     if (typeof value[key] === 'string') link[key] = String(value[key]).slice(0, 500);
   }
+  if (object(value.uncertainCreate)) link.uncertainCreate = structuredClone(value.uncertainCreate) as ProviderLink['uncertainCreate'];
+  if (typeof value.publishedContent === 'string') link.publishedContent = value.publishedContent;
   if (typeof value.lastSyncedAt === 'string' && Number.isFinite(Date.parse(value.lastSyncedAt))) link.lastSyncedAt = value.lastSyncedAt;
   if (typeof value.deletedRemotely === 'boolean') link.deletedRemotely = value.deletedRemotely;
   return link;
@@ -539,7 +546,7 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
   let twitchChatters: Awaited<ReturnType<TwitchClient['chatters']>> = { items: [], total: 0, cursor: null };
   let chatMessages: TwitchChatMessage[] = [];
   let chatStatus: 'CONNECTING' | 'CONNECTED' | 'DEGRADED' | 'DISCONNECTED' = 'DISCONNECTED';
-  let twitchEventSubStarted = false;
+  let twitchEventSubKey = '';
   let googleError: string | null = null;
   let googleOAuthAttempt: GoogleOAuthAttempt | null = null;
   let preflightState: PreflightState = {
@@ -559,6 +566,7 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
   const twitchEventSub = new TwitchEventSub(
     sessionId => twitch.subscribeEventSub(sessionId),
     message => {
+      if (!twitch.controlCapabilities().chatRead || message.broadcasterId !== twitch.publicIdentity().broadcasterId) return;
       if (chatMessages.some(item => item.id === message.id)) return;
       chatMessages = [...chatMessages.slice(-199), message];
       eventCore.publish({ type: 'chat.message.received', source: 'twitch', occurredAt: message.receivedAt, payload: message });
@@ -572,6 +580,7 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
     },
     undefined,
     (redemption: TwitchRewardRedemption) => {
+      if (!twitch.controlCapabilities().redemptions || redemption.broadcasterId !== twitch.publicIdentity().broadcasterId) return;
       eventCore.publish({ type: 'twitch.reward.redeemed', source: 'twitch', occurredAt: redemption.redeemedAt, correlationId: redemption.id, payload: redemption });
       if (!(local.settings.streamerPingRewardIds ?? []).includes(redemption.reward.id)) return;
       if (local.streamerPings.some(ping => ping.id === redemption.id)) return;
@@ -595,7 +604,7 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
   );
 
   const app = express();
-  const remoteAuth = new RemoteAuth(Date.now, local.remoteDevices);
+  const remoteAuth = new RemoteAuth(Date.now, local.remoteDevices, Array.isArray(local.remotePairings) ? local.remotePairings : []);
   const server = createServer(app);
   const sockets = new WebSocketServer({ noServer: true });
   const socketDevices = new Map<WebSocket, string>();
@@ -651,6 +660,19 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
     return false;
   };
 
+  // Validate the authority independently of Origin to prevent DNS rebinding.
+  // Re-read interfaces on each request so Wi-Fi/Ethernet changes need no restart.
+  const acceptedHost = (authority: string | undefined) => {
+    if (!authority) return false;
+    try {
+      const url = new URL(`http://${authority}`);
+      const addresses = Object.values(networkInterfaces()).flatMap(values => (values ?? []).map(value => value.address));
+      return !url.username && !url.password && url.host === authority.toLowerCase()
+        && Number(url.port || 80) === runtimePort
+        && ['localhost', '127.0.0.1', '[::1]', hostname().toLowerCase(), `${hostname().toLowerCase()}.local`, ...addresses].includes(url.hostname);
+    } catch { return false; }
+  };
+
   server.on('upgrade', (request, socket, head) => {
     const requestUrl = new URL(request.url ?? '/', 'http://local');
     const pathname = requestUrl.pathname;
@@ -663,7 +685,7 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
     })();
     const remoteRequest = !isLocalAddress(request.socket.remoteAddress);
     const deviceId = remoteRequest ? remoteAuth.consumeWsTicket(requestUrl.searchParams.get('ticket') ?? '') : null;
-    if ((pathname !== '/ws' && pathname !== '/ws/v1') || !acceptedOrigin || (remoteRequest && (!remoteRuntimeEnabled || !deviceId))) {
+    if (!acceptedHost(requestHost) || (pathname !== '/ws' && pathname !== '/ws/v1') || !acceptedOrigin || (remoteRequest && (!remoteRuntimeEnabled || !deviceId))) {
       socket.write('HTTP/1.1 403 Forbidden\r\n\r\n');
       socket.destroy();
       return;
@@ -674,7 +696,9 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
     });
   });
 
-  app.use((_req, res, next) => {
+  app.use((req, res, next) => {
+    if (!acceptedHost(req.headers.host)) { res.status(403).json({ ok: false, error: { code: 'HOST_REJECTED', message: 'Adresse du PC non autorisée. Utilisez une adresse LAN affichée sur le PC.' } }); return; }
+    res.set('Cache-Control', 'no-store');
     res.set({
       'Content-Security-Policy': "default-src 'self'; connect-src 'self' https://static-cdn.jtvnw.net ws://127.0.0.1:* ws://localhost:* ws://[::1]:* ws: wss:; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https://static-cdn.jtvnw.net https://clips-media-assets2.twitch.tv https://clips-media-assets.twitch.tv; object-src 'none'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'",
       'X-Content-Type-Options': 'nosniff',
@@ -763,6 +787,7 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
     accessMode: remoteRuntimeEnabled ? 'remote-LAN' : 'desktop-local',
   };
   let runtimePort = requestedPort;
+  const serverInstanceId = randomUUID();
   let stateRevision = 0;
   const temporalPlanning = (from = Date.now() - DAY_MS, to = Date.now() + 730 * DAY_MS) => expandRecurringItems(local.planning, { from, to });
   const nextLive = () => temporalPlanning()
@@ -777,14 +802,15 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
       if (connected) return transitionIntegration(integrationState(), 'CONNECTED', { at: new Date().toISOString() });
       return error ? transitionIntegration(integrationState(), 'DEGRADED', { error: { code: 'PROVIDER_UNAVAILABLE', message: error, retryable: true, details: null } }) : integrationState('DISCONNECTED');
     };
+    const twitchCapabilities = twitch.controlCapabilities();
     const controlHub: ControlHubSnapshot = {
       live: { thumbnailUrl: twitchLive.thumbnailUrl, categoryId: twitchLive.categoryId, isLive: twitchLive.isLive, title: twitchLive.title ?? (twitchChannel.title || null), category: twitchLive.category ?? (twitchChannel.gameName || null), startedAt: twitchLive.startedAt, durationSeconds: twitchLive.startedAt ? Math.max(0, Math.floor((Date.now() - Date.parse(twitchLive.startedAt)) / 1_000)) : null, viewerCount: twitchLive.viewerCount },
-      audience: { viewerCount: twitchLive.viewerCount, chatters: twitchChatters.items.map(user => { const badges = chatMessages.find(message => message.chatter.id === user.id)?.chatter.badges.map(badge => badge.setId) ?? []; return { id: user.id, displayName: user.displayName, role: user.id === local.twitch.broadcasterId ? 'broadcaster' as const : badges.includes('moderator') ? 'moderator' as const : badges.includes('vip') ? 'vip' as const : 'viewer' as const }; }) },
+      audience: { viewerCount: twitchLive.viewerCount, chatters: (twitchCapabilities.chatters ? twitchChatters.items : []).map(user => { const badges = chatMessages.find(message => message.chatter.id === user.id)?.chatter.badges.map(badge => badge.setId) ?? []; return { id: user.id, displayName: user.displayName, role: user.id === local.twitch.broadcasterId ? 'broadcaster' as const : badges.includes('moderator') ? 'moderator' as const : badges.includes('vip') ? 'vip' as const : 'viewer' as const }; }) },
       activity: eventCore.recent({ limit: 20 }),
-      chat: { messages: chatMessages, connected: chatStatus === 'CONNECTED' },
+      chat: { messages: twitchCapabilities.chatRead ? chatMessages : [], connected: twitchCapabilities.chatRead && chatStatus === 'CONNECTED' },
       integrations: {
         runtime: transitionIntegration(integrationState(), 'CONNECTED'),
-        obs: connectedState(obs.state.connected, true, obs.state.error),
+        obs: obs.state.connectionStatus === 'connecting' ? integrationState('CONNECTING') : connectedState(obs.state.connected, true, obs.state.error),
         twitch: connectedState(twitch.state.connected, Boolean(options.twitchClientId ?? process.env.TWITCH_CLIENT_ID), twitch.state.error),
         discord: connectedState(discordPublic.connected, discordPublic.configured, discordPublic.error),
         streamlabs: streamlabs.state(),
@@ -795,6 +821,7 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
     return {
       at: new Date().toISOString(),
       stateRevision,
+      serverInstanceId,
       mode: local.mode,
       timer,
       planning: local.planning,
@@ -875,6 +902,7 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
   });
   const save = async () => {
     local.remoteDevices = remoteAuth.serialize();
+    local.remotePairings = remoteAuth.serializePairings();
     local.schemaVersion = DASHBOARD_SCHEMA_VERSION;
     await store.write(local);
   };
@@ -954,14 +982,24 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
 
   const providerAdapters = (): Partial<Record<'twitch' | 'google', PlanningProvider>> => ({
     twitch: twitch.state.connected ? {
+      read: id => twitch.readSegment(id),
       create: item => twitch.createSegment(item),
-      update: async (id, item) => { await twitch.updateSegment(id, item); return {}; },
+      update: (id, item) => twitch.updateSegment(id, item),
       delete: id => twitch.deleteSegment(id),
     } : undefined,
     google: google.connected ? {
+      read: async (id, item) => {
+        const calendarId = item.providers?.google?.calendarId ?? local.google.targetCalendarId;
+        if (!calendarId) throw new Error('Calendrier Google lié introuvable.');
+        const event = await google.event(calendarId, id);
+        return { revision: event.etag, deleted: event.deleted, remote: {
+          title: event.title, description: event.description, startAtUtc: event.startAtUtc, endAtUtc: event.endAtUtc, allDay: event.allDay,
+        } };
+      },
       create: async item => {
         const calendarId = item.providers?.google?.calendarId ?? local.google.targetCalendarId;
-        if (!calendarId) throw new Error('Choisissez un calendrier Google cible.');
+        if (!calendarId) throw Object.assign(new Error('Choisissez un calendrier Google cible.'), { mutationNotStarted: true });
+        assertProviderCreationCertain(item, 'google');
         const event = await google.create(calendarId, googleEventInput(item));
         return { id: event.id, revision: event.etag, calendarId };
       },
@@ -982,6 +1020,8 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
     local.planning = items;
     await save();
   });
+
+  await drainCompanionProviders(local.planning, local.companion, providerAdapters(), save);
 
   const invalidatePreflight = () => {
     twitchPreflight.invalidate();
@@ -1045,6 +1085,12 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
       return changed();
     }
   };
+  // Persist chronology separately: Object.keys sorts numeric IDs before other keys.
+  // Older files have no order metadata; retain their receipts when migrating.
+  local.commandReceiptOrder = [...new Set([
+    ...(Array.isArray(local.commandReceiptOrder) ? local.commandReceiptOrder : []),
+    ...Object.keys(local.commandReceipts ?? {}),
+  ])].filter(id => typeof id === 'string' && Object.hasOwn(local.commandReceipts ?? {}, id));
   const commandJournal = new Map<string, { fingerprint: string; operation: Promise<{ command: DashboardCommand; state: DashboardState }> }>();
   const executeCommand = async (body: unknown, remote = false) => {
     const envelope = body && typeof body === 'object' ? body as Record<string, unknown> : {};
@@ -1063,50 +1109,97 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
         return existing.operation;
       }
     }
+    if (typeof commandId === 'string' && Object.hasOwn(local.commandReceipts ?? {}, commandId)) {
+      const error = new Error('Commande déjà reçue avant le redémarrage. Vérifiez l’état avant de créer une nouvelle commande.');
+      error.name = 'COMMAND_ALREADY_RECEIVED';
+      throw error;
+    }
     const operation = (async () => {
+      if (typeof commandId === 'string') {
+        local.commandReceipts = { ...local.commandReceipts, [commandId]: fingerprint };
+        const order = local.commandReceiptOrder!;
+        order.push(commandId);
+        for (const id of order.splice(0, Math.max(0, order.length - 5_000))) delete local.commandReceipts[id];
+        // Persist intent before any external side effect: a crash leaves an uncertain
+        // outcome which must be reconciled, never automatically executed again.
+        await save();
+      }
       const state = await commands.execute(command);
       if (command.type === 'session.prepare') return { command, state: await runPreflight() };
       return { command, state };
     })();
     if (typeof commandId === 'string') {
       commandJournal.set(commandId, { fingerprint, operation });
-      while (commandJournal.size > 500) commandJournal.delete(commandJournal.keys().next().value!);
+      void operation.finally(() => {
+        if (commandJournal.size > 500) commandJournal.delete(commandId);
+      }).catch(() => undefined);
     }
     return operation;
   };
   executeAutomationCommand = async command => { await executeCommand({ ...command, commandId: `auto_${randomUUID()}`, correlationId: `auto_${randomUUID()}` }); };
+  const resetTwitchRuntime = () => {
+    twitchEventSubKey = '';
+    chatMessages = []; chatStatus = 'DISCONNECTED';
+    twitchChatters = { items: [], total: 0, cursor: null };
+    twitchChannel = { title: '', gameId: '', gameName: '' };
+    twitchLive = { isLive: false, title: null, category: null, categoryId: null, startedAt: null, viewerCount: null, thumbnailUrl: null };
+    invalidatePreflight();
+    twitchEventSub.stop();
+  };
+  const reconcileTwitchEventSub = () => {
+    const capabilities = twitch.controlCapabilities();
+    const key = twitch.state.connected && (capabilities.chatRead || capabilities.redemptions)
+      ? JSON.stringify([twitch.publicIdentity().broadcasterId, capabilities.chatRead, capabilities.redemptions]) : '';
+    if (key === twitchEventSubKey) return;
+    twitchEventSubKey = key;
+    twitchEventSub.stop();
+    if (!capabilities.chatRead) chatMessages = [];
+    if (key) twitchEventSub.start();
+  };
   const validateTwitch = async () => {
-    if (!twitch.state.connected) return;
-    if (!await twitch.validateSession()) {
-      local.twitch = { broadcasterId: '', userName: '', displayName: '' };
-      await save();
-    } else {
+    if (!twitch.state.connected) { resetTwitchRuntime(); broadcast(); return; }
+    const previous = JSON.stringify(twitch.controlCapabilities());
+    try {
+      if (!await twitch.validateSession()) {
+        resetTwitchRuntime();
+        local.twitch = { broadcasterId: '', userName: '', displayName: '' };
+        await save();
+        return;
+      }
+      const capabilities = twitch.controlCapabilities();
+      if (previous !== JSON.stringify(capabilities)) resetTwitchRuntime();
+      if (!capabilities.chatRead) { chatStatus = 'DISCONNECTED'; chatMessages = []; }
+      if (!capabilities.chatters) twitchChatters = { items: [], total: 0, cursor: null };
+      reconcileTwitchEventSub();
       const metadata = await twitch.getChannelMetadata();
       twitchChannel = { title: metadata.title, gameId: metadata.gameId, gameName: metadata.gameName };
-      const capabilities = twitch.controlCapabilities();
-      twitchLive = await twitch.getLiveState();
-      twitchChatters = capabilities.chatters ? await twitch.chatters() : { items: [], total: 0, cursor: null };
-      if (!capabilities.chatRead) chatStatus = 'DISCONNECTED';
-      if (!twitchEventSubStarted && (capabilities.chatRead || capabilities.redemptions)) { twitchEventSubStarted = true; twitchEventSub.start(); }
-    }
-    broadcast();
+      await refreshTwitchLive();
+    } finally { broadcast(); }
   };
-  const refreshTwitchLive = async () => {
-    if (!twitch.state.connected) return;
-    try {
-      const capabilities = twitch.controlCapabilities();
-      const live = await twitch.getLiveState();
-      const chatters = capabilities.chatters ? await twitch.chatters() : { items: [], total: 0, cursor: null };
-      const liveChanged = live.isLive !== twitchLive.isLive;
-      twitchLive = live;
-      twitchChatters = chatters;
-      eventCore.publish({ type: 'audience.viewerCount.updated', source: 'twitch', payload: { viewerCount: live.viewerCount } });
-      if (liveChanged) eventCore.publish({ type: live.isLive ? 'stream.started' : 'stream.stopped', source: 'twitch', occurredAt: live.startedAt ?? undefined, payload: live });
+  let twitchLiveRefresh: Promise<void> | undefined;
+  const refreshTwitchLive = () => {
+    if (twitchLiveRefresh) return twitchLiveRefresh;
+    twitchLiveRefresh = (async () => {
+      if (!twitch.state.connected) { resetTwitchRuntime(); broadcast(); return; }
+      try {
+        const live = await twitch.getLiveState();
+        const liveChanged = live.isLive !== twitchLive.isLive;
+        twitchLive = live;
+        eventCore.publish({ type: 'audience.viewer-count.updated', source: 'twitch', payload: { viewerCount: live.viewerCount } });
+        if (liveChanged) eventCore.publish({ type: live.isLive ? 'stream.started' : 'stream.stopped', source: 'twitch', occurredAt: live.startedAt ?? undefined, payload: live });
+      } catch (error) {
+        twitchLive = { isLive: false, title: null, category: null, categoryId: null, startedAt: null, viewerCount: null, thumbnailUrl: null };
+        eventCore.publish({ type: 'integration.degraded', source: 'twitch', payload: { error: error instanceof Error ? error.message : String(error) } });
+        logError(error);
+      }
+      try {
+        twitchChatters = twitch.controlCapabilities().chatters ? await twitch.chatters() : { items: [], total: 0, cursor: null };
+      } catch (error) { twitchChatters = { items: [], total: 0, cursor: null }; logError(error); }
+      if (!twitch.state.connected) resetTwitchRuntime();
+      else reconcileTwitchEventSub();
       broadcast();
-    } catch (error) {
-      eventCore.publish({ type: 'integration.degraded', source: 'twitch', payload: { error: error instanceof Error ? error.message : String(error) } });
-      logError(error);
-    }
+    })().finally(() => { twitchLiveRefresh = undefined; });
+    return twitchLiveRefresh;
   };
 
   let trackedUnplannedLiveId = findUnplannedDraft(local.planning)?.id ?? null;
@@ -1147,6 +1240,7 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
 
     try {
       const linkedId = item.providers?.google?.remoteId;
+      if (!linkedId) assertProviderCreationCertain(item, 'google');
       const event = linkedId
         ? await google.update(calendarId, linkedId, googleEventInput(item), item.providers?.google?.remoteRevision)
         : await google.create(calendarId, googleEventInput(item));
@@ -1314,7 +1408,7 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
   });
   app.get('/api/v1/remote/info', (req, res) => {
     if (!requireLocal(req, res)) return;
-    res.json({ enabled: remoteRuntimeEnabled, configured: local.settings.remoteEnabled === true, urls: remoteRuntimeEnabled ? lanUrls(runtimePort) : [] });
+    res.json({ enabled: remoteRuntimeEnabled, configured: local.settings.remoteEnabled === true, restartRequired: remoteRuntimeEnabled !== (local.settings.remoteEnabled === true), urls: remoteRuntimeEnabled ? lanUrls(runtimePort) : [] });
   });
   app.delete('/api/v1/remote/devices/:id', async (req, res, next) => {
     try {
@@ -1578,9 +1672,12 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
       if (req.body?.deviceId !== deviceId) { res.status(400).json({ ok: false, error: { code: 'COMPANION_PAYLOAD_INVALID', message: 'Identité compagnon invalide.' } }); return; }
       const result = await plan(async () => {
         const reconciled = reconcileCompanionBatch(local.planning, local.checklist, local.companion, req.body.operations as SyncOperation[]);
+        const previous = { planning: local.planning, checklist: local.checklist, companion: local.companion };
         local.planning = reconciled.planning; local.checklist = reconciled.checklist; local.companion = reconciled.companion;
         // Persistence is the transaction boundary: ACKs are emitted only after this resolves.
-        await save(); broadcast();
+        try { await save(); } catch (error) { Object.assign(local, previous); throw error; }
+        await drainCompanionProviders(local.planning, local.companion, providerAdapters(), save);
+        broadcast();
         return { acknowledged: reconciled.acknowledged, conflicts: reconciled.conflicts, snapshot: companionSnapshot(local.planning, local.companion) };
       });
       res.json({ ok: true, ...result });
@@ -1592,7 +1689,17 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
       if (!remoteAuth.authenticate(credential)) { res.status(401).json({ ok: false, error: { code: 'DEVICE_AUTH_REQUIRED', message: 'Compagnon non autorisé.' } }); return; }
       const strategy = req.body?.strategy;
       if (!['pc', 'android'].includes(strategy)) { res.status(400).json({ ok: false, error: { code: 'COMPANION_PAYLOAD_INVALID', message: 'Résolution invalide.' } }); return; }
-      const result = await plan(async () => { const resolved = resolveCompanionConflict(local.planning, local.companion, req.params.operationId, strategy); local.planning = resolved.planning; local.companion = resolved.companion; await save(); broadcast(); return resolved; });
+      const result = await plan(async () => {
+        const previous = { planning: local.planning, checklist: local.checklist, companion: local.companion };
+        const resolved = resolveCompanionConflict(local.planning, local.companion, req.params.operationId, strategy);
+        local.planning = resolved.planning;
+        local.companion = resolved.companion;
+        local.checklist = local.companion.checklist.map(item => ({ id: item.id, label: String(item.label ?? ''), done: item.done === true }));
+        try { await save(); } catch (error) { Object.assign(local, previous); throw error; }
+        await drainCompanionProviders(local.planning, local.companion, providerAdapters(), save);
+        broadcast();
+        return resolved;
+      });
       res.json({ ok: true, acknowledged: result.acknowledged, snapshot: companionSnapshot(local.planning, local.companion), conflicts: Object.values(local.companion.conflicts) });
     } catch (error) { next(error); }
   });
@@ -1733,7 +1840,25 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
       const provider = String(req.params.provider);
       const id = String(req.params.id);
       if (!['twitch', 'google'].includes(provider)) throw new Error('Provider invalide.');
-      await plan(async () => planning().retry(id, provider as 'twitch' | 'google', { confirmRecurring: req.body?.confirmRecurring === true }));
+      await plan(async () => {
+        const key = id + ':' + provider;
+        const work = local.companion.providerWork[key];
+        if (work) {
+          const item = local.planning.find(item => item.id === id);
+          if (work.uncertain && !item?.providers?.[provider as 'twitch' | 'google']?.remoteId)
+            throw new Error('Création distante incertaine : réconciliez le provider avant de réessayer.');
+          if (item) {
+            await planning().retry(id, provider as 'twitch' | 'google', { confirmRecurring: req.body?.confirmRecurring === true });
+            delete local.companion.providerWork[key];
+            await save();
+            return;
+          }
+          work.status = 'queued';
+          await save();
+          await drainCompanionProviders(local.planning, local.companion, providerAdapters(), save, key);
+          if (local.companion.providerWork[key]) throw new Error(work.error ?? 'Publication incomplète.');
+        } else await planning().retry(id, provider as 'twitch' | 'google', { confirmRecurring: req.body?.confirmRecurring === true });
+      });
       if (provider === 'google') googleError = null;
       res.json(responseState(req, await changed()));
     } catch (error) { next(error); }
@@ -1745,7 +1870,23 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
       const id = String(req.params.id);
       const strategy = String(req.body?.strategy ?? '');
       if (!['twitch', 'google'].includes(provider) || !['local', 'remote'].includes(strategy)) throw new Error('Résolution de conflit invalide.');
-      await plan(async () => planning().resolveConflict(id, provider as 'twitch' | 'google', strategy as 'local' | 'remote'));
+      await plan(async () => {
+        if (!local.planning.some(item => item.id === id) && local.companion.tombstones[id]) {
+          const nextPlanning = structuredClone(local.planning);
+          const nextCompanion = structuredClone(local.companion);
+          await resolveCompanionDeletion(nextPlanning, nextCompanion, id, provider as 'twitch' | 'google',
+            strategy as 'local' | 'remote', providerAdapters());
+          // Commit the resolution before exposing it or allowing a retry.
+          await store.write({ ...local, planning: nextPlanning, companion: nextCompanion });
+          local.planning = nextPlanning; local.companion = nextCompanion;
+          return;
+        }
+        await planning().resolveConflict(id, provider as 'twitch' | 'google', strategy as 'local' | 'remote');
+        delete local.companion.providerWork[id + ':' + provider];
+        local.companion.eventRevisions[id] = (local.companion.eventRevisions[id] ?? 1) + 1;
+        local.companion.serverRevision++;
+        await save();
+      });
       if (provider === 'google') googleError = null;
       invalidatePreflight();
       res.json(responseState(req, await changed()));
@@ -1888,12 +2029,12 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
       res.status(201).json(authorization);
       if (!alreadyPending) {
         void twitch.waitForDeviceAuthorization().then(async () => {
+          if (local.twitch.broadcasterId !== twitch.publicIdentity().broadcasterId) local.streamerPings = [];
           Object.assign(local.twitch, twitch.publicIdentity());
+          resetTwitchRuntime();
           await save();
-          twitchEventSub.stop();
-          twitchEventSubStarted = false;
           await validateTwitch();
-        }).catch(error => { logError(error); broadcast(); });
+        }).catch(error => { resetTwitchRuntime(); logError(error); broadcast(); });
       }
     } catch (error) { next(error); }
   });
@@ -1902,9 +2043,8 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
       await twitch.disconnect();
       local.twitch = { broadcasterId: '', userName: '', displayName: '' };
       local.twitchLastSyncedAt = null;
-      twitchEventSub.stop(); twitchEventSubStarted = false; chatMessages = []; chatStatus = 'DISCONNECTED'; twitchChatters = { items: [], total: 0, cursor: null };
-      twitchLive = { isLive: false, title: null, category: null, categoryId: null, startedAt: null, viewerCount: null, thumbnailUrl: null };
-      invalidatePreflight();
+      local.streamerPings = [];
+      resetTwitchRuntime();
       res.json(responseState(req, await changed()));
     } catch (error) { next(error); }
   });
@@ -2028,6 +2168,10 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
 
         for (const event of remote) {
           if (event.deleted) continue;
+          if (Object.values(local.companion.tombstones).some(tombstone => {
+            const links = tombstone.providerLinks as CalendarItem['providers'];
+            return links?.google?.remoteId === event.id && links.google.calendarId === calendarId;
+          })) continue;
           const managedLocal = event.managed ? localById.get(event.localId) : undefined;
           if (managedLocal) {
             managedLocal.providers ??= {};
@@ -2131,12 +2275,20 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
 
   app.use((error: unknown, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
     logError(error);
+    if (!twitch.state.connected) resetTwitchRuntime();
+    else reconcileTwitchEventSub();
+    broadcast();
+    if (error instanceof TwitchHttpError) {
+      if (error.retryAfter && /^\d+$/.test(error.retryAfter)) res.setHeader('Retry-After', error.retryAfter);
+      res.status(error.status).json({ ok: false, error: { code: 'TWITCH_HTTP_ERROR', message: error.message, retryable: error.status === 429 || error.status >= 500 } });
+      return;
+    }
     const name = error instanceof Error ? error.name : '';
     const status = name === 'NOT_FOUND' ? 404
       : ['REMOTE_SCOPE_DENIED', 'TWITCH_NOT_AUTHORIZED'].includes(name) ? 403
-        : ['CHECKLIST_INCOMPLETE', 'CONFIRM_REQUIRED', 'TWITCH_DISCONNECTED', 'NOT_EDITABLE'].includes(name) ? 409
+        : ['COMMAND_ALREADY_RECEIVED', 'CHECKLIST_INCOMPLETE', 'CONFIRM_REQUIRED', 'TWITCH_DISCONNECTED', 'NOT_EDITABLE'].includes(name) ? 409
           : 400;
-    const code = name === 'CHECKLIST_INCOMPLETE' ? 'CHECKLIST_INCOMPLETE'
+    const code = name === 'COMMAND_ALREADY_RECEIVED' ? name : name === 'CHECKLIST_INCOMPLETE' ? 'CHECKLIST_INCOMPLETE'
       : name === 'CONFIRM_REQUIRED' ? 'CONFIRM_REQUIRED'
         : name === 'TWITCH_DISCONNECTED' ? 'TWITCH_DISCONNECTED'
           : name === 'NOT_FOUND' ? 'NOT_FOUND'
@@ -2148,6 +2300,7 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
   });
 
   sockets.on('connection', ws => {
+    ws.on('error', logError);
     ws.on('close', () => socketDevices.delete(ws));
     ws.send(JSON.stringify({ type: 'server.ready', data: capabilities }));
     ws.send(stateEvent(socketDevices.has(ws)));
@@ -2200,17 +2353,23 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
     clearInterval(twitchLivePoller);
     if (timerExpiry) clearTimeout(timerExpiry);
     if (remoteActivitySaveTimer) clearTimeout(remoteActivitySaveTimer);
+    // Stop accepting HTTP work, drain accepted handlers while providers are still
+    // available, then persist their final state before releasing the runtime.
+    for (const ws of sockets.clients) ws.terminate();
+    sockets.close();
+    await new Promise<void>((resolve, reject) => server.close(error => error ? reject(error) : resolve()));
+    await commands.stop();
+    await planningQueue;
+    if (timerExpiry) clearTimeout(timerExpiry);
+    if (remoteActivitySaveTimer) clearTimeout(remoteActivitySaveTimer);
     await streamTrackingQueue.catch(() => undefined);
     await unplannedMetadataQueue.catch(() => undefined);
     await unplannedGoogleQueue.catch(() => undefined);
     twitch.close();
     twitchEventSub.stop();
     await streamlabs.disconnect();
-    for (const ws of sockets.clients) ws.terminate();
-    sockets.close();
     await obs.close();
     await save();
-    await new Promise<void>((resolve, reject) => server.close(error => error ? reject(error) : resolve()));
   })();
   const urlHost = host === '0.0.0.0' ? '127.0.0.1' : host === '::1' ? '[::1]' : host;
   return { port: actualPort, url: `http://${urlHost}:${actualPort}`, state: snapshot, server, stop };

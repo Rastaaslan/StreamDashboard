@@ -210,7 +210,7 @@
         <div><span class="eyebrow">CONNEXION</span><h2>Relier le PC</h2></div>
         <button type="button" id="close-connection">×</button>
       </div>
-      <p class="dialog-hint" id="connection-hint">Entre l’adresse LAN et le code généré par StreamDashboard Desktop.</p>
+      <p class="dialog-hint" id="connection-hint">Entre l’adresse LAN et le code généré par StreamDashboard Desktop. Après un changement réseau, vérifie l’adresse sur le PC puis utilise Reconnexion. Oublier efface uniquement la connexion du téléphone ; révoque l’appareil sur le PC pour invalider son accès.</p>
       <label>Adresse du PC
         <input id="pair-server" inputmode="url" placeholder="192.168.1.42:47832" autocomplete="url">
       </label>
@@ -224,6 +224,7 @@
         <input id="pair-name" maxlength="80" value="Android Remote">
       </label>
       <div class="dialog-buttons">
+        <button type="button" class="secondary-button" id="reconnect-address">Reconnexion à cette adresse</button>
         <button type="button" class="secondary-button" id="forget-connection">Oublier</button>
         <button type="submit" class="primary-button">Appairer</button>
       </div>

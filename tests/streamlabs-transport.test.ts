@@ -17,6 +17,7 @@ describe('transport Streamlabs officiel', () => {
     let url = '';
     const connected = new StreamlabsSocketTransport({ createSocket: value => { url = value; return socket as never; }, logger, connectTimeoutMs: 100 });
     const operation = connected.connect('ultra-secret', vi.fn(), vi.fn());
+    socket.emit('message', Buffer.from('0{"pingInterval":25000,"pingTimeout":20000}'));
     socket.emit('message', Buffer.from('40'));
     const close = await operation;
     expect(new URL(url).searchParams.get('token')).toBe('ultra-secret');

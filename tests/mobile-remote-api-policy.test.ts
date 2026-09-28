@@ -20,6 +20,7 @@ describe('contrat API télécommande Mobile', () => {
     ['POST','/v1/planning'],['PUT','/v1/planning/event-1'],['DELETE','/v1/planning/event-1'],['PUT','/v1/planning/event-1/occurrence'],['DELETE','/v1/planning/event-1/occurrence'],['POST','/v1/planning/event-1/retry/twitch'],['POST','/v1/planning/event-1/retry/google'],
     ['GET','/v1/discord/status'],['GET','/v1/discord/guilds'],['GET','/v1/discord/guilds/123/channels'],['PUT','/v1/discord/settings'],['POST','/v1/discord/planning'],
     ['POST','/v1/streamer-pings/ping-1/ack'],['POST','/v1/streamer-pings/ack-all'],
+    ['POST','/v1/planning/event-1/conflict/google'],['POST','/v1/planning/event-1/conflict/twitch'],
     ['POST','/v1/companion/sync'],['POST','/v1/companion/conflicts/op-1/resolve'],
   ];
 

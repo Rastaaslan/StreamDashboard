@@ -1,5 +1,5 @@
 import { createTransport, CRITICAL_COMMAND_TIMEOUT_MS, HttpError } from './transport.js';
-import { createCommandController, acceptsSnapshot } from './command-controller.js';
+import { createCommandController, acceptsSnapshot, confirmsObsStreaming, obsRuntimeView } from './command-controller.js';
 import { isAndroidRuntime, localDateInputValue, nextRetry, normalizeServer, parsePairing } from './runtime.js';
 import { credentialStorage, settingsStorage } from './storage.js';
 
@@ -16,6 +16,8 @@ let reconnectTimer = null;
 let retry = 500;
 let httpReady = false;
 let pairing = false;
+let connectionGeneration = 0;
+let healthCheckInFlight = false;
 let activeStreamerPingId = null;
 const notifiedStreamerPingIds = new Set();
 
@@ -28,7 +30,7 @@ try {
 let quickSoundCategory = '';
 
 const newCommandId = () => globalThis.crypto?.randomUUID?.() || `cmd_${Date.now()}_${Math.random().toString(36).slice(2)}`;
-const transport = createTransport(() => server, () => credential);
+const transport = createTransport(() => server, () => credential, () => connectionGeneration);
 
 const toast = message => {
   const node = $('#toast');
@@ -39,6 +41,7 @@ const toast = message => {
 };
 
 const commandController = createCommandController({
+  getGeneration: () => connectionGeneration,
   send: (value, options) => transport.command(value, options),
   readState: () => transport.state(),
   applyState: next => applyState(next),
@@ -237,7 +240,8 @@ const applyState = next => {
   if (!next || (state && !acceptsSnapshot(state, next))) return;
   state = next;
   const hub = next.controlHub || {};
-  const isLive = hub.live?.isLive === true || next.obs?.streaming === true;
+  const obsView = obsRuntimeView(next);
+  const isLive = obsView.live;
   const duration = Number.isFinite(hub.live?.durationSeconds) ? hub.live.durationSeconds : 0;
   const title = hub.live?.title || next.twitch?.channelTitle || (isLive ? 'Live en cours' : 'Prêt à streamer');
   const category = hub.live?.category || next.twitch?.gameName || (isLive ? 'Twitch' : 'Aucun live en cours');
@@ -246,8 +250,8 @@ const applyState = next => {
   const actualScene = next.obs?.scene || '—';
   const logical = logicalScene(next);
 
-  $('#home-live-copy').textContent = isLive ? 'En direct' : 'Prêt';
-  const homeDotCopy = $('#home-live-dot-copy'); if (homeDotCopy) homeDotCopy.textContent = isLive ? 'LIVE' : 'PRÊT';
+  $('#home-live-copy').textContent = obsView.liveLabel;
+  const homeDotCopy = $('#home-live-dot-copy'); if (homeDotCopy) homeDotCopy.textContent = obsView.liveLabel;
   $('#home-live-pill').classList.toggle('live', isLive);
   $('#home-live-pill').classList.toggle('offline', !isLive);
   $('#home-duration').textContent = isLive ? formatDuration(duration) : '—';
@@ -257,16 +261,16 @@ const applyState = next => {
   $('#home-chatters').textContent = String(chatters);
   $('#home-scene-name').textContent = actualScene;
 
-  $('#live-status-copy').textContent = isLive ? formatDuration(duration) : 'Prêt';
+  $('#live-status-copy').textContent = obsView.liveLabel;
   $('#live-status-pill').classList.toggle('live', isLive);
   $('#live-status-pill').classList.toggle('offline', !isLive);
   $('#scene-name').textContent = actualScene;
-  $('#scene-state').textContent = next.obs?.connected ? 'OBS OK' : 'OBS HORS LIGNE';
+  $('#scene-state').textContent = `OBS · ${obsView.connectionLabel}`;
   $('#scene-state').classList.toggle('offline', !next.obs?.connected);
   selectSceneVisual(logical);
 
   const integrations = hub.integrations || {};
-  setProvider('#status-obs', integrations.obs?.status || (next.obs?.connected ? 'CONNECTED' : 'DISCONNECTED'));
+  setProvider('#status-obs', obsView.providerStatus);
   setProvider('#status-twitch', integrations.twitch?.status || (next.twitch?.connected ? 'CONNECTED' : 'DISCONNECTED'));
   setProvider('#status-streamlabs', integrations.streamlabs?.status || 'NOT_CONFIGURED');
   renderChat(hub.chat?.messages || []);
@@ -276,11 +280,12 @@ const applyState = next => {
   syncStreamerPings(next.streamerPings || []);
 
   const stop = $('#stop-live');
-  stop.textContent = isLive ? '■ Arrêter le live' : '▶ Démarrer le live';
-  stop.classList.toggle('danger-outline', isLive);
-  stop.classList.toggle('live-command', !isLive);
-  stop.classList.toggle('start', !isLive);
-  stop.dataset.action = isLive ? 'stop' : 'start';
+  stop.textContent = obsView.buttonLabel;
+  stop.disabled = !obsView.known;
+  stop.classList.toggle('danger-outline', obsView.streaming);
+  stop.classList.toggle('live-command', obsView.known && !obsView.streaming);
+  stop.classList.toggle('start', obsView.known && !obsView.streaming);
+  stop.dataset.action = !obsView.known ? '' : obsView.streaming ? 'stop' : 'start';
 };
 
 const notifyStreamerPing = (ping, pendingCount) => {
@@ -356,7 +361,7 @@ const execute = async (payload,{resource=payload.type,reconcile,critical=false}=
       timeoutMs:critical?CRITICAL_COMMAND_TIMEOUT_MS:undefined,
       reconcile,
     });
-    if(!result.accepted){toast('Commande déjà en cours.');return false;}
+    if(!result.accepted){if(result.reason==='busy')toast('Commande déjà en cours.');return false;}
     globalThis.StreamDashboardNative?.haptic?.(critical?'strong':'light');
     if(!result.reconciled) toast('Commande confirmée.');
     return true;
@@ -486,35 +491,44 @@ const populateSoundChoice=()=>{
   if(sounds[0]) $('#quick-sound-category').value=sounds[0].category||'Sans catégorie';
 };
 
-const connectRealtime=async()=>{
+const connectRealtime=async(generation)=>{
   try{
     const {ticket}=await transport.ticket();
-    ws?.close();
+    if(generation!==connectionGeneration) return;
+    if (ws) { ws.onclose=null; ws.onmessage=null; ws.close(); }
     ws=transport.websocket(ticket);
-    ws.onopen=()=>{retry=500;renderConnection('PC connecté','online');};
-    ws.onmessage=event=>{try{const value=JSON.parse(event.data);if(value.type==='state.updated')applyState(value.data);}catch{}};
+    ws.onopen=()=>{if(generation!==connectionGeneration)return;retry=500;renderConnection('PC connecté','online');};
+    ws.onmessage=event=>{if(generation!==connectionGeneration)return;try{const value=JSON.parse(event.data);if(value.type==='state.updated')applyState(value.data);}catch{}};
     ws.onclose=()=>{
+      if(generation!==connectionGeneration)return;
       if(httpReady) renderConnection('PC connecté · temps réel…','degraded');
       reconnectTimer=setTimeout(()=>void probeAndConnect(),retry);retry=nextRetry(retry);
     };
-    ws.onerror=()=>ws.close();
+    const socket=ws;
+    ws.onerror=()=>socket.close();
   }catch(error){
+    if(generation!==connectionGeneration)return;
     renderConnection('PC connecté · temps réel indisponible','degraded');
     reconnectTimer=setTimeout(()=>void probeAndConnect(),retry);retry=nextRetry(retry);
   }
 };
 
 const probeAndConnect=async()=>{
+  const generation=++connectionGeneration;
+  if(ws){ws.onclose=null;ws.onmessage=null;ws.close();ws=null;}
   clearTimeout(reconnectTimer);
   if(!credential){httpReady=false;renderConnection('PC non appairé','offline');return;}
   try{
     const next=await transport.state();
+    if(generation!==connectionGeneration)return;
     httpReady=true;retry=500;applyState(next);renderConnection('PC connecté','online');
     await loadSoundboard();
-    void connectRealtime();
+    if(generation===connectionGeneration) void connectRealtime(generation);
   }catch(error){
-    httpReady=false;renderConnection('PC hors ligne','offline');
-    if(error instanceof HttpError&&[401,403].includes(error.status)){
+    if(generation!==connectionGeneration)return;
+    httpReady=false;renderConnection('PC hors ligne · vérifier réseau/adresse dans Connexions','offline');
+    $('#connection-hint').textContent=error.message;
+    if(error instanceof HttpError&&error.status===401){
       credential='';await credentialStorage.clear();toast('Télécommande révoquée. Nouvel appairage requis.');$('#connection-dialog').showModal();return;
     }
     reconnectTimer=setTimeout(()=>void probeAndConnect(),retry);retry=nextRetry(retry);
@@ -557,10 +571,12 @@ setInterval(()=>{if(state)$('#timer-value').textContent=formatTimer(timerRemaini
 
 $('#stop-live').onclick=async()=>{
   if(!requireConnection())return;
-  const live=state?.controlHub?.live?.isLive===true||state?.obs?.streaming===true;
+  const obsView=obsRuntimeView(state);
+  if(!obsView.known){toast('État OBS inconnu : attendre la reconnexion.');return;}
+  const live=obsView.streaming;
   if(live){
     if(!confirm('Arrêter réellement le live ?'))return;
-    await execute({type:'session.stop'},{resource:'stream',critical:true,reconcile:next=>next.obs?.streaming===false});
+    await execute({type:'session.stop'},{resource:'stream',critical:true,reconcile:next=>confirmsObsStreaming(next,false)});
     return;
   }
   if(!confirm('Démarrer réellement le live ?'))return;
@@ -568,7 +584,7 @@ $('#stop-live').onclick=async()=>{
   if(!prepared)return;
   const bypass=state?.preflight?.status==='action-required';
   if(bypass&&!confirm('La checklist demande une action. Démarrer quand même ?'))return;
-  await execute({type:'session.start',force:bypass},{resource:'stream',critical:true,reconcile:next=>next.obs?.streaming===true});
+  await execute({type:'session.start',force:bypass},{resource:'stream',critical:true,reconcile:next=>confirmsObsStreaming(next,true)});
 };
 
 $('#sound-search').oninput=renderFullSoundboard;
@@ -592,7 +608,19 @@ all('[data-legacy-tab]').forEach(button => button.onclick = () => openLegacyTool
 $('#open-connection').onclick=()=>{$('#camp-sheet').hidden=true;$('#pair-server').value=server||'';$('#connection-dialog').showModal();};
 $('#close-connection').onclick=()=>$('#connection-dialog').close();
 $('#connection-form').onsubmit=pair;
+$('#reconnect-address').onclick=async()=>{
+  try {
+    if(!credential) throw new Error('Appairage requis. Générez un code sur le PC.');
+    const address=normalizeServer($('#pair-server').value);
+    if(ws){ws.onclose=null;ws.onmessage=null;ws.close();ws=null;}
+    server=address;settingsStorage.setServer(server);
+    state=null;httpReady=false;
+    await probeAndConnect();
+    if(httpReady) $('#connection-dialog').close();
+  } catch(error){$('#connection-hint').textContent=error.message;}
+};
 $('#forget-connection').onclick=async()=>{
+  ++connectionGeneration;clearTimeout(reconnectTimer);
   credential='';httpReady=false;ws?.close();await credentialStorage.clear();settingsStorage.setServer('');server='';
   renderConnection('PC non appairé','offline');toast('Connexion locale oubliée.');
 };
@@ -638,6 +666,21 @@ $('#export-planning').onclick=async()=>{
     toast(`Image prête · ${count} live${count>1?'s':''}.`);
   }catch(error){if(error?.name!=='AbortError')toast(error.message);}
 };
+
+// HTTP also detects half-open sockets and keeps telemetry fresh during WS fallback.
+setInterval(async()=>{
+  if(document.hidden||!credential||!httpReady||healthCheckInFlight)return;
+  const generation=connectionGeneration;
+  healthCheckInFlight=true;
+  try {
+    const next=await transport.state();
+    if(generation!==connectionGeneration)return;
+    if(state?.serverInstanceId&&next.serverInstanceId&&state.serverInstanceId!==next.serverInstanceId){void probeAndConnect();return;}
+    applyState(next);
+  } catch {
+    if(generation===connectionGeneration){httpReady=false;void probeAndConnect();}
+  } finally {healthCheckInFlight=false;}
+},10000);
 
 window.addEventListener('online',()=>void probeAndConnect());
 window.addEventListener('offline',()=>{httpReady=false;renderConnection('PC hors ligne','offline');});

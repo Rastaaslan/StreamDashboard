@@ -3,6 +3,11 @@ import { readFileSync } from 'node:fs';
 import { TwitchClient } from '../integrations/twitch/src/client.js';
 
 const empty = { clientId: '', accessToken: '', refreshToken: '', broadcasterId: '', userName: '', displayName: '' };
+async function authorize(client: TwitchClient, userId = '42') {
+  vi.mocked(fetch).mockResolvedValueOnce(new Response(JSON.stringify({ ...validSession, user_id: userId })));
+  expect(await client.validateSession()).toBe(true);
+  vi.mocked(fetch).mockClear();
+}
 const validSession = { client_id: 'id', user_id: '42', login: 'streamer', scopes: ['channel:manage:schedule'] };
 afterEach(() => { vi.unstubAllGlobals(); vi.useRealTimers(); });
 
@@ -49,6 +54,7 @@ describe('intégration Twitch générique', () => {
       new Response(JSON.stringify({ message: 'authorization_pending' }), { status: 400 }),
       new Response(JSON.stringify({ access_token: 'user-token', refresh_token: 'refresh-token' })),
       new Response(JSON.stringify({ data: [{ id: '42', login: 'streamer', display_name: 'Streamer' }] })),
+      new Response(JSON.stringify({ ...validSession, client_id: 'public-id' })),
     ];
     vi.stubGlobal('fetch', vi.fn(async () => responses.shift()!));
     const client = new TwitchClient({ ...empty, clientId: 'public-id' });
@@ -68,6 +74,7 @@ describe('intégration Twitch générique', () => {
       new Response(JSON.stringify({ message: 'slow_down' }), { status: 400 }),
       new Response(JSON.stringify({ access_token: 'access', refresh_token: 'refresh' })),
       new Response(JSON.stringify({ data: [{ id: '42', login: 'streamer', display_name: 'Streamer' }] })),
+      new Response(JSON.stringify(validSession)),
       new Response(JSON.stringify({ device_code: 'cancel-device', user_code: 'CANCEL', verification_uri: 'https://www.twitch.tv/activate', expires_in: 60, interval: 1 })),
     ];
     const fetch = vi.fn(async () => responses.shift()!); vi.stubGlobal('fetch', fetch);
@@ -94,6 +101,7 @@ describe('intégration Twitch générique', () => {
       return new Response(JSON.stringify({ data: { segments: [{ id: 'created' }] } }));
     }));
     const client = new TwitchClient({ ...empty, clientId: 'id', accessToken: 'token', broadcasterId: '42' });
+    await authorize(client);
     const result = await client.sync([{ id: 'local', title: 'Live local', startAtUtc: '2030-01-02T10:00:00Z', endAtUtc: '2030-01-02T11:00:00Z', category: 'live', desiredPublication: { local: true, twitch: true, google: false } }]);
     expect(result.map(x => x.twitchSegmentId).sort()).toEqual(['created', 'remote']);
     const publish = calls.find(call => call.init?.method === 'POST');
@@ -107,6 +115,7 @@ describe('intégration Twitch générique', () => {
       : new Response(JSON.stringify({ message: 'schedule not found' }), { status: 404 }));
     vi.stubGlobal('fetch', fetch);
     const client = new TwitchClient({ ...empty, clientId: 'id', accessToken: 'token', broadcasterId: '42' });
+    await authorize(client);
     const result = await client.sync([{ id: 'local', title: 'Premier live', startAtUtc: '2030-01-01T10:00:00Z', endAtUtc: '2030-01-01T11:00:00Z', category: 'live', desiredPublication: { local: true, twitch: true, google: false } }]);
     expect(result[0]?.twitchSegmentId).toBe('first'); expect(fetch).toHaveBeenCalledTimes(2);
   });
@@ -115,6 +124,7 @@ describe('intégration Twitch générique', () => {
     let release!: () => void; const gate = new Promise<void>(resolve => { release = resolve; }); let posts = 0;
     vi.stubGlobal('fetch', vi.fn(async (_input: string | URL | Request, init?: RequestInit) => { if (init?.method === 'POST') { posts++; await gate; return new Response(JSON.stringify({ data: { segments: [{ id: 'once' }] } })); } return new Response(JSON.stringify({ data: { segments: [] } })); }));
     const client = new TwitchClient({ ...empty, clientId: 'id', accessToken: 'token', broadcasterId: '42' });
+    await authorize(client);
     const items = [{ id: 'local', title: 'Live', startAtUtc: '2030-01-01T10:00:00Z', endAtUtc: '2030-01-01T11:00:00Z', category: 'live' as const, desiredPublication: { local: true, twitch: true, google: false } }];
     const first = client.sync(items), second = client.sync(items); await vi.waitFor(() => expect(posts).toBe(1)); release(); expect(await first).toBe(await second); expect(posts).toBe(1);
   });
@@ -154,6 +164,7 @@ describe('intégration Twitch générique', () => {
     const fetch = vi.fn(async (_input: string | URL | Request) => new Response(null, { status: 204 }));
     vi.stubGlobal('fetch', fetch);
     const client = new TwitchClient({ ...empty, clientId: 'id', accessToken: 'token', broadcasterId: 'user/42' });
+    await authorize(client, 'user/42');
     await client.deleteSegment('segment & one');
     expect(String(fetch.mock.calls[0]?.[0])).toContain('broadcaster_id=user%2F42&id=segment%20%26%20one');
   });
@@ -202,13 +213,15 @@ describe('intégration Twitch générique', () => {
     await expect(client.sendChatMessage('bonjour')).rejects.toThrow(/user:write:chat/);
   });
 
-  it('déconnecte une session qui a perdu le scope de planning', async () => {
+  it('conserve une session sans scope et désactive les actions protégées', async () => {
     const persisted: Array<Record<string, string> | null> = [];
     vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify({ client_id: 'id', user_id: '42', login: 'streamer', scopes: [] }))));
     const client = new TwitchClient({ ...empty, clientId: 'id', accessToken: 'token', broadcasterId: '42' }, async tokens => { persisted.push(tokens); });
-    expect(await client.validateSession()).toBe(false);
-    expect(client.state.connected).toBe(false);
-    expect(persisted).toEqual([null]);
+    expect(await client.validateSession()).toBe(true);
+    expect(client.state.connected).toBe(true);
+    expect(persisted).toEqual([]);
+    expect(client.controlCapabilities()).toMatchObject({ schedule: false, chatWrite: false });
+    await expect(client.deleteSegment('segment')).rejects.toMatchObject({ requiredScope: 'channel:manage:schedule' });
   });
 
   it('ne réinjecte pas un token si l’utilisateur se déconnecte pendant un refresh', async () => {

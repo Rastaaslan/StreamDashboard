@@ -1,3 +1,5 @@
+import { assertProviderCreationCertain } from '../../../packages/core/src/provider-identity.js';
+import { createHash } from 'node:crypto';
 import type { CalendarItem, TwitchState, TwitchControlCapabilities } from '../../../packages/contracts/src/index.js';
 
 const API = 'https://api.twitch.tv/helix';
@@ -72,7 +74,7 @@ export class TwitchClient {
       error: this.error,
       syncing: this.syncing,
       lastSyncedAt: null,
-      redemptionsAvailable: this.grantedScopes.has(REDEMPTIONS_SCOPE),
+      redemptionsAvailable: this.hasScope(REDEMPTIONS_SCOPE),
       deviceAuthorization: this.pending ? {
         userCode: this.pending.userCode,
         verificationUri: this.pending.verificationUri,
@@ -181,6 +183,7 @@ export class TwitchClient {
   }
 
   async deleteVideo(id: string) {
+    this.requireScope(VIDEOS_SCOPE);
     if (!/^\d{1,30}$/.test(id)) throw new Error('Identifiant VOD invalide.');
     await this.api(`/videos?id=${encodeURIComponent(id)}`, { method: 'DELETE' });
   }
@@ -194,6 +197,7 @@ export class TwitchClient {
   async createClip() {
     this.requireConnected();
     this.requireScope(CLIPS_SCOPE);
+    if (!(await this.getLiveState()).isLive) throw new TwitchHttpError(409, 'La chaîne Twitch est hors ligne.');
     const value = await this.api<{ data: Array<{ id: string; edit_url: string }> }>(`/clips?broadcaster_id=${encodeURIComponent(this.credentials.broadcasterId)}`, { method: 'POST' });
     const clip = value.data[0];
     if (!clip) throw new Error('Twitch n’a renvoyé aucun clip.');
@@ -214,7 +218,7 @@ export class TwitchClient {
     if (!normalized || normalized.length > 500) throw new Error('Le message Twitch doit contenir entre 1 et 500 caractères.');
     const value = await this.api<{ data: Array<{ message_id: string; is_sent: boolean; drop_reason?: { code: string; message: string } }> }>('/chat/messages', { method: 'POST', body: JSON.stringify({ broadcaster_id: this.credentials.broadcasterId, sender_id: this.credentials.broadcasterId, message: normalized, ...(replyParentMessageId ? { reply_parent_message_id: replyParentMessageId } : {}) }) });
     const result = value.data[0];
-    if (!result?.is_sent) throw new Error(result?.drop_reason?.message ?? 'Twitch a refusé le message.');
+    if (!result?.is_sent) throw new Error('Twitch a refusé le message.');
     return { messageId: result.message_id };
   }
 
@@ -227,7 +231,7 @@ export class TwitchClient {
       deleteVideo: this.grantedScopes.has(VIDEOS_SCOPE),
       updateChannel: this.grantedScopes.has(BROADCAST_SCOPE),
       schedule: this.grantedScopes.has(SCHEDULE_SCOPE),
-      redemptions: this.grantedScopes.has(REDEMPTIONS_SCOPE),
+      redemptions: this.hasScope(REDEMPTIONS_SCOPE),
       deleteMessage: this.grantedScopes.has(DELETE_CHAT_SCOPE),
       timeout: this.grantedScopes.has(BANS_SCOPE),
       ban: this.grantedScopes.has(BANS_SCOPE),
@@ -299,7 +303,7 @@ export class TwitchClient {
 
   async subscribeEventSub(sessionId: string) {
     if (this.grantedScopes.has(CHAT_READ_SCOPE)) await this.subscribeChat(sessionId);
-    if (this.grantedScopes.has(REDEMPTIONS_SCOPE)) await this.subscribeRewardRedemptions(sessionId);
+    if (this.hasScope(REDEMPTIONS_SCOPE)) await this.subscribeRewardRedemptions(sessionId);
   }
 
   async customRewards() {
@@ -317,14 +321,16 @@ export class TwitchClient {
     });
     if (generation !== this.generation) return false;
 
-    if (!response.ok && this.credentials.refreshToken) {
+    if (response.status === 401 && this.credentials.refreshToken) {
       try {
         await this.refreshSingleFlight();
         if (generation !== this.generation) return false;
         response = await this.request(`${AUTH}/validate`, {
           headers: { Authorization: `OAuth ${this.credentials.accessToken}` },
         });
-      } catch {
+      } catch (error) {
+        if (generation !== this.generation) return false;
+        if (!(error instanceof TwitchHttpError) || ![400, 401].includes(error.status)) throw error;
         if (generation === this.generation) {
           await this.disconnect();
           this.error = 'La session Twitch ne peut pas être renouvelée.';
@@ -334,26 +340,23 @@ export class TwitchClient {
     }
 
     if (generation !== this.generation) return false;
+    if (!response.ok && response.status !== 401) await this.json(response);
     if (!response.ok) {
       await this.disconnect();
       this.error = 'La session Twitch a été révoquée ou a expiré.';
       return false;
     }
 
-    const value = await response.json() as { client_id?: string; user_id?: string; login?: string; scopes?: string[] };
+    const value = await this.json<{ client_id?: string; user_id?: string; login?: string; scopes?: string[] }>(response);
+    if (generation !== this.generation) return false;
     if (value.client_id !== this.credentials.clientId || (this.credentials.broadcasterId && value.user_id !== this.credentials.broadcasterId)) {
       await this.disconnect();
       this.error = 'La session Twitch ne correspond plus à cette application.';
       return false;
     }
-    // Existing schedule-only credentials remain useful for planning. The preflight
-    // itself gives a targeted reconnect message when broadcast scope is missing.
-    if (!Array.isArray(value.scopes) || !value.scopes.includes(SCHEDULE_SCOPE)) {
-      await this.disconnect();
-      this.error = 'La connexion Twitch ne possède pas l’autorisation de gérer le planning. Reconnectez le compte.';
-      return false;
-    }
-    this.grantedScopes = new Set(value.scopes);
+    if (generation !== this.generation) return false;
+    this.grantedScopes = new Set(Array.isArray(value.scopes) ? value.scopes : []);
+    this.error = null;
     return generation === this.generation;
   }
 
@@ -387,18 +390,35 @@ export class TwitchClient {
   }
 
   async createSegment(item: CalendarItem) {
-    if (!this.state.connected) throw new Error('Connectez Twitch avant de modifier son planning.');
-    this.validateScheduleItem(item);
-    const exact = (await this.scheduleSegments()).filter(segment => this.sameIdentity(item, segment) && this.sameCategory(item, segment));
-    if (exact.length > 1) throw new Error('Plusieurs segments Twitch identiques existent déjà. Synchronisez puis choisissez explicitement celui à conserver.');
-    if (exact.length === 1) return { id: exact[0]!.id };
+    try {
+      this.requireScope(SCHEDULE_SCOPE);
+      if (!this.state.connected) throw new Error('Connectez Twitch avant de modifier son planning.');
+      this.validateScheduleItem(item);
+      const exact = (await this.scheduleSegments()).filter(segment => this.sameIdentity(item, segment) && this.sameCategory(item, segment));
+      if (exact.length > 1) throw new Error('Plusieurs segments Twitch identiques existent déjà. Synchronisez puis choisissez explicitement celui à conserver.');
+      if (exact.length === 1) return { id: exact[0]!.id };
+    } catch (error) {
+      throw Object.assign(error instanceof Error ? error : new Error(String(error)), { mutationNotStarted: true });
+    }
     return this.createSegmentUnchecked(item);
   }
 
   async updateSegment(id: string, item: CalendarItem) {
+    this.requireScope(SCHEDULE_SCOPE);
     if (!this.state.connected) throw new Error('Connectez Twitch avant de modifier son planning.');
     const duration = this.validateScheduleItem(item);
-    await this.api(`/schedule/segment?broadcaster_id=${encodeURIComponent(this.credentials.broadcasterId)}&id=${encodeURIComponent(id)}`, {
+    const fingerprint = item.providers?.twitch?.fingerprint;
+    if (fingerprint) {
+      const current = (await this.scheduleSegments()).find(segment => segment.id === id);
+      if (!current) throw Object.assign(new Error('Événement Twitch supprimé à distance.'), { code: 'DELETED_REMOTELY' });
+      if (this.segmentFingerprint(current) !== fingerprint) {
+        throw Object.assign(new Error('Le planning Twitch a changé ailleurs.'), { code: 'CONFLICT', remote: {
+          title: current.title, startAtUtc: current.start_time, endAtUtc: current.end_time,
+          twitchCategoryId: current.category?.id, twitchCategoryName: current.category?.name,
+        }, fingerprint: this.segmentFingerprint(current) });
+      }
+    }
+    const response = await this.api<{ data: { segments: ScheduleSegment[] } }>(`/schedule/segment?broadcaster_id=${encodeURIComponent(this.credentials.broadcasterId)}&id=${encodeURIComponent(id)}`, {
       method: 'PATCH',
       body: JSON.stringify({
         start_time: item.startAtUtc,
@@ -408,11 +428,23 @@ export class TwitchClient {
         ...(item.twitchCategoryId ? { category_id: item.twitchCategoryId } : {}),
       }),
     });
+    const segment = response?.data?.segments?.[0];
+    return { fingerprint: segment ? this.segmentFingerprint(segment) : undefined };
+  }
+
+  async readSegment(id: string) {
+    const segment = (await this.scheduleSegments()).find(value => value.id === id);
+    if (!segment) return { deleted: true };
+    return { fingerprint: this.segmentFingerprint(segment), remote: {
+      title: segment.title, startAtUtc: segment.start_time, endAtUtc: segment.end_time,
+      twitchCategoryId: segment.category?.id, twitchCategoryName: segment.category?.name,
+    } };
   }
 
   async deleteSegment(id: string) {
+    this.requireScope(SCHEDULE_SCOPE);
     if (!this.state.connected) throw new Error('Connectez Twitch avant de modifier son planning.');
-    await this.api(`/schedule/segment?broadcaster_id=${encodeURIComponent(this.credentials.broadcasterId)}&id=${encodeURIComponent(id)}`, { method: 'DELETE' });
+    try { await this.api(`/schedule/segment?broadcaster_id=${encodeURIComponent(this.credentials.broadcasterId)}&id=${encodeURIComponent(id)}`, { method: 'DELETE' }); } catch (error) { if (!(error instanceof TwitchHttpError && error.status === 404)) throw error; }
   }
 
   async sync(items: CalendarItem[]) {
@@ -555,7 +587,8 @@ export class TwitchClient {
   }
 
   private async pollDeviceAuthorization() {
-    const generation = this.generation;
+    let generation = this.generation;
+    let installing = false;
     try {
       while (this.pending && Date.now() < this.pending.expiresAt) {
         const pending = this.pending;
@@ -588,23 +621,47 @@ export class TwitchClient {
           if (reason === 'authorization_pending') continue;
           if (reason === 'slow_down') { pending.interval += 5; continue; }
           this.pending = undefined;
-          this.error = value.message ?? `Twitch HTTP ${response.status}`;
+          this.error = `Connexion Twitch refusée (HTTP ${response.status}).`;
           throw new Error(this.error);
         }
         if (!value.access_token) throw new Error('Twitch n’a renvoyé aucun jeton utilisateur.');
         if (generation !== this.generation) throw new Error('Connexion Twitch annulée.');
 
+        // Keep the active account intact until both identity and grant are verified.
+        const identity = await this.loadUser(value.access_token);
+        if (generation !== this.generation || this.pending !== pending) throw new Error('Connexion Twitch annulée.');
+        const validated = await this.json<{ client_id?: string; user_id?: string; scopes?: string[] }>(await this.request(`${AUTH}/validate`, {
+          headers: { Authorization: `OAuth ${value.access_token}` },
+        }));
+        if (generation !== this.generation || this.pending !== pending) throw new Error('Connexion Twitch annulée.');
+        if (validated.client_id !== this.credentials.clientId || validated.user_id !== identity.broadcasterId
+          || !Array.isArray(validated.scopes) || !validated.scopes.every(scope => typeof scope === 'string')) {
+          throw new Error('La nouvelle session Twitch ne correspond pas au compte ou à cette application.');
+        }
+
         this.pending = undefined;
-        this.credentials = { ...this.credentials, accessToken: value.access_token, refreshToken: value.refresh_token ?? '' };
-        await this.loadUser();
+        generation = ++this.generation;
+        this.networkAbort.abort();
+        this.networkAbort = new AbortController();
+        // Settle any old token rotation before persisting the replacement.
+        await this.refreshPromise?.catch(() => undefined);
         if (generation !== this.generation) throw new Error('Connexion Twitch annulée.');
+        this.refreshPromise = undefined;
+        installing = true;
+        this.credentials = { clientId: this.credentials.clientId, ...identity, accessToken: value.access_token, refreshToken: value.refresh_token ?? '' };
+        this.grantedScopes = new Set(validated.scopes);
         await this.persistTokens(generation);
+        this.error = null;
         return this.credentials;
       }
       this.pending = undefined;
       this.error = 'Le code Twitch a expiré. Recommencez la connexion.';
       throw new Error(this.error);
     } catch (error) {
+      if (installing && generation === this.generation) {
+        await this.disconnect();
+        generation = this.generation;
+      }
       if (generation === this.generation) {
         this.pending = undefined;
         this.error = error instanceof Error ? error.message : String(error);
@@ -613,12 +670,13 @@ export class TwitchClient {
     }
   }
 
-  private async loadUser() {
-    const users = await this.api<{ data: Array<{ id: string; login: string; display_name: string }> }>('/users');
+  private async loadUser(accessToken: string) {
+    const users = await this.json<{ data: Array<{ id: string; login: string; display_name: string }> }>(await this.request(`${API}/users`, {
+      headers: { Authorization: `Bearer ${accessToken}`, 'Client-Id': this.credentials.clientId },
+    }));
     const user = users.data[0];
-    if (!user) throw new Error('Twitch n’a renvoyé aucun compte.');
-    Object.assign(this.credentials, { broadcasterId: user.id, userName: user.login, displayName: user.display_name });
-    this.error = null;
+    if (!user || !user.id || typeof user.id !== 'string' || typeof user.login !== 'string' || typeof user.display_name !== 'string') throw new Error('Twitch n’a renvoyé aucun compte valide.');
+    return { broadcasterId: user.id, userName: user.login, displayName: user.display_name };
   }
 
   private validateScheduleItem(item: CalendarItem) {
@@ -626,7 +684,7 @@ export class TwitchClient {
     const end = Date.parse(item.endAtUtc);
     const duration = Math.ceil((end - start) / 60_000);
     if (!item.title.trim() || item.title.length > 140 || !Number.isFinite(start) || !Number.isFinite(end) || end <= start || duration < 30 || duration > 1380) {
-      throw new Error(`Le live « ${item.title} » doit avoir un titre de 1 à 140 caractères et une durée de 30 à 1380 minutes.`);
+      throw Object.assign(new Error(`Le live « ${item.title} » doit avoir un titre de 1 à 140 caractères et une durée de 30 à 1380 minutes.`), { mutationNotStarted: true });
     }
     return duration;
   }
@@ -634,7 +692,12 @@ export class TwitchClient {
   private requireConnected() {
     if (!this.state.connected) throw new Error('Connectez Twitch avant cette action.');
   }
-  private requireScope(scope: string) { this.requireConnected(); if (!this.grantedScopes.has(scope)) { const error = new Error(`Autorisation Twitch requise : ${scope}. Reconnectez le compte.`); error.name = 'TWITCH_NOT_AUTHORIZED'; Object.assign(error, { requiredScope: scope }); throw error; } }
+  private hasScope(scope: string) { return this.grantedScopes.has(scope) || (scope === REDEMPTIONS_SCOPE && this.grantedScopes.has('channel:manage:redemptions')); }
+  private requireScope(scope: string) { this.requireConnected(); if (!this.hasScope(scope)) { const error = new Error(`Autorisation Twitch requise : ${scope}. Reconnectez le compte.`); error.name = 'TWITCH_NOT_AUTHORIZED'; Object.assign(error, { requiredScope: scope }); throw error; } }
+
+  private segmentFingerprint(segment: ScheduleSegment) {
+    return createHash('sha256').update([segment.title, segment.start_time, segment.end_time, segment.category?.id ?? ''].join('\u001f')).digest('base64url');
+  }
 
   private sameIdentity(item: CalendarItem, segment: ScheduleSegment) {
     return item.title === segment.title
@@ -668,6 +731,8 @@ export class TwitchClient {
   }
 
   private async createSegmentUnchecked(item: CalendarItem) {
+    this.requireScope(SCHEDULE_SCOPE);
+    assertProviderCreationCertain(item, 'twitch');
     const duration = this.validateScheduleItem(item);
     try {
       const result = await this.api<{ data: { segments: Array<{ id: string }> } }>(`/schedule/segment?broadcaster_id=${encodeURIComponent(this.credentials.broadcasterId)}`, {
@@ -685,7 +750,7 @@ export class TwitchClient {
       return { id };
     } catch (error) {
       if (error instanceof TwitchHttpError && error.status === 403) {
-        throw new Error('Votre compte Twitch ne permet pas la création de segments de planning via l’API. Le planning local reste disponible.');
+        throw new TwitchHttpError(403, 'Votre compte Twitch ne permet pas la création de segments de planning via l’API. Le planning local reste disponible.');
       }
       throw error;
     }
@@ -700,12 +765,23 @@ export class TwitchClient {
         throw new Error('Twitch ne répond pas dans le délai attendu. Réessayez.');
       }
       if (this.networkAbort.signal.aborted) throw new Error('Opération Twitch annulée.');
-      throw error;
+      throw new Error('Connexion réseau Twitch indisponible. Réessayez.');
     }
   }
 
   private async api<T>(path: string, init?: RequestInit): Promise<T> {
     const generation = this.generation;
+    const endpoint = path.split('?')[0];
+    const requiredScope = endpoint === '/chat/messages' ? CHAT_WRITE_SCOPE
+      : endpoint === '/chat/chatters' ? CHATTERS_SCOPE
+      : endpoint === '/moderation/chat' ? DELETE_CHAT_SCOPE
+      : endpoint === '/moderation/bans' ? BANS_SCOPE
+      : endpoint === '/schedule/segment' ? SCHEDULE_SCOPE
+      : endpoint === '/channel_points/custom_rewards' ? REDEMPTIONS_SCOPE
+      : endpoint === '/clips' && init?.method === 'POST' ? CLIPS_SCOPE
+      : endpoint === '/videos' && init?.method === 'DELETE' ? VIDEOS_SCOPE
+      : endpoint === '/channels' && init?.method === 'PATCH' ? BROADCAST_SCOPE : undefined;
+    if (requiredScope) this.requireScope(requiredScope);
     let response = await this.request(`${API}${path}`, {
       ...init,
       headers: {
@@ -725,10 +801,11 @@ export class TwitchClient {
       try {
         await this.refreshSingleFlight();
       } catch (error) {
-        if (generation === this.generation) await this.disconnect();
+        if (generation === this.generation && error instanceof TwitchHttpError && [400, 401].includes(error.status)) await this.disconnect();
         throw error;
       }
       if (generation !== this.generation) throw new Error('Opération Twitch annulée.');
+      if (requiredScope) this.requireScope(requiredScope);
       response = await this.request(`${API}${path}`, {
         ...init,
         headers: {
@@ -744,7 +821,13 @@ export class TwitchClient {
         throw new Error('Session Twitch expirée. Reconnectez votre compte.');
       }
     }
-    return this.json<T>(response);
+    if (response.status === 403) {
+      // Revoked scopes must stop advertising actions before the next hourly validation.
+      await this.validateSession().catch(() => undefined);
+    }
+    const result = await this.json<T>(response);
+    if (generation !== this.generation) throw new Error('Opération Twitch annulée.');
+    return result;
   }
 
   private async refreshSingleFlight() {
@@ -761,13 +844,15 @@ export class TwitchClient {
       headers: { 'content-type': 'application/x-www-form-urlencoded' },
       body: new URLSearchParams({ grant_type: 'refresh_token', refresh_token: refreshToken, client_id: this.credentials.clientId }),
     });
-    const token = await this.json<{ access_token: string; refresh_token?: string }>(response);
+    const token = await this.json<{ access_token: string; refresh_token?: string; scope?: string[] }>(response);
+    if (!token.access_token) throw new Error('Renouvellement Twitch invalide.');
     if (generation !== this.generation) throw new Error('Renouvellement Twitch annulé.');
     const next = { accessToken: token.access_token, refreshToken: token.refresh_token ?? refreshToken };
     await this.onTokensChanged(next);
     if (generation !== this.generation) throw new Error('Renouvellement Twitch annulé.');
     this.credentials.accessToken = next.accessToken;
     this.credentials.refreshToken = next.refreshToken;
+    if (Array.isArray(token.scope)) this.grantedScopes = new Set(token.scope);
   }
 
   private async persistTokens(generation = this.generation) {
@@ -782,13 +867,13 @@ export class TwitchClient {
     try {
       value = await response.json() as T & { message?: string };
     } catch {
-      throw new TwitchHttpError(response.status, `Twitch HTTP ${response.status}`);
+      throw new TwitchHttpError(response.ok ? 502 : response.status, 'Réponse Twitch invalide.', response.headers.get('retry-after'));
     }
-    if (!response.ok) throw new TwitchHttpError(response.status, value.message ?? `Twitch HTTP ${response.status}`);
+    if (!response.ok) throw new TwitchHttpError(response.status, response.status === 429 ? 'Limite Twitch atteinte. Réessayez plus tard.' : `Twitch HTTP ${response.status}`, response.headers.get('retry-after'));
     return value;
   }
 }
 
-class TwitchHttpError extends Error {
-  constructor(readonly status: number, message: string) { super(message); }
+export class TwitchHttpError extends Error {
+  constructor(readonly status: number, message: string, readonly retryAfter: string | null = null) { super(message); this.name = 'TWITCH_HTTP_ERROR'; }
 }

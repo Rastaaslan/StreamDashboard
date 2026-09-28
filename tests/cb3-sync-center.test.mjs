@@ -21,11 +21,11 @@ test('pending operations, publication conflicts and successful sync timestamps r
   s.updateProvider(item.id, 'twitch', { status:'conflict', lastError:'Version distante modifiée' });
   s.applySyncResponse({ conflicts:[{ operationId:'op', fields:['title'] }] });
   let summary = syncSummary(s.snapshot(), undefined, M.ONLINE_STANDALONE);
-  assert.equal(summary.pending, 1); assert.equal(summary.providerPending, 1); assert.equal(summary.conflicts, 2); assert.equal(summary.lastSync, null);
+  assert.equal(summary.pending, 2); assert.equal(summary.providerPending, 1); assert.equal(summary.conflicts, 2); assert.equal(summary.lastSync, null);
   s.updateProvider(item.id, 'google', { status:'synced' });
   summary = syncSummary(s.snapshot(), undefined, M.ONLINE_STANDALONE);
   assert.equal(summary.lastSync, '2026-09-28T10:00:00Z');
-  assert.equal(summary.pending, 1); // provider success does not acknowledge PC queue
+  assert.equal(summary.pending, 3); // each provider result is durable and does not acknowledge the PC queue
   s.applySyncResponse({ acknowledged:s.snapshot().pending.map(op=>op.id), conflicts:[] });
   assert.equal(syncSummary(s.snapshot(), undefined, M.ONLINE_STANDALONE).pending, 0);
 });
@@ -54,7 +54,7 @@ test('targeted retry routes by mode, deduplicates and rejects offline or unsuppo
 test('standalone retry preserves other provider, reports syncing/conflict then clears error on successful create', async () => {
   const s=store(); const item=s.createEvent({title:'Live',desiredPublication:{twitch:true,google:true},providerLinks:{google:{status:'synced',remoteId:'g'}}}).item;
   let fail=true; const calls=[];
-  const sync=createStandaloneProviderSync({store:s,adapter:{mutate:async(provider,action)=>{calls.push([provider,action]); assert.equal(s.snapshot().planning[0].providerLinks.twitch.status,'syncing'); if(fail) throw Object.assign(new Error('Conflit distant'),{code:'CONFLICT'}); return {remoteId:'t'};}}});
+  const sync=createStandaloneProviderSync({store:s,adapter:{mutate:async(provider,action)=>{calls.push([provider,action]); assert.equal(s.snapshot().planning[0].providerLinks.twitch.status,'syncing'); if(fail) throw Object.assign(new Error('Conflit distant'),{code:'CONFLICT',mutationNotStarted:true}); return {remoteId:'t'};}}});
   await sync.apply(M.ONLINE_STANDALONE,item,undefined,'twitch');
   assert.equal(s.snapshot().planning[0].providerLinks.twitch.status,'conflict');
   fail=false; await sync.apply(M.ONLINE_STANDALONE,s.snapshot().planning[0],undefined,'twitch');

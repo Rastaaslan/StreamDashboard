@@ -39,3 +39,49 @@ Android queries moderation capabilities before rendering actions. Missing scopes
 produce `TWITCH_NOT_AUTHORIZED` with the exact `requiredScope`; delete, timeout,
 ban and unban are never shown as successful before the Helix response. EventSub
 also uses a keepalive watchdog and bounded exponential reconnect delay.
+
+CB-15 runtime audit:
+
+* All protected mutations check their exact scope, including VOD deletion and
+  schedule writes. Partial grants remain connected; a missing schedule scope does
+  not disable unrelated chat or channel features.
+* Device reauthorization validates the new identity/scopes before completion,
+  cancels old requests, resets cached channel/audience data and replaces EventSub
+  subscriptions. Snapshots carry the current capabilities to Desktop and mobile.
+* Clip creation checks `/streams` immediately before the mutation and returns
+  HTTP 409 offline. Chat, moderation, metadata and existing VOD/clip reads do not
+  require a live stream.
+* Live polling and chatter polling fail independently. Failed live reads clear
+  the live indicator and viewer count; failed chatter reads clear the roster.
+  `audience.viewer-count.updated` uses the event core's supported naming format.
+* Only authentication failures clear stored credentials. HTTP 429 and provider
+  failures preserve the session; API responses retain the HTTP status and numeric
+  `Retry-After`. Provider error bodies and network error details are not forwarded
+  to logs or mobile. A 403 triggers scope revalidation without replaying mutations.
+* `channel:read:redemptions` enables custom rewards and Streamer Pings through
+  EventSub. Obsolete sockets and notifications for a different broadcaster are
+  ignored. Viewer count always comes from `/streams`, never from chatters.
+
+Regression coverage: `tests/twitch-runtime-audit.test.ts` exercises the client and
+EventSub lifecycle; `tests/twitch-runtime-api.test.ts` starts the runtime and checks
+HTTP guards, live/audience transitions, mobile projection and secret redaction
+using mocked Twitch responses. No live Twitch account is required by these tests.
+
+Reauthorization stages the candidate token, `/users` identity and `/validate`
+grant before replacing the active session. A 429/503 during either check keeps
+the previous identity, scopes and persisted tokens together. Failed persistence
+of a verified replacement disconnects and clears the session. The runtime tests
+also restart the server after failed account switching to verify consistency.
+
+Both mobile clip buttons require a connected PC, a connected Twitch session,
+confirmed `clips:edit` capability and `controlHub.live.isLive === true`. OBS
+streaming does not affect their availability. Behavioral renderer coverage is in
+`tests/mobile-twitch-capabilities.test.ts`.
+
+In a restricted worktree where `/tmp` is not writable, run Vitest with its
+temporary directory inside the worktree:
+
+```sh
+mkdir -p .tmp
+TMPDIR="$PWD/.tmp" npm test
+```

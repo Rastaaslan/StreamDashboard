@@ -82,37 +82,48 @@ export class TwitchEventSub {
   ) {}
 
   start() { if (!this.stopped) return; this.stopped = false; this.connect(EVENTSUB_URL, true); }
-  stop() { this.stopped = true; if (this.reconnectTimer) clearTimeout(this.reconnectTimer); if (this.watchdog) clearTimeout(this.watchdog); this.socket?.close(); this.socket = undefined; this.onStatus('DISCONNECTED'); }
+  stop() { this.stopped = true; if (this.reconnectTimer) clearTimeout(this.reconnectTimer); if (this.watchdog) clearTimeout(this.watchdog); const socket = this.socket; this.socket = undefined; this.reconnectTimer = undefined; this.watchdog = undefined; socket?.close(); this.onStatus('DISCONNECTED'); }
 
   private connect(url: string, shouldSubscribe: boolean) {
     if (this.stopped) return;
     this.onStatus('CONNECTING');
     const socket = this.createSocket(url);
     this.socket = socket;
+    this.armWatchdog(socket, 30);
+    let welcomed = false;
     socket.on('message', raw => {
+      if (this.stopped || this.socket !== socket) return;
       let value: any;
       try { value = JSON.parse(raw.toString()); } catch { return; }
+      if (!value || typeof value !== 'object') return;
       const type = value.metadata?.message_type;
       this.armWatchdog(socket, Number(value.payload?.session?.keepalive_timeout_seconds) || 30);
       if (type === 'session_welcome') {
+        if (welcomed) return;
+        welcomed = true;
         const sessionId = value.payload?.session?.id;
-        if (shouldSubscribe && typeof sessionId === 'string') void this.subscribe(sessionId).then(() => { this.reconnectAttempt = 0; this.onStatus('CONNECTED'); }).catch(error => { this.onStatus('DEGRADED', error instanceof Error ? error.message : String(error)); socket.close(); });
+        if (shouldSubscribe && typeof sessionId === 'string') void this.subscribe(sessionId).then(() => { if (this.stopped || this.socket !== socket) return; this.reconnectAttempt = 0; this.onStatus('CONNECTED'); }).catch(error => { if (this.stopped || this.socket !== socket) return; this.onStatus('DEGRADED', error instanceof Error ? error.message : String(error)); socket.close(); });
         else { this.reconnectAttempt = 0; this.onStatus('CONNECTED'); }
         return;
       }
       if (type === 'session_reconnect' && typeof value.payload?.session?.reconnect_url === 'string') {
-        this.connect(value.payload.session.reconnect_url, false);
+        let target: URL;
+        try { target = new URL(value.payload.session.reconnect_url); } catch { return; }
+        if (target.protocol !== 'wss:' || target.hostname !== 'eventsub.wss.twitch.tv' || target.username || target.password || target.port) return;
+        this.connect(target.toString(), false);
         socket.close();
         return;
       }
+      if (type === 'revocation') { this.onStatus('DEGRADED', 'Autorisation EventSub révoquée. Reconnectez Twitch.'); socket.close(); return; }
       const message = parseChatNotification(value);
       if (message) this.onMessage(message);
       const redemption = parseRewardRedemptionNotification(value);
       if (redemption) this.onRewardRedemption(redemption);
     });
-    socket.on('error', error => this.onStatus('DEGRADED', error.message));
+    socket.on('error', () => { if (!this.stopped && this.socket === socket) this.onStatus('DEGRADED', 'Connexion EventSub indisponible.'); });
     socket.on('close', () => {
-      if (this.socket === socket) this.socket = undefined;
+      if (this.socket !== socket) return;
+      this.socket = undefined;
       if (this.watchdog) clearTimeout(this.watchdog);
       if (this.stopped || this.socket) return;
       this.onStatus('DEGRADED', 'Connexion Twitch EventSub interrompue.');
@@ -122,5 +133,5 @@ export class TwitchEventSub {
     });
   }
 
-  private armWatchdog(socket: WebSocket, timeoutSeconds: number) { if (this.watchdog) clearTimeout(this.watchdog); this.watchdog = setTimeout(() => { if (this.socket === socket) { this.onStatus('DEGRADED', 'Twitch EventSub keepalive expiré.'); socket.close(); } }, Math.max(10, timeoutSeconds + 10) * 1_000); this.watchdog.unref(); }
+  private armWatchdog(socket: WebSocket, timeoutSeconds: number) { if (this.watchdog) clearTimeout(this.watchdog); this.watchdog = setTimeout(() => { if (this.socket === socket) { this.onStatus('DEGRADED', 'Twitch EventSub keepalive expiré.'); socket.close(); } }, Math.min(70, Math.max(10, timeoutSeconds + 10)) * 1_000); this.watchdog.unref(); }
 }

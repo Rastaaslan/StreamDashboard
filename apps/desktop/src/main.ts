@@ -17,6 +17,7 @@ let window: BrowserWindow | null = null;
 let runtime: DesktopRuntime | null = null;
 let stopUpdater: () => void = () => undefined;
 let quitting = false;
+let booting = false;
 
 app.on('second-instance', () => {
   if (!window || window.isDestroyed()) return;
@@ -41,6 +42,7 @@ const showStartupError = async (error: unknown): Promise<void> => {
 };
 
 async function boot(): Promise<void> {
+  booting = true;
   try {
     await cleanupRuntime();
     if (window && !window.isDestroyed()) window.destroy();
@@ -55,16 +57,17 @@ async function boot(): Promise<void> {
     window = createDashboardWindow(targetUrl, path.join(import.meta.dirname, 'preload.cjs'), preview ? 'StreamDashboard Desktop Preview' : 'StreamDashboard');
     stopUpdater = startUpdater(window, runtime.dashboard, runtime.logger, async () => { await cleanupRuntime(); });
     window.webContents.on('render-process-gone', (_event, details) => {
-      void Promise.resolve(runtime?.logger.error('Renderer crash', details.reason)).finally(() => { void showStartupError(new Error(`Le renderer StreamDashboard s’est arrêté : ${details.reason}`)); });
+      void Promise.resolve(runtime?.logger.error('Renderer crash', details.reason)).catch(() => undefined).then(() => showStartupError(new Error(`Le renderer StreamDashboard s’est arrêté : ${details.reason}`))).catch(() => app.quit());
     });
     window.webContents.on('did-fail-load', (_event, code, description) => {
       if (code === -3) return;
-      void Promise.resolve(runtime?.logger.error('Renderer load failure', code, description)).finally(() => { void showStartupError(new Error(description)); });
+      void Promise.resolve(runtime?.logger.error('Renderer load failure', code, description)).catch(() => undefined).then(() => showStartupError(new Error(description))).catch(() => app.quit());
     });
   } catch (error) { await showStartupError(error); }
+  finally { booting = false; }
 }
 
-app.whenReady().then(() => primary ? boot() : undefined);
+void app.whenReady().then(() => primary ? boot() : undefined).catch(() => app.quit());
 ipcMain.handle('app:get-version', () => app.getVersion());
 ipcMain.handle('app:open-twitch-activation', async (_event, url: unknown) => {
   if (typeof url !== 'string' || !isAllowedTwitchUrl(url)) return false;
@@ -95,7 +98,7 @@ ipcMain.handle('soundboard:import-file', async (_event, source: unknown) => {
 ipcMain.on('app:minimize', () => window?.minimize());
 ipcMain.on('app:close', () => window?.close());
 
-app.on('window-all-closed', () => app.quit());
+app.on('window-all-closed', () => { if (!booting) app.quit(); });
 app.on('before-quit', event => {
   if (!runtime || quitting) return;
   event.preventDefault(); quitting = true;
@@ -105,6 +108,6 @@ app.on('before-quit', event => {
 process.on('uncaughtException', error => {
   if (!app.isPackaged) { process.removeAllListeners('uncaughtException'); throw error; }
   const fallback = setTimeout(() => app.exit(1), 1_000); fallback.unref();
-  void Promise.resolve(runtime?.logger.error('Uncaught exception', error)).finally(() => { clearTimeout(fallback); app.exit(1); });
+  void Promise.resolve(runtime?.logger.error('Uncaught exception', error)).catch(() => undefined).finally(() => { clearTimeout(fallback); app.exit(1); });
 });
 process.on('unhandledRejection', error => { void Promise.resolve(runtime?.logger.error('Unhandled rejection', error)).catch(() => undefined); });

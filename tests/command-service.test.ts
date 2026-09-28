@@ -12,6 +12,20 @@ function setup() {
 }
 
 describe('service de commandes', () => {
+  it('attend les commandes acceptées avant shutdown et refuse les suivantes', async () => {
+    const { service, obs, commit } = setup();
+    let finish!: () => void;
+    vi.mocked(obs.restartMedia).mockImplementation(() => new Promise<void>(resolve => { finish = resolve; }));
+    const operation = service.execute({ type: 'obs.media.restart', input: 'Jingle' });
+    await Promise.resolve();
+    let stopped = false;
+    const closing = service.stop().then(() => { stopped = true; });
+    await expect(service.execute({ type: 'obs.media.restart', input: 'Jingle' })).rejects.toThrow('arrêt');
+    expect(stopped).toBe(false);
+    finish(); await Promise.all([operation, closing]);
+    expect(stopped).toBe(true); expect(obs.restartMedia).toHaveBeenCalledOnce(); expect(commit).toHaveBeenCalledOnce();
+  });
+
   it('active Chatting en un appui tout en restant dans le mode live', async () => {
     const domain = { mode: 'live' as const, timer: { running: true, duration: 300, remaining: 240, deadline: Date.now() + 240_000 }, checklist: [] };
     const beforeTimer = { ...domain.timer };
@@ -129,11 +143,11 @@ describe('service de commandes', () => {
     const obs: ObsCommands = {
       state: { connected: true, streaming: true }, scene: vi.fn(), mute: vi.fn(), volume: vi.fn(), stream: vi.fn(), record: vi.fn(), restartMedia: vi.fn(),
       waitForStreaming: vi.fn(async () => { throw new Error('event missed'); }),
-      refresh: vi.fn(async () => { obs.state.streaming = false; }),
+      refresh: vi.fn(async () => { if (vi.mocked(obs.stream).mock.calls.length) obs.state.streaming = false; }),
     };
     const service = new DashboardCommandService(domain, obs, vi.fn(async () => ({}) as never));
     await service.execute({ type: 'session.stop' });
-    expect(obs.refresh).toHaveBeenCalledOnce();
+    expect(obs.refresh).toHaveBeenCalledTimes(2);
     expect(domain.mode).toBe('end'); expect(domain.timer.running).toBe(false);
   });
 
@@ -162,7 +176,7 @@ describe('service de commandes', () => {
     const pause = service.execute({ type: 'mode.set', mode: 'pause' });
     expect(obs.scene).not.toHaveBeenCalledWith('Pause');
     release(); await Promise.all([start, pause]);
-    expect(order).toEqual(['scene:Live', 'stream', 'confirmed', 'scene:Pause', 'refresh']);
+    expect(order).toEqual(['refresh', 'scene:Live', 'stream', 'confirmed', 'scene:Pause', 'refresh']);
     expect(domain.mode).toBe('pause');
   });
 
@@ -197,4 +211,46 @@ describe('service de commandes', () => {
     await expect(service.execute({ type: 'obs.stream', start: true })).rejects.toMatchObject({ name: 'CHECKLIST_INCOMPLETE' });
     expect(obs.stream).not.toHaveBeenCalled();
   });
+});
+
+it('annule une commande en attente après remplacement de la connexion OBS', async () => {
+  const { obs, commit, domain } = setup();
+  let generation = 1;
+  Object.defineProperty(obs, 'connectionGeneration', { get: () => generation });
+  let release!: () => void;
+  obs.mute = vi.fn(() => new Promise<void>(resolve => { release = resolve; }));
+  const service = new DashboardCommandService(domain, obs, commit);
+  const first = service.execute({ type: 'obs.mute', input: 'Mic', muted: true });
+  await vi.waitFor(() => expect(obs.mute).toHaveBeenCalled());
+  const queued = service.execute({ type: 'obs.scene', scene: 'Live' });
+  const rejected = expect(queued).rejects.toThrow('commande annulée');
+  generation++;
+  release(); await first; await rejected;
+  expect(obs.scene).not.toHaveBeenCalled();
+});
+
+it('refuse une confirmation streaming stale après disparition OBS', async () => {
+  const { obs, service, commit } = setup();
+  obs.stream = vi.fn(async () => {
+    obs.state.streaming = true;
+    obs.state.streamingKnown = false;
+    obs.state.connected = false;
+    throw new Error('connection lost');
+  });
+  await expect(service.execute({ type: 'session.start' })).rejects.toThrow('connection lost');
+  expect(commit).not.toHaveBeenCalled();
+});
+
+it('ne rejoue pas StopStream après une reconnexion pendant la scène End', async () => {
+  const { obs, domain, commit } = setup();
+  obs.state.streaming = true;
+  let generation = 1;
+  Object.defineProperty(obs, 'connectionGeneration', { get: () => generation });
+  const service = new DashboardCommandService(domain, obs, commit, {
+    settings: { modeScenes: { end: 'End' } },
+    wait: async () => { generation++; },
+  });
+  await expect(service.execute({ type: 'session.stop' })).rejects.toThrow('commande annulée');
+  expect(obs.stream).not.toHaveBeenCalled();
+  expect(commit).not.toHaveBeenCalled();
 });

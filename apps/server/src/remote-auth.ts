@@ -4,6 +4,7 @@ import type { RemoteDevice } from '../../../packages/contracts/src/index.js';
 interface Pairing { digest: Buffer; expiresAt: number; used: boolean }
 interface WsTicket { deviceId: string; expiresAt: number; used: boolean }
 interface DeviceRecord extends RemoteDevice { credentialHash: Buffer }
+export interface PersistedPairing { id: string; digest: string; expiresAt: number }
 export interface PersistedRemoteDevice extends RemoteDevice { credentialHash: string }
 
 export class RemoteAuth {
@@ -12,7 +13,12 @@ export class RemoteAuth {
   private attempts = new Map<string, number[]>();
   private wsTickets = new Map<string, WsTicket>();
 
-  constructor(private now: () => number = Date.now, initial: PersistedRemoteDevice[] = []) {
+  constructor(private now: () => number = Date.now, initial: PersistedRemoteDevice[] = [], pending: PersistedPairing[] = []) {
+    for (const value of pending) {
+      if (!value || typeof value.digest !== 'string') continue;
+      const digest = Buffer.from(value.digest, 'base64');
+      if (digest.length === 32 && value.expiresAt > this.now()) this.pairing.set(value.id, { digest, expiresAt: value.expiresAt, used: false });
+    }
     for (const device of initial) {
       const credentialHash = Buffer.from(device.credentialHash, 'base64');
       if (credentialHash.length === 32) this.devices.set(device.id, { ...device, credentialHash });
@@ -92,6 +98,11 @@ export class RemoteAuth {
 
   list(): RemoteDevice[] {
     return [...this.devices.values()].map(({ credentialHash: _secret, ...device }) => ({ ...device }));
+  }
+
+  serializePairings(): PersistedPairing[] {
+    this.cleanup();
+    return [...this.pairing].map(([id, value]) => ({ id, digest: value.digest.toString('base64'), expiresAt: value.expiresAt }));
   }
 
   serialize(): PersistedRemoteDevice[] {

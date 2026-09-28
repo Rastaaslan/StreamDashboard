@@ -21,7 +21,8 @@ test('assistant refusal → Planning error → targeted sync retry → prelive r
   const permissions = () => planningPublicationPermissions({ mode, phone: phone() });
   const diagnostic = () => diagnosePrelive({ mode, cache: store.snapshot(), phone: phone() });
   assert.equal(permissions().google.available, false);
-  await sync.apply(mode, item);
+  // This scenario exercises only Google; a general reconciliation also unpublishes disabled Twitch.
+  await sync.apply(mode, item, undefined, 'google');
   assert.equal(writes, 0);
   const summary = syncSummary(store.snapshot(), undefined, mode);
   assert.equal(summary.entries.find(entry => entry.provider === 'google').retryable, true);

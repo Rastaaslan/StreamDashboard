@@ -8,18 +8,25 @@ export class HttpError extends Error {
   constructor(status, message) { super(message); this.status = status; }
 }
 
-export function createTransport(getServer, getCredential) {
+export class StaleConnectionError extends Error {
+  constructor() { super('Réponse ignorée : la connexion au PC a changé.'); this.name = 'StaleConnectionError'; }
+}
+
+export function createTransport(getServer, getCredential, getGeneration = () => 0) {
   const url = path => isAndroidRuntime() ? apiUrl(getServer(), path) : path;
   const request = async (path, init = {}, timeoutMs = REQUEST_TIMEOUT_MS) => {
+    const generation = getGeneration();
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), timeoutMs);
     try {
       const response = await fetch(url(path), { ...init, signal: controller.signal });
       const body = await response.json().catch(() => ({}));
+      if (generation !== getGeneration()) throw new StaleConnectionError();
       if (!response.ok) throw new HttpError(response.status, body.error?.message || body.error || `HTTP ${response.status}`);
       return body;
     } catch (error) {
-      if (error?.name === 'AbortError') throw new Error('Le PC ne répond pas dans le délai attendu.');
+      if (generation !== getGeneration()) throw new StaleConnectionError();
+      if (error?.name === 'AbortError' || error instanceof TypeError) throw new Error('PC injoignable. Vérifiez le même réseau Wi-Fi/Ethernet et l’adresse LAN affichée sur le PC, puis mettez à jour Connexions.');
       throw error;
     } finally { clearTimeout(timeout); }
   };
@@ -49,7 +56,7 @@ export function createTransport(getServer, getCredential) {
 
   // The current server may reject PUT/DELETE remotely or the Android WebView may stop them at CORS.
   // In both cases the transactional companion POST remains authenticated and preserves revisions.
-  const shouldFallbackPlanning = error => !(error instanceof HttpError) || error.status === 403;
+  const shouldFallbackPlanning = error => !(error instanceof StaleConnectionError) && (!(error instanceof HttpError) || error.status === 403);
 
   return {
     request,
@@ -93,6 +100,7 @@ export function createTransport(getServer, getCredential) {
     searchTwitch: query => request(`/api/v1/twitch/categories?q=${encodeURIComponent(query)}`, { headers: { authorization: `Device ${getCredential()}` } }),
     updateTwitch: value => request('/api/v1/twitch/channel', { method: 'POST', headers: authHeaders(), body: JSON.stringify(value) }),
     createPlanning: value => request('/api/v1/planning', { method: 'POST', headers: authHeaders(), body: JSON.stringify(value) }),
+    resolvePlanningProvider: (id, provider, strategy) => request(`/api/v1/planning/${encodeURIComponent(id)}/conflict/${encodeURIComponent(provider)}`, { method: 'POST', headers: authHeaders(), body: JSON.stringify({ strategy }) }),
     retryPlanningProvider: (id, provider) => request(`/api/v1/planning/${encodeURIComponent(id)}/retry/${encodeURIComponent(provider)}`, { method: 'POST', headers: authHeaders(), body: '{}' }),
     updatePlanning: async (id, value) => {
       try { return await request(`/api/v1/planning/${encodeURIComponent(id)}`, { method: 'PUT', headers: authHeaders(), body: JSON.stringify(value) }); }

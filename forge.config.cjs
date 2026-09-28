@@ -15,7 +15,10 @@ module.exports = {
     // package.json and production node_modules. Source/tests/tooling only increase the
     // attack/read surface and ASAR size, so exclude them from shipped builds.
     ignore: [
-      /^\/(?:_integration_sources|tests|docs|scripts|data|\.github)(?:\/|$)/,
+      /^\/node_modules\/(?:\.cache|\.vite)(?:\/|$)/,
+      /^\/(?:test-results|playwright-report)(?:\/|$)/,
+      /^\/dist\/(?:tests|scripts)(?:\/|$)/,
+      /^\/(?:_integration_sources|android|tests|docs|scripts|data|\.github|\.agents|\.codex)(?:\/|$)/,
       /^\/apps\/(?:desktop|server)\/src(?:\/|$)/,
       /^\/(?:integrations|packages)(?:\/|$)/,
       /^\/(?:README\.md|tsconfig\.json|vitest\.config\.ts|playwright(?:\.[^/]*)?\.ts|\.env\.example|Lancer_StreamDashboard\.cmd|package-lock\.json)$/,

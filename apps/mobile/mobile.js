@@ -10,7 +10,7 @@ import { CompanionMode, createCompanionStore, resolveMode } from './companion-st
 import { createNativeProviderAdapter, createStandaloneProviderSync } from './provider-sync.js';
 import { recurrenceSummary } from './shared/recurrence.js';
 import { createMobileFixture, devFixtureName } from './dev-fixtures.js';
-import { acceptsSnapshot, createCommandController, primaryMicCommand } from './command-controller.js';
+import { acceptsSnapshot, createCommandController, primaryMicCommand, confirmsObsStreaming, obsRuntimeView } from './command-controller.js';
 import { setMobileContext } from './mobile-context.js';
 
 const $ = id => document.getElementById(id);
@@ -87,6 +87,9 @@ let pairingInFlight = false;
 let ws = null;
 let retry = 500;
 let reconnectTimer = null;
+let connectionGeneration = 0;
+let connectionInFlight = false;
+let healthCheckInFlight = false;
 let companionMode = CompanionMode.OFFLINE;
 const phoneProviderSnapshots = {};
 const companion = createCompanionStore();
@@ -105,8 +108,9 @@ const exportNoteKey = 'streamdashboard.exportNote';
 try { planningFilters = { ...planningFilters, ...JSON.parse(localStorage.getItem('streamdashboard.planningFilters') || '{}') }; } catch { /* corrupted preferences reset safely */ }
 if (!Object.values(TEMPORAL_FILTERS).includes(planningTemporal)) planningTemporal = TEMPORAL_FILTERS.UPCOMING;
 
-const transport = createTransport(() => server, () => credential);
+const transport = createTransport(() => server, () => credential, () => connectionGeneration);
 const commandController = createCommandController({
+  getGeneration: () => connectionGeneration,
   send: (value, options) => transport.command(value, options),
   readState: () => transport.state(),
   applyState: next => render(next),
@@ -162,7 +166,7 @@ function syncMobileStreamerPing(pings = []) {
   if (!dialog.open) dialog.showModal();
 }
 async function ensureCredentialOwner() { if (!credential) credential = await credentialStorage.get() || ''; if (!credential) throw new Error('Télécommande non appairée.'); return credential; }
-setMobileContext({ companion, transport, providerSync, getCredential: () => credential, ensureCredential: ensureCredentialOwner, getMode: () => companionMode, getState: () => state, getProviderDiagnostics: () => phoneProviderSnapshots, refreshProviderDiagnostics: refreshProviderAccounts, applyState: next => render(next), executeCommand: command, syncCompanion, note });
+setMobileContext({ refreshState: fetchState, companion, transport, providerSync, getCredential: () => credential, ensureCredential: ensureCredentialOwner, getMode: () => companionMode, getState: () => state, getProviderDiagnostics: () => phoneProviderSnapshots, refreshProviderDiagnostics: refreshProviderAccounts, applyState: next => render(next), executeCommand: command, syncCompanion, note });
 const text = (tag, value, className) => {
   const node = document.createElement(tag);
   node.textContent = String(value ?? '');
@@ -190,8 +194,11 @@ const planningWhenParts = item => {
 const formatPlanningDate = item => { const when = planningWhenParts(item); return `${when.date} · ${when.time}`; };
 
 function remoteButtons(disabled) {
-  document.querySelectorAll('button[data-command],button[data-mode],button[data-chatting],button[data-media],button[data-mute],#stream')
+  document.querySelectorAll('button[data-command],button[data-mode],button[data-chatting],button[data-media],button[data-mute]')
     .forEach(button => { button.disabled = disabled; });
+  const streamDisabled = disabled || companionMode !== CompanionMode.ONLINE_PC || !obsRuntimeView(state).known;
+  $('stream').disabled = streamDisabled;
+  $('live-stream').disabled = streamDisabled;
 }
 
 function offlineState() {
@@ -224,6 +231,8 @@ function showPairing(show) {
   }
   $('pairing').hidden = !show;
   $('forget-device').hidden = show || legacyMode;
+  $('reconnect-address').hidden = !isAndroidRuntime() || !credential;
+  if (show) $('pair-server').value = server;
   if (show) remoteButtons(true);
 }
 
@@ -397,9 +406,10 @@ function renderControlHub(hub) {
   $('hub-category').textContent = hub?.live?.category || (companionMode === CompanionMode.ONLINE_PC ? 'PC Runtime connecté' : 'Les contrôles PC reviendront à la reconnexion.');
   $('hub-viewers').textContent = Number.isInteger(hub?.audience?.viewerCount) ? String(hub.audience.viewerCount) : '—';
   $('hub-chatters').textContent = Array.isArray(hub?.audience?.chatters) ? String(hub.audience.chatters.length) : '—';
-  const isLive = hub?.live?.isLive === true; document.querySelector('[data-view="home"]')?.classList.toggle('is-live', isLive); const degraded = Object.values(hub?.integrations || {}).some(value => ['DEGRADED', 'ERROR'].includes(value.status)); const duration = Number.isFinite(hub?.live?.durationSeconds) ? formatClock(hub.live.durationSeconds) : '—';
-  $('home-live-status').textContent = isLive ? `${degraded ? '!' : '●'} En direct` : companionMode === CompanionMode.ONLINE_PC ? '○ Prêt' : '○ Hors ligne'; $('home-live-status').className = `live-line ${isLive ? degraded ? 'danger' : 'ok' : ''}`; $('home-duration').textContent = duration;
-  $('direct-scene').textContent = state?.obs?.scene || 'Aucune scène'; $('direct-twitch-state').textContent = humanProviderStatus(hub?.integrations?.twitch?.status || 'DISCONNECTED'); $('obs-status-detail').textContent = state?.obs?.connected ? 'Connecté' : 'Indisponible'; $('twitch-status-detail').textContent = $('direct-twitch-state').textContent;
+  const obsView = obsRuntimeView(state);
+  const isLive = obsView.live; document.querySelector('[data-view="home"]')?.classList.toggle('is-live', isLive); const degraded = Object.values(hub?.integrations || {}).some(value => ['DEGRADED', 'ERROR'].includes(value.status)); const duration = Number.isFinite(hub?.live?.durationSeconds) ? formatClock(hub.live.durationSeconds) : '—';
+  $('home-live-status').textContent = obsView.liveLabel; $('home-live-status').className = `live-line ${isLive ? degraded ? 'danger' : 'ok' : ''}`; $('home-duration').textContent = duration;
+  $('direct-scene').textContent = state?.obs?.scene || 'Aucune scène'; $('direct-twitch-state').textContent = humanProviderStatus(hub?.integrations?.twitch?.status || 'DISCONNECTED'); $('obs-status-detail').textContent = obsView.connectionLabel; $('twitch-status-detail').textContent = $('direct-twitch-state').textContent;
   $('live-workspace-status').textContent = $('home-live-status').textContent; $('live-workspace-status').className = $('home-live-status').className; $('live-duration').textContent = duration; $('live-viewers').textContent = $('hub-viewers').textContent; $('live-chatters').textContent = $('hub-chatters').textContent; $('live-scene').textContent = state?.obs?.scene || '—';
   renderManagedConnections(hub);
   renderHubChat(hub?.chat?.messages || []);
@@ -418,8 +428,9 @@ function applyTwitchActionCapabilities() {
   const chatWritable = connected && twitchCapability('chatWrite');
   $('chat-message').disabled = !chatWritable;
   $('chat-form').querySelector('button').disabled = !chatWritable;
-  $('live-clip').disabled = !connected || !state?.obs?.streaming || !twitchCapability('createClip');
-  $('create-clip').disabled = !connected || !twitchCapability('createClip');
+  const clipAvailable = connected && moderationCapabilities?.createClip === true && state?.controlHub?.live?.isLive === true;
+  $('live-clip').disabled = !clipAvailable;
+  $('create-clip').disabled = !clipAvailable;
   $('more-chatters').disabled = !connected || !twitchCapability('chatters');
   $('save-twitch').disabled = !connected || !twitchCapability('updateChannel');
   updatePlanningProviderReadiness();
@@ -430,7 +441,10 @@ async function loadModerationCapabilities() {
   if (twitchCapabilitiesFlight) return twitchCapabilitiesFlight;
   twitchCapabilitiesFlight = (async () => {
     try {
-      moderationCapabilities = await transport.twitchModerationCapabilities();
+      const requestedState = state;
+      const received = await transport.twitchModerationCapabilities();
+      if (state !== requestedState || companionMode !== CompanionMode.ONLINE_PC || state?.twitch?.connected !== true) return moderationCapabilities;
+      moderationCapabilities = state.twitch.capabilities || received;
       const missing = Object.entries(moderationCapabilities.requiredScopes || {}).filter(([action]) => moderationCapabilities[action] === false).map(([, scope]) => scope);
       $('moderation-state').textContent = missing.length ? `Fonctions Twitch partielles · reconnecte Twitch pour : ${[...new Set(missing)].join(', ')}` : 'Autorisations Twitch à jour';
       applyTwitchActionCapabilities();
@@ -634,7 +648,24 @@ function renderOnlinePlanningProviders(item, row, onlyProvider) {
       retry.disabled = companionMode === CompanionMode.OFFLINE || (companionMode === CompanionMode.ONLINE_STANDALONE && !globalThis.StreamDashboardProviders);
       retry.onclick = async () => { retry.disabled = true; await retryPlanningProvider(item, provider); if (state) renderPlanning(state.planning); };
       block.append(retry);
-      if (link.status === 'conflict') block.append(text('small', 'Une nouvelle tentative respecte la version distante. Si le conflit persiste, choisissez la version à conserver sur le PC.', 'muted'));
+      if (item.deleted && link.status === 'conflict' && companionMode === CompanionMode.ONLINE_PC) {
+        for (const [strategy, label] of [['local', 'Confirmer la suppression'], ['remote', 'Conserver la version distante']]) {
+          const resolve = text('button', label, 'secondary');
+          resolve.type = 'button';
+          resolve.onclick = async () => {
+            resolve.disabled = true;
+            try {
+              await transport.resolvePlanningProvider(item.id, provider, strategy);
+              if (strategy === 'local') await transport.retryPlanningProvider(item.id, provider);
+              await syncCompanion();
+              render(await transport.state());
+            } catch (error) { note(error.message); }
+            finally { resolve.disabled = false; }
+          };
+          block.append(resolve);
+        }
+      }
+      if (link.status === 'conflict' && !item.deleted) block.append(text('small', 'Une nouvelle tentative respecte la version distante. Si le conflit persiste, choisissez la version à conserver sur le PC.', 'muted'));
     }
     row.append(block);
   }
@@ -761,16 +792,18 @@ function render(next) {
   if (!next) return;
   if (!acceptsSnapshot(state, next)) return;
   state = next;
+  window.dispatchEvent(new Event('mobile-state-updated'));
   renderSyncCenter();
   if (companionMode === CompanionMode.ONLINE_PC && Date.now() - lastProfileSyncAt > 5_000) void loadProductProfile().catch(() => undefined);
   syncMobileStreamerPing(next.streamerPings || []);
   if (companionMode === CompanionMode.ONLINE_PC) $('pc').textContent = 'Connecté';
-  $('obs').textContent = next.obs.connected ? 'Prêt' : 'Déconnecté';
+  const obsView = obsRuntimeView(next);
+  $('obs').textContent = obsView.connectionLabel;
   const primaryMic = next.settings.primaryMicInput; const micMuted = primaryMic ? next.obs.inputs?.[primaryMic]?.muted : null; const micMissing = !primaryMic || micMuted === null || micMuted === undefined; $('direct-mic-state').textContent = primaryMic ? (micMissing ? 'Introuvable · toucher pour configurer' : micMuted ? 'Coupé' : 'Ouvert') : 'Non configuré · toucher pour configurer'; $('direct-mic-dot').textContent = primaryMic && micMuted === false ? '●' : '○'; $('direct-mic-dot').className = primaryMic && micMuted === false ? 'ok' : 'muted'; $('quick-mic').classList.toggle('configuration-needed', micMissing); $('quick-mic').setAttribute('aria-label', micMissing ? 'Configurer le micro principal' : `${micMuted ? 'Réactiver' : 'Couper'} le micro principal`);
-  $('live').textContent = next.obs.streaming ? 'Live' : 'Hors ligne';
-  $('live').className = next.obs.streaming ? 'ok' : '';
+  $('live').textContent = obsView.obsLabel;
+  $('live').className = obsView.streaming ? 'ok' : '';
   $('next').textContent = next.nextLive ? `${next.nextLive.title} · ${formatPlanningDate(next.nextLive)}` : 'Aucun live planifié';
-  $('stream').textContent = next.obs.streaming ? 'ARRÊTER LE LIVE' : 'DÉMARRER LE LIVE'; $('live-stream').textContent = $('stream').textContent;
+  $('stream').textContent = obsView.buttonLabel.toUpperCase(); $('live-stream').textContent = $('stream').textContent;
   renderAudio(next.obs.inputs, next.obs.activeAudioInputs);
   if (document.activeElement !== $('twitch-title')) $('twitch-title').value = next.twitch?.channelTitle || '';
   if (document.activeElement !== $('twitch-category')) $('twitch-category').value = next.twitch?.gameName || '';
@@ -789,9 +822,9 @@ function render(next) {
   $('publish-discord').disabled = !discordConfigured;
   for (const id of ['discord-guild','discord-channel','discord-message']) $(id).disabled = !discordConfigured;
   $('timer').textContent = formatDuration(remaining());
-  if (companionMode === CompanionMode.ONLINE_PC) showPairing(false);
+  // Telemetry must not close the address/pairing form while the user edits it.
+  $('forget-device').hidden = !credential || !$('pairing').hidden || legacyMode;
   remoteButtons(companionMode !== CompanionMode.ONLINE_PC);
-  $('stream').disabled = !next.obs.connected; $('live-stream').disabled = $('stream').disabled;
   if (next.twitch?.capabilities) moderationCapabilities = next.twitch.capabilities;
   if (!next.twitch?.connected) moderationCapabilities = null;
   else if (!moderationCapabilities && !twitchCapabilitiesFlight) void loadModerationCapabilities();
@@ -863,17 +896,29 @@ async function getWsTicket() {
   return result.ticket;
 }
 
-async function fetchState() {
+async function fetchState(generation = connectionGeneration) {
   // REST state is the authority for whether the PC command channel is reachable.
   // Companion sync must never gate remote-control availability.
   const previousCapabilityKey = runtimeCapabilities ? `${runtimeCapabilities.serverVersion || ''}|${(runtimeCapabilities.features || []).join(',')}` : '';
-  runtimeCapabilities = await transport.capabilities().catch(() => ({ protocolVersion: 0, serverVersion: '', features: [] }));
+  const capabilities = await transport.capabilities().catch(() => ({ protocolVersion: 0, serverVersion: '', features: [] }));
+  if (generation !== connectionGeneration) return;
+  runtimeCapabilities = capabilities;
   const nextCapabilityKey = `${runtimeCapabilities.serverVersion || ''}|${(runtimeCapabilities.features || []).join(',')}`;
   if (previousCapabilityKey !== nextCapabilityKey) profileLoaded = false;
   updateRuntimeCompatibility();
   const next = await transport.state();
+  if (generation !== connectionGeneration) return;
+  if (state?.serverInstanceId && next.serverInstanceId && state.serverInstanceId !== next.serverInstanceId) {
+    // A Desktop restart can be discovered by HTTP before the old socket closes.
+    // Retire pending commands/HTTP responses before adopting the new instance.
+    resetConnection();
+    state = null;
+    void connect();
+    return;
+  }
   if (!profileLoaded) { profileLoaded = true; await loadProductProfile().catch(() => { profileLoaded = false; }); }
-  if (!companion.snapshot().pending.length) companion.replaceServerSnapshot(next);
+  if (generation !== connectionGeneration) return;
+  if (!credential && !companion.snapshot().pending.length) companion.replaceServerSnapshot(next);
   companionMode = CompanionMode.ONLINE_PC;
   render(next);
   setConnectionMode(CompanionMode.ONLINE_PC);
@@ -886,9 +931,11 @@ async function fetchState() {
 
 async function syncCompanion() {
   if (companionSyncFlight) return companionSyncFlight;
+  const generation = connectionGeneration;
   companionSyncFlight = (async () => {
     const cache = companion.snapshot();
     const response = await transport.syncCompanion({ schemaVersion: cache.schemaVersion, deviceId, lastKnownServerRevision: cache.serverRevision ?? 0, operations: cache.pending });
+    if (generation !== connectionGeneration) return response;
     companion.applySyncResponse(response);
     showSyncConflict();
     return response;
@@ -910,95 +957,128 @@ async function resolveSyncConflict(strategy) {
 $('keep-pc').onclick = () => void resolveSyncConflict('pc');
 $('keep-phone').onclick = () => void resolveSyncConflict('android');
 
-async function connect() {
-  if (reconnectTimer) {
-    clearTimeout(reconnectTimer);
-    reconnectTimer = null;
+function resetConnection() {
+  ++connectionGeneration;
+  clearTimeout(reconnectTimer);
+  reconnectTimer = null;
+  connectionInFlight = false;
+  if (ws) {
+    ws.onopen = ws.onmessage = ws.onclose = ws.onerror = null;
+    ws.close();
+    ws = null;
   }
+}
+
+async function connectionFailed(error, generation) {
+  if (generation !== connectionGeneration) return;
+  resetConnection();
+  setConnectionMode(resolveMode({ pcAvailable: false, internetAvailable: navigator.onLine }));
+  render(offlineState());
+  if (error instanceof HttpError && error.status === 401) {
+    credential = '';
+    await credentialStorage.clear();
+    note('Cette télécommande a été révoquée depuis le PC.');
+    showPairing(true);
+    return;
+  }
+  note(`Connexion PC impossible : ${error.message} Vérifiez le réseau puis Plus → Comptes connectés → Modifier l’adresse du PC.`);
+  scheduleReconnect();
+}
+
+function scheduleReconnect() {
+  clearTimeout(reconnectTimer);
+  const generation = connectionGeneration;
+  reconnectTimer = setTimeout(() => { if (generation === connectionGeneration) void connect(); }, retry);
+  retry = nextRetry(retry);
+}
+
+async function connect() {
+  resetConnection();
+  const generation = connectionGeneration;
   if (!credential) {
     $('connection').textContent = 'Appairage requis';
     showPairing(true);
     return;
   }
-
-  // Phase 1: establish the HTTP command channel. This alone is enough to make
-  // the remote usable; realtime is an optional telemetry enhancement.
+  connectionInFlight = true;
   try {
     $('connection').textContent = 'Connexion au PC…';
     remoteButtons(true);
-    await fetchState();
+    await fetchState(generation);
+    if (generation !== connectionGeneration) return;
     $('connection').textContent = 'PC connecté';
     $('connection').className = 'ok';
   } catch (error) {
-    setConnectionMode(resolveMode({ pcAvailable: false, internetAvailable: navigator.onLine }));
-    render(offlineState());
-    if (error instanceof HttpError && [401, 403].includes(error.status)) {
-      credential = '';
-      await credentialStorage.clear();
-      note('Cette télécommande a été révoquée depuis le PC.');
-      showPairing(true);
-      return;
-    }
-    note(`Connexion PC impossible : ${error.message}`);
-    reconnectTimer = setTimeout(connect, retry);
-    retry = nextRetry(retry);
+    await connectionFailed(error, generation);
     return;
   }
 
-  // Phase 2: realtime must never disable a healthy HTTP command channel.
+  // realtime must never disable a healthy HTTP command channel.
   try {
     const ticket = await getWsTicket();
-    ws = transport.websocket(ticket);
-    ws.onopen = () => {
+    if (generation !== connectionGeneration) return;
+    const socket = transport.websocket(ticket);
+    ws = socket;
+    socket.onopen = () => {
+      if (generation !== connectionGeneration) return;
       retry = 500;
-      setConnectionMode(CompanionMode.ONLINE_PC);
+      note('Télécommande connectée au PC.');
       $('connection').textContent = 'PC connecté · temps réel';
       $('connection').className = 'ok';
-      render(state);
       remoteButtons(false);
-      note('Télécommande connectée au PC.');
     };
-    ws.onmessage = event => {
+    socket.onmessage = event => {
+      if (generation !== connectionGeneration) return;
       try {
         const value = JSON.parse(event.data);
         if (value.type === 'state.updated') render(value.data);
       } catch { note('Événement temps réel invalide.'); }
     };
-    ws.onclose = () => {
+    socket.onclose = () => {
+      if (generation !== connectionGeneration) return;
       $('connection').textContent = 'PC connecté · temps réel en reconnexion…';
-      $('connection').className = '';
-      void transport.state().then(next => {
-        companionMode = CompanionMode.ONLINE_PC;
-        render(next);
-        setConnectionMode(CompanionMode.ONLINE_PC);
-        $('connection').textContent = 'PC connecté · temps réel en reconnexion…';
-        remoteButtons(false);
-      }).catch(async error => {
-        if (error instanceof HttpError && [401, 403].includes(error.status)) {
-          credential = '';
-          await credentialStorage.clear();
-          showPairing(true);
-          note('Cette télécommande a été révoquée depuis le PC.');
-          return;
-        }
-        setConnectionMode(resolveMode({ pcAvailable: false, internetAvailable: navigator.onLine }));
-      });
-      reconnectTimer = setTimeout(connect, retry);
-      retry = nextRetry(retry);
+      scheduleReconnect();
     };
-    ws.onerror = () => ws.close();
+    socket.onerror = () => { if (generation === connectionGeneration) socket.close(); };
   } catch (error) {
-    // Ticket/WebSocket failure is telemetry-only. Keep HTTP controls enabled.
-    companionMode = CompanionMode.ONLINE_PC;
-    setConnectionMode(CompanionMode.ONLINE_PC);
+    if (generation !== connectionGeneration) return;
+    if (error instanceof HttpError && error.status === 401) {
+      await connectionFailed(error, generation);
+      return;
+    }
+    // HTTP remains authoritative when realtime is unavailable.
     remoteButtons(false);
     $('connection').textContent = 'PC connecté · temps réel indisponible';
-    $('connection').className = 'ok';
     note(`Contrôle disponible · temps réel indisponible : ${error.message}`);
-    reconnectTimer = setTimeout(connect, retry);
-    retry = nextRetry(retry);
+    scheduleReconnect();
+  } finally {
+    if (generation === connectionGeneration) connectionInFlight = false;
   }
 }
+
+// A half-open WebSocket may never emit close: periodically verify HTTP state.
+setInterval(async () => {
+  if (document.hidden || !credential || connectionInFlight || healthCheckInFlight || companionMode !== CompanionMode.ONLINE_PC) return;
+  const generation = connectionGeneration;
+  healthCheckInFlight = true;
+  try { await fetchState(generation); }
+  catch (error) { await connectionFailed(error, generation); }
+  finally { healthCheckInFlight = false; }
+}, 10_000);
+
+$('reconnect-address').onclick = async () => {
+  try {
+    if (!credential) throw new Error('Appairage requis. Générez un code sur le PC.');
+    const address = normalizeServer($('pair-server').value);
+    resetConnection();
+    server = address;
+    settingsStorage.setServer(server);
+    profileLoaded = false;
+    state = null;
+    showPairing(false);
+    await connect();
+  } catch (error) { note(error.message); }
+};
 
 if (params.get('pair')) $('pair-id').value = params.get('pair');
 if (params.get('code')) $('pair-code').value = params.get('code');
@@ -1218,11 +1298,12 @@ $('profile-appearance-form').onsubmit = async event => {
     note('Profil et apparence enregistrés.');
   } catch (error) { note(error.message); }
 };
-async function loadProductProfile() {
+async function loadProductProfile(generation = connectionGeneration) {
   const [result, connections] = await Promise.all([
     transport.profile().catch(() => null),
     transport.connections().catch(() => ({ items: [] })),
   ]);
+  if (generation !== connectionGeneration) return;
   if (result?.profile) {
     productProfile = result.profile;
     uxPreferences = { ...uxPreferences, ...productProfile.appearance }; applyUxPreferences();
@@ -1319,7 +1400,7 @@ $('slot-form').onsubmit = async event => {
       const id = mobileEditing.item.id;
       if (companionMode === CompanionMode.ONLINE_PC) render(await transport.updatePlanning(id, value));
       else { const canonical = companion.snapshot().planning.find(item => item.id === id); const updated = companion.updateEvent(id, value, canonical.revision); if (updated.conflict) throw new Error('Ce live a été modifié sur un autre appareil.'); render(offlineState()); if (companionMode === CompanionMode.ONLINE_STANDALONE) void syncEventProviders(updated.item); }
-    } else if (companionMode === CompanionMode.ONLINE_PC) { const next = await transport.createPlanning(value); companion.replaceServerSnapshot(next); render(next); }
+    } else if (companionMode === CompanionMode.ONLINE_PC) { const next = await transport.createPlanning(value); await syncCompanion(); render(next); }
     else { const created=companion.createEvent(value).item; render(offlineState()); if(companionMode===CompanionMode.ONLINE_STANDALONE) void syncEventProviders(created,'create'); }
     mobileEditing = null; event.currentTarget.elements.recurrence.disabled = false; event.currentTarget.elements.recurrenceUntil.disabled = false; $('slot-dialog').close(); event.currentTarget.reset(); note(companionMode === CompanionMode.ONLINE_PC ? 'Planning enregistré.' : 'Créneau enregistré · À synchroniser.');
   } catch (error) { note(error.message); }
@@ -1351,7 +1432,9 @@ $('forget-device').onclick = () => {
   if (!confirm('Oublier cette télécommande sur ce téléphone ?')) return;
   credential = '';
   void credentialStorage.clear();
-  ws?.close();
+  resetConnection();
+  setConnectionMode(resolveMode({ pcAvailable: false, internetAvailable: navigator.onLine }));
+  render(offlineState());
   showPairing(true);
   note('Credential local supprimé. Révoque aussi l’appareil depuis le PC si nécessaire.');
 };
@@ -1382,7 +1465,7 @@ document.addEventListener('change', event => {
 });
 
 $('stream').onclick = () => {
-  if (!state || !state.obs.connected || commandController.isLocked('stream')) return;
+  if (!obsRuntimeView(state).known || commandController.isLocked('stream')) return;
   const start = !state.obs.streaming;
   const question = start
     ? 'Démarrer réellement le live ?'
@@ -1390,14 +1473,14 @@ $('stream').onclick = () => {
   if (!confirm(question)) return;
   void (async () => {
     if (!start) {
-      await command({ type: 'session.stop' }, { reconcile: next => next.obs?.streaming === false });
+      await command({ type: 'session.stop' }, { reconcile: next => confirmsObsStreaming(next, false) });
       return;
     }
     const prepared = await command({ type: 'session.prepare' });
     if (!prepared) return;
     const requiresBypass = state?.preflight?.status === 'action-required';
     if (requiresBypass && !confirm('La checklist demande une action. Démarrer quand même ?')) return;
-    await command({ type: 'session.start', force: requiresBypass }, { reconcile: next => next.obs?.streaming === true });
+    await command({ type: 'session.start', force: requiresBypass }, { reconcile: next => confirmsObsStreaming(next, true) });
   })();
 };
 
@@ -1481,14 +1564,14 @@ async function start() {
     void refreshProviderAccounts();
     $('android-options').hidden = false;
     $('pair-server').value = server;
-    if (!server) { showPairing(true); setConnectionMode(resolveMode({ pcAvailable: false, internetAvailable: navigator.onLine })); render(offlineState()); return; }
     document.addEventListener('visibilitychange', () => {
-      if (!document.hidden) { ws?.close(); void connect(); }
+      if (!document.hidden) void connect();
       else if (state?.streamerPings?.length) {
         const pending = state.streamerPings.filter(value => !value.acknowledgedAt);
         notifyMobileStreamerPing(pending.at(-1), pending.length);
       }
     });
+    if (!server) { showPairing(true); setConnectionMode(resolveMode({ pcAvailable: false, internetAvailable: navigator.onLine })); render(offlineState()); return; }
   } else {
     $('server-label').hidden = true;
     $('link-label').hidden = true;
@@ -1496,7 +1579,7 @@ async function start() {
   await connect();
 }
 window.addEventListener('online', () => { if (companionMode !== CompanionMode.ONLINE_PC) setConnectionMode(CompanionMode.ONLINE_STANDALONE); void connect(); });
-window.addEventListener('offline', () => setConnectionMode(CompanionMode.OFFLINE));
+window.addEventListener('offline', () => { resetConnection(); setConnectionMode(CompanionMode.OFFLINE); render(offlineState()); if (credential) scheduleReconnect(); });
 
 const providerPending = new Set();
 const providerBusy = new Set();

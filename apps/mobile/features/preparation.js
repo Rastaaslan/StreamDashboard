@@ -2,7 +2,7 @@ import { CompanionMode } from '../companion-store.js';
 import { getMobileContext } from '../mobile-context.js';
 
 const $ = id => document.getElementById(id);
-const { companion, transport, ensureCredential, executeCommand, syncCompanion, getMode, getState, applyState, note } = getMobileContext();
+const { refreshState, companion, ensureCredential, executeCommand, syncCompanion, getMode, getState, note } = getMobileContext();
 
 const text = (tag, value, className) => {
   const node = document.createElement(tag);
@@ -15,8 +15,7 @@ const onlinePc = () => getMode() === CompanionMode.ONLINE_PC;
 async function refreshRemoteState() {
   if (!onlinePc()) return null;
   await ensureCredential();
-  const next = await transport.state();
-  applyState(next);
+  const next = await refreshState();
   renderChecklist();
   return next;
 }
@@ -190,9 +189,9 @@ window.addEventListener('companion-mutated', event => {
   if (!['notes', 'checklist'].includes(event.detail?.kind)) return;
   void syncCompanionNow().then(() => refreshRemoteState()).catch(error => note(error.message));
 });
-window.addEventListener('online', () => { if (onlinePc()) void refreshRemoteState(); });
+// The canonical connection owner handles network/resume events and stale responses.
+window.addEventListener('mobile-state-updated', () => { renderNotes(); renderChecklist(); });
 window.addEventListener('offline', () => { renderNotes(); renderChecklist(); });
-document.addEventListener('visibilitychange', () => { if (!document.hidden && onlinePc()) void refreshRemoteState(); });
 
 renderNotes();
 renderChecklist();

@@ -2,7 +2,16 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { providerDiagnostic, wizardState, capabilityAvailability } from '../../apps/mobile/provider-diagnostics.js';
 import { createNativeProviderAdapter, createStandaloneProviderSync } from '../../apps/mobile/provider-sync.js';
-import { CompanionMode } from '../../apps/mobile/companion-store.js';
+import { createCompanionStore, CompanionMode } from '../../apps/mobile/companion-store.js';
+
+function trackedStore(updates, event) {
+  const data = new Map();
+  const store = createCompanionStore({ getItem: key => data.get(key) ?? null, setItem: (key, value) => data.set(key, value) });
+  store.createEvent(event);
+  const update = store.updateProvider;
+  store.updateProvider = (...args) => { updates.push(args); return update(...args); };
+  return store;
+}
 
 for (const provider of ['twitch', 'google']) {
   test(`${provider}: wizard configuration → OAuth → test → ready, reauth and logout`, () => {
@@ -56,10 +65,10 @@ test('bridge error messages never relay raw provider payloads', async () => {
 });
 test('CB-2 retry chooses create/update independently and stores sanitized errors', async () => {
   const calls = [], updates = [];
-  const sync = createStandaloneProviderSync({ store: { updateProvider: (...args) => updates.push(args) }, adapter: {
+  const event = { id: 'event', desiredPublication: { twitch: true, google: true }, providerLinks: { twitch: { remoteId: 't1' }, google: { status: 'error' } } };
+  const sync = createStandaloneProviderSync({ store: trackedStore(updates, event), adapter: {
     mutate: async (provider, action) => { calls.push([provider, action]); if (provider === 'google') throw Object.assign(new Error('access_token=SECRET'), { code: 'NETWORK' }); return { remoteId: 't1' }; },
   } });
-  const event = { id: 'event', desiredPublication: { twitch: true, google: true }, providerLinks: { twitch: { remoteId: 't1' }, google: { status: 'error' } } };
   await sync.apply(CompanionMode.ONLINE_STANDALONE, event);
   assert.deepEqual(calls, [['twitch', 'update'], ['google', 'create']]);
   assert.ok(!JSON.stringify(updates).includes('SECRET'));
@@ -78,7 +87,7 @@ for (const provider of ['twitch', 'google']) {
         [`${provider}Test`]: () => JSON.stringify({ ok: true, configured: true, connected: true, code, message: 'Bearer SECRET', access_token: 'SECRET', capabilities: ['schedule', 'calendar'] }),
         [`${provider}CreatePlanning`]: () => { mutations++; return '{"ok":true}'; },
       });
-      const sync = createStandaloneProviderSync({ adapter, store: { updateProvider: (...args) => updates.push(args) } });
+      const sync = createStandaloneProviderSync({ adapter, store: trackedStore(updates, { id: 'event', desiredPublication: { [provider]: true } }) });
       const result = await sync.apply(CompanionMode.ONLINE_STANDALONE, { id: 'event', desiredPublication: { [provider]: true } });
       assert.equal(mutations, 0);
       assert.equal(result[0].error.code, code);

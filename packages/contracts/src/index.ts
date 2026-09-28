@@ -95,6 +95,10 @@ export interface ProviderLink {
   remoteId?: string;
   calendarId?: string;
   remoteRevision?: string;
+  fingerprint?: string;
+  publishedContent?: string;
+  createNotStarted?: boolean;
+  uncertainCreate?: { event: Record<string, unknown>; publishedContent: string } | null;
   lastSyncedAt?: string;
   lastError?: string;
   deletedRemotely?: boolean;
@@ -189,6 +193,7 @@ export interface StreamerPing {
 
 export interface ObsInputState { muted: boolean; volume: number; volumeDb?: number }
 export interface ObsState {
+  connectionStatus?: 'offline' | 'connecting' | 'connected' | 'error';
   connected: boolean;
   streaming: boolean;
   /** False means `streaming` is only the last known value after OBS telemetry loss. */
@@ -263,6 +268,7 @@ export interface DashboardState {
   at: string;
   /** Monotonic runtime snapshot revision. Optional only for legacy persisted/test fixtures. */
   stateRevision?: number;
+  serverInstanceId?: string;
   mode: RunMode;
   timer: TimerState;
   planning: CalendarItem[];
@@ -285,11 +291,12 @@ export interface DashboardState {
 export interface RemoteDashboardState {
   at: string;
   stateRevision?: number;
+  serverInstanceId?: string;
   mode: RunMode;
   timer: TimerState;
   planning: Array<Pick<CalendarItem, 'id' | 'title' | 'startAtUtc' | 'endAtUtc' | 'allDay' | 'category' | 'kind' | 'source' | 'twitchCategoryId' | 'twitchCategoryName' | 'desiredPublication' | 'recurrence' | 'seriesId' | 'occurrenceKey'>>;
   nextLive: Pick<CalendarItem, 'id' | 'title' | 'startAtUtc' | 'endAtUtc' | 'allDay' | 'category' | 'kind' | 'source' | 'twitchCategoryId' | 'twitchCategoryName' | 'desiredPublication'> | null;
-  obs: Pick<ObsState, 'connected' | 'streaming' | 'streamingKnown' | 'scene' | 'scenes' | 'inputs' | 'activeAudioInputs' | 'mediaInputs' | 'browserInputs'>;
+  obs: Pick<ObsState, 'connectionStatus' | 'connected' | 'streaming' | 'streamingKnown' | 'scene' | 'scenes' | 'inputs' | 'activeAudioInputs' | 'mediaInputs' | 'browserInputs'>;
   settings: Pick<DashboardSettings, 'confirmStop' | 'streamerName' | 'modeScenes' | 'chattingScene' | 'primaryMicInput' | 'requireTimerOverlayOnStart' | 'startMode' | 'timerBrowserSource'>;
   twitch: Pick<TwitchState, 'connected' | 'channelTitle' | 'gameId' | 'gameName' | 'error' | 'capabilities'>;
   google?: { configured: boolean; connected: boolean; targetConfigured: boolean };

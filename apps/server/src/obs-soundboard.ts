@@ -10,6 +10,7 @@ export interface ObsSoundboardClient {
   restartMedia(inputName: string): Promise<void>;
   stopMedia(inputName: string): Promise<void>;
   setMonitorType(inputName: string, type: 'OBS_MONITORING_TYPE_NONE' | 'OBS_MONITORING_TYPE_MONITOR_AND_OUTPUT'): Promise<void>;
+  onStateChanged?(listener: () => void): () => void;
   onMediaEnded(listener: (inputName: string) => void): () => void;
 }
 export interface ObsSoundboardSetupClient extends ObsSoundboardClient {
@@ -44,12 +45,14 @@ export class ObsSoundboardPlayback implements AudioPlayback {
     await this.obs.volume(this.inputName, input.volume);
     await this.obs.setMonitorType(this.inputName, input.monitoringMode === 'monitor' ? 'OBS_MONITORING_TYPE_MONITOR_AND_OUTPUT' : 'OBS_MONITORING_TYPE_NONE');
     let remove: () => void = () => undefined;
+    let removeState: () => void = () => undefined;
     const finished = new Promise<void>(resolve => {
-      this.finish = () => { remove(); this.finish = undefined; resolve(); };
+      this.finish = () => { remove(); removeState(); this.finish = undefined; resolve(); };
+      removeState = this.obs.onStateChanged?.(() => { if (!this.obs.state.connected) this.finish?.(); }) ?? (() => undefined);
       remove = this.obs.onMediaEnded(name => { if (name === this.inputName) this.finish?.(); });
     });
     try { await this.obs.restartMedia(this.inputName); }
-    catch (error) { remove(); this.finish = undefined; throw error; }
+    catch (error) { remove(); removeState(); this.finish = undefined; throw error; }
     return { finished };
   }
   async stop() {

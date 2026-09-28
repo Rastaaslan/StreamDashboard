@@ -34,7 +34,7 @@ describe('mobile HTTP command controller', () => {
 
   it('reconciles a timed-out critical command from authoritative REST state', async () => {
     const send = vi.fn().mockRejectedValue(new Error('timeout'));
-    const readState = vi.fn().mockResolvedValue({ obs: { streaming: true } });
+    const readState = vi.fn().mockResolvedValue({ obs: { connected: true, streamingKnown: true, streaming: true } });
     const controller = createCommandController({ send, readState, applyState: vi.fn() });
 
     const result = await controller.execute({ type: 'session.start' }, {
@@ -76,6 +76,11 @@ describe('explicit primary microphone', () => {
     expect(primaryMicCommand(state)).toEqual({ type: 'obs.mute', input: 'DJI Mic', muted: false });
   });
 
+  it('fails closed when the configured microphone was removed or renamed', () => {
+    expect(() => primaryMicCommand({ settings: { primaryMicInput: 'Old Mic' }, obs: { inputs: { 'New Mic': { muted: false } } } }))
+      .toThrow('Micro principal introuvable');
+  });
+
   it('fails closed when no primary microphone is configured', () => {
     expect(() => primaryMicCommand({ settings: {}, obs: { inputs: { Discord: { muted: false } } } }))
       .toThrow('Micro principal non configuré');
@@ -83,9 +88,64 @@ describe('explicit primary microphone', () => {
 });
 
 describe('monotonic mobile snapshots', () => {
+  it('accepts a fresh PC instance after Desktop restart', () => {
+    expect(acceptsSnapshot({ stateRevision: 999, serverInstanceId: 'before' }, { stateRevision: 0, serverInstanceId: 'after' })).toBe(true);
+    expect(acceptsSnapshot({ stateRevision: 999, serverInstanceId: 'same' }, { stateRevision: 0, serverInstanceId: 'same' })).toBe(false);
+  });
   it('ignores a stale revision after a newer HTTP or realtime snapshot', () => {
     expect(acceptsSnapshot({ stateRevision: 42 }, { stateRevision: 41 })).toBe(false);
     expect(acceptsSnapshot({ stateRevision: 42 }, { stateRevision: 43 })).toBe(true);
     expect(acceptsSnapshot({ stateRevision: 42 }, {})).toBe(true);
+  });
+});
+
+describe('command connection ownership', () => {
+  it('discards old success without releasing a new generation resource lock', async () => {
+    let generation = 0;
+    const pending: ((value: { state: {} }) => void)[] = [];
+    const applyState = vi.fn();
+    const controller = createCommandController<{}>({ getGeneration: () => generation, send: () => new Promise(resolve => pending.push(resolve)), readState: vi.fn(), applyState });
+    const old = controller.execute({ type: 'session.stop' });
+    generation++;
+    expect(controller.isLocked('session.stop')).toBe(false);
+    const current = controller.execute({ type: 'session.stop' });
+    pending[0]({ state: {} });
+    expect(await old).toEqual({ accepted: false, reason: 'stale' });
+    expect(controller.isLocked('session.stop')).toBe(true);
+    expect(applyState).not.toHaveBeenCalled();
+    pending[1]({ state: {} });
+    expect((await current).accepted).toBe(true);
+    expect(applyState).toHaveBeenCalledOnce();
+  });
+
+  it('does not reconcile a failure from a retired connection', async () => {
+    let generation = 0;
+    let reject!: (error: Error) => void;
+    const readState = vi.fn();
+    const controller = createCommandController({ getGeneration: () => generation, send: () => new Promise((_resolve, fail) => { reject = fail; }), readState, applyState: vi.fn() });
+    const result = controller.execute({ type: 'session.stop' }, { reconcile: () => true });
+    generation++;
+    reject(new Error('old timeout'));
+    expect(await result).toEqual({ accepted: false, reason: 'stale' });
+    expect(readState).not.toHaveBeenCalled();
+  });
+
+  it('discards an in-flight reconciliation after reconnect or forget', async () => {
+    let generation = 0;
+    let resolve!: (state: {}) => void;
+    const readState = vi.fn(() => new Promise<{}>(done => { resolve = done; }));
+    const applyState = vi.fn();
+    const reconcile = vi.fn(() => true);
+    const onMessage = vi.fn();
+    const controller = createCommandController({ getGeneration: () => generation, send: vi.fn().mockRejectedValue(new Error('timeout')), readState, applyState, onMessage });
+    const result = controller.execute({ type: 'session.stop' }, { reconcile });
+    await Promise.resolve();
+    expect(readState).toHaveBeenCalledOnce();
+    generation++;
+    resolve({});
+    expect(await result).toEqual({ accepted: false, reason: 'stale' });
+    expect(applyState).not.toHaveBeenCalled();
+    expect(reconcile).not.toHaveBeenCalled();
+    expect(onMessage).not.toHaveBeenCalled();
   });
 });

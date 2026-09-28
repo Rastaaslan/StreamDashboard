@@ -40,16 +40,14 @@ export async function startDesktopRuntime(): Promise<DesktopRuntime> {
     googleClientId: distribution.googleClientId || process.env.GOOGLE_CLIENT_ID || '',
     logger,
   });
-  let stopped = false;
+  let stopPromise: Promise<void> | undefined;
   return {
     dashboard,
     logger,
     ensureObsRunning: () => launchObsIfRequested(true, dashboard.state().settings.obsExecutablePath),
-    stop: async () => {
-      if (stopped) return;
-      stopped = true;
+    stop: () => stopPromise ??= (async () => {
       await dashboard.stop();
       await logger.info('Arrêt propre terminé').catch(() => undefined);
-    },
+    })(),
   };
 }

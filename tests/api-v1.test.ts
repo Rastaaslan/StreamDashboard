@@ -219,6 +219,56 @@ describe('API publique v1', () => {
     expect(collision.status).toBe(400);
   });
 
+  it('préserve le timer et refuse un rejeu après restart, même après une rafale', async () => {
+    const app = await start();
+    const command = { type: 'timer.add', seconds: 60, commandId: 'recovery_timer_0001' };
+    const send = (url: string) => fetch(`${url}/api/v1/commands`, {
+      method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(command),
+    });
+    const responses = await Promise.all(Array.from({ length: 30 }, () => send(app.url)));
+    expect(responses.every(response => response.status === 200)).toBe(true);
+    await app.stop();
+    dashboard = await startDashboardServer({ port: 0, dataDir, logger: { info() {}, warn() {}, error() {} } });
+    const replay = await send(dashboard.url);
+    expect(replay.status).toBe(409);
+    expect(await replay.json()).toMatchObject({ error: { code: 'COMMAND_ALREADY_RECEIVED', retryable: false } });
+    expect(dashboard.state().timer.remaining).toBe(360);
+  });
+
+  it('conserve un reçu numérique à capacité maximale et refuse son rejeu après restart', async () => {
+    const app = await start(); await app.stop();
+    const file = path.join(dataDir, 'dashboard.json');
+    const data = JSON.parse(await readFile(file, 'utf8'));
+    const ids = Array.from({ length: 5000 }, (_, index) => `previous_command_${index}`);
+    data.commandReceipts = Object.fromEntries(ids.map(id => [id, '{}']));
+    // Exercise migration from the original receipt format with no order metadata.
+    delete data.commandReceiptOrder;
+    await writeFile(file, JSON.stringify(data));
+    const restart = async () => {
+      dashboard = await startDashboardServer({ port: 0, dataDir, logger: { info() {}, warn() {}, error() {} } });
+      return dashboard;
+    };
+    const running = await restart();
+    const send = (url: string, commandId = '12345678') => fetch(`${url}/api/v1/commands`, {
+      method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ type: 'timer.add', seconds: 60, commandId }),
+    });
+    expect((await send(running.url)).status).toBe(200);
+    await running.stop();
+    const saved = JSON.parse(await readFile(file, 'utf8'));
+    expect(Object.keys(saved.commandReceipts)).toHaveLength(5000);
+    expect(saved.commandReceipts).toHaveProperty('12345678');
+    expect(saved.commandReceipts).not.toHaveProperty(ids[0]);
+    expect(saved.commandReceiptOrder).toEqual([...ids.slice(1), '12345678']);
+    const restarted = await restart();
+    // A further insertion must use the persisted chronology, not numeric key order.
+    expect((await send(restarted.url, 'new_command_0002')).status).toBe(200);
+    const replay = await send(restarted.url);
+    expect(replay.status).toBe(409);
+    expect(await replay.json()).toMatchObject({ error: { code: 'COMMAND_ALREADY_RECEIVED', retryable: false } });
+    expect(restarted.state().timer.remaining).toBe(420);
+  });
+
   it('rejette les URLs OBS non locales et expose les réglages valides par v1', async () => {
     const app = await start();
     const remote = await fetch(`${app.url}/api/v1/settings`, { method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ obsUrl: 'ws://example.com:4455' }) });

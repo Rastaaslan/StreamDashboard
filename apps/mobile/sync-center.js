@@ -13,7 +13,7 @@ export function eventProviderState(item, provider, mode) {
   return { ...link, status, label: statusNames[status] || status, retryable: Boolean(link.deletedRemotely) || ['error', 'conflict'].includes(status), syncSucceeded: !link.deletedRemotely && ['synced', 'deleted'].includes(status) };
 }
 export function syncSummary(cache, items, mode) {
-  const events = [...(items || cache.planning), ...(mode === CompanionMode.ONLINE_PC ? [] : cache.tombstones.map(item => ({ ...item, id: item.eventId || item.id, deleted: true })))];
+  const events = [...(items || cache.planning), ...(cache.tombstones.map(item => ({ ...item, id: item.eventId || item.id, deleted: true })))];
   const entries = events.flatMap(item => Object.keys(providerNames).map(provider => ({ item, provider, ...eventProviderState(item, provider, mode) })));
   // A remote deletion discovered as an error is not a successful publication.
   const dates = entries.filter(entry => entry.syncSucceeded).flatMap(entry => [entry.lastSyncedAt, entry.lastProviderSyncAt]).filter(Boolean);

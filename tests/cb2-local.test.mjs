@@ -143,7 +143,7 @@ test('Server capabilities survive remote projection and reauthorization updates 
   // Evaluate the actual server snapshot expression, including its capabilities call.
   const expression = read('apps/server/src/index.ts').match(/twitch: (\{ \.\.\.twitch.state, capabilities: twitch.controlCapabilities\(\).*? \}),/)[1];
   const snapshot = () => vm.runInNewContext(`(${expression})`, { twitch: { state: { connected: true }, controlCapabilities: () => capabilities }, local: {}, twitchChannel: {} });
-  const dashboard = () => ({ twitch: snapshot(), obs: { streaming: true, scenes: [], inputs: {}, activeAudioInputs: [], mediaInputs: [] }, settings: {}, planning: [], checklist: [] });
+  const dashboard = () => ({ twitch: snapshot(), controlHub: { live: { isLive: true } }, obs: { streaming: true, scenes: [], inputs: {}, activeAudioInputs: [], mediaInputs: [] }, settings: {}, planning: [], checklist: [] });
   const project = () => {
     context.input = dashboard();
     vm.runInContext('next=toRemoteDashboardState(input);state=next;', context);
@@ -181,7 +181,7 @@ test('Standalone Planning form uses real sync: second provider, failed creation 
       if (action !== 'create' && !link.remoteId) return JSON.stringify({ ok: false, code: 'INVALID_LINK', message: 'Missing remoteId' });
       if (provider === 'google' && action === 'create' && failGoogleCreate) {
         failGoogleCreate = false;
-        return JSON.stringify({ ok: false, code: 'NETWORK', message: 'Simulated creation failure' });
+        return JSON.stringify({ ok: false, code: 'HTTP_403', message: 'Simulated definitive creation refusal' });
       }
       return JSON.stringify({ ok: true, remoteId: link.remoteId || `${provider}-remote` });
     },

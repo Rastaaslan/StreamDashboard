@@ -178,7 +178,9 @@ export class GoogleCalendarClient {
   async create(calendarId: string, input: GoogleEventInput) {
     // Recovery/idempotence: a previous POST may have succeeded remotely while its
     // response was lost. The private local id lets a retry recover that event.
-    const existing = (await this.events(calendarId, { managedLocalId: input.localId }))
+    const existing = (await this.events(calendarId, { managedLocalId: input.localId }).catch(error => {
+      throw Object.assign(error instanceof Error ? error : new Error(String(error)), { mutationNotStarted: true });
+    }))
       .find(event => !event.deleted && event.managed && event.localId === input.localId);
     if (existing) return existing;
     return this.mutate('POST', calendarId, '', input);
@@ -189,10 +191,10 @@ export class GoogleCalendarClient {
   }
 
   async delete(calendarId: string, id: string, etag?: string) {
-    await this.api(`/calendars/${encodeURIComponent(calendarId)}/events/${encodeURIComponent(id)}`, {
+    try { await this.api(`/calendars/${encodeURIComponent(calendarId)}/events/${encodeURIComponent(id)}`, {
       method: 'DELETE',
       headers: etag ? { 'If-Match': etag } : undefined,
-    });
+    }); } catch (error) { if (!(error instanceof GoogleCalendarError && [404, 410].includes(error.status))) throw error; }
   }
 
   private async mutate(method: string, calendarId: string, suffix: string, input: GoogleEventInput, etag?: string) {
@@ -221,10 +223,10 @@ export class GoogleCalendarClient {
     const startAtUtc = start?.dateTime ?? (start?.date ? allDayUtc(start.date) : '');
     const endAtUtc = end?.dateTime ?? (end?.date ? allDayUtc(end.date) : '');
     if (typeof value.id !== 'string' || !startAtUtc || !endAtUtc) return null;
-    const managed = privateProperties?.streamDashboardManaged === 'true';
+    const managed = privateProperties?.streamDashboardManaged === 'true' || Boolean(privateProperties?.streamDashboardEventId);
     return {
       id: value.id,
-      localId: privateProperties?.streamDashboardId ?? `google:${value.id}`,
+      localId: privateProperties?.streamDashboardId ?? privateProperties?.streamDashboardEventId ?? `google:${value.id}`,
       title: typeof value.summary === 'string' ? value.summary : '(sans titre)',
       description: typeof value.description === 'string' ? value.description : undefined,
       startAtUtc,

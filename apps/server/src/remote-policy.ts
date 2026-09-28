@@ -91,6 +91,7 @@ export function toRemoteDashboardState(state: DashboardState): ExtendedRemoteDas
 
   return {
     at: state.at,
+    serverInstanceId: state.serverInstanceId,
     ...(state.stateRevision !== undefined ? { stateRevision: state.stateRevision } : {}),
     mode: state.mode,
     timer: { ...state.timer },
@@ -99,6 +100,7 @@ export function toRemoteDashboardState(state: DashboardState): ExtendedRemoteDas
     nextLive: state.nextLive ? projectItem(state.nextLive) : null,
     obs: {
       connected: state.obs.connected,
+      connectionStatus: state.obs.connectionStatus,
       streaming: state.obs.streaming,
       streamingKnown: state.obs.streamingKnown,
       scene: state.obs.scene,

@@ -4,7 +4,8 @@ import { applyDashboardCommand, startNewSessionTimer, type DashboardDomainState 
 export const END_SCENE_VISIBILITY_MS = 1_500;
 
 export interface ObsCommands {
-  readonly state: { connected: boolean; streaming: boolean; scene?: string | null };
+  readonly state: { connected: boolean; streaming: boolean; streamingKnown?: boolean; scene?: string | null };
+  readonly connectionGeneration?: number;
   scene(name: string): Promise<void>; mute(input: string, muted: boolean): Promise<void>; volume(input: string, volume: number): Promise<void>;
   volumeDb?(input: string, volumeDb: number): Promise<void>; refreshBrowserSource?(input: string): Promise<void>;
   stream(start: boolean): Promise<void>; record(start: boolean): Promise<void>; restartMedia(input: string): Promise<void>; refresh(): Promise<void>;
@@ -15,27 +16,45 @@ export interface CommandContext { settings: Pick<DashboardSettings, 'modeScenes'
 
 /** Unique, serialized application command bus shared by every client. */
 export class DashboardCommandService {
+  private activeGeneration?: number;
   private queue: Promise<void> = Promise.resolve();
+  private stopping = false;
 
   constructor(private domain: DashboardDomainState, private obs: ObsCommands, private commit: () => Promise<DashboardState>, private context: CommandContext = { settings: { modeScenes: {} } }) {}
 
+  stop() { this.stopping = true; return this.queue; }
+
   execute(command: DashboardCommand) {
-    const operation = this.queue.then(() => this.executeNow(command));
+    if (this.stopping) return Promise.reject(new Error('StreamDashboard est en cours d’arrêt.'));
+    if (!command || typeof command.type !== 'string') return Promise.reject(new Error('Commande invalide.'));
+    const generation = this.obs.connectionGeneration;
+    const usesObs = command.type.startsWith('obs.') || command.type.startsWith('session.') || command.type === 'scene.chatting' || (command.type === 'mode.set' && command.mode !== 'idle');
+    const connected = this.obs.state.connected;
+    const operation = this.queue.then(() => {
+      if (usesObs && (!connected || generation !== this.obs.connectionGeneration)) throw new Error('Connexion OBS modifiée : commande annulée.');
+      this.activeGeneration = generation;
+      return this.executeNow(command);
+    });
     this.queue = operation.then(() => undefined, () => undefined);
     return operation;
   }
 
+  private requireActiveConnection() {
+    if (!this.obs.state.connected || this.activeGeneration !== this.obs.connectionGeneration) throw new Error('Connexion OBS modifiée : commande annulée.');
+  }
+
   private async confirmScene(scene: string) {
     if (this.obs.waitForScene) {
-      try { await this.obs.waitForScene(scene); return; }
+      try { await this.obs.waitForScene(scene); this.requireActiveConnection(); return; }
       catch (confirmationError) {
         try { await this.obs.refresh(); } catch { /* confirmation error remains authoritative */ }
-        if (this.obs.state.scene === scene) return;
+        if (this.activeGeneration === this.obs.connectionGeneration && this.obs.state.connected && this.obs.state.scene === scene) return;
         throw confirmationError;
       }
     }
     if (this.obs.state.scene === undefined) return;
     await this.obs.refresh();
+    this.requireActiveConnection();
     if (this.obs.state.scene !== scene) throw new Error(`OBS n’a pas confirmé la scène « ${scene} ».`);
   }
 
@@ -56,6 +75,7 @@ export class DashboardCommandService {
   }
 
   private async refreshTimerBrowserSource(required = false) {
+    this.requireActiveConnection();
     const source = this.context.settings.timerBrowserSource?.trim();
     if (!source) {
       if (required) throw this.timerOverlayNotReady('Aucune Browser Source timer n’est configurée.');
@@ -73,17 +93,19 @@ export class DashboardCommandService {
   }
 
   private async applyStreamState(expected: boolean) {
+    this.requireActiveConnection();
     try { await this.obs.stream(expected); }
     catch (commandError) {
       try { await this.obs.refresh(); } catch { /* keep the original command error */ }
-      if (this.obs.state.streaming !== expected) throw commandError;
+      if (this.activeGeneration !== this.obs.connectionGeneration || !this.obs.state.connected || this.obs.state.streamingKnown === false || this.obs.state.streaming !== expected) throw commandError;
       return;
     }
+    this.requireActiveConnection();
     if (!this.obs.waitForStreaming) return;
-    try { await this.obs.waitForStreaming(expected); }
+    try { await this.obs.waitForStreaming(expected); this.requireActiveConnection(); }
     catch (confirmationError) {
       try { await this.obs.refresh(); } catch { /* confirmation error remains authoritative */ }
-      if (this.obs.state.streaming !== expected) throw confirmationError;
+      if (this.activeGeneration !== this.obs.connectionGeneration || !this.obs.state.connected || this.obs.state.streamingKnown === false || this.obs.state.streaming !== expected) throw confirmationError;
     }
   }
 
@@ -93,8 +115,13 @@ export class DashboardCommandService {
 
     if (command.type === 'obs.stream') return this.executeNow(command.start ? { type: 'session.start' } : { type: 'session.stop' });
 
-    if (command.type === 'session.prepare') {
+    if (command.type.startsWith('session.')) {
+      if (!this.obs.state.connected) throw new Error('OBS n’est pas connecté.');
       await this.obs.refresh();
+      this.requireActiveConnection();
+      if (this.obs.state.streamingKnown === false) throw new Error('État OBS non confirmé.');
+    }
+    if (command.type === 'session.prepare') {
       if (!this.obs.state.streaming) applyDashboardCommand(this.domain, { type: 'timer.reset' });
       await this.refreshTimerBrowserSource(this.context.settings.requireTimerOverlayOnStart === true);
       return this.commit();

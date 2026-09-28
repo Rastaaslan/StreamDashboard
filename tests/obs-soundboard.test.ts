@@ -61,3 +61,16 @@ describe('ObsSoundboardSetup', () => {
     await expect(new ObsSoundboardSetup(obs).ensure(['Gameplay'])).rejects.toMatchObject({name:'OBS_SOUNDBOARD_INPUT_KIND_MISMATCH'});
   });
 });
+
+it('ends soundboard playback and releases listeners when OBS disappears', async () => {
+  const { obs } = mockObs();
+  let changed: () => void = () => undefined;
+  const off = vi.fn();
+  obs.onStateChanged = listener => { changed = listener; return off; };
+  const backend = new ObsSoundboardPlayback(obs);
+  const session = await backend.play({ file: '/library/bonk.mp3', volume: 1, outputId: 'obs' });
+  obs.state.connected = false;
+  changed();
+  await session.finished;
+  expect(off).toHaveBeenCalledOnce();
+});

@@ -1,3 +1,4 @@
+import { publicationContent } from './shared/publication-content.js';
 export const COMPANION_SCHEMA_VERSION = 3;
 export const COMPANION_KEY = 'streamdashboard.companion.v3';
 const LEGACY_COMPANION_KEY = 'streamdashboard.companion.v2';
@@ -32,18 +33,28 @@ export function createCompanionStore(storage = localStorage, clock = now) {
     if (current && baseRevision !== undefined && current.revision !== baseRevision) return { conflict: true, current: clone(current), proposed: clone(input) };
     const item = { ...(current || {}), ...clone(input), id: input.id || uid('live'), revision: (current?.revision || 0) + 1, updatedAt: clock(), origin: 'ANDROID', providerLinks: { ...(current?.providerLinks || {}), ...(input.providerLinks || {}) } };
     if (index < 0) data.planning.push(item); else data.planning[index] = item;
-    const patch = current ? Object.fromEntries(Object.entries(input).filter(([key, value]) => !['id', 'revision', 'updatedAt', 'origin', 'providerLinks'].includes(key) && JSON.stringify(current[key]) !== JSON.stringify(value))) : input;
+    const eventFields = new Set(['id', 'localId', 'title', 'description', 'startAtUtc', 'endAtUtc', 'allDay', 'category', 'kind', 'draft', 'twitchCategoryId', 'twitchCategoryName', 'desiredPublication', 'providerLinks', 'recurrence']);
+    const patch = current ? Object.fromEntries(Object.entries(input).filter(([key, value]) => !['id', 'revision', 'updatedAt', 'origin', 'providerLinks', 'providers'].includes(key) && JSON.stringify(current[key]) !== JSON.stringify(value))) : Object.fromEntries(Object.entries(input).filter(([key]) => eventFields.has(key)));
     data.pending.push(operation(current ? 'update' : 'create', item.id, current?.revision || 0, patch, item.desiredPublication, current));
     persist(); return { item: clone(item) };
   };
   const store = {
     snapshot: () => clone(data),
     replaceServerSnapshot(snapshot) {
-      const serverItems = (snapshot.planning || []).map(item => ({ revision: item.revision || 1, updatedAt: item.updatedAt || snapshot.at || clock(), origin: 'PC', providerLinks: item.providerLinks || {}, ...item }));
+      const authoritative = snapshot.schemaVersion === COMPANION_SCHEMA_VERSION;
+      const serverItems = (snapshot.planning || []).map(item => {
+        const existing = data.planning.find(value => value.id === item.id);
+        return { revision: item.revision || existing?.revision || 1, updatedAt: item.updatedAt || snapshot.at || clock(), origin: 'PC', ...item,
+          providerLinks: authoritative ? item.providerLinks || item.providers || {} : existing?.providerLinks || item.providerLinks || item.providers || {} };
+      });
       const localById = new Map(data.planning.map(item => [item.id, item]));
       const tombstones = new Map(data.tombstones.map(item => [item.eventId || item.id, item]));
       for (const item of snapshot.tombstones || []) { const id = item.eventId || item.id; if (id && (!tombstones.has(id) || (tombstones.get(id).revision || 0) <= (item.revision || 0))) tombstones.set(id, { ...item, eventId: id }); }
-      data.tombstones = [...tombstones.values()];
+      data.tombstones = [...tombstones.values()].filter(tombstone => {
+        const id = tombstone.eventId || tombstone.id;
+        const restored = authoritative && serverItems.find(item => item.id === id && item.revision > tombstone.revision);
+        return !restored || data.pending.some(op => op.eventId === id && op.type === 'delete');
+      });
       const deleted = new Set(data.tombstones.map(item => item.eventId || item.id));
       data.planning = serverItems.filter(item => !deleted.has(item.id)).map(item => {
         const local = localById.get(item.id);
@@ -51,6 +62,7 @@ export function createCompanionStore(storage = localStorage, clock = now) {
       });
       for (const item of localById.values()) if (!data.planning.some(value => value.id === item.id) && data.pending.some(op => op.eventId === item.id && op.type === 'create')) data.planning.push(item);
       data.checklist = clone(snapshot.checklist || data.checklist); data.notes = clone(snapshot.notes || data.notes); data.templates = clone(snapshot.templates || data.templates); data.serverRevision = snapshot.serverRevision || data.serverRevision; data.streamerName = snapshot.settings?.streamerName || data.streamerName;
+      data.providerWork = clone(snapshot.providerWork || data.providerWork || {});
       data.lastServerSyncAt = clock(); persist(); return clone(data);
     },
     createEvent(input) { return saveEvent({ ...input, id: input.id || uid('live') }, 0); },
@@ -67,7 +79,21 @@ export function createCompanionStore(storage = localStorage, clock = now) {
       const tombstone = data.tombstones.find(value => (value.eventId || value.id) === eventId);
       const target = item || tombstone;
       if (!target) throw new Error('Live introuvable.');
+      const base = clone(target);
+      if (item && metadata.status === 'synced' && metadata.publishedContent !== undefined
+          && metadata.publishedContent !== publicationContent(item, provider)) {
+        metadata = { ...metadata, status: 'pending' };
+      }
       target.providerLinks = { ...(target.providerLinks || {}), [provider]: { ...(target.providerLinks?.[provider] || {}), ...clone(metadata), lastProviderSyncAt: clock() } };
+      // Provider writes are independent durable operations, even if a previous
+      // event operation was already sent and its ACK is still in flight.
+      if (item) {
+        data.pending.push(operation('update', eventId, item.revision, { providerLinks: { [provider]: target.providerLinks[provider] } }, item.desiredPublication, base));
+        item.revision++;
+      } else {
+        data.pending.push(operation('delete', eventId, target.revision, { providerLinks: target.providerLinks }, {}, base));
+        target.revision++;
+      }
       persist(); return clone(target.providerLinks[provider]);
     },
     upsertCollection(kind, input) {
@@ -92,7 +118,12 @@ export function createCompanionStore(storage = localStorage, clock = now) {
     },
     acknowledge(ids) { const accepted = new Set(ids); data.pending = data.pending.filter(item => !accepted.has(item.id)); persist(); },
     applySyncResponse(response) {
-      this.acknowledge(response.acknowledged || []); data.conflicts = clone(response.conflicts || []);
+      const accepted = new Set(response.acknowledged || []);
+      // A PC resolution of a rejected local deletion restores the server item.
+      const restored = new Set(data.pending.filter(op => op.type === 'delete' && accepted.has(op.id)).map(op => op.eventId));
+      if (response.snapshot) data.tombstones = data.tombstones.filter(item => !restored.has(item.eventId || item.id) || !response.snapshot.planning?.some(value => value.id === (item.eventId || item.id)));
+      data.pending = data.pending.filter(item => !accepted.has(item.id));
+      data.conflicts = clone(response.conflicts || []);
       if (response.snapshot) this.replaceServerSnapshot(response.snapshot);
       persist(); return clone(data);
     },

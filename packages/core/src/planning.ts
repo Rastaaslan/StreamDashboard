@@ -1,9 +1,11 @@
+import { assertProviderCreationCertain, createWithDurableIntent } from './provider-identity.js';
 import type { CalendarItem, ProviderLink } from '../../contracts/src/index.js';
 
 export type ProviderName = 'twitch' | 'google';
 export interface PlanningProvider {
-  create(item: CalendarItem): Promise<{ id: string; revision?: string; calendarId?: string }>;
-  update(id: string, item: CalendarItem, revision?: string): Promise<{ revision?: string }>;
+  read?(id: string, item: CalendarItem): Promise<{ remote?: NonNullable<CalendarItem['conflict']>['remote']; revision?: string; fingerprint?: string; deleted?: boolean }>;
+  create(item: CalendarItem): Promise<{ id: string; revision?: string; calendarId?: string; fingerprint?: string }>;
+  update(id: string, item: CalendarItem, revision?: string): Promise<{ revision?: string; fingerprint?: string }>;
   delete(id: string, item: CalendarItem, revision?: string): Promise<void>;
 }
 
@@ -96,6 +98,7 @@ export class PlanningOrchestrator {
   retry(id: string, provider: ProviderName, options: { confirmRecurring?: boolean } = {}) {
     return this.serial(async () => {
       const item = this.required(id);
+      if (!this.remoteId(item, provider)) assertProviderCreationCertain(item, provider);
       const desired = item.desiredPublication?.[provider] ?? false;
       if (desired && item.recurrence) {
         item.providers ??= {}; const link = item.providers[provider] ??= { status: 'error' };
@@ -138,14 +141,43 @@ export class PlanningOrchestrator {
   resolveConflict(id: string, provider: ProviderName, strategy: 'local' | 'remote') {
     return this.serial(async () => {
       const item = this.required(id);
-      const conflict = item.conflict;
+      // Android persists conflicts per provider. Its native snapshot is not a
+      // Desktop CalendarItem: materialize a conflict and fetch the authoritative
+      // remote body below instead of trusting or requiring that snapshot.
+      const conflict = item.conflict?.provider === provider ? item.conflict
+        : item.providers?.[provider]?.status === 'conflict' ? { provider, detectedAt: new Date().toISOString() } as NonNullable<CalendarItem['conflict']> : undefined;
+      if (conflict) item.conflict = conflict;
       if (!conflict || conflict.provider !== provider) throw new Error(`Aucun conflit ${provider} à résoudre.`);
       item.providers ??= {};
       const link = item.providers[provider] ??= { status: 'conflict' };
+      const remoteId = this.remoteId(item, provider);
+      const remoteProvider = this.providers[provider];
+      // A 412 may contain neither the current body nor its ETag. Read both at
+      // resolution time, including after restart, before adopting or overwriting.
+      if (remoteId && remoteProvider?.read) {
+        try {
+          const latest = await remoteProvider.read(remoteId, item);
+          if (latest.deleted) {
+            link.deletedRemotely = true;
+            throw new Error('Événement supprimé à distance. Confirmez explicitement sa republication.');
+          }
+          if (!latest.remote) throw new Error('Version distante indisponible pour résoudre ce conflit.');
+          conflict.remote = latest.remote;
+          if (latest.revision !== undefined) link.remoteRevision = latest.revision;
+          if (latest.fingerprint !== undefined) link.fingerprint = latest.fingerprint;
+          await this.persist(this.items);
+        } catch (error) {
+          link.status = 'conflict';
+          link.lastError = error instanceof Error ? error.message : String(error);
+          await this.persist(this.items);
+          throw error;
+        }
+      }
 
       if (strategy === 'remote') {
         if (!conflict.remote) throw new Error('Version distante indisponible pour résoudre ce conflit.');
         Object.assign(item, conflict.remote);
+        delete link.uncertainCreate;
         delete item.conflict;
         link.status = 'synced';
         link.deletedRemotely = false;
@@ -155,8 +187,6 @@ export class PlanningOrchestrator {
         return structuredClone(item);
       }
 
-      const remoteId = this.remoteId(item, provider);
-      const remoteProvider = this.providers[provider];
       if (!remoteId) throw new Error(`Objet distant ${provider} introuvable pour appliquer la version locale.`);
       if (!remoteProvider) {
         link.status = 'conflict';
@@ -173,7 +203,9 @@ export class PlanningOrchestrator {
       await this.persist(this.items);
       try {
         const result = await remoteProvider.update(remoteId, item, link.remoteRevision);
-        if (result.revision) link.remoteRevision = result.revision;
+        delete link.uncertainCreate;
+        if (result.revision !== undefined) link.remoteRevision = result.revision;
+        if (provider === 'twitch') link.fingerprint = result.fingerprint;
         link.status = 'synced';
         link.lastSyncedAt = new Date().toISOString();
         link.deletedRemotely = false;
@@ -221,6 +253,13 @@ export class PlanningOrchestrator {
       const desired = item.desiredPublication?.[name] ?? false;
       const remoteId = this.remoteId(item, name);
 
+      if (!remoteId && item.providers?.[name]?.uncertainCreate) {
+        const link = item.providers[name]!;
+        link.status = 'error';
+        link.lastError = 'Création distante incertaine. Réconciliez son identité avant de republier.';
+        await this.persist(this.items);
+        continue;
+      }
       // V1 provider APIs do not expose a reliable exception-aware recurring model.
       // Refuse rather than silently publishing only the anchor or duplicating retries.
       if (desired && item.recurrence) {
@@ -288,17 +327,29 @@ export class PlanningOrchestrator {
       link.deletedRemotely = false;
     }
 
+    if (!this.remoteId(item, name)) {
+      try { assertProviderCreationCertain(item, name); }
+      catch (error) {
+        link.status = 'error';
+        link.lastError = (error as Error).message;
+        await this.persist(this.items);
+        return;
+      }
+    }
     link.status = 'pending';
     await this.persist(this.items);
     await this.attempt(item, name, async remoteProvider => {
       const remoteId = this.remoteId(item, name);
       if (remoteId) {
         const result = await remoteProvider.update(remoteId, item, link.remoteRevision);
-        link.remoteRevision = result.revision;
+        delete link.uncertainCreate;
+        if (result.revision !== undefined) link.remoteRevision = result.revision;
+        if (name === 'twitch') link.fingerprint = result.fingerprint;
       } else {
-        const result = await remoteProvider.create(item);
+        const result = await createWithDurableIntent(item, name, () => this.persist(this.items), request => remoteProvider.create(request));
         link.remoteId = result.id;
-        link.remoteRevision = result.revision;
+        if (result.revision !== undefined) link.remoteRevision = result.revision;
+        if (name === 'twitch') link.fingerprint = result.fingerprint;
         link.calendarId = result.calendarId ?? link.calendarId;
         if (name === 'twitch') item.twitchSegmentId = result.id;
       }
@@ -341,7 +392,13 @@ export class PlanningOrchestrator {
       await this.persist(this.items);
       return true;
     } catch (error) {
-      link.status = 'error';
+      const failure = error as { code?: string; status?: number; fingerprint?: string; remote?: NonNullable<CalendarItem['conflict']>['remote'] };
+      link.status = failure.code === 'CONFLICT' || failure.status === 412 ? 'conflict' : 'error';
+      if (link.status === 'conflict') {
+        item.conflict = { provider: name, detectedAt: new Date().toISOString(), remote: failure.remote };
+        if (failure.fingerprint) link.fingerprint = failure.fingerprint;
+      }
+      if (failure.code === 'DELETED_REMOTELY' || failure.status === 404 || failure.status === 410) link.deletedRemotely = true;
       link.lastError = error instanceof Error ? error.message : String(error);
       await this.persist(this.items);
       return false;

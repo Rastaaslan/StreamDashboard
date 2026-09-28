@@ -30,11 +30,11 @@ describe('Twitch Live Control mobile', () => {
   });
 
   it('garde les scopes Twitch optionnels réellement optionnels côté Runtime', () => {
-    expect(server).toContain('twitchChatters = capabilities.chatters ? await twitch.chatters() : { items: [], total: 0, cursor: null }');
-    expect(server).toContain('if (!capabilities.chatRead) chatStatus = \'DISCONNECTED\'');
+    expect(server).toContain('twitchChatters = twitch.controlCapabilities().chatters ? await twitch.chatters() : { items: [], total: 0, cursor: null }');
+    expect(server).toContain('if (!capabilities.chatRead) { chatStatus = \'DISCONNECTED\'');
     expect(server).toContain('capabilities.chatRead || capabilities.redemptions');
     expect(twitchClient).toContain('if (this.grantedScopes.has(CHAT_READ_SCOPE)) await this.subscribeChat(sessionId)');
-    expect(twitchClient).toContain('if (this.grantedScopes.has(REDEMPTIONS_SCOPE)) await this.subscribeRewardRedemptions(sessionId)');
+    expect(twitchClient).toContain('if (this.hasScope(REDEMPTIONS_SCOPE)) await this.subscribeRewardRedemptions(sessionId)');
   });
 
   it('conserve un message PC hors ligne explicite', () => {

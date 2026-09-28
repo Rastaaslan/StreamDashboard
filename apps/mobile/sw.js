@@ -1,4 +1,4 @@
-const CACHE = 'streamdashboard-mobile-v14-cb7';
+const CACHE = 'streamdashboard-mobile-v19-integrated';
 const PATHS = new Set([
   '/mobile/',
   '/mobile/index.html',
@@ -22,6 +22,7 @@ const PATHS = new Set([
   '/mobile/planning-export.js',
   '/mobile/planning-model.js',
   '/mobile/shared/recurrence.js',
+  '/mobile/shared/publication-content.js',
   '/mobile/companion-store.js',
   '/mobile/manifest.webmanifest',
   '/mobile/icon-192.png',
@@ -50,6 +51,7 @@ const ASSETS = [
   'planning-export.js',
   'planning-model.js',
   'shared/recurrence.js',
+  'shared/publication-content.js',
   'companion-store.js',
   'manifest.webmanifest',
   'icon-192.png',
