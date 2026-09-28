@@ -224,7 +224,7 @@ describe('Android remote runtime', () => {
   it('refuse de publier un APK Android avec les connexions autonomes désactivées', () => {
     for (const variable of ['TWITCH_ANDROID_CLIENT_ID','GOOGLE_ANDROID_CLIENT_ID']) {
       expect(androidGradle).toContain(`System.getenv('${variable}')`);
-      expect(androidWorkflow).toContain(`${{ secrets.${variable} }}`);
+      expect(androidWorkflow).toContain('${{ secrets.' + variable + ' }}');
       expect(androidWorkflow).toContain(`echo "${variable}=${variable}" >> "$GITHUB_ENV"`);
     }
     expect(androidWorkflow).toContain('Refusing to publish an APK with disabled provider login.');
