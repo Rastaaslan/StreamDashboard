@@ -47,7 +47,8 @@ jobs:
       - name: Synchronize Android assets
         run: npm run android:sync
       - name: Preview build note
-        run: echo "Preview APK build: Android OAuth IDs/signing are intentionally not required on this temporary test branch."
+        run: |
+          echo "Preview APK build - Android OAuth IDs/signing are intentionally not required on this temporary test branch."
       - name: Lint and build Preview APK
         run: |
           ./android/gradlew -p android testDebugUnitTest lintDebug assemblePreview
