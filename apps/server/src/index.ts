@@ -50,6 +50,7 @@ import { DashboardCommandService } from './command-service.js';
 import { companionSnapshot, emptyCompanionState, reconcileCompanionBatch, resolveCompanionConflict, type CompanionState, type SyncOperation } from './companion-sync.js';
 import { RemoteAuth, type PersistedRemoteDevice } from './remote-auth.js';
 import { parseRemoteCommand, toRemoteDashboardState } from './remote-policy.js';
+import { isRemoteApiAllowed } from './remote-api-policy.js';
 import { SoundboardRuntime, validateSound } from './soundboard-runtime.js';
 import { ObsSoundboardPlayback, ObsSoundboardSetup } from './obs-soundboard.js';
 import { AutomationRuntime } from './automation-runtime.js';
@@ -564,8 +565,9 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
       broadcast();
     },
     (status, error) => {
-      chatStatus = status;
-      eventCore.publish({ type: status === 'CONNECTED' ? 'integration.connected' : status === 'DISCONNECTED' ? 'integration.disconnected' : 'integration.degraded', source: 'twitch-chat', payload: { integration: 'twitch-chat', status, ...(error ? { error } : {}) } });
+      const chatEnabled = twitch.controlCapabilities().chatRead;
+      chatStatus = chatEnabled ? status : 'DISCONNECTED';
+      if (chatEnabled) eventCore.publish({ type: status === 'CONNECTED' ? 'integration.connected' : status === 'DISCONNECTED' ? 'integration.disconnected' : 'integration.degraded', source: 'twitch-chat', payload: { integration: 'twitch-chat', status, ...(error ? { error } : {}) } });
       broadcast();
     },
     undefined,
@@ -752,7 +754,7 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
     remoteEnabled: local.settings.remoteEnabled === true,
     streamerPingRewardIds: [...(local.settings.streamerPingRewardIds ?? [])],
   });
-  const features = ['obs', 'twitch', 'preflight', 'timer', 'planning', 'planning-recurrence', 'discord-planning', 'checklist', 'deck', 'mobile-remote', 'unplanned-live-tracking', 'streamer-pings'];
+  const features = ['obs', 'twitch', 'preflight', 'timer', 'planning', 'planning-recurrence', 'discord-planning', 'checklist', 'deck', 'mobile-remote', 'unplanned-live-tracking', 'streamer-pings', 'mobile-profile-presentation', 'mobile-live-control-config', 'mobile-provider-actions', 'soundboard-live-volume'];
   if (googleClientId) features.push('google-calendar', 'unplanned-live-google-sync');
   const capabilities: ServerCapabilities = {
     protocolVersion,
@@ -913,6 +915,7 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
     broadcast();
     return snapshot();
   };
+  const responseState = (req: express.Request, value: DashboardState) => isRemoteRequest(req) ? toRemoteDashboardState(value) : value;
   type CompanionCollectionKind = 'notes' | 'checklist' | 'templates';
   const companionKinds = new Set<CompanionCollectionKind>(['notes', 'checklist', 'templates']);
   const mutateCompanionCollection = async (kind: CompanionCollectionKind, action: 'upsert' | 'delete', id: string | undefined, patch: Record<string, unknown> = {}) => plan(async () => {
@@ -1080,15 +1083,20 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
     } else {
       const metadata = await twitch.getChannelMetadata();
       twitchChannel = { title: metadata.title, gameId: metadata.gameId, gameName: metadata.gameName };
-      [twitchLive, twitchChatters] = await Promise.all([twitch.getLiveState(), twitch.chatters()]);
-      if (!twitchEventSubStarted) { twitchEventSubStarted = true; twitchEventSub.start(); }
+      const capabilities = twitch.controlCapabilities();
+      twitchLive = await twitch.getLiveState();
+      twitchChatters = capabilities.chatters ? await twitch.chatters() : { items: [], total: 0, cursor: null };
+      if (!capabilities.chatRead) chatStatus = 'DISCONNECTED';
+      if (!twitchEventSubStarted && (capabilities.chatRead || capabilities.redemptions)) { twitchEventSubStarted = true; twitchEventSub.start(); }
     }
     broadcast();
   };
   const refreshTwitchLive = async () => {
     if (!twitch.state.connected) return;
     try {
-      const [live, chatters] = await Promise.all([twitch.getLiveState(), twitch.chatters()]);
+      const capabilities = twitch.controlCapabilities();
+      const live = await twitch.getLiveState();
+      const chatters = capabilities.chatters ? await twitch.chatters() : { items: [], total: 0, cursor: null };
       const liveChanged = live.isLive !== twitchLive.isLive;
       twitchLive = live;
       twitchChatters = chatters;
@@ -1335,11 +1343,7 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
       return;
     }
     scheduleRemoteActivitySave();
-    const allowed = (req.method === 'GET' && (['/v1/state', '/v1/control-hub', '/v1/events', '/v1/soundboard', '/v1/automations', '/v1/automations/capabilities', '/v1/supports', '/v1/twitch/categories', '/v1/twitch/videos', '/v1/twitch/clips', '/v1/twitch/chatters', '/v1/twitch/moderation/capabilities', '/v1/discord/status', '/v1/discord/guilds'].includes(pathName) || /^\/v1\/discord\/guilds\/\d+\/channels$/.test(pathName)))
-      || (req.method === 'PUT' && (pathName === '/v1/discord/settings' || /^\/v1\/planning\/[^/]+(?:\/occurrence)?$/.test(pathName) || /^\/v1\/soundboard\/sounds\/[A-Za-z0-9._:-]+$/.test(pathName) || /^\/v1\/automations\/[A-Za-z0-9._:-]+$/.test(pathName)))
-      || (req.method === 'DELETE' && (/^\/v1\/planning\/[^/]+(?:\/occurrence)?$/.test(pathName) || /^\/v1\/twitch\/videos\/\d+$/.test(pathName) || /^\/v1\/twitch\/moderation\/(?:messages|bans)\/[A-Za-z0-9_-]+$/.test(pathName) || /^\/v1\/automations\/[A-Za-z0-9._:-]+$/.test(pathName)))
-      || (req.method === 'POST' && (['/v1/commands', '/v1/remote/ws-ticket', '/v1/soundboard/play', '/v1/soundboard/stop', '/v1/automations', '/v1/automations/test', '/v1/twitch/channel', '/v1/twitch/chat/messages', '/v1/twitch/clips', '/v1/twitch/moderation/bans', '/v1/planning', '/v1/companion/sync', '/v1/discord/planning'].includes(pathName) || /^\/v1\/companion\/conflicts\/[^/]+\/resolve$/.test(pathName) || /^\/v1\/streamer-pings\/[^/]+\/ack$/.test(pathName) || pathName === '/v1/streamer-pings/ack-all'));
-    if (!allowed) {
+    if (!isRemoteApiAllowed(req.method, pathName)) {
       res.status(403).json({ ok: false, error: { code: 'REMOTE_SCOPE_DENIED', message: 'Cette action n’est pas autorisée depuis la télécommande.' } });
       return;
     }
@@ -1361,6 +1365,55 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
   app.get('/api/v1/health', health);
   app.get('/api/v1/state', (req, res) => res.json(isRemoteRequest(req) ? toRemoteDashboardState(snapshot()) : snapshot()));
   app.get('/api/v1/profile', (_req, res) => res.json({ profile: productProfile, modules: resolveModules(productProfile) }));
+  app.put('/api/v1/profile/presentation', async (req, res, next) => {
+    try {
+      if (!object(req.body) || Object.keys(req.body).some(key => !['profile','appearance'].includes(key))) throw new Error('Présentation du profil invalide.');
+      const nextProfile = structuredClone(productProfile);
+      if (object(req.body.profile)) {
+        if (Object.keys(req.body.profile).some(key => !['displayName','channelName','language'].includes(key))) throw new Error('Profil visible invalide.');
+        nextProfile.profile = { ...nextProfile.profile, ...req.body.profile };
+      }
+      if (object(req.body.appearance)) {
+        if (Object.keys(req.body.appearance).some(key => !['theme','preset','accent','density','radius','textScale'].includes(key))) throw new Error('Apparence invalide.');
+        nextProfile.appearance = { ...nextProfile.appearance, ...req.body.appearance };
+      }
+      const validated = validateProductProfile(nextProfile);
+      await profileStore.save(validated);
+      productProfile = validated;
+      broadcast();
+      res.json({ profile: productProfile, modules: resolveModules(productProfile) });
+    } catch (error) { next(error); }
+  });
+  app.put('/api/v1/settings/live-control', async (req, res, next) => {
+    try {
+      if (!object(req.body) || Object.keys(req.body).some(key => !['primaryMicInput','mode','scene'].includes(key))) throw new Error('Réglage Live invalide.');
+      const next = await configure(async () => {
+        if (req.body.primaryMicInput !== undefined) {
+          if (typeof req.body.primaryMicInput !== 'string' || req.body.primaryMicInput.length > 200) throw new Error('Micro principal OBS invalide.');
+          const input = req.body.primaryMicInput.trim();
+          if (input && obs.state.connected && !Object.prototype.hasOwnProperty.call(obs.state.inputs, input)) throw new Error('Choisissez une source audio OBS disponible.');
+          local.settings.primaryMicInput = input || undefined;
+        }
+        if (req.body.mode !== undefined || req.body.scene !== undefined) {
+          const mode = String(req.body.mode ?? '');
+          const scene = String(req.body.scene ?? '').trim();
+          if (!['intro','live','chatting','pause','end'].includes(mode) || scene.length > 200) throw new Error('Mapping de scène invalide.');
+          if (scene && obs.state.connected && !obs.state.scenes.includes(scene)) throw new Error('Choisissez une scène OBS disponible.');
+          if (mode === 'chatting') local.settings.chattingScene = scene || undefined;
+          else {
+            const mapped = { ...local.settings.modeScenes };
+            if (scene) mapped[mode as keyof typeof mapped] = scene;
+            else delete mapped[mode as keyof typeof mapped];
+            local.settings.modeScenes = mapped;
+          }
+        }
+        await save();
+        broadcast();
+        return snapshot();
+      });
+      res.json(isRemoteRequest(req) ? toRemoteDashboardState(next) : next);
+    } catch (error) { next(error); }
+  });
   app.put('/api/v1/profile', async (req, res, next) => { try { if (!requireLocal(req, res)) return; const nextProfile = validateProductProfile(req.body); await profileStore.save(nextProfile); productProfile = nextProfile; broadcast(); res.json({ profile: productProfile, modules: resolveModules(productProfile) }); } catch (error) { next(error); } });
   app.get('/api/v1/profile/export', async (req, res, next) => { try { if (!requireLocal(req, res)) return; res.attachment('streamdashboard.streamdashboard.yaml'); res.setHeader('Content-Type', 'application/yaml; charset=utf-8'); res.send(await profileStore.export()); } catch (error) { next(error); } });
   app.post('/api/v1/profile/import', async (req, res, next) => { try { if (!requireLocal(req, res)) return; const content = String(req.body?.content ?? ''); if (!content || content.length > 256_000) throw new Error('Fichier profil invalide.'); const imported = await profileStore.import(content); productProfile = imported.profile; broadcast(); res.json({ profile: productProfile, modules: resolveModules(productProfile), backup: imported.backup ? path.basename(imported.backup) : null }); } catch (error) { next(error); } });
@@ -1443,7 +1496,7 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
   app.post('/api/v1/twitch/clips', async (_req, res, next) => { try { res.status(202).json(await twitch.createClip()); } catch (error) { next(error); } });
   app.get('/api/v1/twitch/chatters', async (req, res, next) => { try { res.json(await twitch.chatters(String(req.query.after ?? ''), Number(req.query.first) || 100)); } catch (error) { next(error); } });
   app.post('/api/v1/twitch/chat/messages', async (req, res, next) => { try { res.status(201).json(await twitch.sendChatMessage(String(req.body?.message ?? ''), typeof req.body?.replyParentMessageId === 'string' ? req.body.replyParentMessageId : undefined)); } catch (error) { next(error); } });
-  app.get('/api/v1/twitch/moderation/capabilities', (_req, res) => res.json(twitch.moderationCapabilities()));
+  app.get('/api/v1/twitch/moderation/capabilities', (_req, res) => res.json(twitch.controlCapabilities()));
   app.delete('/api/v1/twitch/moderation/messages/:id', async (req, res, next) => { try { await twitch.deleteChatMessage(String(req.params.id)); res.status(204).end(); } catch (error) { next(error); } });
   app.post('/api/v1/twitch/moderation/bans', async (req, res, next) => { try { await twitch.banUser(String(req.body?.userId ?? ''), { ...(req.body?.duration !== undefined ? { duration: Number(req.body.duration) } : {}), ...(typeof req.body?.reason === 'string' ? { reason: req.body.reason } : {}) }); res.status(204).end(); } catch (error) { next(error); } });
   app.delete('/api/v1/twitch/moderation/bans/:userId', async (req, res, next) => { try { await twitch.unbanUser(String(req.params.userId)); res.status(204).end(); } catch (error) { next(error); } });
@@ -1671,7 +1724,7 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
       local.companion.eventRevisions[id] = (local.companion.eventRevisions[id] ?? 1) + 1;
       local.companion.serverRevision++;
       invalidatePreflight();
-      res.json(await changed());
+      res.json(responseState(req, await changed()));
     } catch (error) { next(error); }
   };
 
@@ -1682,7 +1735,7 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
       if (!['twitch', 'google'].includes(provider)) throw new Error('Provider invalide.');
       await plan(async () => planning().retry(id, provider as 'twitch' | 'google', { confirmRecurring: req.body?.confirmRecurring === true }));
       if (provider === 'google') googleError = null;
-      res.json(await changed());
+      res.json(responseState(req, await changed()));
     } catch (error) { next(error); }
   };
 
@@ -1695,7 +1748,7 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
       await plan(async () => planning().resolveConflict(id, provider as 'twitch' | 'google', strategy as 'local' | 'remote'));
       if (provider === 'google') googleError = null;
       invalidatePreflight();
-      res.json(await changed());
+      res.json(responseState(req, await changed()));
     } catch (error) { next(error); }
   };
 
@@ -1722,7 +1775,7 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
       local.companion.tombstones[id] = { id, revision: oldRevision + 1, updatedAt: new Date().toISOString() };
       delete local.companion.eventHistory[id]; local.companion.serverRevision++;
       invalidatePreflight();
-      res.json(await changed());
+      res.json(responseState(req, await changed()));
     } catch (error) { next(error); }
   };
 
@@ -1742,7 +1795,7 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
       }
       await plan(async () => planning().update(series.id, { title: series.title, description: series.description, startAtUtc: series.startAtUtc, endAtUtc: series.endAtUtc, allDay: series.allDay, category: series.category, kind: series.kind, twitchCategoryId: series.twitchCategoryId, twitchCategoryName: series.twitchCategoryName, recurrence }));
       local.companion.eventRevisions[series.id] = (local.companion.eventRevisions[series.id] ?? 1) + 1; local.companion.serverRevision++;
-      res.json(await changed());
+      res.json(responseState(req, await changed()));
     } catch (error) { next(error); }
   };
 
@@ -1844,7 +1897,7 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
       }
     } catch (error) { next(error); }
   });
-  app.post(['/api/twitch/disconnect', '/api/v1/twitch/disconnect'], async (_req, res, next) => {
+  app.post(['/api/twitch/disconnect', '/api/v1/twitch/disconnect'], async (req, res, next) => {
     try {
       await twitch.disconnect();
       local.twitch = { broadcasterId: '', userName: '', displayName: '' };
@@ -1852,7 +1905,7 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
       twitchEventSub.stop(); twitchEventSubStarted = false; chatMessages = []; chatStatus = 'DISCONNECTED'; twitchChatters = { items: [], total: 0, cursor: null };
       twitchLive = { isLive: false, title: null, category: null, categoryId: null, startedAt: null, viewerCount: null, thumbnailUrl: null };
       invalidatePreflight();
-      res.json(await changed());
+      res.json(responseState(req, await changed()));
     } catch (error) { next(error); }
   });
   app.post(['/api/twitch/sync', '/api/v1/twitch/sync'], async (_req, res, next) => {
@@ -1910,18 +1963,16 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
   });
   app.post('/api/v1/google/disconnect', async (req, res, next) => {
     try {
-      if (!requireLocal(req, res)) return;
       googleOAuthAttempt = null;
       await google.disconnect();
       googleCalendars = [];
       googleError = null;
       local.google = { targetCalendarId: null, lastSyncedAt: null };
-      res.json(await changed());
+      res.json(responseState(req, await changed()));
     } catch (error) { next(error); }
   });
-  app.post('/api/v1/google/sync', async (req, res, next) => {
+  app.post('/api/v1/google/sync', async (_req, res, next) => {
     try {
-      if (!requireLocal(req, res)) return;
       res.json(await plan(async () => {
         if (!google.connected) throw new Error('Connectez Google Calendar avant de synchroniser.');
         const calendarId = local.google.targetCalendarId;
@@ -2057,8 +2108,9 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
 
   const obsTest: express.RequestHandler = async (req, res, next) => {
     try {
-      const url = req.body.obsUrl !== undefined ? normalizeObsUrl(String(req.body.obsUrl).trim()) : local.settings.obsUrl;
-      const password = Object.prototype.hasOwnProperty.call(req.body, 'obsPassword') ? String(req.body.obsPassword ?? '') : currentObsPassword;
+      const remote = isRemoteRequest(req);
+      const url = remote ? local.settings.obsUrl : req.body.obsUrl !== undefined ? normalizeObsUrl(String(req.body.obsUrl).trim()) : local.settings.obsUrl;
+      const password = remote ? currentObsPassword : Object.prototype.hasOwnProperty.call(req.body, 'obsPassword') ? String(req.body.obsPassword ?? '') : currentObsPassword;
       res.json(await obs.test(url, password));
     } catch (error) { next(error); }
   };

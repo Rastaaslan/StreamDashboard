@@ -12,6 +12,16 @@ describe('mobile information architecture', () => {
   it('rend le chat et les contrôles essentiels visibles dans Live', () => { for(const id of ['hub-chat','chat-form','live-viewers','open-scenes-live','quick-mic','live-stream']) expect(html).toContain(`id="${id}"`); expect(html).toContain('id="live-tools-sheet"'); expect(html).toContain('data-open-live-tool="timer"'); expect(html).not.toContain('hub-tool-tabs'); expect(html).not.toMatch(/sr-only[^>]*>[\s\S]{0,80}id="timer"/); });
   it('réserve Sons à sa destination principale', () => { expect(html).toContain('data-view="sounds"'); expect(html).toContain('id="sound-search"'); expect(html).toContain('id="stop-sound"'); expect(html).toContain('id="sound-volume"'); expect(html).not.toContain('id="sound-volume" type="range" min="0" max="100" value="100" disabled'); expect(html).not.toContain('data-open-tab="sounds"'); expect(html).not.toContain('data-hub-panel="soundboard"'); expect(mobile).toContain('setSoundVolume'); expect(mobile).toContain("StreamDashboard • Soundboard"); expect(mobile).toContain('publicObsMediaInputs'); expect(mobile).not.toContain('renderCommandSounds()'); });
   it('organise Plus par intentions sans doublonner les onglets', () => { for(const label of ['Préparer','Communauté','Automatiser','Application','Avant le live','Notes','Modèles de live','Comptes connectés','État technique']) expect(html).toContain(label); });
+  it('rend chaque événement Planning directement interactif sans avaler ses actions internes', () => {
+    expect(mobile).toContain("row.setAttribute('role', 'button')");
+    expect(mobile).toContain("openMobileEditor(item, item.occurrenceKey ? 'occurrence' : item.seriesId ? 'series' : 'event')");
+    expect(mobile).toContain("event.target.closest('button,summary,details,input,select,textarea,a,label')");
+    expect(mobile).toContain("mobileEditing?.scope === 'event'");
+    expect(mobile).toContain("form.elements.twitch.checked = item.desiredPublication?.twitch === true");
+    expect(mobile).toContain("form.elements.google.checked = item.desiredPublication?.google === true");
+    expect(css).toContain('.planning-row[role="button"]');
+  });
+
   it('stabilise le sizing réel du Planning et des Modèles', () => {
     expect(mobile).toContain('planningWhenParts');
     expect(mobile).toContain("actions.className = 'planning-actions'");

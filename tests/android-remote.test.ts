@@ -4,22 +4,26 @@ import { apiUrl, nextRetry, normalizeServer, parsePairing, websocketUrl } from '
 
 const mobileIndex = readFileSync(new URL('../apps/mobile/index.html', import.meta.url), 'utf8');
 const mobileScript = readFileSync(new URL('../apps/mobile/mobile.js', import.meta.url), 'utf8');
+const mobileTransport = readFileSync(new URL('../apps/mobile/transport.js', import.meta.url), 'utf8');
+const serverSource = readFileSync(new URL('../apps/server/src/index.ts', import.meta.url), 'utf8');
 const templatesFeature = readFileSync(new URL('../apps/mobile/features/templates.js', import.meta.url), 'utf8');
 const remotePolicy = readFileSync(new URL('../apps/server/src/remote-policy.ts', import.meta.url), 'utf8');
+const remoteApiPolicy = readFileSync(new URL('../apps/server/src/remote-api-policy.ts', import.meta.url), 'utf8');
 const androidActivity = readFileSync(new URL('../android/app/src/main/java/com/rastaaslan/streamdashboard/remote/MainActivity.java', import.meta.url), 'utf8');
+const androidProviderBridge = readFileSync(new URL('../android/app/src/main/java/com/rastaaslan/streamdashboard/remote/ProviderBridge.java', import.meta.url), 'utf8');
 const androidManifest = readFileSync(new URL('../android/app/src/main/AndroidManifest.xml', import.meta.url), 'utf8');
 const androidFilePaths = readFileSync(new URL('../android/app/src/main/res/xml/file_paths.xml', import.meta.url), 'utf8');
 
 describe('Android remote runtime', () => {
   it('expose Pause avec les quatre modes et conserve le flux mode.set partagé', () => {
     for (const mode of ['intro', 'live', 'pause', 'end']) expect(mobileIndex).toContain(`data-mode="${mode}"`);
-    expect(mobileScript).toContain("command({ type: 'mode.set', mode: button.dataset.mode })");
+    expect(mobileScript).toContain('handleModeAction(button.dataset.mode)');
     expect(mobileScript).toContain("button.dataset.mode === next.mode && !(button.dataset.mode === 'live' && chattingActive)");
     expect(remotePolicy).toContain("new Set(['intro', 'live', 'pause', 'end'])");
   });
   it('expose le preset Chatting sans créer de RunMode ni accepter une scène arbitraire', () => {
     expect(mobileIndex).toMatch(/data-chatting[^>]*>[\s\S]*?Chatting/);
-    expect(mobileScript).toContain("command({ type: 'scene.chatting' })");
+    expect(mobileScript).toContain("if (mode === 'chatting') await command({ type: 'scene.chatting' })");
     expect(mobileScript).toContain("next.mode === 'live'");
     expect(mobileScript).toContain("next.obs.scene === next.settings.chattingScene");
     expect(remotePolicy).toContain("case 'scene.chatting'");
@@ -56,6 +60,11 @@ describe('Android remote runtime', () => {
     expect(templatesFeature).toContain('La périodicité reste libre');
     expect(templatesFeature).toContain('Créer un événement');
   });
+  it('autorise le volume Soundboard en direct depuis une télécommande appairée', () => {
+    expect(mobileTransport).toContain("'/api/v1/soundboard/volume'");
+    expect(serverSource).toContain("import { isRemoteApiAllowed } from './remote-api-policy.js'");
+  });
+
   it('répare le démarrage live Android avec préparation et confirmation de bypass checklist', () => {
     expect(mobileScript).toContain("command({ type: 'session.prepare' })");
     expect(mobileScript).toContain("command({ type: 'session.start', force: requiresBypass }");
@@ -81,6 +90,18 @@ describe('Android remote runtime', () => {
     expect(androidActivity).toContain('import android.webkit.WebChromeClient;');
     expect(androidActivity).toContain('webView.setWebChromeClient(new WebChromeClient());');
   });
+  it('ouvre seulement les ressources Twitch HTTPS dans le navigateur système', () => {
+    expect(androidActivity).toContain('isAllowedExternalUri');
+    expect(androidActivity).toContain('host.equals("twitch.tv") || host.endsWith(".twitch.tv")');
+    expect(androidActivity).toContain('startActivity(new Intent(Intent.ACTION_VIEW, uri))');
+    expect(androidActivity).not.toContain('if (!"https".equalsIgnoreCase(uri.getScheme())) return;');
+  });
+
+  it('retourne le bon provider dans les statuts autonomes Android', () => {
+    expect(androidProviderBridge).toContain('provider.equals("google") ? "Google" : "Twitch"');
+    expect(androidProviderBridge).toContain('label + " autonome non configuré"');
+  });
+
   it.each([
     ['192.168.1.10', 'http://192.168.1.10:47832'],
     ['192.168.1.10:47832', 'http://192.168.1.10:47832'],
@@ -126,6 +147,84 @@ describe('Android remote runtime', () => {
     expect(mobileScript).toContain('notifyMobileStreamerPing');
     expect(mobileScript).toContain('document.hidden');
     expect(mobileScript).toContain('notifyStreamerPing?.(');
+  });
+
+  it('rend les contrôles Live configurables directement depuis leur état manquant', () => {
+    for (const id of ['mic-config-dialog','mic-config-form','primary-mic-select','configure-primary-mic','scene-config-dialog','scene-config-form','scene-config-select']) expect(mobileIndex).toContain(`id="${id}"`);
+    for (const mode of ['intro','live','chatting','pause','end']) expect(mobileIndex).toContain(`data-mode-status="${mode}"`);
+    expect(mobileScript).toContain('function openPrimaryMicConfig()');
+    expect(mobileScript).toContain('function openSceneConfig(mode)');
+    expect(mobileScript).toContain("transport.updateLiveControl({ primaryMicInput: $('primary-mic-select').value })");
+    expect(mobileScript).toContain("transport.updateLiveControl({ mode, scene: $('scene-config-select').value })");
+    expect(mobileScript).toContain("Non configuré · toucher pour configurer");
+    expect(mobileScript).toContain("Non configuré · toucher pour choisir");
+    expect(mobileTransport).toContain("'/api/v1/settings/live-control'");
+    expect(remoteApiPolicy).toContain("'/v1/settings/live-control'");
+    expect(serverSource).toContain("Object.keys(req.body).some(key => !['primaryMicInput','mode','scene'].includes(key))");
+    expect(remotePolicy).toContain('scenes: [...state.obs.scenes]');
+  });
+
+  it('affiche les erreurs provider du Planning connecté et permet un retry explicite', () => {
+    expect(mobileIndex).toContain('id="planning-provider-readiness"');
+    expect(mobileScript).toContain('renderOnlinePlanningProviders');
+    expect(mobileScript).toContain('transport.retryPlanningProvider');
+    expect(mobileScript).toContain('Conflit distant · résolution à effectuer sur le PC.');
+    expect(mobileTransport).toContain('/retry/');
+    expect(remotePolicy).toContain("providers?: Partial<Record<'twitch' | 'google'");
+    expect(remotePolicy).toContain('lastError: link.lastError');
+  });
+
+  it('permet de modifier le profil et l’apparence partagés depuis Mobile', () => {
+    for (const id of ['profile-appearance-form','profile-display-name','profile-channel-name','appearance-theme-input','appearance-preset-input','appearance-accent-input','appearance-density-input','appearance-radius-input','appearance-text-scale-input']) expect(mobileIndex).toContain(`id="${id}"`);
+    expect(mobileScript).toContain('transport.updateProfilePresentation(value)');
+    expect(mobileScript).toContain('populateProfileAppearanceForm');
+    expect(mobileScript).toContain('previewProfileAppearance');
+    expect(mobileTransport).toContain("'/api/v1/profile/presentation'");
+    expect(remoteApiPolicy).toContain("'/v1/profile/presentation'");
+    expect(serverSource).toContain("Object.keys(req.body).some(key => !['profile','appearance'].includes(key))");
+  });
+
+  it('détecte les capacités du Runtime PC avant d’utiliser les fonctions Mobile récentes', () => {
+    expect(mobileIndex).toContain('id="runtime-compatibility"');
+    expect(mobileTransport).toContain("capabilities: () => request('/api/v1/capabilities')");
+    for (const feature of ['mobile-profile-presentation','mobile-live-control-config','mobile-provider-actions','soundboard-live-volume']) {
+      expect(mobileScript).toContain(feature);
+      expect(serverSource).toContain(feature);
+    }
+    expect(mobileScript).toContain('Mets à jour StreamDashboard sur le PC pour utiliser');
+    expect(mobileScript).toContain('updateRuntimeCompatibility');
+  });
+
+  it('ne permet au test OBS Mobile que de tester la configuration déjà stockée sur le PC', () => {
+    expect(serverSource).toContain('const remote = isRemoteRequest(req)');
+    expect(serverSource).toContain('const url = remote ? local.settings.obsUrl');
+    expect(serverSource).toContain('const password = remote ? currentObsPassword');
+    expect(mobileTransport).toContain("testObs: () => request('/api/v1/obs/test'");
+  });
+
+  it('gère les connexions sûres du PC depuis Mobile sans confondre connexion et synchro planning', () => {
+    for (const action of ['obs-test','twitch-connect','twitch-disconnect','google-disconnect']) expect(mobileScript).toContain(`'${action}'`);
+    for (const action of ['twitch-sync','google-sync']) expect(mobileScript).not.toContain(`'${action}'`);
+    expect(mobileTransport).toContain("'/api/v1/connections'");
+    expect(mobileTransport).toContain("'/api/v1/obs/test'");
+    expect(mobileTransport).toContain("'/api/v1/twitch/device'");
+    expect(mobileTransport).not.toContain("'/api/v1/twitch/sync'");
+    expect(mobileTransport).not.toContain("'/api/v1/google/sync'");
+    expect(mobileScript).toContain('La connexion initiale Google du PC doit être autorisée depuis le PC.');
+    expect(mobileScript).toContain('Configuration locale à effectuer sur le PC.');
+    expect(androidActivity).toContain('@JavascriptInterface public void openExternal');
+    expect(androidActivity).toContain('@JavascriptInterface public void copyText');
+    expect(androidActivity).toContain('ClipboardManager');
+    expect(androidActivity).toContain('Intent.ACTION_VIEW');
+    expect(mobileScript).toContain("copyText?.('Code Twitch', result.userCode)");
+  });
+
+  it('rend explicites les réglages qui restent volontairement locaux au PC', () => {
+    expect(mobileScript).toContain('Discord · configuration initiale à faire sur le PC');
+    expect(mobileScript).toContain('Configure d’abord Discord sur le PC.');
+    expect(mobileScript).toContain('Streamlabs non configuré · configure-le sur le PC.');
+    expect(mobileScript).toContain('Indisponible dans cette version');
+    expect(mobileScript).not.toContain(":'Non configuré'; $('twitch-standalone-auth')");
   });
 
   it('édite les automatisations avec le vocabulaire Runtime actuel', () => {

@@ -55,8 +55,15 @@ export function createTransport(getServer, getCredential) {
     request,
     authHeaders,
     state,
+    capabilities: () => request('/api/v1/capabilities'),
     profile: () => request('/api/v1/profile', { headers: { authorization: `Device ${getCredential()}` } }),
+    updateProfilePresentation: value => request('/api/v1/profile/presentation', { method: 'PUT', headers: authHeaders(), body: JSON.stringify(value) }),
+    updateLiveControl: value => request('/api/v1/settings/live-control', { method: 'PUT', headers: authHeaders(), body: JSON.stringify(value) }),
     connections: () => request('/api/v1/connections', { headers: { authorization: `Device ${getCredential()}` } }),
+    testObs: () => request('/api/v1/obs/test', { method: 'POST', headers: authHeaders(), body: '{}' }),
+    twitchDevice: () => request('/api/v1/twitch/device', { method: 'POST', headers: authHeaders(), body: '{}' }),
+    twitchDisconnect: () => request('/api/v1/twitch/disconnect', { method: 'POST', headers: authHeaders(), body: '{}' }),
+    googleDisconnect: () => request('/api/v1/google/disconnect', { method: 'POST', headers: authHeaders(), body: '{}' }),
     soundboard: () => request('/api/v1/soundboard', { headers: { authorization: `Device ${getCredential()}` } }),
     playSound: value => request('/api/v1/soundboard/play', { method: 'POST', headers: authHeaders(), body: JSON.stringify(value) }),
     setSoundVolume: volume => request('/api/v1/soundboard/volume', { method: 'POST', headers: authHeaders(), body: JSON.stringify({ volume }) }),
@@ -86,6 +93,7 @@ export function createTransport(getServer, getCredential) {
     searchTwitch: query => request(`/api/v1/twitch/categories?q=${encodeURIComponent(query)}`, { headers: { authorization: `Device ${getCredential()}` } }),
     updateTwitch: value => request('/api/v1/twitch/channel', { method: 'POST', headers: authHeaders(), body: JSON.stringify(value) }),
     createPlanning: value => request('/api/v1/planning', { method: 'POST', headers: authHeaders(), body: JSON.stringify(value) }),
+    retryPlanningProvider: (id, provider) => request(`/api/v1/planning/${encodeURIComponent(id)}/retry/${encodeURIComponent(provider)}`, { method: 'POST', headers: authHeaders(), body: '{}' }),
     updatePlanning: async (id, value) => {
       try { return await request(`/api/v1/planning/${encodeURIComponent(id)}`, { method: 'PUT', headers: authHeaders(), body: JSON.stringify(value) }); }
       catch (error) { if (!shouldFallbackPlanning(error)) throw error; return planningFallback(id, value, false); }
