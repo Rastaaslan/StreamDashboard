@@ -99,9 +99,11 @@ describe('Android remote runtime', () => {
     expect(androidActivity).not.toContain('if (!"https".equalsIgnoreCase(uri.getScheme())) return;');
   });
 
-  it('retourne le bon provider dans les statuts autonomes Android', () => {
-    expect(androidProviderBridge).toContain('provider.equals("google") ? "Google" : "Twitch"');
-    expect(androidProviderBridge).toContain('label + " autonome non configuré"');
+  it('distingue Twitch configuré par client ID et Google natif Android', () => {
+    expect(androidProviderBridge).toContain('BuildConfig.TWITCH_ANDROID_CLIENT_ID');
+    expect(androidProviderBridge).toContain('private String googleStatus()');
+    expect(androidProviderBridge).toContain('.put("configured", true)');
+    expect(androidProviderBridge).not.toContain('BuildConfig.GOOGLE_ANDROID_CLIENT_ID');
   });
 
   it.each([
@@ -221,13 +223,20 @@ describe('Android remote runtime', () => {
     expect(mobileScript).toContain("copyText?.('Code Twitch', result.userCode)");
   });
 
-  it('refuse de publier un APK Android avec les connexions autonomes désactivées', () => {
-    for (const variable of ['TWITCH_ANDROID_CLIENT_ID','GOOGLE_ANDROID_CLIENT_ID']) {
-      expect(androidGradle).toContain(`System.getenv('${variable}')`);
-      expect(androidWorkflow).toContain('${{ secrets.' + variable + ' }}');
-      expect(androidWorkflow).toContain(`echo "${variable}=${variable}" >> "$GITHUB_ENV"`);
-    }
-    expect(androidWorkflow).toContain('Refusing to publish an APK with disabled provider login.');
+  it('publie Twitch avec son client ID et Google via AuthorizationClient natif', () => {
+    expect(androidGradle).toContain("System.getenv('TWITCH_ANDROID_CLIENT_ID')");
+    expect(androidWorkflow).toContain('${{ secrets.TWITCH_ANDROID_CLIENT_ID }}');
+    expect(androidWorkflow).toContain('echo "TWITCH_ANDROID_CLIENT_ID=$TWITCH_ANDROID_CLIENT_ID" >> "$GITHUB_ENV"');
+    expect(androidWorkflow).toContain('Refusing to publish an APK with disabled Twitch login.');
+    expect(androidGradle).toContain("com.google.android.gms:play-services-auth:22.0.0");
+    expect(androidGradle).not.toContain('GOOGLE_ANDROID_CLIENT_ID');
+    expect(androidWorkflow).not.toContain('GOOGLE_ANDROID_CLIENT_ID');
+    expect(androidProviderBridge).toContain('Identity.getAuthorizationClient(activity)');
+    expect(androidProviderBridge).toContain('AuthorizationRequest.builder().setRequestedScopes(GOOGLE_SCOPES).build()');
+    expect(androidProviderBridge).toContain('googleAuthorization.getAuthorizationResultFromIntent(data)');
+    expect(androidProviderBridge).toContain('googleAuthorization.revokeAccess(request)');
+    expect(androidProviderBridge).not.toContain('streamdashboard://oauth?provider=google');
+    expect(androidActivity).toContain('providerBridge.handleActivityResult(requestCode, resultCode, data)');
   });
 
   it('rend explicites les réglages qui restent volontairement locaux au PC', () => {
