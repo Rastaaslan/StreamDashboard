@@ -41,6 +41,8 @@ jobs:
         run: npm ci
 
       - name: Package Windows x64
+        env:
+          GOOGLE_CLIENT_ID: 206682842774-lu1efnct6o2cjn3jrtgo2a33r2amontq.apps.googleusercontent.com
         run: npm run desktop:package
 
       - name: Upload EXE
