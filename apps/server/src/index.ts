@@ -2307,10 +2307,23 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
   });
 
   await Promise.all([mkdir(dataDir, { recursive: true }), mkdir(soundLibraryDir, { recursive: true })]);
-  await new Promise<void>((resolve, reject) => {
-    server.once('error', reject);
-    server.listen(requestedPort, host, () => { server.off('error', reject); resolve(); });
+  const listen = (port: number) => new Promise<void>((resolve, reject) => {
+    const cleanup = () => { server.off('error', onError); server.off('listening', onListening); };
+    const onError = (error: Error) => { cleanup(); reject(error); };
+    const onListening = () => { cleanup(); resolve(); };
+    server.once('error', onError);
+    server.once('listening', onListening);
+    try { server.listen(port, host); } catch (error) { cleanup(); reject(error); }
   });
+  try {
+    await listen(requestedPort);
+  } catch (error) {
+    const code = (error as NodeJS.ErrnoException).code;
+    if (requestedPort === 0 || (code !== 'EACCES' && code !== 'EADDRINUSE')) throw error;
+    // Keep the LAN binding and retry only once; the OS chooses the available port.
+    void Promise.resolve().then(() => logger.warn(`StreamDashboard: listen ${code} on ${host}:${requestedPort}; falling back to an ephemeral port (0).`)).catch(() => undefined);
+    await listen(0);
+  }
   const address = server.address();
   const actualPort = typeof address === 'object' && address ? address.port : requestedPort;
   runtimePort = actualPort;

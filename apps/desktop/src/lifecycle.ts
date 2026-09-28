@@ -23,8 +23,7 @@ export async function startDesktopRuntime(): Promise<DesktopRuntime> {
   const obsResult = await launchObsIfRequested(launchObs, obsExecutablePath);
   await logger.info(obsResult.detail).catch(() => undefined);
   const dashboard = await startDashboardServer({
-    // A stable desktop port is required by OBS Browser Sources and paired phones.
-    // If it is occupied, fail loudly instead of silently changing the overlay/mobile URL.
+    // Prefer a stable port for OBS and phones; the server falls back if unavailable.
     port: 47832,
     host: remoteEnabled ? '0.0.0.0' : '127.0.0.1',
     remoteEnabled,
