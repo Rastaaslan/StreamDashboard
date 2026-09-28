@@ -46,79 +46,24 @@ jobs:
         run: npm test && npm run build && npm run security:check && npm run check:shipped-js && npm run mobile:smoke
       - name: Synchronize Android assets
         run: npm run android:sync
-      - name: Require Android provider IDs
-        env:
-          TWITCH_ANDROID_CLIENT_ID: ${{ secrets.TWITCH_ANDROID_CLIENT_ID }}
-          GOOGLE_ANDROID_CLIENT_ID: ${{ secrets.GOOGLE_ANDROID_CLIENT_ID }}
+      - name: Preview build note
+        run: echo "Preview APK build: Android OAuth IDs/signing are intentionally not required on this temporary test branch."
+      - name: Lint and build Preview APK
         run: |
-          if [[ -z "${TWITCH_ANDROID_CLIENT_ID//[[:space:]]/}" || -z "${GOOGLE_ANDROID_CLIENT_ID//[[:space:]]/}" ]]; then
-            echo "TWITCH_ANDROID_CLIENT_ID and GOOGLE_ANDROID_CLIENT_ID are required for release APKs." >&2
-            exit 1
-          fi
-      - name: Require stable Android signing identity
-        shell: bash
-        env:
-          KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
-          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
-          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
-          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
-          ANDROID_CERT_SHA256: ${{ secrets.ANDROID_CERT_SHA256 }}
-        run: |
-          if [[ -z "$KEYSTORE_BASE64" || -z "$ANDROID_KEYSTORE_PASSWORD" || -z "$ANDROID_KEY_ALIAS" || -z "$ANDROID_KEY_PASSWORD" || -z "$ANDROID_CERT_SHA256" ]]; then
-            echo "Stable Android signing is not configured. Refusing to publish an ephemeral debug-signed APK." >&2
-            exit 1
-          fi
-          KEYSTORE_PATH="$RUNNER_TEMP/streamdashboard-remote.jks"
-          printf '%s' "$KEYSTORE_BASE64" | base64 --decode > "$KEYSTORE_PATH"
-          test -s "$KEYSTORE_PATH"
-          chmod 600 "$KEYSTORE_PATH"
-          echo "ANDROID_KEYSTORE_PATH=$KEYSTORE_PATH" >> "$GITHUB_ENV"
-          echo "ANDROID_VERSION_CODE=$((900000 + GITHUB_RUN_NUMBER))" >> "$GITHUB_ENV"
-          echo "ANDROID_VERSION_NAME=0.9.0-rc.${GITHUB_RUN_NUMBER}" >> "$GITHUB_ENV"
-      - name: Lint and build installable APK
-        env:
-          TWITCH_ANDROID_CLIENT_ID: ${{ secrets.TWITCH_ANDROID_CLIENT_ID }}
-          GOOGLE_ANDROID_CLIENT_ID: ${{ secrets.GOOGLE_ANDROID_CLIENT_ID }}
-          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
-          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
-          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
-        run: |
-          ./android/gradlew -p android testDebugUnitTest lintDebug assembleRelease assemblePreview
-          cp android/app/build/outputs/apk/release/app-release.apk StreamDashboard-Remote-rc.apk
+          ./android/gradlew -p android testDebugUnitTest lintDebug assemblePreview
           cp android/app/build/outputs/apk/preview/app-preview.apk StreamDashboard-Preview.apk
-      - name: Verify APK identity, version and signature
+      - name: Verify Preview APK
         shell: bash
-        env:
-          ANDROID_CERT_SHA256: ${{ secrets.ANDROID_CERT_SHA256 }}
         run: |
-          APK=StreamDashboard-Remote-rc.apk
+          APK=StreamDashboard-Preview.apk
           test -s "$APK"
           APKSIGNER=$(find "$ANDROID_HOME/build-tools" -type f -name apksigner -print | sort -V | tail -n 1)
           AAPT=$(find "$ANDROID_HOME/build-tools" -type f -name aapt -print | sort -V | tail -n 1)
           test -n "$APKSIGNER" && test -x "$APKSIGNER"
           test -n "$AAPT" && test -x "$AAPT"
-          CERTS=$("$APKSIGNER" verify --verbose --print-certs "$APK")
-          printf '%s\n' "$CERTS"
-          ACTUAL_CERT_SHA256=$(printf '%s\n' "$CERTS" | sed -n -E 's/^.*certificate SHA-256 digest:[[:space:]]*//p' | head -n 1 | tr -d '[:space:]:' | tr '[:lower:]' '[:upper:]')
-          EXPECTED_CERT_SHA256=$(printf '%s' "$ANDROID_CERT_SHA256" | tr -d '[:space:]:' | tr '[:lower:]' '[:upper:]')
-          if [[ -z "$ACTUAL_CERT_SHA256" || "$ACTUAL_CERT_SHA256" != "$EXPECTED_CERT_SHA256" ]]; then
-            echo "Stable Android signing certificate SHA-256 mismatch." >&2
-            exit 1
-          fi
-          "$AAPT" dump badging "$APK" | grep "package: name='com.rastaaslan.streamdashboard.remote'"
-          "$AAPT" dump badging "$APK" | grep "versionCode='$ANDROID_VERSION_CODE' versionName='$ANDROID_VERSION_NAME'"
-          PREVIEW=StreamDashboard-Preview.apk
-          test -s "$PREVIEW"
-          "$APKSIGNER" verify --verbose "$PREVIEW"
-          "$AAPT" dump badging "$PREVIEW" | grep "package: name='com.rastaaslan.streamdashboard.remote.preview'"
-          "$AAPT" dump badging "$PREVIEW" | grep "application-label:'StreamDashboard Preview'"
-      - name: Upload Android APK
-        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
-        with:
-          name: StreamDashboard-Remote
-          path: StreamDashboard-Remote-rc.apk
-          if-no-files-found: error
-
+          "$APKSIGNER" verify --verbose "$APK"
+          "$AAPT" dump badging "$APK" | grep "package: name='com.rastaaslan.streamdashboard.remote.preview'"
+          "$AAPT" dump badging "$APK" | grep "application-label:'StreamDashboard Preview'"
       - name: Upload Android Preview APK
         uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
         with:
