@@ -100,6 +100,11 @@ public class MainActivity extends Activity {
     deliverPendingDeepLink();
   }
 
+  @Override protected void onActivityResult(int requestCode, int resultCode, Intent data) {
+    super.onActivityResult(requestCode, resultCode, data);
+    if (providerBridge != null) providerBridge.handleActivityResult(requestCode, resultCode, data);
+  }
+
   @Override protected void onResume() {
     super.onResume();
     deliverPendingDeepLink();

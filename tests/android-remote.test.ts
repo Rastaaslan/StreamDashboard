@@ -13,6 +13,8 @@ const androidActivity = readFileSync(new URL('../android/app/src/main/java/com/r
 const androidProviderBridge = readFileSync(new URL('../android/app/src/main/java/com/rastaaslan/streamdashboard/remote/ProviderBridge.java', import.meta.url), 'utf8');
 const androidManifest = readFileSync(new URL('../android/app/src/main/AndroidManifest.xml', import.meta.url), 'utf8');
 const androidFilePaths = readFileSync(new URL('../android/app/src/main/res/xml/file_paths.xml', import.meta.url), 'utf8');
+const androidGradle = readFileSync(new URL('../android/app/build.gradle', import.meta.url), 'utf8');
+const androidWorkflow = readFileSync(new URL('../.github/workflows/android.yml', import.meta.url), 'utf8');
 
 describe('Android remote runtime', () => {
   it('expose Pause avec les quatre modes et conserve le flux mode.set partagé', () => {
@@ -38,6 +40,11 @@ describe('Android remote runtime', () => {
     expect(mobileScript).not.toMatch(/selectTab[\s\S]{0,300}(connect\(|location\.reload)/);
     expect(mobileIndex).toContain('+ Ajouter');
   });
+  it('conserve la publication locale lors des créations et éditions Planning mobile', () => {
+    expect(mobileScript).toContain("desiredPublication: { local: true, twitch: form.get('twitch') === 'on', google: form.get('google') === 'on' }");
+    expect(mobileScript).not.toContain("desiredPublication: { local: false");
+  });
+
   it('propose les trois périodes d’export et une note éditoriale persistante', () => {
     for (const period of ['today', 'this-week', 'next-week']) expect(mobileIndex).toContain(`value="${period}"`);
     expect(mobileIndex).toContain('id="export-note-enabled"');
@@ -97,9 +104,11 @@ describe('Android remote runtime', () => {
     expect(androidActivity).not.toContain('if (!"https".equalsIgnoreCase(uri.getScheme())) return;');
   });
 
-  it('retourne le bon provider dans les statuts autonomes Android', () => {
-    expect(androidProviderBridge).toContain('provider.equals("google") ? "Google" : "Twitch"');
-    expect(androidProviderBridge).toContain('label + " autonome non configuré"');
+  it('distingue Twitch configuré par client ID et Google natif Android', () => {
+    expect(androidProviderBridge).toContain('BuildConfig.TWITCH_ANDROID_CLIENT_ID');
+    expect(androidProviderBridge).toContain('private String googleStatus()');
+    expect(androidProviderBridge).toContain('.put("configured", true)');
+    expect(androidProviderBridge).not.toContain('BuildConfig.GOOGLE_ANDROID_CLIENT_ID');
   });
 
   it.each([
@@ -217,6 +226,22 @@ describe('Android remote runtime', () => {
     expect(androidActivity).toContain('ClipboardManager');
     expect(androidActivity).toContain('Intent.ACTION_VIEW');
     expect(mobileScript).toContain("copyText?.('Code Twitch', result.userCode)");
+  });
+
+  it('publie Twitch avec son client ID et Google via AuthorizationClient natif', () => {
+    expect(androidGradle).toContain("System.getenv('TWITCH_ANDROID_CLIENT_ID')");
+    expect(androidWorkflow).toContain('${{ secrets.TWITCH_ANDROID_CLIENT_ID }}');
+    expect(androidWorkflow).toContain('echo "TWITCH_ANDROID_CLIENT_ID=$TWITCH_ANDROID_CLIENT_ID" >> "$GITHUB_ENV"');
+    expect(androidWorkflow).toContain('Refusing to publish an APK with disabled Twitch login.');
+    expect(androidGradle).toContain("com.google.android.gms:play-services-auth:22.0.0");
+    expect(androidGradle).not.toContain('GOOGLE_ANDROID_CLIENT_ID');
+    expect(androidWorkflow).not.toContain('GOOGLE_ANDROID_CLIENT_ID');
+    expect(androidProviderBridge).toContain('Identity.getAuthorizationClient(activity)');
+    expect(androidProviderBridge).toContain('AuthorizationRequest.builder().setRequestedScopes(GOOGLE_SCOPES).build()');
+    expect(androidProviderBridge).toContain('googleAuthorization.getAuthorizationResultFromIntent(data)');
+    expect(androidProviderBridge).toContain('googleAuthorization.revokeAccess(request)');
+    expect(androidProviderBridge).not.toContain('streamdashboard://oauth?provider=google');
+    expect(androidActivity).toContain('providerBridge.handleActivityResult(requestCode, resultCode, data)');
   });
 
   it('rend explicites les réglages qui restent volontairement locaux au PC', () => {

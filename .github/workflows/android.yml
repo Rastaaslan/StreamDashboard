@@ -52,9 +52,14 @@ jobs:
           ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
           ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
           ANDROID_CERT_SHA256: ${{ secrets.ANDROID_CERT_SHA256 }}
+          TWITCH_ANDROID_CLIENT_ID: ${{ secrets.TWITCH_ANDROID_CLIENT_ID }}
         run: |
           if [[ -z "$KEYSTORE_BASE64" || -z "$ANDROID_KEYSTORE_PASSWORD" || -z "$ANDROID_KEY_ALIAS" || -z "$ANDROID_KEY_PASSWORD" || -z "$ANDROID_CERT_SHA256" ]]; then
             echo "Stable Android signing is not configured. Refusing to publish an ephemeral debug-signed APK." >&2
+            exit 1
+          fi
+          if [[ -z "$TWITCH_ANDROID_CLIENT_ID" ]]; then
+            echo "Android standalone Twitch client ID is not configured. Refusing to publish an APK with disabled Twitch login." >&2
             exit 1
           fi
           KEYSTORE_PATH="$RUNNER_TEMP/streamdashboard-remote.jks"
@@ -64,6 +69,7 @@ jobs:
           echo "ANDROID_KEYSTORE_PATH=$KEYSTORE_PATH" >> "$GITHUB_ENV"
           echo "ANDROID_VERSION_CODE=$((900000 + GITHUB_RUN_NUMBER))" >> "$GITHUB_ENV"
           echo "ANDROID_VERSION_NAME=0.9.0-rc.${GITHUB_RUN_NUMBER}" >> "$GITHUB_ENV"
+          echo "TWITCH_ANDROID_CLIENT_ID=$TWITCH_ANDROID_CLIENT_ID" >> "$GITHUB_ENV"
       - name: Lint and build installable APK
         env:
           ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
