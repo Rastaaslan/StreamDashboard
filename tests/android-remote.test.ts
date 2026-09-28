@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { apiUrl, nextRetry, normalizeServer, parsePairing, websocketUrl } from '../apps/mobile/runtime.js';
+import { providerDiagnostic, wizardState } from '../apps/mobile/provider-diagnostics.js';
 
 const mobileIndex = readFileSync(new URL('../apps/mobile/index.html', import.meta.url), 'utf8');
 const mobileScript = readFileSync(new URL('../apps/mobile/mobile.js', import.meta.url), 'utf8');
@@ -98,8 +99,14 @@ describe('Android remote runtime', () => {
   });
 
   it('retourne le bon provider dans les statuts autonomes Android', () => {
-    expect(androidProviderBridge).toContain('provider.equals("google") ? "Google" : "Twitch"');
-    expect(androidProviderBridge).toContain('label + " autonome non configuré"');
+    for (const provider of ['twitch', 'google']) {
+      expect(androidProviderBridge).toContain(`return status("${provider}", BuildConfig.${provider.toUpperCase()}_ANDROID_CLIENT_ID)`);
+    }
+    expect(androidProviderBridge).toContain('provider.equals("google") ? "Google autonome non configuré" : "Twitch autonome non configuré"');
+    const diagnostic = providerDiagnostic({ configured: false });
+    expect(wizardState(diagnostic).step).toBe('configuration');
+    expect(diagnostic.code).toBe('NOT_CONFIGURED');
+    expect(diagnostic.error).toContain('Client ID absent');
   });
 
   it.each([
@@ -168,7 +175,8 @@ describe('Android remote runtime', () => {
     expect(mobileIndex).toContain('id="planning-provider-readiness"');
     expect(mobileScript).toContain('renderOnlinePlanningProviders');
     expect(mobileScript).toContain('transport.retryPlanningProvider');
-    expect(mobileScript).toContain('Conflit distant · résolution à effectuer sur le PC.');
+    expect(mobileScript).toContain('retryPlanningProvider(item, provider)');
+    expect(mobileScript).toContain('Une nouvelle tentative respecte la version distante. Si le conflit persiste, choisissez la version à conserver sur le PC.');
     expect(mobileTransport).toContain('/retry/');
     expect(remotePolicy).toContain("providers?: Partial<Record<'twitch' | 'google'");
     expect(remotePolicy).toContain('lastError: link.lastError');
@@ -223,7 +231,8 @@ describe('Android remote runtime', () => {
     expect(mobileScript).toContain('Discord · configuration initiale à faire sur le PC');
     expect(mobileScript).toContain('Configure d’abord Discord sur le PC.');
     expect(mobileScript).toContain('Streamlabs non configuré · configure-le sur le PC.');
-    expect(mobileScript).toContain('Indisponible dans cette version');
+    expect(mobileScript).toContain('Service non configuré ou indisponible dans cette version.');
+    expect(mobileScript).toContain('Configuration → OAuth → Test → Prêt');
     expect(mobileScript).not.toContain(":'Non configuré'; $('twitch-standalone-auth')");
   });
 

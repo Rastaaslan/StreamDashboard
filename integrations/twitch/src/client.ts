@@ -1,4 +1,4 @@
-import type { CalendarItem, TwitchState } from '../../../packages/contracts/src/index.js';
+import type { CalendarItem, TwitchState, TwitchControlCapabilities } from '../../../packages/contracts/src/index.js';
 
 const API = 'https://api.twitch.tv/helix';
 const AUTH = 'https://id.twitch.tv/oauth2';
@@ -218,7 +218,7 @@ export class TwitchClient {
     return { messageId: result.message_id };
   }
 
-  controlCapabilities() {
+  controlCapabilities(): TwitchControlCapabilities {
     return {
       chatRead: this.grantedScopes.has(CHAT_READ_SCOPE),
       chatWrite: this.grantedScopes.has(CHAT_WRITE_SCOPE),

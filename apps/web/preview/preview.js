@@ -1,3 +1,4 @@
+import { diagnosePrelive, diagnosticLabels } from '/mobile/prelive-diagnostic.js';
 import { fixture } from './fixtures.js';
 import { expandRecurringItems } from '/mobile/shared/recurrence.js';
 import { buildPlanningPng } from '/mobile/planning-export.js';
@@ -17,7 +18,7 @@ const demoModuleStates=[
   ['obs','OBS'],['twitch','Twitch'],['planning','Planning'],['notes','Notes'],['checklist','Avant le live'],['templates','Modèles de live'],['automations','Automatisations'],['soundboard','Sons'],['streamerPings','Alertes viewers'],['googleCalendar','Google Calendar'],['discord','Discord'],['streamlabs','Streamlabs'],['wizebot','WizeBot']
 ].map(([id,label])=>({id,label,enabled:demoProductProfile.modules[id],availability:'available',dependencies:[],capabilities:[],blockedBy:[]}));
 const state={
-  view:'home',runtime:officialRuntime,scene:fixture.live.scene,timerRunning:true,seconds:36,
+  view:'home',runtime:officialRuntime,runtimeAvailable:false,scene:fixture.live.scene,timerRunning:true,seconds:36,
   sounds:structuredClone(fixture.sounds),audio:structuredClone(fixture.audio),live:structuredClone(fixture.live),
   planning:structuredClone(fixture.planning),dashboard:null,soundboard:null,obsSetup:null,search:'',soundCategory:'',soundFavorites:false,
   soundMasterVolume:Math.max(0,Math.min(1,Number(localStorage.getItem('streamdashboard.desktopSoundboardVolume')??1)||1)),
@@ -33,7 +34,7 @@ const esc=value=>String(value??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;
 const uid=()=>globalThis.crypto?.randomUUID?.()||`cmd_${Date.now()}_${Math.random().toString(36).slice(2)}`;
 const viewModules={live:['obs'],sounds:['soundboard'],planning:['planning']};
 const campRequirements={
-  'Préparation':['checklist'],'Notes':['notes'],'Templates':['templates'],'Soutiens':['streamlabs'],
+  'Préparation':[],'Notes':['notes'],'Templates':['templates'],'Soutiens':['streamlabs'],
   'Automatisations':['automations'],'Médias OBS':['obs'],'Alertes viewers':['streamerPings'],'Connexions':[],'Personnalisation':[],'Réglages':[],'Diagnostics':[]
 };
 const moduleEnabled=id=>state.productProfile?.modules?.[id]!==false;
@@ -76,10 +77,10 @@ function connectRuntimeSocket(){
   const socket=new WebSocket(`${location.protocol==='https:'?'wss':'ws'}://${location.host}/ws/v1`);runtimeSocket=socket;
   socket.onopen=()=>runtimeUi(true,state.dashboard?.obs?.connected?'OBS connecté · temps réel':'Runtime connecté · temps réel');
   socket.onmessage=event=>{try{const message=JSON.parse(event.data);if(message.type==='state.updated'&&message.data){applyDashboard(message.data);if(!editableFocus()){render();if(state.campItem==='Alertes viewers'&&state.twitchRewards===null&&state.dashboard?.twitch?.redemptionsAvailable===true)void loadStreamerPingRewards()}}}catch{/* événement invalide ignoré */}};
-  socket.onclose=()=>{if(runtimeSocket===socket)runtimeSocket=null;if(!state.runtime)return;runtimeUi(true,'Runtime connecté · reconnexion temps réel…');socketRetry=setTimeout(connectRuntimeSocket,1500)};
+  socket.onclose=()=>{if(runtimeSocket===socket)runtimeSocket=null;if(!state.runtime)return;runtimeUi(false,'Runtime hors ligne · reconnexion temps réel…');render();socketRetry=setTimeout(connectRuntimeSocket,1500)};
   socket.onerror=()=>socket.close();
 }
-function runtimeUi(online,copy){document.querySelector('#runtime-status').textContent=online?'Runtime PC':'Mode Démo';document.querySelector('#runtime-copy').textContent=copy;document.querySelector('#runtime-dot').classList.toggle('offline',!online)}
+function runtimeUi(online,copy){if(!online)state.runtimeAvailable=false;document.querySelector('#runtime-status').textContent=online?'Runtime PC':state.runtime?'Runtime hors ligne':'Mode Démo';document.querySelector('#runtime-copy').textContent=copy;document.querySelector('#runtime-dot').classList.toggle('offline',!online)}
 const logicalScene=name=>{
   const settings=state.dashboard?.settings||{};
   if(settings.modeScenes?.intro===name)return'Intro';
@@ -110,11 +111,11 @@ async function refreshRuntime(){
     ]);
     applyProduct(product,connections);
     applyDashboard(dashboard);state.soundboard=soundboard;state.sounds=soundboard.sounds||[];state.obsSetup=setup;
-    runtimeUi(true,dashboard.obs?.connected?'OBS connecté':'Runtime connecté · OBS hors ligne');connectRuntimeSocket();render();
-  }catch(error){runtimeUi(true,'Runtime indisponible');toast(error.message,true)}
+    runtimeUi(true,dashboard.obs?.connected?'OBS connecté':'Runtime connecté · OBS hors ligne');connectRuntimeSocket();render();return true;
+  }catch(error){runtimeUi(false,'Runtime indisponible');render();toast(error.message,true);return false}
 }
 function applyDashboard(d){
-  state.dashboard=d;state.scene=d.obs?.scene||'—';state.timerRunning=d.timer?.running===true;state.seconds=Math.max(0,Math.ceil(Number(d.timer?.remaining)||0));
+  state.runtimeAvailable=true;state.dashboard=d;state.scene=d.obs?.scene||'—';state.timerRunning=d.timer?.running===true;state.seconds=Math.max(0,Math.ceil(Number(d.timer?.remaining)||0));
   const hub=d.controlHub||{};state.live={
     active:hub.live?.isLive===true||d.obs?.streaming===true,
     duration:formatDuration(hub.live?.durationSeconds??0),title:hub.live?.title||d.twitch?.channelTitle||'Prêt à streamer',
@@ -168,7 +169,7 @@ function home(){
       ${canStream?`<button class="${state.live.active?'critical':'action'} home-primary" data-live-toggle>${state.live.active?'Arrêter le live':'Démarrer le live'}</button>`:''}
     </section>
     <section class="section home-next"><div><span class="eyebrow">À VENIR</span><h2>${esc(next.title)}</h2><p class="help">${esc(next.when)}</p></div>${moduleEnabled('planning')?'<button class="secondary" data-go-view="planning">Ouvrir le planning</button>':''}</section>
-    <section class="section"><div class="section-head"><h2>État de préparation</h2>${moduleEnabled('checklist')?'<button class="secondary" data-open-camp="Préparation">Préparer</button>':''}</div><div class="readiness-grid">${health}</div></section>
+    <section class="section"><div class="section-head"><h2>État de préparation</h2><button class="secondary" data-open-camp="Préparation">Diagnostic pré-live</button>${moduleEnabled('checklist')?'<button class="secondary" data-open-camp="Préparation">Préparer</button>':''}</div><div class="readiness-grid">${health}</div></section>
   </div>`
 }
 function chatMessages(){
@@ -176,21 +177,24 @@ function chatMessages(){
   if(!messages.length)return'<div class="empty-chat"><b>Le chat est calme</b><span>Les nouveaux messages apparaîtront ici.</span></div>';
   return messages.slice(-80).map(message=>`<article class="desktop-chat-row"><div><b>${esc(message.chatter?.displayName||'Viewer')}</b><time>${esc(new Date(message.receivedAt||Date.now()).toLocaleTimeString('fr-FR',{hour:'2-digit',minute:'2-digit'}))}</time></div><p>${esc(message.text||'')}</p></article>`).join('');
 }
+const twitchCan=action=>state.dashboard?.twitch?.connected===true&&state.dashboard?.twitch?.capabilities?.[action]===true;
+const canCreateClip=()=>twitchCan('createClip')&&state.dashboard?.controlHub?.live?.isLive===true;
+const audienceRole=role=>({broadcaster:'Diffuseur',moderator:'Modérateur',vip:'VIP',viewer:'Spectateur'}[role]||'Spectateur');
 function liveQuickActions(){
   const actions=state.productProfile?.obs?.quickActions||[];if(!actions.length)return'';
   const labels={clip:'Créer un clip','timer+60':'+1 min','mute-main':'Micro principal'};
-  return `<div class="live-quick-actions">${actions.map(action=>`<button class="secondary" data-profile-quick-action="${esc(action)}">${esc(labels[action]||action)}</button>`).join('')}</div>`;
+  return `<div class="live-quick-actions">${actions.map(action=>`<button class="secondary" data-profile-quick-action="${esc(action)}" ${action==='clip'&&!canCreateClip()?'disabled':''}>${esc(labels[action]||action)}</button>`).join('')}</div>`;
 }
 function live(){
   const audience=state.dashboard?.controlHub?.audience||{},chat=state.dashboard?.controlHub?.chat||{};
   const twitchPanel=moduleEnabled('twitch')?`<aside class="section live-chat-panel">
-    <div class="section-head"><div><h2>Chat</h2><span class="label">${chat.connected?'Connecté':'Hors ligne'} · ${Number.isInteger(audience.viewerCount)?audience.viewerCount:'—'} viewers</span></div><button class="secondary compact-button" data-live-clip>Créer un clip</button></div>
+    <div class="section-head"><div><h2>Chat</h2><span class="label">${chat.connected?'Connecté':'Hors ligne'} · ${Number.isInteger(audience.viewerCount)?audience.viewerCount:'—'} viewers</span></div><button class="secondary compact-button" data-live-clip ${canCreateClip()?'':'disabled'}>Créer un clip</button></div>
     <div class="desktop-chat-list">${chatMessages()}</div>
-    <form id="desktop-chat-form" class="desktop-chat-compose"><input name="message" maxlength="500" placeholder="Écrire dans le chat…" autocomplete="off" ${chat.connected?'':'disabled'}><button class="action" ${chat.connected?'':'disabled'}>Envoyer</button></form>
-    <details class="audience-details"><summary>Audience · ${(audience.chatters||[]).length} présents</summary><div class="audience-list">${(audience.chatters||[]).slice(0,100).map(person=>`<span><b>${esc(person.displayName)}</b><small>${esc(person.role||'viewer')}</small></span>`).join('')||'<span class="help">Aucun chatter chargé.</span>'}</div></details>
+    <form id="desktop-chat-form" class="desktop-chat-compose"><input name="message" maxlength="500" placeholder="Écrire dans le chat…" autocomplete="off" ${twitchCan('chatWrite')?'':'disabled'}><button class="action" ${twitchCan('chatWrite')?'':'disabled'}>Envoyer</button></form>
+    <details class="audience-details"><summary>Audience · ${(audience.chatters||[]).length} participants au chat</summary><div class="audience-list">${(audience.chatters||[]).slice(0,100).map(person=>`<span><b>${esc(person.displayName)}</b><small>${esc(audienceRole(person.role))}</small></span>`).join('')||'<span class="help">Aucun chatter chargé.</span>'}</div></details>
   </aside>`:'';
   return`<div class="live-desktop-grid">
-    <div class="live-main stack">
+    <div class="live-main stack"><button class="secondary" data-open-camp="Préparation">Diagnostic pré-live</button>
       <section class="live-hero-desktop">
         <div><span class="live-pill">${state.live.active?'● EN DIRECT':'○ PRÊT'}</span><h2>${esc(state.live.title||'Prêt à streamer')}</h2><p>${esc(state.live.category||'—')} · ${esc(state.live.duration)}</p></div>
         <div class="live-hero-actions">${moduleEnabled('twitch')?`<span><b>${esc(state.live.viewers??'—')}</b><small>viewers</small></span>`:''}<button class="${state.live.active?'critical':'action'}" data-live-toggle>${state.live.active?'Arrêter':'Démarrer'}</button></div>
@@ -245,7 +249,7 @@ function planning(){
       <div><h2>Planning</h2><span class="label">${state.planningFilter==='past'?'Historique':state.planningFilter==='all'?'Tous les événements':'Planning à venir'}</span></div>
       <button class="action" data-add-event>+ Nouvel événement</button>
     </div>
-    <div class="planning-primary-tools"><select data-planning-filter aria-label="Filtrer le planning"><option value="upcoming" ${state.planningFilter==='upcoming'?'selected':''}>À venir</option><option value="past" ${state.planningFilter==='past'?'selected':''}>Passés</option><option value="all" ${state.planningFilter==='all'?'selected':''}>Tous</option></select><details class="planning-more"><summary>Partager & exporter</summary><div><select data-planning-period aria-label="Période d’export"><option value="today" ${state.planningPeriod==='today'?'selected':''}>Aujourd’hui</option><option value="this-week" ${state.planningPeriod==='this-week'?'selected':''}>Cette semaine</option><option value="next-week" ${state.planningPeriod==='next-week'?'selected':''}>Semaine prochaine</option></select><button class="secondary" data-planning-export>Exporter l’image</button>${moduleEnabled('discord')?`<button class="secondary" data-planning-discord ${state.dashboard?.discord?.configured?'':'disabled'}>Publier sur Discord</button>`:''}</div></details></div>
+    <div class="planning-primary-tools"><select data-planning-filter aria-label="Filtrer le planning"><option value="upcoming" ${state.planningFilter==='upcoming'?'selected':''}>À venir</option><option value="past" ${state.planningFilter==='past'?'selected':''}>Passés</option><option value="all" ${state.planningFilter==='all'?'selected':''}>Tous</option></select><details class="planning-more"><summary>Partager & exporter</summary><div><select data-planning-period aria-label="Période d’export"><option value="today" ${state.planningPeriod==='today'?'selected':''}>Aujourd’hui</option><option value="this-week" ${state.planningPeriod==='this-week'?'selected':''}>Cette semaine</option><option value="next-week" ${state.planningPeriod==='next-week'?'selected':''}>Semaine prochaine</option></select><button class="secondary" data-planning-export>Exporter l’image</button>${moduleEnabled('discord')?`<button class="secondary" data-planning-discord ${state.dashboard?.discord?.connected&&state.dashboard?.discord?.channelId?'':'disabled'}>Publier sur Discord</button>`:''}</div></details></div>
     <div class="agenda">${items.slice(0,40).map((e,index)=>`<button class="event" data-event-index="${index}"><span class="event-when"><b>${esc(e.day)}</b><small>${esc(e.time)}</small></span><strong>${esc(e.title)}</strong><span class="kind">${esc([e.kind,providerCopy(e.raw)].filter(Boolean).join(' · '))}</span><i>›</i></button>`).join('')||'<p class="label">Aucun événement pour ce filtre.</p>'}</div>
   </section>`;
 }
@@ -276,7 +280,7 @@ function connectionsContent(){
   const deviceCode=twitch.deviceAuthorization? `<div class="device-code"><span class="label">Code Twitch</span><b>${esc(twitch.deviceAuthorization.userCode)}</b></div>`:'';
   const calendars=Array.isArray(google.calendars)?google.calendars:[];const target=google.targetCalendarId||'';
   const googleControls=!google.configured?'<p class="help">Google Calendar n’est pas configuré dans cette distribution.</p>':google.connected?
-    `<div class="toolbar"><select id="preview-google-calendar"${runtimeDisabled()}><option value="">Choisir le calendrier…</option>${calendars.map(item=>`<option value="${esc(item.id)}" ${target===item.id?'selected':''} ${item.writable?'':'disabled'}>${esc(item.summary)}${item.writable?'':' · lecture seule'}</option>`).join('')}</select><button class="secondary" data-connection-action="google-sync"${runtimeDisabled()}>Synchroniser</button><button class="critical" data-connection-action="google-disconnect"${runtimeDisabled()}>Déconnecter</button></div>`:
+    `<div class="toolbar"><select id="preview-google-calendar"${runtimeDisabled()}><option value="">Choisir le calendrier…</option>${calendars.map(item=>`<option value="${esc(item.id)}" ${target===item.id?'selected':''} ${item.writable?'':'disabled'}>${esc(item.summary)}${item.writable?'':' · lecture seule'}</option>`).join('')}</select><button class="secondary" data-connection-action="google-sync" ${state.runtime&&target?'':'disabled'}>Synchroniser</button><button class="critical" data-connection-action="google-disconnect"${runtimeDisabled()}>Déconnecter</button></div>`:
     `<button class="action" data-connection-action="google-connect"${runtimeDisabled()}>Connecter Google Calendar</button>`;
   const devices=Array.isArray(remote.devices)?remote.devices.filter(item=>!item.revokedAt):[];
   const pairing=state.remotePairing?`<div class="device-code"><span class="label">ID de pairing</span><b>${esc(state.remotePairing.id)}</b><span class="label">Code</span><b>${esc(state.remotePairing.code)}</b></div>`:'';
@@ -320,7 +324,8 @@ async function loadCompanion(){
 }
 async function loadSupports(){
   if(!state.runtime)return;
-  state.supports=await request('/api/v1/supports');
+  const [supports,oauth]=await Promise.all([request('/api/v1/supports'),request('/api/v1/supports/streamlabs/oauth/status')]);
+  state.supports=supports;state.streamlabsOAuth=oauth;
 }
 async function loadAutomations(){
   if(!state.runtime)return;
@@ -350,10 +355,16 @@ async function loadCampData(item=state.campItem){
     if(state.view==='camp'&&state.campItem===item&&!editableFocus())render();
   }catch(error){toast(error.message,true)}
 }
+function preliveContent(){
+  const result=diagnosePrelive({state:state.dashboard||{},mode:state.runtime&&state.runtimeAvailable?'ONLINE_PC':'OFFLINE',capabilities:state.dashboard?.twitch?.capabilities||state.preliveCapabilities||null});
+  const targets={connections:'Connexions',audio:'Réglages',scenes:'Réglages',timer:'Réglages',twitch:'Connexions',planning:'Planning'};
+  return `<section class="setup-status" aria-label="Diagnostic pré-live"><h2>Diagnostic pré-live · ${diagnosticLabels[result.status]}</h2><p class="help">État actuel ; les protections au démarrage restent actives.</p><button class="secondary" data-refresh-prelive>Actualiser le diagnostic</button>${result.checks.map(check=>`<p><b>${check.applicable?diagnosticLabels[check.status]:'Non applicable'}</b> — ${esc(check.message)} ${check.status!=='ok'&&check.action?(check.action==='planning'?'<button class="secondary" data-diagnostic-planning>Ouvrir le planning</button>':`<button class="secondary" data-open-camp="${targets[check.action]}">Ouvrir la correction</button>`):''}</p>`).join('')}</section>`;
+}
 function preparationContent(){
+  if(!moduleEnabled('checklist'))return preliveContent();
   const items=state.companion?.checklist||state.dashboard?.checklist||[];
   const done=items.filter(item=>item.done===true).length;
-  return `<div class="connection-stack"><div class="setup-status"><div class="section-head"><div><b>Checklist avant direct</b><span class="label">${done} / ${items.length} terminés</span></div><div class="connection-actions"><button class="secondary" data-camp-action="prepare">Préparer le direct</button><button class="secondary" data-camp-action="check-reset">Tout décocher</button></div></div><div class="camp-list">${items.map(item=>`<div class="camp-row"><button class="check-button ${item.done?'active':''}" data-check-toggle="${esc(item.id)}">${item.done?'✓':'○'} ${esc(item.label)}</button><button class="critical" data-check-delete="${esc(item.id)}">Suppr.</button></div>`).join('')||'<p class="help">Checklist vide.</p>'}</div><form id="camp-check-add" class="toolbar"><input name="label" maxlength="500" placeholder="Nouvel élément" required><button class="action">Ajouter</button></form></div></div>`;
+  return `<div class="connection-stack">${preliveContent()}<div class="setup-status"><div class="section-head"><div><b>Checklist avant direct</b><span class="label">${done} / ${items.length} terminés</span></div><div class="connection-actions"><button class="secondary" data-camp-action="prepare">Préparer le direct</button><button class="secondary" data-camp-action="check-reset">Tout décocher</button></div></div><div class="camp-list">${items.map(item=>`<div class="camp-row"><button class="check-button ${item.done?'active':''}" data-check-toggle="${esc(item.id)}">${item.done?'✓':'○'} ${esc(item.label)}</button><button class="critical" data-check-delete="${esc(item.id)}">Suppr.</button></div>`).join('')||'<p class="help">Checklist vide.</p>'}</div><form id="camp-check-add" class="toolbar"><input name="label" maxlength="500" placeholder="Nouvel élément" required><button class="action">Ajouter</button></form></div></div>`;
 }
 function notesContent(){
   const notes=state.companion?.notes||[];
@@ -372,7 +383,7 @@ function supportsContent(){
   if(!values)return '<p class="help">Chargement des soutiens…</p>';
   const totals=values.totals||{};
   const totalBlock=key=>Object.entries(totals[key]||{}).map(([currency,amount])=>euro(amount,currency)).join(' · ')||'—';
-  return `<div class="connection-stack"><div class="support-summary"><article class="setup-status"><span class="label">Session</span><b>${esc(totalBlock('session'))}</b></article><article class="setup-status"><span class="label">Aujourd’hui</span><b>${esc(totalBlock('day'))}</b></article><article class="setup-status"><span class="label">Ce mois</span><b>${esc(totalBlock('month'))}</b></article></div><div class="connection-actions"><button class="secondary" data-camp-action="supports-refresh">Rafraîchir</button><button class="secondary" data-camp-action="supports-test">Test interne 1 €</button><button class="action" data-camp-action="supports-test-real">Test réel Streamlabs 1 €</button></div><div class="camp-list">${(values.history||[]).slice().reverse().slice(0,50).map(support=>`<div class="camp-row"><span><b>${esc(support.displayName||'Anonyme')}</b><small>${esc(support.message||'')}</small></span><strong>${esc(euro(support.amountMinor,support.currency))}</strong></div>`).join('')||'<p class="help">Aucun soutien enregistré.</p>'}</div></div>`;
+  return `<div class="connection-stack"><div class="support-summary"><article class="setup-status"><span class="label">Session</span><b>${esc(totalBlock('session'))}</b></article><article class="setup-status"><span class="label">Aujourd’hui</span><b>${esc(totalBlock('day'))}</b></article><article class="setup-status"><span class="label">Ce mois</span><b>${esc(totalBlock('month'))}</b></article></div><div class="connection-actions"><button class="secondary" data-camp-action="supports-refresh">Rafraîchir</button><button class="secondary" data-camp-action="supports-test"${runtimeDisabled()}>Test interne 1 €</button><button class="action" data-camp-action="supports-test-real" ${state.streamlabsOAuth?.authorized&&state.dashboard?.controlHub?.integrations?.streamlabs?.status==='CONNECTED'?'':'disabled'}>Test réel Streamlabs 1 €</button></div><div class="camp-list">${(values.history||[]).slice().reverse().slice(0,50).map(support=>`<div class="camp-row"><span><b>${esc(support.displayName||'Anonyme')}</b><small>${esc(support.message||'')}</small></span><strong>${esc(euro(support.amountMinor,support.currency))}</strong></div>`).join('')||'<p class="help">Aucun soutien enregistré.</p>'}</div></div>`;
 }
 function conditionRow(condition={},index=0){
   return `<div class="automation-row-fields" data-condition-row="${index}"><input data-condition-path value="${esc(condition.path||'')}" placeholder="Chemin, ex. reward.id"><select data-condition-operator><option value="eq" ${condition.operator==='eq'?'selected':''}>=</option><option value="gte" ${condition.operator==='gte'?'selected':''}>≥</option></select><input data-condition-value value="${esc(condition.value??'')}" placeholder="Valeur"><button type="button" class="critical" data-condition-remove="${index}">×</button></div>`;
@@ -408,7 +419,7 @@ function diagnosticsContent(){
 function twitchLiveSettingsContent(){
   if(!moduleEnabled('twitch'))return'';
   const twitch=state.dashboard?.twitch||{};
-  return `<details class="section live-twitch-settings"><summary><span><b>Informations Twitch</b><small>${twitch.connected?'Connecté':'Déconnecté'} · titre et catégorie</small></span><i>›</i></summary><form id="live-twitch-settings"><label class="label">Titre<input name="title" maxlength="140" value="${esc(twitch.channelTitle||'')}" ${twitch.connected?'':'disabled'}></label><div class="toolbar"><input id="live-twitch-category" name="gameName" maxlength="80" value="${esc(twitch.gameName||'')}" placeholder="Catégorie Twitch" ${twitch.connected?'':'disabled'}><input id="live-twitch-game-id" name="gameId" type="hidden" value="${esc(twitch.gameId||'')}"><button type="button" class="secondary" data-live-twitch-category-search ${twitch.connected?'':'disabled'}>Rechercher</button></div><select id="live-twitch-category-results" hidden></select><button class="action" ${twitch.connected?'':'disabled'}>Mettre à jour Twitch</button></form></details>`;
+  return `<details class="section live-twitch-settings"><summary><span><b>Informations Twitch</b><small>${twitch.connected?'Connecté':'Déconnecté'} · titre et catégorie</small></span><i>›</i></summary><form id="live-twitch-settings"><label class="label">Titre<input name="title" maxlength="140" value="${esc(twitch.channelTitle||'')}" ${twitchCan('updateChannel')?'':'disabled'}></label><div class="toolbar"><input id="live-twitch-category" name="gameName" maxlength="80" value="${esc(twitch.gameName||'')}" placeholder="Catégorie Twitch" ${twitchCan('updateChannel')?'':'disabled'}><input id="live-twitch-game-id" name="gameId" type="hidden" value="${esc(twitch.gameId||'')}"><button type="button" class="secondary" data-live-twitch-category-search ${twitchCan('updateChannel')?'':'disabled'}>Rechercher</button></div><select id="live-twitch-category-results" hidden></select><button class="action" ${twitchCan('updateChannel')?'':'disabled'}>Mettre à jour Twitch</button></form></details>`;
 }
 function generalSettingsContent(){
   const settings=state.dashboard?.settings||{},obs=state.dashboard?.obs||{};
@@ -639,7 +650,7 @@ function bindCampSections(){
   }
   if(state.campItem==='Soutiens'){
     document.querySelector('[data-camp-action="supports-refresh"]')?.addEventListener('click',()=>void loadSupports().then(render).catch(error=>toast(error.message,true)));
-    document.querySelector('[data-camp-action="supports-test"]')?.addEventListener('click',async()=>{try{await request('/api/v1/supports/streamlabs/test',{method:'POST',body:'{}'});await loadSupports();render();toast('Test interne ajouté')}catch(error){toast(error.message,true)}});
+    document.querySelector('[data-camp-action="supports-test"]')?.addEventListener('click',async()=>{if(!requireRuntime())return;try{await request('/api/v1/supports/streamlabs/test',{method:'POST',body:'{}'});await loadSupports();render();toast('Test interne ajouté')}catch(error){toast(error.message,true)}});
     document.querySelector('[data-camp-action="supports-test-real"]')?.addEventListener('click',async()=>{try{toast('Test réel envoyé à Streamlabs · attente du Socket…');await request('/api/v1/supports/streamlabs/test-real',{method:'POST',body:'{}'});await loadSupports();render();toast('Test réel OK · Alert Box + Socket Streamlabs validés')}catch(error){toast(error.message,true)}});
   }
   if(state.campItem==='Automatisations'){
@@ -666,6 +677,7 @@ function bindCampSections(){
 async function blobBase64(blob){const bytes=new Uint8Array(await blob.arrayBuffer());let binary='';for(let offset=0;offset<bytes.length;offset+=0x8000)binary+=String.fromCharCode(...bytes.subarray(offset,offset+0x8000));return btoa(binary)}
 async function exportPlanning(publishDiscord=false){
   if(!state.dashboard)return;
+  if(publishDiscord&&(!state.dashboard.discord?.connected||!state.dashboard.discord?.channelId))return toast('Connecte Discord et choisis un salon.',true);
   try{
     const result=await buildPlanningPng(state.dashboard.planning||[],state.productProfile?.profile?.displayName||state.dashboard.settings?.streamerName||'StreamDashboard',{period:state.planningPeriod,noteEnabled:false});
     if(publishDiscord){
@@ -686,9 +698,14 @@ function bindPlanning(){
 function bindLiveTwitchSettings(){
   if(state.view!=='live'||!moduleEnabled('twitch'))return;
   document.querySelector('[data-live-twitch-category-search]')?.addEventListener('click',()=>void searchCategory('#live-twitch-category','#live-twitch-game-id','#live-twitch-category-results').catch(error=>toast(error.message,true)));
-  document.querySelector('#live-twitch-settings')?.addEventListener('submit',async event=>{event.preventDefault();const form=new FormData(event.currentTarget);try{const next=await request('/api/v1/twitch/channel',{method:'POST',body:JSON.stringify({title:String(form.get('title')||'').trim(),gameId:String(form.get('gameId')||''),gameName:String(form.get('gameName')||'').trim()})});applyDashboard(next);render();toast('Informations Twitch mises à jour')}catch(error){toast(error.message,true)}});
+  document.querySelector('#live-twitch-settings')?.addEventListener('submit',async event=>{event.preventDefault();if(!twitchCan('updateChannel'))return toast('Autorisation titre/catégorie requise.',true);const form=new FormData(event.currentTarget);try{const next=await request('/api/v1/twitch/channel',{method:'POST',body:JSON.stringify({title:String(form.get('title')||'').trim(),gameId:String(form.get('gameId')||''),gameName:String(form.get('gameName')||'').trim()})});applyDashboard(next);render();toast('Informations Twitch mises à jour')}catch(error){toast(error.message,true)}});
 }
 function bind(){
+  document.querySelector('[data-diagnostic-planning]')?.addEventListener('click',()=>{state.view='planning';render()});
+  document.querySelector('[data-refresh-prelive]')?.addEventListener('click',async()=>{
+    state.preliveCapabilities=null;
+    try{if(!await refreshRuntime())return;state.preliveCapabilities=await request('/api/v1/twitch/moderation/capabilities');render()}catch(error){render();toast(error.message,true)}
+  });
   document.querySelectorAll('[data-scene]').forEach(b=>b.onclick=async()=>{const label=b.dataset.scene,entry=sceneEntries().find(value=>value.label===label),target=entry?.scene||label,command=entry?.custom?{type:'obs.scene',scene:entry.scene}:sceneCommand(label);record('obs.scene.set',{sceneName:target});if(!state.runtime){state.scene=target;toast(`Scène ${label}`);render();return}try{await dashboardCommand(command);await refreshRuntime();toast(`Scène ${label}`)}catch(error){toast(error.message,true)}});
   document.querySelectorAll('[data-sound]').forEach(b=>b.onclick=()=>void playSound(b.dataset.sound));
   document.querySelectorAll('[data-edit-sound]').forEach(b=>b.onclick=event=>{event.stopPropagation();openSoundDialog(b.dataset.editSound)});
@@ -705,14 +722,14 @@ function bind(){
   document.querySelector('[data-open-personalization]')?.addEventListener('click',()=>{state.view='camp';state.campItem='Personnalisation';render()});
   document.querySelectorAll('[data-go-view]').forEach(button=>button.addEventListener('click',()=>{state.view=button.dataset.goView;render()}));
   document.querySelectorAll('[data-open-camp]').forEach(button=>button.addEventListener('click',()=>{state.view='camp';state.campItem=button.dataset.openCamp;render();void loadCampData(state.campItem)}));
-  document.querySelector('[data-live-clip]')?.addEventListener('click',async()=>{if(!state.runtime)return toast('Clip simulé');try{await request('/api/v1/twitch/clips',{method:'POST',body:'{}'});toast('Clip Twitch demandé')}catch(error){toast(error.message,true)}});
+  document.querySelector('[data-live-clip]')?.addEventListener('click',async()=>{if(!state.runtime)return toast('Clip simulé');if(!canCreateClip())return toast('Live Twitch et autorisation clips requis.',true);try{await request('/api/v1/twitch/clips',{method:'POST',body:'{}'});toast('Clip Twitch demandé')}catch(error){toast(error.message,true)}});
   document.querySelectorAll('[data-profile-quick-action]').forEach(button=>button.addEventListener('click',async()=>{
     const action=button.dataset.profileQuickAction;
-    if(action==='clip'){if(!state.runtime)return toast('Clip simulé');try{await request('/api/v1/twitch/clips',{method:'POST',body:'{}'});toast('Clip Twitch demandé')}catch(error){toast(error.message,true)};return}
+    if(action==='clip'){if(!state.runtime)return toast('Clip simulé');if(!canCreateClip())return toast('Live Twitch et autorisation clips requis.',true);try{await request('/api/v1/twitch/clips',{method:'POST',body:'{}'});toast('Clip Twitch demandé')}catch(error){toast(error.message,true)};return}
     if(action==='timer+60'){if(!state.runtime){state.seconds+=60;render();return}try{await dashboardCommand({type:'timer.add',seconds:60});await refreshRuntime()}catch(error){toast(error.message,true)};return}
     if(action==='mute-main'){const input=state.audio.find(value=>value.primary)||state.audio[0];if(!input)return toast('Aucun micro principal actif.',true);if(!state.runtime){input.muted=!input.muted;render();return}try{await dashboardCommand({type:'obs.mute',input:input.name,muted:!input.muted});await refreshRuntime()}catch(error){toast(error.message,true)}}
   }));
-  document.querySelector('#desktop-chat-form')?.addEventListener('submit',async event=>{event.preventDefault();const input=event.currentTarget.elements.namedItem('message'),message=String(input?.value||'').trim();if(!message)return;if(!state.runtime)return toast('Message simulé');try{await request('/api/v1/twitch/chat/messages',{method:'POST',body:JSON.stringify({message})});input.value='';toast('Message envoyé')}catch(error){toast(error.message,true)}});
+  document.querySelector('#desktop-chat-form')?.addEventListener('submit',async event=>{event.preventDefault();const input=event.currentTarget.elements.namedItem('message'),message=String(input?.value||'').trim();if(!message)return;if(!state.runtime)return toast('Message simulé');if(!twitchCan('chatWrite'))return toast('Autorisation chat requise.',true);try{await request('/api/v1/twitch/chat/messages',{method:'POST',body:JSON.stringify({message})});input.value='';toast('Message envoyé')}catch(error){toast(error.message,true)}});
   document.querySelector('[data-add-event]')?.addEventListener('click',()=>openEventDialog());
   document.querySelector('[data-sound-search]')?.addEventListener('input',e=>{state.search=e.currentTarget.value;render()});
   document.querySelectorAll('[data-camp]').forEach(b=>b.onclick=()=>{state.campItem=b.dataset.camp;render();void loadCampData(state.campItem)});
@@ -778,7 +795,7 @@ function bindConnections(){
       if(action==='twitch-sync'){const next=await request('/api/v1/twitch/sync',{method:'POST',body:'{}'});applyDashboard(next);toast('Planning Twitch synchronisé');render();return}
       if(action==='google-connect'){const result=await request('/api/v1/google/oauth/start',{method:'POST',body:'{}'});if(window.streamDashboardDesktop?.openExternalAuth)await window.streamDashboardDesktop.openExternalAuth(result.authorizationUrl);toast('Connexion Google ouverte dans le navigateur');return}
       if(action==='google-disconnect'){const next=await request('/api/v1/google/disconnect',{method:'POST',body:'{}'});applyDashboard(next);toast('Google Calendar déconnecté');render();return}
-      if(action==='google-sync'){const next=await request('/api/v1/google/sync',{method:'POST',body:'{}'});applyDashboard(next);toast('Google Calendar synchronisé');render();return}
+      if(action==='google-sync'){if(!state.dashboard?.google?.connected||!state.dashboard?.google?.targetCalendarId)return toast('Choisis un calendrier Google cible.',true);const next=await request('/api/v1/google/sync',{method:'POST',body:'{}'});applyDashboard(next);toast('Google Calendar synchronisé');render();return}
       if(action==='discord-token-save'){const input=document.querySelector('#preview-discord-token');const token=input?.value.trim();if(!token)throw new Error('Saisis le token Discord.');await request('/api/v1/discord/token',{method:'PUT',body:JSON.stringify({token})});input.value='';await refreshAfterConnection('Token Discord configuré');return}
       if(action==='discord-token-delete'){await request('/api/v1/discord/token',{method:'DELETE'});await refreshAfterConnection('Discord déconnecté');return}
       if(action==='discord-load'){await loadDiscord();return}
