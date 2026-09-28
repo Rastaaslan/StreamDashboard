@@ -676,7 +676,7 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
 
   app.use((_req, res, next) => {
     res.set({
-      'Content-Security-Policy': "default-src 'self'; connect-src 'self' ws://127.0.0.1:* ws://localhost:* ws://[::1]:* ws: wss:; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; object-src 'none'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'",
+      'Content-Security-Policy': "default-src 'self'; connect-src 'self' https://static-cdn.jtvnw.net ws://127.0.0.1:* ws://localhost:* ws://[::1]:* ws: wss:; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https://static-cdn.jtvnw.net https://clips-media-assets2.twitch.tv https://clips-media-assets.twitch.tv; object-src 'none'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'",
       'X-Content-Type-Options': 'nosniff',
       'X-Frame-Options': 'DENY',
       'Referrer-Policy': 'no-referrer',
@@ -778,7 +778,7 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
       return error ? transitionIntegration(integrationState(), 'DEGRADED', { error: { code: 'PROVIDER_UNAVAILABLE', message: error, retryable: true, details: null } }) : integrationState('DISCONNECTED');
     };
     const controlHub: ControlHubSnapshot = {
-      live: { isLive: twitchLive.isLive, title: twitchLive.title ?? (twitchChannel.title || null), category: twitchLive.category ?? (twitchChannel.gameName || null), startedAt: twitchLive.startedAt, durationSeconds: twitchLive.startedAt ? Math.max(0, Math.floor((Date.now() - Date.parse(twitchLive.startedAt)) / 1_000)) : null, viewerCount: twitchLive.viewerCount },
+      live: { thumbnailUrl: twitchLive.thumbnailUrl, categoryId: twitchLive.categoryId, isLive: twitchLive.isLive, title: twitchLive.title ?? (twitchChannel.title || null), category: twitchLive.category ?? (twitchChannel.gameName || null), startedAt: twitchLive.startedAt, durationSeconds: twitchLive.startedAt ? Math.max(0, Math.floor((Date.now() - Date.parse(twitchLive.startedAt)) / 1_000)) : null, viewerCount: twitchLive.viewerCount },
       audience: { viewerCount: twitchLive.viewerCount, chatters: twitchChatters.items.map(user => { const badges = chatMessages.find(message => message.chatter.id === user.id)?.chatter.badges.map(badge => badge.setId) ?? []; return { id: user.id, displayName: user.displayName, role: user.id === local.twitch.broadcasterId ? 'broadcaster' as const : badges.includes('moderator') ? 'moderator' as const : badges.includes('vip') ? 'vip' as const : 'viewer' as const }; }) },
       activity: eventCore.recent({ limit: 20 }),
       chat: { messages: chatMessages, connected: chatStatus === 'CONNECTED' },
@@ -809,7 +809,7 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
         port: runtimePort,
         logsPath: options.logsPath ?? null,
       },
-      twitch: { ...twitch.state, lastSyncedAt: local.twitchLastSyncedAt, channelTitle: twitchChannel.title || null, gameId: twitchChannel.gameId || null, gameName: twitchChannel.gameName || null },
+      twitch: { ...twitch.state, capabilities: twitch.controlCapabilities(), lastSyncedAt: local.twitchLastSyncedAt, channelTitle: twitchChannel.title || null, gameId: twitchChannel.gameId || null, gameName: twitchChannel.gameName || null },
       nextLive: nextLive(),
       google: {
         configured: Boolean(googleClientId),

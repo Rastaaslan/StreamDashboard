@@ -1,3 +1,6 @@
+import { modeDescription, eventProviderState, syncSummary, createProviderRetry } from './sync-center.js';
+import { providerDiagnostic, capabilityAvailability, wizardState, providerError, planningPublicationPermissions } from './provider-diagnostics.js';
+import { createThumbnail } from './thumbnails.js';
 import { isAndroidRuntime, nextRetry, normalizeServer, parsePairing } from './runtime.js';
 import { credentialStorage, settingsStorage } from './storage.js';
 import { createTransport, CRITICAL_COMMAND_TIMEOUT_MS, HttpError } from './transport.js';
@@ -85,7 +88,10 @@ let ws = null;
 let retry = 500;
 let reconnectTimer = null;
 let companionMode = CompanionMode.OFFLINE;
+const phoneProviderSnapshots = {};
 const companion = createCompanionStore();
+let syncError = '';
+const providerAccounts = {};
 let companionSyncFlight = null;
 const providerSync = createStandaloneProviderSync({ store: companion, adapter: createNativeProviderAdapter() });
 let deviceId = localStorage.getItem('streamdashboard.deviceId') || '';
@@ -156,7 +162,7 @@ function syncMobileStreamerPing(pings = []) {
   if (!dialog.open) dialog.showModal();
 }
 async function ensureCredentialOwner() { if (!credential) credential = await credentialStorage.get() || ''; if (!credential) throw new Error('Télécommande non appairée.'); return credential; }
-setMobileContext({ companion, transport, providerSync, getCredential: () => credential, ensureCredential: ensureCredentialOwner, getMode: () => companionMode, getState: () => state, applyState: next => render(next), executeCommand: command, syncCompanion, note });
+setMobileContext({ companion, transport, providerSync, getCredential: () => credential, ensureCredential: ensureCredentialOwner, getMode: () => companionMode, getState: () => state, getProviderDiagnostics: () => phoneProviderSnapshots, refreshProviderDiagnostics: refreshProviderAccounts, applyState: next => render(next), executeCommand: command, syncCompanion, note });
 const text = (tag, value, className) => {
   const node = document.createElement(tag);
   node.textContent = String(value ?? '');
@@ -196,11 +202,14 @@ function offlineState() {
 function setConnectionMode(mode) {
   companionMode = mode;
   const online = mode === CompanionMode.ONLINE_PC;
+  renderSyncCenter();
+  if (state) renderPlanning(state.planning);
   $('pc').textContent = online ? 'Connecté' : 'Hors ligne';
   $('connection').textContent = online ? 'Connecté' : 'Hors ligne'; $('status-dot').classList.toggle('online', online);
   $('connection').className = online ? 'ok' : '';
-  $('last-sync').textContent = companion.snapshot().lastServerSyncAt ? `À jour · ${new Date(companion.snapshot().lastServerSyncAt).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })}` : 'Jamais synchronisé';
+  $('last-sync').textContent = companion.snapshot().lastServerSyncAt ? `Dernière sync PC · ${new Date(companion.snapshot().lastServerSyncAt).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })}` : 'Jamais synchronisé';
   remoteButtons(!online);
+  updatePlanningProviderReadiness();
 }
 
 function openCanonicalPairing(pendingLink = '') {
@@ -300,6 +309,15 @@ function connectionButton(label, action, className = 'secondary') {
   button.dataset.connectionAction = action;
   return button;
 }
+// Transport handlers stay provider-specific; availability comes from ConnectionSnapshot.capabilities.
+const managedConnectionActions = {
+  obs: [{ capability: 'test', label: 'Tester', action: 'obs-test' }],
+  twitch: [{ capability: 'connect', label: 'Connecter', action: 'twitch-connect', connected: false }, { capability: 'disconnect', label: 'Déconnecter', action: 'twitch-disconnect', connected: true }],
+  google: [{ capability: 'disconnect', label: 'Déconnecter', action: 'google-disconnect', connected: true }],
+};
+function managedPermission(provider, capability) {
+  return capabilityAvailability({ configured: provider.status !== 'unavailable', capabilities: provider.capabilities || [] }, capability);
+}
 function renderManagedConnections(hub) {
   const integrations = $('hub-integrations');
   integrations.replaceChildren();
@@ -314,23 +332,16 @@ function renderManagedConnections(hub) {
     const dot = text('i', '', `provider-dot status-${status.toLowerCase()}`);
     const copy = document.createElement('div'); copy.className = 'connection-copy';
     copy.append(text('b', provider.label), text('small', `${humanProviderStatus(status)}${provider.mode ? ` · ${provider.mode === 'official' ? 'Officiel' : 'Personnalisé'}` : ''}`, 'muted'));
-    if (provider.message) copy.append(text('small', provider.message, 'muted'));
+    if (provider.status === 'unavailable') copy.append(text('small', 'Service non configuré ou indisponible dans cette version.', 'muted'));
     const actions = document.createElement('div'); actions.className = 'connection-actions';
-    const capabilities = new Set(provider.capabilities || []);
     const canManageConnections = runtimeSupports('mobile-provider-actions');
-    if (canManageConnections && provider.id === 'obs' && capabilities.has('test')) actions.append(connectionButton('Tester', 'obs-test'));
-    if (canManageConnections && provider.id === 'twitch') {
-      if (status === 'CONNECTED') {
-        if (capabilities.has('disconnect')) actions.append(connectionButton('Déconnecter', 'twitch-disconnect', 'secondary danger-button'));
-      } else if (capabilities.has('connect')) actions.append(connectionButton('Connecter', 'twitch-connect'));
+    for (const item of managedConnectionActions[provider.id] || []) {
+      if (item.connected !== undefined && item.connected !== (status === 'CONNECTED')) continue;
+      const permission = managedPermission(provider, item.capability);
+      if (canManageConnections && permission.available) actions.append(connectionButton(item.label, item.action));
+      else if (canManageConnections) copy.append(text('small', `${item.label} : ${permission.reason}`, 'muted'));
     }
-    if (provider.id === 'google') {
-      if (canManageConnections && status === 'CONNECTED') {
-        if (capabilities.has('disconnect')) actions.append(connectionButton('Déconnecter', 'google-disconnect', 'secondary danger-button'));
-      } else if (status !== 'CONNECTED') {
-        copy.append(text('small', 'La connexion initiale Google du PC doit être autorisée depuis le PC.', 'muted'));
-      }
-    }
+    if (provider.id === 'google' && status !== 'CONNECTED') copy.append(text('small', 'La connexion initiale Google du PC doit être autorisée depuis le PC.', 'muted'));
     if (!canManageConnections && ['obs','twitch','google'].includes(provider.id)) {
       copy.append(text('small', 'Mets à jour StreamDashboard sur le PC pour gérer cette connexion depuis le téléphone.', 'muted'));
     } else if (!actions.children.length && ['discord','streamlabs','wizebot'].includes(provider.id) && provider.mode === 'custom') {
@@ -350,6 +361,9 @@ async function openExternalUrl(url) {
 $('hub-integrations').addEventListener('click', async event => {
   const action = event.target.closest('[data-connection-action]')?.dataset.connectionAction;
   if (!action) return;
+  const provider = connectionProjection.find(value => (managedConnectionActions[value.id] || []).some(item => item.action === action));
+  const contract = provider && managedConnectionActions[provider.id].find(item => item.action === action);
+  if (!contract || !managedPermission(provider, contract.capability).available) { note('Action indisponible pour cette connexion. Actualise son état.'); return; }
   if (!requireRuntimeFeature('mobile-provider-actions')) return;
   if (companionMode !== CompanionMode.ONLINE_PC) { note('PC requis pour gérer cette connexion.'); return; }
   try {
@@ -373,6 +387,13 @@ function renderControlHub(hub) {
   const integrations = $('hub-integrations');
   integrations.replaceChildren();
   $('hub-title').textContent = hub?.live?.isLive ? (hub.live.title || 'Live en cours') : 'Prêt à streamer';
+  const liveArtwork = $('hub-title').parentElement;
+  const liveSource = JSON.stringify([hub?.live?.thumbnailUrl, hub?.live?.categoryId, hub?.live?.isLive, Math.floor(Date.now() / 300000)]);
+  if (liveArtwork.dataset.thumbnailSource !== liveSource) {
+    liveArtwork.dataset.thumbnailSource = liveSource;
+    liveArtwork.querySelector('.twitch-thumbnail')?.remove();
+    if (hub?.live?.isLive) liveArtwork.append(createThumbnail(hub.live, 'stream'));
+  }
   $('hub-category').textContent = hub?.live?.category || (companionMode === CompanionMode.ONLINE_PC ? 'PC Runtime connecté' : 'Les contrôles PC reviendront à la reconnexion.');
   $('hub-viewers').textContent = Number.isInteger(hub?.audience?.viewerCount) ? String(hub.audience.viewerCount) : '—';
   $('hub-chatters').textContent = Array.isArray(hub?.audience?.chatters) ? String(hub.audience.chatters.length) : '—';
@@ -393,7 +414,7 @@ let moderationCapabilities = null;
 let twitchCapabilitiesFlight = null;
 const twitchCapability = name => moderationCapabilities?.[name] !== false;
 function applyTwitchActionCapabilities() {
-  const connected = state?.twitch?.connected === true;
+  const connected = companionMode === CompanionMode.ONLINE_PC && state?.twitch?.connected === true;
   const chatWritable = connected && twitchCapability('chatWrite');
   $('chat-message').disabled = !chatWritable;
   $('chat-form').querySelector('button').disabled = !chatWritable;
@@ -401,8 +422,7 @@ function applyTwitchActionCapabilities() {
   $('create-clip').disabled = !connected || !twitchCapability('createClip');
   $('more-chatters').disabled = !connected || !twitchCapability('chatters');
   $('save-twitch').disabled = !connected || !twitchCapability('updateChannel');
-  const twitchPublish = $('slot-form').elements.namedItem('twitch');
-  if (twitchPublish) twitchPublish.title = twitchCapability('schedule') ? '' : 'Reconnecte Twitch pour autoriser la publication du planning.';
+  updatePlanningProviderReadiness();
   if ($('template-publish-twitch')) $('template-publish-twitch').title = twitchCapability('schedule') ? '' : 'Reconnecte Twitch pour autoriser la publication du planning.';
 }
 async function loadModerationCapabilities() {
@@ -573,7 +593,7 @@ async function loadVods(append = false) {
   try {
     const container = $('vod-list'); if (!append) container.replaceChildren(text('p', 'Chargement des VOD…', 'muted')); const result = await transport.twitchVideos(append ? vodCursor : ''); if (!append) container.replaceChildren();
     for (const vod of result.items || []) {
-      const card = document.createElement('article'); card.className = 'resource-card'; card.append(text('b', vod.title), text('small', `${new Date(vod.createdAt).toLocaleDateString('fr-FR')} · ${vod.duration} · ${vod.viewCount} vues`, 'muted'));
+      const card = document.createElement('article'); card.className = 'resource-card'; card.append(createThumbnail(vod, 'video'), text('b', vod.title), text('small', `${new Date(vod.createdAt).toLocaleDateString('fr-FR')} · ${vod.duration} · ${vod.viewCount} vues`, 'muted'));
       const actions = document.createElement('div'); actions.className = 'resource-actions'; actions.append(resourceLink(vod.url));
       const remove = text('button', 'SUPPRIMER', 'danger-button'); remove.type = 'button'; remove.disabled = moderationCapabilities?.deleteVideo === false; remove.title = remove.disabled ? `Reconnecte Twitch pour accorder ${moderationCapabilities.requiredScopes?.deleteVideo || 'channel:manage:videos'}.` : ''; remove.onclick = async () => { if (prompt(`Suppression définitive. Saisissez DELETE ${vod.id}`) !== `DELETE ${vod.id}`) return; try { await transport.deleteTwitchVideo(vod.id); card.remove(); note('VOD supprimée après confirmation Twitch.'); } catch (error) { note(error.message); } }; actions.append(remove); card.append(actions); container.append(card);
     }
@@ -582,62 +602,57 @@ async function loadVods(append = false) {
 }
 async function loadClips(append = false) {
   if (companionMode !== CompanionMode.ONLINE_PC) { note('PC hors ligne. Les clips Twitch ne peuvent pas être chargés via le PC.'); return; }
-  try { const container = $('clip-list'); if (!append) container.replaceChildren(text('p', 'Chargement des clips…', 'muted')); const result = await transport.twitchClips(append ? clipCursor : ''); if (!append) container.replaceChildren(); for (const clip of result.items || []) { const card = document.createElement('article'); card.className = 'resource-card'; card.append(text('b', clip.title), text('small', `${clip.creatorName} · ${clip.viewCount} vues · ${clip.duration}s`, 'muted'), resourceLink(clip.url)); container.append(card); } clipCursor = result.cursor; $('more-clips').hidden = !clipCursor; if (!container.children.length) container.append(text('p', 'Aucun clip disponible.', 'empty-copy')); } catch (error) { note(error.message); }
+  try { const container = $('clip-list'); if (!append) container.replaceChildren(text('p', 'Chargement des clips…', 'muted')); const result = await transport.twitchClips(append ? clipCursor : ''); if (!append) container.replaceChildren(); for (const clip of result.items || []) { const card = document.createElement('article'); card.className = 'resource-card'; card.append(createThumbnail(clip, 'clip'), text('b', clip.title), text('small', `${clip.creatorName} · ${clip.viewCount} vues · ${clip.duration}s`, 'muted'), resourceLink(clip.url)); container.append(card); } clipCursor = result.cursor; $('more-clips').hidden = !clipCursor; if (!container.children.length) container.append(text('p', 'Aucun clip disponible.', 'empty-copy')); } catch (error) { note(error.message); }
 }
 
 const planningProviderNames = { twitch: 'Twitch', google: 'Google' };
-const planningProviderStatusNames = { synced: 'Synchronisé', pending: 'En attente', error: 'Erreur', 'not-published': 'Non publié', conflict: 'Conflit' };
+const targetedRetry = createProviderRetry({
+  getMode: () => companionMode,
+  nativeAvailable: () => Boolean(globalThis.StreamDashboardProviders),
+  pcRetry: async (id, provider) => { const next = await transport.retryPlanningProvider(id, provider); render(next); },
+  standaloneRetry: async (item, provider) => {
+    const cache = companion.snapshot();
+    const current = cache.planning.find(value => value.id === (item.seriesId || item.id)) || item;
+    await syncEventProviders(current, item.deleted ? 'delete' : undefined, provider);
+  },
+});
 async function retryPlanningProvider(item, provider) {
-  if (companionMode !== CompanionMode.ONLINE_PC) return;
-  try {
-    const id = item.seriesId || item.id;
-    const next = await transport.retryPlanningProvider(id, provider);
-    render(next);
-    note(`${planningProviderNames[provider] || provider} · nouvelle tentative effectuée.`);
-  } catch (error) { note(error.message); }
+  try { syncError = ''; await targetedRetry(item, provider); }
+  catch (error) { syncError = error.message; note(error.message); }
+  finally { renderSyncCenter(); }
 }
-function renderOnlinePlanningProviders(item, row) {
-  if (companionMode !== CompanionMode.ONLINE_PC || item.occurrenceKey) return;
-  for (const provider of ['twitch','google']) {
-    if (item.desiredPublication?.[provider] !== true) continue;
-    const link = item.providers?.[provider];
-    const status = link?.status || 'pending';
+function renderOnlinePlanningProviders(item, row, onlyProvider) {
+  for (const provider of onlyProvider ? [onlyProvider] : ['twitch', 'google']) {
+    const link = eventProviderState(item, provider, companionMode);
     const block = document.createElement('div');
-    block.className = `planning-provider-state provider-${status}`;
-    const head = document.createElement('div');
-    head.append(text('b', planningProviderNames[provider]), text('span', planningProviderStatusNames[status] || status, 'muted'));
-    block.append(head);
-    if (link?.lastError) block.append(text('small', link.lastError, 'danger'));
-    if (status === 'error') {
-      const retry = text('button', 'Réessayer', 'secondary');
+    block.className = `planning-provider-state provider-${link.status}`;
+    block.append(text('b', planningProviderNames[provider]), text('span', link.label, 'muted'));
+    if (link.lastError) block.append(text('small', link.lastError, 'danger'));
+    if (link.retryable) {
+      const retry = text('button', `Réessayer ${planningProviderNames[provider]}`, 'secondary');
       retry.type = 'button';
-      retry.onclick = () => void retryPlanningProvider(item, provider);
+      retry.disabled = companionMode === CompanionMode.OFFLINE || (companionMode === CompanionMode.ONLINE_STANDALONE && !globalThis.StreamDashboardProviders);
+      retry.onclick = async () => { retry.disabled = true; await retryPlanningProvider(item, provider); if (state) renderPlanning(state.planning); };
       block.append(retry);
-    } else if (status === 'conflict' || item.conflict?.provider === provider) {
-      block.append(text('small', 'Conflit distant · résolution à effectuer sur le PC.', 'muted'));
+      if (link.status === 'conflict') block.append(text('small', 'Une nouvelle tentative respecte la version distante. Si le conflit persiste, choisissez la version à conserver sur le PC.', 'muted'));
     }
     row.append(block);
   }
   if (item.syncError) row.append(text('small', item.syncError, 'danger planning-sync-error'));
 }
+function applyPlanningProviderCapabilities() {
+  const permissions = planningPublicationPermissions({ mode: companionMode, pcState: state, twitchCapabilities: moderationCapabilities, phone: phoneProviderSnapshots });
+  for (const [provider, permission] of Object.entries(permissions)) {
+    const input = $('slot-form').elements[provider];
+    if (input) { input.disabled = !permission.available; input.title = permission.reason; }
+  }
+  return permissions;
+}
 function updatePlanningProviderReadiness() {
+  const permissions = applyPlanningProviderCapabilities();
   const copy = $('planning-provider-readiness');
   if (!copy) return;
-  if (companionMode === CompanionMode.ONLINE_STANDALONE) {
-    copy.textContent = 'Publication autonome selon les comptes connectés sur ce téléphone.';
-    return;
-  }
-  if (companionMode !== CompanionMode.ONLINE_PC || !state) {
-    copy.textContent = 'Connecte le PC pour vérifier la disponibilité des publications.';
-    return;
-  }
-  const issues = [];
-  if (!state.twitch?.connected) issues.push('Twitch non connecté');
-  else if (moderationCapabilities?.schedule === false) issues.push('Twitch à reconnecter pour le planning');
-  const google = state.google;
-  if (google?.configured === false) issues.push('Google non provisionné sur ce PC');
-  else if (!google?.connected) issues.push('Google à connecter sur le PC');
-  else if (!google?.targetConfigured) issues.push('Calendrier Google cible à choisir sur le PC');
+  const issues = Object.values(permissions).filter(value => !value.available).map(value => value.reason);
   copy.textContent = issues.length ? issues.join(' · ') : 'Twitch et Google sont prêts.';
 }
 function renderPlanning(items) {
@@ -662,12 +677,13 @@ function renderPlanning(items) {
       openItem();
     });
     row.addEventListener('keydown', event => {
-      if (!['Enter',' '].includes(event.key)) return;
+      if (event.target !== row || !['Enter',' '].includes(event.key)) return;
       event.preventDefault();
       openItem();
     });
     const when = planningWhenParts(item);
     const whenBlock = document.createElement('div'); whenBlock.className = 'planning-when'; whenBlock.append(text('strong', when.date), text('small', when.time));
+    whenBlock.append(createThumbnail(item));
     row.append(whenBlock, text('b', item.title));
     if (item.recurrence) row.append(text('small', recurrenceSummary(item), 'muted planning-recurrence'));
     if (item.occurrenceKey) {
@@ -681,12 +697,9 @@ function renderPlanning(items) {
       row.append(actions);
     }
     if (companionMode !== CompanionMode.ONLINE_PC && !item.occurrenceKey) {
-      const statuses = Object.entries(item.desiredPublication || {}).filter(([provider, enabled]) => enabled && ['twitch','google'].includes(provider)).map(([provider]) => `${provider === 'twitch' ? 'Twitch' : 'Google'} · ${(item.providerLinks?.[provider]?.status || 'pending').toUpperCase()}`).join('  ');
-      const status = text('small', statuses || '⏳ À synchroniser', 'pending');
-      const retryButton = text('button', 'Retry'); retryButton.type='button'; retryButton.hidden=!Object.values(item.providerLinks||{}).some(link=>['error','conflict'].includes(link.status)); retryButton.onclick=()=>void syncEventProviders(item);
       const edit = text('button', 'Modifier'); edit.type = 'button'; edit.onclick = () => { const title = prompt('Titre du live', item.title); if (!title || title === item.title) return; const result = companion.updateEvent(item.id, { title }, item.revision); if (result.conflict) note('Ce live a été modifié sur un autre appareil.'); else { render(offlineState()); void syncEventProviders(result.item); } };
       const remove = text('button', 'Supprimer'); remove.type = 'button'; remove.onclick = () => { if (!confirm(`Supprimer « ${item.title} » ?`)) return; const result = companion.deleteEvent(item.id, item.revision); if (result.conflict) note('Ce live a été modifié sur un autre appareil.'); else { render(offlineState()); void syncEventProviders(item, 'delete'); } };
-      row.append(status, retryButton, edit, remove);
+      row.append(edit, remove);
     }
     renderOnlinePlanningProviders(item, row);
     container.append(row);
@@ -734,16 +747,21 @@ async function removeMobileOccurrence(item) {
 }
 async function removeMobileSeries(item) { if (!confirm(`Supprimer toute la série « ${item.title} » ?`)) return; try { if (companionMode === CompanionMode.ONLINE_PC) render(await transport.deletePlanning(item.seriesId)); else { const canonical = companion.snapshot().planning.find(value => value.id === item.seriesId); companion.deleteEvent(canonical.id, canonical.revision); render(offlineState()); } note('Série supprimée.'); } catch (error) { note(error.message); } }
 
-async function syncEventProviders(event, action) {
+async function syncEventProviders(event, action, onlyProvider) {
   if (companionMode !== CompanionMode.ONLINE_STANDALONE || !globalThis.StreamDashboardProviders) return;
-  await providerSync.apply(companionMode, event, action);
-  render(offlineState());
+  const flight = providerSync.apply(companionMode, event, action, onlyProvider);
+  await Promise.resolve();
+  if (companionMode !== CompanionMode.ONLINE_PC) render(offlineState());
+  await flight;
+  await refreshProviderAccounts();
+  if (companionMode !== CompanionMode.ONLINE_PC) render(offlineState());
 }
 
 function render(next) {
   if (!next) return;
   if (!acceptsSnapshot(state, next)) return;
   state = next;
+  renderSyncCenter();
   if (companionMode === CompanionMode.ONLINE_PC && Date.now() - lastProfileSyncAt > 5_000) void loadProductProfile().catch(() => undefined);
   syncMobileStreamerPing(next.streamerPings || []);
   if (companionMode === CompanionMode.ONLINE_PC) $('pc').textContent = 'Connecté';
@@ -774,6 +792,7 @@ function render(next) {
   if (companionMode === CompanionMode.ONLINE_PC) showPairing(false);
   remoteButtons(companionMode !== CompanionMode.ONLINE_PC);
   $('stream').disabled = !next.obs.connected; $('live-stream').disabled = $('stream').disabled;
+  if (next.twitch?.capabilities) moderationCapabilities = next.twitch.capabilities;
   if (!next.twitch?.connected) moderationCapabilities = null;
   else if (!moderationCapabilities && !twitchCapabilitiesFlight) void loadModerationCapabilities();
   applyTwitchActionCapabilities();
@@ -874,18 +893,18 @@ async function syncCompanion() {
     showSyncConflict();
     return response;
   })();
-  try { return await companionSyncFlight; } finally { companionSyncFlight = null; }
+  try { const result = await companionSyncFlight; syncError = ''; return result; } catch (error) { syncError = error.message; throw error; } finally { companionSyncFlight = null; renderSyncCenter(); }
 }
 
 function showSyncConflict() {
   const conflict = companion.conflicts()[0];
   if (!conflict) return;
   $('sync-conflict-fields').textContent = `${conflict.fields.join(', ')} · PC et Téléphone contiennent des valeurs différentes.`;
-  $('sync-conflict').showModal();
+  if (!$('sync-conflict').open) $('sync-conflict').showModal();
 }
 async function resolveSyncConflict(strategy) {
   const conflict = companion.conflicts()[0]; if (!conflict) return;
-  try { const response = await transport.resolveCompanionConflict(conflict.operationId, strategy); companion.applySyncResponse(response); $('sync-conflict').close(); render(offlineState()); showSyncConflict(); }
+  try { const response = await transport.resolveCompanionConflict(conflict.operationId, strategy); companion.applySyncResponse(response); $('sync-conflict').close(); render(await transport.state()); showSyncConflict(); }
   catch (error) { note(error.message); }
 }
 $('keep-pc').onclick = () => void resolveSyncConflict('pc');
@@ -1129,7 +1148,7 @@ const savedTab = localStorage.getItem('streamdashboard.mobileTab'); selectTab(['
 const preferenceKey = 'streamdashboard.mobileUx';
 const appearanceDefaults = { theme: 'system', preset: 'minimal', accent: '#2474e5', density: 'normal', radius: 'medium', textScale: 'normal' };
 let uxPreferences = { focus: false, reducedMotion: false, ...appearanceDefaults };
-try { const local = JSON.parse(localStorage.getItem(preferenceKey) || '{}'); uxPreferences.focus = local.focus === true; uxPreferences.reducedMotion = local.reducedMotion === true; } catch { /* use accessible device defaults */ }
+try { const local = JSON.parse(localStorage.getItem(preferenceKey) || '{}'); uxPreferences.focus = local.focus === true; uxPreferences.reducedMotion = local.reducedMotion === true; for (const key of Object.keys(appearanceDefaults)) if (typeof local[key] === 'string') uxPreferences[key] = local[key]; } catch { /* use accessible device defaults */ }
 function applyUxPreferences() {
   document.body.classList.toggle('focus-mode', uxPreferences.focus); document.body.classList.toggle('reduce-motion', uxPreferences.reducedMotion);
   for (const key of ['theme', 'preset', 'density', 'radius']) document.body.dataset[key] = uxPreferences[key];
@@ -1138,20 +1157,20 @@ function applyUxPreferences() {
   const themeLabels = { system: 'Système', light: 'Clair', dark: 'Sombre', oled: 'OLED' }; const presetLabels = { minimal: 'Minimal', soft: 'Doux', compact: 'Compact', contrast: 'Contrasté' };
   $('appearance-theme').textContent = `${themeLabels[uxPreferences.theme] || uxPreferences.theme} · ${presetLabels[uxPreferences.preset] || uxPreferences.preset}`;
   $('appearance-details').textContent = `Densité ${uxPreferences.density} · Texte ${uxPreferences.textScale}`;
-  localStorage.setItem(preferenceKey, JSON.stringify({ focus: uxPreferences.focus, reducedMotion: uxPreferences.reducedMotion }));
+  localStorage.setItem(preferenceKey, JSON.stringify(uxPreferences));
 }
 function setFocusPreference(value) { uxPreferences.focus = value; applyUxPreferences(); }
 $('focus-mode').onchange = event => setFocusPreference(event.target.checked); $('reduce-motion').onchange = event => { uxPreferences.reducedMotion = event.target.checked; applyUxPreferences(); };
 function populateProfileAppearanceForm() {
-  if (!productProfile) return;
-  $('profile-display-name').value = productProfile.profile?.displayName || '';
-  $('profile-channel-name').value = productProfile.profile?.channelName || '';
-  $('appearance-theme-input').value = productProfile.appearance?.theme || appearanceDefaults.theme;
-  $('appearance-preset-input').value = productProfile.appearance?.preset || appearanceDefaults.preset;
-  $('appearance-accent-input').value = productProfile.appearance?.accent || appearanceDefaults.accent;
-  $('appearance-density-input').value = productProfile.appearance?.density || appearanceDefaults.density;
-  $('appearance-radius-input').value = productProfile.appearance?.radius || appearanceDefaults.radius;
-  $('appearance-text-scale-input').value = productProfile.appearance?.textScale || appearanceDefaults.textScale;
+  const appearance = productProfile?.appearance || uxPreferences;
+  $('profile-display-name').value = productProfile?.profile?.displayName || '';
+  $('profile-channel-name').value = productProfile?.profile?.channelName || '';
+  $('appearance-theme-input').value = appearance?.theme || appearanceDefaults.theme;
+  $('appearance-preset-input').value = appearance?.preset || appearanceDefaults.preset;
+  $('appearance-accent-input').value = appearance?.accent || appearanceDefaults.accent;
+  $('appearance-density-input').value = appearance?.density || appearanceDefaults.density;
+  $('appearance-radius-input').value = appearance?.radius || appearanceDefaults.radius;
+  $('appearance-text-scale-input').value = appearance?.textScale || appearanceDefaults.textScale;
 }
 function previewProfileAppearance() {
   uxPreferences = {
@@ -1171,7 +1190,7 @@ for (const id of ['appearance-theme-input','appearance-preset-input','appearance
 }
 $('profile-appearance-form').onsubmit = async event => {
   event.preventDefault();
-  if (companionMode !== CompanionMode.ONLINE_PC) { note('Connecte le téléphone au PC pour enregistrer le profil partagé.'); return; }
+  if (companionMode !== CompanionMode.ONLINE_PC) { previewProfileAppearance(); note('Apparence enregistrée sur cet appareil.'); return; }
   if (!requireRuntimeFeature('mobile-profile-presentation')) return;
   if (!productProfile) { note('Le profil partagé n’a pas pu être chargé depuis le PC.'); return; }
   try {
@@ -1179,7 +1198,7 @@ $('profile-appearance-form').onsubmit = async event => {
       profile: {
         displayName: $('profile-display-name').value.trim() || 'Streamer',
         channelName: $('profile-channel-name').value.trim(),
-        language: productProfile.profile?.language || 'fr',
+        language: productProfile?.profile?.language || 'fr',
       },
       appearance: {
         theme: $('appearance-theme-input').value,
@@ -1218,7 +1237,7 @@ function applyModuleProjection(enabled) {
   document.querySelectorAll('[data-module]').forEach(node => { const unavailable = !node.dataset.module.split(',').some(id => enabled[id] !== false); node.dataset.moduleUnavailable = String(unavailable); if (node.matches('[data-live-panel]')) { if (unavailable) node.hidden = true; } else node.hidden = unavailable; });
   const active = document.querySelector('[data-view].active'); if (active?.hidden) activateView('home');
 }
-applyUxPreferences(); setFocusPreference(uxPreferences.focus);
+applyUxPreferences(); populateProfileAppearanceForm(); setFocusPreference(uxPreferences.focus);
 const preparationKey = 'streamdashboard.mobilePreparationTab';
 function selectPreparationTab(tab, remember = true) { const selected = ['checklist', 'notes', 'templates'].includes(tab) ? tab : 'checklist'; document.querySelectorAll('[data-prepare-tab]').forEach(button => { const active = button.dataset.prepareTab === selected; button.classList.toggle('active', active); button.setAttribute('aria-selected', String(active)); }); document.querySelectorAll('[data-prepare-panel]').forEach(panel => { panel.hidden = panel.dataset.preparePanel !== selected; }); if (remember) localStorage.setItem(preparationKey, selected); }
 document.querySelector('.prepare-tabs').onclick = event => { const tab = event.target.closest('[data-prepare-tab]')?.dataset.prepareTab; if (tab) selectPreparationTab(tab); };
@@ -1270,14 +1289,19 @@ $('open-planning-filters').onclick = () => $('planning-filters-sheet').showModal
 $('close-planning-filters').onclick = () => $('planning-filters-sheet').close();
 $('open-planning-publish').onclick = () => $('planning-publish-sheet').showModal();
 $('close-planning-publish').onclick = () => $('planning-publish-sheet').close();
-$('add-slot').onclick = () => { mobileEditing = null; if ($('slot-dialog-title')) $('slot-dialog-title').textContent = 'Nouvel événement'; $('slot-form').elements.recurrence.disabled = false; $('slot-form').elements.recurrenceUntil.disabled = false; $('slot-form').reset(); selectPlanningPage('main'); $('slot-dialog').showModal(); };
+$('add-slot').onclick = () => { mobileEditing = null; if ($('slot-dialog-title')) $('slot-dialog-title').textContent = 'Nouvel événement'; $('slot-form').elements.recurrence.disabled = false; $('slot-form').elements.recurrenceUntil.disabled = false; $('slot-form').reset(); void refreshProviderAccounts(); selectPlanningPage('main'); $('slot-dialog').showModal(); };
 $('close-slot').onclick = () => { mobileEditing = null; if ($('slot-dialog-title')) $('slot-dialog-title').textContent = 'Nouvel événement'; $('slot-form').elements.recurrence.disabled = false; $('slot-form').elements.recurrenceUntil.disabled = false; $('slot-dialog').close(); };
 $('slot-form').onsubmit = async event => {
   event.preventDefault(); const form = new FormData(event.currentTarget);
+  // A temporarily unavailable account must not erase an existing publication intent.
+  for (const provider of ['twitch', 'google']) {
+    const input = event.currentTarget.elements[provider];
+    if (input.disabled && input.checked) form.set(provider, 'on');
+  }
   const date = form.get('date'); const startAtUtc = new Date(`${date}T${form.get('start')}`).toISOString(); const endAtUtc = new Date(`${date}T${form.get('end')}`).toISOString();
   try {
     if (form.get('twitch') === 'on') await ensureTwitchCapabilities();
-    if (form.get('twitch') === 'on' && moderationCapabilities?.schedule === false) throw new Error(`Reconnecte Twitch pour accorder ${moderationCapabilities.requiredScopes?.schedule || 'channel:manage:schedule'}.`);
+    if (companionMode === CompanionMode.ONLINE_PC && form.get('twitch') === 'on' && moderationCapabilities?.schedule === false) throw new Error(`Reconnecte Twitch pour accorder ${moderationCapabilities.requiredScopes?.schedule || 'channel:manage:schedule'}.`);
     if (form.get('twitch') === 'on' && !$('slot-twitch-game-id').value) throw new Error('Sélectionnez une catégorie Twitch officielle.');
     const recurrenceValue = String(form.get('recurrence') || ''); const [frequency, interval] = recurrenceValue.split('-'); const untilDate = String(form.get('recurrenceUntil') || '');
     const recurrence = recurrenceValue ? { frequency, interval: Number(interval), timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone || 'Europe/Paris', until: untilDate ? new Date(`${untilDate}T23:59:59`).toISOString() : null, exceptions: {} } : undefined;
@@ -1294,7 +1318,7 @@ $('slot-form').onsubmit = async event => {
     } else if (mobileEditing?.scope === 'event') {
       const id = mobileEditing.item.id;
       if (companionMode === CompanionMode.ONLINE_PC) render(await transport.updatePlanning(id, value));
-      else { const canonical = companion.snapshot().planning.find(item => item.id === id); companion.updateEvent(id, value, canonical.revision); render(offlineState()); }
+      else { const canonical = companion.snapshot().planning.find(item => item.id === id); const updated = companion.updateEvent(id, value, canonical.revision); if (updated.conflict) throw new Error('Ce live a été modifié sur un autre appareil.'); render(offlineState()); if (companionMode === CompanionMode.ONLINE_STANDALONE) void syncEventProviders(updated.item); }
     } else if (companionMode === CompanionMode.ONLINE_PC) { const next = await transport.createPlanning(value); companion.replaceServerSnapshot(next); render(next); }
     else { const created=companion.createEvent(value).item; render(offlineState()); if(companionMode===CompanionMode.ONLINE_STANDALONE) void syncEventProviders(created,'create'); }
     mobileEditing = null; event.currentTarget.elements.recurrence.disabled = false; event.currentTarget.elements.recurrenceUntil.disabled = false; $('slot-dialog').close(); event.currentTarget.reset(); note(companionMode === CompanionMode.ONLINE_PC ? 'Planning enregistré.' : 'Créneau enregistré · À synchroniser.');
@@ -1314,6 +1338,7 @@ function attachCategoryPicker(inputId, gameIdId, resultsId) {
 attachCategoryPicker('twitch-category','twitch-game-id','twitch-results');
 attachCategoryPicker('slot-twitch-category','slot-twitch-game-id','slot-twitch-results');
 $('save-twitch').onclick = async () => {
+  if (companionMode !== CompanionMode.ONLINE_PC) { note('PC requis pour modifier la chaîne Twitch.'); return; }
   await ensureTwitchCapabilities();
   if (moderationCapabilities?.updateChannel === false) { note(`Reconnecte Twitch pour accorder ${moderationCapabilities.requiredScopes?.updateChannel || 'channel:manage:broadcast'}.`); return; }
   try {
@@ -1473,31 +1498,95 @@ async function start() {
 window.addEventListener('online', () => { if (companionMode !== CompanionMode.ONLINE_PC) setConnectionMode(CompanionMode.ONLINE_STANDALONE); void connect(); });
 window.addEventListener('offline', () => setConnectionMode(CompanionMode.OFFLINE));
 
+const providerPending = new Set();
+const providerBusy = new Set();
+function renderPhoneProvider(provider, raw) {
+  const snapshot = providerDiagnostic(raw);
+  phoneProviderSnapshots[provider] = snapshot;
+  const wizard = wizardState(snapshot, providerPending.has(provider));
+  providerAccounts[provider] = `${wizard.label} sur Android${snapshot.error ? ` · ${snapshot.error}` : ""}`;
+  renderSyncCenter();
+  const auth = $(`${provider}-standalone-auth`);
+  const logout = $(`${provider}-standalone-logout`);
+  $(`${provider}-standalone-status`).textContent = wizard.label;
+  auth.textContent = providerPending.has(provider) ? 'Relancer OAuth' : snapshot.connected || snapshot.requiresReauth ? 'Réautoriser' : 'Autoriser';
+  auth.hidden = !providerPending.has(provider) && snapshot.connected && !snapshot.requiresReauth && !snapshot.error;
+  auth.disabled = providerBusy.has(provider) || !capabilityAvailability(snapshot, 'connect').available;
+  logout.hidden = !capabilityAvailability(snapshot, 'disconnect').available;
+  logout.disabled = providerBusy.has(provider);
+  let panel = $(`${provider}-assistant`);
+  if (!panel) {
+    panel = document.createElement('div'); panel.id = `${provider}-assistant`;
+    auth.closest('.companion-row').after(panel);
+  }
+  panel.replaceChildren();
+  const progress = text('p', `Configuration → OAuth → Test → Prêt · ${wizard.label}`);
+  progress.setAttribute('role', 'status'); panel.append(progress);
+  if (wizard.reason) panel.append(text('p', wizard.reason, 'muted'));
+  const test = text('button', providerBusy.has(provider) ? 'Test en cours…' : snapshot.tested ? 'Diagnostic / Retester' : 'Diagnostic / Tester');
+  test.type = 'button'; test.disabled = providerBusy.has(provider) || providerPending.has(provider);
+  test.onclick = () => void testPhoneProvider(provider);
+  panel.append(test);
+  const details = document.createElement('details');
+  details.open = raw.showDiagnostic === true;
+  details.append(text('summary', 'Diagnostic de cette connexion'));
+  for (const line of [
+    `Client ID : ${snapshot.configured ? 'présent' : 'absent'}`,
+    `Session / token : ${snapshot.connected ? 'présent (validité confirmée uniquement après test)' : 'absent'}`,
+    `Scopes vérifiés : ${snapshot.scopes.join(', ') || 'aucun'}`,
+    `Actions disponibles : ${snapshot.capabilities.join(', ') || 'aucune'}`,
+    ...(provider === 'google' ? [`Calendrier cible : principal · ${snapshot.calendar}`] : []),
+    `Dernière synchronisation : ${snapshot.lastSync}`,
+    `Erreur actuelle : ${snapshot.error || 'aucune'}`,
+  ]) details.append(text('p', line));
+  panel.append(details);
+  const capability = provider === 'google' ? 'calendar' : 'schedule';
+  const permission = capabilityAvailability(snapshot, capability);
+  if (!permission.available) panel.append(text('p', `Publication : ${permission.reason}`, 'muted'));
+  updatePlanningProviderReadiness();
+}
+async function testPhoneProvider(provider) {
+  if (providerBusy.has(provider)) return;
+  providerBusy.add(provider);
+  const adapter = createNativeProviderAdapter();
+  try {
+    renderPhoneProvider(provider, { ...await adapter.status(provider), showDiagnostic: true });
+    const result = await adapter.test(provider);
+    providerPending.delete(provider);
+    providerBusy.delete(provider);
+    renderPhoneProvider(provider, { ...result, showDiagnostic: true });
+  } catch (error) {
+    providerBusy.delete(provider);
+    renderPhoneProvider(provider, { configured: true, code: error.code || 'NETWORK', showDiagnostic: true });
+  } finally { providerBusy.delete(provider); }
+}
 async function refreshProviderAccounts() {
   if (!isAndroidRuntime() || !globalThis.StreamDashboardProviders) return;
   $('provider-accounts').hidden = false;
   const adapter = createNativeProviderAdapter();
-  for (const provider of ['twitch','google']) {
-    try {
-      const status = await adapter.status(provider);
-      const auth = $(`${provider}-standalone-auth`);
-      const logout = $(`${provider}-standalone-logout`);
-      $(`${provider}-standalone-status`).textContent = status.configured ? (status.connected ? 'Connecté' : 'Déconnecté') : 'Indisponible dans cette version';
-      auth.hidden = !status.configured;
-      auth.disabled = !status.configured;
-      logout.hidden = !status.connected;
-    } catch {
-      $(`${provider}-standalone-status`).textContent = 'Indisponible';
-      $(`${provider}-standalone-auth`).hidden = true;
-      $(`${provider}-standalone-logout`).hidden = true;
-    }
+  for (const provider of ['twitch', 'google']) {
+    try { renderPhoneProvider(provider, await adapter.status(provider)); }
+    catch { renderPhoneProvider(provider, { configured: true, code: 'NETWORK' }); }
   }
 }
-for (const provider of ['twitch','google']) {
-  $(`${provider}-standalone-auth`).onclick=async()=>{try{await createNativeProviderAdapter().authorize(provider);note('Terminez l’autorisation dans le navigateur.');}catch(error){note(error.message);}};
-  $(`${provider}-standalone-logout`).onclick=async()=>{await createNativeProviderAdapter().logout(provider);await refreshProviderAccounts();note(`${provider==='twitch'?'Twitch':'Google'} autonome déconnecté.`);};
+for (const provider of ['twitch', 'google']) {
+  $(`${provider}-standalone-auth`).onclick = async () => {
+    if (providerBusy.has(provider)) return;
+    providerBusy.add(provider);
+    try {
+      await createNativeProviderAdapter().authorize(provider);
+      providerPending.add(provider);
+      note('Terminez l’autorisation dans le navigateur, puis testez la connexion.');
+    } catch (error) { note(providerError(error.code)); }
+    finally { providerBusy.delete(provider); await refreshProviderAccounts(); }
+  };
+  $(`${provider}-standalone-logout`).onclick = async () => {
+    try { await createNativeProviderAdapter().logout(provider); providerPending.delete(provider); await refreshProviderAccounts(); }
+    catch (error) { note(providerError(error.code)); }
+  };
 }
-window.addEventListener('provider-auth',()=>void refreshProviderAccounts());
+window.addEventListener('provider-auth', () => { providerPending.clear(); void refreshProviderAccounts(); });
+document.addEventListener('visibilitychange', () => { if (!document.hidden) void refreshProviderAccounts(); });
 
 if (fixtureName) {
   const fixture = createMobileFixture(fixtureName);
@@ -1524,4 +1613,41 @@ if (fixtureName) {
 // order after the canonical store/transport/controller have installed their owners.
 void import('./features/templates.js')
   .then(() => import('./features/preparation.js'))
+  .then(() => import('./features/prelive.js'))
   .catch(error => note(`Initialisation mobile incomplète : ${error.message}`));
+
+function renderSyncCenter() {
+  const mode = modeDescription(companionMode, Boolean(globalThis.StreamDashboardProviders));
+  $('operating-mode').textContent = mode.label;
+  $('sync-mode').textContent = mode.label;
+  $('sync-available').textContent = mode.available;
+  const summary = syncSummary(companion.snapshot(), companionMode === CompanionMode.ONLINE_PC ? state?.planning : undefined, companionMode);
+  $('sync-counts').textContent = `${summary.pending} opération(s) vers le PC · ${summary.providerPending} publication(s) en attente · ${summary.conflicts} conflit(s)`;
+  $('sync-last').textContent = summary.lastSync ? `Dernière sync : ${new Date(summary.lastSync).toLocaleString('fr-FR')}` : 'Aucune synchronisation réussie';
+  $('sync-error').textContent = syncError;
+  $('sync-pc').disabled = companionMode !== CompanionMode.ONLINE_PC || Boolean(companionSyncFlight);
+  const list = $('sync-providers'); list.replaceChildren();
+  for (const provider of ['twitch', 'google']) {
+    const account = companionMode === CompanionMode.ONLINE_PC ? (state?.[provider]?.connected ? 'Connecté au PC' : 'Non connecté au PC') : companionMode === CompanionMode.OFFLINE ? 'Hors ligne' : providerAccounts[provider] || 'Compte Android non vérifié';
+    list.append(text('p', `${planningProviderNames[provider]} · ${account}`));
+  }
+  for (const operation of companion.snapshot().pending) {
+    const title = companion.snapshot().planning.find(item => item.id === operation.eventId)?.title || operation.patch?.title || operation.eventId;
+    list.append(text('p', `En attente du PC · ${operation.type} · ${title}`));
+  }
+  for (const entry of summary.entries.filter(value => value.retryable || ['pending', 'syncing'].includes(value.status))) {
+    const row = document.createElement('div');
+    row.append(text('b', entry.item.title || entry.item.id));
+    const item = { ...entry.item, desiredPublication: { [entry.provider]: true } };
+    // Reuse the event controls so errors and targeted retries stay identical.
+    const block = document.createElement('div');
+    renderOnlinePlanningProviders(item, block, entry.provider);
+    row.append(block); list.append(row);
+  }
+  $('sync-resolve').hidden = !companion.conflicts().length;
+  $('sync-resolve').disabled = companionMode !== CompanionMode.ONLINE_PC;
+}
+$('open-sync-center').onclick = () => { renderSyncCenter(); $('sync-center').showModal(); void refreshProviderAccounts().then(renderSyncCenter); };
+$('close-sync-center').onclick = () => $('sync-center').close();
+$('sync-pc').onclick = async () => { $('sync-pc').disabled = true; try { await syncCompanion(); } catch (error) { note(error.message); } };
+$('sync-resolve').onclick = () => showSyncConflict();
