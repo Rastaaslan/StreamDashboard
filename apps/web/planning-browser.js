@@ -1,3 +1,4 @@
+import { createThumbnail } from '../mobile/thumbnails.js';
 import { filterPlanningTemporal, paginatePlanning, TEMPORAL_FILTERS } from '../mobile/planning-model.js';
 import { expandRecurringItems } from '../mobile/shared/recurrence.js';
 
@@ -75,6 +76,7 @@ function applyCurrentState() {
   articles.forEach((article, index) => {
     const item = sorted[index];
     article.dataset.planningId = item.id;
+    if (!article.querySelector('.twitch-thumbnail')) article.querySelector('time')?.append(createThumbnail(item));
     byId.set(item.id, article);
     article.hidden = true;
     article.style.display = 'none';
