@@ -18,23 +18,26 @@ public final class ProviderBridge {
   private static final String TWITCH_SCOPES = "channel:manage:schedule channel:read:schedule";
   private static final String GOOGLE_SCOPES = "https://www.googleapis.com/auth/calendar.events https://www.googleapis.com/auth/calendar.readonly";
   private static final long OAUTH_PENDING_TTL_MS = 10 * 60_000L;
+  private final Map<String, JSONObject> diagnostics = new java.util.concurrent.ConcurrentHashMap<>();
   private final Activity activity;
   private final SecureCredentialStore credentials;
 
   ProviderBridge(Activity activity) { this.activity = activity; credentials = new SecureCredentialStore(activity); }
+  @JavascriptInterface public String twitchTest(String ignored) { return testProvider("twitch"); }
+  @JavascriptInterface public String googleTest(String ignored) { return testProvider("google"); }
   @JavascriptInterface public String twitchStatus(String ignored) { return status("twitch", BuildConfig.TWITCH_ANDROID_CLIENT_ID); }
   @JavascriptInterface public String googleStatus(String ignored) { return status("google", BuildConfig.GOOGLE_ANDROID_CLIENT_ID); }
   @JavascriptInterface public String twitchAuthorize(String ignored) { return authorize("twitch", BuildConfig.TWITCH_ANDROID_CLIENT_ID, "https://id.twitch.tv/oauth2/authorize", TWITCH_SCOPES); }
   @JavascriptInterface public String googleAuthorize(String ignored) { return authorize("google", BuildConfig.GOOGLE_ANDROID_CLIENT_ID, "https://accounts.google.com/o/oauth2/v2/auth", GOOGLE_SCOPES); }
-  @JavascriptInterface public String twitchLogout(String ignored) { credentials.clear("twitch"); credentials.clear(pendingKey("twitch")); return ok().toString(); }
-  @JavascriptInterface public String googleLogout(String ignored) { credentials.clear("google"); credentials.clear(pendingKey("google")); return ok().toString(); }
+  @JavascriptInterface public String twitchLogout(String ignored) { diagnostics.remove("twitch"); credentials.clear("twitch"); credentials.clear(pendingKey("twitch")); return ok().toString(); }
+  @JavascriptInterface public String googleLogout(String ignored) { diagnostics.remove("google"); credentials.clear("google"); credentials.clear(pendingKey("google")); return ok().toString(); }
   @JavascriptInterface public String twitchSearchCategories(String raw) { return guarded(() -> twitchSearch(body(raw).optString("query"))); }
-  @JavascriptInterface public String twitchCreatePlanning(String raw) { return guarded(() -> twitchMutate("create", body(raw))); }
-  @JavascriptInterface public String twitchUpdatePlanning(String raw) { return guarded(() -> twitchMutate("update", body(raw))); }
-  @JavascriptInterface public String twitchDeletePlanning(String raw) { return guarded(() -> twitchMutate("delete", body(raw))); }
-  @JavascriptInterface public String googleCreatePlanning(String raw) { return guarded(() -> googleMutate("create", body(raw))); }
-  @JavascriptInterface public String googleUpdatePlanning(String raw) { return guarded(() -> googleMutate("update", body(raw))); }
-  @JavascriptInterface public String googleDeletePlanning(String raw) { return guarded(() -> googleMutate("delete", body(raw))); }
+  @JavascriptInterface public String twitchCreatePlanning(String raw) { return guardedMutation("twitch", () -> twitchMutate("create", body(raw))); }
+  @JavascriptInterface public String twitchUpdatePlanning(String raw) { return guardedMutation("twitch", () -> twitchMutate("update", body(raw))); }
+  @JavascriptInterface public String twitchDeletePlanning(String raw) { return guardedMutation("twitch", () -> twitchMutate("delete", body(raw))); }
+  @JavascriptInterface public String googleCreatePlanning(String raw) { return guardedMutation("google", () -> googleMutate("create", body(raw))); }
+  @JavascriptInterface public String googleUpdatePlanning(String raw) { return guardedMutation("google", () -> googleMutate("update", body(raw))); }
+  @JavascriptInterface public String googleDeletePlanning(String raw) { return guardedMutation("google", () -> googleMutate("delete", body(raw))); }
 
   void acceptOAuthCallback(Uri uri) {
     if (uri == null || DeepLinkRouter.route(uri.toString()) != DeepLinkRouter.Route.OAUTH) return;
@@ -51,11 +54,75 @@ public final class ProviderBridge {
     new Thread(() -> { try { exchangeCode(selected, code, verifier); notifyAuth(selected, true); } catch (Exception ignored) { notifyAuth(selected, false); } }).start();
   }
 
-  private void notifyAuth(String provider, boolean connected) { activity.runOnUiThread(() -> ((MainActivity)activity).dispatchProviderAuth(provider, connected)); }
-  private String status(String provider, String clientId) { try { String label = provider.equals("google") ? "Google" : "Twitch"; return new JSONObject().put("ok", true).put("configured", !clientId.isEmpty()).put("connected", !credentials.get(provider).isEmpty()).put("message", clientId.isEmpty() ? label + " autonome non configuré" : JSONObject.NULL).toString(); } catch (Exception e) { return failure("INTERNAL", "État indisponible."); } }
+  private void notifyAuth(String provider, boolean connected) { diagnostics.remove(provider); if (!connected) { try { diagnostics.put(provider, ok().put("code", "AUTH")); } catch (JSONException ignored) { } } activity.runOnUiThread(() -> ((MainActivity)activity).dispatchProviderAuth(provider, connected)); }
+  private String status(String provider, String clientId) {
+    try {
+      boolean configured = !clientId.isEmpty(), connected = !credentials.get(provider).isEmpty();
+      JSONObject result = diagnostics.containsKey(provider) ? new JSONObject(diagnostics.get(provider).toString()) : ok();
+      JSONArray capabilities = new JSONArray();
+      if (configured) capabilities.put("connect");
+      if (connected) { capabilities.put("disconnect"); capabilities.put("test"); }
+      boolean fresh = connected && System.currentTimeMillis() - result.optLong("testedAt", 0) < 300_000;
+      if (!fresh) result.put("tested", false);
+      if (fresh && result.optBoolean("tested") && result.optJSONArray("capabilities") != null) {
+        JSONArray previous = result.getJSONArray("capabilities");
+        for (int i = 0; i < previous.length(); i++) {
+          String cap = previous.getString(i);
+          if (cap.equals("calendar") || cap.equals("schedule") || cap.equals("categories")) capabilities.put(cap);
+        }
+      }
+      String lastSync = credentials.get(provider + "_last_sync");
+      result.put("lastSync", lastSync.isEmpty() ? 0 : Long.parseLong(lastSync));
+      return result.put("ok", true).put("configured", configured).put("connected", connected).put("capabilities", capabilities).toString();
+    } catch (Exception e) { return failure("INTERNAL", "État indisponible."); }
+  }
+  private synchronized String testProvider(String provider) {
+    String clientId = provider.equals("twitch") ? BuildConfig.TWITCH_ANDROID_CLIENT_ID : BuildConfig.GOOGLE_ANDROID_CLIENT_ID;
+    JSONObject result = ok();
+    try {
+      if (clientId.isEmpty()) throw new ProviderException("NOT_CONFIGURED", "Configuration requise.");
+      if (credentials.get(provider).isEmpty()) throw new ProviderException("REAUTH_REQUIRED", "Connexion requise.");
+      JSONObject session = token(provider);
+      JSONArray granted = new JSONArray();
+      JSONArray capabilities = new JSONArray();
+      if (provider.equals("twitch")) {
+        JSONObject validation = request("GET", "https://id.twitch.tv/oauth2/validate", null, null, Map.of("Authorization", "OAuth " + session.getString("access_token")));
+        JSONArray scopes = validation.optJSONArray("scopes");
+        if (scopes != null) for (int i = 0; i < scopes.length(); i++) {
+          String scope = scopes.getString(i);
+          if (Arrays.asList(TWITCH_SCOPES.split(" ")).contains(scope)) granted.put(scope);
+        }
+        result.put("scopes", granted);
+        if (!granted.toString().contains("channel:manage:schedule")) throw new ProviderException("SCOPES", "Permissions requises.");
+        JSONObject user = twitch("GET", "https://api.twitch.tv/helix/users", null).getJSONArray("data").getJSONObject(0);
+        capabilities.put("categories");
+        // Twitch only permits schedule writes for affiliates and partners.
+        if (user.optString("broadcaster_type").isEmpty()) throw new ProviderException("ACCOUNT", "Compte affilié ou partenaire requis.");
+        capabilities.put("schedule");
+      } else {
+        // Token scope is returned by Google OAuth; never return the token itself.
+        for (String scope : session.optString("scope").split(" ")) {
+          if (Arrays.asList(GOOGLE_SCOPES.split(" ")).contains(scope)) granted.put(scope);
+        }
+        result.put("scopes", granted);
+        if (!granted.toString().contains("calendar.events") || !granted.toString().contains("calendar.readonly")) throw new ProviderException("SCOPES", "Permissions requises.");
+        JSONObject calendar = google("GET", "https://www.googleapis.com/calendar/v3/users/me/calendarList/primary", null, null);
+        String role = calendar.optString("accessRole");
+        if (!role.equals("owner") && !role.equals("writer")) throw new ProviderException("CALENDAR", "Calendrier non accessible en écriture.");
+        result.put("calendar", "primary"); capabilities.put("calendar");
+      }
+      result.put("tested", true).put("testedAt", System.currentTimeMillis()).put("capabilities", capabilities);
+    } catch (ProviderException e) {
+      try { result.put("code", e.code).put("requiresReauth", e.code.equals("REAUTH_REQUIRED") || e.code.equals("SCOPES") || e.code.equals("HTTP_403")); } catch (JSONException ignored) { }
+    } catch (Exception e) { try { result.put("code", "NETWORK"); } catch (JSONException ignored) { } }
+    try { if (diagnostics.containsKey(provider)) result.put("lastSync", diagnostics.get(provider).optLong("lastSync", 0)); } catch (JSONException ignored) { }
+    diagnostics.put(provider, result);
+    return status(provider, clientId);
+  }
   private String authorize(String provider, String clientId, String endpoint, String scopes) {
     if (clientId.isEmpty()) return failure("NOT_CONFIGURED", provider.equals("google") ? "Google autonome non configuré" : "Twitch autonome non configuré");
     try {
+      diagnostics.remove(provider);
       String verifier = random(48), state = random(24), challenge = base64(MessageDigest.getInstance("SHA-256").digest(verifier.getBytes(StandardCharsets.US_ASCII)));
       long now = System.currentTimeMillis();
       JSONObject pending = new JSONObject()
@@ -108,8 +175,22 @@ public final class ProviderBridge {
     String refresh = token.optString("refresh_token"); if (refresh.isEmpty()) throw new ProviderException("REAUTH_REQUIRED", "Reconnectez le provider autonome.");
     String clientId = provider.equals("twitch") ? BuildConfig.TWITCH_ANDROID_CLIENT_ID : BuildConfig.GOOGLE_ANDROID_CLIENT_ID;
     String endpoint = provider.equals("twitch") ? "https://id.twitch.tv/oauth2/token" : "https://oauth2.googleapis.com/token";
-    JSONObject fresh = request("POST", endpoint, null, form(Map.of("client_id",clientId,"refresh_token",refresh,"grant_type","refresh_token")), null);
+    JSONObject fresh;
+    try { fresh = request("POST", endpoint, null, form(Map.of("client_id",clientId,"refresh_token",refresh,"grant_type","refresh_token")), null); }
+    catch (ProviderException e) { if (e.code.equals("HTTP_400") || e.code.equals("REAUTH_REQUIRED")) throw new ProviderException("REAUTH_REQUIRED", "Réautoriser ce compte."); throw e; }
+    if (!fresh.has("scope")) fresh.put("scope", token.optString("scope"));
     if (!fresh.has("refresh_token")) fresh.put("refresh_token", refresh); fresh.put("obtained_at", System.currentTimeMillis()); credentials.put(provider, fresh.toString()); return fresh;
+  }
+  private void requirePublication(String provider) throws Exception {
+    JSONObject result = new JSONObject(testProvider(provider));
+    if (!result.optBoolean("tested")) throw new ProviderException(result.optString("code", "SCOPES"), "Tester les permissions de ce compte avant publication.");
+  }
+  private JSONObject recordSync(String provider, JSONObject value) throws Exception {
+    JSONObject result = diagnostics.get(provider);
+    long now = System.currentTimeMillis();
+    credentials.put(provider + "_last_sync", Long.toString(now));
+    if (result != null) result.put("lastSync", now);
+    return value;
   }
   private JSONObject twitchSearch(String query) throws Exception {
     query = limited(query, 80); if (query.trim().length() < 2) return ok().put("items", new JSONArray());
@@ -117,6 +198,7 @@ public final class ProviderBridge {
     return ok().put("items", value.getJSONArray("data"));
   }
   private JSONObject twitchMutate(String action, JSONObject input) throws Exception {
+    requirePublication("twitch");
     JSONObject event = input.getJSONObject("event"), link = input.optJSONObject("link"); if (link == null) link = new JSONObject();
     String broadcaster = twitchUserId(), remoteId = limited(link.optString("remoteId"), 120);
     if (action.equals("delete")) { requireId(remoteId); twitch("DELETE", "https://api.twitch.tv/helix/schedule/segment?broadcaster_id="+enc(broadcaster)+"&id="+enc(remoteId), null); return ok().put("remoteId", remoteId); }
@@ -132,6 +214,7 @@ public final class ProviderBridge {
     return ok().put("remoteId", segment.getString("id")).put("fingerprint", twitchFingerprint(segment)).put("remoteSnapshot", segment);
   }
   private JSONObject googleMutate(String action, JSONObject input) throws Exception {
+    requirePublication("google");
     JSONObject event=input.getJSONObject("event"), link=input.optJSONObject("link"); if(link==null)link=new JSONObject();
     String calendar=limited(link.optString("calendarId","primary"),200), remoteId=limited(link.optString("remoteId"),200);
     String base="https://www.googleapis.com/calendar/v3/calendars/"+enc(calendar)+"/events";
@@ -160,6 +243,14 @@ public final class ProviderBridge {
     return new String(out.toByteArray(), StandardCharsets.UTF_8);
   }
   private interface Work { JSONObject run()throws Exception; }
+  private String guardedMutation(String provider, Work work) {
+    try { return recordSync(provider, work.run()).put("ok", true).toString(); }
+    catch (Exception e) {
+      String code = e instanceof ProviderException ? ((ProviderException)e).code : "NETWORK";
+      try { diagnostics.put(provider, ok().put("code", code).put("tested", false)); } catch (JSONException ignored) { }
+      return failure(code, "Publication refusée : vérifier le diagnostic du compte.", e instanceof ProviderException ? ((ProviderException)e).current : null);
+    }
+  }
   private String guarded(Work work){try{return work.run().put("ok",true).toString();}catch(ProviderException e){return failure(e.code,e.getMessage(),e.current);}catch(Exception e){return failure("NETWORK","Provider temporairement indisponible.");}}
   private static JSONObject body(String raw)throws Exception {if(raw==null||raw.length()>16_000)throw new ProviderException("INVALID_PAYLOAD","Payload provider invalide.");return new JSONObject(raw);}
   private static String limited(String value,int max)throws Exception {if(value==null)return "";if(value.length()>max)throw new ProviderException("INVALID_PAYLOAD","Champ provider trop long.");return value;}
