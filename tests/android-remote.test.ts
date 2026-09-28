@@ -40,6 +40,11 @@ describe('Android remote runtime', () => {
     expect(mobileScript).not.toMatch(/selectTab[\s\S]{0,300}(connect\(|location\.reload)/);
     expect(mobileIndex).toContain('+ Ajouter');
   });
+  it('conserve la publication locale lors des créations et éditions Planning mobile', () => {
+    expect(mobileScript).toContain("desiredPublication: { local: true, twitch: form.get('twitch') === 'on', google: form.get('google') === 'on' }");
+    expect(mobileScript).not.toContain("desiredPublication: { local: false");
+  });
+
   it('propose les trois périodes d’export et une note éditoriale persistante', () => {
     for (const period of ['today', 'this-week', 'next-week']) expect(mobileIndex).toContain(`value="${period}"`);
     expect(mobileIndex).toContain('id="export-note-enabled"');
