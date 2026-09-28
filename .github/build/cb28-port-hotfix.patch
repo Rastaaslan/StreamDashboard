@@ -1,0 +1,45 @@
+diff --git a/apps/desktop/src/lifecycle.ts b/apps/desktop/src/lifecycle.ts
+index 7d57113..39ffdac 100644
+--- a/apps/desktop/src/lifecycle.ts
++++ b/apps/desktop/src/lifecycle.ts
+@@ -23,8 +23,7 @@ export async function startDesktopRuntime(): Promise<DesktopRuntime> {
+   const obsResult = await launchObsIfRequested(launchObs, obsExecutablePath);
+   await logger.info(obsResult.detail).catch(() => undefined);
+   const dashboard = await startDashboardServer({
+-    // A stable desktop port is required by OBS Browser Sources and paired phones.
+-    // If it is occupied, fail loudly instead of silently changing the overlay/mobile URL.
++    // Prefer a stable port for OBS and phones; the server falls back if unavailable.
+     port: 47832,
+     host: remoteEnabled ? '0.0.0.0' : '127.0.0.1',
+     remoteEnabled,
+diff --git a/apps/server/src/index.ts b/apps/server/src/index.ts
+index e92de0d..67052c8 100644
+--- a/apps/server/src/index.ts
++++ b/apps/server/src/index.ts
+@@ -2307,10 +2307,23 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
+   });
+ 
+   await Promise.all([mkdir(dataDir, { recursive: true }), mkdir(soundLibraryDir, { recursive: true })]);
+-  await new Promise<void>((resolve, reject) => {
+-    server.once('error', reject);
+-    server.listen(requestedPort, host, () => { server.off('error', reject); resolve(); });
++  const listen = (port: number) => new Promise<void>((resolve, reject) => {
++    const cleanup = () => { server.off('error', onError); server.off('listening', onListening); };
++    const onError = (error: Error) => { cleanup(); reject(error); };
++    const onListening = () => { cleanup(); resolve(); };
++    server.once('error', onError);
++    server.once('listening', onListening);
++    try { server.listen(port, host); } catch (error) { cleanup(); reject(error); }
+   });
++  try {
++    await listen(requestedPort);
++  } catch (error) {
++    const code = (error as NodeJS.ErrnoException).code;
++    if (requestedPort === 0 || (code !== 'EACCES' && code !== 'EADDRINUSE')) throw error;
++    // Keep the LAN binding and retry only once; the OS chooses the available port.
++    void Promise.resolve().then(() => logger.warn(`StreamDashboard: listen ${code} on ${host}:${requestedPort}; falling back to an ephemeral port (0).`)).catch(() => undefined);
++    await listen(0);
++  }
+   const address = server.address();
+   const actualPort = typeof address === 'object' && address ? address.port : requestedPort;
+   runtimePort = actualPort;

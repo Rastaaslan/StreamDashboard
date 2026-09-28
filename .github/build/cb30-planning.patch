@@ -1,0 +1,59 @@
+diff --git a/apps/web/preview/preview.js b/apps/web/preview/preview.js
+index 354f6fe..94d2573 100644
+--- a/apps/web/preview/preview.js
++++ b/apps/web/preview/preview.js
+@@ -699,7 +699,11 @@ function camp(){
+   const navigation=campGroups.map(group=>{const items=group.items.filter(campItemEnabled);return items.length?`<div class="camp-nav-group"><span class="camp-nav-label">${group.label}</span>${items.map(item=>`<button class="${state.campItem===item?'active':''}" data-camp="${item}">${item}</button>`).join('')}</div>`:''}).join('');
+   return`<div class="camp-grid"><section class="section camp-nav">${navigation}</section><section class="section empty-detail"><p class="eyebrow">APPLICATION</p><h2 id="camp-title">${esc(state.campItem)}</h2><div id="camp-copy">${campContent(state.campItem)}</div></section></div>`
+ }
+-function render(){deferredRuntimeRender=false;projectProductShell();if(state.view==='camp')ensureCampItem();const names={home:['Accueil','COCKPIT'],live:['Live','EN DIRECT'],sounds:['Sons','BIBLIOTHÈQUE'],planning:['Planning','PLANNING'],camp:['Application','CONFIGURATION']};[title.textContent,eyebrow.textContent]=names[state.view];view.innerHTML=({home,live,sounds:soundboard,planning,camp}[state.view])();document.querySelectorAll('[data-view]').forEach(b=>b.setAttribute('aria-current',b.dataset.view===state.view?'page':'false'));bind();applyActionGuards();mountThumbnails()}
++function render(){
++  // The open Planning editor owns its DOM and draft until an explicit close.
++  // This also covers runtime refresh/reconnect paths which bypass updateRuntimeView.
++  if(document.querySelector('#event-dialog').open){deferredRuntimeRender=true;return}
++  deferredRuntimeRender=false;projectProductShell();if(state.view==='camp')ensureCampItem();const names={home:['Accueil','COCKPIT'],live:['Live','EN DIRECT'],sounds:['Sons','BIBLIOTHÈQUE'],planning:['Planning','PLANNING'],camp:['Application','CONFIGURATION']};[title.textContent,eyebrow.textContent]=names[state.view];view.innerHTML=({home,live,sounds:soundboard,planning,camp}[state.view])();document.querySelectorAll('[data-view]').forEach(b=>b.setAttribute('aria-current',b.dataset.view===state.view?'page':'false'));bind();applyActionGuards();mountThumbnails()}
+ function mountThumbnails(){
+   document.querySelectorAll('[data-planning-thumbnail]').forEach(host=>{
+     const item=state.visiblePlanning?.[Number(host.dataset.planningThumbnail)]?.raw||{};
+@@ -1061,6 +1065,7 @@ async function openEventDialog(item=null,template=null){
+   populateEventForm(seed,state.eventEdit?.scope||'item');
+   if(template){document.querySelector('#event-title').value=template.title||'';document.querySelector('#event-description').value=template.description||'';document.querySelector('#event-twitch-category').value=template.twitchCategoryName||'';document.querySelector('#event-twitch-game-id').value=template.twitchCategoryId||'';document.querySelector('#event-publish-twitch').checked=template.desiredPublication?.twitch===true;document.querySelector('#event-publish-google').checked=template.desiredPublication?.google===true}
+   document.querySelector('#event-dialog').showModal();
++  document.querySelector('#event-title').focus();
+ }
+ let eventCategoryTimer;
+ document.querySelector('#event-twitch-category').oninput=()=>{clearTimeout(eventCategoryTimer);eventCategoryTimer=setTimeout(()=>void searchEventCategory(),300)};
+@@ -1072,7 +1077,7 @@ function recurrenceFromEventForm(){
+   return{frequency,interval:Number(interval),timeZone:Intl.DateTimeFormat().resolvedOptions().timeZone||'Europe/Paris',...(until?{until:new Date(`${until}T23:59:59`).toISOString()}:{})};
+ }
+ document.querySelector('#event-form').onsubmit=async event=>{
+-  event.preventDefault();const date=document.querySelector('#event-date').value,start=document.querySelector('#event-start').value,end=document.querySelector('#event-end').value;
++  event.preventDefault();const form=event.currentTarget;const date=document.querySelector('#event-date').value,start=document.querySelector('#event-start').value,end=document.querySelector('#event-end').value;
+   const startDate=new Date(`${date}T${start}`),endDate=new Date(`${date}T${end}`);if(endDate<=startDate)endDate.setDate(endDate.getDate()+1);
+   const category=document.querySelector('#event-category').value,publishTwitch=document.querySelector('#event-publish-twitch').checked,publishGoogle=document.querySelector('#event-publish-google').checked,gameId=document.querySelector('#event-twitch-game-id').value,gameName=document.querySelector('#event-twitch-category').value.trim();
+   if(publishTwitch&&!gameId)return toast('Choisis une catégorie Twitch officielle.',true);
+@@ -1086,7 +1091,7 @@ document.querySelector('#event-form').onsubmit=async event=>{
+     }else{
+       const source=state.eventEdit.scope==='series'?state.eventEdit.series:state.eventEdit.occurrence;item.recurrence=recurrenceFromEventForm()||null;await request(`/api/v1/planning/${encodeURIComponent(source.id)}`,{method:'PUT',body:JSON.stringify({...item,confirmRecurring:true})});
+     }
+-    document.querySelector('#event-dialog').close();state.eventEdit=null;event.currentTarget.reset();await refreshRuntime();toast('Événement enregistré');
++    document.querySelector('#event-dialog').close();state.eventEdit=null;form.reset();await refreshRuntime();toast('Événement enregistré');
+   }catch(error){toast(error.message,true)}
+ };
+ document.querySelector('#event-delete').onclick=async()=>{
+@@ -1097,10 +1102,14 @@ document.querySelector('#event-delete').onclick=async()=>{
+     document.querySelector('#event-dialog').close();state.eventEdit=null;await refreshRuntime();toast('Événement supprimé');
+   }catch(error){toast(error.message,true)}
+ };
++document.querySelector('#event-dialog').addEventListener('close',()=>{
++  state.eventEdit=null;
++  if(deferredRuntimeRender)render();
++});
+ document.querySelectorAll('[data-close-dialog]').forEach(button=>button.onclick=()=>document.querySelector(`#${button.dataset.closeDialog}`).close());
+ document.querySelectorAll('[data-view]').forEach(b=>b.onclick=()=>{state.view=b.dataset.view;render()});
+ document.querySelector('#mode').onclick=async e=>{state.runtime=!state.runtime;e.currentTarget.textContent=state.runtime?'Runtime':'Démo';document.querySelector('.preview-mode span').textContent=state.runtime?'APERÇU · RUNTIME PC':'APERÇU · AUCUNE COMMANDE RÉELLE';runtimeUi(state.runtime,state.runtime?'Connexion au Runtime…':'Aucune commande réelle');if(state.runtime){await refreshRuntime();if(state.campItem==='Alertes viewers')await loadStreamerPingRewards()}else{closeRuntimeSocket();state.scene=fixture.live.scene;state.sounds=structuredClone(fixture.sounds);state.audio=structuredClone(fixture.audio);state.live=structuredClone(fixture.live);state.planning=structuredClone(fixture.planning);state.dashboard=null;state.remotePairing=null;state.twitchRewards=null;applyProduct({profile:structuredClone(demoProductProfile),modules:structuredClone(demoModuleStates)},[]);syncStreamerPing();render()}toast(state.runtime?'Mode Runtime activé':'Mode Démo activé')};
+-window.addEventListener('keydown',e=>{if(e.altKey&&['1','2','3','4'].includes(e.key)){e.preventDefault();state.view=['home','live','sounds','planning'][+e.key-1];render()}});
++window.addEventListener('keydown',e=>{if(document.querySelector('#event-dialog').open)return;if(e.altKey&&['1','2','3','4'].includes(e.key)){e.preventDefault();state.view=['home','live','sounds','planning'][+e.key-1];render()}});
+ setInterval(()=>{if(state.runtime&&state.timerRunning){state.seconds=Math.max(0,state.seconds-1);if(state.view==='live'){const timer=document.querySelector('.timer-value');if(timer)timer.textContent=formatDuration(state.seconds)}}},1000);
+ window.addEventListener('beforeunload',closeRuntimeSocket);
+ document.documentElement.dataset.appReady='true';

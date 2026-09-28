@@ -1,0 +1,127 @@
+name: CB19 final test artifacts
+
+on:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout CB7 build base
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Apply verified CB19 final patch
+        shell: bash
+        run: |
+          base64 -d .github/build/cb19-final.patch.gz.b64 > "$RUNNER_TEMP/cb19.patch.gz"
+          echo "8126ccbad2a4721611abdec85e716d8286528fec1752475249cb52660144cbb5  $RUNNER_TEMP/cb19.patch.gz" | sha256sum -c -
+          gzip -dc "$RUNNER_TEMP/cb19.patch.gz" > "$RUNNER_TEMP/cb19.patch"
+          echo "f48406c5a55750c85eb407b57169eb6ee06b52416595a89d55c6ec8519ba98d8  $RUNNER_TEMP/cb19.patch" | sha256sum -c -
+          git apply --check --binary "$RUNNER_TEMP/cb19.patch"
+          git apply --binary "$RUNNER_TEMP/cb19.patch"
+          git apply --check .github/build/cb28-port-hotfix.patch
+          git apply .github/build/cb28-port-hotfix.patch
+          git apply --check .github/build/cb29-connections.patch
+          git apply .github/build/cb29-connections.patch
+          git apply --check .github/build/cb30-planning.patch
+          git apply .github/build/cb30-planning.patch
+
+      - name: Setup Node
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Package Windows x64
+        env:
+          GOOGLE_CLIENT_ID: 206682842774-lu1efnct6o2cjn3jrtgo2a33r2amontq.apps.googleusercontent.com
+        run: npm run desktop:package
+
+      - name: Upload EXE
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
+        with:
+          name: StreamDashboard-exe-x64
+          path: out/StreamDashboard-win32-x64/StreamDashboard.exe
+          if-no-files-found: error
+
+      - name: Upload runnable Windows package
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
+        with:
+          name: StreamDashboard-Windows-x64-test
+          path: out/StreamDashboard-win32-x64/**
+          if-no-files-found: error
+
+  android-preview:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - name: Checkout CB7 build base
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Apply verified CB19 final patch
+        shell: bash
+        run: |
+          base64 -d .github/build/cb19-final.patch.gz.b64 > "$RUNNER_TEMP/cb19.patch.gz"
+          echo "8126ccbad2a4721611abdec85e716d8286528fec1752475249cb52660144cbb5  $RUNNER_TEMP/cb19.patch.gz" | sha256sum -c -
+          gzip -dc "$RUNNER_TEMP/cb19.patch.gz" > "$RUNNER_TEMP/cb19.patch"
+          echo "f48406c5a55750c85eb407b57169eb6ee06b52416595a89d55c6ec8519ba98d8  $RUNNER_TEMP/cb19.patch" | sha256sum -c -
+          git apply --check --binary "$RUNNER_TEMP/cb19.patch"
+          git apply --binary "$RUNNER_TEMP/cb19.patch"
+          git apply --check .github/build/cb28-port-hotfix.patch
+          git apply .github/build/cb28-port-hotfix.patch
+          git apply --check .github/build/cb29-connections.patch
+          git apply .github/build/cb29-connections.patch
+          git apply --check .github/build/cb30-planning.patch
+          git apply .github/build/cb30-planning.patch
+
+      - name: Setup Node
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Setup Java
+        uses: actions/setup-java@dded0888837ed1f317902acf8a20df0ad188d165 # v5.0.0
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@07976c6290703d34c16d382cb36445f98bb43b1f # v3.2.2
+        with:
+          packages: 'platform-tools platforms;android-35 build-tools;35.0.0'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Synchronize Android assets
+        run: npm run android:sync
+
+      - name: Build Preview APK
+        run: |
+          chmod +x android/gradlew
+          ./android/gradlew -p android --no-daemon assemblePreview
+          cp android/app/build/outputs/apk/preview/app-preview.apk StreamDashboard-CB19-Preview.apk
+
+      - name: Verify Preview APK
+        shell: bash
+        run: |
+          test -s StreamDashboard-CB19-Preview.apk
+          "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --verbose StreamDashboard-CB19-Preview.apk
+          "$ANDROID_HOME/build-tools/35.0.0/aapt" dump badging StreamDashboard-CB19-Preview.apk | grep -F "package: name='com.rastaaslan.streamdashboard.remote.preview'"
+          "$ANDROID_HOME/build-tools/35.0.0/aapt" dump badging StreamDashboard-CB19-Preview.apk | grep -F "application-label:'StreamDashboard Preview'"
+
+      - name: Upload Preview APK
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
+        with:
+          name: StreamDashboard-CB19-Preview
+          path: StreamDashboard-CB19-Preview.apk
+          if-no-files-found: error

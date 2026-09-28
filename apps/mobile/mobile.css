@@ -81,3 +81,12 @@ dialog{width:min(540px,calc(100vw - 20px));max-height:88vh;border:1px solid var(
 .planning-row[role="button"]{cursor:pointer;outline:none}
 .planning-row[role="button"]:focus-visible{box-shadow:inset 3px 0 var(--accent);padding-left:8px}
 .planning-row[role="button"]:active{background:color-mix(in srgb,var(--accent) 5%,transparent)}
+
+#operating-mode{font-size:.7rem;max-width:35%;text-align:center}#sync-center{max-height:85dvh;overflow-y:auto}#sync-providers>div{padding:.65rem 0;border-top:1px solid var(--border,#333)}#sync-error{color:var(--danger,#ff8080)}.provider-syncing{opacity:.8}
+/* Shared Twitch artwork treatment; the fallback never relies on a remote asset. */
+.twitch-thumbnail{position:relative;display:grid;place-items:center;overflow:hidden;flex-shrink:0;width:72px;height:96px;border-radius:10px;background:linear-gradient(135deg,#30234d,#171322);color:#bca8ff;margin-top:8px}
+.twitch-thumbnail.landscape{width:160px;height:90px}
+.twitch-thumbnail canvas{width:100%;height:100%;object-fit:cover}
+.twitch-thumbnail>span{font-size:24px}
+.twitch-thumbnail>button{position:absolute;right:2px;bottom:2px;min-width:32px;min-height:32px;padding:3px;border:1px solid #bca8ff;border-radius:8px;background:#171322;color:#fff;font-size:18px}
+.twitch-thumbnail.portrait{width:min(72px,100%);height:auto;aspect-ratio:3/4}

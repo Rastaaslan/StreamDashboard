@@ -1,3 +1,4 @@
+import { thumbnailUrl, createThumbnailCache } from './thumbnails.js';
 import { filterPlanning, weekAgenda } from './planning-model.js';
 
 export const PLANNING_CANVAS = Object.freeze({ width: 1080, height: 1350 });
@@ -55,10 +56,6 @@ export function fitCanvasText(ctx, value, { maxWidth, maxLines = 2, maxSize, min
   return { size: minSize, lines: wrapCanvasText(ctx, value, maxWidth, maxLines) };
 }
 
-function twitchArtworkUrl(value, width = 285, height = 380) {
-  return String(value || '').replace('{width}', String(width)).replace('{height}', String(height));
-}
-
 function fallbackTwitchArtworkUrl(item) {
   const categoryId = String(item?.twitchCategoryId || '').trim();
   if (!/^\d+$/.test(categoryId)) return '';
@@ -66,16 +63,25 @@ function fallbackTwitchArtworkUrl(item) {
 }
 
 /** Loads remote artwork through a blob URL, so a permissive remote response cannot taint the canvas. */
-export async function loadArtwork(url, { timeoutMs = 3500, fetchApi = globalThis.fetch, imageFactory = () => new Image(), urlApi = globalThis.URL } = {}) {
+const artworkCache = createThumbnailCache();
+export function loadArtwork(url, options = {}) {
+  const safe = thumbnailUrl(url);
+  if (!safe) return Promise.resolve(null);
+  // Injected transports have isolated lifetimes (tests and platform integrations).
+  if (options.fetchApi || options.imageFactory) return fetchArtwork(safe, options);
+  return artworkCache.load(safe, source => fetchArtwork(source, options), { refresh: options.refresh === true });
+}
+
+async function fetchArtwork(url, { timeoutMs = 3500, fetchApi = globalThis.fetch, imageFactory = () => new Image(), urlApi = globalThis.URL } = {}) {
   if (!url || !fetchApi || !urlApi?.createObjectURL) return null;
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), timeoutMs);
-  let objectUrl;
+  let objectUrl, image;
   try {
-    const response = await fetchApi(twitchArtworkUrl(url), { signal: controller.signal, mode: 'cors', credentials: 'omit' });
+    const response = await fetchApi(url, { signal: controller.signal, mode: 'cors', credentials: 'omit', referrerPolicy: 'no-referrer', redirect: 'error', cache: 'reload' });
     if (!response.ok) return null;
     objectUrl = urlApi.createObjectURL(await response.blob());
-    const image = imageFactory();
+    image = imageFactory();
     await new Promise((resolve, reject) => {
       const imageTimeout = setTimeout(() => reject(new Error('Artwork timeout')), timeoutMs);
       image.onload = () => { clearTimeout(imageTimeout); resolve(); };
@@ -84,7 +90,7 @@ export async function loadArtwork(url, { timeoutMs = 3500, fetchApi = globalThis
     });
     return image;
   } catch { return null; }
-  finally { clearTimeout(timeout); if (objectUrl) urlApi.revokeObjectURL(objectUrl); }
+  finally { clearTimeout(timeout); if (image) image.onload = image.onerror = null; if (objectUrl) urlApi.revokeObjectURL(objectUrl); }
 }
 
 export function drawCoverImage(ctx, image, box) {

@@ -55,3 +55,11 @@ android {
         }
     }
 }
+
+// Enforce this for local builds as well as CI artifact publication.
+gradle.taskGraph.whenReady { graph ->
+    if (graph.allTasks.any { it.name == 'preReleaseBuild' } &&
+        (!twitchAndroidClientId.trim() || !googleAndroidClientId.trim())) {
+        throw new GradleException('Release requires TWITCH_ANDROID_CLIENT_ID and GOOGLE_ANDROID_CLIENT_ID')
+    }
+}
