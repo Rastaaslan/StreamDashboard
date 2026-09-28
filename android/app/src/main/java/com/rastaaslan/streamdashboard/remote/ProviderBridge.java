@@ -1,9 +1,20 @@
 package com.rastaaslan.streamdashboard.remote;
 
+import android.accounts.Account;
 import android.app.Activity;
+import android.app.PendingIntent;
 import android.content.Intent;
+import android.content.IntentSender;
 import android.net.Uri;
 import android.webkit.JavascriptInterface;
+import com.google.android.gms.auth.api.identity.AuthorizationClient;
+import com.google.android.gms.auth.api.identity.AuthorizationRequest;
+import com.google.android.gms.auth.api.identity.AuthorizationResult;
+import com.google.android.gms.auth.api.identity.Identity;
+import com.google.android.gms.auth.api.identity.RevokeAccessRequest;
+import com.google.android.gms.auth.api.signin.GoogleSignInAccount;
+import com.google.android.gms.common.api.Scope;
+import com.google.android.gms.tasks.Tasks;
 import java.io.*;
 import java.net.*;
 import java.nio.charset.StandardCharsets;
@@ -16,18 +27,27 @@ import org.json.*;
 /** Narrow, local-origin-only provider API. OAuth credentials never cross this bridge. */
 public final class ProviderBridge {
   private static final String TWITCH_SCOPES = "channel:manage:schedule channel:read:schedule";
-  private static final String GOOGLE_SCOPES = "https://www.googleapis.com/auth/calendar.events https://www.googleapis.com/auth/calendar.readonly";
+  private static final List<Scope> GOOGLE_SCOPES = Arrays.asList(
+    new Scope("https://www.googleapis.com/auth/calendar.events"),
+    new Scope("https://www.googleapis.com/auth/calendar.readonly")
+  );
+  private static final int GOOGLE_AUTH_REQUEST_CODE = 7102;
   private static final long OAUTH_PENDING_TTL_MS = 10 * 60_000L;
   private final Activity activity;
   private final SecureCredentialStore credentials;
+  private final AuthorizationClient googleAuthorization;
 
-  ProviderBridge(Activity activity) { this.activity = activity; credentials = new SecureCredentialStore(activity); }
+  ProviderBridge(Activity activity) {
+    this.activity = activity;
+    credentials = new SecureCredentialStore(activity);
+    googleAuthorization = Identity.getAuthorizationClient(activity);
+  }
   @JavascriptInterface public String twitchStatus(String ignored) { return status("twitch", BuildConfig.TWITCH_ANDROID_CLIENT_ID); }
-  @JavascriptInterface public String googleStatus(String ignored) { return status("google", BuildConfig.GOOGLE_ANDROID_CLIENT_ID); }
+  @JavascriptInterface public String googleStatus(String ignored) { return googleStatus(); }
   @JavascriptInterface public String twitchAuthorize(String ignored) { return authorize("twitch", BuildConfig.TWITCH_ANDROID_CLIENT_ID, "https://id.twitch.tv/oauth2/authorize", TWITCH_SCOPES); }
-  @JavascriptInterface public String googleAuthorize(String ignored) { return authorize("google", BuildConfig.GOOGLE_ANDROID_CLIENT_ID, "https://accounts.google.com/o/oauth2/v2/auth", GOOGLE_SCOPES); }
+  @JavascriptInterface public String googleAuthorize(String ignored) { return authorizeGoogle(); }
   @JavascriptInterface public String twitchLogout(String ignored) { credentials.clear("twitch"); credentials.clear(pendingKey("twitch")); return ok().toString(); }
-  @JavascriptInterface public String googleLogout(String ignored) { credentials.clear("google"); credentials.clear(pendingKey("google")); return ok().toString(); }
+  @JavascriptInterface public String googleLogout(String ignored) { return logoutGoogle(); }
   @JavascriptInterface public String twitchSearchCategories(String raw) { return guarded(() -> twitchSearch(body(raw).optString("query"))); }
   @JavascriptInterface public String twitchCreatePlanning(String raw) { return guarded(() -> twitchMutate("create", body(raw))); }
   @JavascriptInterface public String twitchUpdatePlanning(String raw) { return guarded(() -> twitchMutate("update", body(raw))); }
@@ -39,20 +59,47 @@ public final class ProviderBridge {
   void acceptOAuthCallback(Uri uri) {
     if (uri == null || DeepLinkRouter.route(uri.toString()) != DeepLinkRouter.Route.OAUTH) return;
     String provider = uri.getQueryParameter("provider");
+    if (!"twitch".equals(provider)) return;
     String code = uri.getQueryParameter("code");
     String state = uri.getQueryParameter("state");
-    if (!"twitch".equals(provider) && !"google".equals(provider)) return;
-    if (code == null || state == null) { notifyAuth(provider, false); return; }
+    if (code == null || state == null) { notifyAuth("twitch", false); return; }
     final String verifier;
-    try { verifier = consumePendingVerifier(provider, state); }
-    catch (Exception ignored) { notifyAuth(provider, false); return; }
-    if (verifier == null) { notifyAuth(provider, false); return; }
-    final String selected = provider;
-    new Thread(() -> { try { exchangeCode(selected, code, verifier); notifyAuth(selected, true); } catch (Exception ignored) { notifyAuth(selected, false); } }).start();
+    try { verifier = consumePendingVerifier("twitch", state); }
+    catch (Exception ignored) { notifyAuth("twitch", false); return; }
+    if (verifier == null) { notifyAuth("twitch", false); return; }
+    new Thread(() -> { try { exchangeTwitchCode(code, verifier); notifyAuth("twitch", true); } catch (Exception ignored) { notifyAuth("twitch", false); } }).start();
+  }
+
+  boolean handleActivityResult(int requestCode, int resultCode, Intent data) {
+    if (requestCode != GOOGLE_AUTH_REQUEST_CODE) return false;
+    if (resultCode != Activity.RESULT_OK || data == null) {
+      notifyAuth("google", false);
+      return true;
+    }
+    try {
+      AuthorizationResult result = googleAuthorization.getAuthorizationResultFromIntent(data);
+      saveGoogleAuthorization(result);
+      notifyAuth("google", true);
+    } catch (Exception ignored) {
+      notifyAuth("google", false);
+    }
+    return true;
   }
 
   private void notifyAuth(String provider, boolean connected) { activity.runOnUiThread(() -> ((MainActivity)activity).dispatchProviderAuth(provider, connected)); }
-  private String status(String provider, String clientId) { try { String label = provider.equals("google") ? "Google" : "Twitch"; return new JSONObject().put("ok", true).put("configured", !clientId.isEmpty()).put("connected", !credentials.get(provider).isEmpty()).put("message", clientId.isEmpty() ? label + " autonome non configuré" : JSONObject.NULL).toString(); } catch (Exception e) { return failure("INTERNAL", "État indisponible."); } }
+  private String status(String provider, String clientId) { try { String label = "Twitch"; return new JSONObject().put("ok", true).put("configured", !clientId.isEmpty()).put("connected", !credentials.get(provider).isEmpty()).put("message", clientId.isEmpty() ? label + " autonome non configuré" : JSONObject.NULL).toString(); } catch (Exception e) { return failure("INTERNAL", "État indisponible."); } }
+  private String googleStatus() {
+    try {
+      return new JSONObject()
+        .put("ok", true)
+        .put("configured", true)
+        .put("connected", !credentials.get("google").isEmpty())
+        .put("message", JSONObject.NULL)
+        .toString();
+    } catch (Exception e) {
+      return failure("INTERNAL", "État Google indisponible.");
+    }
+  }
   private String authorize(String provider, String clientId, String endpoint, String scopes) {
     if (clientId.isEmpty()) return failure("NOT_CONFIGURED", provider.equals("google") ? "Google autonome non configuré" : "Twitch autonome non configuré");
     try {
@@ -94,22 +141,125 @@ public final class ProviderBridge {
     return MessageDigest.isEqual(left.getBytes(StandardCharsets.UTF_8), right.getBytes(StandardCharsets.UTF_8));
   }
 
-  private void exchangeCode(String provider, String code, String verifier) throws Exception {
-    String clientId = provider.equals("twitch") ? BuildConfig.TWITCH_ANDROID_CLIENT_ID : BuildConfig.GOOGLE_ANDROID_CLIENT_ID;
-    String endpoint = provider.equals("twitch") ? "https://id.twitch.tv/oauth2/token" : "https://oauth2.googleapis.com/token";
-    String form = form(Map.of("client_id",clientId,"code",code,"code_verifier",verifier,"grant_type","authorization_code","redirect_uri","streamdashboard://oauth?provider="+provider));
-    JSONObject token = request("POST", endpoint, null, form, null);
-    token.put("obtained_at", System.currentTimeMillis()); credentials.put(provider, token.toString());
+  private AuthorizationRequest googleAuthorizationRequest() {
+    return AuthorizationRequest.builder().setRequestedScopes(GOOGLE_SCOPES).build();
   }
-  private synchronized JSONObject token(String provider) throws Exception {
-    JSONObject token = new JSONObject(credentials.get(provider));
+
+  private String authorizeGoogle() {
+    activity.runOnUiThread(() ->
+      googleAuthorization.authorize(googleAuthorizationRequest())
+        .addOnSuccessListener(result -> {
+          if (result.hasResolution()) {
+            PendingIntent pendingIntent = result.getPendingIntent();
+            if (pendingIntent == null) {
+              notifyAuth("google", false);
+              return;
+            }
+            try {
+              activity.startIntentSenderForResult(
+                pendingIntent.getIntentSender(),
+                GOOGLE_AUTH_REQUEST_CODE,
+                null,
+                0,
+                0,
+                0
+              );
+            } catch (IntentSender.SendIntentException error) {
+              notifyAuth("google", false);
+            }
+            return;
+          }
+          try {
+            saveGoogleAuthorization(result);
+            notifyAuth("google", true);
+          } catch (Exception error) {
+            notifyAuth("google", false);
+          }
+        })
+        .addOnFailureListener(error -> notifyAuth("google", false))
+    );
+    return ok().put("launched", true).toString();
+  }
+
+  private void saveGoogleAuthorization(AuthorizationResult result) throws Exception {
+    String accessToken = result.getAccessToken();
+    if (accessToken == null || accessToken.isEmpty()) throw new ProviderException("AUTH", "Autorisation Google incomplète.");
+    JSONObject marker = new JSONObject().put("connected", true);
+    GoogleSignInAccount signInAccount = result.toGoogleSignInAccount();
+    if (signInAccount != null && signInAccount.getAccount() != null) {
+      marker.put("account", signInAccount.getAccount().name);
+    }
+    credentials.put("google", marker.toString());
+  }
+
+  private String logoutGoogle() {
+    try {
+      String raw = credentials.get("google");
+      credentials.clear("google");
+      if (!raw.isEmpty()) {
+        String accountName = new JSONObject(raw).optString("account");
+        if (!accountName.isEmpty()) {
+          RevokeAccessRequest request = RevokeAccessRequest.builder()
+            .setAccount(new Account(accountName, "com.google"))
+            .setScopes(GOOGLE_SCOPES)
+            .build();
+          googleAuthorization.revokeAccess(request);
+        }
+      }
+      return ok().toString();
+    } catch (Exception error) {
+      credentials.clear("google");
+      return failure("AUTH", "Déconnexion Google locale effectuée, révocation distante indisponible.");
+    }
+  }
+
+  private String googleAccessToken() throws Exception {
+    AuthorizationResult result = Tasks.await(
+      googleAuthorization.authorize(googleAuthorizationRequest()),
+      15,
+      java.util.concurrent.TimeUnit.SECONDS
+    );
+    if (result.hasResolution() || result.getAccessToken() == null || result.getAccessToken().isEmpty()) {
+      throw new ProviderException("REAUTH_REQUIRED", "Reconnectez Google autonome.");
+    }
+    saveGoogleAuthorization(result);
+    return result.getAccessToken();
+  }
+
+  private void exchangeTwitchCode(String code, String verifier) throws Exception {
+    String form = form(Map.of(
+      "client_id", BuildConfig.TWITCH_ANDROID_CLIENT_ID,
+      "code", code,
+      "code_verifier", verifier,
+      "grant_type", "authorization_code",
+      "redirect_uri", "streamdashboard://oauth?provider=twitch"
+    ));
+    JSONObject token = request("POST", "https://id.twitch.tv/oauth2/token", null, form, null);
+    token.put("obtained_at", System.currentTimeMillis());
+    credentials.put("twitch", token.toString());
+  }
+
+  private synchronized JSONObject twitchToken() throws Exception {
+    JSONObject token = new JSONObject(credentials.get("twitch"));
     long expires = token.optLong("expires_in", 3600) * 1000L, obtained = token.optLong("obtained_at");
     if (System.currentTimeMillis() < obtained + expires - 60_000) return token;
-    String refresh = token.optString("refresh_token"); if (refresh.isEmpty()) throw new ProviderException("REAUTH_REQUIRED", "Reconnectez le provider autonome.");
-    String clientId = provider.equals("twitch") ? BuildConfig.TWITCH_ANDROID_CLIENT_ID : BuildConfig.GOOGLE_ANDROID_CLIENT_ID;
-    String endpoint = provider.equals("twitch") ? "https://id.twitch.tv/oauth2/token" : "https://oauth2.googleapis.com/token";
-    JSONObject fresh = request("POST", endpoint, null, form(Map.of("client_id",clientId,"refresh_token",refresh,"grant_type","refresh_token")), null);
-    if (!fresh.has("refresh_token")) fresh.put("refresh_token", refresh); fresh.put("obtained_at", System.currentTimeMillis()); credentials.put(provider, fresh.toString()); return fresh;
+    String refresh = token.optString("refresh_token");
+    if (refresh.isEmpty()) throw new ProviderException("REAUTH_REQUIRED", "Reconnectez Twitch autonome.");
+    JSONObject fresh = request(
+      "POST",
+      "https://id.twitch.tv/oauth2/token",
+      null,
+      form(Map.of(
+        "client_id", BuildConfig.TWITCH_ANDROID_CLIENT_ID,
+        "refresh_token", refresh,
+        "grant_type", "refresh_token"
+      )),
+      null
+    );
+    if (!fresh.has("refresh_token")) fresh.put("refresh_token", refresh);
+    fresh.put("obtained_at", System.currentTimeMillis());
+    credentials.put("twitch", fresh.toString());
+    return fresh;
   }
   private JSONObject twitchSearch(String query) throws Exception {
     query = limited(query, 80); if (query.trim().length() < 2) return ok().put("items", new JSONArray());
@@ -141,8 +291,8 @@ public final class ProviderBridge {
     JSONObject response=google(method,base,payload.toString(),action.equals("update")?link.optString("revision"):null);
     return ok().put("remoteId",response.getString("id")).put("calendarId",calendar).put("revision",response.optString("etag")).put("remoteSnapshot",response);
   }
-  private JSONObject twitch(String method,String url,String body)throws Exception { JSONObject t=token("twitch"); return request(method,url,body,null,Map.of("Authorization","Bearer "+t.getString("access_token"),"Client-Id",BuildConfig.TWITCH_ANDROID_CLIENT_ID)); }
-  private JSONObject google(String method,String url,String body,String etag)throws Exception { Map<String,String> h=new HashMap<>(); h.put("Authorization","Bearer "+token("google").getString("access_token")); if(etag!=null&&!etag.isEmpty())h.put("If-Match",etag); return request(method,url,body,null,h); }
+  private JSONObject twitch(String method,String url,String body)throws Exception { JSONObject t=twitchToken(); return request(method,url,body,null,Map.of("Authorization","Bearer "+t.getString("access_token"),"Client-Id",BuildConfig.TWITCH_ANDROID_CLIENT_ID)); }
+  private JSONObject google(String method,String url,String body,String etag)throws Exception { Map<String,String> h=new HashMap<>(); h.put("Authorization","Bearer "+googleAccessToken()); if(etag!=null&&!etag.isEmpty())h.put("If-Match",etag); return request(method,url,body,null,h); }
   private String twitchUserId()throws Exception { return twitch("GET","https://api.twitch.tv/helix/users",null).getJSONArray("data").getJSONObject(0).getString("id"); }
   private JSONObject request(String method,String address,String json,String form,Map<String,String> headers)throws Exception {
     HttpURLConnection c=(HttpURLConnection)new URL(address).openConnection(); c.setRequestMethod(method); c.setConnectTimeout(10000); c.setReadTimeout(15000); c.setRequestProperty("Accept","application/json");
