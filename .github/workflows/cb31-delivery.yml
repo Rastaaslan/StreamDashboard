@@ -63,7 +63,9 @@ jobs:
         with:
           distribution: temurin
           java-version: '17'
-      - uses: android-actions/setup-android@v3
+      - uses: android-actions/setup-android@07976c6290703d34c16d382cb36445f98bb43b1f # v3.2.2
+        with:
+          packages: ''
       - name: Rebuild validated snapshot
         shell: bash
         run: |
