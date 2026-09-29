@@ -70,8 +70,16 @@ test('Desktop Live runtime matrix: HTTP controls, custom scenes, confirmations a
     await expect(page.locator('[data-live-toggle]')).toContainText('Démarrer');
     await page.locator('[data-live-toggle]').click();
     await expect.poll(() => commands.map(c => c.type)).toEqual(['session.stop','session.prepare','session.start']);
-    await page.locator('[data-scene="Custom"]').click();
+    const custom = page.locator('[data-scene="Custom"]');
+    const customNode = await custom.elementHandle();
+    await custom.hover(); await page.mouse.down();
+    state.controlHub.audience.viewerCount = 18;
+    for (const socket of sockets.clients) socket.send(JSON.stringify({ type: 'state.updated', data: state }));
+    await expect(page.locator('.live-chat-panel .section-head .label')).toContainText('18 viewers');
+    assert.equal(await customNode.evaluate(node => node.isConnected), true);
+    await page.mouse.up();
     await expect.poll(() => commands.at(-1)).toMatchObject({ type: 'obs.scene', scene: 'Custom OBS' });
+    assert.equal(commands.filter(command => command.type === 'obs.scene').length, 1);
     // Return to the default mode mapping after verifying the ProductProfile override.
     profile.obs.scenes = [];
     await page.evaluate(() => { window.__preview.state.productProfile.obs.scenes = []; });
@@ -117,6 +125,30 @@ test('Desktop Live runtime matrix: HTTP controls, custom scenes, confirmations a
       await expect(page.locator('.live-chat-panel .section-head .label')).toContainText(`${count} viewers`);
       await expect(title).toBeFocused(); await expect(title).toHaveValue('Draft title');
     }
+    // A draft remains a draft after focus leaves the editor, across every update.
+    await chat.fill('Unsent chat draft');
+    await title.evaluate(input => input.blur());
+    await chat.evaluate(input => input.blur());
+    await expect(title).toHaveValue('Draft title');
+    for (const count of [26,27]) {
+      state.controlHub.audience.viewerCount = count;
+      for (const socket of sockets.clients) socket.send(JSON.stringify({ type: 'state.updated', data: state }));
+      await expect(page.locator('.live-chat-panel .section-head .label')).toContainText(`${count} viewers`);
+      await expect(title).toHaveValue('Draft title');
+      await expect(chat).toHaveValue('Unsent chat draft');
+    }
+    let releaseLate, markLate;
+    const lateGate = new Promise(resolve => { releaseLate = resolve; });
+    const lateStarted = new Promise(resolve => { markLate = resolve; });
+    await page.route('**/api/v1/state', async route => { markLate(); await lateGate; await route.fulfill({ json: state }); });
+    await page.locator('[data-timer="plus"]').click();
+    await lateStarted;
+    await page.locator('[data-timer="plus"]').evaluate(button => button.blur());
+    state.timer.remaining = 188;
+    releaseLate();
+    await page.waitForFunction(() => window.__preview.state.seconds === 188);
+    await expect(title).toHaveValue('Draft title');
+    await expect(chat).toHaveValue('Unsent chat draft');
     await page.locator('#live-twitch-category').fill('Test');
     await page.locator('[data-live-twitch-category-search]').click();
     await page.locator('#live-twitch-category-results').selectOption('42');

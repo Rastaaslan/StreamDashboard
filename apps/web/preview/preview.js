@@ -93,15 +93,45 @@ function record(type,payload={}){commandLog.push({type,payload})}
 let runtimeSocket=null,socketRetry=null;
 const editableFocus=()=>document.activeElement?.matches?.('input,select,textarea')||Boolean(document.querySelector('dialog[open]'));
 let deferredRuntimeRender=false;
+const liveDraftInputs=()=>[...view.querySelectorAll('#desktop-chat-form input,#live-twitch-settings input')];
+function captureLiveDrafts(){
+  if(state.view!=='live')return null;
+  const inputs=liveDraftInputs();
+  const dirty=input=>input.dataset.draftDirty==='true'||input.value!==input.dataset.draftBaseline;
+  // Hidden inputs change defaultValue when their value changes. Use our own
+  // baseline, and treat a category's display name and provider ID as one edit.
+  const categoryDirty=inputs.some(input=>['gameName','gameId'].includes(input.name)&&dirty(input));
+  return {
+    fields:inputs.map(input=>({form:input.form.id,name:input.name,value:input.value,dirty:dirty(input)||categoryDirty&&['gameName','gameId'].includes(input.name),focused:input===document.activeElement,start:input.selectionStart,end:input.selectionEnd})),
+    details:[...view.querySelectorAll('details')].map(details=>details.open),
+  };
+}
+function restoreLiveDrafts(draft){
+  if(!draft)return;
+  view.querySelectorAll('details').forEach((details,index)=>{details.open=draft.details[index]===true});
+  for(const field of draft.fields){
+    const input=document.getElementById(field.form)?.elements.namedItem(field.name);
+    if(!input)continue;
+    if(field.dirty){input.value=field.value;input.dataset.draftDirty='true'}
+    if(field.focused){input.focus({preventScroll:true});if(field.start!==null)input.setSelectionRange(field.start,field.end)}
+  }
+}
+function acknowledgeLiveSettings(submitted){
+  const form=document.querySelector('#live-twitch-settings');if(!form)return;
+  // A response owns only the submitted values, never text entered while it waited.
+  for(const names of [['title'],['gameName','gameId']]){
+    if(names.every(name=>form.elements.namedItem(name).value===submitted.get(name))){
+      for(const name of names){const input=form.elements.namedItem(name);input.dataset.draftBaseline=input.value;input.dataset.draftDirty='false'}
+    }
+  }
+}
+view.addEventListener('input',event=>{if(event.target.matches('#desktop-chat-form input,#live-twitch-settings input'))event.target.dataset.draftDirty='true'});
+view.addEventListener('change',event=>{if(event.target.matches('#live-twitch-category-results'))for(const name of ['gameName','gameId'])document.querySelector('#live-twitch-settings').elements.namedItem(name).dataset.draftDirty='true'});
 // Only structural rendering waits for interaction to finish; live telemetry never waits.
 view.addEventListener('focusout',()=>setTimeout(()=>{
   if(deferredRuntimeRender&&!view.contains(document.activeElement)&&!editableFocus()){
     // Structural catch-up must not discard a draft merely because focus moved to the sidebar.
-    const drafts=state.view==='live'?[...view.querySelectorAll('#desktop-chat-form input,#live-twitch-settings input')].map(input=>({form:input.form.id,name:input.name,value:input.value})):[];
-    const openDetails=[...view.querySelectorAll('details')].map(details=>details.open);
     deferredRuntimeRender=false;render();
-    for(const draft of drafts){const input=document.getElementById(draft.form)?.elements.namedItem(draft.name);if(input)input.value=draft.value}
-    view.querySelectorAll('details').forEach((details,index)=>{details.open=openDetails[index]===true});
   }
 }));
 function updateRuntimeView(){
@@ -724,7 +754,8 @@ function render(){
   // The open Planning editor owns its DOM and draft until an explicit close.
   // This also covers runtime refresh/reconnect paths which bypass updateRuntimeView.
   if(document.querySelector('#event-dialog').open){deferredRuntimeRender=true;return}
-  deferredRuntimeRender=false;projectProductShell();if(state.view==='camp')ensureCampItem();const names={home:['Accueil','COCKPIT'],live:['Live','EN DIRECT'],sounds:['Sons','BIBLIOTHÈQUE'],planning:['Planning','PLANNING'],camp:['Application','CONFIGURATION']};[title.textContent,eyebrow.textContent]=names[state.view];view.innerHTML=({home,live,sounds:soundboard,planning,camp}[state.view])();document.querySelectorAll('[data-view]').forEach(b=>b.setAttribute('aria-current',b.dataset.view===state.view?'page':'false'));bind();applyActionGuards();mountThumbnails()}
+  const draft=captureLiveDrafts();
+  deferredRuntimeRender=false;projectProductShell();if(state.view==='camp')ensureCampItem();const names={home:['Accueil','COCKPIT'],live:['Live','EN DIRECT'],sounds:['Sons','BIBLIOTHÈQUE'],planning:['Planning','PLANNING'],camp:['Application','CONFIGURATION']};[title.textContent,eyebrow.textContent]=names[state.view];view.innerHTML=({home,live,sounds:soundboard,planning,camp}[state.view])();document.querySelectorAll('[data-view]').forEach(b=>b.setAttribute('aria-current',b.dataset.view===state.view?'page':'false'));bind();restoreLiveDrafts(draft);applyActionGuards();mountThumbnails()}
 function mountThumbnails(){
   document.querySelectorAll('[data-planning-thumbnail]').forEach(host=>{
     const item=state.visiblePlanning?.[Number(host.dataset.planningThumbnail)]?.raw||{};
@@ -894,9 +925,10 @@ function bindPlanning(){
 function bindLiveTwitchSettings(){
   if(state.view!=='live'||!moduleEnabled('twitch'))return;
   document.querySelector('[data-live-twitch-category-search]')?.addEventListener('click',()=>void searchCategory('#live-twitch-category','#live-twitch-game-id','#live-twitch-category-results').catch(error=>toast(error.message,true)));
-  document.querySelector('#live-twitch-settings')?.addEventListener('submit',async event=>{event.preventDefault();if(!twitchCan('updateChannel'))return toast('Autorisation titre/catégorie requise.',true);const form=new FormData(event.currentTarget);try{const next=await request('/api/v1/twitch/channel',{method:'POST',body:JSON.stringify({title:String(form.get('title')||'').trim(),gameId:String(form.get('gameId')||''),gameName:String(form.get('gameName')||'').trim()})});applyDashboard(next);render();toast('Informations Twitch mises à jour')}catch(error){toast(error.message,true)}});
+  document.querySelector('#live-twitch-settings')?.addEventListener('submit',async event=>{event.preventDefault();if(!twitchCan('updateChannel'))return toast('Autorisation titre/catégorie requise.',true);const form=new FormData(event.currentTarget);try{const next=await request('/api/v1/twitch/channel',{method:'POST',body:JSON.stringify({title:String(form.get('title')||'').trim(),gameId:String(form.get('gameId')||''),gameName:String(form.get('gameName')||'').trim()})});acknowledgeLiveSettings(form);applyDashboard(next);render();toast('Informations Twitch mises à jour')}catch(error){toast(error.message,true)}});
 }
 function bind(){
+  for(const input of liveDraftInputs())input.dataset.draftBaseline=input.value;
   document.querySelector('[data-diagnostic-planning]')?.addEventListener('click',()=>{state.view='planning';render()});
   document.querySelector('[data-refresh-prelive]')?.addEventListener('click',async()=>{
     state.preliveCapabilities=null;
@@ -925,7 +957,7 @@ function bind(){
     if(action==='timer+60'){if(!state.runtime){state.seconds+=60;render();return}try{await dashboardCommand({type:'timer.add',seconds:60});await refreshRuntime()}catch(error){toast(error.message,true)};return}
     if(action==='mute-main'){const input=state.audio.find(value=>value.primary);if(!input)return toast('Aucun micro principal actif.',true);if(!state.runtime){input.muted=!input.muted;render();return}try{await dashboardCommand({type:'obs.mute',input:input.name,muted:!input.muted});await refreshRuntime()}catch(error){toast(error.message,true)}}
   }));
-  document.querySelector('#desktop-chat-form')?.addEventListener('submit',async event=>{event.preventDefault();const input=event.currentTarget.elements.namedItem('message'),message=String(input?.value||'').trim();if(!message)return;if(!state.runtime)return toast('Message simulé');if(!twitchCan('chatWrite'))return toast('Autorisation chat requise.',true);try{await request('/api/v1/twitch/chat/messages',{method:'POST',body:JSON.stringify({message})});input.value='';toast('Message envoyé')}catch(error){toast(error.message,true)}});
+  document.querySelector('#desktop-chat-form')?.addEventListener('submit',async event=>{event.preventDefault();const input=event.currentTarget.elements.namedItem('message'),submitted=String(input?.value||''),message=submitted.trim();if(!message)return;if(!state.runtime)return toast('Message simulé');if(!twitchCan('chatWrite'))return toast('Autorisation chat requise.',true);try{await request('/api/v1/twitch/chat/messages',{method:'POST',body:JSON.stringify({message})});const current=document.querySelector('#desktop-chat-form input');if(current?.value===submitted){current.value='';current.dataset.draftDirty='false'}toast('Message envoyé')}catch(error){toast(error.message,true)}});
   document.querySelector('[data-add-event]')?.addEventListener('click',()=>openEventDialog());
   document.querySelector('[data-sound-search]')?.addEventListener('input',e=>{state.search=e.currentTarget.value;render()});
   document.querySelectorAll('[data-camp]').forEach(b=>b.onclick=()=>{state.campItem=b.dataset.camp;render();void loadCampData(state.campItem)});

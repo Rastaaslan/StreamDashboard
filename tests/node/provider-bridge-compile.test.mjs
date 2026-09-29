@@ -11,7 +11,9 @@ test('ProviderBridge compiles with javac and accepts only idempotent deletion re
   const directory = mkdtempSync(path.resolve('test-results/provider-bridge-'));
   const pkg = 'com.rastaaslan.streamdashboard.remote';
   const stubs = {
-    'android/app/Activity.java': 'package android.app; public class Activity { public void runOnUiThread(Runnable r) {} public void startActivity(android.content.Intent i) {} }',
+    'android/app/Activity.java': 'package android.app; public class Activity { public static final int RESULT_OK=-1; public void runOnUiThread(Runnable r) {} public void startActivity(android.content.Intent i) {} }',
+    'com/google/android/gms/common/ConnectionResult.java': 'package com.google.android.gms.common; public class ConnectionResult { public static final int SUCCESS=0; }',
+    'com/google/android/gms/common/GoogleApiAvailability.java': 'package com.google.android.gms.common; public class GoogleApiAvailability { public static GoogleApiAvailability getInstance() { return new GoogleApiAvailability(); } public int isGooglePlayServicesAvailable(android.app.Activity activity) { return 0; } }',
     'android/content/Intent.java': 'package android.content; public class Intent { public static final String ACTION_VIEW=""; public Intent(String a, android.net.Uri u) {} }',
     'android/net/Uri.java': 'package android.net; public class Uri { public static Uri parse(String s) { return null; } public String getQueryParameter(String s) { return null; } public Builder buildUpon() { return null; } public static class Builder { public Builder appendQueryParameter(String k, String v) { return this; } public Uri build() { return null; } } }',
     'android/webkit/JavascriptInterface.java': 'package android.webkit; public @interface JavascriptInterface {}',
@@ -30,7 +32,14 @@ test('ProviderBridge compiles with javac and accepts only idempotent deletion re
     }`,
     'org/json/JSONArray.java': 'package org.json; public class JSONArray { public JSONArray put(Object v) { return this; } public int length() { return 0; } public String getString(int i) throws JSONException { return ""; } public JSONObject getJSONObject(int i) throws JSONException { return null; } }',
     'SecureCredentialStore.java': `package ${pkg}; class SecureCredentialStore { SecureCredentialStore(android.app.Activity a) {} String get(String k) { return ""; } void put(String k,String v) {} void clear(String k) {} }`,
-    'BuildConfig.java': `package ${pkg}; class BuildConfig { static final String TWITCH_ANDROID_CLIENT_ID="", GOOGLE_ANDROID_CLIENT_ID=""; }`,
+    'BuildConfig.java': `package ${pkg}; class BuildConfig { static final String TWITCH_ANDROID_CLIENT_ID="", GOOGLE_ANDROID_CLIENT_ID=""; static final boolean PREVIEW_MODE=false; }`,
+    'GoogleAuthorizationAdapter.java': `package ${pkg}; class GoogleAuthorizationAdapter implements GoogleAuthorizationFlow.Adapter {
+      GoogleAuthorizationAdapter(android.app.Activity activity) {}
+      public void authorize(java.util.List<String> scopes, GoogleAuthorizationFlow.Callback callback) {}
+      public void launch(Object resolution, int requestCode) {}
+      public GoogleAuthorizationFlow.Grant result(Object data) { return null; }
+      public GoogleAuthorizationFlow.Grant refresh(java.util.List<String> scopes) { return null; }
+    }`,
     'DeletionPolicyTest.java': `package ${pkg}; public class DeletionPolicyTest {
       public static void main(String[] args) throws Exception {
         for (String code : new String[]{"INVALID_PAYLOAD", "INVALID_LINK", "REAUTH_REQUIRED", "HTTP_400", "HTTP_401", "HTTP_403", "HTTP_404", "HTTP_405", "HTTP_410", "HTTP_412", "HTTP_413", "HTTP_415", "HTTP_422", "HTTP_429"}) {
@@ -64,7 +73,7 @@ test('ProviderBridge compiles with javac and accepts only idempotent deletion re
       const file = path.join(directory, name);
       mkdirSync(path.dirname(file), { recursive: true }); writeFileSync(file, source); return file;
     });
-    execFileSync('javac', ['-d', path.join(directory, 'classes'), ...files, 'android/app/src/main/java/com/rastaaslan/streamdashboard/remote/ProviderBridge.java'], { stdio: 'inherit' });
+    execFileSync('javac', ['-d', path.join(directory, 'classes'), ...files, 'android/app/src/main/java/com/rastaaslan/streamdashboard/remote/ProviderBridge.java', 'android/app/src/main/java/com/rastaaslan/streamdashboard/remote/GoogleAuthorizationFlow.java'], { stdio: 'inherit' });
     execFileSync('java', ['-cp', path.join(directory, 'classes'), pkg + '.DeletionPolicyTest'], { stdio: 'inherit' });
   } finally { rmSync(directory, { recursive: true, force: true }); }
 });
