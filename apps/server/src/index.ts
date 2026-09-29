@@ -125,6 +125,7 @@ export interface DashboardServerOptions {
   electronVersion?: string;
   logsPath?: string;
   logger?: Pick<Console, 'info' | 'warn' | 'error'>;
+  googleFetch?: typeof fetch;
   discordFetch?: typeof fetch;
   streamlabsTransport?: StreamlabsTransport;
   streamlabsFetch?: typeof fetch;
@@ -539,6 +540,7 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
         expiresAt: String(tokens.expiresAt),
       });
     },
+    options.googleFetch ?? fetch,
   );
   let googleCalendars: Array<{ id: string; summary: string; writable: boolean }> = [];
   let twitchChannel: { title: string; gameId: string; gameName: string } = { title: '', gameId: '', gameName: '' };
@@ -549,6 +551,7 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
   let twitchEventSubKey = '';
   let googleError: string | null = null;
   let googleOAuthAttempt: GoogleOAuthAttempt | null = null;
+  let googleOAuthTimeout: ReturnType<typeof setTimeout> | undefined;
   let preflightState: PreflightState = {
     eventId: null,
     status: 'idle',
@@ -1519,7 +1522,7 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
       { id: 'remote', label: 'Remote Android', status: remoteRuntimeEnabled ? 'connected' : 'disconnected', mode: 'custom', requiresReauth: false, capabilities: [], message: remoteRuntimeEnabled ? 'Télécommande LAN active · appairage depuis le PC.' : 'Activer la télécommande dans Connexions sur le PC puis redémarrer.' },
       { id: 'obs', label: 'OBS', status: status(obs.state.connected), mode: 'custom', requiresReauth: false, capabilities: ['test','configure','scenes','audio'] },
       { id: 'twitch', label: 'Twitch', status: status(twitch.state.connected, Boolean(twitchClientId), twitch.state.error), mode: productProfile.providers.twitch.mode, requiresReauth: needsReauth(twitch.state.error), capabilities: twitchClientId ? ['connect','disconnect','test','chat','audience','clips'] : [], ...(!twitchClientId ? { message: 'Configuration mainteneur requise' } : {}) },
-      { id: 'google', label: 'Google Calendar', status: status(google.connected, Boolean(googleClientId), googleError), mode: productProfile.providers.google.mode, requiresReauth: needsReauth(googleError), capabilities: googleClientId ? ['connect','disconnect','test','calendar'] : [], ...(!googleClientId ? { message: 'Configuration mainteneur requise' } : {}) },
+      { id: 'google', label: 'Google Calendar', status: status(google.connected, Boolean(googleClientId), googleError), mode: productProfile.providers.google.mode, requiresReauth: needsReauth(googleError), capabilities: googleClientId ? ['connect','disconnect','test','calendar'] : [], ...(!googleClientId ? { message: 'GOOGLE_CLIENT_ID manquant : configurer un Client ID OAuth de type application de bureau dans resources/distribution.json ou l’environnement Desktop.' } : {}) },
       { id: 'discord', label: 'Discord', status: status(discordPublic.connected, true, discordPublic.error), mode: 'custom', requiresReauth: false, capabilities: ['configure','disconnect','test','publish'], message: 'Connexion par token de bot Discord. OAuth officiel non disponible.' },
       { id: 'streamlabs', label: 'Streamlabs', status: integrationStatus(streamlabs.state().status), mode: 'custom', requiresReauth: false, capabilities: ['configure','disconnect','test','donations'], ...(productProfile.providers.streamlabs.mode !== 'custom' ? { message: 'Provider officiel non implémenté · configuration personnalisée disponible sur le PC.' } : {}) },
       { id: 'wizebot', label: 'WizeBot', status: integrationStatus(wizebot.state().status), mode: 'custom', requiresReauth: false, capabilities: ['configure','disconnect','test','events'], ...(productProfile.providers.wizebot.mode !== 'custom' ? { message: 'Provider officiel non implémenté · configuration personnalisée disponible sur le PC.' } : {}) },
@@ -2066,6 +2069,15 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
       if (!requireLocal(req, res)) return;
       if (!googleClientId) throw new Error('GOOGLE_CLIENT_ID n’est pas configuré dans cette distribution.');
       googleOAuthAttempt = createGoogleOAuthAttempt(googleClientId, `http://127.0.0.1:${runtimePort}/api/v1/google/oauth/callback`);
+      googleError = null;
+      clearTimeout(googleOAuthTimeout);
+      googleOAuthTimeout = setTimeout(() => {
+        googleOAuthAttempt = null;
+        googleError = 'Callback Google non reçu après 10 minutes. Revenez dans StreamDashboard et cliquez sur Connecter. Vérifiez que le navigateur est sur ce PC et autorise le retour vers 127.0.0.1.';
+        broadcast();
+      }, Math.max(0, googleOAuthAttempt.expiresAt - Date.now()));
+      googleOAuthTimeout.unref();
+      broadcast();
       res.status(201).json({ authorizationUrl: googleOAuthAttempt.authorizationUrl });
     } catch (error) { next(error); }
   });
@@ -2074,7 +2086,9 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
       if (!requireLocal(req, res)) return;
       if (!googleOAuthAttempt) throw new Error('Aucune connexion Google en attente.');
       const attempt = googleOAuthAttempt;
+      clearTimeout(googleOAuthTimeout);
       googleOAuthAttempt = null;
+      if (req.query.error) throw new Error(`Google OAuth : ${String(req.query.error)}. Credential attendu : application de bureau (Desktop). URI de redirection : ${new URL(attempt.authorizationUrl).searchParams.get('redirect_uri')}`);
       await google.exchangeCode(String(req.query.code ?? ''), String(req.query.state ?? ''), attempt);
       await refreshGoogleCalendars();
       googleError = null;
@@ -2083,6 +2097,9 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
     } catch (error) {
       googleOAuthAttempt = null;
       googleError = error instanceof Error ? error.message : String(error);
+      if (/invalid_client|redirect_uri_mismatch/.test(googleError)) googleError += ` Vérifiez le Client ID OAuth de type application de bureau (Desktop). URI de redirection : http://127.0.0.1:${runtimePort}/api/v1/google/oauth/callback`;
+      clearTimeout(googleOAuthTimeout);
+      broadcast();
       logError(error);
       res.status(400).type('text/plain').send(`Connexion Google impossible : ${googleError}`);
     }
@@ -2106,6 +2123,7 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
   app.post('/api/v1/google/disconnect', async (req, res, next) => {
     try {
       googleOAuthAttempt = null;
+      clearTimeout(googleOAuthTimeout);
       await google.disconnect();
       googleCalendars = [];
       googleError = null;
@@ -2364,6 +2382,7 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
   scheduleTimerExpiry();
   const stop = () => stopPromise ??= (async () => {
     unsubscribeObs();
+    clearTimeout(googleOAuthTimeout);
     clearInterval(validator);
     clearInterval(twitchLivePoller);
     if (timerExpiry) clearTimeout(timerExpiry);
