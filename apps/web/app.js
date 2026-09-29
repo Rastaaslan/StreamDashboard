@@ -205,12 +205,12 @@ function automations() { return '<div class="intent-panel"><span class="label">A
 const connectionLabel = status => ({ connected: 'Connecté', connecting: 'Connexion…', disconnected: 'Déconnecté', 'reauth-required': 'Autorisation nécessaire', error: 'Erreur', unavailable: 'Indisponible', CONNECTED: 'Connecté', CONNECTING: 'Connexion…', DISCONNECTED: 'Déconnecté', NOT_CONFIGURED: 'À configurer', NOT_SUPPORTED: 'Indisponible', DEGRADED: 'Erreur', ERROR: 'Erreur' })[status] || 'Indisponible';
 const connection = id => connectionProjection.find(item => item.id === id) || { id, status: 'unavailable', mode: 'custom', capabilities: [], message: 'Indisponible' };
 const supportsConnection = (id, capability) => connection(id).capabilities.includes(capability);
-const connectionCopy = id => `${connectionLabel(connection(id).status)}${connection(id).message ? ` · ${esc(connection(id).message)}` : ''}`;
+const connectionCopy = id => `${!moduleEnabled(id === 'google' ? 'googleCalendar' : id) ? 'Module désactivé · ' : ''}${connectionLabel(connection(id).status)}${connection(id).message ? ` · ${esc(connection(id).message)}` : ''}`;
 function connections() {
   const integrations = state.controlHub?.integrations || {};
   const streamlabs = integrations.streamlabs || { status: 'NOT_CONFIGURED' };
   const wizebot = integrations.wizebot || { status: 'NOT_CONFIGURED' };
-  const visible = id => moduleEnabled(id);
+  const visible = () => true;
   return `<div class="intent-panel"><span class="label">CONNEXIONS</span><h3>Services connectés</h3><div class="connection-cards">
     ${visible('obs') ? `<article><div><b>OBS</b><span>${connectionCopy('obs')}</span></div>${supportsConnection('obs', 'configure') ? '<button class="secondary compact" data-action="go" data-value="settings">CONFIGURER</button>' : ''}</article>` : ''}
     ${visible('twitch') ? `<article><div><b>Twitch</b><span>${connectionCopy('twitch')}</span></div>${supportsConnection('twitch', state.twitch.connected ? 'disconnect' : 'connect') ? `<button class="secondary compact" data-action="${state.twitch.connected ? 'disconnect-twitch' : 'connect-twitch'}">${state.twitch.connected ? 'DÉCONNECTER' : 'CONNECTER'}</button>` : ''}</article>` : ''}

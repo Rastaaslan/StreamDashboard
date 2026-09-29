@@ -2,6 +2,9 @@ import { CompanionMode } from './companion-store.js';
 
 // Deliberately project known fields only: provider errors and OAuth payloads are untrusted.
 const messages = {
+  GOOGLE_PLAY_SERVICES: 'Services Google Play indisponibles : installer ou mettre à jour les services Google Play sur ce téléphone.',
+  PREVIEW: 'Preview : providers autonomes désactivés dans cette build. Installer une release provisionnée.',
+  RUNTIME_UNAVAILABLE: 'Provider Android indisponible : installer une build Android compatible.',
   CONFLICT: 'Cet événement a changé ailleurs : résoudre le conflit avant de republier.',
   NOT_CONFIGURED: 'Client ID absent : installer une version Android configurée pour ce service.',
   REAUTH_REQUIRED: 'Session expirée ou refusée : réautoriser ce compte.',
@@ -20,18 +23,18 @@ export function providerDiagnostic(raw = {}) {
   const connected = raw.connected === true;
   const code = Object.hasOwn(messages, raw.code) ? raw.code : raw.code ? 'NETWORK' : '';
   return {
-    code: !configured ? 'NOT_CONFIGURED' : code,
+    code: code || (!configured ? 'NOT_CONFIGURED' : ''),
     configured, connected, requiresReauth: raw.requiresReauth === true || ['REAUTH_REQUIRED', 'SCOPES', 'HTTP_403'].includes(code),
     tested: raw.tested === true && !code,
     capabilities: Array.isArray(raw.capabilities) ? knownCapabilities.filter(value => raw.capabilities.includes(value) && (value === 'connect' ? configured : ['test', 'disconnect'].includes(value) ? connected : configured && connected && raw.tested === true && !code)) : [],
     scopes: Array.isArray(raw.scopes) ? knownScopes.filter(value => raw.scopes.includes(value)) : [],
     calendar: raw.calendar === 'primary' ? 'Principal' : 'Non vérifié',
     lastSync: Number.isSafeInteger(raw.lastSync) && raw.lastSync > 0 && raw.lastSync <= 8640000000000000 ? new Date(raw.lastSync).toISOString() : 'Jamais',
-    error: !configured ? messages.NOT_CONFIGURED : code ? providerError(code) : '',
+    error: code ? providerError(code) : !configured ? messages.NOT_CONFIGURED : '',
   };
 }
 export function capabilityAvailability(snapshot, capability) {
-  if (!snapshot.configured) return { available: false, reason: messages.NOT_CONFIGURED };
+  if (!snapshot.configured) return { available: false, reason: snapshot.error || messages.NOT_CONFIGURED };
   if (!snapshot.capabilities?.includes(capability)) return { available: false, reason: snapshot.error || 'Action indisponible : connecter le compte puis tester ses permissions.' };
   return { available: true, reason: '' };
 }

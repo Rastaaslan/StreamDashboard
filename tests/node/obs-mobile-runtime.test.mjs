@@ -17,7 +17,7 @@ function harness(shell) {
       const classes = new Set();
       const node = { textContent: '', dataset: {}, disabled: false, value: '',
         classList: { toggle: (name, enabled) => enabled ? classes.add(name) : classes.delete(name), contains: name => classes.has(name) },
-        setAttribute: noop, replaceChildren: noop, append: noop, querySelector: () => null,
+        contains: () => false, setAttribute: noop, replaceChildren: noop, append: noop, querySelector: () => null,
       };
       node.parentElement = node;
       nodes.set(id, node);
@@ -28,7 +28,7 @@ function harness(shell) {
     $, credential: null, window: { dispatchEvent: noop }, Event: class {}, state: null, acceptsSnapshot, confirmsObsStreaming, obsRuntimeView,
     document: { activeElement: null, querySelectorAll: () => [], querySelector: $ },
     CompanionMode: { ONLINE_PC: 'pc' }, companionMode: 'pc', lastProfileSyncAt: Date.now(),
-    moderationCapabilities: null, twitchCapabilitiesFlight: null,
+    moderationCapabilities: null, twitchCapabilitiesFlight: null, twitchEditorDirty: false,
     formatDuration: String, formatClock: String, formatTimer: String, remaining: () => 0, timerRemaining: () => 0,
     formatPlanningDate: () => '', logicalScene: () => '', humanProviderStatus: String, createThumbnail: () => ({}),
   };

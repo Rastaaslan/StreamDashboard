@@ -158,7 +158,7 @@ export interface GoogleCalendarState {
   lastSyncedAt: string | null;
 }
 
-export interface DiscordState { configured: boolean; connected: boolean; guildId: string | null; guildName: string | null; channelId: string | null; channelName: string | null; error: string | null }
+export interface DiscordState { defaultMessage?: string; configured: boolean; connected: boolean; guildId: string | null; guildName: string | null; channelId: string | null; channelName: string | null; error: string | null }
 export interface DiscordSettings { guildId: string | null; channelId: string | null; defaultMessage: string }
 
 export interface PreflightState {

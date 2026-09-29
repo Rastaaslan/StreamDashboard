@@ -47,6 +47,15 @@ test('Desktop Preview navigue et émet une commande unique par contrôle', async
       playedDesktopSound = true;
       await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ commandId: route.request().postDataJSON().commandId, correlationId: route.request().postDataJSON().correlationId, status: 'succeeded', timestamp: new Date().toISOString() }) });
     });
+    // This smoke mocks OBS operations, so project matching connected telemetry.
+    // The real backend has no OBS process in CI and must not overwrite that fixture.
+    await page.routeWebSocket('**/ws/v1', () => {});
+    await page.route('**/api/v1/state', async route => {
+      const response = await route.fetch();
+      const state = await response.json();
+      state.obs = { ...state.obs, connected: true, streamingKnown: true, scene: 'Gameplay' };
+      await route.fulfill({ response, json: state });
+    });
     await page.locator('#mode').click(); await expect(page.locator('#runtime-status')).toHaveText('Runtime PC');
     await page.locator('[data-view="camp"]').click(); await page.locator('[data-camp="Connexions"]').click();
     await expect(page.locator('[data-connection-action="obs-test"]')).toBeEnabled();

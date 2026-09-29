@@ -198,7 +198,19 @@ public class MainActivity extends Activity {
     }
   }
 
+  @Override protected void onActivityResult(int requestCode, int resultCode, Intent data) {
+    super.onActivityResult(requestCode, resultCode, data);
+    if (providerBridge != null) providerBridge.acceptGoogleResult(requestCode, resultCode, data);
+  }
+
   public final class NativeBridge {
+    @JavascriptInterface public String buildCapabilities() {
+      try {
+        return new org.json.JSONObject(BuildCapabilities.json(BuildConfig.PREVIEW_MODE, BuildConfig.GOOGLE_ANDROID_CLIENT_ID, BuildConfig.TWITCH_ANDROID_CLIENT_ID))
+          .put("buildType", BuildConfig.BUILD_TYPE).put("packageName", BuildConfig.APPLICATION_ID).toString();
+      } catch (Exception error) { return "{}"; }
+    }
+
     private static final String ALIAS = "streamdashboard.remote.credential";
     private static final String PREFS = "secure_remote";
     @JavascriptInterface public boolean isAndroid() { return true; }

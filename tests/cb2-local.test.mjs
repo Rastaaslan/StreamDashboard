@@ -137,7 +137,7 @@ test('Server capabilities survive remote projection and reauthorization updates 
   const remote = section(read('apps/server/src/remote-policy.ts'), 'export function toRemoteDashboardState', 'function denied');
   vm.runInContext(stripTypeScriptTypes(remote.replace('export function', 'function')), context);
   vm.runInContext(section(mobile, 'let moderationCapabilities = null;', 'async function loadModerationCapabilities'), context);
-  vm.runInContext(section(mobile, "$('save-twitch').onclick", "$('forget-device').onclick"), context);
+  vm.runInContext(section(mobile, "$('save-twitch').onclick =", "$('forget-device').onclick"), context);
   vm.runInContext(section(mobile, "$('chat-form').onsubmit", "$('unban-user').onclick"), context);
   const capabilities = { chatWrite: false, createClip: false, updateChannel: false, chatters: false, schedule: true, requiredScopes: {} };
   // Evaluate the actual server snapshot expression, including its capabilities call.

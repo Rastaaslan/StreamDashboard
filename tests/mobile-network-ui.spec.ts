@@ -232,3 +232,127 @@ for (const connected of [false, true]) {
     expect(errors).toEqual([]);
   });
 }
+
+test('Live HTTP matrix: confirmation, modes, mic, timer, Twitch, media and Soundboard without WS', async ({ page }) => {
+  const { backend, errors } = await setup(page, { connected: true, streamingKnown: true }, true);
+  backend.ticketStatus = 503;
+  backend.state.obs.mediaInputs = ['Jingle'];
+  const commands: any[] = [];
+  const writes: { path: string; body: any }[] = [];
+  const board = { ...createMobileFixture('live').soundboard, supportsStop: true, currentPlayback: null as null | { soundId: string } };
+  await page.route('**/api/v1/twitch/moderation/capabilities', route => route.fulfill({ json: { chatWrite: true, updateChannel: true, createClip: true, chatters: true, deleteMessage: true, timeout: true, ban: true } }));
+  await page.route('**/api/v1/soundboard', route => route.fulfill({ json: board }));
+  await page.route('**/api/v1/twitch/categories?*', route => route.fulfill({ json: [{ id: '42', name: 'Test Category' }] }));
+  await page.route('**/api/v1/commands', async route => {
+    const command = route.request().postDataJSON(); commands.push(command);
+    backend.state.stateRevision++;
+    if (command.type === 'session.stop') backend.state.obs.streaming = false;
+    if (command.type === 'session.start') backend.state.obs.streaming = true;
+    if (command.type === 'obs.mute') backend.state.obs.inputs.Mic.muted = command.muted;
+    await route.fulfill({ json: { ok: true, state: backend.state } });
+  });
+  for (const path of ['/twitch/chat/messages', '/twitch/channel', '/twitch/clips', '/soundboard/play', '/soundboard/stop']) {
+    await page.route(`**/api/v1${path}`, async route => {
+      writes.push({ path, body: route.request().postDataJSON() });
+      if (path === '/soundboard/play') board.currentPlayback = { soundId: 'bonk' };
+      if (path === '/soundboard/stop') board.currentPlayback = null;
+      if (path === '/twitch/channel') Object.assign(backend.state.twitch, { channelTitle: writes.at(-1)!.body.title, gameId: writes.at(-1)!.body.gameId, gameName: writes.at(-1)!.body.gameName });
+      await route.fulfill({ json: path === '/soundboard/play' ? { status: 'succeeded' } : path === '/soundboard/stop' ? board : backend.state });
+    });
+  }
+  await page.reload();
+  await expect(page.locator('#pc')).toHaveText('Connecté');
+  await page.locator('[data-tab="live"]').click();
+  await expect(page.locator('#hub-chat')).toContainText('mdrrrr');
+  await expect(page.locator('#live-viewers')).toHaveText('17');
+  page.once('dialog', dialog => dialog.dismiss());
+  await page.locator('#live-stream').click();
+  expect(commands).toHaveLength(0);
+  page.on('dialog', dialog => dialog.accept());
+  await page.locator('#live-stream').click();
+  await expect.poll(() => commands.map(c => c.type)).toEqual(['session.stop']);
+  await expect(page.locator('#live-stream')).toContainText(/démarrer/i);
+  await page.locator('#live-stream').click();
+  await expect.poll(() => commands.map(c => c.type)).toEqual(['session.stop','session.prepare','session.start']);
+  for (const mode of ['intro','live','chatting','pause','end']) {
+    await page.locator('#open-scenes-live').click();
+    await page.locator(mode === 'chatting' ? '[data-chatting]' : `[data-mode="${mode}"]`).click();
+    await expect.poll(() => commands.at(-1)).toMatchObject(mode === 'chatting' ? { type: 'scene.chatting' } : { type: 'mode.set', mode });
+    if (await page.locator('#live-tools-sheet').evaluate(el => (el as HTMLDialogElement).open)) await page.locator('#close-live-tool').click();
+  }
+  for (const muted of [true,false]) {
+    await page.locator('#quick-mic').click();
+    await expect.poll(() => commands.at(-1)).toMatchObject({ type: 'obs.mute', input: 'Mic', muted });
+    await expect(page.locator('#quick-mic')).toBeEnabled();
+  }
+  await page.locator('[data-open-live-tool="timer"]').click();
+  for (const type of ['timer.start','timer.pause','timer.add','timer.reset']) {
+    await page.locator(`[data-command="${type}"]${type === 'timer.add' ? '[data-seconds="60"]' : ''}`).click();
+    await expect.poll(() => commands.at(-1)).toMatchObject({ type, ...(type === 'timer.add' ? { seconds: 60 } : {}) });
+  }
+  await page.locator('#close-live-tool').click();
+  await page.locator('#chat-message').fill('Live matrix');
+  await page.locator('#chat-form button').click();
+  await expect.poll(() => writes.at(-1)).toMatchObject({ path: '/twitch/chat/messages', body: { message: 'Live matrix' } });
+  await page.locator('#live-clip').click();
+  await expect.poll(() => writes.at(-1)?.path).toBe('/twitch/clips');
+  await page.locator('[data-open-live-tool="twitch"]').click();
+  await page.locator('#twitch-title').fill('Live matrix title');
+  await page.locator('#twitch-category').fill('Test');
+  await page.clock.runFor(350);
+  await expect(page.locator('#twitch-results')).toContainText('Test Category');
+  backend.state.stateRevision++; backend.state.controlHub.audience.viewerCount = 41;
+  await page.evaluate(() => window.dispatchEvent(new Event('online')));
+  await expect(page.locator('#live-viewers')).toHaveText('41');
+  await expect(page.locator('#twitch-title')).toHaveValue('Live matrix title');
+  await expect(page.locator('#twitch-category')).toBeFocused();
+  await page.locator('#twitch-results [data-game-id="42"]').click();
+  backend.state.stateRevision++; backend.state.controlHub.audience.viewerCount = 42;
+  await page.evaluate(() => window.dispatchEvent(new Event('online')));
+  await expect(page.locator('#live-viewers')).toHaveText('42');
+  await expect(page.locator('#twitch-game-id')).toHaveValue('42');
+  let navigations = 0; page.on('framenavigated', frame => { if (frame === page.mainFrame()) navigations++; });
+  await page.locator('#save-twitch').click();
+  await expect.poll(() => writes.at(-1)).toMatchObject({ path: '/twitch/channel', body: { title: 'Live matrix title', gameId: '42' } });
+  if (await page.locator('#live-tools-sheet').evaluate(el => (el as HTMLDialogElement).open)) await page.locator('#close-live-tool').click();
+  await page.locator('[data-open-live-tool="media"]').click();
+  await page.locator('[data-media="Jingle"]').click();
+  await expect.poll(() => commands.at(-1)).toMatchObject({ type: 'obs.media.restart', input: 'Jingle' });
+  await page.locator('#close-live-tool').click();
+  await page.locator('[data-tab="sounds"]').click();
+  await page.locator('#sound-grid .sound-pad').filter({ hasText: 'BONK' }).click();
+  await expect.poll(() => writes.at(-1)?.path).toBe('/soundboard/play');
+  await page.locator('#stop-sound').click();
+  await expect.poll(() => writes.at(-1)?.path).toBe('/soundboard/stop');
+  await expect(page.locator('.bottom-nav [data-tab]:visible small')).toHaveText(['Accueil','Live','Sons','Planning','Plus']);
+  expect(navigations).toBe(0);
+  expect(errors).toEqual([]);
+});
+
+test('retrying unavailable WS tickets preserves an in-flight HTTP command on the same PC', async ({ page }) => {
+  const { backend, errors } = await setup(page);
+  backend.ticketStatus = 503;
+  await page.reload();
+  await expect(page.locator('#connection')).toContainText('temps réel indisponible');
+  let release!: () => void;
+  const gate = new Promise<void>(resolve => { release = resolve; });
+  let requests = 0;
+  await page.route('**/api/v1/commands', async route => {
+    requests++;
+    await gate;
+    backend.state.stateRevision++;
+    backend.state.obs.streaming = false;
+    await route.fulfill({ json: { state: backend.state } });
+  });
+  page.on('dialog', dialog => dialog.accept());
+  await page.locator('#stream').click();
+  await expect.poll(() => requests).toBe(1);
+  const reads = backend.stateCalls;
+  await page.clock.runFor(600);
+  await expect.poll(() => backend.stateCalls).toBeGreaterThan(reads);
+  await expect(page.locator('#connection')).toContainText('temps réel indisponible');
+  release();
+  await expect(page.locator('#stream')).toContainText(/démarrer/i);
+  expect(requests).toBe(1);
+  expect(errors).toEqual([]);
+});

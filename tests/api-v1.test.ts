@@ -25,7 +25,7 @@ describe('API publique v1', () => {
     const connections = await fetch(`${app.url}/api/v1/connections`).then(r => r.json());
     expect(connections.items.find((item: { id: string }) => item.id === 'obs')).toMatchObject({ mode: 'custom', capabilities: ['test','configure','scenes','audio'] });
     expect(connections.items.find((item: { id: string }) => item.id === 'twitch')).toMatchObject({ status: 'unavailable', mode: 'official', capabilities: [], message: 'Configuration mainteneur requise' });
-    expect(connections.items.find((item: { id: string }) => item.id === 'discord')).toMatchObject({ status: 'unavailable', mode: 'official', capabilities: [] });
+    expect(connections.items.find((item: { id: string }) => item.id === 'discord')).toMatchObject({ status: 'disconnected', mode: 'custom', capabilities: ['configure','disconnect','test','publish'] });
     expect(capabilities).toMatchObject({ protocolVersion: 1, accessMode: 'desktop-local' });
     for (const feature of ['mobile-profile-presentation','mobile-live-control-config','mobile-provider-actions','soundboard-live-volume']) expect(capabilities.features).toContain(feature);
     expect(stateText).not.toMatch(/accessToken|refreshToken|deviceCode|obsPassword\"/);
@@ -47,6 +47,21 @@ describe('API publique v1', () => {
       mode: 'official',
       capabilities: ['connect','disconnect','test','chat','audience','clips'],
     });
+  });
+
+  it('garde toutes les connexions et leurs configurations personnalisées quand les modules sont désactivés', async () => {
+    const app = await start();
+    const product = await fetch(`${app.url}/api/v1/profile`).then(r => r.json());
+    for (const key of Object.keys(product.profile.modules)) product.profile.modules[key] = false;
+    product.profile.providers.streamlabs.mode = 'official';
+    product.profile.providers.wizebot.mode = 'official';
+    const update = await fetch(`${app.url}/api/v1/profile`, { method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify(product.profile) });
+    expect(update.status).toBe(200);
+    const { items } = await fetch(`${app.url}/api/v1/connections`).then(r => r.json());
+    expect(items.map((item: { id: string }) => item.id).sort()).toEqual(['discord','google','obs','remote','streamlabs','twitch','wizebot']);
+    for (const id of ['discord', 'streamlabs', 'wizebot']) {
+      expect(items.find((item: { id: string }) => item.id === id)).toMatchObject({ mode: 'custom', capabilities: expect.arrayContaining(['configure']) });
+    }
   });
 
   it('persiste, exporte et réimporte le profil YAML canonique après restart', async () => {

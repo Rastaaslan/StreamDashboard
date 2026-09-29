@@ -92,6 +92,7 @@ let connectionInFlight = false;
 let healthCheckInFlight = false;
 let companionMode = CompanionMode.OFFLINE;
 const phoneProviderSnapshots = {};
+let twitchEditorDirty = false;
 const companion = createCompanionStore();
 let syncError = '';
 const providerAccounts = {};
@@ -330,25 +331,33 @@ function managedPermission(provider, capability) {
 function renderManagedConnections(hub) {
   const integrations = $('hub-integrations');
   integrations.replaceChildren();
-  const fallback = Object.entries({ obs: 'OBS', twitch: 'Twitch', discord: 'Discord', streamlabs: 'Streamlabs', wizebot: 'WizeBot' }).map(([id, label]) => ({ id, label, status: (hub?.integrations?.[id]?.status || 'DISCONNECTED').toLowerCase(), capabilities: [] }));
-  const projected = connectionProjection.length ? connectionProjection : fallback;
+  const fallback = Object.entries({ obs: 'OBS', twitch: 'Twitch', google: 'Google Calendar', remote: 'Remote Android', discord: 'Discord', streamlabs: 'Streamlabs', wizebot: 'WizeBot' }).map(([id, label]) => ({ id, label, status: (hub?.integrations?.[id]?.status || 'DISCONNECTED').toLowerCase(), capabilities: [] }));
+  const projected = fallback.map(item => connectionProjection.find(provider => provider.id === item.id) || item);
   for (const provider of projected) {
     const moduleId = provider.id === 'google' ? 'googleCalendar' : provider.id;
-    if (productProfile?.modules?.[moduleId] === false) continue;
+    const moduleOff = productProfile?.modules?.[moduleId] === false;
+    const pcOnline = companionMode === CompanionMode.ONLINE_PC;
     const status = String(provider.status || 'unavailable').toUpperCase().replace('REAUTH-REQUIRED', 'REAUTH_REQUIRED');
     const row = document.createElement('article');
     row.className = 'integration-card connection-manage-card';
-    const dot = text('i', '', `provider-dot status-${status.toLowerCase()}`);
+    const dot = text('i', '', `provider-dot status-${pcOnline ? status.toLowerCase() : 'disconnected'}`);
     const copy = document.createElement('div'); copy.className = 'connection-copy';
-    copy.append(text('b', provider.label), text('small', `${humanProviderStatus(status)}${provider.mode ? ` · ${provider.mode === 'official' ? 'Officiel' : 'Personnalisé'}` : ''}`, 'muted'));
+    copy.append(text('b', provider.label), text('small', `${pcOnline ? humanProviderStatus(status) : 'PC hors ligne · dernier état : ' + humanProviderStatus(status)}${provider.mode ? ` · ${provider.mode === 'official' ? 'Officiel' : 'Personnalisé'}` : ''}`, 'muted'));
+    if (moduleOff) copy.append(text('small', 'Module désactivé sur le PC · activer dans Personnalisation.', 'muted'));
+    if (!pcOnline) copy.append(text('small', 'État actuel non vérifié. Reconnecter le PC pour agir.', 'muted'));
+    if (provider.message) copy.append(text('small', provider.message, 'muted'));
     if (provider.status === 'unavailable') copy.append(text('small', 'Service non configuré ou indisponible dans cette version.', 'muted'));
     const actions = document.createElement('div'); actions.className = 'connection-actions';
     const canManageConnections = runtimeSupports('mobile-provider-actions');
     for (const item of managedConnectionActions[provider.id] || []) {
       if (item.connected !== undefined && item.connected !== (status === 'CONNECTED')) continue;
       const permission = managedPermission(provider, item.capability);
-      if (canManageConnections && permission.available) actions.append(connectionButton(item.label, item.action));
-      else if (canManageConnections) copy.append(text('small', `${item.label} : ${permission.reason}`, 'muted'));
+      if (pcOnline && canManageConnections && permission.available) actions.append(connectionButton(item.label, item.action));
+      else {
+        const reason = !pcOnline ? 'PC hors ligne : reconnecter le PC.' : !canManageConnections ? 'Mettre à jour le runtime PC.' : permission.reason;
+        const button = connectionButton(item.label, item.action); button.disabled = true; button.title = reason; actions.append(button);
+        copy.append(text('small', `${item.label} : ${reason}`, 'muted'));
+      }
     }
     if (provider.id === 'google' && status !== 'CONNECTED') copy.append(text('small', 'La connexion initiale Google du PC doit être autorisée depuis le PC.', 'muted'));
     if (!canManageConnections && ['obs','twitch','google'].includes(provider.id)) {
@@ -805,9 +814,12 @@ function render(next) {
   $('next').textContent = next.nextLive ? `${next.nextLive.title} · ${formatPlanningDate(next.nextLive)}` : 'Aucun live planifié';
   $('stream').textContent = obsView.buttonLabel.toUpperCase(); $('live-stream').textContent = $('stream').textContent;
   renderAudio(next.obs.inputs, next.obs.activeAudioInputs);
-  if (document.activeElement !== $('twitch-title')) $('twitch-title').value = next.twitch?.channelTitle || '';
-  if (document.activeElement !== $('twitch-category')) $('twitch-category').value = next.twitch?.gameName || '';
-  $('twitch-game-id').value = next.twitch?.gameId || '';
+  // Keep the whole draft while moving between title, category and search results.
+  if (!twitchEditorDirty && !$('twitch-editor').contains(document.activeElement)) {
+    $('twitch-title').value = next.twitch?.channelTitle || '';
+    $('twitch-category').value = next.twitch?.gameName || '';
+    $('twitch-game-id').value = next.twitch?.gameId || '';
+  }
   $('twitch-editor').hidden = !next.twitch?.connected;
   renderDeck(next.obs.mediaInputs);
   renderControlHub(next.controlHub);
@@ -988,12 +1000,19 @@ async function connectionFailed(error, generation) {
 function scheduleReconnect() {
   clearTimeout(reconnectTimer);
   const generation = connectionGeneration;
-  reconnectTimer = setTimeout(() => { if (generation === connectionGeneration) void connect(); }, retry);
+  reconnectTimer = setTimeout(() => { if (generation === connectionGeneration) void connect({ realtimeOnly: companionMode === CompanionMode.ONLINE_PC }); }, retry);
   retry = nextRetry(retry);
 }
 
-async function connect() {
-  resetConnection();
+async function connect({ realtimeOnly = false } = {}) {
+  // A WS retry on the same healthy PC must not invalidate in-flight HTTP commands.
+  // Explicit reconnects and a detected Desktop restart still retire the generation.
+  if (realtimeOnly && companionMode === CompanionMode.ONLINE_PC) {
+    if (connectionInFlight) return;
+    clearTimeout(reconnectTimer);
+    reconnectTimer = null;
+    if (ws) { ws.onopen = ws.onmessage = ws.onclose = ws.onerror = null; ws.close(); ws = null; }
+  } else resetConnection();
   const generation = connectionGeneration;
   if (!credential) {
     $('connection').textContent = 'Appairage requis';
@@ -1003,7 +1022,7 @@ async function connect() {
   connectionInFlight = true;
   try {
     $('connection').textContent = 'Connexion au PC…';
-    remoteButtons(true);
+    if (!realtimeOnly) remoteButtons(true);
     await fetchState(generation);
     if (generation !== connectionGeneration) return;
     $('connection').textContent = 'PC connecté';
@@ -1301,7 +1320,7 @@ $('profile-appearance-form').onsubmit = async event => {
 async function loadProductProfile(generation = connectionGeneration) {
   const [result, connections] = await Promise.all([
     transport.profile().catch(() => null),
-    transport.connections().catch(() => ({ items: [] })),
+    transport.connections().catch(() => null),
   ]);
   if (generation !== connectionGeneration) return;
   if (result?.profile) {
@@ -1310,12 +1329,12 @@ async function loadProductProfile(generation = connectionGeneration) {
     populateProfileAppearanceForm();
     applyModuleProjection(productProfile.modules || {});
   }
-  connectionProjection = connections.items || [];
+  if (Array.isArray(connections?.items)) connectionProjection = connections.items;
   lastProfileSyncAt = Date.now();
   renderManagedConnections(state?.controlHub);
 }
 function applyModuleProjection(enabled) {
-  document.querySelectorAll('[data-module]').forEach(node => { const unavailable = !node.dataset.module.split(',').some(id => enabled[id] !== false); node.dataset.moduleUnavailable = String(unavailable); if (node.matches('[data-live-panel]')) { if (unavailable) node.hidden = true; } else node.hidden = unavailable; });
+  document.querySelectorAll('[data-module]').forEach(node => { const unavailable = !node.dataset.module.split(',').some(id => enabled[id] !== false); node.dataset.moduleUnavailable = String(unavailable); if (node.matches('[data-live-panel]')) { if (unavailable) node.hidden = true; } else node.hidden = node.matches('[data-tab], [data-view]') ? false : unavailable; });
   const active = document.querySelector('[data-view].active'); if (active?.hidden) activateView('home');
 }
 applyUxPreferences(); populateProfileAppearanceForm(); setFocusPreference(uxPreferences.focus);
@@ -1418,12 +1437,16 @@ function attachCategoryPicker(inputId, gameIdId, resultsId) {
 }
 attachCategoryPicker('twitch-category','twitch-game-id','twitch-results');
 attachCategoryPicker('slot-twitch-category','slot-twitch-game-id','slot-twitch-results');
-$('save-twitch').onclick = async () => {
+$('twitch-editor').oninput = () => { twitchEditorDirty = true; };
+$('twitch-editor').onsubmit = event => { event.preventDefault(); void $('save-twitch').onclick(); };
+$('save-twitch').onclick = async event => {
+  event?.preventDefault();
   if (companionMode !== CompanionMode.ONLINE_PC) { note('PC requis pour modifier la chaîne Twitch.'); return; }
   await ensureTwitchCapabilities();
   if (moderationCapabilities?.updateChannel === false) { note(`Reconnecte Twitch pour accorder ${moderationCapabilities.requiredScopes?.updateChannel || 'channel:manage:broadcast'}.`); return; }
   try {
     const next = await transport.updateTwitch({ title: $('twitch-title').value, gameId: $('twitch-game-id').value, gameName: $('twitch-category').value });
+    twitchEditorDirty = false;
     render(next); note('Informations Twitch enregistrées.');
   } catch (error) { note(error.message); }
 };
@@ -1607,13 +1630,14 @@ function renderPhoneProvider(provider, raw) {
   progress.setAttribute('role', 'status'); panel.append(progress);
   if (wizard.reason) panel.append(text('p', wizard.reason, 'muted'));
   const test = text('button', providerBusy.has(provider) ? 'Test en cours…' : snapshot.tested ? 'Diagnostic / Retester' : 'Diagnostic / Tester');
-  test.type = 'button'; test.disabled = providerBusy.has(provider) || providerPending.has(provider);
+  test.type = 'button'; test.disabled = providerBusy.has(provider) || providerPending.has(provider) || !capabilityAvailability(snapshot, 'test').available;
   test.onclick = () => void testPhoneProvider(provider);
   panel.append(test);
   const details = document.createElement('details');
   details.open = raw.showDiagnostic === true;
   details.append(text('summary', 'Diagnostic de cette connexion'));
   for (const line of [
+    `Build : ${raw.build || 'Runtime Android'}`,
     `Client ID : ${snapshot.configured ? 'présent' : 'absent'}`,
     `Session / token : ${snapshot.connected ? 'présent (validité confirmée uniquement après test)' : 'absent'}`,
     `Scopes vérifiés : ${snapshot.scopes.join(', ') || 'aucun'}`,
@@ -1644,12 +1668,16 @@ async function testPhoneProvider(provider) {
   } finally { providerBusy.delete(provider); }
 }
 async function refreshProviderAccounts() {
-  if (!isAndroidRuntime() || !globalThis.StreamDashboardProviders) return;
+  if (!isAndroidRuntime()) return;
   $('provider-accounts').hidden = false;
   const adapter = createNativeProviderAdapter();
   for (const provider of ['twitch', 'google']) {
-    try { renderPhoneProvider(provider, await adapter.status(provider)); }
-    catch { renderPhoneProvider(provider, { configured: true, code: 'NETWORK' }); }
+    try {
+      const build = JSON.parse(globalThis.StreamDashboardNative?.buildCapabilities?.() || '{}');
+      const code = build.preview ? 'PREVIEW' : build.providers?.[provider]?.code || (!globalThis.StreamDashboardProviders ? 'RUNTIME_UNAVAILABLE' : '');
+      renderPhoneProvider(provider, { ...(code ? { configured: false, code } : await adapter.status(provider)), build: build.preview ? 'Preview' : build.buildType || 'Runtime Android' });
+    }
+    catch { renderPhoneProvider(provider, { configured: false, code: 'RUNTIME_UNAVAILABLE' }); }
   }
 }
 for (const provider of ['twitch', 'google']) {

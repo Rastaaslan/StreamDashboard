@@ -171,6 +171,7 @@ test('Desktop audit: guards, thumbnails, chat focus, destinations and overflow',
     await page.waitForFunction(() => !document.querySelector('[data-connection-action="obs-test"]').disabled);
     assert.equal(obsTests, 1);
     assert.match(await page.locator('#toast').innerText(), /OBS indisponible pour ce test/);
+    await page.route('**/api/v1/discord/status', route => route.fulfill({ json: runtime.dashboard.discord }));
     await page.route('**/api/v1/discord/guilds', route => route.fulfill({ json: [{ id: 'a', name: 'A' }, { id: 'b', name: 'B' }] }));
     await page.route('**/api/v1/discord/guilds/*/channels', async route => {
       const a = route.request().url().includes('/a/');

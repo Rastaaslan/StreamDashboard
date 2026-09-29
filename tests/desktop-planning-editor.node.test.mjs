@@ -59,6 +59,38 @@ test('Planning Desktop preserves the editable draft across telemetry, reconnect 
       socket.send(JSON.stringify({ type: 'state.updated', data: dashboard }));
       await page.waitForFunction(n => window.__preview.state.dashboard.timer.remaining === n, n);
     };
+    // Publication guards update inside the open editor, without replacing its draft DOM.
+    await page.evaluate(() => { window.__preview.state.productProfile.modules.googleCalendar = true; });
+    dashboard.twitch.connected = true;
+    dashboard.twitch.capabilities = { schedule: false };
+    dashboard.google = { configured: true, connected: true, targetCalendarId: 'primary', calendars: [{ id: 'primary', writable: false }] };
+    await title.fill('Brouillon permissions'); await title.focus();
+    const original = await title.elementHandle();
+    await emit(90);
+    await expect(page.locator('#event-publish-twitch')).toBeDisabled();
+    await expect(page.locator('#event-twitch-reason')).toContainText('channel:manage:schedule');
+    await expect(page.locator('#event-publish-google')).toBeDisabled();
+    await expect(page.locator('#event-google-reason')).toContainText('écriture');
+    for (const connected of [true, false, true]) {
+      dashboard.twitch.connected = connected; dashboard.twitch.capabilities.schedule = true;
+      dashboard.google.connected = connected; dashboard.google.calendars[0].writable = true;
+      await emit(connected ? 92 : 91);
+      for (const provider of ['twitch','google']) {
+        await expect(page.locator(`#event-publish-${provider}`)).toBeVisible();
+        if (connected) await expect(page.locator(`#event-publish-${provider}`)).toBeEnabled();
+        else {
+          await expect(page.locator(`#event-publish-${provider}`)).toBeDisabled();
+          await expect(page.locator(`#event-${provider}-reason`)).toContainText('Connecter');
+        }
+      }
+      await expect(title).toHaveValue('Brouillon permissions'); await expect(title).toBeFocused();
+      assert.equal(await original.evaluate(el => el === document.querySelector('#event-title')), true);
+    }
+    // Permission can also be revoked while the account remains connected.
+    dashboard.twitch.capabilities.schedule = false; await emit(93);
+    await expect(page.locator('#event-publish-twitch')).toBeDisabled();
+    await expect(page.locator('#event-twitch-reason')).toContainText('channel:manage:schedule');
+    await expect(title).toBeFocused(); await title.fill('');
     await title.click();
     for (const [n, chunk] of ['Mon ', 'live ', 'saisi'].entries()) {
       await page.keyboard.type(chunk);

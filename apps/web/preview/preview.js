@@ -47,6 +47,22 @@ function applyProductAppearance(){
   document.documentElement.style.setProperty('--product-accent',appearance.accent||demoProductProfile.appearance.accent);
   document.documentElement.style.setProperty('--product-font-scale',appearance.textScale==='large'?'1.15':appearance.textScale==='small'?'.9':'1');
 }
+function updatePlanningPublicationGuards(){
+  const d=state.dashboard||{};
+  const common=!state.runtime?'Publication disponible en mode Runtime.':!state.runtimeAvailable?'Runtime hors ligne · reconnecter le PC.':'';
+  const reasons={
+    twitch:common||(!moduleEnabled('twitch')?'Module désactivé : activer Twitch dans Personnalisation.':!d.twitch?.connected?'Connecter Twitch dans Connexions.':d.twitch?.capabilities?.schedule!==true?'Réautoriser Twitch dans Connexions avec la permission Planning (channel:manage:schedule).':''),
+    google:common||(!moduleEnabled('googleCalendar')?'Module désactivé : activer Google Calendar dans Personnalisation.':!d.google?.configured?'Google Calendar non provisionné dans cette distribution.':!d.google?.connected?'Connecter Google Calendar dans Connexions.':!d.google?.calendars?.some(calendar=>calendar.id===d.google.targetCalendarId&&calendar.writable)?'Choisir un calendrier Google accessible en écriture dans Connexions.':''),
+  };
+  for(const [provider,reason] of Object.entries(reasons)){
+    const input=document.querySelector(`#event-publish-${provider}`),label=input?.closest('label');
+    if(!label)continue;
+    label.hidden=false;input.disabled=Boolean(reason);label.title=reason;
+    let hint=label.querySelector('[data-provider-reason]');
+    if(!hint){hint=document.createElement('small');hint.dataset.providerReason='';hint.id=`event-${provider}-reason`;label.append(hint)}
+    hint.textContent=reason;input.setAttribute('aria-describedby',hint.id);
+  }
+}
 function projectProductShell(){
   document.querySelectorAll('[data-view]').forEach(button=>{
     if(button.dataset.view==='camp'||button.dataset.view==='home')button.hidden=false;
@@ -56,8 +72,7 @@ function projectProductShell(){
   const context=state.productProfile?.profile?.channelName||state.productProfile?.profile?.displayName||'Desktop';
   const brand=document.querySelector('#brand-context');if(brand)brand.textContent=state.runtime?context:`${context} · Aperçu`;
   const preview=document.querySelector('#preview-mode');if(preview)preview.hidden=state.runtime;
-  const twitchPublish=document.querySelector('#event-publish-twitch')?.closest('label');if(twitchPublish)twitchPublish.hidden=!moduleEnabled('twitch');
-  const googlePublish=document.querySelector('#event-publish-google')?.closest('label');if(googlePublish)googlePublish.hidden=!moduleEnabled('googleCalendar');
+  updatePlanningPublicationGuards();
   const twitchCategory=document.querySelector('#event-twitch-category')?.closest('label');if(twitchCategory)twitchCategory.hidden=!moduleEnabled('twitch');
   document.title=state.runtime?'StreamDashboard':'StreamDashboard Desktop Preview';
 }
@@ -90,6 +105,7 @@ view.addEventListener('focusout',()=>setTimeout(()=>{
   }
 }));
 function updateRuntimeView(){
+  updatePlanningPublicationGuards();
   if(state.view==='live'&&(view.contains(document.activeElement)||editableFocus())){
     updateLiveTelemetry();
     deferredRuntimeRender=true;
@@ -101,7 +117,7 @@ function updateRuntimeView(){
   applyActionGuards();
 }
 let streamlabsOAuthTimer=null,streamlabsOAuthLoading=false,streamlabsOAuthDirty=false;
-const streamlabsOAuthVisible=()=>state.runtime&&moduleEnabled('streamlabs')&&state.view==='camp'&&['Connexions','Soutiens'].includes(state.campItem);
+const streamlabsOAuthVisible=()=>state.runtime&&state.view==='camp'&&['Connexions','Soutiens'].includes(state.campItem);
 // Socket connectivity also works with a manual token. Only the OAuth endpoint can authorize a real test.
 function scheduleStreamlabsOAuthRefresh(){
   if(!streamlabsOAuthVisible())return;
@@ -156,7 +172,7 @@ async function dashboardCommand(command,logType='dashboard.command',logPayload=c
   const commandId=uid();const body=await request('/api/v1/commands',{method:'POST',body:JSON.stringify({...command,commandId,correlationId:commandId})});
   if(body?.state)applyDashboard(body.state);return body;
 }
-async function refreshRuntime(){
+async function refreshRuntime(preserveConnections=false){
   if(!state.runtime)return;
   try{
     const [dashboard,soundboard,setup,product,connections]=await Promise.all([
@@ -168,7 +184,7 @@ async function refreshRuntime(){
     ]);
     applyProduct(product,connections);
     applyDashboard(dashboard);state.soundboard=soundboard;state.sounds=soundboard.sounds||[];state.obsSetup=setup;
-    runtimeUi(true,dashboard.obs?.connected?'OBS connecté':'Runtime connecté · OBS hors ligne');connectRuntimeSocket();render();return true;
+    runtimeUi(true,dashboard.obs?.connected?'OBS connecté':'Runtime connecté · OBS hors ligne');connectRuntimeSocket();if(state.view==='live'||(preserveConnections&&state.view==='camp'&&state.campItem==='Connexions'&&view.querySelector('[data-connection-id]')))updateRuntimeView();else render();return true;
   }catch(error){runtimeUi(false,'Runtime indisponible');render();toast(error.message,true);return false}
 }
 function applyDashboard(d){
@@ -343,7 +359,7 @@ function planning(){
       <div><h2>Planning</h2><span class="label">${state.planningFilter==='past'?'Historique':state.planningFilter==='all'?'Tous les événements':'Planning à venir'}</span></div>
       <button class="action" data-add-event>+ Nouvel événement</button>
     </div>
-    <div class="planning-primary-tools"><select data-planning-filter aria-label="Filtrer le planning"><option value="upcoming" ${state.planningFilter==='upcoming'?'selected':''}>À venir</option><option value="past" ${state.planningFilter==='past'?'selected':''}>Passés</option><option value="all" ${state.planningFilter==='all'?'selected':''}>Tous</option></select><details class="planning-more"><summary>Partager & exporter</summary><div><select data-planning-period aria-label="Période d’export"><option value="today" ${state.planningPeriod==='today'?'selected':''}>Aujourd’hui</option><option value="this-week" ${state.planningPeriod==='this-week'?'selected':''}>Cette semaine</option><option value="next-week" ${state.planningPeriod==='next-week'?'selected':''}>Semaine prochaine</option></select><button class="secondary" data-planning-export>Exporter l’image</button>${moduleEnabled('discord')?`<button class="secondary" data-planning-discord ${state.dashboard?.discord?.connected&&state.dashboard?.discord?.channelId?'':'disabled'}>Publier sur Discord</button>`:''}</div></details></div>
+    <div class="planning-primary-tools"><select data-planning-filter aria-label="Filtrer le planning"><option value="upcoming" ${state.planningFilter==='upcoming'?'selected':''}>À venir</option><option value="past" ${state.planningFilter==='past'?'selected':''}>Passés</option><option value="all" ${state.planningFilter==='all'?'selected':''}>Tous</option></select><details class="planning-more"><summary>Partager & exporter</summary><div><select data-planning-period aria-label="Période d’export"><option value="today" ${state.planningPeriod==='today'?'selected':''}>Aujourd’hui</option><option value="this-week" ${state.planningPeriod==='this-week'?'selected':''}>Cette semaine</option><option value="next-week" ${state.planningPeriod==='next-week'?'selected':''}>Semaine prochaine</option></select><button class="secondary" data-planning-export>Exporter l’image</button><button class="secondary" data-planning-discord ${state.dashboard?.discord?.connected&&state.dashboard?.discord?.channelId?'':'disabled'}>Publier sur Discord</button></div></details></div>
     <div class="agenda">${items.slice(0,40).map((e,index)=>`<article class="planning-entry"><div data-planning-thumbnail="${index}"></div><button class="event" data-event-index="${index}"><span class="event-when"><b>${esc(e.day)}</b><small>${esc(e.time)}</small></span><strong>${esc(e.title)}</strong><span class="kind">${esc([e.kind,providerCopy(e.raw)].filter(Boolean).join(' · '))}</span><i>›</i></button></article>`).join('')||'<p class="label">Aucun événement pour ce filtre.</p>'}</div>
   </section>`;
 }
@@ -357,26 +373,24 @@ const campItems=campGroups.flatMap(group=>group.items);
 const connectionLabel=status=>({CONNECTED:'Connecté',CONNECTING:'Connexion…',DISCONNECTED:'Déconnecté',NOT_CONFIGURED:'À configurer',NOT_SUPPORTED:'Non disponible',DEGRADED:'Connexion instable',ERROR:'Erreur'})[status]||'À configurer';
 const normalizedConnectionLabel=status=>({connected:'Connecté',connecting:'Connexion…',disconnected:'Déconnecté','reauth-required':'Réautorisation requise',error:'Erreur',unavailable:'Non disponible'})[status]||'À configurer';
 const runtimeDisabled=()=>state.runtime?'':' disabled';
-const connectionModuleByName={OBS:'obs',Twitch:'twitch','Google Calendar':'googleCalendar',Discord:'discord',Streamlabs:'streamlabs',WizeBot:'wizebot'};
-const connectionIdByName={OBS:'obs',Twitch:'twitch','Google Calendar':'google',Discord:'discord',Streamlabs:'streamlabs',WizeBot:'wizebot'};
+const connectionModuleByName={OBS:'obs',Twitch:'twitch','Google Calendar':'googleCalendar',Discord:'discord',Streamlabs:'streamlabs',WizeBot:'wizebot',Android:'remote'};
+const connectionIdByName={OBS:'obs',Twitch:'twitch','Google Calendar':'google',Discord:'discord',Streamlabs:'streamlabs',WizeBot:'wizebot',Android:'remote'};
 function connectionCard(name,status,content=''){
-  const module=connectionModuleByName[name];if(module&&!moduleEnabled(module))return'';
+  const module=connectionModuleByName[name];
   const normalized=state.connections?.find(value=>value.id===connectionIdByName[name]);
   const id=connectionIdByName[name];
   const snapshot=id==='streamlabs'||id==='wizebot'?state.dashboard?.controlHub?.integrations?.[id]:state.dashboard?.[id];
-  const resolvedStatus=snapshot?status:normalized?normalizedConnectionLabel(normalized.status):status;
+  const resolvedStatus=normalized?.requiresReauth||normalized?.status==='reauth-required'?'Réautorisation requise':normalized?.status==='unavailable'?'Non provisionné / indisponible':snapshot?status:normalized?normalizedConnectionLabel(normalized.status):status;
   const mode=normalized?.mode?` · ${normalized.mode==='official'?'Officiel':'Personnalisé'}`:'';
-  const blocked=normalized?.status==='unavailable'&&!(normalized.capabilities||[]).length;
-  const message=normalized?.message&&(!snapshot||blocked)?`<p class="help provider-message">${esc(normalized.message)}</p>`:'';
-  return`<article class="setup-status connection-card" data-connection-id="${esc(id||name)}"><div class="section-head"><b>${esc(name)}</b><span class="label">${esc(resolvedStatus+mode)}</span></div>${blocked?(message||'<p class="help">Ce provider n’est pas disponible dans cette configuration.</p>'):`${message}${content}`}</article>`
+  const message=normalized?.message&&!snapshot?`<p class="help provider-message">${esc(normalized.message)}</p>`:'';
+  return`<article class="setup-status connection-card" data-connection-id="${esc(id||name)}"><div class="section-head"><b>${esc(name)}</b><span class="label">${esc(resolvedStatus+mode+(module&&!moduleEnabled(module)?' · Module désactivé (Personnalisation)':''))}</span></div>${message}${content}</article>`
 }
 function connectionsContent(){
   const d=state.dashboard||{};const integrations=d.controlHub?.integrations||{};const streamlabs=integrations.streamlabs||{status:'NOT_CONFIGURED'};const wizebot=integrations.wizebot||{status:'NOT_CONFIGURED'};
   const twitch=d.twitch||{};const google=d.google||{};const discord=d.discord||{};const remote=d.remote||{};const settings=d.settings||{};
   const deviceCode=twitch.deviceAuthorization? `<div class="device-code"><span class="label">Code Twitch</span><b>${esc(twitch.deviceAuthorization.userCode)}</b></div>`:'';
   const calendars=Array.isArray(google.calendars)?google.calendars:[];const target=google.targetCalendarId||'';
-  const googleControls=!google.configured?'<p class="help">Google Calendar n’est pas configuré dans cette distribution.</p>':
-    `<div class="toolbar"><select aria-label="Calendrier Google cible" id="preview-google-calendar"${runtimeDisabled()}><option value="">Choisir le calendrier…</option>${calendars.map(item=>`<option value="${esc(item.id)}" ${target===item.id?'selected':''} ${item.writable?'':'disabled'}>${esc(item.summary)}${item.writable?'':' · lecture seule'}</option>`).join('')}</select><button class="secondary" data-connection-action="google-sync" ${state.runtime&&google.connected&&target?'':'disabled'}>Synchroniser</button><button class="${google.connected?'critical':'action'}" data-connection-control="google-auth" data-connection-action="${google.connected?'google-disconnect':'google-connect'}"${runtimeDisabled()}>${google.connected?'Déconnecter':'Connecter Google Calendar'}</button></div>`;
+  const googleControls=`<p class="help" data-google-diagnostic>${google.configured?'':'Google Calendar n’est pas configuré dans cette distribution · configuration mainteneur requise.'}</p><div class="toolbar"><select aria-label="Calendrier Google cible" id="preview-google-calendar" data-target="${esc(target)}"${runtimeDisabled()}><option value="">Choisir le calendrier…</option>${calendars.map(item=>`<option value="${esc(item.id)}" ${target===item.id?'selected':''} ${item.writable?'':'disabled'}>${esc(item.summary)}${item.writable?'':' · lecture seule'}</option>`).join('')}</select><button class="secondary" data-connection-action="google-sync" ${state.runtime&&google.connected&&target?'':'disabled'}>Synchroniser</button><button class="${google.connected?'critical':'action'}" data-connection-control="google-auth" data-connection-action="${google.connected?'google-disconnect':'google-connect'}"${runtimeDisabled()}>${google.connected?'Déconnecter':'Connecter Google Calendar'}</button></div>`;
   const devices=Array.isArray(remote.devices)?remote.devices.filter(item=>!item.revokedAt):[];
   const pairing=state.remotePairing?`<div class="device-code"><span class="label">ID de pairing</span><b>${esc(state.remotePairing.id)}</b><span class="label">Code</span><b>${esc(state.remotePairing.code)}</b><span>Usage unique · expire : ${esc(new Date(state.remotePairing.expiresAt).toLocaleString())}</span>${(state.remotePairing.urls||[]).map(url=>`<span>${esc(url)}</span>`).join('')}${(state.remotePairing.androidLinks||[]).map(url=>`<a href="${esc(url)}">Ouvrir sur Android</a><small>${esc(url)}</small>`).join('')}</div>`:'';
   return `<div class="connection-stack">
@@ -387,11 +401,12 @@ function connectionsContent(){
         <div class="connection-actions"><button class="secondary" type="button" data-connection-action="obs-launch"${runtimeDisabled()}>Lancer OBS</button><button class="secondary" type="button" data-connection-action="obs-test"${runtimeDisabled()}>Tester</button><button class="action" type="submit"${runtimeDisabled()}>Enregistrer</button></div>
       </form>`)}
     ${connectionCard('Twitch',twitch.connected?`Connecté · ${twitch.displayName||twitch.userName||''}`:twitch.error||'Déconnecté',`<div data-twitch-device-code>${deviceCode}</div><div class="connection-actions"><button class="${twitch.connected?'critical':'action'}" data-connection-control="twitch-auth" data-connection-action="${twitch.connected?'twitch-disconnect':'twitch-connect'}"${runtimeDisabled()}>${twitch.connected?'Déconnecter':'Connecter Twitch'}</button>${twitch.connected?`<button class="secondary" data-connection-action="twitch-sync" ${twitchCan('schedule')?'':'disabled'}>Synchroniser</button>`:''}</div>`)}
-    ${connectionCard('Google Calendar',google.connected?'Connecté':google.error||'Déconnecté',googleControls)}
-    ${connectionCard('Discord',discord.connected?`Connecté${discord.guildName?` · ${discord.guildName}`:''}`:discord.configured?discord.error||'Configuré · non connecté':'À configurer',`
-      <div class="toolbar"><input id="preview-discord-token" type="password" maxlength="300" autocomplete="new-password" placeholder="Token du bot"${runtimeDisabled()}><button class="action" data-connection-action="discord-token-save"${runtimeDisabled()}>Enregistrer token</button><button class="critical" data-connection-action="discord-token-delete"${runtimeDisabled()}>Déconnecter</button></div>
-      <div class="toolbar"><select aria-label="Serveur Discord" id="preview-discord-guild"${runtimeDisabled()}><option value="">Serveur Discord…</option></select><select aria-label="Salon Discord" id="preview-discord-channel"${runtimeDisabled()}><option value="">Salon…</option></select><button class="secondary" data-connection-action="discord-load"${runtimeDisabled()}>Charger</button></div>
-      <div class="toolbar"><input id="preview-discord-message" maxlength="2000" value="${esc(d.discordDefaultMessage||'')}" placeholder="Message par défaut"${runtimeDisabled()}><button class="action" data-connection-action="discord-settings-save"${runtimeDisabled()}>Enregistrer destination</button></div>`)}
+    ${connectionCard('Google Calendar',google.error|| (google.connected?'Connecté':'Déconnecté'),googleControls)}
+    ${connectionCard('Discord',discord.connected?`Connecté${discord.guildName?` · ${discord.guildName}`:''}${discord.channelName?` · #${discord.channelName}`:' · destination à sélectionner'}`:discord.configured?discord.error||'Configuré · non connecté':'À configurer',`
+      <p class="help">Connexion par token de bot Discord (pas de compte utilisateur). Ajoute ton bot au serveur avec les permissions Voir le salon, Envoyer des messages et Joindre des fichiers, puis enregistre son token et charge les destinations. Aucun OAuth Discord officiel n’est disponible.</p>
+      <div class="toolbar"><input aria-label="Token du bot Discord" id="preview-discord-token" type="password" maxlength="300" autocomplete="new-password" placeholder="Token du bot"${runtimeDisabled()}><button class="action" data-connection-action="discord-token-save"${runtimeDisabled()}>Enregistrer token</button><button class="critical" data-connection-action="discord-token-delete"${runtimeDisabled()}>Déconnecter</button></div>
+      <div class="toolbar"><select aria-label="Serveur Discord" id="preview-discord-guild"${runtimeDisabled()}><option value="">Serveur Discord…</option></select><select aria-label="Salon Discord" id="preview-discord-channel"${runtimeDisabled()}><option value="">Salon…</option></select><button class="secondary" data-connection-action="discord-load"${runtimeDisabled()}>Charger les serveurs et salons</button></div>
+      <div class="toolbar"><input id="preview-discord-message" maxlength="2000" value="${esc(discord.defaultMessage||'')}" placeholder="Message par défaut"${runtimeDisabled()}><button class="action" data-connection-action="discord-settings-save"${runtimeDisabled()}>Enregistrer destination</button></div>`)}
     ${connectionCard('Streamlabs',connectionLabel(streamlabs.status),`<form id="preview-streamlabs-oauth-form" class="connection-form"><div class="toolbar"><input name="clientId" maxlength="500" autocomplete="off" placeholder="${state.streamlabsOAuth?.configured?'Client ID enregistré · saisir les deux pour remplacer':'Client ID Streamlabs'}"${runtimeDisabled()}><input name="clientSecret" type="password" maxlength="1000" autocomplete="new-password" placeholder="${state.streamlabsOAuth?.configured?'Client Secret enregistré · saisir les deux pour remplacer':'Client Secret Streamlabs'}"${runtimeDisabled()}></div><div class="connection-actions"><button class="secondary" type="submit"${runtimeDisabled()}>Enregistrer les identifiants</button><button class="action" type="button" data-connection-control="streamlabs-auth" data-connection-action="streamlabs-oauth-connect" ${state.streamlabsOAuth?.configured?'':'disabled'}> ${streamlabs.status==='CONNECTED'?'Réautoriser Streamlabs':'Connecter Streamlabs'}</button><button class="secondary" type="button" data-connection-action="streamlabs-test"${runtimeDisabled()}>Test interne</button><button class="action" type="button" data-connection-action="streamlabs-test-real" ${state.streamlabsOAuth?.authorized&&streamlabs.status==='CONNECTED'?'':'disabled'}>Test réel Streamlabs</button><button class="critical" type="button" data-connection-action="streamlabs-disconnect"${runtimeDisabled()}>Déconnecter</button></div><p class="help">Test interne : simulation locale, sans Alert Box. Test réel : envoi à Streamlabs. OAuth Streamlabs · scopes socket.token + donations.create · le test réel déclenche l’Alert Box et vérifie le retour Socket.</p></form><details class="more-details"><summary>Configuration avancée · Socket Token manuel</summary><form id="preview-streamlabs-form" class="toolbar"><input name="token" type="password" maxlength="1000" autocomplete="new-password" placeholder="Token Socket API"${runtimeDisabled()}><button class="secondary" type="submit"${runtimeDisabled()}>Configurer manuellement</button></form></details>`)}
     ${connectionCard('WizeBot',`${connectionLabel(wizebot.status)}${wizebot.profile?.name?` · ${wizebot.profile.name}`:''}`,`<form id="preview-wizebot-form" class="connection-form"><div class="toolbar"><input name="apiBaseUrl" type="url" placeholder="Adresse API WizeBot" required${runtimeDisabled()}><input name="token" type="password" maxlength="1000" autocomplete="new-password" placeholder="Token API" required${runtimeDisabled()}></div><div class="connection-actions"><button class="action" type="submit"${runtimeDisabled()}>Configurer</button><button class="secondary" type="button" data-connection-action="wizebot-refresh"${runtimeDisabled()}>Rafraîchir</button><button class="critical" type="button" data-connection-action="wizebot-disconnect"${runtimeDisabled()}>Déconnecter</button></div></form>`)}
     ${connectionCard('Android',remote.enabled?(settings.remoteEnabled?'Télécommande LAN active':'LAN encore actif · redémarrage requis pour désactiver'):settings.remoteEnabled?'Activation configurée · redémarrage requis':'Télécommande LAN désactivée',`<div class="connection-actions"><button class="secondary" data-connection-action="remote-toggle"${runtimeDisabled()}>${settings.remoteEnabled?'Désactiver au prochain démarrage':'Activer la télécommande'}</button>${remote.enabled?'<button class="action" data-connection-action="remote-pair">Ajouter une télécommande</button>':''}</div>${pairing}<p class="help">${(remote.urls||[]).map(url=>esc(url)).join(' · ')} · Même réseau LAN requis. Après changement Wi-Fi/Ethernet, actualisez cette adresse dans Connexions sur Android. Pour renouveler un accès, révoquez l’appareil puis appairez-le avec un nouveau code.</p><div class="connection-devices">${devices.map(device=>`<span>${esc(device.name||'Android')}<button class="critical" data-revoke-device="${esc(device.id)}">Révoquer</button></span>`).join('')||'<span class="help">Aucune télécommande appairée.</span>'}</div>`)}
@@ -415,6 +430,8 @@ function updateConnectionTelemetry(){
     button.dataset.connectionAction=fresh.dataset.connectionAction;
     button.textContent=fresh.textContent;button.className=fresh.className;
   });
+  const diagnostic=view.querySelector('[data-google-diagnostic]');
+  if(diagnostic)diagnostic.textContent=next.content.querySelector('[data-google-diagnostic]')?.textContent||'';
   const code=view.querySelector('[data-twitch-device-code]');
   if(code)code.innerHTML=next.content.querySelector('[data-twitch-device-code]')?.innerHTML||'';
   const calendar=view.querySelector('#preview-google-calendar'),freshCalendar=next.content.querySelector('#preview-google-calendar');
@@ -422,7 +439,10 @@ function updateConnectionTelemetry(){
     const selected=calendar.value,oldOption=calendar.selectedOptions[0]?.cloneNode(true);
     const options=[...freshCalendar.options].map(option=>option.cloneNode(true));
     if(selected&&!options.some(option=>option.value===selected)&&oldOption){oldOption.disabled=true;options.push(oldOption)}
-    calendar.replaceChildren(...options);calendar.value=selected;
+    const targetChanged=calendar.dataset.target!==freshCalendar.dataset.target;
+    if(calendar.innerHTML!==freshCalendar.innerHTML)calendar.replaceChildren(...options);
+    calendar.value=targetChanged?freshCalendar.dataset.target:selected;
+    calendar.dataset.target=freshCalendar.dataset.target;
   }
   runtimeUi(true,state.dashboard?.obs?.connected?'OBS connecté · temps réel':'Runtime connecté · OBS hors ligne');
 }
@@ -700,6 +720,7 @@ function camp(){
   return`<div class="camp-grid"><section class="section camp-nav">${navigation}</section><section class="section empty-detail"><p class="eyebrow">APPLICATION</p><h2 id="camp-title">${esc(state.campItem)}</h2><div id="camp-copy">${campContent(state.campItem)}</div></section></div>`
 }
 function render(){
+  updatePlanningPublicationGuards();
   // The open Planning editor owns its DOM and draft until an explicit close.
   // This also covers runtime refresh/reconnect paths which bypass updateRuntimeView.
   if(document.querySelector('#event-dialog').open){deferredRuntimeRender=true;return}
@@ -718,7 +739,9 @@ function applyActionGuards(){
   const obsReason=state.runtime&&!d.obs?.connected?'OBS hors ligne · vérifie la connexion.':'';
   const realTestReason=state.streamlabsOAuth?.statusError||(!state.streamlabsOAuth?.authorized?'Autorise Streamlabs via OAuth pour envoyer un test réel.':d.controlHub?.integrations?.streamlabs?.status!=='CONNECTED'?'Socket Streamlabs déconnecté.':'');
   const reasons={
+    'twitch-connect':state.connections?.find(item=>item.id==='twitch')?.status==='unavailable'?'Twitch non provisionné dans cette distribution · configuration mainteneur requise.':'',
     'twitch-sync':!d.twitch?.connected?'Connecte Twitch.':!twitchCan('schedule')?'Reconnecte Twitch avec l’autorisation Planning.':'',
+    'google-connect':!d.google?.configured?'Google Calendar non configuré dans cette distribution.':'',
     'google-sync':!d.google?.connected?'Connecte Google Calendar.':!d.google?.calendars?.some(item=>item.id===d.google.targetCalendarId&&item.writable)?'Choisis un calendrier Google accessible en écriture.':'',
     'obs-launch':!window.streamDashboardDesktop?.ensureObsRunning?'Disponible dans l’application Desktop.':'',
     'discord-load':!d.discord?.configured?'Configure le token Discord.':'',
@@ -941,7 +964,7 @@ function bindStreamerPingSettings(){
   document.querySelector('[data-ping-action="clear-history"]')?.addEventListener('click',async()=>{if(!confirm('Effacer les Streamer Pings déjà acquittés ?'))return;try{await request('/api/v1/streamer-pings/history',{method:'DELETE'});await loadPingHistory();render();toast('Historique nettoyé')}catch(error){toast(error.message,true)}});
 }
 function requireRuntime(){if(state.runtime)return true;toast('Passe en mode Runtime pour utiliser cette connexion.',true);return false}
-async function refreshAfterConnection(message){await refreshRuntime();if(message)toast(message)}
+async function refreshAfterConnection(message,preserveConnections=false){await refreshRuntime(preserveConnections);if(message)toast(message)}
 let discordChannelRequest=0;
 async function loadDiscordChannels(){
   if(!requireRuntime())return;
@@ -959,7 +982,15 @@ async function loadDiscordChannels(){
   finally{applyActionGuards()}
 }
 async function loadDiscord(){
-  if(!requireRuntime())return;const guild=document.querySelector('#preview-discord-guild');if(!guild)return;const guilds=await request('/api/v1/discord/guilds');guild.replaceChildren(new Option('Serveur Discord…',''),...guilds.map(value=>new Option(value.name,value.id)));if(state.dashboard?.discord?.guildId)guild.value=state.dashboard.discord.guildId;await loadDiscordChannels();toast('Discord chargé');
+  if(!requireRuntime())return;
+  const guild=document.querySelector('#preview-discord-guild');if(!guild)return;
+  // Revalidate the stored bot token, including after a server restart.
+  const status=await request('/api/v1/discord/status');
+  state.dashboard.discord=status;
+  updateRuntimeView();
+  if(!status.connected)throw new Error(status.error||'Connexion Discord impossible · vérifie le token du bot.');
+  if(!guild.isConnected)return;
+  const guilds=await request('/api/v1/discord/guilds');guild.replaceChildren(new Option('Serveur Discord…',''),...guilds.map(value=>new Option(value.name,value.id)));if(state.dashboard?.discord?.guildId)guild.value=state.dashboard.discord.guildId;await loadDiscordChannels();toast('Discord chargé');
 }
 function bindConnections(){
   if(state.view!=='camp'||state.campItem!=='Connexions')return;
@@ -981,12 +1012,12 @@ function bindConnections(){
       if(action==='twitch-disconnect'){const next=await request('/api/v1/twitch/disconnect',{method:'POST',body:'{}'});applyDashboard(next);toast('Twitch déconnecté');render();return}
       if(action==='twitch-sync'){const next=await request('/api/v1/twitch/sync',{method:'POST',body:'{}'});applyDashboard(next);toast('Planning Twitch synchronisé');render();return}
       if(action==='google-connect'){const result=await request('/api/v1/google/oauth/start',{method:'POST',body:'{}'});if(window.streamDashboardDesktop?.openExternalAuth)await window.streamDashboardDesktop.openExternalAuth(result.authorizationUrl);else window.open(result.authorizationUrl,'_blank','noopener,noreferrer');toast('Connexion Google ouverte dans le navigateur');return}
-      if(action==='google-disconnect'){const next=await request('/api/v1/google/disconnect',{method:'POST',body:'{}'});applyDashboard(next);toast('Google Calendar déconnecté');render();return}
-      if(action==='google-sync'){if(!state.dashboard?.google?.connected||!state.dashboard?.google?.targetCalendarId)return toast('Choisis un calendrier Google cible.',true);const next=await request('/api/v1/google/sync',{method:'POST',body:'{}'});applyDashboard(next);toast('Google Calendar synchronisé');render();return}
-      if(action==='discord-token-save'){const input=document.querySelector('#preview-discord-token');const token=input?.value.trim();if(!token)throw new Error('Saisis le token Discord.');await request('/api/v1/discord/token',{method:'PUT',body:JSON.stringify({token})});input.value='';await refreshAfterConnection('Token Discord configuré');return}
-      if(action==='discord-token-delete'){await request('/api/v1/discord/token',{method:'DELETE'});await refreshAfterConnection('Discord déconnecté');return}
+      if(action==='google-disconnect'){const next=await request('/api/v1/google/disconnect',{method:'POST',body:'{}'});applyDashboard(next);toast('Google Calendar déconnecté');updateRuntimeView();return}
+      if(action==='google-sync'){if(!state.dashboard?.google?.connected||!state.dashboard?.google?.targetCalendarId)return toast('Choisis un calendrier Google cible.',true);const next=await request('/api/v1/google/sync',{method:'POST',body:'{}'});applyDashboard(next);toast('Google Calendar synchronisé');updateRuntimeView();return}
+      if(action==='discord-token-save'){const input=document.querySelector('#preview-discord-token');const token=input?.value.trim();if(!token)throw new Error('Saisis le token Discord.');await request('/api/v1/discord/token',{method:'PUT',body:JSON.stringify({token})});input.value='';await refreshAfterConnection('Token Discord configuré',true);await loadDiscord();return}
+      if(action==='discord-token-delete'){await request('/api/v1/discord/token',{method:'DELETE'});await refreshAfterConnection('Discord déconnecté',true);return}
       if(action==='discord-load'){await loadDiscord();return}
-      if(action==='discord-settings-save'){const g=document.querySelector('#preview-discord-guild'),ch=document.querySelector('#preview-discord-channel'),msg=document.querySelector('#preview-discord-message');if(!g?.value||!ch?.value||ch.disabled)throw new Error('Choisis un serveur et un salon Discord accessibles.');await request('/api/v1/discord/settings',{method:'PUT',body:JSON.stringify({guildId:g?.value||null,channelId:ch?.value||null,defaultMessage:msg?.value||''})});await refreshAfterConnection('Destination Discord enregistrée');return}
+      if(action==='discord-settings-save'){const g=document.querySelector('#preview-discord-guild'),ch=document.querySelector('#preview-discord-channel'),msg=document.querySelector('#preview-discord-message');if(!g?.value||!ch?.value||ch.disabled)throw new Error('Choisis un serveur et un salon Discord accessibles.');await request('/api/v1/discord/settings',{method:'PUT',body:JSON.stringify({guildId:g?.value||null,channelId:ch?.value||null,defaultMessage:msg?.value||''})});await refreshAfterConnection('Destination Discord enregistrée',true);return}
       if(action==='streamlabs-oauth-connect'){const result=await request('/api/v1/supports/streamlabs/oauth/start',{method:'POST',body:'{}'});if(window.streamDashboardDesktop?.openExternalAuth)await window.streamDashboardDesktop.openExternalAuth(result.authorizationUrl);else window.open(result.authorizationUrl,'_blank','noopener,noreferrer');toast('Autorisation Streamlabs ouverte dans le navigateur');return}
       if(action==='streamlabs-test'){await request('/api/v1/supports/streamlabs/test',{method:'POST',body:'{}'});toast('Test interne StreamDashboard OK');return}
       if(action==='streamlabs-test-real'){toast('Test réel envoyé à Streamlabs · attente du Socket…');await request('/api/v1/supports/streamlabs/test-real',{method:'POST',body:'{}'});await refreshAfterConnection('Test réel OK · Alert Box + Socket Streamlabs validés');return}
@@ -997,7 +1028,7 @@ function bindConnections(){
       if(action==='remote-pair'){state.remotePairing=await request('/api/v1/remote/pairing',{method:'POST',body:'{}'});toast('Code de pairing créé');render();return}
     }catch(error){toast(error.message,true)}finally{if(button.isConnected){button.disabled=false;button.removeAttribute('aria-busy');applyActionGuards()}}
   });
-  const calendar=document.querySelector('#preview-google-calendar');if(calendar)calendar.onchange=async()=>{if(!calendar.value){calendar.value=state.dashboard?.google?.targetCalendarId||'';toast('Choisis un calendrier accessible en écriture.',true);return}if(!requireRuntime())return;try{const next=await request('/api/v1/google/target',{method:'PUT',body:JSON.stringify({calendarId:calendar.value})});applyDashboard(next);toast('Calendrier Google sélectionné');render()}catch(error){calendar.value=state.dashboard?.google?.targetCalendarId||'';toast(error.message,true)}};
+  const calendar=document.querySelector('#preview-google-calendar');if(calendar)calendar.onchange=async()=>{if(!calendar.value){calendar.value=state.dashboard?.google?.targetCalendarId||'';toast('Choisis un calendrier accessible en écriture.',true);return}if(!requireRuntime())return;try{const next=await request('/api/v1/google/target',{method:'PUT',body:JSON.stringify({calendarId:calendar.value})});applyDashboard(next);toast('Calendrier Google sélectionné');updateRuntimeView()}catch(error){calendar.value=state.dashboard?.google?.targetCalendarId||'';toast(error.message,true)}};
 }
 let selectedSoundFile='';
 function openSoundDialog(id=''){const sound=(state.sounds||[]).find(s=>s.id===id);selectedSoundFile='';document.querySelector('#sound-id').value=id;document.querySelector('#sound-dialog-title').textContent=sound?'Modifier le son':'Ajouter un son';document.querySelector('#sound-name').value=sound?.name||'';document.querySelector('#sound-category').value=sound?.category||'';document.querySelector('#sound-volume').value=String(Math.round((sound?.volume??1)*100));document.querySelector('#sound-cooldown').value=String(Math.round((sound?.cooldownMs??0)/1000));document.querySelector('#sound-monitoring').value=sound?.monitoringMode||'stream';document.querySelector('#sound-favorite').checked=sound?.favorite===true;document.querySelector('#sound-enabled').checked=sound?.enabled!==false;document.querySelector('#sound-file-copy').textContent=sound?'Conserver le fichier actuel':'Aucun fichier choisi';document.querySelector('#sound-delete').hidden=!sound;document.querySelector('#sound-dialog').showModal()}
