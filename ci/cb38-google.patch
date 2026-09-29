@@ -1,0 +1,419 @@
+diff --git a/apps/server/src/index.ts b/apps/server/src/index.ts
+index 57fdf33..d302d4c 100644
+--- a/apps/server/src/index.ts
++++ b/apps/server/src/index.ts
+@@ -125,6 +125,7 @@ export interface DashboardServerOptions {
+   electronVersion?: string;
+   logsPath?: string;
+   logger?: Pick<Console, 'info' | 'warn' | 'error'>;
++  googleFetch?: typeof fetch;
+   discordFetch?: typeof fetch;
+   streamlabsTransport?: StreamlabsTransport;
+   streamlabsFetch?: typeof fetch;
+@@ -539,6 +540,7 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
+         expiresAt: String(tokens.expiresAt),
+       });
+     },
++    options.googleFetch ?? fetch,
+   );
+   let googleCalendars: Array<{ id: string; summary: string; writable: boolean }> = [];
+   let twitchChannel: { title: string; gameId: string; gameName: string } = { title: '', gameId: '', gameName: '' };
+@@ -549,6 +551,7 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
+   let twitchEventSubKey = '';
+   let googleError: string | null = null;
+   let googleOAuthAttempt: GoogleOAuthAttempt | null = null;
++  let googleOAuthTimeout: ReturnType<typeof setTimeout> | undefined;
+   let preflightState: PreflightState = {
+     eventId: null,
+     status: 'idle',
+@@ -1519,7 +1522,7 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
+       { id: 'remote', label: 'Remote Android', status: remoteRuntimeEnabled ? 'connected' : 'disconnected', mode: 'custom', requiresReauth: false, capabilities: [], message: remoteRuntimeEnabled ? 'Télécommande LAN active · appairage depuis le PC.' : 'Activer la télécommande dans Connexions sur le PC puis redémarrer.' },
+       { id: 'obs', label: 'OBS', status: status(obs.state.connected), mode: 'custom', requiresReauth: false, capabilities: ['test','configure','scenes','audio'] },
+       { id: 'twitch', label: 'Twitch', status: status(twitch.state.connected, Boolean(twitchClientId), twitch.state.error), mode: productProfile.providers.twitch.mode, requiresReauth: needsReauth(twitch.state.error), capabilities: twitchClientId ? ['connect','disconnect','test','chat','audience','clips'] : [], ...(!twitchClientId ? { message: 'Configuration mainteneur requise' } : {}) },
+-      { id: 'google', label: 'Google Calendar', status: status(google.connected, Boolean(googleClientId), googleError), mode: productProfile.providers.google.mode, requiresReauth: needsReauth(googleError), capabilities: googleClientId ? ['connect','disconnect','test','calendar'] : [], ...(!googleClientId ? { message: 'Configuration mainteneur requise' } : {}) },
++      { id: 'google', label: 'Google Calendar', status: status(google.connected, Boolean(googleClientId), googleError), mode: productProfile.providers.google.mode, requiresReauth: needsReauth(googleError), capabilities: googleClientId ? ['connect','disconnect','test','calendar'] : [], ...(!googleClientId ? { message: 'GOOGLE_CLIENT_ID manquant : configurer un Client ID OAuth de type application de bureau dans resources/distribution.json ou l’environnement Desktop.' } : {}) },
+       { id: 'discord', label: 'Discord', status: status(discordPublic.connected, true, discordPublic.error), mode: 'custom', requiresReauth: false, capabilities: ['configure','disconnect','test','publish'], message: 'Connexion par token de bot Discord. OAuth officiel non disponible.' },
+       { id: 'streamlabs', label: 'Streamlabs', status: integrationStatus(streamlabs.state().status), mode: 'custom', requiresReauth: false, capabilities: ['configure','disconnect','test','donations'], ...(productProfile.providers.streamlabs.mode !== 'custom' ? { message: 'Provider officiel non implémenté · configuration personnalisée disponible sur le PC.' } : {}) },
+       { id: 'wizebot', label: 'WizeBot', status: integrationStatus(wizebot.state().status), mode: 'custom', requiresReauth: false, capabilities: ['configure','disconnect','test','events'], ...(productProfile.providers.wizebot.mode !== 'custom' ? { message: 'Provider officiel non implémenté · configuration personnalisée disponible sur le PC.' } : {}) },
+@@ -2066,6 +2069,15 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
+       if (!requireLocal(req, res)) return;
+       if (!googleClientId) throw new Error('GOOGLE_CLIENT_ID n’est pas configuré dans cette distribution.');
+       googleOAuthAttempt = createGoogleOAuthAttempt(googleClientId, `http://127.0.0.1:${runtimePort}/api/v1/google/oauth/callback`);
++      googleError = null;
++      clearTimeout(googleOAuthTimeout);
++      googleOAuthTimeout = setTimeout(() => {
++        googleOAuthAttempt = null;
++        googleError = 'Callback Google non reçu après 10 minutes. Revenez dans StreamDashboard et cliquez sur Connecter. Vérifiez que le navigateur est sur ce PC et autorise le retour vers 127.0.0.1.';
++        broadcast();
++      }, Math.max(0, googleOAuthAttempt.expiresAt - Date.now()));
++      googleOAuthTimeout.unref();
++      broadcast();
+       res.status(201).json({ authorizationUrl: googleOAuthAttempt.authorizationUrl });
+     } catch (error) { next(error); }
+   });
+@@ -2074,7 +2086,9 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
+       if (!requireLocal(req, res)) return;
+       if (!googleOAuthAttempt) throw new Error('Aucune connexion Google en attente.');
+       const attempt = googleOAuthAttempt;
++      clearTimeout(googleOAuthTimeout);
+       googleOAuthAttempt = null;
++      if (req.query.error) throw new Error(`Google OAuth : ${String(req.query.error)}. Credential attendu : application de bureau (Desktop). URI de redirection : ${new URL(attempt.authorizationUrl).searchParams.get('redirect_uri')}`);
+       await google.exchangeCode(String(req.query.code ?? ''), String(req.query.state ?? ''), attempt);
+       await refreshGoogleCalendars();
+       googleError = null;
+@@ -2083,6 +2097,9 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
+     } catch (error) {
+       googleOAuthAttempt = null;
+       googleError = error instanceof Error ? error.message : String(error);
++      if (/invalid_client|redirect_uri_mismatch/.test(googleError)) googleError += ` Vérifiez le Client ID OAuth de type application de bureau (Desktop). URI de redirection : http://127.0.0.1:${runtimePort}/api/v1/google/oauth/callback`;
++      clearTimeout(googleOAuthTimeout);
++      broadcast();
+       logError(error);
+       res.status(400).type('text/plain').send(`Connexion Google impossible : ${googleError}`);
+     }
+@@ -2106,6 +2123,7 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
+   app.post('/api/v1/google/disconnect', async (req, res, next) => {
+     try {
+       googleOAuthAttempt = null;
++      clearTimeout(googleOAuthTimeout);
+       await google.disconnect();
+       googleCalendars = [];
+       googleError = null;
+@@ -2364,6 +2382,7 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
+   scheduleTimerExpiry();
+   const stop = () => stopPromise ??= (async () => {
+     unsubscribeObs();
++    clearTimeout(googleOAuthTimeout);
+     clearInterval(validator);
+     clearInterval(twitchLivePoller);
+     if (timerExpiry) clearTimeout(timerExpiry);
+diff --git a/apps/web/preview/preview.js b/apps/web/preview/preview.js
+index fa919bf..4008a6d 100644
+--- a/apps/web/preview/preview.js
++++ b/apps/web/preview/preview.js
+@@ -390,7 +390,7 @@ function connectionsContent(){
+   const twitch=d.twitch||{};const google=d.google||{};const discord=d.discord||{};const remote=d.remote||{};const settings=d.settings||{};
+   const deviceCode=twitch.deviceAuthorization? `<div class="device-code"><span class="label">Code Twitch</span><b>${esc(twitch.deviceAuthorization.userCode)}</b></div>`:'';
+   const calendars=Array.isArray(google.calendars)?google.calendars:[];const target=google.targetCalendarId||'';
+-  const googleControls=`<p class="help" data-google-diagnostic>${google.configured?'':'Google Calendar n’est pas configuré dans cette distribution · configuration mainteneur requise.'}</p><div class="toolbar"><select aria-label="Calendrier Google cible" id="preview-google-calendar" data-target="${esc(target)}"${runtimeDisabled()}><option value="">Choisir le calendrier…</option>${calendars.map(item=>`<option value="${esc(item.id)}" ${target===item.id?'selected':''} ${item.writable?'':'disabled'}>${esc(item.summary)}${item.writable?'':' · lecture seule'}</option>`).join('')}</select><button class="secondary" data-connection-action="google-sync" ${state.runtime&&google.connected&&target?'':'disabled'}>Synchroniser</button><button class="${google.connected?'critical':'action'}" data-connection-control="google-auth" data-connection-action="${google.connected?'google-disconnect':'google-connect'}"${runtimeDisabled()}>${google.connected?'Déconnecter':'Connecter Google Calendar'}</button></div>`;
++  const googleControls=`<p class="help" data-google-diagnostic>${google.configured?'':'GOOGLE_CLIENT_ID manquant : configurer un Client ID OAuth Desktop dans resources/distribution.json ou l’environnement Desktop.'}</p><div class="toolbar"><select aria-label="Calendrier Google cible" id="preview-google-calendar" data-target="${esc(target)}"${runtimeDisabled()}><option value="">Choisir le calendrier…</option>${calendars.map(item=>`<option value="${esc(item.id)}" ${target===item.id?'selected':''} ${item.writable?'':'disabled'}>${esc(item.summary)}${item.writable?'':' · lecture seule'}</option>`).join('')}</select><button class="secondary" data-connection-action="google-sync" ${state.runtime&&google.connected&&target?'':'disabled'}>Synchroniser</button><button class="${google.connected?'critical':'action'}" data-connection-control="google-auth" data-connection-action="${google.connected?'google-disconnect':'google-connect'}"${runtimeDisabled()}>${google.connected?'Déconnecter':'Connecter Google Calendar'}</button></div>`;
+   const devices=Array.isArray(remote.devices)?remote.devices.filter(item=>!item.revokedAt):[];
+   const pairing=state.remotePairing?`<div class="device-code"><span class="label">ID de pairing</span><b>${esc(state.remotePairing.id)}</b><span class="label">Code</span><b>${esc(state.remotePairing.code)}</b><span>Usage unique · expire : ${esc(new Date(state.remotePairing.expiresAt).toLocaleString())}</span>${(state.remotePairing.urls||[]).map(url=>`<span>${esc(url)}</span>`).join('')}${(state.remotePairing.androidLinks||[]).map(url=>`<a href="${esc(url)}">Ouvrir sur Android</a><small>${esc(url)}</small>`).join('')}</div>`:'';
+   return `<div class="connection-stack">
+diff --git a/docs/CB-38-google-desktop.md b/docs/CB-38-google-desktop.md
+new file mode 100644
+index 0000000..64e2b87
+--- /dev/null
++++ b/docs/CB-38-google-desktop.md
+@@ -0,0 +1,43 @@
++# Google Agenda Desktop — CB-38
++
++Base : `0cddfdd`. La distribution comportait un `googleClientId` vide : sans
++`GOOGLE_CLIENT_ID`, le bouton ne pouvait pas lancer OAuth. Le Client ID public
++Desktop fourni est désormais embarqué dans `resources/distribution.json` et
++repris par la préparation de distribution et le runtime Electron. Aucun secret
++n’est ajouté. Le client existant utilise PKCE S256 et n’exige pas de secret.
++
++Credential Google Console attendu : **ID client OAuth 2.0 — Application de bureau
++(Desktop app)**. Calendar API doit être activée ; en mode consentement « Test »,
++le compte doit faire partie des utilisateurs test autorisés.
++
++URI normale exacte : `http://127.0.0.1:47832/api/v1/google/oauth/callback`.
++Si le port est occupé, le serveur choisit un port libre : l’URI exacte est alors
++la valeur `redirect_uri` dans l’URL retournée par `POST /api/v1/google/oauth/start`.
++Cette même URI est utilisée pour l’échange du code. Les credentials Desktop
++acceptent les ports loopback dynamiques ; ne pas utiliser un credential Web.
++Le navigateur doit tourner sur le même PC et le runtime doit rester ouvert.
++
++`invalid_client` et `redirect_uri_mismatch` sont affichés avec le type attendu et
++l’URI effective lorsque Google renvoie une erreur au callback ou au token endpoint.
++Si Google bloque sur sa propre page sans callback, le runtime ne peut pas lire
++cette page : après dix minutes, il signale explicitement le callback non reçu.
++Une nouvelle tentative reste possible. Les erreurs de callback sont diffusées
++au renderer par le websocket existant, comme la réussite.
++
++Validation locale : le test `tests/google-desktop-e2e.node.test.mjs` utilise le
++renderer, le serveur HTTP, le callback, le stockage et les mises à jour websocket
++réels. Seules les réponses Google sont simulées. Il vérifie aussi un port occupé,
++le choix du calendrier Planning et le redémarrage. L’accès au vrai compte Google
++et la configuration Console ne sont pas validés par ce test.
++
++Commandes : `npm test`, `npm run build`, `npm run security:check`,
++`npm run check:shipped-js`, puis
++`node --test tests/google-desktop-e2e.node.test.mjs tests/desktop-connections.node.test.mjs tests/desktop-planning-editor.node.test.mjs`.
++Dans un sandbox sans `/tmp` accessible, définir `TMPDIR` vers un dossier writable ;
++`PLAYWRIGHT_BROWSERS_PATH` peut désigner l’installation locale de Chromium.
++
++Après revue : le délai serveur utilise désormais la même échéance absolue que
++la tentative PKCE. Les clics répétés réutilisent la tentative encore valide sans
++prolonger son délai ; après expiration, le prochain clic génère un nouveau state
++et un nouveau verifier. Des tests à horloge contrôlée couvrent t=0, t=9 min,
++l’expiration à t=10 min, le callback tardif à t=11 min et une reconnexion réussie.
+diff --git a/integrations/google-calendar/src/client.ts b/integrations/google-calendar/src/client.ts
+index d00baf1..2f2f091 100644
+--- a/integrations/google-calendar/src/client.ts
++++ b/integrations/google-calendar/src/client.ts
+@@ -11,7 +11,7 @@ const TIMEOUT_MS = 15_000;
+ const OAUTH_ATTEMPT_TTL_MS = 10 * 60_000;
+ 
+ export interface GoogleTokens { accessToken: string; refreshToken: string; expiresAt: number }
+-export interface GoogleOAuthAttempt { authorizationUrl: string; state: string; verifier: string; redirectUri: string }
++export interface GoogleOAuthAttempt { authorizationUrl: string; state: string; verifier: string; redirectUri: string; expiresAt: number }
+ export interface GoogleEventInput {
+   localId: string;
+   title: string;
+@@ -31,7 +31,7 @@ export interface GoogleEvent extends GoogleEventInput {
+ const base64url = (value: Buffer) => value.toString('base64url');
+ const allDayUtc = (value: string) => `${value}T00:00:00.000Z`;
+ const dateOnly = (value: string) => value.slice(0, 10);
+-const pendingOAuthAttempts = new Map<string, { attempt: GoogleOAuthAttempt; expiresAt: number }>();
++const pendingOAuthAttempts = new Map<string, { attempt: GoogleOAuthAttempt }>();
+ 
+ function oauthAttemptKey(clientId: string, redirectUri: string) {
+   return `${clientId}\n${redirectUri}`;
+@@ -52,7 +52,7 @@ function isPendingOAuthAttempt(clientId: string, attempt: GoogleOAuthAttempt) {
+   const key = oauthAttemptKey(clientId, attempt.redirectUri);
+   const current = pendingOAuthAttempts.get(key);
+   if (!current) return false;
+-  if (current.expiresAt <= Date.now()) {
++  if (current.attempt.expiresAt <= Date.now()) {
+     pendingOAuthAttempts.delete(key);
+     return false;
+   }
+@@ -64,7 +64,7 @@ export function createGoogleOAuthAttempt(clientId: string, redirectUri: string):
+   const key = oauthAttemptKey(clientId, redirectUri);
+   const now = Date.now();
+   const pending = pendingOAuthAttempts.get(key);
+-  if (pending && pending.expiresAt > now) return pending.attempt;
++  if (pending && pending.attempt.expiresAt > now) return pending.attempt;
+   if (pending) pendingOAuthAttempts.delete(key);
+ 
+   const state = base64url(randomBytes(32));
+@@ -81,8 +81,8 @@ export function createGoogleOAuthAttempt(clientId: string, redirectUri: string):
+     code_challenge: challenge,
+     code_challenge_method: 'S256',
+   });
+-  const attempt = { authorizationUrl: `${AUTH}?${query}`, state, verifier, redirectUri };
+-  pendingOAuthAttempts.set(key, { attempt, expiresAt: now + OAUTH_ATTEMPT_TTL_MS });
++  const attempt = { authorizationUrl: `${AUTH}?${query}`, state, verifier, redirectUri, expiresAt: now + OAUTH_ATTEMPT_TTL_MS };
++  pendingOAuthAttempts.set(key, { attempt });
+   return attempt;
+ }
+ 
+diff --git a/resources/distribution.json b/resources/distribution.json
+index a5a5f59..d35ddd6 100644
+--- a/resources/distribution.json
++++ b/resources/distribution.json
+@@ -1,4 +1,4 @@
+ {
+   "twitchClientId": "rksd5h9msic7t4kf1hgxygdv8lhbku",
+-  "googleClientId": ""
++  "googleClientId": "206682842774-lu1efnct6o2cjn3jrtgo2a33r2amontq.apps.googleusercontent.com"
+ }
+diff --git a/tests/desktop-connections.node.test.mjs b/tests/desktop-connections.node.test.mjs
+index 6ecc75d..72071ec 100644
+--- a/tests/desktop-connections.node.test.mjs
++++ b/tests/desktop-connections.node.test.mjs
+@@ -145,7 +145,7 @@ test('Desktop connections: default modules, Google OAuth, bot setup and live for
+     dashboard.google.configured = false;
+     socket.send(JSON.stringify({ type: 'state.updated', data: dashboard }));
+     await expect(page.locator('[data-connection-action="google-connect"]')).toBeDisabled();
+-    await expect(google).toContainText('configuration mainteneur requise');
++    await expect(google).toContainText('GOOGLE_CLIENT_ID manquant');
+     dashboard.google.configured = true;
+     socket.send(JSON.stringify({ type: 'state.updated', data: dashboard }));
+     await expect(page.locator('[data-connection-action="google-connect"]')).toBeEnabled();
+diff --git a/tests/google-desktop-e2e.node.test.mjs b/tests/google-desktop-e2e.node.test.mjs
+new file mode 100644
+index 0000000..2e3ddcf
+--- /dev/null
++++ b/tests/google-desktop-e2e.node.test.mjs
+@@ -0,0 +1,73 @@
++import test from 'node:test';
++import assert from 'node:assert/strict';
++import { mkdtemp, readFile, rm } from 'node:fs/promises';
++import { createServer } from 'node:http';
++import { chromium, expect } from '@playwright/test';
++import { startDashboardServer } from '../dist/apps/server/src/index.js';
++import { MemorySecretStore } from '../dist/apps/server/src/storage.js';
++
++// Real renderer, HTTP routes, PKCE, callback, storage and websocket. Only Google is mocked.
++test('Desktop Google: shipped ID, occupied port, OAuth callback, persistence and Planning', async () => {
++  const distribution = JSON.parse(await readFile('resources/distribution.json', 'utf8'));
++  assert.equal(distribution.googleClientId, '206682842774-lu1efnct6o2cjn3jrtgo2a33r2amontq.apps.googleusercontent.com');
++  const dataDir = await mkdtemp('.google-e2e-');
++  const occupied = createServer();
++  await new Promise(resolve => occupied.listen(0, '127.0.0.1', resolve));
++  const secrets = new MemorySecretStore();
++  let tokenBody, browser, dashboard;
++  const options = { port: occupied.address().port, dataDir, googleClientId: distribution.googleClientId, secretStore: secrets,
++    logger: { info() {}, warn() {}, error() {} },
++    googleFetch: async (url, init) => {
++      if (url === 'https://oauth2.googleapis.com/token') {
++        tokenBody = new URLSearchParams(init.body);
++        assert.equal(tokenBody.has('client_secret'), false);
++        return Response.json({ access_token: "[REDACTED]", refresh_token: "[REDACTED]", expires_in: 3600 });
++      }
++      if (url.includes('/users/me/calendarList')) return Response.json({ items: [{ id: 'primary', summary: 'Agenda test', accessRole: 'owner' }] });
++      if (url.includes('/calendars/primary/events')) return Response.json({ items: [] });
++      throw new Error(`Unexpected Google request: ${url}`);
++    } };
++  try {
++    dashboard = await startDashboardServer(options);
++    assert.notEqual(new URL(dashboard.url).port, String(occupied.address().port));
++    browser = await chromium.launch({ headless: true, args: ['--no-sandbox'] });
++    const page = await browser.newPage();
++    const errors = [];
++    page.on('pageerror', error => errors.push(error.message));
++    await page.addInitScript(() => { window.streamDashboardDesktop = { openExternalAuth: async url => { window.openedAuth = url; } }; });
++    await page.goto(dashboard.url + '/preview/?runtime=1');
++    await expect(page.locator('#runtime-status')).toHaveText('Runtime PC');
++    await page.locator('[data-view="camp"]').click();
++    await page.locator('[data-camp="Connexions"]').click();
++    await page.locator('[data-connection-action="google-connect"]').click();
++    await page.waitForFunction(() => window.openedAuth);
++    const auth = new URL(await page.evaluate(() => window.openedAuth));
++    assert.equal(auth.origin, 'https://accounts.google.com');
++    assert.equal(auth.searchParams.get('client_id'), distribution.googleClientId);
++    const redirect = auth.searchParams.get('redirect_uri');
++    assert.equal(redirect, dashboard.url + '/api/v1/google/oauth/callback');
++    assert.equal(auth.searchParams.get('code_challenge_method'), 'S256');
++    const response = await fetch(redirect + '?code=mock-code&state=' + auth.searchParams.get('state'));
++    assert.equal(response.status, 200, await response.text());
++    assert.equal(tokenBody.get('redirect_uri'), redirect);
++    assert.equal(tokenBody.get('code'), 'mock-code');
++    assert.ok(tokenBody.get('code_verifier'));
++    await expect(page.locator('[data-connection-action="google-disconnect"]')).toBeVisible();
++    const connections = await fetch(dashboard.url + '/api/v1/connections').then(r => r.json());
++    assert.equal(connections.items.find(item => item.id === 'google').status, 'connected');
++    assert.equal((await secrets.getGoogleTokens()).refreshToken, 'mock-refresh');
++    await page.locator('#preview-google-calendar').selectOption('primary');
++    await expect.poll(() => dashboard.state().google.targetCalendarId).toBe('primary');
++    await page.locator('[data-view="planning"]').click();
++    assert.deepEqual(errors, []);
++    await dashboard.stop();
++    dashboard = await startDashboardServer({ ...options, port: 0 });
++    assert.equal(dashboard.state().google.connected, true);
++    assert.equal(dashboard.state().google.targetCalendarId, 'primary');
++  } finally {
++    await browser?.close();
++    await dashboard?.stop();
++    await new Promise(resolve => occupied.close(resolve));
++    await rm(dataDir, { recursive: true, force: true });
++  }
++});
+diff --git a/tests/google-desktop-errors.test.ts b/tests/google-desktop-errors.test.ts
+new file mode 100644
+index 0000000..ae6f9d3
+--- /dev/null
++++ b/tests/google-desktop-errors.test.ts
+@@ -0,0 +1,75 @@
++import { afterEach, expect, it, vi } from 'vitest';
++import { mkdtemp, rm } from 'node:fs/promises';
++import os from 'node:os';
++import path from 'node:path';
++import { startDashboardServer, type DashboardServerHandle } from '../apps/server/src/index.js';
++import { MemorySecretStore } from '../apps/server/src/storage.js';
++let server: DashboardServerHandle | undefined;
++let dataDir = '';
++afterEach(async () => { vi.useRealTimers(); vi.restoreAllMocks(); await server?.stop(); server = undefined; if (dataDir) await rm(dataDir, { recursive: true, force: true }); });
++async function start(clientId = 'desktop-client', providerError = '') {
++  dataDir = await mkdtemp(path.join(os.tmpdir(), 'google-errors-'));
++  server = await startDashboardServer({ port: 0, dataDir, googleClientId: clientId, secretStore: new MemorySecretStore(),
++    googleFetch: async () => Response.json({ error: providerError }, { status: 400 }), logger: { info() {}, warn() {}, error() {} } });
++  return server;
++}
++it('reports missing public Desktop configuration explicitly', async () => {
++  const app = await start('');
++  const res = await fetch(app.url + '/api/v1/google/oauth/start', { method: 'POST' });
++  expect(res.ok).toBe(false);
++  expect(await res.text()).toContain('GOOGLE_CLIENT_ID');
++});
++it.each(['invalid_client', 'redirect_uri_mismatch'])('reports %s with exact redirect and credential type', async error => {
++  const app = await start('desktop-client', error);
++  const { authorizationUrl } = await fetch(app.url + '/api/v1/google/oauth/start', { method: 'POST' }).then(r => r.json());
++  const auth = new URL(authorizationUrl);
++  const redirect = auth.searchParams.get('redirect_uri')!;
++  const res = await fetch(`${redirect}?state=${auth.searchParams.get('state')}&code=mock`);
++  expect(res.status).toBe(400);
++  expect(await res.text()).toContain(error);
++  expect(app.state().google?.error).toContain(redirect);
++  expect(app.state().google?.error).toContain('Desktop');
++  expect(app.state().google?.connected).toBe(false);
++});
++it('reports provider denial', async () => {
++  const app = await start();
++  const { authorizationUrl } = await fetch(app.url + '/api/v1/google/oauth/start', { method: 'POST' }).then(r => r.json());
++  const auth = new URL(authorizationUrl);
++  const res = await fetch(`${auth.searchParams.get('redirect_uri')}?state=${auth.searchParams.get('state')}&error=access_denied`);
++  expect(res.status).toBe(400);
++  expect(app.state().google?.error).toContain('access_denied');
++});
++it('keeps repeated clicks on the PKCE deadline, expires, then reconnects successfully', async () => {
++  dataDir = await mkdtemp(path.join(os.tmpdir(), 'google-deadline-'));
++  const secrets = new MemorySecretStore();
++  const provider = vi.fn(async (url: string | URL | Request) => String(url).includes('/token')
++    ? Response.json({ access_token: "[REDACTED]", refresh_token: "[REDACTED]", expires_in: 3600 })
++    : Response.json({ items: [] }));
++  server = await startDashboardServer({ port: 0, dataDir, googleClientId: 'deadline-client', secretStore: secrets,
++    googleFetch: provider, logger: { info() {}, warn() {}, error() {} } });
++  const app = server;
++  // Keep HTTP/intervals real, but advance both the PKCE clock and OAuth timeout.
++  vi.useFakeTimers({ toFake: ['Date', 'setTimeout', 'clearTimeout'] });
++  const begin = async () => new URL((await fetch(app.url + '/api/v1/google/oauth/start', { method: 'POST' }).then(r => r.json())).authorizationUrl);
++  const callback = (auth: URL) => fetch(`${auth.searchParams.get('redirect_uri')}?state=${auth.searchParams.get('state')}&code=mock`);
++  const first = await begin();
++  await vi.advanceTimersByTimeAsync(9 * 60_000);
++  expect((await begin()).href).toBe(first.href);
++  await vi.advanceTimersByTimeAsync(60_000 - 1);
++  expect(app.state().google?.error).toBeNull();
++  await vi.advanceTimersByTimeAsync(1);
++  expect(app.state().google?.error).toContain('Callback Google non reçu');
++  await vi.advanceTimersByTimeAsync(60_000);
++  expect((await callback(first)).status).toBe(400);
++  expect(provider).not.toHaveBeenCalled();
++  const renewed = await begin();
++  expect(renewed.searchParams.get('state')).not.toBe(first.searchParams.get('state'));
++  expect(renewed.searchParams.get('code_challenge')).not.toBe(first.searchParams.get('code_challenge'));
++  expect(app.state().google?.error).toBeNull();
++  await vi.advanceTimersByTimeAsync(9 * 60_000);
++  expect((await callback(renewed)).status).toBe(200);
++  expect(app.state().google?.connected).toBe(true);
++  expect((await secrets.getGoogleTokens())?.refreshToken).toBe('refresh');
++  await vi.advanceTimersByTimeAsync(2 * 60_000);
++  expect(app.state().google?.error).toBeNull();
++});
+diff --git a/tests/google-oauth-pending.test.ts b/tests/google-oauth-pending.test.ts
+index 522b478..522640d 100644
+--- a/tests/google-oauth-pending.test.ts
++++ b/tests/google-oauth-pending.test.ts
+@@ -1,7 +1,28 @@
+-import { describe, expect, it, vi } from 'vitest';
++import { afterEach, describe, expect, it, vi } from 'vitest';
+ import { createGoogleOAuthAttempt, GoogleCalendarClient } from '../integrations/google-calendar/src/client.js';
+ 
+ describe('Google OAuth pending attempt lifecycle', () => {
++  afterEach(() => vi.useRealTimers());
++
++  it('renews expired PKCE credentials after repeated clicks without extending their deadline', async () => {
++    vi.useFakeTimers({ toFake: ['Date'] });
++    const clientId = 'pkce-expiry-client';
++    const redirect = 'http://127.0.0.1/callback';
++    const provider = vi.fn(async () => Response.json({ access_token: "[REDACTED]", refresh_token: "[REDACTED]", expires_in: 3600 }));
++    const client = new GoogleCalendarClient(clientId, null, async () => undefined, provider);
++    const first = createGoogleOAuthAttempt(clientId, redirect);
++    vi.setSystemTime(first.expiresAt - 60_000);
++    expect(createGoogleOAuthAttempt(clientId, redirect)).toBe(first);
++    vi.setSystemTime(first.expiresAt);
++    await expect(client.exchangeCode('expired', first.state, first)).rejects.toThrow(/expirée/);
++    expect(provider).not.toHaveBeenCalled();
++    const renewed = createGoogleOAuthAttempt(clientId, redirect);
++    expect(renewed.expiresAt).toBe(first.expiresAt + 600_000);
++    expect(renewed.state).not.toBe(first.state);
++    expect(renewed.verifier).not.toBe(first.verifier);
++    await client.exchangeCode('fresh', renewed.state, renewed);
++    expect(client.connected).toBe(true);
++  });
+   it('refuse immédiatement un callback provenant d’une tentative annulée par disconnect', async () => {
+     const clientId = 'stale-callback-client';
+     const redirectUri = 'http://127.0.0.1:47832/api/v1/google/oauth/callback';
