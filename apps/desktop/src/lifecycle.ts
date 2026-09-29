@@ -22,6 +22,7 @@ export async function startDesktopRuntime(): Promise<DesktopRuntime> {
   } catch { /* first run */ }
   const obsResult = await launchObsIfRequested(launchObs, obsExecutablePath);
   await logger.info(obsResult.detail).catch(() => undefined);
+  const secretStore = new ElectronSecretStore(userData);
   const dashboard = await startDashboardServer({
     // Prefer a stable port for OBS and phones; the server falls back if unavailable.
     port: 47832,
@@ -31,7 +32,8 @@ export async function startDesktopRuntime(): Promise<DesktopRuntime> {
     soundLibraryDir: path.join(userData, 'soundboard'),
     webDir: path.join(app.getAppPath(), 'apps', 'web'),
     mobileDir: path.join(app.getAppPath(), 'apps', 'mobile'),
-    secretStore: new ElectronSecretStore(userData),
+    secretStore,
+    googleClientSecret: await secretStore.getGoogleClientSecret() || process.env.GOOGLE_CLIENT_SECRET || '',
     version: app.getVersion(),
     electronVersion: process.versions.electron,
     logsPath: logger.file,

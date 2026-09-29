@@ -11,6 +11,9 @@ export interface SecretStore {
   clearTwitchTokens(): Promise<void>;
   getObsPassword(): Promise<string>;
   setObsPassword(password: string): Promise<void>;
+  getGoogleClientSecret?(): Promise<string>;
+  setGoogleClientSecret?(secret: string): Promise<void>;
+  clearGoogleClientSecret?(): Promise<void>;
   getGoogleTokens?(): Promise<Record<string, string> | null>;
   setGoogleTokens?(tokens: Record<string, string>): Promise<void>;
   clearGoogleTokens?(): Promise<void>;
@@ -33,6 +36,7 @@ export class MemorySecretStore implements SecretStore {
   private tokens: Record<string, string> | null = null;
   private obsPassword = '';
   private google: Record<string, string> | null = null;
+  private googleClientSecret = '';
   private discord = '';
   private streamlabs = '';
   private streamlabsOAuth: { clientId: string; clientSecret: string; accessToken?: string } | null = null;
@@ -43,6 +47,9 @@ export class MemorySecretStore implements SecretStore {
   async clearTwitchTokens() { this.tokens = null; }
   async getObsPassword() { return this.obsPassword; }
   async setObsPassword(password: string) { this.obsPassword = password; }
+  async getGoogleClientSecret() { return this.googleClientSecret; }
+  async setGoogleClientSecret(secret: string) { this.googleClientSecret = secret; }
+  async clearGoogleClientSecret() { this.googleClientSecret = ''; }
   async getGoogleTokens() { return this.google ? { ...this.google } : null; }
   async setGoogleTokens(tokens: Record<string, string>) { this.google = { ...tokens }; }
   async clearGoogleTokens() { this.google = null; }

@@ -7,6 +7,7 @@ import type { SecretStore } from '../../server/src/storage.js';
 interface SecurePayload {
   twitch?: Record<string, string>;
   google?: Record<string, string>;
+  googleClientSecret?: string;
   obsPassword?: string;
   discordToken?: string;
   streamlabsToken?: string;
@@ -77,6 +78,9 @@ export class ElectronSecretStore implements SecretStore {
   async clearTwitchTokens() { await this.update(value => { delete value.twitch; }); }
   async getObsPassword() { return (await this.read()).obsPassword ?? ''; }
   async setObsPassword(obsPassword: string) { await this.update(value => { value.obsPassword = obsPassword; }); }
+  async getGoogleClientSecret() { return (await this.read()).googleClientSecret ?? ''; }
+  async setGoogleClientSecret(secret: string) { await this.update(value => { value.googleClientSecret = secret; }); }
+  async clearGoogleClientSecret() { await this.update(value => { delete value.googleClientSecret; }); }
   async getGoogleTokens() { return (await this.read()).google ?? null; }
   async setGoogleTokens(google: Record<string, string>) { await this.update(value => { value.google = { ...google }; }); }
   async clearGoogleTokens() { await this.update(value => { delete value.google; }); }

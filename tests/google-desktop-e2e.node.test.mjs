@@ -7,7 +7,8 @@ import { startDashboardServer } from '../dist/apps/server/src/index.js';
 import { MemorySecretStore } from '../dist/apps/server/src/storage.js';
 
 // Real renderer, HTTP routes, PKCE, callback, storage and websocket. Only Google is mocked.
-test('Desktop Google: shipped ID, occupied port, OAuth callback, persistence and Planning', async () => {
+for (const googleClientSecret of ['', 'mock-desktop-credential']) {
+test(`Desktop Google (${googleClientSecret ? 'with secret' : 'public PKCE'}): shipped ID, occupied port, OAuth callback, persistence and Planning`, async () => {
   const distribution = JSON.parse(await readFile('resources/distribution.json', 'utf8'));
   assert.equal(distribution.googleClientId, '206682842774-lu1efnct6o2cjn3jrtgo2a33r2amontq.apps.googleusercontent.com');
   const dataDir = await mkdtemp('.google-e2e-');
@@ -15,12 +16,13 @@ test('Desktop Google: shipped ID, occupied port, OAuth callback, persistence and
   await new Promise(resolve => occupied.listen(0, '127.0.0.1', resolve));
   const secrets = new MemorySecretStore();
   let tokenBody, browser, dashboard;
-  const options = { port: occupied.address().port, dataDir, googleClientId: distribution.googleClientId, secretStore: secrets,
+  const options = { port: occupied.address().port, dataDir, googleClientId: distribution.googleClientId, googleClientSecret: '', secretStore: secrets,
     logger: { info() {}, warn() {}, error() {} },
     googleFetch: async (url, init) => {
       if (url === 'https://oauth2.googleapis.com/token') {
         tokenBody = new URLSearchParams(init.body);
-        assert.equal(tokenBody.has('client_secret'), false);
+        if (googleClientSecret && !tokenBody.has('client_secret')) return Response.json({ error: 'invalid_request', error_description: 'client_secret is missing.' }, { status: 400 });
+        assert.equal(tokenBody.get('client_secret'), googleClientSecret || null);
         return Response.json({ access_token: 'mock-access', refresh_token: 'mock-refresh', expires_in: 3600 });
       }
       if (url.includes('/users/me/calendarList')) return Response.json({ items: [{ id: 'primary', summary: 'Agenda test', accessRole: 'owner' }] });
@@ -41,12 +43,30 @@ test('Desktop Google: shipped ID, occupied port, OAuth callback, persistence and
     await page.locator('[data-camp="Connexions"]').click();
     await page.locator('[data-connection-action="google-connect"]').click();
     await page.waitForFunction(() => window.openedAuth);
-    const auth = new URL(await page.evaluate(() => window.openedAuth));
+    let auth = new URL(await page.evaluate(() => window.openedAuth));
     assert.equal(auth.origin, 'https://accounts.google.com');
     assert.equal(auth.searchParams.get('client_id'), distribution.googleClientId);
     const redirect = auth.searchParams.get('redirect_uri');
     assert.equal(redirect, dashboard.url + '/api/v1/google/oauth/callback');
     assert.equal(auth.searchParams.get('code_challenge_method'), 'S256');
+    if (googleClientSecret) {
+      const failed = await fetch(redirect + '?code=mock-code&state=' + auth.searchParams.get('state'));
+      assert.equal(failed.status, 400);
+      await expect(page.locator('[data-google-diagnostic]')).toContainText('client_secret is missing');
+      await expect(page.locator('[data-google-diagnostic]')).toContainText('Enregistrer');
+      await expect(page.locator('[data-connection-action="google-connect"]')).toBeVisible();
+      await expect(page.locator('[data-connection-id="discord"]')).toBeVisible();
+      await page.getByLabel('Client Secret Google', { exact: true }).fill(googleClientSecret);
+      await page.locator('#preview-google-secret-form button[type="submit"]').click();
+      await expect(page.getByLabel('Client Secret Google', { exact: true })).toHaveValue('');
+      await expect(page.locator('[data-google-secret-status]')).toContainText('Secret configuré');
+      assert.equal((await page.content()).includes(googleClientSecret), false);
+      assert.equal(await secrets.getGoogleClientSecret(), googleClientSecret);
+      await page.evaluate(() => { window.openedAuth = null; });
+      await page.locator('[data-connection-action="google-connect"]').click();
+      await page.waitForFunction(() => window.openedAuth);
+      auth = new URL(await page.evaluate(() => window.openedAuth));
+    }
     const response = await fetch(redirect + '?code=mock-code&state=' + auth.searchParams.get('state'));
     assert.equal(response.status, 200, await response.text());
     assert.equal(tokenBody.get('redirect_uri'), redirect);
@@ -64,6 +84,15 @@ test('Desktop Google: shipped ID, occupied port, OAuth callback, persistence and
     dashboard = await startDashboardServer({ ...options, port: 0 });
     assert.equal(dashboard.state().google.connected, true);
     assert.equal(dashboard.state().google.targetCalendarId, 'primary');
+    if (googleClientSecret) {
+      assert.equal(dashboard.state().google.clientSecretConfigured, true);
+      await page.goto(dashboard.url + '/preview/?runtime=1');
+      await page.locator('[data-view="camp"]').click();
+      await page.locator('[data-camp="Connexions"]').click();
+      await page.locator('[data-connection-action="google-secret-clear"]').click();
+      await expect(page.locator('[data-google-secret-status]')).toContainText('Aucun secret configuré');
+      assert.equal(await secrets.getGoogleClientSecret(), '');
+    }
   } finally {
     await browser?.close();
     await dashboard?.stop();
@@ -71,3 +100,4 @@ test('Desktop Google: shipped ID, occupied port, OAuth callback, persistence and
     await rm(dataDir, { recursive: true, force: true });
   }
 });
+}

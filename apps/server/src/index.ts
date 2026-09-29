@@ -122,6 +122,8 @@ export interface DashboardServerOptions {
   version?: string;
   twitchClientId?: string;
   googleClientId?: string;
+  /** Initial backend Desktop credential; never included in public state. Secure storage takes precedence. */
+  googleClientSecret?: string;
   electronVersion?: string;
   logsPath?: string;
   logger?: Pick<Console, 'info' | 'warn' | 'error'>;
@@ -541,6 +543,7 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
       });
     },
     options.googleFetch ?? fetch,
+    (await secrets.getGoogleClientSecret?.() || (options.googleClientSecret ?? process.env.GOOGLE_CLIENT_SECRET ?? '')).trim(),
   );
   let googleCalendars: Array<{ id: string; summary: string; writable: boolean }> = [];
   let twitchChannel: { title: string; gameId: string; gameName: string } = { title: '', gameId: '', gameName: '' };
@@ -843,6 +846,7 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
       nextLive: nextLive(),
       google: {
         configured: Boolean(googleClientId),
+        clientSecretConfigured: google.clientSecretConfigured,
         connected: google.connected,
         targetCalendarId: local.google.targetCalendarId,
         calendars: googleCalendars,
@@ -2064,6 +2068,40 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
     } catch (error) { next(error); }
   });
 
+  app.get('/api/v1/google/oauth/config', (req, res) => {
+    if (!requireLocal(req, res)) return;
+    res.json({ clientSecretConfigured: google.clientSecretConfigured });
+  });
+  app.post('/api/v1/google/oauth/config', async (req, res) => {
+    if (!requireLocal(req, res)) return;
+    const secret = typeof req.body?.clientSecret === 'string' ? req.body.clientSecret.trim() : '';
+    if (!secret || secret.length > 1000) { res.status(400).json({ error: 'Client Secret Google invalide.' }); return; }
+    try {
+      if (!secrets.setGoogleClientSecret) throw new Error('Secure storage unavailable');
+      await secrets.setGoogleClientSecret(secret);
+      google.setClientSecret(secret);
+      googleError = null;
+      broadcast();
+      res.json({ clientSecretConfigured: google.clientSecretConfigured });
+    } catch {
+      // Do not log storage errors that could contain credential data.
+      res.status(503).json({ error: 'Impossible d’enregistrer le secret Google dans le stockage sécurisé.' });
+    }
+  });
+  app.delete('/api/v1/google/oauth/config', async (req, res) => {
+    if (!requireLocal(req, res)) return;
+    try {
+      if (!secrets.clearGoogleClientSecret) throw new Error('Secure storage unavailable');
+      await secrets.clearGoogleClientSecret();
+      google.setClientSecret(process.env.GOOGLE_CLIENT_SECRET?.trim() ?? '');
+      googleError = null;
+      broadcast();
+      res.json({ clientSecretConfigured: google.clientSecretConfigured });
+    } catch {
+      res.status(503).json({ error: 'Impossible d’effacer le secret Google du stockage sécurisé.' });
+    }
+  });
+
   app.post('/api/v1/google/oauth/start', async (req, res, next) => {
     try {
       if (!requireLocal(req, res)) return;
@@ -2097,6 +2135,7 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
     } catch (error) {
       googleOAuthAttempt = null;
       googleError = error instanceof Error ? error.message : String(error);
+      if (/invalid_request.*client_secret is missing/i.test(googleError)) googleError += ' Renseignez le Client Secret dans Application > Connexions > Google, puis cliquez sur Enregistrer et Connecter Google Calendar.';
       if (/invalid_client|redirect_uri_mismatch/.test(googleError)) googleError += ` Vérifiez le Client ID OAuth de type application de bureau (Desktop). URI de redirection : http://127.0.0.1:${runtimePort}/api/v1/google/oauth/callback`;
       clearTimeout(googleOAuthTimeout);
       broadcast();

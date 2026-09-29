@@ -150,6 +150,7 @@ export interface CalendarItem {
 }
 
 export interface GoogleCalendarState {
+  clientSecretConfigured?: boolean;
   configured: boolean;
   connected: boolean;
   targetCalendarId: string | null;

@@ -4,7 +4,20 @@ Base : `0cddfdd`. La distribution comportait un `googleClientId` vide : sans
 `GOOGLE_CLIENT_ID`, le bouton ne pouvait pas lancer OAuth. Le Client ID public
 Desktop fourni est désormais embarqué dans `resources/distribution.json` et
 repris par la préparation de distribution et le runtime Electron. Aucun secret
-n’est ajouté. Le client existant utilise PKCE S256 et n’exige pas de secret.
+n’est ajouté. Le client existant utilise PKCE S256. Correction CB-50 : certains
+credentials Desktop exigent aussi un secret ; le test CB-38 sans secret ne
+validait pas le credential réel. Le support environnement existait déjà (`2fe27fa`, puis `00e129b`) : CB-38
+a ajouté le Client ID embarqué
+`206682842774-lu1efnct6o2cjn3jrtgo2a33r2amontq.apps.googleusercontent.com`
+sans parcours de saisie dans l’EXE. Le suffixe de cet ID ne prouve pas son type
+Console ; le refus réel indique que Google exige le secret associé. Le chemin
+environnement n’avait pas été supprimé sur la base `14256c2`. CB-50 ajoute
+Application > Connexions > Google : Enregistrer/Effacer le secret via safeStorage,
+utilisé immédiatement pour code + refresh, avec PKCE dans les deux cas. Au
+démarrage, le secret stocké est prioritaire ; sinon `GOOGLE_CLIENT_SECRET` reste
+le fallback, sans copie automatique. Effacer supprime le secret stocké et revient
+au fallback environnement s’il existe. Aucun secret dans la distribution, les
+états publics, les logs ou le HTML ; la saisie password est vidée après envoi.
 
 Credential Google Console attendu : **ID client OAuth 2.0 — Application de bureau
 (Desktop app)**. Calendar API doit être activée ; en mode consentement « Test »,

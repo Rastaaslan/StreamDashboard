@@ -95,8 +95,11 @@ export class GoogleCalendarClient {
     private tokens: GoogleTokens | null,
     private readonly persist: (tokens: GoogleTokens | null) => Promise<void>,
     private readonly request: typeof fetch = fetch,
-    private readonly clientSecret: string = process.env.GOOGLE_CLIENT_SECRET ?? '',
+    private clientSecret: string = process.env.GOOGLE_CLIENT_SECRET ?? '',
   ) {}
+
+  setClientSecret(secret: string) { this.clientSecret = secret; }
+  get clientSecretConfigured() { return Boolean(this.clientSecret); }
 
   get connected() { return Boolean(this.tokens?.accessToken || this.tokens?.refreshToken); }
 
@@ -108,19 +111,20 @@ export class GoogleCalendarClient {
     if (actual.length !== expected.length || !timingSafeEqual(actual, expected)) throw new Error('État OAuth Google invalide.');
     if (!code.trim()) throw new Error('Code OAuth Google manquant.');
 
+    const requestSecret = this.clientSecret;
     const response = await this.fetchWithTimeout(TOKEN, {
       method: 'POST',
       headers: { 'content-type': 'application/x-www-form-urlencoded' },
       body: new URLSearchParams({
         client_id: this.clientId,
-        ...(this.clientSecret ? { client_secret: this.clientSecret } : {}),
+        ...(requestSecret ? { client_secret: requestSecret } : {}),
         code,
         code_verifier: attempt.verifier,
         redirect_uri: attempt.redirectUri,
         grant_type: 'authorization_code',
       }),
-    });
-    const value = await this.json<{ access_token: string; refresh_token?: string; expires_in: number }>(response);
+    }, requestSecret);
+    const value = await this.json<{ access_token: string; refresh_token?: string; expires_in: number }>(response, requestSecret);
     const next = {
       accessToken: value.access_token,
       refreshToken: value.refresh_token ?? this.tokens?.refreshToken ?? '',
@@ -278,13 +282,14 @@ export class GoogleCalendarClient {
       await this.invalidateSession();
       throw new Error('Reconnectez Google Calendar.');
     }
+    const requestSecret = this.clientSecret;
     try {
       const response = await this.fetchWithTimeout(TOKEN, {
         method: 'POST',
         headers: { 'content-type': 'application/x-www-form-urlencoded' },
-        body: new URLSearchParams({ client_id: this.clientId, ...(this.clientSecret ? { client_secret: this.clientSecret } : {}), refresh_token: refreshToken, grant_type: 'refresh_token' }),
-      });
-      const value = await this.json<{ access_token: string; expires_in: number; refresh_token?: string }>(response);
+        body: new URLSearchParams({ client_id: this.clientId, ...(requestSecret ? { client_secret: requestSecret } : {}), refresh_token: refreshToken, grant_type: 'refresh_token' }),
+      }, requestSecret);
+      const value = await this.json<{ access_token: string; expires_in: number; refresh_token?: string }>(response, requestSecret);
       const next = {
         accessToken: value.access_token,
         refreshToken: value.refresh_token ?? refreshToken,
@@ -319,7 +324,7 @@ export class GoogleCalendarClient {
     await this.persist(null);
   }
 
-  private async fetchWithTimeout(url: string, init: RequestInit) {
+  private async fetchWithTimeout(url: string, init: RequestInit, requestSecret = this.clientSecret) {
     const timeout = AbortSignal.timeout(TIMEOUT_MS);
     const signal = init.signal ? AbortSignal.any([init.signal, timeout]) : timeout;
     try {
@@ -328,15 +333,23 @@ export class GoogleCalendarClient {
       if (error instanceof Error && (error.name === 'TimeoutError' || /timed?\s*out/i.test(error.message))) {
         throw new Error('Google Calendar ne répond pas dans le délai attendu. Réessayez.');
       }
-      throw error;
+      throw new Error(this.redactSecret(error instanceof Error ? error.message : String(error), requestSecret));
     }
   }
 
-  private async json<T>(response: Response): Promise<T> {
+  private redactSecret(message: string, requestSecret: string) {
+    // A credential can be cleared or replaced while the request is in flight.
+    for (const secret of new Set([requestSecret, this.clientSecret])) {
+      if (secret) message = message.split(secret).join('[REDACTED]');
+    }
+    return message;
+  }
+
+  private async json<T>(response: Response, requestSecret = this.clientSecret): Promise<T> {
     if (response.status === 204) return undefined as T;
     const value = await response.json().catch(() => ({})) as T & { error?: string | { message?: string }; error_description?: string };
     const oauthError = typeof value.error === 'string' ? [value.error, value.error_description].filter(Boolean).join(': ') : value.error?.message;
-    if (!response.ok) throw new GoogleCalendarError(response.status, oauthError ?? `Google Calendar HTTP ${response.status}`);
+    if (!response.ok) throw new GoogleCalendarError(response.status, this.redactSecret(oauthError ?? `Google Calendar HTTP ${response.status}`, requestSecret));
     return value;
   }
 }
