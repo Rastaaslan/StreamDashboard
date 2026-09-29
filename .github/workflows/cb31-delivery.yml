@@ -1,4 +1,4 @@
-name: CB31 delivery build
+name: CB38 Google Desktop delivery build
 
 on:
   push:
@@ -28,6 +28,7 @@ jobs:
           if ($hash -ne "5cbcbbccd44348767dfbed9faf6f7e0df7699cfcd11c0a6a4889ef68c9fdf1c1") { throw "Snapshot SHA256 mismatch: $hash" }
           New-Item -ItemType Directory -Force cb31-snapshot | Out-Null
           tar -xf cb31-snapshot.tar -C cb31-snapshot
+          git apply --directory=cb31-snapshot ci/cb38-google.patch
       - name: Install and validate
         shell: pwsh
         working-directory: cb31-snapshot
@@ -46,7 +47,7 @@ jobs:
       - name: Upload EXE
         uses: actions/upload-artifact@v4
         with:
-          name: StreamDashboard-CB31-EXE
+          name: StreamDashboard-CB38-EXE
           path: cb31-snapshot/out/StreamDashboard-win32-x64/StreamDashboard.exe
           if-no-files-found: error
 
@@ -73,6 +74,7 @@ jobs:
           echo "5cbcbbccd44348767dfbed9faf6f7e0df7699cfcd11c0a6a4889ef68c9fdf1c1  cb31-snapshot.tar" | sha256sum -c -
           mkdir -p cb31-snapshot
           tar -xf cb31-snapshot.tar -C cb31-snapshot
+          git apply --directory=cb31-snapshot ci/cb38-google.patch
       - name: Install and validate
         working-directory: cb31-snapshot
         run: |
@@ -87,13 +89,13 @@ jobs:
         run: |
           chmod +x android/gradlew
           ./android/gradlew -p android --no-daemon testDebugUnitTest lintDebug assembleDebug testPreviewUnitTest lintPreview assemblePreview
-          cp android/app/build/outputs/apk/debug/app-debug.apk ../StreamDashboard-Remote-debug-CB31.apk
-          cp android/app/build/outputs/apk/preview/app-preview.apk ../StreamDashboard-Preview-CB31.apk
+          cp android/app/build/outputs/apk/debug/app-debug.apk ../StreamDashboard-Remote-debug-CB38.apk
+          cp android/app/build/outputs/apk/preview/app-preview.apk ../StreamDashboard-Preview-CB38.apk
       - name: Upload APKs
         uses: actions/upload-artifact@v4
         with:
-          name: StreamDashboard-CB31-APK
+          name: StreamDashboard-CB38-APK
           path: |
-            StreamDashboard-Remote-debug-CB31.apk
-            StreamDashboard-Preview-CB31.apk
+            StreamDashboard-Remote-debug-CB38.apk
+            StreamDashboard-Preview-CB38.apk
           if-no-files-found: error
