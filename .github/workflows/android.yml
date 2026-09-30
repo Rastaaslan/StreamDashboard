@@ -42,8 +42,12 @@ jobs:
         run: node tests/cb2-local.test.mjs
       - name: Install dependencies
         run: npm ci
+      - name: Install Chromium for renderer tests
+        run: npx playwright install --with-deps chromium
       - name: Validate shared remote
         run: npm test && npm run build && npm run security:check && npm run check:shipped-js && npm run mobile:smoke
+      - name: Mobile browser regression gate
+        run: npm run test:browser
       - name: Synchronize Android assets
         run: npm run android:sync
       - name: Require Android provider IDs

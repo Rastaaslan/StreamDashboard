@@ -29,8 +29,12 @@ jobs:
           cache: npm
       - name: Install dependencies including Electron toolchain
         run: npm ci
+      - name: Install Chromium for renderer tests
+        run: npx playwright install --with-deps chromium
       - name: Unit and integration tests
         run: npm test
+      - name: Mobile browser regression gate
+        run: npm run test:browser
       - name: TypeScript build
         run: npm run build
       - name: Static security invariants

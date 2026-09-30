@@ -884,7 +884,8 @@ async function ensureObsSoundboardForPlayback(){
   if(setup.wrongInputKind)throw new Error('La source « StreamDashboard • Soundboard » existe dans OBS mais n’est pas une Media Source.');
   if(!setup.inputExists)throw new Error('La Media Source Soundboard OBS n’a pas pu être créée.');
   if(currentScene&&!setup.attachedScenes?.includes(currentScene))throw new Error(`La Soundboard OBS n’est pas présente dans la scène actuelle « ${currentScene} ». Configure cette scène dans Application → Réglages.`);
-  if(setup.ready===false)throw new Error(setup.diagnostic||'La source Soundboard doit être active, non muette et routée vers une piste audio.');
+  // The backend applies this playback's volume before verifying activation, mute
+  // and routing. A stale zero volume must not prevent the next positive playback.
   return setup;
 }
 async function playSound(soundId){record('soundboard.play',{soundId});const sound=(state.sounds||[]).find(value=>value.id===soundId),volume=Math.max(0,Math.min(1,(sound?.volume??1)*state.soundMasterVolume));if(!state.runtime){toast('Lecture simulée');return}try{await ensureObsSoundboardForPlayback();const commandId=uid();const ack=await request('/api/v1/soundboard/play',{method:'POST',body:JSON.stringify({commandId,correlationId:commandId,soundId,volume,issuedAt:new Date().toISOString()})});if(ack.status!=='succeeded')throw new Error(ack.message||'Lecture refusée.');toast('Son envoyé à OBS');await refreshRuntime()}catch(error){toast(error.message,true)}}

@@ -17,12 +17,12 @@ Les P1 démontrés sont clos côté sources et tests automatisables. Les essais 
 | F05 P1 | CORRECTED+TEST | Même PATCH minimal dans ProviderBridge Android. `node/provider-bridge-compile.test.mjs` compile le vrai Java et exécute le cas titre récurrent ancien + changement durée avec JSONObject en mémoire. Ce n’est pas un build APK. |
 | F06 P1 | ALREADY_FIXED_IN_BASE+TEST | Timer : HTTP accessible, URL attendue, Browser Source présente, attachée et activée dans scène courante. `obs-websocket-runtime.test.ts` utilise serveur HTTP et protocole OBS v5 ; absente, mauvais type/port, désactivée, détachée et HTTP indisponible refusés. |
 | F07 P1 | CORRECTED+TEST | Hotfixes dans les sources, build JS synchronisé ; contrôle ASAR compare renderer/helper Planning/client OBS aux fichiers sources/build. `desktop:package` inclut ce contrôle ; logs/temp exclus. |
-| F08 P1 | CORRECTED+TEST | `npm test` = Vitest + découverte récursive de tous les `.test.mjs` (incluant `.node.test.mjs`) après build. Gate release = tests + navigateur + sécurité/syntaxe + smoke Electron + package/ASAR. Temp hors dépôt, nettoyage garanti ; aucun `.cb52-tmp`. |
+| F08 P1 | CORRECTED+TEST | `npm test` = Vitest + découverte récursive de tous les `.test.mjs` (incluant `.node.test.mjs`) après build. Gate release = tests + navigateur + sécurité/syntaxe + smoke Electron + package/ASAR. Les workflows Windows et Android installent Chromium avec ses dépendances avant npm test et imposent test:browser avant artifacts ; la release Windows dépend de ce job Desktop. Temp hors dépôt, nettoyage garanti ; aucun `.cb52-tmp`. |
 | F09 P2 | CORRECTED+TEST | Détail Twitch utile conservé après masquage tokens connus, formes encodées et champs secrets ; Android sépare le diagnostic HTTP nettoyé du message brut, y compris persistance. `cb52-twitch.test.ts`, suites confidentialité Twitch, `node/provider-diagnostics.test.mjs`, test Java. |
 | F10 P2 | ALREADY_FIXED_IN_BASE+TEST | Réponses Discord mobile inversées ignorées, ancien salon invalidé. `cb52-planning.node.test.mjs`. |
 | F11 P2 | ALREADY_FIXED_IN_BASE+TEST | Callback Streamlabs dérivé du runtime 48132. Suites Streamlabs/runtime et recherche des anciens ports. |
 | F12 P2 | ALREADY_FIXED_IN_BASE+TEST | Desktop, Android, launchers, exemples et URLs alignés 48132. `port-fallback.test.ts`, `mobile-network-ui.spec.ts` (adresse Android livrée), tests runtime/assets et package. |
-| F13 P2 | CORRECTED+TEST | Soundboard exige Media Source attachée/activée, présence active dans scène courante, volume > 0, non mute, piste routée et monitoring compatible sortie. Lecture refusée avant restart si inutilisable. `obs-soundboard.test.ts`, vrai protocole mock dans `obs-websocket-runtime.test.ts`. Audibilité matérielle : test humain. |
+| F13 P2 | CORRECTED+TEST | Soundboard exige Media Source attachée/activée, présence active dans scène courante, volume > 0, non mute, piste routée et monitoring compatible sortie. Lecture refusée avant restart si inutilisable. Le renderer laisse le backend appliquer le nouveau volume avant cette vérification : un ancien volume nul ne bloque pas la reprise. `cb52-soundboard-recovery.node.test.mjs` exécute les handlers renderer réels contre le backend compilé : zéro → refus → volume positif → succès, puis refus inactive/mute/non routée. `obs-soundboard.test.ts`, vrai protocole mock dans `obs-websocket-runtime.test.ts`. Audibilité matérielle : test humain. |
 | F14 P2 | CORRECTED+TEST | Google exige calendrier choisi writable ; Discord exige destination vérifiée ; actions Twitch suivent scopes et état. `discord-api.test.ts`, `api-v1.test.ts`, `desktop-audit.node.test.mjs`, `desktop-planning-editor.node.test.mjs`, diagnostics natifs. |
 | F15 P2 | CORRECTED+TEST | HTTP_400/4xx/5xx restent des erreurs fournisseur, pas NETWORK ; texte sûr. `node/provider-diagnostics.test.mjs`, compilation Java. |
 | F16 P2 | CORRECTED+TEST | Config Desktop illisible signalée sans écrasement ni contenu secret ; config publique manquante fatale en package. Discovery scènes OBS propage le refus. `port-fallback.test.ts` (config corrompue préservée), `obs-websocket-runtime.test.ts` (discovery refusée), E2E erreurs connexions. |
@@ -55,10 +55,10 @@ Commandes lancées dans ce worktree. `npm test` choisit lui-même un répertoire
 
 | Commande | Résultat final |
 | --- | --- |
-| `npm test` | **PASS** : 643 tests Vitest (91 fichiers) + 114 tests Node ; aucun skip. Inclut build TypeScript, E2E Chromium Desktop, compilation Java et tests de politique native. |
+| `npm test` | **PASS** : 643 tests Vitest (91 fichiers) + 115 tests Node ; aucun skip. Inclut build TypeScript, E2E Chromium Desktop, compilation Java et tests de politique native. |
 | `npm run test:browser` | **PASS** : 13 scénarios Playwright mobile, dont WS/races, brouillons, DOM/focus et round-trip récurrence/description. |
 | `npm run build` | **PASS**, également réexécuté par `npm test` et le packaging final. |
-| `npm run security:check` | **PASS** : 274 fichiers. |
+| `npm run security:check` | **PASS** : 275 fichiers. |
 | `npm run check:shipped-js` | **PASS** : 30 fichiers JavaScript livrés. |
 | `npm run desktop:package` | **PASS** : paquet Windows x64 et `desktop:check-package` ASAR ; variables GOOGLE_CLIENT_SECRET/GOOGLE_CLIENT_ID/TWITCH_CLIENT_ID retirées de l’environnement. |
 | `npm run android:sync` | **PASS** : assets reconstruits depuis apps/mobile. |
@@ -77,3 +77,11 @@ Les premiers essais révélant des attentes de tests obsolètes ou une variable 
 4. **APK réelle** après SDK : `npm run android:check`, `npm run android:build`, installer puis premier son, pairing/restart, édition série avec exception/timezone, occurrence avec description, minuit Paris et overnight/multijour, suppression ONLINE_PC, 5 onglets/thèmes/Focus. Vérifier les races de saisie et rotation/reprise sur appareil.
 
 Sur machine avec affichage : `npm run release:check`. Pour le binaire Windows produit : définir `STREAMDASHBOARD_PACKAGED_EXE`, puis `npm run desktop:package-smoke`. Aucun PASS Electron/Android réel n’est déduit du seul packaging ou des stubs Java.
+
+
+## Correction après review 3
+
+- P1 Soundboard : supprimé le refus anticipé fondé sur `ready=false`, qui reflète le volume de la lecture précédente. Les contrôles structurels renderer restent présents ; le backend applique le volume demandé puis vérifie activation, mute et routage avant tout redémarrage média. Le test renderer/backend reproduit le blocage initial et vérifie la reprise sans intervention OBS.
+- P1 runner neuf : installation explicite `npx playwright install --with-deps chromium` après `npm ci` et avant `npm test` dans les workflows Windows et Android. Vérification locale avec un nouveau répertoire navigateur hors dépôt, `/var/lib/codexbridge/.npm/cb52-review-browser` : téléchargement Chromium/headless shell/FFmpeg réussi, puis `npm test` exécuté exclusivement avec ce cache nouvellement provisionné. Les bibliothèques système Linux sont déjà disponibles ici ; aucun runner GitHub neuf ni Windows distant n’a été exécuté.
+- P2 gate mobile : étape obligatoire `npm run test:browser` avant packaging Windows et construction APK Android, sans `continue-on-error`. La release Windows taguée conserve `needs: desktop`, donc dépend de cette validation. Aucune exécution ni publication de workflow distant.
+- Validations de cette correction : `npm test` (643 Vitest + 115 Node sans skip), `test:browser` (13), build, security:check, check:shipped-js, desktop:package/ASAR, android:sync et git diff --check. Les limites DISPLAY/SDK et les scénarios HUMAN_TEST_REQUIRED ci-dessus restent applicables.
