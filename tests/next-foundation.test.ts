@@ -85,7 +85,7 @@ describe('Google Calendar OAuth et synchronisation', () => {
 
   it('réutilise le même PKCE pendant une autorisation en attente puis le renouvelle après succès', async () => {
     const clientId = 'client-idempotent';
-    const redirect = 'http://127.0.0.1:47832/api/v1/google/oauth/callback';
+    const redirect = 'http://127.0.0.1:48132/api/v1/google/oauth/callback';
     const first = createGoogleOAuthAttempt(clientId, redirect);
     const second = createGoogleOAuthAttempt(clientId, redirect);
     expect(second).toEqual(first);

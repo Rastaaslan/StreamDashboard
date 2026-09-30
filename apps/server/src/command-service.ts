@@ -10,9 +10,10 @@ export interface ObsCommands {
   volumeDb?(input: string, volumeDb: number): Promise<void>; refreshBrowserSource?(input: string): Promise<void>;
   stream(start: boolean): Promise<void>; record(start: boolean): Promise<void>; restartMedia(input: string): Promise<void>; refresh(): Promise<void>;
   waitForStreaming?(expected: boolean, timeoutMs?: number): Promise<void>;
+  verifyTimerBrowserSource?(input: string, endpoint: string): Promise<void>;
   waitForScene?(expected: string, timeoutMs?: number): Promise<void>;
 }
-export interface CommandContext { settings: Pick<DashboardSettings, 'modeScenes' | 'chattingScene' | 'startMode' | 'timerBrowserSource' | 'requireTimerOverlayOnStart'>; logger?: Pick<Console, 'info' | 'warn'>; wait?: (milliseconds: number) => Promise<void> }
+export interface CommandContext { timerOverlayUrl?: () => string; settings: Pick<DashboardSettings, 'modeScenes' | 'chattingScene' | 'startMode' | 'timerBrowserSource' | 'requireTimerOverlayOnStart'>; logger?: Pick<Console, 'info' | 'warn'>; wait?: (milliseconds: number) => Promise<void> }
 
 /** Unique, serialized application command bus shared by every client. */
 export class DashboardCommandService {
@@ -85,7 +86,11 @@ export class DashboardCommandService {
       if (required) throw this.timerOverlayNotReady('Le rafraîchissement de la Browser Source timer est indisponible.');
       return;
     }
-    try { await this.obs.refreshBrowserSource(source); }
+    try {
+      if (this.obs.verifyTimerBrowserSource && this.context.timerOverlayUrl) await this.obs.verifyTimerBrowserSource(source, this.context.timerOverlayUrl());
+      else if (required) throw new Error('Vérification du timer indisponible.');
+      await this.obs.refreshBrowserSource(source);
+    }
     catch (error) {
       this.context.logger?.warn(`Impossible de rafraîchir la Browser Source timer « ${source} ».`, error);
       if (required) throw this.timerOverlayNotReady(`La Browser Source timer « ${source} » n’est pas prête. Démarrage interrompu.`);
@@ -178,7 +183,14 @@ export class DashboardCommandService {
     }
     if (applyDashboardCommand(this.domain, command)) return this.commit();
     switch (command.type) {
-      case 'obs.scene': if (!command.scene.trim()) throw new Error('Scène OBS invalide.'); await this.obs.scene(command.scene); await this.confirmScene(command.scene); break;
+      case 'obs.scene': {
+        if (!command.scene.trim()) throw new Error('Scène OBS invalide.');
+        await this.obs.scene(command.scene); await this.confirmScene(command.scene);
+        const mode = Object.entries(this.context.settings.modeScenes).find(([, scene]) => scene === command.scene)?.[0];
+        if (mode) this.domain.mode = mode as RunMode;
+        else if (command.scene === this.context.settings.chattingScene) this.domain.mode = 'live';
+        break;
+      }
       case 'obs.mute': if (!command.input.trim()) throw new Error('Source OBS invalide.'); await this.obs.mute(command.input, command.muted); break;
       case 'obs.volume': if (!command.input.trim() || !Number.isFinite(command.volume)) throw new Error('Volume OBS invalide.'); await this.obs.volume(command.input, Math.min(1.5, Math.max(0, command.volume))); break;
       case 'obs.volumeDb': if (!command.input.trim() || !Number.isFinite(command.volumeDb) || !this.obs.volumeDb) throw new Error('Volume OBS en dB indisponible.'); await this.obs.volumeDb(command.input, Math.min(26, Math.max(-100, command.volumeDb))); break;

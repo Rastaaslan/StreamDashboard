@@ -15,6 +15,7 @@ module.exports = {
     // package.json and production node_modules. Source/tests/tooling only increase the
     // attack/read surface and ASAR size, so exclude them from shipped builds.
     ignore: [
+      /^\/[^/]*\.log$/,
       /^\/\.dependencies(?:\/|$)/,
       /^\/node_modules\/(?:\.cache|\.vite)(?:\/|$)/,
       /^\/(?:test-results|playwright-report)(?:\/|$)/,

@@ -298,7 +298,7 @@ public final class ProviderBridge {
       String currentFingerprint = twitchFingerprint(current.getJSONObject("data").getJSONArray("segments").getJSONObject(0));
       if (!link.optString("fingerprint").isEmpty() && !link.optString("fingerprint").equals(currentFingerprint)) throw new ProviderException("CONFLICT", "Le planning Twitch a changé ailleurs.", current);
     }
-    JSONObject payload = new JSONObject().put("title", limited(event.optString("title"), 140)).put("category_id", limited(event.optString("twitchCategoryId"), 40)).put("start_time", iso(event.getString("startAtUtc"))).put("duration", duration(event));
+    JSONObject payload = new JSONObject().put("title", limited(event.optString("title"), 140)).put("category_id", limited(event.optString("twitchCategoryId"), 40)).put("start_time", iso(event.getString("startAtUtc"))).put("duration", String.valueOf(duration(event))).put("timezone", "UTC");
     String url = "https://api.twitch.tv/helix/schedule/segment?broadcaster_id="+enc(broadcaster) + (action.equals("update") ? "&id="+enc(remoteId) : "");
     JSONObject response = twitch(action.equals("create") ? "POST" : "PATCH", url, payload.toString());
     JSONObject segment = response.getJSONObject("data").getJSONArray("segments").getJSONObject(0);
@@ -337,8 +337,22 @@ public final class ProviderBridge {
     if(headers!=null)for(Map.Entry<String,String> h:headers.entrySet())c.setRequestProperty(h.getKey(),h.getValue()); String outgoing=json!=null?json:form;
     if(outgoing!=null){c.setDoOutput(true);c.setRequestProperty("Content-Type",json!=null?"application/json":"application/x-www-form-urlencoded");try(OutputStream o=c.getOutputStream()){o.write(outgoing.getBytes(StandardCharsets.UTF_8));}}
     int status=c.getResponseCode(); InputStream stream=status>=400?c.getErrorStream():c.getInputStream(); String value=stream==null?"":readStream(stream);
-    if(status==401)throw new ProviderException("REAUTH_REQUIRED","Session provider expirée."); if(status==409||status==412)throw new ProviderException("CONFLICT","Le provider a changé ailleurs.",value.isEmpty()?null:new JSONObject(value)); if(status>=400)throw new ProviderException("HTTP_"+status,"Le provider a refusé l’opération.");
+    if(status==401)throw new ProviderException("REAUTH_REQUIRED","Session provider expirée."); if(status==409||status==412)throw new ProviderException("CONFLICT","Le provider a changé ailleurs.",value.isEmpty()?null:new JSONObject(value)); if(status>=400) {
+      String message = "Le provider a refusé l’opération.";
+      try { JSONObject response = new JSONObject(value); message = response.optString("message", message); JSONObject detail = response.optJSONObject("error"); if (detail != null) message = detail.optString("message", message); } catch (JSONException ignored) { }
+      throw new ProviderException("HTTP_"+status, safeProviderMessage(message, headers));
+    }
     return value.isEmpty()?new JSONObject():new JSONObject(value);
+  }
+  static String safeProviderMessage(String message, Map<String,String> headers) {
+    String result = message;
+    if (headers != null) for (Map.Entry<String,String> header : headers.entrySet()) {
+      if (header.getKey().equalsIgnoreCase("Authorization")) {
+        String secret = header.getValue().replaceFirst("(?i)^Bearer ", "");
+        if (!secret.isEmpty()) result = result.replace(secret, "[redacted]");
+      }
+    }
+    return result.substring(0, Math.min(result.length(), 1000));
   }
   private static String readStream(InputStream stream) throws IOException {
     ByteArrayOutputStream out = new ByteArrayOutputStream();
@@ -353,7 +367,7 @@ public final class ProviderBridge {
     catch (Exception e) {
       String code = e instanceof ProviderException ? ((ProviderException)e).code : "NETWORK";
       try { diagnostics.put(provider, ok().put("code", code).put("tested", false)); } catch (JSONException ignored) { }
-      return failure(code, "Publication refusée : vérifier le diagnostic du compte.", e instanceof ProviderException ? ((ProviderException)e).current : null);
+      return failure(code, e instanceof ProviderException ? e.getMessage() : "Publication refusée : vérifier le diagnostic du compte.", e instanceof ProviderException ? ((ProviderException)e).current : null);
     }
   }
   private String guarded(Work work){try{return work.run().put("ok",true).toString();}catch(ProviderException e){return failure(e.code,e.getMessage(),e.current);}catch(Exception e){return failure("NETWORK","Provider temporairement indisponible.");}}

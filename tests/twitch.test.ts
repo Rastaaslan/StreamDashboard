@@ -106,7 +106,7 @@ describe('intégration Twitch générique', () => {
     expect(result.map(x => x.twitchSegmentId).sort()).toEqual(['created', 'remote']);
     const publish = calls.find(call => call.init?.method === 'POST');
     expect(publish?.url).toBe('https://api.twitch.tv/helix/schedule/segment?broadcaster_id=42');
-    expect(JSON.parse(String(publish?.init?.body))).toEqual({ start_time: '2030-01-02T10:00:00Z', timezone: 'UTC', duration: 60, title: 'Live local' });
+    expect(JSON.parse(String(publish?.init?.body))).toEqual({ start_time: '2030-01-02T10:00:00Z', timezone: 'UTC', duration: '60', title: 'Live local' });
   });
 
   it('traite un premier planning 404 comme vide puis crée le segment explicitement demandé', async () => {

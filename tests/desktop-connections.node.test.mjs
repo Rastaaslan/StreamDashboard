@@ -145,7 +145,7 @@ test('Desktop connections: default modules, Google OAuth, bot setup and live for
     dashboard.google.configured = false;
     socket.send(JSON.stringify({ type: 'state.updated', data: dashboard }));
     await expect(page.locator('[data-connection-action="google-connect"]')).toBeDisabled();
-    await expect(google).toContainText('GOOGLE_CLIENT_ID manquant');
+    await expect(google).toContainText('Google Calendar non configuré dans cette distribution.');
     dashboard.google.configured = true;
     socket.send(JSON.stringify({ type: 'state.updated', data: dashboard }));
     await expect(page.locator('[data-connection-action="google-connect"]')).toBeEnabled();

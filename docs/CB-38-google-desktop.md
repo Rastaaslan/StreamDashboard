@@ -23,7 +23,7 @@ Credential Google Console attendu : **ID client OAuth 2.0 — Application de bur
 (Desktop app)**. Calendar API doit être activée ; en mode consentement « Test »,
 le compte doit faire partie des utilisateurs test autorisés.
 
-URI normale exacte : `http://127.0.0.1:47832/api/v1/google/oauth/callback`.
+URI normale exacte : `http://127.0.0.1:48132/api/v1/google/oauth/callback`.
 Si le port est occupé, le serveur choisit un port libre : l’URI exacte est alors
 la valeur `redirect_uri` dans l’URL retournée par `POST /api/v1/google/oauth/start`.
 Cette même URI est utilisée pour l’échange du code. Les credentials Desktop

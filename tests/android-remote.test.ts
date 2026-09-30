@@ -110,9 +110,9 @@ describe('Android remote runtime', () => {
   });
 
   it.each([
-    ['192.168.1.10', 'http://192.168.1.10:47832'],
-    ['192.168.1.10:47832', 'http://192.168.1.10:47832'],
-    ['http://192.168.1.10:47832/', 'http://192.168.1.10:47832'],
+    ['192.168.1.10', 'http://192.168.1.10:48132'],
+    ['192.168.1.10:48132', 'http://192.168.1.10:48132'],
+    ['http://192.168.1.10:48132/', 'http://192.168.1.10:48132'],
   ])('normalizes %s', (input, expected) => expect(normalizeServer(input)).toBe(expected));
 
   it.each(['https://example.com', 'http://8.8.8.8', 'ftp://192.168.1.2', 'http://user:pass@192.168.1.2'])('rejects unsafe server %s', input => {
@@ -120,8 +120,8 @@ describe('Android remote runtime', () => {
   });
 
   it('parses a versioned pairing link', () => {
-    expect(parsePairing('streamdashboard://pair?v=1&server=http%3A%2F%2F192.168.1.2%3A47832&id=abc&code=123456')).toEqual({
-      server: 'http://192.168.1.2:47832', id: 'abc', code: '123456',
+    expect(parsePairing('streamdashboard://pair?v=1&server=http%3A%2F%2F192.168.1.2%3A48132&id=abc&code=123456')).toEqual({
+      server: 'http://192.168.1.2:48132', id: 'abc', code: '123456',
     });
   });
 
@@ -133,10 +133,10 @@ describe('Android remote runtime', () => {
   ])('rejects malformed pairing payload %s', value => expect(() => parsePairing(value)).toThrow());
 
   it('builds REST and one-use-ticket websocket URLs without a credential', () => {
-    expect(apiUrl('http://192.168.1.2:47832/', '/api/v1/state')).toBe('http://192.168.1.2:47832/api/v1/state');
-    expect(websocketUrl('http://192.168.1.2:47832', 'short-ticket')).toBe('ws://192.168.1.2:47832/ws/v1?ticket=short-ticket');
-    expect(websocketUrl('https://localhost:47832', 'ticket').startsWith('wss://')).toBe(true);
-    expect(websocketUrl('http://192.168.1.2:47832', 'ticket')).not.toContain('credential');
+    expect(apiUrl('http://192.168.1.2:48132/', '/api/v1/state')).toBe('http://192.168.1.2:48132/api/v1/state');
+    expect(websocketUrl('http://192.168.1.2:48132', 'short-ticket')).toBe('ws://192.168.1.2:48132/ws/v1?ticket=short-ticket');
+    expect(websocketUrl('https://localhost:48132', 'ticket').startsWith('wss://')).toBe(true);
+    expect(websocketUrl('http://192.168.1.2:48132', 'ticket')).not.toContain('credential');
   });
 
   it('affiche et acquitte les Streamer Pings Twitch sur Android', () => {

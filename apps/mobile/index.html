@@ -23,7 +23,7 @@
   <section id="pairing" class="pairing" hidden>
     <small>APPAIRAGE</small><h2>Connecter ce téléphone</h2>
     <p>Génère un code depuis StreamDashboard sur le PC, puis saisis-le ici.</p>
-    <label id="server-label">Adresse du PC Stream<input id="pair-server" inputmode="url" placeholder="192.168.1.42:47832" autocomplete="url"></label>
+    <label id="server-label">Adresse du PC Stream<input id="pair-server" inputmode="url" placeholder="192.168.1.42:48132" autocomplete="url"></label>
     <label id="link-label">Lien d’appairage (facultatif)<input id="pair-link" inputmode="url" placeholder="streamdashboard://pair?v=1&amp;…" autocomplete="off"></label>
     <label>ID de pairing<input id="pair-id" autocomplete="off"></label>
     <label>Code<input id="pair-code" autocomplete="one-time-code"></label>
@@ -110,7 +110,7 @@
           <section class="form-page" data-planning-page="main">
             <label>Titre<input name="title" maxlength="140" required></label>
             <label>Date<input name="date" type="date" required></label>
-            <div class="form-grid"><label>Début<input name="start" type="time" required></label><label>Fin<input name="end" type="time" required></label></div>
+            <div class="form-grid"><label>Début<input name="start" type="time" required></label><label>Date de fin (facultative)<input name="endDate" type="date"></label><label>Fin<input name="end" type="time" required></label></div>
             <label>Description<textarea name="description" maxlength="500" placeholder="De quoi parlera ce live ?"></textarea></label>
             <button type="button" class="disclosure-row" data-open-planning-page="advanced"><span><b>Options avancées</b><small>Récurrence, modèle et publications</small></span><i>›</i></button>
           </section>

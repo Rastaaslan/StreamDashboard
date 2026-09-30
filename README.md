@@ -16,7 +16,7 @@ Le bouton **Démarrer le live** sélectionne d'abord la scène de démarrage con
 
 L'overlay timer StreamDashboard est disponible sur :
 
-`http://127.0.0.1:47832/overlay/timer/`
+`http://127.0.0.1:48132/overlay/timer/`
 
 ### Planning et lives non programmés
 

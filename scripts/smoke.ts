@@ -1,4 +1,4 @@
-const base = process.env.DASHBOARD_URL ?? 'http://127.0.0.1:47832';
+const base = process.env.DASHBOARD_URL ?? 'http://127.0.0.1:48132';
 const [healthResponse, stateResponse, capabilitiesResponse] = await Promise.all([
   fetch(`${base}/api/v1/health`, { signal: AbortSignal.timeout(5000) }), fetch(`${base}/api/v1/state`, { signal: AbortSignal.timeout(5000) }), fetch(`${base}/api/v1/capabilities`, { signal: AbortSignal.timeout(5000) }),
 ]);

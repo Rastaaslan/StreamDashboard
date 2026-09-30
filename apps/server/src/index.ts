@@ -330,7 +330,7 @@ function lanUrls(port: number) {
 }
 
 export async function startDashboardServer(options: DashboardServerOptions = {}): Promise<DashboardServerHandle> {
-  const requestedPort = options.port ?? Number(process.env.PORT ?? 47832);
+  const requestedPort = options.port ?? Number(process.env.PORT ?? 48132);
   const host = options.host ?? '127.0.0.1';
   const remoteRuntimeEnabled = options.remoteEnabled === true;
   if (!LOOPBACK_HOSTS.has(host) && !remoteRuntimeEnabled) {
@@ -636,7 +636,7 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
   }, async values => { local.automations = values; await save(); });
   const support = new SupportRuntime(local.supports, async values => { local.supports = values; await save(); }, value => { eventCore.publish({ type: 'support.received', source: value.provider, occurredAt: value.receivedAt, correlationId: `${value.provider}:${value.externalId}`, payload: value }); });
   const streamlabsOAuth = new StreamlabsOAuthClient(options.streamlabsFetch ?? fetch);
-  const streamlabsRedirectUri = String(options.streamlabsRedirectUri ?? process.env.STREAMLABS_REDIRECT_URI ?? 'http://127.0.0.1:47832/api/v1/streamlabs/oauth/callback').trim();
+  const streamlabsRedirectUri = String(options.streamlabsRedirectUri ?? process.env.STREAMLABS_REDIRECT_URI ?? 'http://127.0.0.1:48132/api/v1/streamlabs/oauth/callback').trim();
   {
     let redirect: URL;
     try { redirect = new URL(streamlabsRedirectUri); } catch { throw new Error('URL de redirection Streamlabs invalide.'); }
@@ -974,7 +974,7 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
     broadcast();
     return companionSnapshot(local.planning, local.companion);
   });
-  const commands = new DashboardCommandService(local, obs, changed, { settings: local.settings, logger });
+  const commands = new DashboardCommandService(local, obs, changed, { settings: local.settings, logger, timerOverlayUrl: () => `http://127.0.0.1:${runtimePort}/overlay/timer/` });
 
   const refreshGoogleCalendars = async () => {
     if (!googleClientId || !google.connected) { googleCalendars = []; return; }
@@ -1917,7 +1917,7 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
         local: true,
         twitch: Boolean(item.twitchSegmentId || item.providers?.twitch?.remoteId),
         google: Boolean(item.providers?.google?.remoteId),
-        confirmRecurring: req.query.confirmRecurring === 'true',
+        confirmRecurring: req.body?.confirmRecurring === true || req.query.confirmRecurring === 'true',
       };
       const oldRevision = local.companion.eventRevisions[id] ?? 1;
       await plan(async () => planning().remove(id, destinations));
@@ -2374,15 +2374,8 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
     server.once('listening', onListening);
     try { server.listen(port, host); } catch (error) { cleanup(); reject(error); }
   });
-  try {
-    await listen(requestedPort);
-  } catch (error) {
-    const code = (error as NodeJS.ErrnoException).code;
-    if (requestedPort === 0 || (code !== 'EACCES' && code !== 'EADDRINUSE')) throw error;
-    // Keep the LAN binding and retry only once; the OS chooses the available port.
-    void Promise.resolve().then(() => logger.warn(`StreamDashboard: listen ${code} on ${host}:${requestedPort}; falling back to an ephemeral port (0).`)).catch(() => undefined);
-    await listen(0);
-  }
+  // A changed port invalidates OBS URLs, OAuth callbacks and paired phones.
+  await listen(requestedPort);
   const address = server.address();
   const actualPort = typeof address === 'object' && address ? address.port : requestedPort;
   runtimePort = actualPort;

@@ -30,7 +30,8 @@ test(`Desktop Google (${googleClientSecret ? 'with secret' : 'public PKCE'}): sh
       throw new Error(`Unexpected Google request: ${url}`);
     } };
   try {
-    dashboard = await startDashboardServer(options);
+    await assert.rejects(startDashboardServer(options), { code: 'EADDRINUSE' });
+    dashboard = await startDashboardServer({ ...options, port: 0 });
     assert.notEqual(new URL(dashboard.url).port, String(occupied.address().port));
     browser = await chromium.launch({ headless: true, args: ['--no-sandbox'] });
     const page = await browser.newPage();

@@ -25,7 +25,7 @@ describe('Google OAuth pending attempt lifecycle', () => {
   });
   it('refuse immédiatement un callback provenant d’une tentative annulée par disconnect', async () => {
     const clientId = 'stale-callback-client';
-    const redirectUri = 'http://127.0.0.1:47832/api/v1/google/oauth/callback';
+    const redirectUri = 'http://127.0.0.1:48132/api/v1/google/oauth/callback';
     const attempt = createGoogleOAuthAttempt(clientId, redirectUri);
     const request = vi.fn();
     const persist = vi.fn(async () => undefined);
@@ -40,7 +40,7 @@ describe('Google OAuth pending attempt lifecycle', () => {
 
   it('garde un seul state/verifier actif par client et callback pendant la fenêtre PKCE', () => {
     const clientId = 'single-flight-client';
-    const redirectUri = 'http://127.0.0.1:47832/api/v1/google/oauth/callback';
+    const redirectUri = 'http://127.0.0.1:48132/api/v1/google/oauth/callback';
     const first = createGoogleOAuthAttempt(clientId, redirectUri);
     const second = createGoogleOAuthAttempt(clientId, redirectUri);
 

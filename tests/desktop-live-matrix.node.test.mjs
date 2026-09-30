@@ -21,6 +21,7 @@ test('Desktop Live runtime matrix: HTTP controls, custom scenes, confirmations a
     const page = await browser.newPage(); page.setDefaultTimeout(5000);
     const errors = []; page.on('pageerror', error => errors.push(error.message));
     const data = createMobileFixture('live'); const state = data.state;
+    for(let i=0;i<7;i++){const name=`Extra ${i}`;state.obs.inputs[name]={muted:false,volume:0.5};state.obs.activeAudioInputs.push(name)}
     state.obs.streamingKnown = true; state.obs.mediaInputs = ['Jingle']; state.obs.browserInputs = ['Overlay'];
     state.obs.scenes.push('Custom OBS'); state.google = { configured: false };
     state.twitch.capabilities = { chatWrite: true, updateChannel: true, createClip: true };
@@ -70,6 +71,18 @@ test('Desktop Live runtime matrix: HTTP controls, custom scenes, confirmations a
     await expect(page.locator('[data-live-toggle]')).toContainText('Démarrer');
     await page.locator('[data-live-toggle]').click();
     await expect.poll(() => commands.map(c => c.type)).toEqual(['session.stop','session.prepare','session.start']);
+    await expect(page.locator('.audio-row')).toHaveCount(state.obs.activeAudioInputs.length);
+    for(const label of ['Intro','Gameplay','Chatting','Pause','Fin'])await expect(page.locator(`[data-scene="${label}"]`)).toBeVisible();
+    await page.locator('[data-audio-volume="Extra 6"]').fill('25');
+    await page.locator('[data-audio-volume="Extra 6"]').dispatchEvent('change');
+    await expect.poll(()=>commands.at(-1)).toMatchObject({type:'obs.volume',input:'Extra 6',volume:0.25});
+    const volumeSlider=page.locator('[data-audio-volume="Extra 6"]');
+    await volumeSlider.focus();const volumeNode=await volumeSlider.elementHandle();
+    state.obs.inputs['Late source']={muted:false,volume:0.75};state.obs.activeAudioInputs.push('Late source');
+    for(const socket of sockets.clients)socket.send(JSON.stringify({type:'state.updated',data:state}));
+    await expect(page.locator('[data-audio-volume="Late source"]')).toBeVisible();
+    await expect(volumeSlider).toBeFocused();
+    assert.equal(await volumeNode.evaluate(node=>node.isConnected),true);
     const custom = page.locator('[data-scene="Custom"]');
     const customNode = await custom.elementHandle();
     await custom.hover(); await page.mouse.down();
@@ -91,7 +104,7 @@ test('Desktop Live runtime matrix: HTTP controls, custom scenes, confirmations a
     for (const muted of [true,false]) {
       await page.locator('[data-profile-quick-action="mute-main"]').click();
       await expect.poll(() => commands.at(-1)).toMatchObject({ type: 'obs.mute', input: 'Mic', muted });
-      await expect(page.locator('[data-mute="0"]')).toHaveText(muted ? 'OFF' : 'ON');
+      await expect(page.locator('[data-mute="Mic"]')).toHaveText(muted ? 'OFF' : 'ON');
     }
     for (const [control,type,seconds] of [['toggle','timer.start'],['toggle','timer.pause'],['plus','timer.add',60],['minus','timer.add',-60],['reset','timer.reset']]) {
       if (control === 'reset') holdRefresh = true;

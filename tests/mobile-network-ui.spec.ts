@@ -25,7 +25,7 @@ async function setup(page: Page, obs = { connected: true, streamingKnown: true }
     if (!localStorage.getItem('test-initialized')) {
       localStorage.setItem('test-initialized', 'yes');
       localStorage.setItem('native-credential', 'persistent-device-credential');
-      localStorage.setItem('streamdashboard.server', 'http://192.168.1.10:47832');
+      localStorage.setItem('streamdashboard.server', 'http://192.168.1.10:48132');
     }
     win.StreamDashboardNative = {
       isAndroid: () => true,
@@ -72,20 +72,20 @@ test('shipped Android address recovery uses no pairing code and persists the exi
   await page.getByRole('button', { name: 'Comptes connectés' }).click();
   await expect(page.getByRole('button', { name: 'Oublier cette télécommande' })).toBeVisible();
   await page.getByRole('button', { name: 'Modifier l’adresse du PC' }).click();
-  await page.locator('#pair-server').fill('192.168.2.20:47832');
+  await page.locator('#pair-server').fill('192.168.2.20:48132');
   // A heartbeat/telemetry update must leave the recovery form and typed address intact.
   await page.clock.fastForward(10_000);
-  await expect(page.locator('#pair-server')).toHaveValue('192.168.2.20:47832');
+  await expect(page.locator('#pair-server')).toHaveValue('192.168.2.20:48132');
   await expect(page.locator('#pair-id')).toHaveValue('');
   await expect(page.locator('#pair-code')).toHaveValue('');
   await page.getByRole('button', { name: 'Reconnexion à cette adresse' }).click();
   await expect(page.locator('#pc')).toHaveText('Connecté');
-  await expect.poll(() => backend.calls.some(call => call.url === 'http://192.168.2.20:47832/api/v1/state' && call.auth === 'Device persistent-device-credential')).toBe(true);
+  await expect.poll(() => backend.calls.some(call => call.url === 'http://192.168.2.20:48132/api/v1/state' && call.auth === 'Device persistent-device-credential')).toBe(true);
   expect(backend.calls.some(call => call.url.endsWith('/remote/pair'))).toBe(false);
   expect(await nativeCredential(page)).toBe('persistent-device-credential');
   await page.reload();
   await expect(page.locator('#pc')).toHaveText('Connecté');
-  expect(await page.evaluate(() => localStorage.getItem('streamdashboard.server'))).toBe('http://192.168.2.20:47832');
+  expect(await page.evaluate(() => localStorage.getItem('streamdashboard.server'))).toBe('http://192.168.2.20:48132');
   expect(await nativeCredential(page)).toBe('persistent-device-credential');
   expect(errors).toEqual([]);
 });

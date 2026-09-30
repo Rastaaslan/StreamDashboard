@@ -422,8 +422,8 @@ export class TwitchClient {
       method: 'PATCH',
       body: JSON.stringify({
         start_time: item.startAtUtc,
-        timezone: 'UTC',
-        duration,
+        timezone: item.recurrence?.timeZone || 'UTC',
+        duration: String(duration),
         title: item.title,
         ...(item.twitchCategoryId ? { category_id: item.twitchCategoryId } : {}),
       }),
@@ -739,8 +739,8 @@ export class TwitchClient {
         method: 'POST',
         body: JSON.stringify({
           start_time: item.startAtUtc,
-          timezone: 'UTC',
-          duration,
+          timezone: item.recurrence?.timeZone || 'UTC',
+          duration: String(duration),
           title: item.title,
           ...(item.twitchCategoryId ? { category_id: item.twitchCategoryId } : {}),
         }),
@@ -825,7 +825,7 @@ export class TwitchClient {
       // Revoked scopes must stop advertising actions before the next hourly validation.
       await this.validateSession().catch(() => undefined);
     }
-    const result = await this.json<T>(response);
+    const result = await this.json<T>(response, endpoint === '/schedule/segment');
     if (generation !== this.generation) throw new Error('Opération Twitch annulée.');
     return result;
   }
@@ -861,7 +861,7 @@ export class TwitchClient {
     if (generation !== this.generation) throw new Error('Connexion Twitch annulée.');
   }
 
-  private async json<T>(response: Response): Promise<T> {
+  private async json<T>(response: Response, providerMessage = false): Promise<T> {
     if (response.status === 204) return undefined as T;
     let value: T & { message?: string };
     try {
@@ -869,7 +869,7 @@ export class TwitchClient {
     } catch {
       throw new TwitchHttpError(response.ok ? 502 : response.status, 'Réponse Twitch invalide.', response.headers.get('retry-after'));
     }
-    if (!response.ok) throw new TwitchHttpError(response.status, response.status === 429 ? 'Limite Twitch atteinte. Réessayez plus tard.' : `Twitch HTTP ${response.status}`, response.headers.get('retry-after'));
+    if (!response.ok) throw new TwitchHttpError(response.status, providerMessage && typeof value.message === 'string' && value.message.trim() ? `Twitch HTTP ${response.status}: ${[this.credentials.accessToken, this.credentials.refreshToken].filter(Boolean).reduce((message, secret) => message.split(secret).join('[redacted]'), value.message).slice(0, 1000)}` : response.status === 429 ? 'Limite Twitch atteinte. Réessayez plus tard.' : `Twitch HTTP ${response.status}`, response.headers.get('retry-after'));
     return value;
   }
 }

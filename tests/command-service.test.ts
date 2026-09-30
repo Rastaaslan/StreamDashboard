@@ -254,3 +254,14 @@ it('ne rejoue pas StopStream après une reconnexion pendant la scène End', asyn
   expect(obs.stream).not.toHaveBeenCalled();
   expect(commit).not.toHaveBeenCalled();
 });
+
+it('synchronizes the logical mode after a confirmed quick scene without resetting the timer', async () => {
+  const domain = { mode: 'idle' as const, timer: { running: false, duration: 300, remaining: 42, deadline: null }, checklist: [] };
+  const obs: ObsCommands = { state: { connected: true, streaming: false }, scene: vi.fn(), mute: vi.fn(), volume: vi.fn(), stream: vi.fn(), record: vi.fn(), restartMedia: vi.fn(), refresh: vi.fn() };
+  const service = new DashboardCommandService(domain, obs, vi.fn(async () => ({}) as never), { settings: { modeScenes: { pause: 'Pause scene' }, chattingScene: 'Chat scene' } });
+  await service.execute({ type: 'obs.scene', scene: 'Pause scene' });
+  expect(domain.mode).toBe('pause');
+  await service.execute({ type: 'obs.scene', scene: 'Chat scene' });
+  expect(domain.mode).toBe('live');
+  expect(domain.timer.remaining).toBe(42);
+});

@@ -42,6 +42,9 @@ test('ProviderBridge compiles with javac and accepts only idempotent deletion re
     }`,
     'DeletionPolicyTest.java': `package ${pkg}; public class DeletionPolicyTest {
       public static void main(String[] args) throws Exception {
+        String diagnostic = ProviderBridge.safeProviderMessage("Invalid duration token-secret", java.util.Map.of("Authorization", "Bearer token-secret"));
+        if (!diagnostic.equals("Invalid duration [redacted]")) throw new AssertionError(diagnostic);
+
         for (String code : new String[]{"INVALID_PAYLOAD", "INVALID_LINK", "REAUTH_REQUIRED", "HTTP_400", "HTTP_401", "HTTP_403", "HTTP_404", "HTTP_405", "HTTP_410", "HTTP_412", "HTTP_413", "HTTP_415", "HTTP_422", "HTTP_429"}) {
           if (!ProviderBridge.isDefinitiveNonCreation(code)) throw new AssertionError(code);
         }

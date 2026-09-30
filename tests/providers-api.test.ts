@@ -69,7 +69,7 @@ describe('API providers', () => {
     expect(authorization.origin + authorization.pathname).toBe('https://streamlabs.com/api/v2.0/authorize');
     expect(authorization.searchParams.get('client_id')).toBe('client-id');
     expect(authorization.searchParams.get('scope')).toBe('socket.token donations.create');
-    expect(authorization.searchParams.get('redirect_uri')).toBe('http://127.0.0.1:47832/api/v1/streamlabs/oauth/callback');
+    expect(authorization.searchParams.get('redirect_uri')).toBe('http://127.0.0.1:48132/api/v1/streamlabs/oauth/callback');
     const state = authorization.searchParams.get('state');
     expect(state).toMatch(/^streamlabs_/);
 

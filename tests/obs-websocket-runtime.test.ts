@@ -75,3 +75,50 @@ it('authenticates, loses OBS during a live, and recovers over a new websocket', 
     await new Promise<void>(resolve => server.close(() => resolve()));
   }
 }, 15000);
+
+it('timer readiness requires an enabled attached browser, matching URL and reachable HTTP endpoint', async () => {
+  const { createServer } = await import('node:http');
+  let httpStatus = 200, attached = true, enabled = true, present = true;
+  const http = createServer((_req, res) => { res.writeHead(httpStatus, { 'content-type': 'text/html' }); res.end('timer'); });
+  http.listen(0, '127.0.0.1'); await once(http, 'listening');
+  const address = http.address(); if (!address || typeof address === 'string') throw new Error('No HTTP port');
+  const endpoint = `http://127.0.0.1:${address.port}/overlay/timer/`;
+  let url = endpoint;
+  const server = new WebSocketServer({ host: '127.0.0.1', port: 0 });
+  server.on('connection', socket => {
+    socket.send(encode({ op: 0, d: { obsWebSocketVersion: '5.6.3', rpcVersion: 1 } }));
+    socket.on('message', data => {
+      const message = decode(new Uint8Array(data as Buffer)) as { op: number; d: Record<string, string> };
+      if (message.op === 1) { socket.send(encode({ op: 2, d: { negotiatedRpcVersion: 1 } })); return; }
+      if (message.op !== 6) return;
+      const { requestId, requestType } = message.d;
+      const responses: Record<string, unknown> = {
+        GetVersion: { obsVersion: '31', obsWebSocketVersion: '5' },
+        GetCurrentProgramScene: { currentProgramSceneName: 'Live' }, GetSceneList: { scenes: [{ sceneName: 'Live' }] },
+        GetStreamStatus: { outputActive: false }, GetRecordStatus: { outputActive: false },
+        GetInputList: { inputs: present ? [{ inputName: 'Timer', inputKind: 'browser_source' }] : [] },
+        GetSceneItemList: { sceneItems: attached ? [{ sourceName: 'Timer', sceneItemEnabled: enabled }] : [] },
+        GetInputSettings: { inputSettings: { url } },
+      };
+      socket.send(encode({ op: 7, d: { requestId, requestType, requestStatus: { result: true, code: 100 }, responseData: responses[requestType] || {} } }));
+    });
+  });
+  await once(server, 'listening');
+  const wsAddress = server.address(); if (!wsAddress || typeof wsAddress === 'string') throw new Error('No WS port');
+  const obs = new ObsClient(`ws://127.0.0.1:${wsAddress.port}`);
+  try {
+    await obs.connect();
+    await expect(obs.verifyTimerBrowserSource('Timer', endpoint)).resolves.toBeUndefined();
+    enabled = false; await expect(obs.verifyTimerBrowserSource('Timer', endpoint)).rejects.toThrow('activé');
+    enabled = true; attached = false; await expect(obs.verifyTimerBrowserSource('Timer', endpoint)).rejects.toThrow('attaché');
+    attached = true; present = false; await expect(obs.verifyTimerBrowserSource('Timer', endpoint)).rejects.toThrow('absente');
+    present = true; url = 'http://127.0.0.1:47832/overlay/timer/'; await expect(obs.verifyTimerBrowserSource('Timer', endpoint)).rejects.toThrow('URL timer attendue');
+    url = endpoint; httpStatus = 503; await expect(obs.verifyTimerBrowserSource('Timer', endpoint)).rejects.toThrow('HTTP 503');
+    await new Promise<void>(resolve => http.close(() => resolve()));
+    await expect(obs.verifyTimerBrowserSource('Timer', endpoint)).rejects.toThrow();
+  } finally {
+    await obs.close(); for (const socket of server.clients) socket.terminate();
+    await new Promise<void>(resolve => server.close(() => resolve()));
+    if (http.listening) await new Promise<void>(resolve => http.close(() => resolve()));
+  }
+});

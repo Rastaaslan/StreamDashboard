@@ -173,7 +173,7 @@ describe('audit politique télécommande', () => {
     twitch: { connected: true, userName: 'dam', displayName: 'Dam', error: null, syncing: false, lastSyncedAt: null, deviceAuthorization: null },
     google: { configured: true, connected: true, targetCalendarId: 'private-calendar', calendars: [{ id: 'private-calendar', summary: 'Perso', writable: true }], error: null, lastSyncedAt: null },
     remote: { supported: true, enabled: true, devices: [{ id: 'd', name: 'phone', createdAt: '', lastSeenAt: '' }], urls: ['http://192.168.1.2'] },
-    runtime: { serverVersion: '1', nodeVersion: '22', electronVersion: '43', platform: 'win32', port: 47832, logsPath: 'C:/secret/logs' },
+    runtime: { serverVersion: '1', nodeVersion: '22', electronVersion: '43', platform: 'win32', port: 48132, logsPath: 'C:/secret/logs' },
   } as DashboardState;
 
   it('autorise force pour le démarrage appairé, refuse enregistrement/scène arbitraire et accepte les contrôles nécessaires', () => {

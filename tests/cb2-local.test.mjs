@@ -1,3 +1,4 @@
+import { localDate, eventTimes, editedRecurrence } from '../apps/mobile/shared/planning-editor.js';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
@@ -92,7 +93,7 @@ function dom() {
     };
   }
   const $ = id => { if (!nodes.has(id)) nodes.set(id, node()); return nodes.get(id); };
-  const fields = Object.fromEntries(['title','date','start','end','category','description','twitch','google','recurrence','recurrenceUntil'].map(key => [key, node('input')]));
+  const fields = Object.fromEntries(['title','date','start','end','endDate','category','description','twitch','google','recurrence','recurrenceUntil'].map(key => [key, node('input')]));
   fields.namedItem = name => fields[name];
   $('slot-form').elements = fields;
   $('slot-form').reset = () => { for (const field of Object.values(fields)) if (typeof field !== 'function') { field.value = ''; field.checked = false; } };
@@ -193,7 +194,7 @@ test('Standalone Planning form uses real sync: second provider, failed creation 
     providerSync, StreamDashboardProviders: bridge, createProviderRetry, eventProviderState, renderSyncCenter() {}, refreshProviderAccounts: async () => {}, createThumbnail: () => ui.document.createElement('span'),
     mobileEditing: null, planningPage: 1, planningPageSize: 20, planningFilters: {}, planningTemporal: '',
     moderationCapabilities: { schedule: false }, // A stale PC denial must not block the native provider.
-    ensureTwitchCapabilities: async () => {}, structuredClone,
+    ensureTwitchCapabilities: async () => {}, structuredClone, localDate, eventTimes, editedRecurrence,
     FormData: class { constructor(form) { this.form = form; } get(key) { const field = this.form.elements[key]; return ['twitch','google'].includes(key) ? field.checked ? 'on' : null : field?.value; } },
     selectPlanningPage() {}, updatePlanningProviderReadiness() {}, renderOnlinePlanningProviders() {},
     filterPlanning: items => items, filterPlanningTemporal: items => items,
@@ -213,7 +214,7 @@ test('Standalone Planning form uses real sync: second provider, failed creation 
   for (const [key,value] of Object.entries({ title:'Premier live',date:'2030-01-01',start:'18:00',end:'20:00',category:'live' })) fields[key].value = value;
   fields.twitch.checked = true;
   ui.$('slot-twitch-game-id').value = '123';
-  const submit = () => ui.$('slot-form').onsubmit({ preventDefault() {}, currentTarget: ui.$('slot-form') });
+  const submit = () => { const event = { preventDefault() {}, currentTarget: ui.$('slot-form') }; const pending = ui.$('slot-form').onsubmit(event); event.currentTarget = null; return pending; };
   await submit();
   await settle();
   assert.equal(companion.snapshot().planning.length, 1, notices.join('; '));
@@ -249,6 +250,17 @@ test('Standalone Planning form uses real sync: second provider, failed creation 
   assert.deepEqual(publications.slice(-2).map(({provider, action, link}) => [provider, action, link.remoteId]), [
     ['twitch','update','twitch-remote'], ['google','update','google-remote'],
   ]);
+  const remoteDeletes = [];
+  context.companionMode = CompanionMode.ONLINE_PC;
+  context.transport = { deletePlanning: async (id, options) => { remoteDeletes.push({ id, options }); return { planning: [] }; } };
+  context.confirm = () => true;
+  context.render(context.offlineState());
+  await ui.$('planning').children[0].children.find(node => node.textContent === 'Supprimer').onclick();
+  assert.equal(remoteDeletes[0].id, companion.snapshot().planning[0].id);
+  assert.equal(companion.snapshot().planning.length, 1, 'ONLINE_PC deletion goes through the PC API');
+  context.companionMode = CompanionMode.ONLINE_STANDALONE;
+  context.confirm = () => false;
+  context.render(context.offlineState());
   const remove = ui.$('planning').children[0].children.find(node => node.textContent === 'Supprimer');
   remove.onclick();
   assert.equal(companion.snapshot().planning.length, 1);

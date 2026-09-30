@@ -48,6 +48,14 @@ test('Planning Desktop preserves the editable draft across telemetry, reconnect 
     await expect.poll(() => connections).toBe(1);
     await expect(page.locator('#runtime-status')).toHaveText('Runtime PC');
     await page.locator('[data-view="planning"]').click();
+    dashboard.planning=Array.from({length:45},(_,i)=>({id:`bulk-${i}`,title:`Event ${i}`,startAtUtc:'2027-06-02T22:30:00Z',endAtUtc:'2027-06-05T23:30:00Z'}));
+    socket.send(JSON.stringify({type:'state.updated',data:dashboard}));
+    await expect(page.locator('[data-event-index]')).toHaveCount(45);
+    await page.locator('[data-event-index="44"]').click();
+    await expect(page.locator('#event-date')).toHaveValue('2027-06-03');
+    await expect(page.locator('#event-end-date')).toHaveValue('2027-06-06');
+    await page.locator('#event-dialog').evaluate(dialog=>dialog.close());
+    dashboard.planning=[];
     await page.locator('[data-add-event]').click();
     const dialog = page.locator('#event-dialog');
     const title = page.locator('#event-title');

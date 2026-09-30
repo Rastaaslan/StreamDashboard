@@ -1,3 +1,4 @@
+import { eventTimes, editedRecurrence } from '/mobile/shared/planning-editor.js';
 import { diagnosePrelive, diagnosticLabels } from '/mobile/prelive-diagnostic.js';
 import { fixture } from './fixtures.js';
 import { expandRecurringItems } from '/mobile/shared/recurrence.js';
@@ -204,6 +205,7 @@ async function dashboardCommand(command,logType='dashboard.command',logPayload=c
 }
 async function refreshRuntime(preserveConnections=false){
   if(!state.runtime)return;
+  const snapshotVersion=state.dashboardVersion||0;
   try{
     const [dashboard,soundboard,setup,product,connections]=await Promise.all([
       request('/api/v1/state'),
@@ -213,11 +215,12 @@ async function refreshRuntime(preserveConnections=false){
       request('/api/v1/connections')
     ]);
     applyProduct(product,connections);
-    applyDashboard(dashboard);state.soundboard=soundboard;state.sounds=soundboard.sounds||[];state.obsSetup=setup;
+    if((state.dashboardVersion||0)===snapshotVersion)applyDashboard(dashboard);state.soundboard=soundboard;state.sounds=soundboard.sounds||[];state.obsSetup=setup;
     runtimeUi(true,dashboard.obs?.connected?'OBS connecté':'Runtime connecté · OBS hors ligne');connectRuntimeSocket();if(state.view==='live'||(preserveConnections&&state.view==='camp'&&state.campItem==='Connexions'&&view.querySelector('[data-connection-id]')))updateRuntimeView();else render();return true;
   }catch(error){runtimeUi(false,'Runtime indisponible');render();toast(error.message,true);return false}
 }
 function applyDashboard(d){
+  state.dashboardVersion=(state.dashboardVersion||0)+1;
   state.runtimeAvailable=true;state.dashboard=d;state.scene=d.obs?.scene||'—';state.timerRunning=d.timer?.running===true;state.seconds=Math.max(0,Math.ceil(Number(d.timer?.remaining)||0));
   const hub=d.controlHub||{};state.live={
     active:hub.live?.isLive===true||d.obs?.streaming===true,
@@ -226,10 +229,24 @@ function applyDashboard(d){
     scene:d.obs?.scene||'—'
   };
   const inputs=d.obs?.inputs||{};const active=Array.isArray(d.obs?.activeAudioInputs)?d.obs.activeAudioInputs:Object.keys(inputs);
-  state.audio=active.filter(name=>inputs[name]).slice(0,6).map(name=>{const input=inputs[name];const db=Number.isFinite(input.volumeDb)?input.volumeDb:-100;return{name,muted:input.muted,volume:Math.round(Math.max(0,Math.min(1,input.volume??0))*100),level:Math.round(Math.max(0,Math.min(100,((db+60)/66)*100))),primary:d.settings?.primaryMicInput===name}});
+  state.audio=[...new Set([...active,d.settings?.primaryMicInput].filter(Boolean))].filter(name=>inputs[name]).map(name=>{const input=inputs[name];const db=Number.isFinite(input.volumeDb)?input.volumeDb:-100;return{name,muted:input.muted,volume:Math.round(Math.max(0,Math.min(1,input.volume??0))*100),level:Math.round(Math.max(0,Math.min(100,((db+60)/66)*100))),primary:d.settings?.primaryMicInput===name}});
   const from=Date.now()-366*86_400_000,to=Date.now()+730*86_400_000;
   state.planning=expandRecurringItems(d.planning||[],{from,to}).sort((a,b)=>Date.parse(a.startAtUtc)-Date.parse(b.startAtUtc)).map(item=>{const start=new Date(item.startAtUtc);return{raw:item,day:start.toLocaleDateString('fr-FR',{weekday:'long',day:'numeric'}),date:start.toLocaleDateString('fr-FR'),time:start.toLocaleTimeString('fr-FR',{hour:'2-digit',minute:'2-digit'}),title:item.title,kind:item.category==='live'?'Twitch':item.category==='personal'?'Personnel':'Production'}});
   syncStreamerPing();
+}
+function audioRows(){return state.audio.map(a=>`<div class="audio-row" data-audio-name="${esc(a.name)}"><b>${esc(a.name)}${a.primary?' · principal':''}</b><button data-mute="${esc(a.name)}" aria-label="${a.muted?'Réactiver':'Couper'} ${esc(a.name)}">${a.muted?'OFF':'ON'}</button><div class="meter"><i style="width:${a.level}%"></i></div><input data-audio-volume="${esc(a.name)}" aria-label="Volume ${esc(a.name)}" type="range" min="0" max="100" value="${a.volume}"><span>${a.volume}%</span></div>`).join('')}
+function bindAudioControls(){
+  document.querySelectorAll('[data-mute]').forEach(button=>button.onclick=async()=>{
+    const audio=state.audio.find(value=>value.name===button.dataset.mute);if(!audio)return;
+    record('obs.audio.mute',{inputName:audio.name,muted:!audio.muted});
+    if(!state.runtime){audio.muted=!audio.muted;render();return}
+    try{await dashboardCommand({type:'obs.mute',input:audio.name,muted:!audio.muted});await refreshRuntime()}catch(error){toast(error.message,true)}
+  });
+  document.querySelectorAll('[data-audio-volume]').forEach(slider=>slider.onchange=async()=>{
+    const volume=Number(slider.value)/100;
+    if(!state.runtime){const audio=state.audio.find(value=>value.name===slider.dataset.audioVolume);if(audio)audio.volume=Number(slider.value);return}
+    try{await dashboardCommand({type:'obs.volume',input:slider.dataset.audioVolume,volume})}catch(error){toast(error.message,true)}
+  });
 }
 function formatDuration(seconds){const n=Math.max(0,Math.floor(Number(seconds)||0));return`${String(Math.floor(n/3600)).padStart(2,'0')}:${String(Math.floor(n/60)%60).padStart(2,'0')}:${String(n%60).padStart(2,'0')}`}
 const primaryScenes=['Intro','Gameplay','Chatting','Pause','Fin'];
@@ -237,8 +254,7 @@ const OBS_SOUNDBOARD_INPUT='StreamDashboard • Soundboard';
 const publicObsMediaInputs=values=>(values||[]).filter(input=>input!==OBS_SOUNDBOARD_INPUT);
 const sceneEntries=()=>{
   const custom=state.productProfile?.obs?.scenes||[];
-  if(custom.length)return custom.map(item=>({label:item.label,scene:item.scene,custom:true}));
-  return primaryScenes.map(label=>({label,scene:null,custom:false}));
+  return [...primaryScenes.map(label=>({label,scene:null,custom:false})),...custom.filter(item=>!primaryScenes.includes(item.label)).map(item=>({label:item.label,scene:item.scene,custom:true}))];
 };
 const sceneActive=entry=>entry.custom?state.scene===entry.scene:logicalScene(state.scene)===entry.label;
 const scenes=()=>`<div class="scene-grid">${sceneEntries().map(entry=>`<button class="scene ${sceneActive(entry)?'active':''}" data-scene="${esc(entry.label)}" aria-pressed="${sceneActive(entry)}">${esc(entry.label)}</button>`).join('')}</div>`;
@@ -307,7 +323,7 @@ function live(){
       ${liveQuickActions()}
       <section class="section"><div class="section-head"><div><h2>Scènes</h2><span class="label">Active · ${esc(state.scene)}</span></div></div>${scenes()}</section>
       <div class="cockpit-secondary">
-        <section class="section"><div class="section-head"><h2>Audio</h2><span class="label">Sources actives</span></div>${state.audio.map((a,i)=>`<div class="audio-row"><b>${esc(a.name)}${a.primary?' · principal':''}</b><button data-mute="${i}" aria-label="${a.muted?'Réactiver':'Couper'} ${esc(a.name)}">${a.muted?'OFF':'ON'}</button><div class="meter"><i style="width:${a.level}%"></i></div><span>${a.volume}%</span></div>`).join('')||'<p class="label">Aucune source audio active.</p>'}</section>
+        <section class="section"><div class="section-head"><h2>Audio</h2><span class="label">Sources actives</span></div><div data-audio-list>${audioRows()}</div></section>
         <section class="section timer"><div class="section-head"><h2>Timer</h2></div><b class="timer-value">${formatDuration(state.seconds)}</b><div class="timer-actions"><button class="action" data-timer="minus">−1 min</button><button class="action" data-timer="toggle">${state.timerRunning?'Pause':'Play'}</button><button class="action" data-timer="plus">+1 min</button><button class="action" data-timer="reset">Reset</button></div></section>
       </div>
     </div>
@@ -337,14 +353,24 @@ function updateLiveTelemetry(){
     const active=Boolean(entry&&sceneActive(entry));
     button.classList.toggle('active',active);button.setAttribute('aria-pressed',String(active));
   });
-  // Keep index-based audio handlers aligned with the current snapshot without replacing buttons.
-  view.querySelectorAll('.audio-row').forEach((row,index)=>{
-    const audio=state.audio[index];row.hidden=!audio;if(!audio)return;
-    row.querySelector('b').textContent=audio.name+(audio.primary?' · principal':'');
-    const button=row.querySelector('[data-mute]');button.textContent=audio.muted?'OFF':'ON';
-    button.setAttribute('aria-label',`${audio.muted?'Réactiver':'Couper'} ${audio.name}`);
-    row.querySelector('.meter i').style.width=`${audio.level}%`;row.querySelector('span').textContent=`${audio.volume}%`;
-  });
+  const audioHost=view.querySelector('[data-audio-list]');
+  if(audioHost){
+    const fresh=document.createElement('template');fresh.innerHTML=audioRows();
+    const existing=new Map([...audioHost.querySelectorAll('.audio-row')].map(row=>[row.dataset.audioName,row]));
+    for(const row of fresh.content.querySelectorAll('.audio-row')){
+      const current=existing.get(row.dataset.audioName);
+      if(!current){audioHost.append(row);continue}
+      existing.delete(row.dataset.audioName);
+      const audio=state.audio.find(value=>value.name===row.dataset.audioName);
+      current.querySelector('b').textContent=row.querySelector('b').textContent;
+      const button=current.querySelector('[data-mute]');button.textContent=audio.muted?'OFF':'ON';
+      button.setAttribute('aria-label',row.querySelector('[data-mute]').getAttribute('aria-label'));
+      current.querySelector('.meter i').style.width=`${audio.level}%`;
+      current.querySelector('span').textContent=`${audio.volume}%`;
+      const slider=current.querySelector('[data-audio-volume]');if(document.activeElement!==slider)slider.value=audio.volume;
+    }
+    existing.forEach(row=>row.remove());bindAudioControls();
+  }
   const chatInput=view.querySelector('#desktop-chat-form input');
   // A disconnected chat keeps its draft editable; the send guard communicates the restriction.
   if(chatInput)chatInput.disabled=false;
@@ -390,7 +416,7 @@ function planning(){
       <button class="action" data-add-event>+ Nouvel événement</button>
     </div>
     <div class="planning-primary-tools"><select data-planning-filter aria-label="Filtrer le planning"><option value="upcoming" ${state.planningFilter==='upcoming'?'selected':''}>À venir</option><option value="past" ${state.planningFilter==='past'?'selected':''}>Passés</option><option value="all" ${state.planningFilter==='all'?'selected':''}>Tous</option></select><details class="planning-more"><summary>Partager & exporter</summary><div><select data-planning-period aria-label="Période d’export"><option value="today" ${state.planningPeriod==='today'?'selected':''}>Aujourd’hui</option><option value="this-week" ${state.planningPeriod==='this-week'?'selected':''}>Cette semaine</option><option value="next-week" ${state.planningPeriod==='next-week'?'selected':''}>Semaine prochaine</option></select><button class="secondary" data-planning-export>Exporter l’image</button><button class="secondary" data-planning-discord ${state.dashboard?.discord?.connected&&state.dashboard?.discord?.channelId?'':'disabled'}>Publier sur Discord</button></div></details></div>
-    <div class="agenda">${items.slice(0,40).map((e,index)=>`<article class="planning-entry"><div data-planning-thumbnail="${index}"></div><button class="event" data-event-index="${index}"><span class="event-when"><b>${esc(e.day)}</b><small>${esc(e.time)}</small></span><strong>${esc(e.title)}</strong><span class="kind">${esc([e.kind,providerCopy(e.raw)].filter(Boolean).join(' · '))}</span><i>›</i></button></article>`).join('')||'<p class="label">Aucun événement pour ce filtre.</p>'}</div>
+    <div class="agenda">${items.map((e,index)=>`<article class="planning-entry"><div data-planning-thumbnail="${index}"></div><button class="event" data-event-index="${index}"><span class="event-when"><b>${esc(e.day)}</b><small>${esc(e.time)}</small></span><strong>${esc(e.title)}</strong><span class="kind">${esc([e.kind,providerCopy(e.raw)].filter(Boolean).join(' · '))}</span><i>›</i></button></article>`).join('')||'<p class="label">Aucun événement pour ce filtre.</p>'}</div>
   </section>`;
 }
 const campGroups=[
@@ -940,7 +966,7 @@ function bind(){
   document.querySelectorAll('[data-scene]').forEach(b=>b.onclick=async()=>{const label=b.dataset.scene,entry=sceneEntries().find(value=>value.label===label),target=entry?.scene||label,command=entry?.custom?{type:'obs.scene',scene:entry.scene}:sceneCommand(label);record('obs.scene.set',{sceneName:target});if(!state.runtime){state.scene=target;toast(`Scène ${label}`);render();return}try{await dashboardCommand(command);await refreshRuntime();toast(`Scène ${label}`)}catch(error){toast(error.message,true)}});
   document.querySelectorAll('[data-sound]').forEach(b=>b.onclick=()=>void playSound(b.dataset.sound));
   document.querySelectorAll('[data-edit-sound]').forEach(b=>b.onclick=event=>{event.stopPropagation();openSoundDialog(b.dataset.editSound)});
-  document.querySelectorAll('[data-mute]').forEach(b=>b.onclick=async()=>{const a=state.audio[+b.dataset.mute];if(!a)return;record('obs.audio.mute',{inputName:a.name,muted:!a.muted});if(!state.runtime){a.muted=!a.muted;render();return}try{await dashboardCommand({type:'obs.mute',input:a.name,muted:!a.muted});await refreshRuntime()}catch(error){toast(error.message,true)}});
+  bindAudioControls();
   document.querySelectorAll('[data-timer]').forEach(b=>b.onclick=async()=>{const action=b.dataset.timer;record(`timer.${action}`);if(!state.runtime){if(action==='toggle')state.timerRunning=!state.timerRunning;if(action==='plus')state.seconds+=60;if(action==='minus')state.seconds=Math.max(0,state.seconds-60);if(action==='reset'){state.seconds=0;state.timerRunning=false}render();return}const command=action==='toggle'?{type:state.timerRunning?'timer.pause':'timer.start'}:action==='plus'?{type:'timer.add',seconds:60}:action==='minus'?{type:'timer.add',seconds:-60}:{type:'timer.reset'};try{await dashboardCommand(command);await refreshRuntime()}catch(error){toast(error.message,true)}});
   document.querySelector('[data-stop]')?.addEventListener('click',async()=>{record('soundboard.stop');if(!state.runtime){toast('Lecture arrêtée');return}try{state.soundboard=await request('/api/v1/soundboard/stop',{method:'POST',body:'{}'});state.sounds=state.soundboard?.sounds||state.sounds;toast('Lecture arrêtée');render()}catch(error){toast(error.message,true)}});
   document.querySelectorAll('[data-add-sound]').forEach(b=>b.onclick=()=>openSoundDialog());
@@ -1018,14 +1044,15 @@ async function loadDiscordChannels(){
 }
 async function loadDiscord(){
   if(!requireRuntime())return;
-  const guild=document.querySelector('#preview-discord-guild');if(!guild)return;
+  if(!document.querySelector('#preview-discord-guild'))return;
   // Revalidate the stored bot token, including after a server restart.
   const status=await request('/api/v1/discord/status');
   state.dashboard.discord=status;
   updateRuntimeView();
   if(!status.connected)throw new Error(status.error||'Connexion Discord impossible · vérifie le token du bot.');
-  if(!guild.isConnected)return;
-  const guilds=await request('/api/v1/discord/guilds');guild.replaceChildren(new Option('Serveur Discord…',''),...guilds.map(value=>new Option(value.name,value.id)));if(state.dashboard?.discord?.guildId)guild.value=state.dashboard.discord.guildId;await loadDiscordChannels();toast('Discord chargé');
+  const guilds=await request('/api/v1/discord/guilds');
+  const guild=document.querySelector('#preview-discord-guild');if(!guild)return;
+  guild.replaceChildren(new Option('Serveur Discord…',''),...guilds.map(value=>new Option(value.name,value.id)));if(state.dashboard?.discord?.guildId)guild.value=state.dashboard.discord.guildId;await loadDiscordChannels();toast('Discord chargé');
 }
 function bindConnections(){
   if(state.view!=='camp'||state.campItem!=='Connexions')return;
@@ -1077,7 +1104,7 @@ function renderObsSetupStatus(){const s=state.obsSetup,host=document.querySelect
 document.querySelector('#obs-setup-form').onsubmit=async event=>{event.preventDefault();if(!state.runtime)return toast('Passe en mode Runtime pour modifier OBS.');try{state.obsSetup=await request('/api/v1/soundboard/obs/setup',{method:'POST',body:'{}'});renderObsSetupStatus();toast(state.obsSetup.ready?'Soundboard OBS prête':'Réparation partielle terminée')}catch(error){toast(error.message,true);await openObsSetup()}};
 const localDate=value=>{const date=new Date(value);return Number.isFinite(+date)?`${date.getFullYear()}-${String(date.getMonth()+1).padStart(2,'0')}-${String(date.getDate()).padStart(2,'0')}`:''};
 const localTime=value=>{const date=new Date(value);return Number.isFinite(+date)?`${String(date.getHours()).padStart(2,'0')}:${String(date.getMinutes()).padStart(2,'0')}`:''};
-const recurrenceValue=rule=>!rule?'':rule.frequency==='monthly'?'monthly-1':`weekly-${rule.interval||1}`;
+const recurrenceValue=rule=>rule?`${rule.frequency}-${rule.interval||1}`:'';
 function eventCanonical(item){const id=item?.seriesId||item?.id;return (state.dashboard?.planning||[]).find(value=>value.id===id)||item}
 function populateEventTemplates(selected=''){
   const select=document.querySelector('#event-template');const templates=state.companion?.templates||[];
@@ -1093,11 +1120,14 @@ function populateEventForm(item,scope='item'){
   document.querySelector('#event-category').value=source.category||'live';
   document.querySelector('#event-date').value=source.startAtUtc?localDate(source.startAtUtc):localDate(new Date());
   document.querySelector('#event-start').value=source.startAtUtc?localTime(source.startAtUtc):'20:30';
+  document.querySelector('#event-end-date').value=source.endAtUtc?localDate(source.endAtUtc):'';
   document.querySelector('#event-end').value=source.endAtUtc?localTime(source.endAtUtc):'23:30';
   document.querySelector('#event-twitch-category').value=source.twitchCategoryName||'';
   document.querySelector('#event-twitch-game-id').value=source.twitchCategoryId||'';
   document.querySelector('#event-twitch-results').replaceChildren();
-  document.querySelector('#event-recurrence').value=recurrenceValue(source.recurrence);
+  const recurrenceSelect=document.querySelector('#event-recurrence'),currentRecurrence=recurrenceValue(source.recurrence);
+  if(currentRecurrence&&![...recurrenceSelect.options].some(option=>option.value===currentRecurrence))recurrenceSelect.add(new Option('Récurrence existante',currentRecurrence));
+  recurrenceSelect.value=currentRecurrence;
   document.querySelector('#event-recurrence-until').value=source.recurrence?.until?localDate(source.recurrence.until):'';
   document.querySelector('#event-publish-twitch').checked=source.desiredPublication?.twitch===true;
   document.querySelector('#event-publish-google').checked=source.desiredPublication?.google===true;
@@ -1141,15 +1171,15 @@ document.querySelector('#event-template').onchange=()=>{const template=(state.co
 document.querySelector('#event-scope').onchange=()=>{if(!state.eventEdit)return;const scope=document.querySelector('#event-scope').value;state.eventEdit.scope=scope;populateEventForm(scope==='series'?state.eventEdit.series:state.eventEdit.occurrence,scope);document.querySelector('#event-scope').value=scope};
 function recurrenceFromEventForm(){
   const value=document.querySelector('#event-recurrence').value;if(!value)return undefined;
-  const [frequency,interval]=value.split('-');const until=document.querySelector('#event-recurrence-until').value;
-  return{frequency,interval:Number(interval),timeZone:Intl.DateTimeFormat().resolvedOptions().timeZone||'Europe/Paris',...(until?{until:new Date(`${until}T23:59:59`).toISOString()}:{})};
+  const source=state.eventEdit?.scope==='series'?state.eventEdit.series:state.eventEdit?.occurrence;
+  return editedRecurrence(source?.recurrence,value,document.querySelector('#event-recurrence-until').value);
 }
 document.querySelector('#event-form').onsubmit=async event=>{
   event.preventDefault();const form=event.currentTarget;const date=document.querySelector('#event-date').value,start=document.querySelector('#event-start').value,end=document.querySelector('#event-end').value;
-  const startDate=new Date(`${date}T${start}`),endDate=new Date(`${date}T${end}`);if(endDate<=startDate)endDate.setDate(endDate.getDate()+1);
+  let times;try{times=eventTimes(date,start,end,document.querySelector('#event-end-date').value)}catch(error){return toast(error.message,true)}
   const category=document.querySelector('#event-category').value,publishTwitch=document.querySelector('#event-publish-twitch').checked,publishGoogle=document.querySelector('#event-publish-google').checked,gameId=document.querySelector('#event-twitch-game-id').value,gameName=document.querySelector('#event-twitch-category').value.trim();
   if(publishTwitch&&!gameId)return toast('Choisis une catégorie Twitch officielle.',true);
-  const item={title:document.querySelector('#event-title').value.trim(),description:document.querySelector('#event-description').value.trim(),startAtUtc:startDate.toISOString(),endAtUtc:endDate.toISOString(),category,twitchCategoryId:gameId||undefined,twitchCategoryName:gameName||undefined,desiredPublication:{local:true,twitch:publishTwitch,google:publishGoogle}};
+  const item={title:document.querySelector('#event-title').value.trim(),description:document.querySelector('#event-description').value.trim(),...times,category,twitchCategoryId:gameId||undefined,twitchCategoryName:gameName||undefined,desiredPublication:{local:true,twitch:publishTwitch,google:publishGoogle}};
   if(!state.runtime){state.planning.unshift({raw:{...item,id:`demo-${Date.now()}`},day:'Démo',time:start,title:item.title,kind:category==='live'?'Twitch':category});document.querySelector('#event-dialog').close();render();return}
   try{
     if(!state.eventEdit){
@@ -1163,7 +1193,9 @@ document.querySelector('#event-form').onsubmit=async event=>{
   }catch(error){toast(error.message,true)}
 };
 document.querySelector('#event-delete').onclick=async()=>{
-  if(!state.eventEdit||!confirm('Supprimer cet événement ?'))return;
+  if(!state.eventEdit)return;
+  const target=state.eventEdit.scope==='series'?state.eventEdit.series:state.eventEdit.occurrence;
+  if(!confirm(target?.twitchRecurring?'Supprimer toute la série Twitch ? Cette action affecte ses occurrences futures.':state.eventEdit.scope==='series'?'Supprimer toute la série ?':'Supprimer cet événement ?'))return;
   try{
     if(state.eventEdit.scope==='occurrence'&&state.eventEdit.occurrence?.seriesId)await request(`/api/v1/planning/${encodeURIComponent(state.eventEdit.occurrence.seriesId)}/occurrence`,{method:'DELETE',body:JSON.stringify({occurrenceKey:state.eventEdit.occurrence.occurrenceKey})});
     else{const source=state.eventEdit.scope==='series'?state.eventEdit.series:state.eventEdit.occurrence;await request(`/api/v1/planning/${encodeURIComponent(source.id)}?confirmRecurring=true`,{method:'DELETE',body:'{}'})}

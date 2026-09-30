@@ -400,6 +400,27 @@ export class ObsClient {
     this.scheduleRefresh();
   }
   onMediaEnded(listener: (inputName: string) => void) { this.mediaEndedListeners.add(listener); return () => this.mediaEndedListeners.delete(listener); }
+  async verifyTimerBrowserSource(inputName: string, endpoint: string) {
+    this.requireConnected();
+    const generation = this.generation;
+    if (await this.inputKind(inputName) !== 'browser_source') throw new Error('Browser Source timer absente.');
+    const scene = await this.call('GetCurrentProgramScene');
+    if (!(await this.sceneSources(scene.currentProgramSceneName)).has(inputName)) throw new Error('Le timer doit être attaché et activé dans la scène courante.');
+    const { inputSettings } = await this.call('GetInputSettings', { inputName });
+    const configured = new URL(String(inputSettings.url || ''));
+    const expected = new URL(endpoint);
+    if (inputSettings.is_local_file || !['127.0.0.1', 'localhost'].includes(configured.hostname)
+      || configured.protocol !== expected.protocol || configured.port !== expected.port
+      || configured.pathname.replace(/\/$/, '') !== expected.pathname.replace(/\/$/, '')) {
+      throw new Error(`URL timer attendue : ${endpoint}`);
+    }
+    const response = await fetch(endpoint, { signal: AbortSignal.timeout(3000), redirect: 'error' });
+    await response.body?.cancel();
+    if (!response.ok) throw new Error(`Endpoint timer indisponible (HTTP ${response.status}).`);
+    this.requireConnected();
+    if (generation !== this.generation) throw new Error('Connexion OBS modifiée pendant la vérification du timer.');
+  }
+
   async refreshBrowserSource(inputName: string) {
     this.requireConnected();
     if (await this.inputKind(inputName) !== 'browser_source') throw new Error(`La source « ${inputName} » n’est pas une Browser Source OBS détectée.`);

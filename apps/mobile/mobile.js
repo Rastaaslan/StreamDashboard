@@ -1,3 +1,4 @@
+import { localDate, eventTimes, editedRecurrence } from './shared/planning-editor.js';
 import { modeDescription, eventProviderState, syncSummary, createProviderRetry } from './sync-center.js';
 import { providerDiagnostic, capabilityAvailability, wizardState, providerError, planningPublicationPermissions } from './provider-diagnostics.js';
 import { createThumbnail } from './thumbnails.js';
@@ -506,7 +507,7 @@ let vodCursor = null, clipCursor = null;
 let soundboardState = null;
 const OBS_SOUNDBOARD_INPUT = 'StreamDashboard • Soundboard';
 const soundboardVolumeKey = 'streamdashboard.soundboardMasterVolume';
-const storedSoundboardVolume = Number(localStorage.getItem(soundboardVolumeKey));
+const storedSoundboardVolume = Number(localStorage.getItem(soundboardVolumeKey) ?? 1);
 let soundboardMasterVolume = Number.isFinite(storedSoundboardVolume) ? Math.max(0, Math.min(1, storedSoundboardVolume)) : 1;
 let soundboardVolumeTimer = null;
 const publicObsMediaInputs = values => (values || []).filter(name => name !== OBS_SOUNDBOARD_INPUT);
@@ -736,9 +737,17 @@ function renderPlanning(items) {
       actions.append(summary, editOne, editSeries, deleteOne, deleteSeries);
       row.append(actions);
     }
-    if (companionMode !== CompanionMode.ONLINE_PC && !item.occurrenceKey) {
-      const edit = text('button', 'Modifier'); edit.type = 'button'; edit.onclick = () => { const title = prompt('Titre du live', item.title); if (!title || title === item.title) return; const result = companion.updateEvent(item.id, { title }, item.revision); if (result.conflict) note('Ce live a été modifié sur un autre appareil.'); else { render(offlineState()); void syncEventProviders(result.item); } };
-      const remove = text('button', 'Supprimer'); remove.type = 'button'; remove.onclick = () => { if (!confirm(`Supprimer « ${item.title} » ?`)) return; const result = companion.deleteEvent(item.id, item.revision); if (result.conflict) note('Ce live a été modifié sur un autre appareil.'); else { render(offlineState()); void syncEventProviders(item, 'delete'); } };
+    if (!item.occurrenceKey) {
+      const edit = text('button', 'Modifier'); edit.type = 'button'; edit.onclick = () => openMobileEditor(item, 'event');
+      const remove = text('button', 'Supprimer'); remove.type = 'button'; remove.onclick = async () => {
+        if (!confirm(item.twitchRecurring ? `Supprimer toute la série Twitch « ${item.title} » ? Cette action affecte ses occurrences futures.` : `Supprimer « ${item.title} » ?`)) return;
+        try {
+          if (companionMode === CompanionMode.ONLINE_PC) { render(await transport.deletePlanning(item.id, { confirmRecurring: item.twitchRecurring === true })); return; }
+          const result = companion.deleteEvent(item.id, item.revision);
+          if (result.conflict) note('Ce live a été modifié sur un autre appareil.');
+          else { render(offlineState()); await syncEventProviders(item, 'delete'); }
+        } catch (error) { note(error.message); }
+      };
       row.append(edit, remove);
     }
     renderOnlinePlanningProviders(item, row);
@@ -759,13 +768,15 @@ function renderPlanning(items) {
 }
 
 function openMobileEditor(item, scope) {
+  if (scope === 'series' && item.seriesId) item = (companionMode === CompanionMode.ONLINE_PC ? state?.planning : companion.snapshot().planning)?.find(value => value.id === item.seriesId) || item;
   mobileEditing = { item, scope };
   if ($('slot-dialog-title')) $('slot-dialog-title').textContent = scope === 'occurrence' ? 'Modifier cette occurrence' : scope === 'series' ? 'Modifier toute la série' : 'Modifier l’événement';
   const form = $('slot-form');
   const start = new Date(item.startAtUtc), end = new Date(item.endAtUtc);
   form.elements.title.value = item.title;
-  form.elements.date.value = start.toISOString().slice(0, 10);
+  form.elements.date.value = localDate(start);
   form.elements.start.value = start.toTimeString().slice(0, 5);
+  form.elements.endDate.value = localDate(end);
   form.elements.end.value = end.toTimeString().slice(0, 5);
   form.elements.category.value = item.category || 'live';
   form.elements.description.value = item.description || '';
@@ -774,7 +785,7 @@ function openMobileEditor(item, scope) {
   $('slot-twitch-game-id').value = item.twitchCategoryId || '';
   $('slot-twitch-category').value = item.twitchCategoryName || '';
   form.elements.recurrence.value = item.recurrence ? `${item.recurrence.frequency}-${item.recurrence.interval}` : '';
-  form.elements.recurrenceUntil.value = item.recurrence?.until?.slice(0, 10) || '';
+  form.elements.recurrenceUntil.value = item.recurrence?.until ? localDate(item.recurrence.until) : '';
   form.elements.recurrence.disabled = scope === 'occurrence';
   form.elements.recurrenceUntil.disabled = scope === 'occurrence';
   selectPlanningPage('main');
@@ -1128,7 +1139,19 @@ async function loadDiscordGuilds() {
   try { const guilds = await transport.discordGuilds(); $('discord-guild').replaceChildren(new Option('Choisir…', ''), ...guilds.map(value => new Option(value.name, value.id))); if (state.discord?.guildId) $('discord-guild').value = state.discord.guildId; $('discord-guild').dispatchEvent(new Event('change')); } catch (error) { note(error.message); }
 }
 $('discord-guild').onfocus = () => { if ($('discord-guild').options.length < 2) void loadDiscordGuilds(); };
-$('discord-guild').onchange = async () => { const guildId = $('discord-guild').value; if (!guildId || state?.discord?.configured !== true) return; try { const channels = await transport.discordChannels(guildId); $('discord-channel').replaceChildren(new Option('Choisir…', ''), ...channels.map(value => new Option(`#${value.name}`, value.id))); if (state.discord?.channelId) $('discord-channel').value = state.discord.channelId; } catch (error) { note(error.message); } };
+let discordChannelRequest = 0;
+$('discord-guild').onchange = async () => {
+  const guildId = $('discord-guild').value, requestId = ++discordChannelRequest;
+  const channel = $('discord-channel'); channel.replaceChildren(new Option('Choisir…', '')); channel.disabled = true;
+  if (!guildId || state?.discord?.configured !== true) return;
+  try {
+    const channels = await transport.discordChannels(guildId);
+    if (requestId !== discordChannelRequest || $('discord-guild').value !== guildId) return;
+    channel.replaceChildren(new Option('Choisir…', ''), ...channels.map(value => new Option(`#${value.name}`, value.id)));
+    if (state.discord?.guildId === guildId) channel.value = state.discord.channelId || '';
+    channel.disabled = false;
+  } catch (error) { if (requestId === discordChannelRequest) note(error.message); }
+};
 $('discord-channel').onchange = async () => { if (state?.discord?.configured !== true) { note('Configure d’abord Discord sur le PC.'); return; } try { await transport.discordSettings({ guildId: $('discord-guild').value, channelId: $('discord-channel').value, defaultMessage: $('discord-message').value }); note('Destination Discord enregistrée.'); } catch (error) { note(error.message); } };
 $('publish-discord').onclick = async () => {
   if (companionMode !== CompanionMode.ONLINE_PC) { note('Connexion PC requise pour publier sur Discord.'); return; }
@@ -1392,23 +1415,23 @@ $('close-planning-publish').onclick = () => $('planning-publish-sheet').close();
 $('add-slot').onclick = () => { mobileEditing = null; if ($('slot-dialog-title')) $('slot-dialog-title').textContent = 'Nouvel événement'; $('slot-form').elements.recurrence.disabled = false; $('slot-form').elements.recurrenceUntil.disabled = false; $('slot-form').reset(); void refreshProviderAccounts(); selectPlanningPage('main'); $('slot-dialog').showModal(); };
 $('close-slot').onclick = () => { mobileEditing = null; if ($('slot-dialog-title')) $('slot-dialog-title').textContent = 'Nouvel événement'; $('slot-form').elements.recurrence.disabled = false; $('slot-form').elements.recurrenceUntil.disabled = false; $('slot-dialog').close(); };
 $('slot-form').onsubmit = async event => {
-  event.preventDefault(); const form = new FormData(event.currentTarget);
+  event.preventDefault(); const formElement = event.currentTarget; const form = new FormData(formElement);
   // A temporarily unavailable account must not erase an existing publication intent.
   for (const provider of ['twitch', 'google']) {
-    const input = event.currentTarget.elements[provider];
+    const input = formElement.elements[provider];
     if (input.disabled && input.checked) form.set(provider, 'on');
   }
-  const date = form.get('date'); const startAtUtc = new Date(`${date}T${form.get('start')}`).toISOString(); const endAtUtc = new Date(`${date}T${form.get('end')}`).toISOString();
   try {
+    const { startAtUtc, endAtUtc } = eventTimes(form.get('date'), form.get('start'), form.get('end'), form.get('endDate'));
     if (form.get('twitch') === 'on') await ensureTwitchCapabilities();
     if (companionMode === CompanionMode.ONLINE_PC && form.get('twitch') === 'on' && moderationCapabilities?.schedule === false) throw new Error(`Reconnecte Twitch pour accorder ${moderationCapabilities.requiredScopes?.schedule || 'channel:manage:schedule'}.`);
     if (form.get('twitch') === 'on' && !$('slot-twitch-game-id').value) throw new Error('Sélectionnez une catégorie Twitch officielle.');
-    const recurrenceValue = String(form.get('recurrence') || ''); const [frequency, interval] = recurrenceValue.split('-'); const untilDate = String(form.get('recurrenceUntil') || '');
-    const recurrence = recurrenceValue ? { frequency, interval: Number(interval), timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone || 'Europe/Paris', until: untilDate ? new Date(`${untilDate}T23:59:59`).toISOString() : null, exceptions: {} } : undefined;
+    const recurrenceValue = String(form.get('recurrence') || ''); const untilDate = String(form.get('recurrenceUntil') || '');
+    const recurrence = editedRecurrence(mobileEditing?.item?.recurrence, recurrenceValue, untilDate);
     const value = { title: form.get('title'), startAtUtc, endAtUtc, category: form.get('category'), description: form.get('description') || '', recurrence, desiredPublication: { local: false, twitch: form.get('twitch') === 'on', google: form.get('google') === 'on' }, twitchCategoryId: form.get('twitch') === 'on' ? $('slot-twitch-game-id').value : undefined, twitchCategoryName: form.get('twitch') === 'on' ? $('slot-twitch-category').value : undefined };
     planningPage = 1;
     if (mobileEditing?.scope === 'occurrence') {
-      const patch = { title: value.title, startAtUtc, endAtUtc, category: value.category, twitchCategoryId: value.twitchCategoryId, twitchCategoryName: value.twitchCategoryName, desiredPublication: value.desiredPublication };
+      const patch = { title: value.title, description: value.description, startAtUtc, endAtUtc, category: value.category, twitchCategoryId: value.twitchCategoryId, twitchCategoryName: value.twitchCategoryName, desiredPublication: value.desiredPublication };
       if (companionMode === CompanionMode.ONLINE_PC) render(await transport.updateOccurrence(mobileEditing.item.seriesId, mobileEditing.item.occurrenceKey, patch));
       else { const canonical = companion.snapshot().planning.find(item => item.id === mobileEditing.item.seriesId); const nextRecurrence = structuredClone(canonical.recurrence); nextRecurrence.exceptions ||= {}; nextRecurrence.exceptions[mobileEditing.item.occurrenceKey] = { patch }; companion.updateEvent(canonical.id, { recurrence: nextRecurrence }, canonical.revision); render(offlineState()); }
     } else if (mobileEditing?.scope === 'series') {
@@ -1421,7 +1444,7 @@ $('slot-form').onsubmit = async event => {
       else { const canonical = companion.snapshot().planning.find(item => item.id === id); const updated = companion.updateEvent(id, value, canonical.revision); if (updated.conflict) throw new Error('Ce live a été modifié sur un autre appareil.'); render(offlineState()); if (companionMode === CompanionMode.ONLINE_STANDALONE) void syncEventProviders(updated.item); }
     } else if (companionMode === CompanionMode.ONLINE_PC) { const next = await transport.createPlanning(value); await syncCompanion(); render(next); }
     else { const created=companion.createEvent(value).item; render(offlineState()); if(companionMode===CompanionMode.ONLINE_STANDALONE) void syncEventProviders(created,'create'); }
-    mobileEditing = null; event.currentTarget.elements.recurrence.disabled = false; event.currentTarget.elements.recurrenceUntil.disabled = false; $('slot-dialog').close(); event.currentTarget.reset(); note(companionMode === CompanionMode.ONLINE_PC ? 'Planning enregistré.' : 'Créneau enregistré · À synchroniser.');
+    mobileEditing = null; formElement.elements.recurrence.disabled = false; formElement.elements.recurrenceUntil.disabled = false; $('slot-dialog').close(); formElement.reset(); note(companionMode === CompanionMode.ONLINE_PC ? 'Planning enregistré.' : 'Créneau enregistré · À synchroniser.');
   } catch (error) { note(error.message); }
 };
 

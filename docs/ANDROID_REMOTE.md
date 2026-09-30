@@ -18,7 +18,7 @@ GitHub Actions publie chaque build de pull request sous l'artifact **StreamDashb
 
 1. Activez **Remote LAN** dans StreamDashboard sur le PC puis redémarrez-le.
 2. Créez un appairage avec **Ajouter une télécommande**.
-3. Dans l'application, saisissez l'adresse privée du PC (`192.168.1.42:47832`) et l'ID/code, ou collez/ouvrez le lien `streamdashboard://pair?...`.
+3. Dans l'application, saisissez l'adresse privée du PC (`192.168.1.42:48132`) et l'ID/code, ou collez/ouvrez le lien `streamdashboard://pair?...`.
 
 Le credential longue durée est chiffré AES-GCM avec une clé non exportable de l'Android Keystore. L'adresse et les préférences non sensibles restent dans le stockage web local. Le WebSocket ne reçoit que le ticket court à usage unique.
 

@@ -1,5 +1,5 @@
 export const NATIVE_ORIGIN = 'http://localhost';
-export const DEFAULT_PORT = 47832;
+export const DEFAULT_PORT = 48132;
 
 export function isAndroidRuntime() {
   return Boolean(globalThis.StreamDashboardNative?.isAndroid?.());

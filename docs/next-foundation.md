@@ -52,9 +52,9 @@ La page **Planning** contient **Image réseaux**. L’export :
 
 StreamDashboard expose un overlay timer indépendant de StreamTool :
 
-`http://127.0.0.1:47832/overlay/timer/`
+`http://127.0.0.1:48132/overlay/timer/`
 
-Le desktop utilise volontairement le port stable **47832** afin que l’URL de la Browser Source OBS ne change pas à chaque démarrage.
+Le desktop utilise volontairement le port stable **48132** afin que l’URL de la Browser Source OBS ne change pas à chaque démarrage.
 
 Dans OBS, créer une nouvelle **Source navigateur** pour StreamDashboard pointant vers cette URL afin de conserver la source historique StreamTool comme fallback. Dans **Réglages > OBS**, sélectionner ensuite exactement cette Browser Source dans **Browser Source du timer**. StreamDashboard déclenche `refreshnocache` pendant Préparer et juste avant Start ; un bouton manuel reste disponible. Une erreur de refresh du timer ne doit jamais interrompre un live.
 
@@ -62,7 +62,7 @@ Dans OBS, créer une nouvelle **Source navigateur** pour StreamDashboard pointan
 
 1. Le mode Remote est **désactivé par défaut** et le serveur reste alors lié au loopback.
 2. Dans Réglages, cocher **Télécommande LAN**, enregistrer puis **redémarrer StreamDashboard**. Le changement de bind réseau n’est volontairement pas appliqué à chaud.
-3. Après redémarrage, cliquer **Ajouter une télécommande** sur le PC. Le PC affiche un code court et les URL LAN possibles. Le port reste `47832`, ce qui permet au téléphone de retrouver le serveur après redémarrage.
+3. Après redémarrage, cliquer **Ajouter une télécommande** sur le PC. Le PC affiche un code court et les URL LAN possibles. Le port reste `48132`, ce qui permet au téléphone de retrouver le serveur après redémarrage.
 4. Sur Android, ouvrir l’URL `/mobile/`. L’ID/code peuvent être préremplis si le lien de pairing a été utilisé ; sinon les saisir manuellement.
 5. Le téléphone échange le code éphémère contre une credential dédiée. Cette credential est stockée localement sur le téléphone ; Twitch/Google/OBS ne sont jamais exposés au mobile.
 6. Les WebSockets n’utilisent pas la credential longue dans l’URL : le mobile obtient d’abord un ticket WS court, à usage unique.

@@ -23,7 +23,7 @@ const state = {
   health: {},
   settings: { streamerName: 'Dam', accent: 'violet', confirmStop: true, obsUrl: 'ws://127.0.0.1:4455', obsPasswordSet: false, twitchConnected: false, twitchUserName: null, launchObs: false, modeScenes: { live: 'LIVE' }, remoteEnabled: true },
   twitch: { connected: false, userName: null, displayName: null, error: null, syncing: false, lastSyncedAt: null, deviceAuthorization: null },
-  runtime: { serverVersion: 'test', nodeVersion: process.version, electronVersion: null, platform: process.platform, port: 47832, logsPath: null },
+  runtime: { serverVersion: 'test', nodeVersion: process.version, electronVersion: null, platform: process.platform, port: 48132, logsPath: null },
 } as DashboardState;
 
 describe('retours à chaud mobile', () => {

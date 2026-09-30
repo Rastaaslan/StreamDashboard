@@ -24,8 +24,8 @@ export async function startDesktopRuntime(): Promise<DesktopRuntime> {
   await logger.info(obsResult.detail).catch(() => undefined);
   const secretStore = new ElectronSecretStore(userData);
   const dashboard = await startDashboardServer({
-    // Prefer a stable port for OBS and phones; the server falls back if unavailable.
-    port: 47832,
+    // Fixed endpoint for OBS, OAuth and phones; binding failures must be explicit.
+    port: 48132,
     host: remoteEnabled ? '0.0.0.0' : '127.0.0.1',
     remoteEnabled,
     dataDir: path.join(userData, 'config'),
