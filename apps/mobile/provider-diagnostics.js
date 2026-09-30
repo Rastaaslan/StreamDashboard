@@ -8,6 +8,11 @@ const messages = {
   CONFLICT: 'Cet événement a changé ailleurs : résoudre le conflit avant de republier.',
   NOT_CONFIGURED: 'Client ID absent : installer une version Android configurée pour ce service.',
   REAUTH_REQUIRED: 'Session expirée ou refusée : réautoriser ce compte.',
+  HTTP_400: 'Requête refusée par le fournisseur : vérifier les champs du planning.',
+  HTTP_404: 'Ressource fournisseur introuvable : synchroniser à nouveau.',
+  HTTP_429: 'Limite fournisseur atteinte : réessayer plus tard.',
+  HTTP_500: 'Erreur du fournisseur : réessayer plus tard.',
+  HTTP_503: 'Fournisseur temporairement indisponible.',
   HTTP_403: 'Permissions insuffisantes : réautoriser le compte et vérifier les droits du calendrier.',
   SCOPES: 'Permissions manquantes : réautoriser ce compte.',
   CALENDAR: 'Le calendrier principal doit être accessible en écriture.',
@@ -15,13 +20,13 @@ const messages = {
   AUTH: 'Autorisation annulée ou échouée : relancer OAuth.',
   NETWORK: 'Test impossible : vérifier Internet puis retester.',
 };
-export const providerError = code => messages[code] || 'Service indisponible : retester la connexion.';
+export const providerError = code => messages[code] || (/^HTTP_[45]\d{2}$/.test(code || '') ? `Le fournisseur a refusé la requête (${code}).` : 'Service indisponible : retester la connexion.');
 const knownCapabilities = ['connect', 'disconnect', 'test', 'schedule', 'calendar', 'categories'];
 const knownScopes = ['channel:manage:schedule', 'channel:read:schedule', 'https://www.googleapis.com/auth/calendar.events', 'https://www.googleapis.com/auth/calendar.readonly'];
 export function providerDiagnostic(raw = {}) {
   const configured = raw.configured === true;
   const connected = raw.connected === true;
-  const code = Object.hasOwn(messages, raw.code) ? raw.code : raw.code ? 'NETWORK' : '';
+  const code = Object.hasOwn(messages, raw.code) || /^HTTP_[45]\d{2}$/.test(raw.code || '') ? raw.code : raw.code ? 'NETWORK' : '';
   return {
     code: code || (!configured ? 'NOT_CONFIGURED' : ''),
     configured, connected, requiresReauth: raw.requiresReauth === true || ['REAUTH_REQUIRED', 'SCOPES', 'HTTP_403'].includes(code),

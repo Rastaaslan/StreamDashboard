@@ -408,9 +408,9 @@ export class TwitchClient {
     if (!this.state.connected) throw new Error('Connectez Twitch avant de modifier son planning.');
     const duration = this.validateScheduleItem(item);
     const fingerprint = item.providers?.twitch?.fingerprint;
+    const current = (await this.scheduleSegments(id)).find(segment => segment.id === id);
+    if (!current) throw Object.assign(new Error('Événement Twitch supprimé à distance.'), { code: 'DELETED_REMOTELY' });
     if (fingerprint) {
-      const current = (await this.scheduleSegments()).find(segment => segment.id === id);
-      if (!current) throw Object.assign(new Error('Événement Twitch supprimé à distance.'), { code: 'DELETED_REMOTELY' });
       if (this.segmentFingerprint(current) !== fingerprint) {
         throw Object.assign(new Error('Le planning Twitch a changé ailleurs.'), { code: 'CONFLICT', remote: {
           title: current.title, startAtUtc: current.start_time, endAtUtc: current.end_time,
@@ -418,15 +418,18 @@ export class TwitchClient {
         }, fingerprint: this.segmentFingerprint(current) });
       }
     }
+    // Twitch rejects unchanged/past start_time on recurring segments: PATCH only edited fields.
+    const payload: Record<string, string> = {};
+    if (item.title !== current.title) payload.title = item.title;
+    if (Date.parse(item.startAtUtc) !== Date.parse(current.start_time)) {
+      payload.start_time = item.startAtUtc;
+      payload.timezone = item.recurrence?.timeZone || 'UTC';
+    }
+    if (duration !== Math.ceil((Date.parse(current.end_time) - Date.parse(current.start_time)) / 60_000)) payload.duration = String(duration);
+    if (item.twitchCategoryId && item.twitchCategoryId !== current.category?.id) payload.category_id = item.twitchCategoryId;
+    if (!Object.keys(payload).length) return { fingerprint: this.segmentFingerprint(current) };
     const response = await this.api<{ data: { segments: ScheduleSegment[] } }>(`/schedule/segment?broadcaster_id=${encodeURIComponent(this.credentials.broadcasterId)}&id=${encodeURIComponent(id)}`, {
-      method: 'PATCH',
-      body: JSON.stringify({
-        start_time: item.startAtUtc,
-        timezone: item.recurrence?.timeZone || 'UTC',
-        duration: String(duration),
-        title: item.title,
-        ...(item.twitchCategoryId ? { category_id: item.twitchCategoryId } : {}),
-      }),
+      method: 'PATCH', body: JSON.stringify(payload),
     });
     const segment = response?.data?.segments?.[0];
     return { fingerprint: segment ? this.segmentFingerprint(segment) : undefined };
@@ -713,13 +716,13 @@ export class TwitchClient {
     return this.sameIdentity(item, segment) && this.sameCategory(item, segment);
   }
 
-  private async scheduleSegments() {
+  private async scheduleSegments(id?: string) {
     const segments: ScheduleSegment[] = [];
     let cursor = '';
     do {
       let remote: { data: { segments: ScheduleSegment[] }; pagination?: { cursor?: string } };
       try {
-        remote = await this.api(`/schedule?broadcaster_id=${encodeURIComponent(this.credentials.broadcasterId)}&first=25${cursor ? `&after=${encodeURIComponent(cursor)}` : ''}`);
+        remote = await this.api(`/schedule?broadcaster_id=${encodeURIComponent(this.credentials.broadcasterId)}&first=25${id ? `&id=${encodeURIComponent(id)}` : ''}${cursor ? `&after=${encodeURIComponent(cursor)}` : ''}`);
       } catch (error) {
         if (error instanceof TwitchHttpError && error.status === 404) remote = { data: { segments: [] } };
         else throw error;
@@ -869,9 +872,19 @@ export class TwitchClient {
     } catch {
       throw new TwitchHttpError(response.ok ? 502 : response.status, 'Réponse Twitch invalide.', response.headers.get('retry-after'));
     }
-    if (!response.ok) throw new TwitchHttpError(response.status, providerMessage && typeof value.message === 'string' && value.message.trim() ? `Twitch HTTP ${response.status}: ${[this.credentials.accessToken, this.credentials.refreshToken].filter(Boolean).reduce((message, secret) => message.split(secret).join('[redacted]'), value.message).slice(0, 1000)}` : response.status === 429 ? 'Limite Twitch atteinte. Réessayez plus tard.' : `Twitch HTTP ${response.status}`, response.headers.get('retry-after'));
+    if (!response.ok) throw new TwitchHttpError(response.status, providerMessage && typeof value.message === 'string' && value.message.trim() ? `Twitch HTTP ${response.status}: ${safeTwitchMessage(value.message, [this.credentials.accessToken, this.credentials.refreshToken])}` : response.status === 429 ? 'Limite Twitch atteinte. Réessayez plus tard.' : `Twitch HTTP ${response.status}`, response.headers.get('retry-after'));
     return value;
   }
+}
+
+export function safeTwitchMessage(message: string, secrets: string[]) {
+  let safe = message;
+  for (const secret of secrets.filter(Boolean).sort((a, b) => b.length - a.length)) {
+    for (const value of new Set([secret, encodeURIComponent(secret)])) safe = safe.split(value).join('[redacted]');
+  }
+  return safe.replace(/\b(Bearer|OAuth)\s+[^\s,;"']+/gi, '$1 [redacted]')
+    .replace(/((?:access_token|refresh_token|client_secret|authorization|api_key|password|secret|token)["']?\s*[:=]\s*["']?)[^\s,;"'}]+/gi, '$1[redacted]')
+    .replace(/[\r\n\x00-\x1f]/g, ' ').slice(0, 1000);
 }
 
 export class TwitchHttpError extends Error {

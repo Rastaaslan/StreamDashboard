@@ -258,6 +258,14 @@ test('Standalone Planning form uses real sync: second provider, failed creation 
   await ui.$('planning').children[0].children.find(node => node.textContent === 'Supprimer').onclick();
   assert.equal(remoteDeletes[0].id, companion.snapshot().planning[0].id);
   assert.equal(companion.snapshot().planning.length, 1, 'ONLINE_PC deletion goes through the PC API');
+  let occurrencePatch;
+  context.transport.updateOccurrence = async (id, key, patch) => { occurrencePatch = { id, key, patch }; return { planning: [] }; };
+  context.mobileEditing = { scope:'occurrence', item:{seriesId:'series',occurrenceKey:'2030-01-01'} };
+  for (const [key,value] of Object.entries({ title:'Occurrence',description:'Description préservée',date:'2030-01-01',start:'23:00',end:'01:00',category:'live' })) fields[key].value=value;
+  fields.twitch.checked=false;fields.google.checked=false;
+  await submit();
+  assert.equal(occurrencePatch.patch.description,'Description préservée');
+  assert.equal(Date.parse(occurrencePatch.patch.endAtUtc)-Date.parse(occurrencePatch.patch.startAtUtc),2*60*60*1000);
   context.companionMode = CompanionMode.ONLINE_STANDALONE;
   context.confirm = () => false;
   context.render(context.offlineState());

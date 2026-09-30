@@ -78,12 +78,13 @@ it('authenticates, loses OBS during a live, and recovers over a new websocket', 
 
 it('timer readiness requires an enabled attached browser, matching URL and reachable HTTP endpoint', async () => {
   const { createServer } = await import('node:http');
-  let httpStatus = 200, attached = true, enabled = true, present = true;
+  let httpStatus = 200, attached = true, enabled = true, present = true, muted = false, volume = 1, routed = true;
   const http = createServer((_req, res) => { res.writeHead(httpStatus, { 'content-type': 'text/html' }); res.end('timer'); });
   http.listen(0, '127.0.0.1'); await once(http, 'listening');
   const address = http.address(); if (!address || typeof address === 'string') throw new Error('No HTTP port');
   const endpoint = `http://127.0.0.1:${address.port}/overlay/timer/`;
-  let url = endpoint;
+  let url = endpoint, kind = 'browser_source';
+  let discoveryFails = false;
   const server = new WebSocketServer({ host: '127.0.0.1', port: 0 });
   server.on('connection', socket => {
     socket.send(encode({ op: 0, d: { obsWebSocketVersion: '5.6.3', rpcVersion: 1 } }));
@@ -96,11 +97,13 @@ it('timer readiness requires an enabled attached browser, matching URL and reach
         GetVersion: { obsVersion: '31', obsWebSocketVersion: '5' },
         GetCurrentProgramScene: { currentProgramSceneName: 'Live' }, GetSceneList: { scenes: [{ sceneName: 'Live' }] },
         GetStreamStatus: { outputActive: false }, GetRecordStatus: { outputActive: false },
-        GetInputList: { inputs: present ? [{ inputName: 'Timer', inputKind: 'browser_source' }] : [] },
-        GetSceneItemList: { sceneItems: attached ? [{ sourceName: 'Timer', sceneItemEnabled: enabled }] : [] },
+        GetInputList: { inputs: present ? [{ inputName: 'Timer', inputKind: kind }, { inputName: 'Soundboard', inputKind: 'ffmpeg_source' }] : [] },
+        GetSceneItemList: { sceneItems: attached ? [{ sourceName: 'Timer', sceneItemEnabled: enabled }, { sourceName: 'Soundboard', sceneItemEnabled: enabled }] : [] },
         GetInputSettings: { inputSettings: { url } },
+        GetInputMute: { inputMuted: muted }, GetInputVolume: { inputVolumeMul: volume, inputVolumeDb: 0 },
+        GetInputAudioTracks: { inputAudioTracks: { '1': routed } }, GetInputAudioMonitorType: { monitorType: 'OBS_MONITORING_TYPE_NONE' },
       };
-      socket.send(encode({ op: 7, d: { requestId, requestType, requestStatus: { result: true, code: 100 }, responseData: responses[requestType] || {} } }));
+      socket.send(encode({ op: 7, d: { requestId, requestType, requestStatus: discoveryFails && requestType === 'GetSceneItemList' ? { result: false, code: 600, comment: 'Discovery denied' } : { result: true, code: 100 }, responseData: responses[requestType] || {} } }));
     });
   });
   await once(server, 'listening');
@@ -109,6 +112,15 @@ it('timer readiness requires an enabled attached browser, matching URL and reach
   try {
     await obs.connect();
     await expect(obs.verifyTimerBrowserSource('Timer', endpoint)).resolves.toBeUndefined();
+    await expect(obs.verifySoundboardPlayback('Soundboard')).resolves.toBeUndefined();
+    muted = true; await expect(obs.verifySoundboardPlayback('Soundboard')).rejects.toThrow('inaudible');
+    muted = false; volume = 0; await expect(obs.verifySoundboardPlayback('Soundboard')).rejects.toThrow('inaudible');
+    volume = 1; routed = false; await expect(obs.verifySoundboardPlayback('Soundboard')).rejects.toThrow('inaudible');
+    routed = true; enabled = false; await expect(obs.verifySoundboardPlayback('Soundboard')).rejects.toThrow('inactive');
+    enabled = true;
+    discoveryFails = true; await expect(obs.sceneSourceEnabled('Live', 'Timer')).rejects.toThrow('Requête OBS impossible');
+    discoveryFails = false; kind = 'ffmpeg_source'; await expect(obs.verifyTimerBrowserSource('Timer', endpoint)).rejects.toThrow();
+    kind = 'browser_source';
     enabled = false; await expect(obs.verifyTimerBrowserSource('Timer', endpoint)).rejects.toThrow('activé');
     enabled = true; attached = false; await expect(obs.verifyTimerBrowserSource('Timer', endpoint)).rejects.toThrow('attaché');
     attached = true; present = false; await expect(obs.verifyTimerBrowserSource('Timer', endpoint)).rejects.toThrow('absente');

@@ -175,11 +175,38 @@ test('Planning Desktop preserves the editable draft across telemetry, reconnect 
     await expect(page.locator('#toast')).toHaveText('Événement enregistré');
     assert.equal(submitted.title, 'Titre modifié');
     assert.equal(submitted.description, 'Description modifiée');
-    assert.equal(submitted.confirmRecurring, true);
+    assert.equal(submitted.confirmRecurring, false);
     await page.locator('[data-event-index]').first().click();
     await expect(title).toHaveValue('Titre modifié');
     await page.keyboard.press('Escape');
     await expect(dialog).not.toBeVisible();
+    // A local save with a failed provider must never report full success.
+    await page.route('**/api/v1/planning/saved', async route => {
+      submitted=route.request().postDataJSON();
+      dashboard.planning=[{...submitted,id:'saved',providerLinks:{twitch:{status:'error'}}}];
+      await route.fulfill({json:dashboard});
+    });
+    await page.locator('[data-event-index]').first().click();
+    await title.fill('Publication partielle');
+    await page.locator('#event-submit').click();
+    await expect(page.locator('#toast')).toContainText('publication fournisseur à vérifier');
+    dashboard.planning[0].twitchRecurring=true;
+    await emit(150);
+    await page.locator('[data-event-index]').first().click();
+    let deletions=0;
+    await page.route('**/api/v1/planning/saved', async route => {
+      assert.equal(route.request().method(),'DELETE');
+      assert.deepEqual(route.request().postDataJSON(),{confirmRecurring:true});
+      deletions++;dashboard.planning=[];await route.fulfill({json:dashboard});
+    });
+    page.once('dialog',dialog=>{assert.match(dialog.message(),/toute la série Twitch/);return dialog.dismiss();});
+    await page.locator('#event-delete').click();
+    assert.equal(deletions,0);
+    await expect(dialog).toBeVisible();
+    page.once('dialog',dialog=>dialog.accept());
+    await page.locator('#event-delete').click();
+    await expect(dialog).not.toBeVisible();
+    assert.equal(deletions,1);
     assert.deepEqual(errors, []);
   } finally {
     await browser?.close();

@@ -90,3 +90,8 @@ dialog{width:min(540px,calc(100vw - 20px));max-height:88vh;border:1px solid var(
 .twitch-thumbnail>span{font-size:24px}
 .twitch-thumbnail>button{position:absolute;right:2px;bottom:2px;min-width:32px;min-height:32px;padding:3px;border:1px solid #bca8ff;border-radius:8px;background:#171322;color:#fff;font-size:18px}
 .twitch-thumbnail.portrait{width:min(72px,100%);height:auto;aspect-ratio:3/4}
+
+/* Focus reduces secondary live information, while keeping chat, timer and all tools reachable. */
+body.focus-mode .live-chat-list{max-height:32vh}
+body.focus-mode .tool-launcher-list small,body.focus-mode .home-audience,body.focus-mode .eyebrow{display:none}
+body.focus-mode .tool-launcher-list{gap:4px}

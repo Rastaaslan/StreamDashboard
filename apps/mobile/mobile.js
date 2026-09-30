@@ -35,7 +35,7 @@ if (previewMode) {
 
 const activateView = tab => {
   document.querySelectorAll('[data-view]').forEach(view => view.classList.toggle('active', view.dataset.view === tab));
-  const primary = ['prepare', 'settings', 'sounds', 'more'].includes(tab) ? 'more' : tab;
+  const primary = ['prepare', 'settings', 'more'].includes(tab) ? 'more' : tab;
   document.querySelectorAll('[data-tab]').forEach(button => button.classList.toggle('active', button.dataset.tab === primary));
   try { localStorage.setItem('streamdashboard.mobileTab', tab); } catch { /* navigation must remain usable */ }
 };
@@ -196,7 +196,7 @@ const planningWhenParts = item => {
 const formatPlanningDate = item => { const when = planningWhenParts(item); return `${when.date} · ${when.time}`; };
 
 function remoteButtons(disabled) {
-  document.querySelectorAll('button[data-command],button[data-mode],button[data-chatting],button[data-media],button[data-mute]')
+  document.querySelectorAll('button[data-inline-timer],button[data-command],button[data-mode],button[data-chatting],button[data-media],button[data-mute]')
     .forEach(button => { button.disabled = disabled; });
   const streamDisabled = disabled || companionMode !== CompanionMode.ONLINE_PC || !obsRuntimeView(state).known;
   $('stream').disabled = streamDisabled;
@@ -273,31 +273,25 @@ async function command(value, { reconcile } = {}) {
 
 function renderAudio(inputs, activeInputs = []) {
   const container = $('audio');
-  container.replaceChildren();
+  const existing = new Map([...container.querySelectorAll('[data-audio-row]')].map(row => [row.dataset.audioRow, row]));
+  container.querySelectorAll('p').forEach(node => node.remove());
   for (const [name, input] of Object.entries(inputs || {}).filter(([name]) => activeInputs.includes(name))) {
-    const row = document.createElement('div');
-    row.className = 'row';
-    const wrap = document.createElement('div');
-    wrap.className = 'audio-control';
-    const mute = document.createElement('button');
-    mute.type = 'button';
-    mute.dataset.mute = name;
-    mute.textContent = `${input.muted ? 'Activer' : 'Couper'} ${name}`;
-    const slider = document.createElement('input');
-    slider.type = 'range';
-    slider.min = '-60';
-    slider.max = '6';
-    slider.step = '0.5';
-    slider.value = String(Math.max(-60, Math.min(6, dbValue(input))));
-    slider.dataset.volume = name;
-    const db = text('span', `${Number(slider.value) <= -59.5 ? '-∞' : Number(slider.value).toFixed(1)} dB`, 'db');
-    slider.addEventListener('input', () => {
-      db.textContent = `${Number(slider.value) <= -59.5 ? '-∞' : Number(slider.value).toFixed(1)} dB`;
-    });
-    wrap.append(mute, slider, db);
-    row.append(wrap);
-    container.append(row);
+    let row = existing.get(name); existing.delete(name);
+    if (!row) {
+      row = document.createElement('div'); row.className = 'row'; row.dataset.audioRow = name;
+      const wrap = document.createElement('div'); wrap.className = 'audio-control';
+      const mute = document.createElement('button'); mute.type = 'button'; mute.dataset.mute = name;
+      const slider = document.createElement('input'); slider.type = 'range'; slider.min = '-60'; slider.max = '6'; slider.step = '0.5'; slider.dataset.volume = name;
+      const db = text('span', '', 'db');
+      slider.addEventListener('input', () => { db.textContent = `${Number(slider.value) <= -59.5 ? '-∞' : Number(slider.value).toFixed(1)} dB`; });
+      wrap.append(mute, slider, db); row.append(wrap); container.append(row);
+    }
+    row.querySelector('button').textContent = `${input.muted ? 'Activer' : 'Couper'} ${name}`;
+    const slider = row.querySelector('input');
+    if (document.activeElement !== slider) slider.value = String(Math.max(-60, Math.min(6, dbValue(input))));
+    row.querySelector('.db').textContent = `${Number(slider.value) <= -59.5 ? '-∞' : Number(slider.value).toFixed(1)} dB`;
   }
+  existing.forEach(row => row.remove());
   if (!container.children.length) container.append(text('p', 'Aucune source audio détectée.', 'muted'));
 }
 
@@ -784,6 +778,7 @@ function openMobileEditor(item, scope) {
   form.elements.google.checked = item.desiredPublication?.google === true;
   $('slot-twitch-game-id').value = item.twitchCategoryId || '';
   $('slot-twitch-category').value = item.twitchCategoryName || '';
+  if (item.recurrence) { const rule = `${item.recurrence.frequency}-${item.recurrence.interval || 1}`; if (![...form.elements.recurrence.options].some(option => option.value === rule)) form.elements.recurrence.add(new Option('Récurrence existante', rule)); }
   form.elements.recurrence.value = item.recurrence ? `${item.recurrence.frequency}-${item.recurrence.interval}` : '';
   form.elements.recurrenceUntil.value = item.recurrence?.until ? localDate(item.recurrence.until) : '';
   form.elements.recurrence.disabled = scope === 'occurrence';
@@ -879,6 +874,8 @@ function tickTimer() {
   if (!state) return;
   const value = formatDuration(remaining());
   $('timer').textContent = value;
+  if ($('live-timer-value')) $('live-timer-value').textContent = value;
+  if ($('live-timer-toggle')) $('live-timer-toggle').textContent = state.timer.running ? 'Pause timer' : 'Démarrer le timer';
   $('timer-preview').textContent = `${value} · ${state.timer.running ? 'en cours' : 'prêt'}`;
 }
 
@@ -1283,7 +1280,11 @@ function applyUxPreferences() {
 }
 function setFocusPreference(value) { uxPreferences.focus = value; applyUxPreferences(); }
 $('focus-mode').onchange = event => setFocusPreference(event.target.checked); $('reduce-motion').onchange = event => { uxPreferences.reducedMotion = event.target.checked; applyUxPreferences(); };
+let profileDraftDirty = false, profileDraftRevision = 0;
+$('profile-appearance-form').addEventListener('input', () => { profileDraftDirty = true; profileDraftRevision++; });
+$('profile-appearance-form').addEventListener('change', () => { profileDraftDirty = true; profileDraftRevision++; });
 function populateProfileAppearanceForm() {
+  if (profileDraftDirty) return;
   const appearance = productProfile?.appearance || uxPreferences;
   $('profile-display-name').value = productProfile?.profile?.displayName || '';
   $('profile-channel-name').value = productProfile?.profile?.channelName || '';
@@ -1331,9 +1332,11 @@ $('profile-appearance-form').onsubmit = async event => {
         textScale: $('appearance-text-scale-input').value,
       },
     };
+    const submittedRevision = profileDraftRevision;
     const result = await transport.updateProfilePresentation(value);
+    if (profileDraftRevision === submittedRevision) profileDraftDirty = false;
     productProfile = result.profile;
-    uxPreferences = { ...uxPreferences, ...productProfile.appearance };
+    if (!profileDraftDirty) uxPreferences = { ...uxPreferences, ...productProfile.appearance };
     applyUxPreferences();
     populateProfileAppearanceForm();
     applyModuleProjection(productProfile.modules || {});
@@ -1348,7 +1351,7 @@ async function loadProductProfile(generation = connectionGeneration) {
   if (generation !== connectionGeneration) return;
   if (result?.profile) {
     productProfile = result.profile;
-    uxPreferences = { ...uxPreferences, ...productProfile.appearance }; applyUxPreferences();
+    if (!profileDraftDirty) uxPreferences = { ...uxPreferences, ...productProfile.appearance }; applyUxPreferences();
     populateProfileAppearanceForm();
     applyModuleProjection(productProfile.modules || {});
   }
@@ -1429,6 +1432,10 @@ $('slot-form').onsubmit = async event => {
     const recurrenceValue = String(form.get('recurrence') || ''); const untilDate = String(form.get('recurrenceUntil') || '');
     const recurrence = editedRecurrence(mobileEditing?.item?.recurrence, recurrenceValue, untilDate);
     const value = { title: form.get('title'), startAtUtc, endAtUtc, category: form.get('category'), description: form.get('description') || '', recurrence, desiredPublication: { local: false, twitch: form.get('twitch') === 'on', google: form.get('google') === 'on' }, twitchCategoryId: form.get('twitch') === 'on' ? $('slot-twitch-game-id').value : undefined, twitchCategoryName: form.get('twitch') === 'on' ? $('slot-twitch-category').value : undefined };
+    if (mobileEditing?.item?.twitchRecurring) {
+      if (!confirm('Cette modification Twitch concerne toute la série récurrente. Continuer ?')) return;
+      value.confirmRecurring = true;
+    }
     planningPage = 1;
     if (mobileEditing?.scope === 'occurrence') {
       const patch = { title: value.title, description: value.description, startAtUtc, endAtUtc, category: value.category, twitchCategoryId: value.twitchCategoryId, twitchCategoryName: value.twitchCategoryName, desiredPublication: value.desiredPublication };
@@ -1444,7 +1451,7 @@ $('slot-form').onsubmit = async event => {
       else { const canonical = companion.snapshot().planning.find(item => item.id === id); const updated = companion.updateEvent(id, value, canonical.revision); if (updated.conflict) throw new Error('Ce live a été modifié sur un autre appareil.'); render(offlineState()); if (companionMode === CompanionMode.ONLINE_STANDALONE) void syncEventProviders(updated.item); }
     } else if (companionMode === CompanionMode.ONLINE_PC) { const next = await transport.createPlanning(value); await syncCompanion(); render(next); }
     else { const created=companion.createEvent(value).item; render(offlineState()); if(companionMode===CompanionMode.ONLINE_STANDALONE) void syncEventProviders(created,'create'); }
-    mobileEditing = null; formElement.elements.recurrence.disabled = false; formElement.elements.recurrenceUntil.disabled = false; $('slot-dialog').close(); formElement.reset(); note(companionMode === CompanionMode.ONLINE_PC ? 'Planning enregistré.' : 'Créneau enregistré · À synchroniser.');
+    mobileEditing = null; formElement.elements.recurrence.disabled = false; formElement.elements.recurrenceUntil.disabled = false; $('slot-dialog').close(); formElement.reset(); note(companionMode === CompanionMode.ONLINE_PC ? (state?.planning?.some(item => item.syncError || item.conflict || Object.values(item.providerLinks || item.providers || {}).some(provider => ['error', 'pending'].includes(provider?.status))) ? 'Planning enregistré localement · synchronisation fournisseur à vérifier dans l’agenda.' : 'Planning enregistré.') : 'Créneau enregistré · À synchroniser.');
   } catch (error) { note(error.message); }
 };
 
@@ -1579,7 +1586,9 @@ $('refresh-vods').onclick = () => void loadVods();
 $('more-vods').onclick = () => void loadVods(true);
 $('more-clips').onclick = () => void loadClips(true);
 $('create-clip').onclick = async () => { if (companionMode !== CompanionMode.ONLINE_PC) { note('PC hors ligne.'); return; } await ensureTwitchCapabilities(); if (moderationCapabilities?.createClip === false) { note(`Reconnecte Twitch pour accorder ${moderationCapabilities.requiredScopes?.createClip || 'clips:edit'}.`); return; } try { const clip = await transport.createTwitchClip(); note(`Clip accepté par Twitch (${clip.id}). Il sera disponible après traitement.`); await loadClips(); } catch (error) { note(error.message); } };
-$('chat-form').onsubmit = async event => { event.preventDefault(); const message = $('chat-message').value.trim(); if (!message) return; if (companionMode !== CompanionMode.ONLINE_PC) { note('PC hors ligne. Le message n’a pas été envoyé.'); return; } await ensureTwitchCapabilities(); if (moderationCapabilities?.chatWrite === false) { note(`Reconnecte Twitch pour accorder ${moderationCapabilities.requiredScopes?.chatWrite || 'user:write:chat'}.`); return; } try { const replyParentMessageId = $('chat-reply-context').dataset.messageId; await transport.sendTwitchChat({ message, ...(replyParentMessageId ? { replyParentMessageId } : {}) }); $('chat-message').value = ''; $('chat-reply-context').hidden = true; delete $('chat-reply-context').dataset.messageId; note('Message confirmé par Twitch.'); } catch (error) { note(error.message); } };
+$('live-timer-toggle').onclick = () => void command({ type: state?.timer?.running ? 'timer.pause' : 'timer.start' });
+$('live-timer-add').onclick = () => void command({ type: 'timer.add', seconds: 60 });
+$('chat-form').onsubmit = async event => { event.preventDefault(); const submitted = $('chat-message').value, message = submitted.trim(), replyParentMessageId = $('chat-reply-context').dataset.messageId; if (!message) return; if (companionMode !== CompanionMode.ONLINE_PC) { note('PC hors ligne. Le message n’a pas été envoyé.'); return; } await ensureTwitchCapabilities(); if (moderationCapabilities?.chatWrite === false) { note(`Reconnecte Twitch pour accorder ${moderationCapabilities.requiredScopes?.chatWrite || 'user:write:chat'}.`); return; } try { await transport.sendTwitchChat({ message, ...(replyParentMessageId ? { replyParentMessageId } : {}) }); if ($('chat-message').value === submitted) $('chat-message').value = ''; if ($('chat-reply-context').dataset.messageId === replyParentMessageId) { $('chat-reply-context').hidden = true; delete $('chat-reply-context').dataset.messageId; } note('Message confirmé par Twitch.'); } catch (error) { note(error.message); } };
 $('unban-user').onclick = async () => { const userId = $('unban-user-id').value.trim(); if (!moderationCapabilities?.unban) { note(`NOT_AUTHORIZED · ${moderationCapabilities?.requiredScopes?.unban || 'scope Twitch requis'}`); return; } try { await transport.unbanTwitchUser(userId); $('unban-user-id').value = ''; note('UNBAN confirmé par Twitch.'); } catch (error) { note(error.message); } };
 
 if ('serviceWorker' in navigator && window.isSecureContext) {

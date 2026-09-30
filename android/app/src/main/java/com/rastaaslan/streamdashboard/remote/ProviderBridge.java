@@ -131,7 +131,7 @@ public final class ProviderBridge {
       result.put("tested", true).put("testedAt", System.currentTimeMillis()).put("capabilities", capabilities);
     } catch (ProviderException e) {
       try { result.put("code", e.code).put("requiresReauth", e.code.equals("REAUTH_REQUIRED") || e.code.equals("SCOPES") || e.code.equals("HTTP_403")); } catch (JSONException ignored) { }
-    } catch (Exception e) { try { result.put("code", "NETWORK"); } catch (JSONException ignored) { } }
+    } catch (Exception e) { try { result.put("code", e instanceof ProviderException ? ((ProviderException)e).code : "NETWORK"); } catch (JSONException ignored) { } }
     try { if (diagnostics.containsKey(provider)) result.put("lastSync", diagnostics.get(provider).optLong("lastSync", 0)); } catch (JSONException ignored) { }
     diagnostics.put(provider, result);
     return status(provider, clientId);
@@ -293,16 +293,30 @@ public final class ProviderBridge {
       catch (ProviderException error) { if (!isAbsentPlanningDelete("twitch", error.code)) throw error; }
       return ok().put("remoteId", remoteId);
     }
+    JSONObject currentSegment = null;
     if (action.equals("update")) {
       requireId(remoteId); JSONObject current = twitch("GET", "https://api.twitch.tv/helix/schedule?broadcaster_id="+enc(broadcaster)+"&id="+enc(remoteId), null);
-      String currentFingerprint = twitchFingerprint(current.getJSONObject("data").getJSONArray("segments").getJSONObject(0));
+      currentSegment = current.getJSONObject("data").getJSONArray("segments").getJSONObject(0);
+      String currentFingerprint = twitchFingerprint(currentSegment);
       if (!link.optString("fingerprint").isEmpty() && !link.optString("fingerprint").equals(currentFingerprint)) throw new ProviderException("CONFLICT", "Le planning Twitch a changé ailleurs.", current);
     }
-    JSONObject payload = new JSONObject().put("title", limited(event.optString("title"), 140)).put("category_id", limited(event.optString("twitchCategoryId"), 40)).put("start_time", iso(event.getString("startAtUtc"))).put("duration", String.valueOf(duration(event))).put("timezone", "UTC");
+    JSONObject payload = twitchSchedulePayload(event, currentSegment);
+    if (currentSegment != null && payload.toString().equals("{}")) return ok().put("remoteId", remoteId).put("fingerprint", twitchFingerprint(currentSegment)).put("remoteSnapshot", currentSegment);
     String url = "https://api.twitch.tv/helix/schedule/segment?broadcaster_id="+enc(broadcaster) + (action.equals("update") ? "&id="+enc(remoteId) : "");
     JSONObject response = twitch(action.equals("create") ? "POST" : "PATCH", url, payload.toString());
     JSONObject segment = response.getJSONObject("data").getJSONArray("segments").getJSONObject(0);
     return ok().put("remoteId", segment.getString("id")).put("fingerprint", twitchFingerprint(segment)).put("remoteSnapshot", segment);
+  }
+  static JSONObject twitchSchedulePayload(JSONObject event, JSONObject currentSegment) throws Exception {
+    JSONObject payload = new JSONObject();
+    String title = limited(event.optString("title"), 140), category = limited(event.optString("twitchCategoryId"), 40), start = iso(event.getString("startAtUtc"));
+    if (currentSegment == null || !title.equals(currentSegment.optString("title"))) payload.put("title", title);
+    JSONObject currentCategory = currentSegment == null ? null : currentSegment.optJSONObject("category");
+    if (!category.isEmpty() && (currentCategory == null || !category.equals(currentCategory.optString("id")))) payload.put("category_id", category);
+    if (currentSegment == null || !start.equals(iso(currentSegment.getString("start_time")))) payload.put("start_time", start).put("timezone", "UTC");
+    int minutes = duration(event);
+    if (currentSegment == null || minutes != Duration.between(Instant.parse(currentSegment.getString("start_time")), Instant.parse(currentSegment.getString("end_time"))).toMinutes()) payload.put("duration", String.valueOf(minutes));
+    return payload;
   }
   private JSONObject googleMutate(String action, JSONObject input) throws Exception {
     requirePublication("google");
@@ -337,7 +351,7 @@ public final class ProviderBridge {
     if(headers!=null)for(Map.Entry<String,String> h:headers.entrySet())c.setRequestProperty(h.getKey(),h.getValue()); String outgoing=json!=null?json:form;
     if(outgoing!=null){c.setDoOutput(true);c.setRequestProperty("Content-Type",json!=null?"application/json":"application/x-www-form-urlencoded");try(OutputStream o=c.getOutputStream()){o.write(outgoing.getBytes(StandardCharsets.UTF_8));}}
     int status=c.getResponseCode(); InputStream stream=status>=400?c.getErrorStream():c.getInputStream(); String value=stream==null?"":readStream(stream);
-    if(status==401)throw new ProviderException("REAUTH_REQUIRED","Session provider expirée."); if(status==409||status==412)throw new ProviderException("CONFLICT","Le provider a changé ailleurs.",value.isEmpty()?null:new JSONObject(value)); if(status>=400) {
+    if(status==401)throw new ProviderException("REAUTH_REQUIRED","Session provider expirée."); if(status==409||status==412)throw new ProviderException("CONFLICT","Le provider a changé ailleurs."); if(status>=400) {
       String message = "Le provider a refusé l’opération.";
       try { JSONObject response = new JSONObject(value); message = response.optString("message", message); JSONObject detail = response.optJSONObject("error"); if (detail != null) message = detail.optString("message", message); } catch (JSONException ignored) { }
       throw new ProviderException("HTTP_"+status, safeProviderMessage(message, headers));
@@ -348,10 +362,12 @@ public final class ProviderBridge {
     String result = message;
     if (headers != null) for (Map.Entry<String,String> header : headers.entrySet()) {
       if (header.getKey().equalsIgnoreCase("Authorization")) {
-        String secret = header.getValue().replaceFirst("(?i)^Bearer ", "");
+        String secret = header.getValue().replaceFirst("(?i)^(Bearer|OAuth) ", "");
         if (!secret.isEmpty()) result = result.replace(secret, "[redacted]");
       }
     }
+    result = result.replaceAll("(?i)(Bearer|OAuth)\\s+[^\\s,;\"']+", "$1 [redacted]")
+      .replaceAll("(?i)((access_token|refresh_token|client_secret|authorization|api_key|password|secret|token)[\"']?\\s*[:=]\\s*[\"']?)[^\\s,;\"'}]+", "$1[redacted]");
     return result.substring(0, Math.min(result.length(), 1000));
   }
   private static String readStream(InputStream stream) throws IOException {
@@ -389,6 +405,7 @@ public final class ProviderBridge {
   private static String failure(String code,String message,JSONObject current){
     try {
       JSONObject o=new JSONObject().put("ok",false).put("code",code).put("message",message).put("nonCreation",isDefinitiveNonCreation(code));
+      if(code.matches("HTTP_[45][0-9]{2}")) o.put("providerMessage", safeProviderMessage(message, null));
       if(current!=null)o.put("current",current);
       return o.toString();
     } catch (JSONException e) {

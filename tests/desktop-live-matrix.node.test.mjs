@@ -178,6 +178,13 @@ test('Desktop Live runtime matrix: HTTP controls, custom scenes, confirmations a
     await expect.poll(() => writes.at(-1)?.path).toBe('/soundboard/play');
     await page.locator('[data-stop]').click();
     await expect.poll(() => writes.at(-1)?.path).toBe('/soundboard/stop');
+    await page.locator('[data-view="live"]').click();
+    delete state.obs.inputs.Mic;
+    state.obs.activeAudioInputs=state.obs.activeAudioInputs.filter(name=>name!=='Mic');
+    for(const socket of sockets.clients)socket.send(JSON.stringify({type:'state.updated',data:state}));
+    await expect(page.locator('[data-audio-name="Mic"]')).toContainText('principal · absent');
+    await expect(page.locator('[data-mute="Mic"]')).toBeDisabled();
+    await expect(page.locator('[data-audio-volume="Mic"]')).toBeDisabled();
     assert.deepEqual(errors, []);
   } finally {
     await browser?.close(); for (const client of sockets.clients) client.terminate();

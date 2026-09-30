@@ -281,7 +281,7 @@ export class ObsClient {
         snapshot.inputs[name] = { muted: mute.inputMuted, volume: volume.inputVolumeMul, volumeDb: volume.inputVolumeDb };
       } catch { /* Inputs without audio capabilities are intentionally omitted. */ }
     }));
-    const active = await this.sceneSources(String(scene.currentProgramSceneName)).catch(() => new Set<string>());
+    const active = await this.sceneSources(String(scene.currentProgramSceneName));
     const special = await this.call('GetSpecialInputs').catch(() => ({}));
     for (const name of Object.values(special)) if (typeof name === 'string') active.add(name);
     snapshot.activeAudioInputs = Object.keys(snapshot.inputs).filter(name => active.has(name));
@@ -344,7 +344,7 @@ export class ObsClient {
     return collectActiveSceneSources(sceneName,
       async name => (await this.call('GetSceneItemList', { sceneName: name })).sceneItems as unknown as SceneNode[],
       async name => (await this.call('GetGroupSceneItemList', { sceneName: name })).sceneItems as unknown as SceneNode[],
-      visited).catch(() => new Set());
+      visited);
   }
 
   private requireConnected() { if (!this.state.connected || !this.ready) throw new Error('OBS n’est pas connecté.'); }
@@ -384,6 +384,21 @@ export class ObsClient {
     this.requireConnected();
     const result = await this.call('GetSceneItemList', { sceneName });
     return result.sceneItems.some(item => String((item as { sourceName?: unknown }).sourceName) === sourceName);
+  }
+  async sceneSourceEnabled(sceneName: string, sourceName: string) { return (await this.sceneSources(sceneName)).has(sourceName); }
+  async inputAudioReadiness(inputName: string) {
+    this.requireConnected();
+    const [mute, volume, tracks, monitor, scene] = await Promise.all([
+      this.call('GetInputMute', { inputName }), this.call('GetInputVolume', { inputName }),
+      this.call('GetInputAudioTracks', { inputName }), this.call('GetInputAudioMonitorType', { inputName }),
+      this.call('GetCurrentProgramScene'),
+    ]);
+    return { audible: !mute.inputMuted && volume.inputVolumeMul > 0 && Object.values(tracks.inputAudioTracks).some(Boolean) && monitor.monitorType !== 'OBS_MONITORING_TYPE_MONITOR_ONLY',
+      active: await this.sceneSourceEnabled(scene.currentProgramSceneName, inputName) };
+  }
+  async verifySoundboardPlayback(inputName: string) {
+    const result = await this.inputAudioReadiness(inputName);
+    if (!result.active || !result.audible) throw new Error('Soundboard OBS inactive ou inaudible : vérifier scène, activation, mute, volume et pistes audio.');
   }
   async createMediaInput(sceneName: string, inputName: string) {
     this.requireConnected();

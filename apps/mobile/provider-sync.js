@@ -4,7 +4,9 @@ import { CompanionMode } from './companion-store.js';
 
 const clone = value => JSON.parse(JSON.stringify(value));
 const allowedProviders = ['twitch', 'google'];
-const cleanError = error => providerError(error?.code);
+// Only the native bridge's separately sanitized HTTP diagnostic is eligible.
+const safeProviderDetail = value => typeof value === 'string' ? value.replace(/\b(Bearer|OAuth)\s+[^\s,;"']+/gi, '$1 [redacted]').replace(/((?:access_token|refresh_token|client_secret|authorization|api_key|password|secret|token)["']?\s*[:=]\s*["']?)[^\s,;"'}]+/gi, '$1[redacted]').replace(/[\x00-\x1f]/g, ' ').slice(0, 1000) : '';
+const cleanError = error => error?.providerMessage ? `${providerError(error.code)} ${safeProviderDetail(error.providerMessage)}` : providerError(error?.code);
 
 export function twitchFingerprint(value) {
   const canonical = [value.title || '', value.startAtUtc || '', value.endAtUtc || '', value.twitchCategoryId || ''].map(part => String(part).trim()).join('\u001f');
@@ -17,7 +19,7 @@ export function createNativeProviderAdapter(bridge = globalThis.StreamDashboardP
   const call = async (method, payload = {}) => {
     if (!bridge?.[method]) throw new Error('Provider autonome indisponible sur cet appareil.');
     const result = JSON.parse(await bridge[method](JSON.stringify(payload)));
-    if (!result.ok) { const error = new Error(providerError(result.code)); error.code = result.code; error.current = result.current; error.nonCreation = result.nonCreation === true; throw error; }
+    if (!result.ok) { const detail = /^HTTP_[45]\d{2}$/.test(result.code || '') ? safeProviderDetail(result.providerMessage) : ''; const error = new Error(detail ? `${providerError(result.code)} ${detail}` : providerError(result.code)); error.providerMessage = detail; error.code = result.code; error.current = result.current; error.nonCreation = result.nonCreation === true; throw error; }
     return result;
   };
   return {

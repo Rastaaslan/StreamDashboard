@@ -23,15 +23,17 @@ describe('API Discord', () => {
     server = await startDashboardServer({ port: 0, dataDir: folder, discordFetch: discordFetch as any });
     const json = async (path: string, method = 'GET', body?: unknown) => fetch(`${server!.url}${path}`, { method, headers: { 'content-type': 'application/json' }, body: body === undefined ? undefined : JSON.stringify(body) });
     const connections = async () => (await (await json('/api/v1/connections')).json()).items.find((item: any) => item.id === 'discord');
-    expect(await connections()).toMatchObject({ status: 'disconnected', mode: 'custom', capabilities: expect.arrayContaining(['configure', 'publish']) });
+    expect(await connections()).toMatchObject({ status: 'disconnected', mode: 'custom', capabilities: ['configure', 'disconnect', 'test'] });
     expect(JSON.stringify(await connections())).not.toContain('Service officiel non encore déployé');
     expect((await json('/api/v1/discord/token', 'PUT', { token: 'private-token' })).status).toBe(200);
     expect(await connections()).toMatchObject({ status: 'connected', mode: 'custom' });
+    expect((await connections()).capabilities).not.toContain('publish');
     const state = await (await json('/api/v1/state')).json(); expect(JSON.stringify(state)).not.toContain('private-token'); expect(state.discord.configured).toBe(true);
     expect(await (await json('/api/v1/discord/guilds')).json()).toEqual([{ id: '1', name: 'Camp' }]);
     expect(await (await json('/api/v1/discord/guilds/1/channels')).json()).toEqual([{ id: '2', name: 'planning', type: 0 }]);
     expect((await json('/api/v1/discord/settings', 'PUT', { guildId: '1', channelId: '2', defaultMessage: 'Planning' })).status).toBe(200);
     expect((await (await json('/api/v1/state')).json()).discord).toMatchObject({ guildId: '1', channelId: '2', defaultMessage: 'Planning' });
+    expect((await connections()).capabilities).toContain('publish');
     const body = { imageBase64: png.toString('base64'), filename: '../../planning.png', message: 'Planning' };
     const [left, right] = await Promise.all([json('/api/v1/discord/planning', 'POST', body), json('/api/v1/discord/planning', 'POST', body)]);
     expect(left.status).toBe(201); expect(right.status).toBe(201);

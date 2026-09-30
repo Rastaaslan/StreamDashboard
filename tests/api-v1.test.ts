@@ -25,7 +25,8 @@ describe('API publique v1', () => {
     const connections = await fetch(`${app.url}/api/v1/connections`).then(r => r.json());
     expect(connections.items.find((item: { id: string }) => item.id === 'obs')).toMatchObject({ mode: 'custom', capabilities: ['test','configure','scenes','audio'] });
     expect(connections.items.find((item: { id: string }) => item.id === 'twitch')).toMatchObject({ status: 'unavailable', mode: 'official', capabilities: [], message: 'Configuration mainteneur requise' });
-    expect(connections.items.find((item: { id: string }) => item.id === 'discord')).toMatchObject({ status: 'disconnected', mode: 'custom', capabilities: ['configure','disconnect','test','publish'] });
+    expect(connections.items.find((item: { id: string }) => item.id === 'discord')).toMatchObject({ status: 'disconnected', mode: 'custom', capabilities: ['configure','disconnect','test'] });
+    expect(connections.items.find((item: { id: string }) => item.id === 'wizebot').capabilities).not.toContain('events');
     expect(capabilities).toMatchObject({ protocolVersion: 1, accessMode: 'desktop-local' });
     for (const feature of ['mobile-profile-presentation','mobile-live-control-config','mobile-provider-actions','soundboard-live-volume']) expect(capabilities.features).toContain(feature);
     expect(stateText).not.toMatch(/accessToken|refreshToken|deviceCode|obsPassword\"/);

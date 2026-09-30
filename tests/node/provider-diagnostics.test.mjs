@@ -104,3 +104,17 @@ test('an unknown diagnostic code is redacted before the mutation refusal', async
   const adapter = createNativeProviderAdapter({ googleTest: () => JSON.stringify({ ok: true, configured: true, connected: true, code: 'SECRET' }) });
   await assert.rejects(adapter.mutate('google', 'create', {}, {}), error => error.code === 'NETWORK' && !error.message.includes('SECRET'));
 });
+
+test('HTTP provider diagnostics preserve status instead of inventing network failures', () => {
+  for (const code of ['HTTP_400','HTTP_422','HTTP_429','HTTP_503']) {
+    const diagnostic=providerDiagnostic({configured:true,connected:true,code,message:'access_token=PRIVATE'});
+    assert.equal(diagnostic.code,code);
+    assert.doesNotMatch(diagnostic.error,/Internet|PRIVATE/);
+    assert.equal(diagnostic.tested,false);
+  }
+});
+
+test('native sanitized HTTP detail stays useful while credentials remain redacted', async () => {
+  const adapter=createNativeProviderAdapter({twitchSearchCategories:()=>JSON.stringify({ok:false,code:'HTTP_400',providerMessage:'Duration must be at least 30 minutes; access_token=PRIVATE OAuth OTHER',message:'UNTRUSTED'})});
+  await assert.rejects(adapter.searchTwitch('x'),error=>/Duration must be at least 30 minutes/.test(error.message)&&! /PRIVATE|OTHER|UNTRUSTED/.test(error.message));
+});

@@ -1,66 +1,79 @@
-# CB-52 — corrections vérifiées, livraison bloquée
+# CB-52 — READY_FOR_HUMAN_TEST
 
-Baseline : `87c4031`, descendant de `14256c2`, incluant le stockage sécurisé du secret Google CB-50. Aucun push, publication, déploiement ou merge. Un seul chantier, aucun agent/job parallèle.
+Reprise du même chantier depuis `b96237d`, conservant la lignée CB-50 et `87c4031` (secret Google sécurisé). Source de vérité : mapping canonique F01–F16/U01–U20 fourni dans le résultat du job et repris explicitement par l’utilisateur. Aucun rapport externe supplémentaire requis. Aucun job parallèle, push, publication ou merge.
 
-## Référence manquante
+Les P1 démontrés sont clos côté sources et tests automatisables. Les essais matériels/comptes ci-dessous restent **HUMAN_TEST_REQUIRED** ; ce document ne déclare ni pixels OBS ni son réel ni OAuth fournisseur réel validés.
 
-Le rapport complet CB-51 (technique et UX) n'est pas dans le worktree. La branche locale `codexbridge/CB-51` pointe sur `14256c2` et ne contient pas de rapport CB-51 ; aucun commit trouvé avec ce numéro dans le message. Son chemin/contenu a été demandé. **Ne pas considérer ce commit comme la baseline finale validée.** Le ticket ne donne pas la correspondance individuelle des identifiants aux descriptions : inventer cette correspondance rendrait le mapping trompeur.
+## Mapping exhaustif
 
-| Findings demandés | État du mapping |
-| --- | --- |
-| F01–F08 | Corrections thématiques ci-dessous ; qualification individuelle bloquée par l'absence du rapport CB-51. |
-| U01–U08 | Corrections thématiques ci-dessous ; qualification individuelle bloquée par l'absence du rapport CB-51. |
-| U19 | Migration non entreprise : données et règle de migration concernées non identifiées sans le rapport. |
-| F09–F16, U09–U18 | Couverture partielle ci-dessous ; reste à confronter aux reproductions originales. |
+`ALREADY_FIXED_IN_BASE+TEST` désigne une correction présente dans `b96237d`, conservée et retestée. `CORRECTED+TEST` désigne une correction complétée dans cette reprise. Les chemins de tests sont relatifs à `tests/`.
 
-## Corrections et preuves
-
-| Sujet explicite du ticket | Correction | Validation |
+| Finding | Statut | Correction et preuve exécutée |
 | --- | --- | --- |
-| Runtime 48132 | Desktop et défaut serveur fixes ; suppression du fallback ; URLs mobiles, Streamlabs, launchers et exemples alignés | `port-fallback.test.ts` : EACCES/EADDRINUSE, un seul bind, échec Desktop ; pairing et credentials après redémarrages ; tests URL existants |
-| Google sécurisé | Lignée CB-50 conservée, identifiants publics réels dans le paquet ; aucun secret dans distribution.json | Suites Google, E2E OAuth simulé avec/sans secret, persistance, contrôle ASAR réel |
-| Twitch PATCH | Durée chaîne et timezone envoyées ; détail fournisseur conservé pour Planning Desktop et Android, token masqué | `cb52-twitch.test.ts`, tests Twitch existants ; compilation Java et test de masquage. API Twitch Android réelle : HUMAN_TEST_REQUIRED |
-| Discord Desktop | Élément serveur relu après réponse asynchrone/rerender ; un ancien snapshot HTTP ne remplace plus un état reçu par WS | E2E connexions Desktop existant, avec WS et chargement asynchrone |
-| Discord mobile | Réponses de salons obsolètes ignorées, sélection précédente invalidée | Test de réponses inversées dans `cb52-planning.node.test.mjs` |
-| Timer OBS | Avant Start obligatoire : source browser présente, attachée/activée dans scène courante, URL attendue, HTTP accessible, connexion OBS inchangée | Mock réel protocole WS OBS v5 et HTTP dans `obs-websocket-runtime.test.ts`, tests Start ; moteur de rendu OBS réel : HUMAN_TEST_REQUIRED |
-| Soundboard mobile | Absence de préférence donne 100 %, mute explicitement enregistré conservé | Premier lancement, redémarrage logique avec valeurs stockées, valeurs invalides/bornes |
-| Planning récurrence | Conservation timezone, exceptions, borne exacte et règle existante lors d'édition Desktop ; même helper mobile ; édition de série mobile utilise l'événement canonique | Tests round-trip du helper partagé, suites récurrence/persistance existantes |
-| Planning dates | Date mobile locale ; overnight et dates de fin explicites sur plusieurs jours | Tests Europe/Paris à minuit, overnight, multijour ; E2E Desktop date/fin locales |
-| Planning Android | Description incluse dans patch d'occurrence ; suppression ONLINE_PC passe par API PC ; référence du formulaire capturée avant await | Test de suppression PC dans `cb2-local.test.mjs`, suites Planning existantes ; description occurrence à compléter en E2E |
-| Suppression Twitch récurrente | Texte explicite « toute la série » ; confirmation transmise et acceptée par l'API de suppression | Garde backend existante ; confirmation UI à compléter en E2E |
-| Scènes Desktop | Modes principaux conservés avec scènes rapides ; commande directe synchronise le mode correspondant après confirmation | Matrice renderer et test service de commandes, timer inchangé |
-| Audio Desktop | Suppression limite 6, ajout micro principal connu, curseurs volume ; rapprochement par nom conserve les contrôles durant télémétrie | E2E plus de 7 sources, ajout source par WS, focus curseur conservé, commande volume |
-| Planning Desktop 40 | Suppression de la troncature de l'agenda ; filtres existants conservés | 45 événements accessibles dans le vrai renderer |
-| Gates | `npm test` inclut tous les `.test.mjs` récursifs avec build préalable ; suites `.spec.ts` dans gates navigateur et Electron ; contrôle JS et ASAR | Exécution détaillée ci-dessous |
-| Artefact | Exclusion des logs ; contrôle paquet réel : identifiants publics, port, assets et absence sources/tests | `desktop:package` puis `desktop:check-package` |
+| F01 P1 | ALREADY_FIXED_IN_BASE+TEST | Bind Desktop fixe 48132 ; aucun retry aléatoire. `port-fallback.test.ts` : EADDRINUSE/EACCES, un seul bind, redémarrage et pairing. |
+| F02 P1 | ALREADY_FIXED_IN_BASE+TEST | Identifiant Google public réel ; secret uniquement dans stockage sécurisé. `google-desktop-credentials.test.ts`, `google-desktop-e2e.node.test.mjs` et contrôle ASAR sans env développeur. OAuth réel : test humain. |
+| F03 P1 | CORRECTED+TEST | Lecture du segment par ID puis PATCH des seuls champs modifiés ; durée chaîne ; pas de start_time passé inchangé pour titre récurrent. `cb52-twitch.test.ts`. |
+| F04 P1 | ALREADY_FIXED_IN_BASE+TEST | Discovery Discord relit le DOM courant ; snapshots HTTP anciens ignorés après WS. `desktop-connections.node.test.mjs`, `desktop-audit.node.test.mjs`, `cb52-planning.node.test.mjs`. |
+| F05 P1 | CORRECTED+TEST | Même PATCH minimal dans ProviderBridge Android. `node/provider-bridge-compile.test.mjs` compile le vrai Java et exécute le cas titre récurrent ancien + changement durée avec JSONObject en mémoire. Ce n’est pas un build APK. |
+| F06 P1 | ALREADY_FIXED_IN_BASE+TEST | Timer : HTTP accessible, URL attendue, Browser Source présente, attachée et activée dans scène courante. `obs-websocket-runtime.test.ts` utilise serveur HTTP et protocole OBS v5 ; absente, mauvais type/port, désactivée, détachée et HTTP indisponible refusés. |
+| F07 P1 | CORRECTED+TEST | Hotfixes dans les sources, build JS synchronisé ; contrôle ASAR compare renderer/helper Planning/client OBS aux fichiers sources/build. `desktop:package` inclut ce contrôle ; logs/temp exclus. |
+| F08 P1 | CORRECTED+TEST | `npm test` = Vitest + découverte récursive de tous les `.test.mjs` (incluant `.node.test.mjs`) après build. Gate release = tests + navigateur + sécurité/syntaxe + smoke Electron + package/ASAR. Temp hors dépôt, nettoyage garanti ; aucun `.cb52-tmp`. |
+| F09 P2 | CORRECTED+TEST | Détail Twitch utile conservé après masquage tokens connus, formes encodées et champs secrets ; Android sépare le diagnostic HTTP nettoyé du message brut, y compris persistance. `cb52-twitch.test.ts`, suites confidentialité Twitch, `node/provider-diagnostics.test.mjs`, test Java. |
+| F10 P2 | ALREADY_FIXED_IN_BASE+TEST | Réponses Discord mobile inversées ignorées, ancien salon invalidé. `cb52-planning.node.test.mjs`. |
+| F11 P2 | ALREADY_FIXED_IN_BASE+TEST | Callback Streamlabs dérivé du runtime 48132. Suites Streamlabs/runtime et recherche des anciens ports. |
+| F12 P2 | ALREADY_FIXED_IN_BASE+TEST | Desktop, Android, launchers, exemples et URLs alignés 48132. `port-fallback.test.ts`, `mobile-network-ui.spec.ts` (adresse Android livrée), tests runtime/assets et package. |
+| F13 P2 | CORRECTED+TEST | Soundboard exige Media Source attachée/activée, présence active dans scène courante, volume > 0, non mute, piste routée et monitoring compatible sortie. Lecture refusée avant restart si inutilisable. `obs-soundboard.test.ts`, vrai protocole mock dans `obs-websocket-runtime.test.ts`. Audibilité matérielle : test humain. |
+| F14 P2 | CORRECTED+TEST | Google exige calendrier choisi writable ; Discord exige destination vérifiée ; actions Twitch suivent scopes et état. `discord-api.test.ts`, `api-v1.test.ts`, `desktop-audit.node.test.mjs`, `desktop-planning-editor.node.test.mjs`, diagnostics natifs. |
+| F15 P2 | CORRECTED+TEST | HTTP_400/4xx/5xx restent des erreurs fournisseur, pas NETWORK ; texte sûr. `node/provider-diagnostics.test.mjs`, compilation Java. |
+| F16 P2 | CORRECTED+TEST | Config Desktop illisible signalée sans écrasement ni contenu secret ; config publique manquante fatale en package. Discovery scènes OBS propage le refus. `port-fallback.test.ts` (config corrompue préservée), `obs-websocket-runtime.test.ts` (discovery refusée), E2E erreurs connexions. |
+| U01 P1 | ALREADY_FIXED_IN_BASE+TEST | Premier volume Soundboard non nul (100 %) ; mute enregistré respecté. `cb52-planning.node.test.mjs` : absent, persisté, invalide et bornes. |
+| U02 P1 | CORRECTED+TEST | Édition canonique préserve timezone/exceptions/borne exacte, y compris règle existante absente du select mobile. `cb52-planning.node.test.mjs`, `recurrence.test.ts`, round-trip réel éditeur mobile dans `mobile-network-ui.spec.ts`. |
+| U03 P1 | ALREADY_FIXED_IN_BASE+TEST | Date civile locale, fin explicite multijour, overnight sans fin explicite. `cb52-planning.node.test.mjs` (minuit Europe/Paris), E2E Desktop Paris/multijour, round-trip mobile et `cb2-local.test.mjs` overnight. |
+| U04 P1 | ALREADY_FIXED_IN_BASE+TEST | Suppression simple ONLINE_PC utilise l’API PC et ne modifie pas le store autonome. `cb2-local.test.mjs`. |
+| U05 P1 | CORRECTED+TEST | Confirmation explicite « toute la série Twitch » ; confirmRecurring uniquement après accord pour événement récurrent, jamais automatiquement sur événement simple. `desktop-planning-editor.node.test.mjs` : annulation sans requête, acceptation avec flag, sauvegarde simple flag false ; garde backend Twitch. |
+| U06 P1 | ALREADY_FIXED_IN_BASE+TEST | Scènes rapides ajoutées aux modes principaux ; changement scène synchronise mode après confirmation OBS. `desktop-live-matrix.node.test.mjs`, tests commandes/Live. |
+| U07 P1 | CORRECTED+TEST | Toutes sources actives, volume individuel et micro principal conservés ; micro configuré absent identifié et désactivé. `desktop-live-matrix.node.test.mjs` : 7+ sources, ajout WS, volume et focus DOM. |
+| U08 P1 | ALREADY_FIXED_IN_BASE+TEST | Agenda Desktop sans troncature à 40 ; filtres conservés. `desktop-planning-editor.node.test.mjs` : 45 événements, ouverture du 45e. |
+| U09 P2 | ALREADY_FIXED_IN_BASE+TEST | Description dans patch d’occurrence mobile. `cb2-local.test.mjs` et `mobile-network-ui.spec.ts` exécutent le submit réel. |
+| U10 P2 | CORRECTED+TEST | ACK chat ne vide que le texte/réponse correspondant à l’envoi initial. `mobile-network-ui.spec.ts` : réponse différée puis nouveau brouillon. |
+| U11 P2 | CORRECTED+TEST | Révision et état dirty du formulaire profil : ni refresh ni réponse save ne remplacent la saisie suivante. `mobile-network-ui.spec.ts` : save différé puis refresh périodique. |
+| U12 P2 | CORRECTED+TEST | Réconciliation sliders mobile par nom ; recherche Sons Desktop ne remplace que résultats. Identité DOM et focus vérifiés dans `mobile-network-ui.spec.ts` et `desktop-audit.node.test.mjs`. |
+| U13 P2 | CORRECTED+TEST | Focus réduit les informations secondaires via CSS, conserve timer/actions. `mobile-network-ui.spec.ts` vérifie effet visible. Persistance : suites préférences existantes. |
+| U14 P2 | CORRECTED+TEST | Sons sélectionne Sons et non Plus. Assertion d’onglet actif dans `mobile-network-ui.spec.ts`. |
+| U15 P2 | CORRECTED+TEST | Timer visible et contrôlable directement dans Live (pause/reprise, +1 min), commandes avancées conservées. `mobile-network-ui.spec.ts` vérifie visibilité et commande timer.add. Pas de refonte du cockpit. |
+| U16 P2 | CORRECTED+TEST | VOD/clips consultables, suppression VOD confirmée, suppression message/timeout/ban/unban via endpoints existants ; contrôles scènes/audio/médias conservés. `desktop-audit.node.test.mjs` exécute mutations confirmées ; matrice Live et suites Twitch backend. Aucun endpoint ou pouvoir nouveau. |
+| U17 P2 | CORRECTED+TEST | Succès local distingué de publication partielle ; échec refresh Desktop explicitement signalé. `desktop-planning-editor.node.test.mjs` injecte provider en erreur et vérifie avertissement ; mobile conserve états/erreurs fournisseur dans agenda. |
+| U18 P2 | CORRECTED+TEST | WizeBot n’annonce plus events sans pipeline ; conserve configuration/test existants. `api-v1.test.ts` vérifie absence events ; registre modules cohérent. |
+| U19 P1 | CORRECTED+TEST | Ancien profil sans startMode avec Live mais sans Intro migre vers Live ; choix explicites préservés. `cb52-upgrade.test.ts` : 4 variantes, persistance et redémarrage ; aucune scène réécrite. |
+| U20 P2 | CORRECTED+TEST | Panne GET Soundboard isolée, Runtime reste disponible, diagnostic local Sons. `desktop-audit.node.test.mjs` injecte HTTP 503 et vérifie Runtime PC. |
 
-## Travail restant — non déclaré corrigé
+Aucun finding source différé. Les seules validations différées sont celles nécessitant matériel, comptes réels ou SDK/affichage absents. Le contrat mobile conserve 5 onglets Accueil/Live/Sons/Planning/Plus, sans palette globale/FAB, cockpit Live, Sons complet, agenda/éditeur, état connexion, Focus et thèmes clair/sombre/OLED.
 
-- Confronter chaque F/U à ses reproductions et valider que les hotfixes utilisateur exacts ont été remplacés. Impossible de certifier « tous les P1 » actuellement.
-- Terminer les scénarios E2E de round-trip mobile des exceptions, description d'occurrence et confirmation de portée Twitch ; vérifier les brouillons modifiés pendant les requêtes et les sélections de formulaires asynchrones.
-- Qualifier/corriger les autres cas explicitement cités : Focus effectif, sélection Sons, sliders/search, feedback partiel, capacités/config/discovery/diagnostics, Soundboard readiness, restauration VOD/modération Desktop V2. Ce sont des travaux restants, **pas des validations prétendument bloquées par un fournisseur**.
-- Examiner U19 avant toute migration de données. Aucun format ni migration destructrice inventé.
-- Le micro principal est conservé dans le mixer lorsqu'il figure dans les inputs OBS ; traitement UX d'une source configurée mais absente à confronter au rapport.
+## Validations de reprise
 
-## Exécutions
+Commandes lancées dans ce worktree. `npm test` choisit lui-même un répertoire temporaire writable hors dépôt : aucune dépendance à un TMPDIR dans le repo. Pour les CLI tsx/packaging dans ce sandbox, `TMPDIR=/var/lib/codexbridge/.npm/cb52-validation` ; cache navigateur `PLAYWRIGHT_BROWSERS_PATH=$PWD/node_modules/.cache/ms-playwright`, cache Electron local ignoré. Ces variables ne sont pas des identifiants développeur.
 
-Les variables locales TMPDIR et caches Electron/Playwright/Gradle ont été dirigées vers des répertoires ignorés du worktree pour respecter le sandbox. Chromium a été installé localement. Les premiers échecs liés aux caches et les attentes obsolètes ont été corrigés avant relance.
+| Commande | Résultat final |
+| --- | --- |
+| `npm test` | **PASS** : 643 tests Vitest (91 fichiers) + 114 tests Node ; aucun skip. Inclut build TypeScript, E2E Chromium Desktop, compilation Java et tests de politique native. |
+| `npm run test:browser` | **PASS** : 13 scénarios Playwright mobile, dont WS/races, brouillons, DOM/focus et round-trip récurrence/description. |
+| `npm run build` | **PASS**, également réexécuté par `npm test` et le packaging final. |
+| `npm run security:check` | **PASS** : 274 fichiers. |
+| `npm run check:shipped-js` | **PASS** : 30 fichiers JavaScript livrés. |
+| `npm run desktop:package` | **PASS** : paquet Windows x64 et `desktop:check-package` ASAR ; variables GOOGLE_CLIENT_SECRET/GOOGLE_CLIENT_ID/TWITCH_CLIENT_ID retirées de l’environnement. |
+| `npm run android:sync` | **PASS** : assets reconstruits depuis apps/mobile. |
+| `npm run desktop:smoke` | **ENV_BLOCKED** : 4 scénarios ne peuvent lancer Electron, erreur « Missing X server or $DISPLAY ». Aucun PASS Electron revendiqué. |
+| `npm run android:check` | **ENV_BLOCKED** après sync et syntaxe JS : SDK location not found. Lint/tests/build Gradle non validés. |
+| `npm run android:build` | **ENV_BLOCKED** : SDK location not found avant compilation Release. Aucune APK réelle validée. |
+| `git diff --check` | **PASS**. |
 
-- `npm test` : **PASS**, 632 tests Vitest et 112 tests Node, aucun skip. Comprend build TypeScript, E2E Chromium, compilation Java via stubs et tests de politique Java ; ce dernier n'est pas un build Android.
-- `npm run test:browser` : **PASS**, 10 scénarios Playwright réseau/mobile.
-- `npm run build` : **PASS**.
-- `npm run security:check` et `npm run check:shipped-js` : **PASS** (sécurité : 285 fichiers ; syntaxe : 30 fichiers).
-- `npm run desktop:package` : paquet Windows x64 construit sans variables développeur Google/Twitch ; contrôle ASAR réel **PASS**, incluant exclusion des logs et identifiants Google/Twitch publics. Aucune publication.
-- `npm run desktop:smoke` : **BLOCKED_ENVIRONMENT**, 4 lancements Electron impossibles : aucun serveur X / DISPLAY ; pas de PASS fonctionnel Electron.
-- `npm run android:check` : assets synchronisés et syntaxe JS vérifiée, puis **BLOCKED_ENVIRONMENT** : SDK Android absent. Lint/tests/build Gradle non validés.
-- `git diff --check` : **PASS**.
+Les premiers essais révélant des attentes de tests obsolètes ou une variable de fixture incorrecte ont été corrigés, puis les suites ont été relancées intégralement. Les erreurs d’écriture des caches tsx/Android ont été contournées avec des répertoires autorisés (`ANDROID_USER_HOME` et `GRADLE_USER_HOME` sous android/.gradle, ignorés et exclus du package). Les blocages restants sont l’absence réelle de DISPLAY et du SDK. Aucun reset/revert des corrections produites après b96237d.
 
-## Tests humains courts — HUMAN_TEST_REQUIRED
+## HUMAN_TEST_REQUIRED
 
-1. Windows, paquet produit, sans env développeur : démarrer, configurer Google via stockage sécurisé, authentifier, redémarrer et vérifier calendrier/Planning. Inspecter que le secret n'est ni dans distribution.json ni réaffiché dans le renderer.
-2. Occuper/réserver 48132 sur Windows : démarrage explicitement en échec, aucun port alternatif. Libérer le port, redémarrer, vérifier pairing mobile, callback Google/Streamlabs et URL timer sur 48132.
-3. OBS réel : timer Browser Source sur `http://127.0.0.1:48132/overlay/timer/`, attaché et activé ; Start obligatoire autorisé. Désactiver/détacher la source, changer son port ou arrêter HTTP : Start refusé. Vérifier le rendu visible, pas seulement le refresh.
-4. Twitch réel Desktop et Android : modifier un segment récurrent, vérifier titre/horaire/durée et détail d'une erreur fournisseur ; annuler puis confirmer la suppression de toute la série.
-5. Après disponibilité SDK : `npm run android:check` et `npm run android:build`, puis appareil : premier son audible, date locale autour de minuit, occurrence et série avec exceptions, édition overnight/multijour, suppression ONLINE_PC, contrat des 5 onglets/thèmes/Focus.
+1. **Windows / port / OBS** : lancer le paquet sans env développeur. Avec 48132 occupé ou réservé, obtenir un échec explicite sans port alternatif. Libérer puis vérifier pairing/callbacks/URL timer sur 48132. Dans OBS, vérifier pixels timer et audio Soundboard réels ; désactiver/détacher la source, couper HTTP, muter audio ou retirer les pistes : obtenir un refus/diagnostic, pas un faux état prêt.
+2. **Google réel** : renseigner le secret via stockage sécurisé, autoriser le compte, sélectionner un calendrier writable, créer/modifier un événement, redémarrer. Vérifier secret absent de distribution.json/renderer ; refus clair avec calendrier readonly.
+3. **Twitch réel Desktop + Android** : modifier seulement le titre d’un segment récurrent, puis horaire/durée/catégorie ; vérifier résultat et erreur fournisseur utile sans token. Annuler puis confirmer la suppression de toute la série. Tester les actions VOD/modération sur contenu/compte de test.
+4. **APK réelle** après SDK : `npm run android:check`, `npm run android:build`, installer puis premier son, pairing/restart, édition série avec exception/timezone, occurrence avec description, minuit Paris et overnight/multijour, suppression ONLINE_PC, 5 onglets/thèmes/Focus. Vérifier les races de saisie et rotation/reprise sur appareil.
 
-Pour exécuter les nouvelles gates hors sandbox : `npm ci`, `npx playwright install chromium`, `npm test`, puis `npm run release:check` sur une machine permettant Electron. Le paquet Windows doit être exécuté sur Windows via `STREAMDASHBOARD_PACKAGED_EXE` et `npm run desktop:package-smoke`.
+Sur machine avec affichage : `npm run release:check`. Pour le binaire Windows produit : définir `STREAMDASHBOARD_PACKAGED_EXE`, puis `npm run desktop:package-smoke`. Aucun PASS Electron/Android réel n’est déduit du seul packaging ou des stubs Java.

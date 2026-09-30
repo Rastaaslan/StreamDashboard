@@ -4,7 +4,7 @@ import { ObsSoundboardPlayback, ObsSoundboardSetup, OBS_SOUNDBOARD_INPUT, type O
 function mockObs(connected = true) {
   let ended: ((name: string) => void) | undefined;
   const obs: ObsSoundboardClient = {
-    state: { connected },
+    state: { connected }, verifySoundboardPlayback: vi.fn(async () => undefined),
     setInputSettings: vi.fn(async () => undefined), volume: vi.fn(async () => undefined),
     restartMedia: vi.fn(async () => undefined), stopMedia: vi.fn(async () => undefined),
     setMonitorType: vi.fn(async () => undefined), onMediaEnded: vi.fn(listener => { ended = listener; return () => { ended = undefined; }; }),
@@ -17,6 +17,7 @@ function setupObs() {
     state: { connected: true, scenes },
     setInputSettings: vi.fn(async()=>undefined), volume: vi.fn(async()=>undefined), restartMedia: vi.fn(async()=>undefined), stopMedia: vi.fn(async()=>undefined),
     setMonitorType: vi.fn(async()=>undefined), onMediaEnded: vi.fn(()=>()=>undefined),
+    sceneSourceEnabled: vi.fn(async scene=>attached.has(scene)), inputAudioReadiness: vi.fn(async()=>({active:true,audible:true})),
     inputKind: vi.fn(async()=>kind), sceneExists: vi.fn(scene=>scenes.includes(scene)),
     sceneHasSource: vi.fn(async scene=>attached.has(scene)),
     createMediaInput: vi.fn(async scene=>{kind='ffmpeg_source';attached.add(scene)}),
@@ -73,4 +74,22 @@ it('ends soundboard playback and releases listeners when OBS disappears', async 
   changed();
   await session.finished;
   expect(off).toHaveBeenCalledOnce();
+});
+
+it.each([{ active: false, audible: true }, { active: true, audible: false }])('never reports ready when audio usability is %j', async audio => {
+  const { obs } = setupObs();
+  obs.inputAudioReadiness = vi.fn(async () => audio);
+  const status = await new ObsSoundboardSetup(obs).ensure(['Gameplay']);
+  expect(status.ready).toBe(false);
+  expect(status.diagnostic).toMatch(/activation|volume/);
+});
+it('reports attached but disabled source as not ready', async () => {
+  const { obs } = setupObs(); obs.sceneSourceEnabled = vi.fn(async () => false);
+  const status = await new ObsSoundboardSetup(obs).ensure(['Gameplay']);
+  expect(status).toMatchObject({ ready: false, attachedScenes: ['Gameplay'], inactiveScenes: ['Gameplay'] });
+});
+it('does not restart a sound when the OBS audio path cannot be verified', async () => {
+  const { obs } = mockObs(); obs.verifySoundboardPlayback = vi.fn(async () => { throw new Error('Source inactive'); });
+  await expect(new ObsSoundboardPlayback(obs).play({ file: '/x.wav', volume: 1, outputId: 'obs' })).rejects.toThrow('Source inactive');
+  expect(obs.restartMedia).not.toHaveBeenCalled();
 });

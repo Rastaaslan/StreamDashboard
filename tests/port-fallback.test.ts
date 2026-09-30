@@ -82,3 +82,12 @@ it('preserves pairing and credentials across fixed-port Desktop restarts', async
   expect(await ticket.json()).toHaveProperty('ticket');
   expect(runtime.dashboard.state().runtime.port).toBe(runtime.dashboard.port);
 });
+
+it('reports corrupt Desktop configuration without silently replacing it or leaking its contents', async () => {
+  await options(); desktop.userData = directory;
+  await mkdir(path.join(directory, 'config'));
+  await writeFile(path.join(directory, 'config', 'dashboard.json'), '{"token":"PRIVATE", invalid');
+  await expect(startDesktopRuntime()).rejects.toThrow('Configuration utilisateur Desktop illisible');
+  const { readFile } = await import('node:fs/promises');
+  expect(await readFile(path.join(directory, 'config', 'dashboard.json'), 'utf8')).toContain('PRIVATE');
+});

@@ -3,7 +3,7 @@ import { execFileSync } from 'node:child_process';
 import { mkdirSync, mkdtempSync, writeFileSync, rmSync } from 'node:fs';
 import path from 'node:path';
 
-// Signature-only stubs: this checks Java compilation, not Android/OAuth runtime behavior.
+// Android signature stubs and a map-backed JSONObject exercise payload policy, not Android/OAuth runtime.
 test('ProviderBridge compiles with javac and accepts only idempotent deletion responses', t => {
   try { execFileSync('javac', ['-version'], { stdio: 'inherit' }); }
   catch (error) { if (error.code !== 'ENOENT') throw error; t.skip('javac unavailable'); return; }
@@ -19,14 +19,16 @@ test('ProviderBridge compiles with javac and accepts only idempotent deletion re
     'android/webkit/JavascriptInterface.java': 'package android.webkit; public @interface JavascriptInterface {}',
     'org/json/JSONException.java': 'package org.json; public class JSONException extends Exception {}',
     'org/json/JSONObject.java': `package org.json; public class JSONObject {
+      private final java.util.Map<String,Object> values = new java.util.HashMap<>();
+      public String toString() { return values.toString(); }
       public JSONObject() {} public JSONObject(String s) throws JSONException {}
-      public JSONObject put(String k,Object v) throws JSONException { return this; }
-      public String getString(String k) throws JSONException { return ""; }
-      public String optString(String k) { return ""; } public String optString(String k,String d) { return d; }
+      public JSONObject put(String k,Object v) throws JSONException { values.put(k,v); return this; }
+      public String getString(String k) throws JSONException { return (String)values.get(k); }
+      public String optString(String k) { return optString(k, ""); } public String optString(String k,String d) { return (String)values.getOrDefault(k,d); }
       public long optLong(String k) { return 0; } public long optLong(String k,long d) { return d; }
-      public boolean optBoolean(String k) { return false; } public boolean has(String k) { return false; }
+      public boolean optBoolean(String k) { return false; } public boolean has(String k) { return values.containsKey(k); }
       public JSONObject getJSONObject(String k) throws JSONException { return this; }
-      public JSONObject optJSONObject(String k) { return this; }
+      public JSONObject optJSONObject(String k) { return (JSONObject)values.get(k); }
       public JSONArray getJSONArray(String k) throws JSONException { return null; }
       public JSONArray optJSONArray(String k) { return null; }
     }`,
@@ -44,6 +46,13 @@ test('ProviderBridge compiles with javac and accepts only idempotent deletion re
       public static void main(String[] args) throws Exception {
         String diagnostic = ProviderBridge.safeProviderMessage("Invalid duration token-secret", java.util.Map.of("Authorization", "Bearer token-secret"));
         if (!diagnostic.equals("Invalid duration [redacted]")) throw new AssertionError(diagnostic);
+
+        org.json.JSONObject original = new org.json.JSONObject().put("title", "Old").put("start_time", "2020-01-01T18:00:00Z").put("end_time", "2020-01-01T19:00:00Z").put("category", new org.json.JSONObject().put("id", "42"));
+        org.json.JSONObject event = new org.json.JSONObject().put("title", "New").put("startAtUtc", "2020-01-01T18:00:00Z").put("endAtUtc", "2020-01-01T19:00:00Z").put("twitchCategoryId", "42");
+        org.json.JSONObject patch = ProviderBridge.twitchSchedulePayload(event, original);
+        if (!patch.getString("title").equals("New") || patch.has("start_time") || patch.has("duration") || patch.has("timezone") || patch.has("category_id")) throw new AssertionError("Recurring title PATCH overspecified: " + patch);
+        event.put("endAtUtc", "2020-01-01T20:00:00Z");
+        if (!ProviderBridge.twitchSchedulePayload(event, original).getString("duration").equals("120")) throw new AssertionError("Duration must be a string");
 
         for (String code : new String[]{"INVALID_PAYLOAD", "INVALID_LINK", "REAUTH_REQUIRED", "HTTP_400", "HTTP_401", "HTTP_403", "HTTP_404", "HTTP_405", "HTTP_410", "HTTP_412", "HTTP_413", "HTTP_415", "HTTP_422", "HTTP_429"}) {
           if (!ProviderBridge.isDefinitiveNonCreation(code)) throw new AssertionError(code);

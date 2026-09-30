@@ -94,7 +94,7 @@ describe('Desktop V2 promu en production', () => {
   });
 
   it('replace les fonctions Twitch et Streamer Pings dans leur contexte naturel', () => {
-    expect(renderer).toContain("items:['Soutiens','Alertes viewers']");
+    expect(renderer).toContain("items:['Soutiens','Alertes viewers','VOD et modération']");
     expect(renderer).toContain("item==='Alertes viewers'");
     expect(renderer).toContain('id="live-twitch-settings"');
     expect(renderer).toContain('data-live-twitch-category-search');

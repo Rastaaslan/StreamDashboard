@@ -10,7 +10,7 @@ export interface DesktopRuntime { dashboard: DashboardServerHandle; logger: Desk
 
 export async function startDesktopRuntime(): Promise<DesktopRuntime> {
   let distribution: { twitchClientId?: string; googleClientId?: string } = {};
-  try { distribution = JSON.parse(await readFile(path.join(app.getAppPath(), 'resources', 'distribution.json'), 'utf8')); } catch { /* development may use the environment */ }
+  try { distribution = JSON.parse(await readFile(path.join(app.getAppPath(), 'resources', 'distribution.json'), 'utf8')); } catch (error) { if ((error as NodeJS.ErrnoException).code !== 'ENOENT' || app.isPackaged) throw new Error('Configuration publique Desktop absente ou illisible. Réinstallez le paquet.'); }
   const userData = app.getPath('userData');
   const logger = new DesktopLogger(path.join(userData, 'logs'));
   let launchObs = false; let obsExecutablePath: string | undefined; let remoteEnabled = false;
@@ -19,7 +19,7 @@ export async function startDesktopRuntime(): Promise<DesktopRuntime> {
     launchObs = config.settings?.launchObs === true;
     obsExecutablePath = typeof config.settings?.obsExecutablePath === 'string' ? config.settings.obsExecutablePath : undefined;
     remoteEnabled = config.settings?.remoteEnabled === true;
-  } catch { /* first run */ }
+  } catch (error) { if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw new Error('Configuration utilisateur Desktop illisible. Conservez dashboard.json et consultez les diagnostics.'); }
   const obsResult = await launchObsIfRequested(launchObs, obsExecutablePath);
   await logger.info(obsResult.detail).catch(() => undefined);
   const secretStore = new ElectronSecretStore(userData);

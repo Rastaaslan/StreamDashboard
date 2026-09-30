@@ -36,7 +36,7 @@ const esc=value=>String(value??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;
 const uid=()=>globalThis.crypto?.randomUUID?.()||`cmd_${Date.now()}_${Math.random().toString(36).slice(2)}`;
 const viewModules={live:['obs'],sounds:['soundboard'],planning:['planning']};
 const campRequirements={
-  'Préparation':[],'Notes':['notes'],'Templates':['templates'],'Soutiens':['streamlabs'],
+  'VOD et modération':['twitch'],'Préparation':[],'Notes':['notes'],'Templates':['templates'],'Soutiens':['streamlabs'],
   'Automatisations':['automations'],'Médias OBS':['obs'],'Alertes viewers':['streamerPings'],'Connexions':[],'Personnalisation':[],'Réglages':[],'Diagnostics':[]
 };
 const moduleEnabled=id=>state.productProfile?.modules?.[id]!==false;
@@ -209,13 +209,13 @@ async function refreshRuntime(preserveConnections=false){
   try{
     const [dashboard,soundboard,setup,product,connections]=await Promise.all([
       request('/api/v1/state'),
-      request('/api/v1/soundboard'),
+      request('/api/v1/soundboard').catch(()=>{state.soundboardError='Soundboard indisponible. Réessaie depuis Sons.';return null}),
       request('/api/v1/soundboard/obs/status').catch(()=>null),
       request('/api/v1/profile'),
       request('/api/v1/connections')
     ]);
     applyProduct(product,connections);
-    if((state.dashboardVersion||0)===snapshotVersion)applyDashboard(dashboard);state.soundboard=soundboard;state.sounds=soundboard.sounds||[];state.obsSetup=setup;
+    if((state.dashboardVersion||0)===snapshotVersion)applyDashboard(dashboard);if(soundboard){state.soundboardError='';state.soundboard=soundboard;state.sounds=soundboard.sounds||[];}state.obsSetup=setup;
     runtimeUi(true,dashboard.obs?.connected?'OBS connecté':'Runtime connecté · OBS hors ligne');connectRuntimeSocket();if(state.view==='live'||(preserveConnections&&state.view==='camp'&&state.campItem==='Connexions'&&view.querySelector('[data-connection-id]')))updateRuntimeView();else render();return true;
   }catch(error){runtimeUi(false,'Runtime indisponible');render();toast(error.message,true);return false}
 }
@@ -229,20 +229,21 @@ function applyDashboard(d){
     scene:d.obs?.scene||'—'
   };
   const inputs=d.obs?.inputs||{};const active=Array.isArray(d.obs?.activeAudioInputs)?d.obs.activeAudioInputs:Object.keys(inputs);
-  state.audio=[...new Set([...active,d.settings?.primaryMicInput].filter(Boolean))].filter(name=>inputs[name]).map(name=>{const input=inputs[name];const db=Number.isFinite(input.volumeDb)?input.volumeDb:-100;return{name,muted:input.muted,volume:Math.round(Math.max(0,Math.min(1,input.volume??0))*100),level:Math.round(Math.max(0,Math.min(100,((db+60)/66)*100))),primary:d.settings?.primaryMicInput===name}});
+  state.audio=[...new Set([...active,d.settings?.primaryMicInput].filter(Boolean))].map(name=>{const unavailable=!inputs[name],input=inputs[name]||{};const db=Number.isFinite(input.volumeDb)?input.volumeDb:-100;return{name,unavailable,muted:input.muted,volume:Math.round(Math.max(0,Math.min(1,input.volume??0))*100),level:Math.round(Math.max(0,Math.min(100,((db+60)/66)*100))),primary:d.settings?.primaryMicInput===name}});
   const from=Date.now()-366*86_400_000,to=Date.now()+730*86_400_000;
   state.planning=expandRecurringItems(d.planning||[],{from,to}).sort((a,b)=>Date.parse(a.startAtUtc)-Date.parse(b.startAtUtc)).map(item=>{const start=new Date(item.startAtUtc);return{raw:item,day:start.toLocaleDateString('fr-FR',{weekday:'long',day:'numeric'}),date:start.toLocaleDateString('fr-FR'),time:start.toLocaleTimeString('fr-FR',{hour:'2-digit',minute:'2-digit'}),title:item.title,kind:item.category==='live'?'Twitch':item.category==='personal'?'Personnel':'Production'}});
   syncStreamerPing();
 }
-function audioRows(){return state.audio.map(a=>`<div class="audio-row" data-audio-name="${esc(a.name)}"><b>${esc(a.name)}${a.primary?' · principal':''}</b><button data-mute="${esc(a.name)}" aria-label="${a.muted?'Réactiver':'Couper'} ${esc(a.name)}">${a.muted?'OFF':'ON'}</button><div class="meter"><i style="width:${a.level}%"></i></div><input data-audio-volume="${esc(a.name)}" aria-label="Volume ${esc(a.name)}" type="range" min="0" max="100" value="${a.volume}"><span>${a.volume}%</span></div>`).join('')}
+function audioRows(){return state.audio.map(a=>`<div class="audio-row" data-audio-name="${esc(a.name)}"><b>${esc(a.name)}${a.primary?' · principal':''}${a.unavailable?' · absent':''}</b><button ${a.unavailable?'disabled':''} data-mute="${esc(a.name)}" aria-label="${a.muted?'Réactiver':'Couper'} ${esc(a.name)}">${a.muted?'OFF':'ON'}</button><div class="meter"><i style="width:${a.level}%"></i></div><input ${a.unavailable?'disabled':''} data-audio-volume="${esc(a.name)}" aria-label="Volume ${esc(a.name)}" type="range" min="0" max="100" value="${a.volume}"><span>${a.volume}%</span></div>`).join('')}
 function bindAudioControls(){
   document.querySelectorAll('[data-mute]').forEach(button=>button.onclick=async()=>{
-    const audio=state.audio.find(value=>value.name===button.dataset.mute);if(!audio)return;
+    const audio=state.audio.find(value=>value.name===button.dataset.mute);if(!audio||audio.unavailable)return;
     record('obs.audio.mute',{inputName:audio.name,muted:!audio.muted});
     if(!state.runtime){audio.muted=!audio.muted;render();return}
     try{await dashboardCommand({type:'obs.mute',input:audio.name,muted:!audio.muted});await refreshRuntime()}catch(error){toast(error.message,true)}
   });
   document.querySelectorAll('[data-audio-volume]').forEach(slider=>slider.onchange=async()=>{
+    if(state.audio.find(value=>value.name===slider.dataset.audioVolume)?.unavailable)return;
     const volume=Number(slider.value)/100;
     if(!state.runtime){const audio=state.audio.find(value=>value.name===slider.dataset.audioVolume);if(audio)audio.volume=Number(slider.value);return}
     try{await dashboardCommand({type:'obs.volume',input:slider.dataset.audioVolume,volume})}catch(error){toast(error.message,true)}
@@ -258,6 +259,10 @@ const sceneEntries=()=>{
 };
 const sceneActive=entry=>entry.custom?state.scene===entry.scene:logicalScene(state.scene)===entry.label;
 const scenes=()=>`<div class="scene-grid">${sceneEntries().map(entry=>`<button class="scene ${sceneActive(entry)?'active':''}" data-scene="${esc(entry.label)}" aria-pressed="${sceneActive(entry)}">${esc(entry.label)}</button>`).join('')}</div>`;
+function bindSoundPads(){
+  document.querySelectorAll('[data-sound]').forEach(b=>b.onclick=()=>void playSound(b.dataset.sound));
+  document.querySelectorAll('[data-edit-sound]').forEach(b=>b.onclick=event=>{event.stopPropagation();openSoundDialog(b.dataset.editSound)});
+}
 function filteredSounds(){const query=state.search.trim().toLowerCase();return(state.sounds||[]).filter(sound=>(!query||String(sound.name).toLowerCase().includes(query)||String(sound.category).toLowerCase().includes(query))&&(!state.soundCategory||sound.category===state.soundCategory)&&(!state.soundFavorites||sound.favorite===true))}
 const sounds=(editable=false)=>Object.entries(filteredSounds().reduce((groups,s)=>{(groups[s.category||'Sans catégorie']??=[]).push(s);return groups},{})).map(([category,items])=>`<div class="group"><h3>${esc(category)}</h3><div class="pads">${items.map(s=>`<div class="sound-item"><button class="pad ${s.sourceAvailable===false?'missing':''}" data-sound="${esc(s.id)}" ${s.enabled===false?'disabled':''}>${esc(s.name)}${s.sourceAvailable===false?' · absent':''}</button>${editable?`<button class="edit-sound" data-edit-sound="${esc(s.id)}" aria-label="Modifier ${esc(s.name)}">•••</button>`:''}</div>`).join('')}</div></div>`).join('');
 function onboardingCard(){
@@ -367,7 +372,7 @@ function updateLiveTelemetry(){
       button.setAttribute('aria-label',row.querySelector('[data-mute]').getAttribute('aria-label'));
       current.querySelector('.meter i').style.width=`${audio.level}%`;
       current.querySelector('span').textContent=`${audio.volume}%`;
-      const slider=current.querySelector('[data-audio-volume]');if(document.activeElement!==slider)slider.value=audio.volume;
+      const slider=current.querySelector('[data-audio-volume]');slider.disabled=audio.unavailable;if(document.activeElement!==slider)slider.value=audio.volume;
     }
     existing.forEach(row=>row.remove());bindAudioControls();
   }
@@ -379,7 +384,7 @@ function updateLiveTelemetry(){
 function soundboard(){
   const setup=state.obsSetup,soundsList=state.sounds||[],categories=[...new Set(soundsList.map(sound=>sound.category).filter(Boolean))].sort((a,b)=>a.localeCompare(b,'fr'));
   const playback=state.soundboard?.currentPlayback,current=soundsList.find(sound=>sound.id===playback?.soundId);
-  const label=state.runtime?(setup?.ready?'Mix OBS prêt':setup?.connected?'Configuration OBS à terminer':'OBS hors ligne'):'Mode Démo';
+  const label=state.soundboardError||(state.runtime?(setup?.ready?'Mix OBS prêt':setup?.connected?'Configuration OBS à terminer':'OBS hors ligne'):'Mode Démo');
   return`<div class="stack soundboard-workspace">
     <section class="soundboard-hero">
       <div><span class="eyebrow">BIBLIOTHÈQUE</span><h2>Soundboard</h2><p>${esc(label)} · ${soundsList.length} ${soundsList.length===1?'son':'sons'}</p></div>
@@ -421,7 +426,7 @@ function planning(){
 }
 const campGroups=[
   {label:'PRÉPARER',items:['Préparation','Notes','Templates']},
-  {label:'COMMUNAUTÉ',items:['Soutiens','Alertes viewers']},
+  {label:'COMMUNAUTÉ',items:['Soutiens','Alertes viewers','VOD et modération']},
   {label:'AUTOMATISER',items:['Automatisations','Médias OBS']},
   {label:'APPLICATION',items:['Connexions','Personnalisation','Réglages','Diagnostics']}
 ];
@@ -549,6 +554,7 @@ async function loadCampData(item=state.campItem){
   try{
     if(['Préparation','Notes','Templates'].includes(item))await loadCompanion();
     else if(item==='Soutiens')await loadSupports();
+    else if(item==='VOD et modération')await loadTwitchArchive();
     else if(item==='Automatisations')await loadAutomations();
     else if(item==='Connexions')state.streamlabsOAuth=await request('/api/v1/supports/streamlabs/oauth/status');
     else if(item==='Diagnostics')await loadDiagnostics();
@@ -755,6 +761,38 @@ function bindProductPersonalization(){
     }catch(error){toast(error.message,true)}
   });
 }
+const archiveLink=value=>{try{const url=new URL(value);return url.protocol==='https:'&&(url.hostname==='twitch.tv'||url.hostname.endsWith('.twitch.tv'))?url.href:''}catch{return''}};
+async function loadTwitchArchive(kind=state.archiveKind||'videos',append=false){
+  if(!state.runtime||!state.dashboard?.twitch?.connected)return;
+  const result=await request(`/api/v1/twitch/${kind}${append&&state.archiveCursor?`?after=${encodeURIComponent(state.archiveCursor)}`:''}`);
+  state.archiveKind=kind;state.archiveItems=append?[...(state.archiveItems||[]),...(result.items||[])]:result.items||[];state.archiveCursor=result.cursor;
+}
+function twitchToolsContent(){
+  const connected=state.runtime&&state.dashboard?.twitch?.connected;
+  return `<section class="section"><h2>VOD et clips Twitch</h2><div class="toolbar"><button data-archive="videos" ${connected?'':'disabled'}>VOD</button><button data-archive="clips" ${connected?'':'disabled'}>Clips</button></div>${(state.archiveItems||[]).map(item=>`<article class="provider-line"><b>${esc(item.title)}</b>${archiveLink(item.url)?`<a href="${esc(archiveLink(item.url))}" target="_blank" rel="noopener noreferrer">Ouvrir</a>`:''}${state.archiveKind!=='clips'?`<button data-delete-vod="${esc(item.id)}" ${twitchCan('deleteVideo')?'':'disabled'}>Supprimer la VOD</button>`:''}</article>`).join('')}<button data-archive-more ${connected&&state.archiveCursor?'':'disabled'}>Charger la suite</button></section>
+    <section class="section"><h2>Modération Twitch</h2><form id="desktop-moderation"><label>Identifiant utilisateur<input name="userId" inputmode="numeric"></label><label>Identifiant message<input name="messageId"></label><label>Motif<input name="reason" maxlength="500"></label><div class="toolbar">${[['deleteMessage','Supprimer le message'],['timeout','Timeout 10 min'],['ban','Bannir'],['unban','Débannir']].map(([action,label])=>`<button type="submit" value="${action}" ${twitchCan(action)?'':'disabled'}>${label}</button>`).join('')}</div><p class="help">Les actions nécessitent les permissions Twitch correspondantes et une confirmation.</p></form></section>`;
+}
+function bindTwitchTools(){
+  document.querySelectorAll('[data-archive]').forEach(button=>button.onclick=async()=>{try{await loadTwitchArchive(button.dataset.archive);render()}catch(error){toast(error.message,true)}});
+  document.querySelector('[data-archive-more]')?.addEventListener('click',async()=>{try{await loadTwitchArchive(state.archiveKind,true);render()}catch(error){toast(error.message,true)}});
+  document.querySelectorAll('[data-delete-vod]').forEach(button=>button.onclick=async()=>{
+    const id=button.dataset.deleteVod;if(!twitchCan('deleteVideo'))return;
+    if(prompt(`Suppression définitive : saisir DELETE ${id}`)!==`DELETE ${id}`)return;
+    try{await request(`/api/v1/twitch/videos/${encodeURIComponent(id)}`,{method:'DELETE',body:JSON.stringify({confirmation:`DELETE ${id}`})});await loadTwitchArchive();render();toast('VOD supprimée')}catch(error){toast(error.message,true)}
+  });
+  const form=document.querySelector('#desktop-moderation');if(form)form.onsubmit=async event=>{
+    event.preventDefault();const action=event.submitter?.value;if(!twitchCan(action))return;
+    const values=new FormData(form),userId=String(values.get('userId')||'').trim(),messageId=String(values.get('messageId')||'').trim();
+    if(action==='deleteMessage'?!messageId:!/^\d+$/.test(userId))return toast('Identifiant Twitch requis.',true);
+    if(!confirm(`Confirmer ${event.submitter.textContent} pour ${action==='deleteMessage'?messageId:userId} ?`))return;
+    try{
+      if(action==='deleteMessage')await request(`/api/v1/twitch/moderation/messages/${encodeURIComponent(messageId)}`,{method:'DELETE'});
+      else if(action==='unban')await request(`/api/v1/twitch/moderation/bans/${encodeURIComponent(userId)}`,{method:'DELETE'});
+      else await request('/api/v1/twitch/moderation/bans',{method:'POST',body:JSON.stringify({userId,reason:String(values.get('reason')||''),...(action==='timeout'?{duration:600}:{})})});
+      toast('Modération confirmée par Twitch');
+    }catch(error){toast(error.message,true)}
+  };
+}
 function settingsContent(){return generalSettingsContent()}
 function campContent(item){
   if(item==='Personnalisation')return personalizationContent();
@@ -763,6 +801,7 @@ function campContent(item){
   if(item==='Notes')return notesContent();
   if(item==='Templates')return templatesContent();
   if(item==='Soutiens')return supportsContent();
+  if(item==='VOD et modération')return twitchToolsContent();
   if(item==='Alertes viewers')return `<div class="connection-stack">${streamerPingSettings()}${pingHistoryContent()}</div>`;
   if(item==='Automatisations')return automationsContent();
   if(item==='Médias OBS')return mediaContent();
@@ -817,6 +856,7 @@ function applyActionGuards(){
     if(button.dataset.connectionAction)guard(runtimeReason||reasons[button.dataset.connectionAction]||'');
     if(button.type==='submit'&&button.closest('.connection-form,#preview-streamlabs-form,#preview-wizebot-form'))guard(runtimeReason);
     if(button.matches('[data-live-toggle],[data-scene],[data-mute],[data-media-restart],[data-browser-refresh]'))guard(state.runtime?(runtimeReason||obsReason):'');
+    if(button.matches('[data-mute]')&&state.audio.find(input=>input.name===button.dataset.mute)?.unavailable)guard('Source OBS absente.');
     if(button.matches('[data-live-clip],[data-profile-quick-action="clip"]'))guard(!canCreateClip()?'Un live Twitch et l’autorisation clips sont nécessaires.':'');
     if(button.matches('#desktop-chat-form button'))guard(!twitchCan('chatWrite')?'Connecte Twitch avec l’autorisation d’écrire dans le chat.':'');
     if(button.matches('#live-twitch-settings button'))guard(!twitchCan('updateChannel')?'Autorise la modification du titre et de la catégorie Twitch.':'');
@@ -844,6 +884,7 @@ async function ensureObsSoundboardForPlayback(){
   if(setup.wrongInputKind)throw new Error('La source « StreamDashboard • Soundboard » existe dans OBS mais n’est pas une Media Source.');
   if(!setup.inputExists)throw new Error('La Media Source Soundboard OBS n’a pas pu être créée.');
   if(currentScene&&!setup.attachedScenes?.includes(currentScene))throw new Error(`La Soundboard OBS n’est pas présente dans la scène actuelle « ${currentScene} ». Configure cette scène dans Application → Réglages.`);
+  if(setup.ready===false)throw new Error(setup.diagnostic||'La source Soundboard doit être active, non muette et routée vers une piste audio.');
   return setup;
 }
 async function playSound(soundId){record('soundboard.play',{soundId});const sound=(state.sounds||[]).find(value=>value.id===soundId),volume=Math.max(0,Math.min(1,(sound?.volume??1)*state.soundMasterVolume));if(!state.runtime){toast('Lecture simulée');return}try{await ensureObsSoundboardForPlayback();const commandId=uid();const ack=await request('/api/v1/soundboard/play',{method:'POST',body:JSON.stringify({commandId,correlationId:commandId,soundId,volume,issuedAt:new Date().toISOString()})});if(ack.status!=='succeeded')throw new Error(ack.message||'Lecture refusée.');toast('Son envoyé à OBS');await refreshRuntime()}catch(error){toast(error.message,true)}}
@@ -964,8 +1005,7 @@ function bind(){
     try{if(!await refreshRuntime())return;state.preliveCapabilities=await request('/api/v1/twitch/moderation/capabilities');render()}catch(error){render();toast(error.message,true)}
   });
   document.querySelectorAll('[data-scene]').forEach(b=>b.onclick=async()=>{const label=b.dataset.scene,entry=sceneEntries().find(value=>value.label===label),target=entry?.scene||label,command=entry?.custom?{type:'obs.scene',scene:entry.scene}:sceneCommand(label);record('obs.scene.set',{sceneName:target});if(!state.runtime){state.scene=target;toast(`Scène ${label}`);render();return}try{await dashboardCommand(command);await refreshRuntime();toast(`Scène ${label}`)}catch(error){toast(error.message,true)}});
-  document.querySelectorAll('[data-sound]').forEach(b=>b.onclick=()=>void playSound(b.dataset.sound));
-  document.querySelectorAll('[data-edit-sound]').forEach(b=>b.onclick=event=>{event.stopPropagation();openSoundDialog(b.dataset.editSound)});
+  bindSoundPads();
   bindAudioControls();
   document.querySelectorAll('[data-timer]').forEach(b=>b.onclick=async()=>{const action=b.dataset.timer;record(`timer.${action}`);if(!state.runtime){if(action==='toggle')state.timerRunning=!state.timerRunning;if(action==='plus')state.seconds+=60;if(action==='minus')state.seconds=Math.max(0,state.seconds-60);if(action==='reset'){state.seconds=0;state.timerRunning=false}render();return}const command=action==='toggle'?{type:state.timerRunning?'timer.pause':'timer.start'}:action==='plus'?{type:'timer.add',seconds:60}:action==='minus'?{type:'timer.add',seconds:-60}:{type:'timer.reset'};try{await dashboardCommand(command);await refreshRuntime()}catch(error){toast(error.message,true)}});
   document.querySelector('[data-stop]')?.addEventListener('click',async()=>{record('soundboard.stop');if(!state.runtime){toast('Lecture arrêtée');return}try{state.soundboard=await request('/api/v1/soundboard/stop',{method:'POST',body:'{}'});state.sounds=state.soundboard?.sounds||state.sounds;toast('Lecture arrêtée');render()}catch(error){toast(error.message,true)}});
@@ -984,13 +1024,14 @@ function bind(){
     const action=button.dataset.profileQuickAction;
     if(action==='clip'){if(!state.runtime)return toast('Clip simulé');if(!canCreateClip())return toast('Live Twitch et autorisation clips requis.',true);try{await request('/api/v1/twitch/clips',{method:'POST',body:'{}'});toast('Clip Twitch demandé')}catch(error){toast(error.message,true)};return}
     if(action==='timer+60'){if(!state.runtime){state.seconds+=60;render();return}try{await dashboardCommand({type:'timer.add',seconds:60});await refreshRuntime()}catch(error){toast(error.message,true)};return}
-    if(action==='mute-main'){const input=state.audio.find(value=>value.primary);if(!input)return toast('Aucun micro principal actif.',true);if(!state.runtime){input.muted=!input.muted;render();return}try{await dashboardCommand({type:'obs.mute',input:input.name,muted:!input.muted});await refreshRuntime()}catch(error){toast(error.message,true)}}
+    if(action==='mute-main'){const input=state.audio.find(value=>value.primary);if(!input||input.unavailable)return toast('Micro principal absent d’OBS. Vérifie la source configurée.',true);if(!state.runtime){input.muted=!input.muted;render();return}try{await dashboardCommand({type:'obs.mute',input:input.name,muted:!input.muted});await refreshRuntime()}catch(error){toast(error.message,true)}}
   }));
   document.querySelector('#desktop-chat-form')?.addEventListener('submit',async event=>{event.preventDefault();const input=event.currentTarget.elements.namedItem('message'),submitted=String(input?.value||''),message=submitted.trim();if(!message)return;if(!state.runtime)return toast('Message simulé');if(!twitchCan('chatWrite'))return toast('Autorisation chat requise.',true);try{await request('/api/v1/twitch/chat/messages',{method:'POST',body:JSON.stringify({message})});const current=document.querySelector('#desktop-chat-form input');if(current?.value===submitted){current.value='';current.dataset.draftDirty='false'}toast('Message envoyé')}catch(error){toast(error.message,true)}});
   document.querySelector('[data-add-event]')?.addEventListener('click',()=>openEventDialog());
-  document.querySelector('[data-sound-search]')?.addEventListener('input',e=>{state.search=e.currentTarget.value;render()});
+  document.querySelector('[data-sound-search]')?.addEventListener('input',e=>{state.search=e.currentTarget.value;const groups=view.querySelector('.sound-groups');if(groups){groups.innerHTML=sounds(true)||'<p>Aucun son pour ce filtre.</p>';bindSoundPads();applyActionGuards()}});
   document.querySelectorAll('[data-camp]').forEach(b=>b.onclick=()=>{state.campItem=b.dataset.camp;render();void loadCampData(state.campItem)});
   bindPlanning();
+  bindTwitchTools();
   bindConnections();
   bindCampSections();
   bindStreamerPingSettings();
@@ -1147,7 +1188,7 @@ function renderEventProviderStatus(item){
   const conflict=item.conflict;
   if(!providers.length&&!conflict){host.hidden=true;host.replaceChildren();return}
   host.hidden=false;host.innerHTML=`${providers.map(({provider,link})=>`<div class="provider-line"><b>${provider==='twitch'?'Twitch':'Google'}</b><span>${esc(link.status||'—')}${link.lastError?` · ${esc(link.lastError)}`:''}</span>${['error','conflict'].includes(link.status)?`<button type="button" class="secondary" data-provider-retry="${provider}">Réessayer</button>`:''}</div>`).join('')}${conflict?`<div class="provider-line warning"><b>Conflit ${esc(conflict.provider)}</b><span>Choisis la version à conserver.</span><button type="button" class="secondary" data-provider-conflict="${esc(conflict.provider)}" data-strategy="local">Garder StreamDashboard</button><button type="button" class="secondary" data-provider-conflict="${esc(conflict.provider)}" data-strategy="remote">Garder distant</button></div>`:''}`;
-  host.querySelectorAll('[data-provider-retry]').forEach(button=>button.onclick=async()=>{try{const id=eventCanonical(state.eventEdit?.scope==='series'?state.eventEdit?.series:state.eventEdit?.occurrence)?.id||item.id;const next=await request(`/api/v1/planning/${encodeURIComponent(id)}/retry/${encodeURIComponent(button.dataset.providerRetry)}`,{method:'POST',body:JSON.stringify({confirmRecurring:true})});applyDashboard(next);toast('Synchronisation relancée');document.querySelector('#event-dialog').close();render()}catch(error){toast(error.message,true)}});
+  host.querySelectorAll('[data-provider-retry]').forEach(button=>button.onclick=async()=>{try{if(item.twitchRecurring&&!confirm('Republier toute la série Twitch et ses occurrences futures ?'))return;const id=eventCanonical(state.eventEdit?.scope==='series'?state.eventEdit?.series:state.eventEdit?.occurrence)?.id||item.id;const next=await request(`/api/v1/planning/${encodeURIComponent(id)}/retry/${encodeURIComponent(button.dataset.providerRetry)}`,{method:'POST',body:JSON.stringify({confirmRecurring:item.twitchRecurring===true})});applyDashboard(next);toast('Synchronisation relancée');document.querySelector('#event-dialog').close();render()}catch(error){toast(error.message,true)}});
   host.querySelectorAll('[data-provider-conflict]').forEach(button=>button.onclick=async()=>{try{const id=item.id;const next=await request(`/api/v1/planning/${encodeURIComponent(id)}/conflict/${encodeURIComponent(button.dataset.providerConflict)}`,{method:'POST',body:JSON.stringify({strategy:button.dataset.strategy})});applyDashboard(next);toast('Conflit résolu');document.querySelector('#event-dialog').close();render()}catch(error){toast(error.message,true)}});
 }
 async function searchEventCategory(){
@@ -1182,14 +1223,17 @@ document.querySelector('#event-form').onsubmit=async event=>{
   const item={title:document.querySelector('#event-title').value.trim(),description:document.querySelector('#event-description').value.trim(),...times,category,twitchCategoryId:gameId||undefined,twitchCategoryName:gameName||undefined,desiredPublication:{local:true,twitch:publishTwitch,google:publishGoogle}};
   if(!state.runtime){state.planning.unshift({raw:{...item,id:`demo-${Date.now()}`},day:'Démo',time:start,title:item.title,kind:category==='live'?'Twitch':category});document.querySelector('#event-dialog').close();render();return}
   try{
+    let saved;
     if(!state.eventEdit){
-      item.recurrence=recurrenceFromEventForm();await request('/api/v1/planning',{method:'POST',body:JSON.stringify(item)});
+      item.recurrence=recurrenceFromEventForm();saved=await request('/api/v1/planning',{method:'POST',body:JSON.stringify(item)});
     }else if(state.eventEdit.scope==='occurrence'&&state.eventEdit.occurrence?.seriesId){
-      await request(`/api/v1/planning/${encodeURIComponent(state.eventEdit.occurrence.seriesId)}/occurrence`,{method:'PUT',body:JSON.stringify({occurrenceKey:state.eventEdit.occurrence.occurrenceKey,patch:item})});
+      saved=await request(`/api/v1/planning/${encodeURIComponent(state.eventEdit.occurrence.seriesId)}/occurrence`,{method:'PUT',body:JSON.stringify({occurrenceKey:state.eventEdit.occurrence.occurrenceKey,patch:item})});
     }else{
-      const source=state.eventEdit.scope==='series'?state.eventEdit.series:state.eventEdit.occurrence;item.recurrence=recurrenceFromEventForm()||null;await request(`/api/v1/planning/${encodeURIComponent(source.id)}`,{method:'PUT',body:JSON.stringify({...item,confirmRecurring:true})});
+      const source=state.eventEdit.scope==='series'?state.eventEdit.series:state.eventEdit.occurrence;item.recurrence=recurrenceFromEventForm()||null;if(source.twitchRecurring&&!confirm('Modifier toute la série Twitch et ses occurrences futures ?'))return;saved=await request(`/api/v1/planning/${encodeURIComponent(source.id)}`,{method:'PUT',body:JSON.stringify({...item,confirmRecurring:source.twitchRecurring===true})});
     }
-    document.querySelector('#event-dialog').close();state.eventEdit=null;form.reset();await refreshRuntime();toast('Événement enregistré');
+    const matches=(saved?.planning||[]).filter(value=>value.id===(state.eventEdit?.series?.id||state.eventEdit?.occurrence?.id)||value.title===item.title&&value.startAtUtc===item.startAtUtc);
+    const partial=matches.some(value=>value.syncError||value.conflict||Object.values(value.providerLinks||value.providers||{}).some(link=>['error','conflict','pending'].includes(link.status)));
+    document.querySelector('#event-dialog').close();state.eventEdit=null;form.reset();const refreshed=await refreshRuntime();toast(partial?'Événement enregistré localement · publication fournisseur à vérifier dans le Planning.':refreshed?'Événement enregistré':'Événement enregistré · rafraîchissement impossible, réessaie.',partial||!refreshed);
   }catch(error){toast(error.message,true)}
 };
 document.querySelector('#event-delete').onclick=async()=>{
@@ -1198,7 +1242,7 @@ document.querySelector('#event-delete').onclick=async()=>{
   if(!confirm(target?.twitchRecurring?'Supprimer toute la série Twitch ? Cette action affecte ses occurrences futures.':state.eventEdit.scope==='series'?'Supprimer toute la série ?':'Supprimer cet événement ?'))return;
   try{
     if(state.eventEdit.scope==='occurrence'&&state.eventEdit.occurrence?.seriesId)await request(`/api/v1/planning/${encodeURIComponent(state.eventEdit.occurrence.seriesId)}/occurrence`,{method:'DELETE',body:JSON.stringify({occurrenceKey:state.eventEdit.occurrence.occurrenceKey})});
-    else{const source=state.eventEdit.scope==='series'?state.eventEdit.series:state.eventEdit.occurrence;await request(`/api/v1/planning/${encodeURIComponent(source.id)}?confirmRecurring=true`,{method:'DELETE',body:'{}'})}
+    else{const source=state.eventEdit.scope==='series'?state.eventEdit.series:state.eventEdit.occurrence;await request(`/api/v1/planning/${encodeURIComponent(source.id)}`,{method:'DELETE',body:JSON.stringify({confirmRecurring:source.twitchRecurring===true})})}
     document.querySelector('#event-dialog').close();state.eventEdit=null;await refreshRuntime();toast('Événement supprimé');
   }catch(error){toast(error.message,true)}
 };

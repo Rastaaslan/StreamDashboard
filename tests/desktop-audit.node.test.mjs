@@ -278,6 +278,45 @@ test('Desktop audit: guards, thumbnails, chat focus, destinations and overflow',
     assert.equal(await page.locator('button button').count(), 0);
     assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true, 'Planning overflow');
     assert.deepEqual(await page.evaluate(() => window.unhandledButtons()), []);
+    await page.evaluate(() => { window.__preview.state.campItem = 'Préparation'; });
+    // Auxiliary audio failures must not take the PC runtime offline.
+    await page.route('**/api/v1/soundboard', route => route.fulfill({ status: 503, json: { error: 'Audio unavailable' } }));
+    await page.locator('[data-view="camp"]').click();
+    await page.locator('[data-refresh-prelive]').click();
+    await page.waitForFunction(() => window.__preview.state.soundboardError);
+    assert.equal(await page.locator('#runtime-status').innerText(), 'Runtime PC');
+    await page.locator('[data-view="sounds"]').click();
+    const search = page.locator('[data-sound-search]');
+    const originalSearch = await search.elementHandle();
+    await search.fill('bonjour');
+    assert.equal(await originalSearch.evaluate(node => node.isConnected && node === document.activeElement), true);
+    assert.equal(await search.inputValue(), 'bonjour');
+    await page.evaluate(() => {
+      Object.assign(window.__preview.state.dashboard.twitch.capabilities, { deleteVideo:true,deleteMessage:true,timeout:true,ban:true,unban:true });
+    });
+    await page.route('**/api/v1/twitch/videos', route => route.fulfill({ json: { items: [{id:'42',title:'Archive',url:'https://www.twitch.tv/videos/42'}] } }));
+    const mutations=[];
+    await page.route('**/api/v1/twitch/videos/42', route => { mutations.push({method:route.request().method(),body:route.request().postDataJSON()});return route.fulfill({status:204}); });
+    await page.route('**/api/v1/twitch/moderation/**', route => {mutations.push({method:route.request().method(),url:route.request().url(),body:route.request().postDataJSON()});return route.fulfill({json:{ok:true}});});
+    await page.locator('[data-view="camp"]').click();
+    await page.locator('[data-camp="VOD et modération"]').click();
+    await page.waitForSelector('[data-delete-vod="42"]');
+    page.once('dialog',dialog=>dialog.accept('DELETE 42'));
+    await page.locator('[data-delete-vod="42"]').click();
+    await page.waitForFunction(() => document.querySelector('#toast').textContent === 'VOD supprimée');
+    assert.deepEqual(mutations.shift(),{method:'DELETE',body:{confirmation:'DELETE 42'}});
+    const moderation=page.locator('#desktop-moderation');
+    await moderation.locator('[name="userId"]').fill('123');
+    await moderation.locator('[name="messageId"]').fill('message-1');
+    for(const action of ['deleteMessage','timeout','ban','unban']){
+      page.once('dialog',dialog=>dialog.accept());
+      await moderation.locator(`[value="${action}"]`).click();
+      await page.waitForTimeout(50);
+    }
+    assert.equal(mutations.length,4);
+    assert.equal(mutations[1].body.duration,600);
+    assert.equal(mutations[2].body.duration,undefined);
+    assert.deepEqual(mutations.map(value=>value.method),['DELETE','POST','POST','DELETE']);
     assert.deepEqual(errors, []);
   } finally {
     await browser?.close();

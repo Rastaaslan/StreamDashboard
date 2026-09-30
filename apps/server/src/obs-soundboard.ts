@@ -10,10 +10,13 @@ export interface ObsSoundboardClient {
   restartMedia(inputName: string): Promise<void>;
   stopMedia(inputName: string): Promise<void>;
   setMonitorType(inputName: string, type: 'OBS_MONITORING_TYPE_NONE' | 'OBS_MONITORING_TYPE_MONITOR_AND_OUTPUT'): Promise<void>;
+  verifySoundboardPlayback?(inputName: string): Promise<void>;
   onStateChanged?(listener: () => void): () => void;
   onMediaEnded(listener: (inputName: string) => void): () => void;
 }
 export interface ObsSoundboardSetupClient extends ObsSoundboardClient {
+  sceneSourceEnabled?(sceneName: string, sourceName: string): Promise<boolean>;
+  inputAudioReadiness?(inputName: string): Promise<{ active: boolean; audible: boolean }>;
   inputKind(inputName: string): Promise<string | null>;
   sceneExists(sceneName: string): boolean;
   sceneHasSource(sceneName: string, sourceName: string): Promise<boolean>;
@@ -22,6 +25,7 @@ export interface ObsSoundboardSetupClient extends ObsSoundboardClient {
 }
 export interface ObsSoundboardSetupStatus {
   connected: boolean; inputName: string; inputExists: boolean; inputKind: string | null; wrongInputKind: boolean;
+  inactiveScenes?: string[]; active?: boolean; audible?: boolean; diagnostic?: string;
   targetScenes: string[]; attachedScenes: string[]; missingScenes: string[]; ready: boolean;
 }
 
@@ -44,6 +48,8 @@ export class ObsSoundboardPlayback implements AudioPlayback {
     await this.obs.setInputSettings(this.inputName, { local_file: input.file, is_local_file: true, close_when_inactive: false });
     await this.obs.volume(this.inputName, input.volume);
     await this.obs.setMonitorType(this.inputName, input.monitoringMode === 'monitor' ? 'OBS_MONITORING_TYPE_MONITOR_AND_OUTPUT' : 'OBS_MONITORING_TYPE_NONE');
+    if (!this.obs.verifySoundboardPlayback) throw new Error('Vérification audio OBS indisponible.');
+    await this.obs.verifySoundboardPlayback(this.inputName);
     let remove: () => void = () => undefined;
     let removeState: () => void = () => undefined;
     const finished = new Promise<void>(resolve => {
@@ -78,7 +84,16 @@ export class ObsSoundboardSetup {
     const attachedScenes: string[] = [];
     if (inputExists) for (const scene of presentScenes) if (await this.obs.sceneHasSource(scene, this.inputName)) attachedScenes.push(scene);
     const wrongInputKind = inputExists && inputKind !== 'ffmpeg_source';
-    return { connected:true,inputName:this.inputName,inputExists,inputKind,wrongInputKind,targetScenes:uniqueTargets,attachedScenes,missingScenes,ready:!wrongInputKind&&inputExists&&uniqueTargets.length>0&&missingScenes.length===0&&attachedScenes.length===presentScenes.length };
+    const inactiveScenes: string[] = [];
+    for (const scene of attachedScenes) if (!this.obs.sceneSourceEnabled || !await this.obs.sceneSourceEnabled(scene, this.inputName)) inactiveScenes.push(scene);
+    let audio = { active: false, audible: false }, diagnostic = '';
+    if (inputExists && !wrongInputKind) {
+      try { if (this.obs.inputAudioReadiness) audio = await this.obs.inputAudioReadiness(this.inputName); else diagnostic = 'Vérification audio OBS indisponible.'; }
+      catch { diagnostic = 'Impossible de vérifier les pistes et le volume OBS.'; }
+    }
+    if (!diagnostic && (!audio.active || !audio.audible || inactiveScenes.length)) diagnostic = 'Vérifier activation, scène courante, mute, volume et pistes de la Soundboard.';
+    return { connected:true,inputName:this.inputName,inputExists,inputKind,wrongInputKind,targetScenes:uniqueTargets,attachedScenes,missingScenes,inactiveScenes,...audio,diagnostic,ready:!wrongInputKind&&inputExists&&uniqueTargets.length>0&&missingScenes.length===0&&attachedScenes.length===presentScenes.length&&!inactiveScenes.length&&audio.active&&audio.audible };
+
   }
   async ensure(targetScenes: string[]) {
     if (!this.obs.state.connected) throw obsUnavailable();
