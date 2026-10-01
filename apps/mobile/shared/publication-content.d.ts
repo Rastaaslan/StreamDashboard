@@ -1,0 +1,1 @@
+export function publicationContent(event: { title?: string; description?: string; startAtUtc?: string; endAtUtc?: string; allDay?: boolean; twitchCategoryId?: string; recurrence?: unknown; seriesId?: string; occurrenceKey?: string; desiredPublication?: { twitch?: boolean; google?: boolean } }, provider: 'twitch' | 'google'): string;

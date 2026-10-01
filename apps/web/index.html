@@ -1,3 +1,36 @@
 <!doctype html>
-<html lang="fr"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="theme-color" content="#080a10"><link rel="stylesheet" href="/style.css"><title>StreamDashboard · Cockpit</title></head>
-<body><aside><div class="brand"><span class="logo">S</span><div><b>StreamDashboard</b><small>DESKTOP COCKPIT</small></div></div><nav></nav><div class="connection" id="socket"><i></i> Connexion…</div></aside><main><header><div><p id="eyebrow">CENTRE DE CONTRÔLE</p><h1 id="title">Vue d'ensemble</h1></div><div class="header-actions"><span class="obs-pill" id="obs-pill">OBS —</span><span class="live-pill" id="live-pill">HORS LIGNE</span></div></header><section id="view"></section></main><div id="toast"></div><script src="/realtime-form-guard.js"></script><script src="/deck-pointer-guard.js"></script><script type="module" src="/app.js"></script></body></html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; connect-src 'self' https://static-cdn.jtvnw.net ws: wss:; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https://static-cdn.jtvnw.net https://clips-media-assets2.twitch.tv https://clips-media-assets.twitch.tv; object-src 'none'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="theme-color" content="#080a10">
+  <link rel="stylesheet" href="/style.css">
+  <title>StreamDashboard · Cockpit</title>
+</head>
+<body>
+  <aside aria-label="Navigation principale">
+    <div class="brand"><span class="logo" aria-hidden="true">S</span><div><b>StreamDashboard</b><small>DESKTOP COCKPIT</small></div></div>
+    <nav aria-label="Sections du cockpit"></nav>
+    <details class="secondary-nav">
+      <summary>Outils</summary>
+      <div aria-label="Outils du cockpit">
+        <button type="button" data-page="live"><span>●</span>Live</button>
+        <button type="button" data-page="deck"><span>▣</span>Scènes &amp; audio</button>
+        <button type="button" data-page="fun"><span>▶</span>Médias OBS</button>
+        <button type="button" data-page="supports"><span>♡</span>Soutiens</button>
+        <button type="button" data-page="automations"><span>↯</span>Automatisations</button>
+        <button type="button" data-page="diagnostics"><span>⚙</span>Diagnostics</button>
+      </div>
+    </details>
+    <div class="connection" id="socket" role="status" aria-live="polite"><i aria-hidden="true"></i> Connexion…</div>
+  </aside>
+  <main>
+    <header><div><p id="eyebrow">CONSOLE FEU DE CAMP</p><h1 id="title">Accueil</h1></div><div class="header-actions"><div id="quick-actions" class="quick-actions" aria-label="Actions rapides"></div><button type="button" id="desktop-focus" class="focus-control" aria-pressed="false">Focus</button><span class="status-pill" id="pc-pill">PC —</span><span class="obs-pill" id="obs-pill">OBS —</span><span class="status-pill" id="twitch-pill">TWITCH —</span><span class="live-pill" id="live-pill">HORS LIGNE</span></div></header>
+    <section id="view" aria-live="polite"></section>
+  </main>
+  <div id="toast" role="status" aria-live="polite" aria-atomic="true"></div>
+  <script type="module" src="/app.js"></script>
+  <script type="module" src="/planning-browser.js"></script>
+</body>
+</html>

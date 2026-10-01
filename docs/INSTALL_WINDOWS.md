@@ -1,9 +1,11 @@
 # Installation Windows
 
-1. Installer Node.js 20+ et OBS Studio.
-2. Activer le serveur WebSocket d'OBS et reporter si nécessaire `OBS_URL` et `OBS_PASSWORD` dans `.env`.
-3. Double-cliquer `Lancer_StreamDashboard.cmd`.
+1. Téléchargez `StreamDashboardSetup.exe` depuis la dernière GitHub Release.
+2. Exécutez l'installateur Squirrel ; aucun droit administrateur, Node.js ou npm n'est requis.
+3. Lancez **StreamDashboard** depuis le menu Démarrer ou le raccourci bureau.
+4. Activez OBS WebSocket, puis configurez OBS dans les réglages du cockpit.
+5. Connectez Twitch avec le code appareil proposé.
 
-Le launcher charge `.env`, détecte puis démarre OBS si nécessaire, installe les dépendances du seul StreamDashboard si elles manquent, attend l'API locale au maximum 25 secondes et ouvre le navigateur uniquement lorsqu'elle répond. Il ne cherche et ne lance ni StreamTool ni damPlanner.
+Les préférences sont dans `%APPDATA%/StreamDashboard/config`, les secrets chiffrés dans `secure` et les logs dans `logs`. La désinstallation passe par **Paramètres → Applications installées**.
 
-Variables utiles : `OBS_EXE_PATH`, `OBS_URL`, `OBS_PASSWORD`, `PUBLIC_URL`, `PORT` et `DATA_FILE`.
+`Lancer_StreamDashboard.cmd` et `.env` sont conservés uniquement pour les développeurs et les installations legacy depuis les sources. Ils ne font pas partie du parcours utilisateur normal.

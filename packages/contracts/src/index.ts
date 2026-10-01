@@ -1,4 +1,86 @@
 export type RunMode = 'idle' | 'intro' | 'live' | 'pause' | 'end';
+export type ApiVersion = 1;
+export const protocolVersion: ApiVersion = 1;
+
+export type IntegrationStatus = 'DISCONNECTED' | 'CONNECTING' | 'CONNECTED' | 'DEGRADED' | 'ERROR' | 'NOT_CONFIGURED' | 'NOT_SUPPORTED';
+export interface IntegrationState {
+  status: IntegrationStatus;
+  lastConnectedAt: string | null;
+  lastEventAt: string | null;
+  lastError: { code: string; message: string; retryable: boolean } | null;
+  retryState: { attempt: number; nextRetryAt: string | null };
+}
+
+export interface EventEnvelope<TPayload = unknown> {
+  eventId: string;
+  schemaVersion: 1;
+  type: string;
+  source: string;
+  occurredAt: string;
+  receivedAt: string;
+  correlationId: string;
+  payload: TPayload;
+}
+
+export type CommandLifecycleStatus = 'accepted' | 'executing' | 'succeeded' | 'failed' | 'rejected';
+export interface ActionCommand<TPayload = unknown> {
+  commandId: string;
+  type: string;
+  origin: 'android' | 'desktop' | 'remote-web' | 'automation' | 'runtime';
+  deviceId?: string;
+  issuedAt: string;
+  correlationId?: string;
+  payload: TPayload;
+}
+export interface CommandAcknowledgement {
+  commandId: string;
+  correlationId: string;
+  status: CommandLifecycleStatus;
+  errorCode?: string;
+  message?: string;
+  timestamp: string;
+}
+
+export interface StructuredError {
+  code: string;
+  message: string;
+  retryable: boolean;
+  details: Record<string, unknown> | null;
+}
+
+export interface ControlHubSnapshot {
+  live: { thumbnailUrl?: string | null; categoryId?: string | null; isLive: boolean; title: string | null; category: string | null; startedAt: string | null; durationSeconds: number | null; viewerCount: number | null };
+  audience: { viewerCount: number | null; chatters: Array<{ id: string; displayName: string; role: 'broadcaster' | 'moderator' | 'vip' | 'viewer' }> };
+  activity: EventEnvelope[];
+  integrations: Record<'runtime' | 'obs' | 'twitch' | 'discord' | 'streamlabs' | 'wizebot', IntegrationState>;
+  availability: Record<'chat' | 'support' | 'vod' | 'clips' | 'soundboard' | 'automation', 'AVAILABLE' | 'NOT_CONFIGURED' | 'NOT_SUPPORTED'>;
+  chat: { messages: ChatMessage[]; connected: boolean };
+}
+export interface ChatMessage {
+  id: string;
+  chatter: { id: string; login: string; displayName: string; color: string | null; badges: Array<{ setId: string; id: string; info: string }> };
+  text: string;
+  fragments: Array<{ type: string; text: string; emote?: { id: string; setId: string; ownerId: string; format: string[] } }>;
+  reply: { parentMessageId: string; parentMessageBody: string; parentUserId: string; parentUserName: string } | null;
+  bits: number | null;
+  receivedAt: string;
+}
+
+export interface Sound {
+  id: string;
+  name: string;
+  category: string;
+  source: string;
+  favorite: boolean;
+  volume: number;
+  cooldownMs: number;
+  enabled: boolean;
+  outputId: string;
+  monitoringMode?: 'stream' | 'monitor';
+}
+export interface PublicSound extends Omit<Sound, 'source'> { sourceAvailable: boolean }
+export interface AudioOutput { id: string; name: string; isDefault: boolean; selectable: boolean }
+export interface SoundboardSnapshot { sounds: PublicSound[]; outputs: AudioOutput[]; currentPlayback: { soundId: string; commandId: string; startedAt: string } | null; available: boolean; supportedFormats: string[]; supportsVolume: boolean; supportsStop: boolean; supportsExplicitOutputSelection: boolean; error: StructuredError | null }
 
 export interface TimerState {
   running: boolean;
@@ -7,31 +89,126 @@ export interface TimerState {
   deadline: number | null;
 }
 
+export type ProviderSyncStatus = 'synced' | 'pending' | 'error' | 'not-published' | 'conflict';
+export interface ProviderLink {
+  status: ProviderSyncStatus;
+  remoteId?: string;
+  calendarId?: string;
+  remoteRevision?: string;
+  fingerprint?: string;
+  publishedContent?: string;
+  createNotStarted?: boolean;
+  uncertainCreate?: { event: Record<string, unknown>; publishedContent: string } | null;
+  lastSyncedAt?: string;
+  lastError?: string;
+  deletedRemotely?: boolean;
+  occurrences?: Record<string, { remoteId: string; remoteRevision?: string; calendarId?: string; syncedAt?: string }>;
+}
+
+export type RecurrenceFrequency = 'weekly' | 'monthly';
+export interface RecurrenceRule {
+  frequency: RecurrenceFrequency;
+  interval: 1 | 2;
+  timeZone: string;
+  until?: string | null;
+  exceptions?: Record<string, { cancelled?: boolean; patch?: Partial<Pick<CalendarItem, 'title' | 'description' | 'startAtUtc' | 'endAtUtc' | 'category' | 'kind' | 'twitchCategoryId' | 'twitchCategoryName' | 'desiredPublication'>> }>;
+}
+
 export interface CalendarItem {
   id: string;
+  /** Stable StreamDashboard identifier. `id` remains as a V1 compatibility alias. */
+  localId?: string;
   title: string;
   description?: string;
   startAtUtc: string;
   endAtUtc: string;
+  /** True when the calendar item is an all-day range instead of an instant range. */
+  allDay?: boolean;
   category?: 'live' | 'production' | 'personal';
   source?: 'DAMPLANNER' | 'GOOGLE' | 'TWITCH';
   ownership?: 'LOCAL' | 'EXTERNAL';
   editable?: boolean;
   kind?: 'LIVE' | 'PERSONAL';
   draft?: boolean;
+  twitchSegmentId?: string;
+  twitchRecurring?: boolean;
+  twitchCategoryId?: string;
+  twitchCategoryName?: string;
+  syncError?: string;
+  syncedAt?: string;
+  desiredPublication?: { local: boolean; twitch: boolean; google: boolean };
+  providers?: Partial<Record<'twitch' | 'google', ProviderLink>>;
+  external?: boolean;
+  recurrence?: RecurrenceRule;
+  seriesId?: string;
+  occurrenceKey?: string;
+  conflict?: {
+    provider: 'twitch' | 'google';
+    detectedAt: string;
+    remote?: Pick<CalendarItem, 'title' | 'description' | 'startAtUtc' | 'endAtUtc' | 'allDay' | 'twitchCategoryId' | 'twitchCategoryName'>;
+  };
 }
+
+export interface GoogleCalendarState {
+  clientSecretConfigured?: boolean;
+  configured: boolean;
+  connected: boolean;
+  targetCalendarId: string | null;
+  calendars: Array<{ id: string; summary: string; writable: boolean }>;
+  error: string | null;
+  lastSyncedAt: string | null;
+}
+
+export interface DiscordState { defaultMessage?: string; configured: boolean; connected: boolean; guildId: string | null; guildName: string | null; channelId: string | null; channelName: string | null; error: string | null }
+export interface DiscordSettings { guildId: string | null; channelId: string | null; defaultMessage: string }
+
+export interface PreflightState {
+  eventId: string | null;
+  status: 'idle' | 'preparing' | 'ready' | 'action-required' | 'error';
+  title: string | null;
+  category: string | null;
+  gameId: string | null;
+  error: string | null;
+  preparedAt: string | null;
+}
+
+export interface RemoteDevice { id: string; name: string; createdAt: string; lastSeenAt: string; revokedAt?: string }
+export interface RemoteState { supported: boolean; enabled: boolean; devices: RemoteDevice[]; urls: string[] }
 export interface CalendarPayload { rows: unknown[]; warnings: string[]; fetchedAt: number; fromCache: boolean; items: CalendarItem[] }
 export interface StreamState { mode: RunMode; running: boolean; startedAt: number | null; deadline: number | null; duration: number; remaining: number; timerVisible: boolean; previousObsScene: string | null; sequence: number; text: string; obs: { connected: boolean; currentScene: string | null; streaming: boolean } }
 
 export interface ChecklistItem { id: string; label: string; done: boolean }
 
+export interface StreamerPing {
+  id: string;
+  source: 'twitch-reward';
+  rewardId: string;
+  rewardTitle: string;
+  rewardCost: number;
+  userId: string;
+  userName: string;
+  userInput: string;
+  createdAt: string;
+  acknowledgedAt: string | null;
+}
+
+export interface ObsInputState { muted: boolean; volume: number; volumeDb?: number }
 export interface ObsState {
+  connectionStatus?: 'offline' | 'connecting' | 'connected' | 'error';
   connected: boolean;
   streaming: boolean;
+  /** False means `streaming` is only the last known value after OBS telemetry loss. */
+  streamingKnown?: boolean;
   recording: boolean;
   scene: string | null;
   scenes: string[];
-  inputs: Record<string, { muted: boolean; volume: number }>;
+  inputs: Record<string, ObsInputState>;
+  /** Audio inputs which are audible in the current program scene (plus OBS global devices). */
+  activeAudioInputs: string[];
+  /** OBS media sources that can be restarted from the Fun Deck. */
+  mediaInputs: string[];
+  /** OBS Browser Sources which may be targeted explicitly (for example the timer overlay). */
+  browserInputs?: string[];
   error: string | null;
   obsVersion: string | null;
   websocketVersion: string | null;
@@ -43,10 +220,56 @@ export interface DashboardSettings {
   confirmStop: boolean;
   obsUrl: string;
   obsPasswordSet: boolean;
+  twitchConnected: boolean;
+  twitchUserName: string | null;
+  launchObs: boolean;
+  obsExecutablePath?: string;
+  modeScenes: Partial<Record<Exclude<RunMode, 'idle'>, string>>;
+  /** Optional, configured OBS content scene which remains part of the Live business mode. */
+  chattingScene?: string;
+  /** Mode/scene selected and confirmed immediately before OBS starts streaming. */
+  startMode?: 'intro' | 'live';
+  /** Exact OBS browser source used for the visible session timer overlay. */
+  timerBrowserSource?: string;
+  /** Explicit input controlled by the mobile one-tap microphone action. */
+  primaryMicInput?: string;
+  /** When true, Start is blocked unless the configured timer Browser Source can be refreshed. */
+  requireTimerOverlayOnStart?: boolean;
+  /** Persisted preference. Binding to LAN is applied on next desktop startup. */
+  remoteEnabled?: boolean;
+  /** Twitch custom reward IDs which should create a persistent Streamer Ping. */
+  streamerPingRewardIds?: string[];
+}
+
+export type TwitchControlAction = 'chatRead' | 'chatWrite' | 'chatters' | 'createClip' | 'deleteVideo' | 'updateChannel' | 'schedule' | 'redemptions' | 'deleteMessage' | 'timeout' | 'ban' | 'unban';
+export type TwitchControlCapabilities = Record<TwitchControlAction, boolean> & {
+  requiredScopes: Record<TwitchControlAction, string>;
+};
+
+export interface TwitchState {
+  capabilities?: TwitchControlCapabilities;
+  connected: boolean;
+  userName: string | null;
+  displayName: string | null;
+  error: string | null;
+  syncing: boolean;
+  lastSyncedAt: string | null;
+  channelTitle?: string | null;
+  gameId?: string | null;
+  gameName?: string | null;
+  redemptionsAvailable?: boolean;
+  deviceAuthorization: {
+    userCode: string;
+    verificationUri: string;
+    expiresAt: string;
+  } | null;
 }
 
 export interface DashboardState {
   at: string;
+  /** Monotonic runtime snapshot revision. Optional only for legacy persisted/test fixtures. */
+  stateRevision?: number;
+  serverInstanceId?: string;
   mode: RunMode;
   timer: TimerState;
   planning: CalendarItem[];
@@ -55,20 +278,107 @@ export interface DashboardState {
   nextLive: CalendarItem | null;
   health: Record<string, { ok: boolean; detail: string; reconnects: number }>;
   settings: DashboardSettings;
+  twitch: TwitchState;
+  google?: GoogleCalendarState;
+  discord?: DiscordState;
+  preflight?: PreflightState;
+  remote?: RemoteState;
+  streamerPings?: StreamerPing[];
+  runtime: { serverVersion: string; nodeVersion: string; electronVersion: string | null; platform: string; port: number; logsPath: string | null };
+  controlHub?: ControlHubSnapshot;
 }
 
-/** Stable command vocabulary intended for every client (desktop today, mobile later). */
+/** Minimal, explicitly redacted state exposed to a paired LAN remote. */
+export interface RemoteDashboardState {
+  at: string;
+  stateRevision?: number;
+  serverInstanceId?: string;
+  mode: RunMode;
+  timer: TimerState;
+  planning: Array<Pick<CalendarItem, 'id' | 'title' | 'startAtUtc' | 'endAtUtc' | 'allDay' | 'category' | 'kind' | 'source' | 'twitchCategoryId' | 'twitchCategoryName' | 'desiredPublication' | 'recurrence' | 'seriesId' | 'occurrenceKey'>>;
+  nextLive: Pick<CalendarItem, 'id' | 'title' | 'startAtUtc' | 'endAtUtc' | 'allDay' | 'category' | 'kind' | 'source' | 'twitchCategoryId' | 'twitchCategoryName' | 'desiredPublication'> | null;
+  obs: Pick<ObsState, 'connectionStatus' | 'connected' | 'streaming' | 'streamingKnown' | 'scene' | 'scenes' | 'inputs' | 'activeAudioInputs' | 'mediaInputs' | 'browserInputs'>;
+  settings: Pick<DashboardSettings, 'confirmStop' | 'streamerName' | 'modeScenes' | 'chattingScene' | 'primaryMicInput' | 'requireTimerOverlayOnStart' | 'startMode' | 'timerBrowserSource'>;
+  twitch: Pick<TwitchState, 'connected' | 'channelTitle' | 'gameId' | 'gameName' | 'error' | 'capabilities'>;
+  google?: { configured: boolean; connected: boolean; targetConfigured: boolean };
+  discord?: DiscordState;
+  preflight?: PreflightState;
+  streamerPings?: StreamerPing[];
+  controlHub?: ControlHubSnapshot;
+}
+
+export type PublicState = DashboardState;
+export type Command = DashboardCommand;
+export interface CommandResult { ok: true; state: PublicState; commandType: Command['type'] }
+export interface ApiError { ok: false; error: { code: string; message: string; details?: Record<string, unknown> } }
+export interface ClientCapabilities { protocolVersion: ApiVersion; clientName: string; features: string[] }
+export interface ServerCapabilities { protocolVersion: ApiVersion; serverVersion: string; features: string[]; accessMode: 'desktop-local' | 'remote-LAN' }
+
+/** Stable command vocabulary intended for every client. */
 export type DashboardCommand =
+  | { type: 'session.prepare' }
+  | { type: 'session.start'; force?: boolean }
+  | { type: 'session.stop' }
   | { type: 'mode.set'; mode: RunMode }
+  | { type: 'scene.chatting' }
   | { type: 'timer.start'; seconds?: number }
   | { type: 'timer.pause' | 'timer.reset' }
   | { type: 'timer.add'; seconds: number }
   | { type: 'obs.scene'; scene: string }
   | { type: 'obs.mute'; input: string; muted: boolean }
   | { type: 'obs.volume'; input: string; volume: number }
+  | { type: 'obs.volumeDb'; input: string; volumeDb: number }
+  | { type: 'obs.browser.refresh'; input: string }
   | { type: 'obs.stream'; start: boolean }
   | { type: 'obs.record'; start: boolean }
+  | { type: 'obs.media.restart'; input: string }
   | { type: 'checklist.toggle'; id: string }
   | { type: 'checklist.reset' };
 
 export interface DashboardEvent { type: 'state.updated'; data: DashboardState }
+export type ServerEvent = DashboardEvent | { type: 'server.ready'; data: ServerCapabilities };
+
+const commandTypes = new Set<Command['type']>([
+  'session.prepare', 'session.start', 'session.stop', 'mode.set', 'scene.chatting', 'timer.start', 'timer.pause', 'timer.reset', 'timer.add',
+  'obs.scene', 'obs.mute', 'obs.volume', 'obs.volumeDb', 'obs.browser.refresh', 'obs.stream', 'obs.record', 'obs.media.restart',
+  'checklist.toggle', 'checklist.reset',
+]);
+
+export function parseCommand(value: unknown): Command {
+  if (!value || typeof value !== 'object') throw new Error('La commande doit être un objet JSON.');
+  const input = value as Record<string, unknown>;
+  if (typeof input.type !== 'string' || !commandTypes.has(input.type as Command['type'])) throw new Error('Type de commande inconnu.');
+
+  const allowed: Record<string, string[]> = {
+    'session.prepare': ['type'], 'session.start': ['type', 'force'], 'session.stop': ['type'],
+    'mode.set': ['type', 'mode'], 'scene.chatting': ['type'], 'timer.start': ['type', 'seconds'], 'timer.pause': ['type'], 'timer.reset': ['type'], 'timer.add': ['type', 'seconds'],
+    'obs.scene': ['type', 'scene'], 'obs.mute': ['type', 'input', 'muted'], 'obs.volume': ['type', 'input', 'volume'], 'obs.volumeDb': ['type', 'input', 'volumeDb'],
+    'obs.browser.refresh': ['type', 'input'], 'obs.stream': ['type', 'start'], 'obs.record': ['type', 'start'], 'obs.media.restart': ['type', 'input'],
+    'checklist.toggle': ['type', 'id'], 'checklist.reset': ['type'],
+  };
+  if (Object.keys(input).some(key => !allowed[input.type as string].includes(key))) throw new Error('La commande contient un champ non autorisé.');
+
+  const text = (key: string) => {
+    if (typeof input[key] !== 'string' || !(input[key] as string).trim() || (input[key] as string).length > 200) throw new Error(`Champ ${key} invalide.`);
+  };
+  const bool = (key: string) => { if (typeof input[key] !== 'boolean') throw new Error(`Champ ${key} invalide.`); };
+  const number = (key: string, min = -Infinity, max = Infinity) => {
+    if (typeof input[key] !== 'number' || !Number.isFinite(input[key]) || (input[key] as number) < min || (input[key] as number) > max) throw new Error(`Champ ${key} invalide.`);
+  };
+
+  switch (input.type) {
+    case 'session.start': if (input.force !== undefined) bool('force'); break;
+    case 'mode.set': text('mode'); if (!['idle', 'intro', 'live', 'pause', 'end'].includes(String(input.mode))) throw new Error('Mode invalide.'); break;
+    case 'timer.start': if (input.seconds !== undefined) number('seconds', 1, 86_400); break;
+    case 'timer.add': number('seconds', -86_400, 86_400); break;
+    case 'obs.scene': text('scene'); break;
+    case 'obs.mute': text('input'); bool('muted'); break;
+    case 'obs.volume': text('input'); number('volume', 0, 1.5); break;
+    case 'obs.volumeDb': text('input'); number('volumeDb', -100, 26); break;
+    case 'obs.browser.refresh': text('input'); break;
+    case 'obs.stream': case 'obs.record': bool('start'); break;
+    case 'obs.media.restart': text('input'); break;
+    case 'checklist.toggle': text('id'); break;
+  }
+  return input as unknown as Command;
+}

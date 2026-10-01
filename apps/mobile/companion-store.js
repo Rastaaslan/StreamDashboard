@@ -1,0 +1,144 @@
+import { publicationContent } from './shared/publication-content.js';
+export const COMPANION_SCHEMA_VERSION = 3;
+export const COMPANION_KEY = 'streamdashboard.companion.v3';
+const LEGACY_COMPANION_KEY = 'streamdashboard.companion.v2';
+export const CompanionMode = Object.freeze({ ONLINE_PC: 'ONLINE_PC', ONLINE_STANDALONE: 'ONLINE_STANDALONE', OFFLINE: 'OFFLINE' });
+
+const clone = value => JSON.parse(JSON.stringify(value));
+const now = () => new Date().toISOString();
+let uidSequence = 0;
+let defaultStore = null;
+const uid = prefix => `${prefix}-${Date.now().toString(36)}-${crypto.randomUUID?.() || Math.random().toString(36).slice(2)}-${++uidSequence}`;
+const empty = () => ({ schemaVersion: COMPANION_SCHEMA_VERSION, serverRevision: 0, planning: [], tombstones: [], pending: [], conflicts: [], notes: [], checklist: [], templates: [], recentTwitchCategories: [], streamerName: '', preferences: {}, lastServerSyncToken: null, lastServerSyncAt: null });
+
+function migrate(value) {
+  if (!value || typeof value !== 'object') return empty();
+  const next = { ...empty(), ...value, schemaVersion: COMPANION_SCHEMA_VERSION };
+  next.planning = Array.isArray(value.planning) ? value.planning.map(item => ({ revision: 1, updatedAt: now(), origin: 'PC', providerLinks: {}, ...item, id: item.id || item.localId || uid('live') })) : [];
+  for (const key of ['tombstones', 'pending', 'notes', 'checklist', 'templates', 'recentTwitchCategories']) next[key] = Array.isArray(value[key]) ? value[key] : [];
+  return next;
+}
+
+export function createCompanionStore(storage = localStorage, clock = now) {
+  const sharedDefault = typeof localStorage !== 'undefined' && storage === localStorage && clock === now;
+  if (sharedDefault && defaultStore) return defaultStore;
+
+  let data;
+  try { data = migrate(JSON.parse(storage.getItem(COMPANION_KEY) || storage.getItem(LEGACY_COMPANION_KEY) || 'null')); } catch { data = empty(); }
+  const persist = () => storage.setItem(COMPANION_KEY, JSON.stringify(data));
+  const operation = (type, eventId, baseRevision, patch, desiredPublication, base) => ({ id: uid('op'), operationId: undefined, type, eventId, baseRevision, timestamp: clock(), patch: clone(patch || {}), base: clone(base || {}), desiredPublication: clone(desiredPublication || {}) });
+  const saveEvent = (input, baseRevision) => {
+    const index = data.planning.findIndex(item => item.id === input.id);
+    const current = index < 0 ? null : data.planning[index];
+    if (current && baseRevision !== undefined && current.revision !== baseRevision) return { conflict: true, current: clone(current), proposed: clone(input) };
+    const item = { ...(current || {}), ...clone(input), id: input.id || uid('live'), revision: (current?.revision || 0) + 1, updatedAt: clock(), origin: 'ANDROID', providerLinks: { ...(current?.providerLinks || {}), ...(input.providerLinks || {}) } };
+    if (index < 0) data.planning.push(item); else data.planning[index] = item;
+    const eventFields = new Set(['id', 'localId', 'title', 'description', 'startAtUtc', 'endAtUtc', 'allDay', 'category', 'kind', 'draft', 'twitchCategoryId', 'twitchCategoryName', 'desiredPublication', 'providerLinks', 'recurrence']);
+    const patch = current ? Object.fromEntries(Object.entries(input).filter(([key, value]) => !['id', 'revision', 'updatedAt', 'origin', 'providerLinks', 'providers'].includes(key) && JSON.stringify(current[key]) !== JSON.stringify(value))) : Object.fromEntries(Object.entries(input).filter(([key]) => eventFields.has(key)));
+    data.pending.push(operation(current ? 'update' : 'create', item.id, current?.revision || 0, patch, item.desiredPublication, current));
+    persist(); return { item: clone(item) };
+  };
+  const store = {
+    snapshot: () => clone(data),
+    replaceServerSnapshot(snapshot) {
+      const authoritative = snapshot.schemaVersion === COMPANION_SCHEMA_VERSION;
+      const serverItems = (snapshot.planning || []).map(item => {
+        const existing = data.planning.find(value => value.id === item.id);
+        return { revision: item.revision || existing?.revision || 1, updatedAt: item.updatedAt || snapshot.at || clock(), origin: 'PC', ...item,
+          providerLinks: authoritative ? item.providerLinks || item.providers || {} : existing?.providerLinks || item.providerLinks || item.providers || {} };
+      });
+      const localById = new Map(data.planning.map(item => [item.id, item]));
+      const tombstones = new Map(data.tombstones.map(item => [item.eventId || item.id, item]));
+      for (const item of snapshot.tombstones || []) { const id = item.eventId || item.id; if (id && (!tombstones.has(id) || (tombstones.get(id).revision || 0) <= (item.revision || 0))) tombstones.set(id, { ...item, eventId: id }); }
+      data.tombstones = [...tombstones.values()].filter(tombstone => {
+        const id = tombstone.eventId || tombstone.id;
+        const restored = authoritative && serverItems.find(item => item.id === id && item.revision > tombstone.revision);
+        return !restored || data.pending.some(op => op.eventId === id && op.type === 'delete');
+      });
+      const deleted = new Set(data.tombstones.map(item => item.eventId || item.id));
+      data.planning = serverItems.filter(item => !deleted.has(item.id)).map(item => {
+        const local = localById.get(item.id);
+        return data.pending.some(op => op.eventId === item.id && op.type === 'update') && local ? local : item;
+      });
+      for (const item of localById.values()) if (!data.planning.some(value => value.id === item.id) && data.pending.some(op => op.eventId === item.id && op.type === 'create')) data.planning.push(item);
+      data.checklist = clone(snapshot.checklist || data.checklist); data.notes = clone(snapshot.notes || data.notes); data.templates = clone(snapshot.templates || data.templates); data.serverRevision = snapshot.serverRevision || data.serverRevision; data.streamerName = snapshot.settings?.streamerName || data.streamerName;
+      data.providerWork = clone(snapshot.providerWork || data.providerWork || {});
+      data.lastServerSyncAt = clock(); persist(); return clone(data);
+    },
+    createEvent(input) { return saveEvent({ ...input, id: input.id || uid('live') }, 0); },
+    updateEvent(id, patch, baseRevision) { const current = data.planning.find(item => item.id === id); if (!current) throw new Error('Live introuvable.'); return saveEvent({ ...current, ...patch, id }, baseRevision); },
+    deleteEvent(id, baseRevision) {
+      const current = data.planning.find(item => item.id === id); if (!current) return { deleted: false };
+      if (baseRevision !== undefined && current.revision !== baseRevision) return { conflict: true, current: clone(current), proposed: null };
+      data.planning = data.planning.filter(item => item.id !== id); data.tombstones.push({ eventId: id, revision: current.revision + 1, deletedAt: clock(), providerLinks: clone(current.providerLinks || {}) });
+      data.pending.push(operation('delete', id, current.revision, {}, current.desiredPublication)); persist(); return { deleted: true };
+    },
+    updateProvider(eventId, provider, metadata) {
+      if (!['twitch', 'google'].includes(provider)) throw new Error('Provider inconnu.');
+      const item = data.planning.find(value => value.id === eventId);
+      const tombstone = data.tombstones.find(value => (value.eventId || value.id) === eventId);
+      const target = item || tombstone;
+      if (!target) throw new Error('Live introuvable.');
+      const base = clone(target);
+      if (item && metadata.status === 'synced' && metadata.publishedContent !== undefined
+          && metadata.publishedContent !== publicationContent(item, provider)) {
+        metadata = { ...metadata, status: 'pending' };
+      }
+      target.providerLinks = { ...(target.providerLinks || {}), [provider]: { ...(target.providerLinks?.[provider] || {}), ...clone(metadata), lastProviderSyncAt: clock() } };
+      // Provider writes are independent durable operations, even if a previous
+      // event operation was already sent and its ACK is still in flight.
+      if (item) {
+        data.pending.push(operation('update', eventId, item.revision, { providerLinks: { [provider]: target.providerLinks[provider] } }, item.desiredPublication, base));
+        item.revision++;
+      } else {
+        data.pending.push(operation('delete', eventId, target.revision, { providerLinks: target.providerLinks }, {}, base));
+        target.revision++;
+      }
+      persist(); return clone(target.providerLinks[provider]);
+    },
+    upsertCollection(kind, input) {
+      if (!['notes', 'checklist', 'templates'].includes(kind)) throw new Error('Collection compagnon inconnue.');
+      const baseRevision = input.revision || 0;
+      const item = { revision: 1, updatedAt: clock(), ...clone(input), id: input.id || uid(kind.slice(0, -1)), revision: baseRevision + 1 };
+      const index = data[kind].findIndex(value => value.id === item.id);
+      if (index < 0) data[kind].push(item); else data[kind][index] = item;
+      const patch = Object.fromEntries(Object.entries(item).filter(([key]) => !['id', 'revision', 'updatedAt'].includes(key)));
+      data.pending.push(operation(`${kind}.upsert`, item.id, baseRevision, patch));
+      persist();
+      return clone(item);
+    },
+    removeCollection(kind, id) {
+      if (!['notes', 'checklist', 'templates'].includes(kind)) throw new Error('Collection compagnon inconnue.');
+      const current = data[kind].find(item => item.id === id);
+      if (!current) return { deleted: false };
+      data[kind] = data[kind].filter(item => item.id !== id);
+      data.pending.push(operation(`${kind}.delete`, id, current.revision || 0, {}));
+      persist();
+      return { deleted: true };
+    },
+    acknowledge(ids) { const accepted = new Set(ids); data.pending = data.pending.filter(item => !accepted.has(item.id)); persist(); },
+    applySyncResponse(response) {
+      const accepted = new Set(response.acknowledged || []);
+      // A PC resolution of a rejected local deletion restores the server item.
+      const restored = new Set(data.pending.filter(op => op.type === 'delete' && accepted.has(op.id)).map(op => op.eventId));
+      if (response.snapshot) data.tombstones = data.tombstones.filter(item => !restored.has(item.eventId || item.id) || !response.snapshot.planning?.some(value => value.id === (item.eventId || item.id)));
+      data.pending = data.pending.filter(item => !accepted.has(item.id));
+      data.conflicts = clone(response.conflicts || []);
+      if (response.snapshot) this.replaceServerSnapshot(response.snapshot);
+      persist(); return clone(data);
+    },
+    conflicts: () => clone(data.conflicts),
+  };
+  if (sharedDefault) defaultStore = store;
+  return store;
+}
+
+export function resolveMode({ pcAvailable, internetAvailable }) { return pcAvailable ? CompanionMode.ONLINE_PC : internetAvailable ? CompanionMode.ONLINE_STANDALONE : CompanionMode.OFFLINE; }
+
+export function changedFields(base, value) { return Object.keys(value || {}).filter(key => !['revision', 'updatedAt', 'origin'].includes(key) && JSON.stringify(base?.[key]) !== JSON.stringify(value[key])); }
+
+export function reconcileEvent(base, pc, android) {
+  const pcFields = changedFields(base, pc); const androidFields = changedFields(base, android); const overlap = pcFields.filter(field => androidFields.includes(field));
+  if (overlap.length) return { conflict: true, fields: overlap, current: clone(pc), proposed: clone(android) };
+  return { conflict: false, value: { ...clone(base), ...Object.fromEntries(pcFields.map(key => [key, pc[key]])), ...Object.fromEntries(androidFields.map(key => [key, android[key]])), revision: Math.max(pc.revision || 0, android.revision || 0) + 1, updatedAt: now() } };
+}

@@ -14,8 +14,8 @@ if (Test-Path $envFile) {
     }
   }
 }
-$PublicUrl = if ($env:PUBLIC_URL) { $env:PUBLIC_URL.TrimEnd('/') } else { 'http://127.0.0.1:47832' }
-$HealthUrl = 'http://127.0.0.1:47832/api/state'
+$PublicUrl = if ($env:PUBLIC_URL) { $env:PUBLIC_URL.TrimEnd('/') } else { 'http://127.0.0.1:48132' }
+$HealthUrl = 'http://127.0.0.1:48132/api/state'
 $status = [ordered]@{ OBS = $false; StreamDashboard = $false }
 
 function Test-Endpoint([string]$Url) { try { Invoke-WebRequest -UseBasicParsing -Uri $Url -TimeoutSec 2 | Out-Null; return $true } catch { return $false } }
