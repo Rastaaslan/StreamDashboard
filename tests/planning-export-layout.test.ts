@@ -60,7 +60,7 @@ describe('layout graphique du planning', () => {
     const result = await renderPlanningCanvas(items, 'Rastaaslan', { period: 'today', filters, now: new Date(2026, 8, 13, 12), documentApi: harness.documentApi, loadArtwork: vi.fn().mockResolvedValueOnce(image).mockResolvedValueOnce(null) });
     expect(result.canvas).toMatchObject({ width: 1080, height: 1350 }); expect(result.count).toBe(2);
     expect(harness.context.drawImage).toHaveBeenCalledOnce();
-    expect(harness.text.every(line => line.x >= 0 && line.x + line.width <= 1080 && line.y >= 0 && line.y <= 1350)).toBe(true);
+    expect(harness.text.every(line => line.x >= 0 && line.x + line.width <= 1080 && line.y >= 0 && line.y <= result.canvas.height)).toBe(true);
   });
 
   it('rend les sept jours et distingue deux lives le même jour sans réseau', async () => {
