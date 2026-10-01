@@ -3,8 +3,11 @@ import path from 'node:path';
 import { readFileSync } from 'node:fs';
 import { extractFile, listPackage } from '@electron/asar';
 const archive = path.resolve(process.argv[2] || 'out/StreamDashboard-win32-x64/resources/app.asar');
-const files = listPackage(archive);
-const publicConfig = JSON.parse(extractFile(archive, 'resources/distribution.json').toString());
+// ASAR uses host-native separators for lookup/listing, even for a Windows
+// target packaged on another OS. Keep policy matching platform-independent.
+const files = listPackage(archive).map(file => file.replaceAll('\\', '/'));
+const readArchive = file => extractFile(archive, path.normalize(file));
+const publicConfig = JSON.parse(readArchive('resources/distribution.json').toString());
 assert.deepEqual(Object.keys(publicConfig).sort(), ['googleClientId', 'twitchClientId']);
 assert.match(publicConfig.googleClientId, /^[\w.-]+\.apps\.googleusercontent\.com$/);
 assert.ok(publicConfig.twitchClientId);
@@ -12,9 +15,9 @@ for (const file of files) {
   assert.ok(!/^\/(tests|test-results|docs|scripts|\.dependencies|\.cb52-tmp|\.git)(\/|$)/.test(file), `Unexpected packaged source: ${file}`);
   assert.ok(!/\.log$/.test(file), `Unexpected packaged log: ${file}`);
 }
-const lifecycle = extractFile(archive, 'dist/apps/desktop/src/lifecycle.js').toString();
+const lifecycle = readArchive('dist/apps/desktop/src/lifecycle.js').toString();
 assert.match(lifecycle, /port: 48132/);
 for (const file of ['apps/mobile/shared/planning-editor.js', 'apps/web/preview/preview.js', 'dist/integrations/obs/src/client.js']) {
-  assert.deepEqual(extractFile(archive, file), readFileSync(file), `Packaged asset diverges from source/build: ${file}`);
+  assert.deepEqual(readArchive(file), readFileSync(file), `Packaged asset diverges from source/build: ${file}`);
 }
 console.log('Desktop ASAR checked: public provider IDs, fixed port, runtime assets and source/log exclusions.');
