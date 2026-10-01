@@ -35,6 +35,10 @@ const localKey = value => `${value.year}-${pad(value.month)}-${pad(value.day)}T$
 const daysInMonth = (year, month) => new Date(Date.UTC(year, month, 0)).getUTCDate();
 
 function occurrenceWall(anchor, rule, step) {
+  if (rule.frequency === 'daily') {
+    const date = new Date(Date.UTC(anchor.year, anchor.month - 1, anchor.day + step * rule.interval, anchor.hour, anchor.minute, anchor.second));
+    return { year: date.getUTCFullYear(), month: date.getUTCMonth() + 1, day: date.getUTCDate(), hour: anchor.hour, minute: anchor.minute, second: anchor.second };
+  }
   if (rule.frequency === 'weekly') {
     const date = new Date(Date.UTC(anchor.year, anchor.month - 1, anchor.day + step * 7 * rule.interval, anchor.hour, anchor.minute, anchor.second));
     return { year: date.getUTCFullYear(), month: date.getUTCMonth() + 1, day: date.getUTCDate(), hour: anchor.hour, minute: anchor.minute, second: anchor.second };
@@ -82,6 +86,7 @@ export function recurrenceSummary(item, locale = 'fr-FR') {
   const local = parts(date, zone);
   const weekday = new Intl.DateTimeFormat(locale, { timeZone: zone, weekday: 'long' }).format(date);
   const time = new Intl.DateTimeFormat(locale, { timeZone: zone, hour: '2-digit', minute: '2-digit' }).format(date);
+  if (rule.frequency === 'daily') return `↻ Tous les jours · ${time}`;
   if (rule.frequency === 'monthly') return `↻ Chaque mois · le ${local.day} à ${time}`;
   return rule.interval === 2 ? `↻ Toutes les 2 semaines · ${weekday} ${time}` : `↻ Chaque ${weekday} à ${time}`;
 }
