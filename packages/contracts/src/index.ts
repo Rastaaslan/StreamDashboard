@@ -105,7 +105,7 @@ export interface ProviderLink {
   occurrences?: Record<string, { remoteId: string; remoteRevision?: string; calendarId?: string; syncedAt?: string }>;
 }
 
-export type RecurrenceFrequency = 'weekly' | 'monthly';
+export type RecurrenceFrequency = 'daily' | 'weekly' | 'monthly';
 export interface RecurrenceRule {
   frequency: RecurrenceFrequency;
   interval: 1 | 2;
