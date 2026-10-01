@@ -2,7 +2,7 @@ import { thumbnailUrl, createThumbnailCache } from './thumbnails.js';
 import { filterPlanning, weekAgenda } from './planning-model.js';
 
 export const PLANNING_CANVAS = Object.freeze({ width: 1080, height: 1350 });
-const { width: WIDTH } = PLANNING_CANVAS;
+const { width: WIDTH, height: HEIGHT } = PLANNING_CANVAS;
 const HEADER_BOTTOM = 210, FOOTER_HEIGHT = 90;
 const FONT = 'system-ui, -apple-system, "Segoe UI", sans-serif';
 
