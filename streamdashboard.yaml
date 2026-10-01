@@ -1,0 +1,45 @@
+version: 1
+profile:
+  displayName: "Streamer"
+  channelName: ""
+  language: "fr"
+modules:
+  obs: true
+  twitch: true
+  planning: true
+  notes: true
+  checklist: true
+  templates: true
+  automations: true
+  soundboard: true
+  streamerPings: true
+  googleCalendar: false
+  discord: false
+  streamlabs: false
+  wizebot: false
+appearance:
+  theme: "system"
+  preset: "minimal"
+  accent: "#2474e5"
+  density: "normal"
+  radius: "medium"
+  textScale: "normal"
+mobile:
+  notifications: true
+  haptics: true
+providers:
+  twitch:
+    mode: "official"
+  google:
+    mode: "official"
+  discord:
+    mode: "official"
+  streamlabs:
+    mode: "custom"
+  wizebot:
+    mode: "custom"
+onboarding:
+  completed: false
+obs:
+  scenes: []
+  quickActions: []

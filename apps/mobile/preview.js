@@ -1,0 +1,759 @@
+import { createTransport, CRITICAL_COMMAND_TIMEOUT_MS, HttpError } from './transport.js';
+import { createCommandController, acceptsSnapshot, confirmsObsStreaming, obsRuntimeView } from './command-controller.js';
+import { isAndroidRuntime, localDateInputValue, nextRetry, normalizeServer, parsePairing } from './runtime.js';
+import { credentialStorage, settingsStorage } from './storage.js';
+
+const $ = selector => document.querySelector(selector);
+const all = selector => [...document.querySelectorAll(selector)];
+const productionUi = new URLSearchParams(location.search).get('runtime') === '1';
+
+let state = null;
+let soundboard = null;
+let credential = '';
+let server = settingsStorage.getServer();
+let ws = null;
+let reconnectTimer = null;
+let retry = 500;
+let httpReady = false;
+let pairing = false;
+let connectionGeneration = 0;
+let healthCheckInFlight = false;
+let activeStreamerPingId = null;
+const notifiedStreamerPingIds = new Set();
+
+const quickSoundStorageKey = productionUi ? 'streamdashboard.quickSoundSelections' : 'streamdashboard.preview.quickSoundSelections';
+let quickSoundSelections = [];
+try {
+  const saved = JSON.parse(localStorage.getItem(quickSoundStorageKey) || '[]');
+  if (Array.isArray(saved)) quickSoundSelections = saved.filter(item => item && typeof item.soundId === 'string' && typeof item.category === 'string');
+} catch {}
+let quickSoundCategory = '';
+
+const newCommandId = () => globalThis.crypto?.randomUUID?.() || `cmd_${Date.now()}_${Math.random().toString(36).slice(2)}`;
+const transport = createTransport(() => server, () => credential, () => connectionGeneration);
+
+const toast = message => {
+  const node = $('#toast');
+  node.textContent = String(message || '');
+  node.classList.toggle('show', Boolean(message));
+  clearTimeout(toast.timer);
+  if (message) toast.timer = setTimeout(() => node.classList.remove('show'), 2300);
+};
+
+const commandController = createCommandController({
+  getGeneration: () => connectionGeneration,
+  send: (value, options) => transport.command(value, options),
+  readState: () => transport.state(),
+  applyState: next => applyState(next),
+  onMessage: toast,
+});
+
+const go = target => {
+  all('.screen').forEach(screen => screen.classList.toggle('active', screen.dataset.screen === target));
+  all('[data-nav]').forEach(button => button.classList.toggle('active', button.dataset.nav === target));
+  window.scrollTo({ top: 0, behavior: 'smooth' });
+};
+
+window.StreamDashboardHandleBack = () => {
+  const dialog = all('dialog[open]').at(-1);
+  if (dialog) { dialog.close(); return true; }
+  const camp = $('#camp-sheet');
+  if (camp && !camp.hidden) { camp.hidden = true; return true; }
+  const active = $('.screen.active')?.dataset.screen;
+  if (active && active !== 'home') { go('home'); return true; }
+  return false;
+};
+
+const formatDuration = seconds => {
+  const value = Math.max(0, Math.floor(Number(seconds) || 0));
+  return `${String(Math.floor(value / 3600)).padStart(2, '0')}:${String(Math.floor(value / 60) % 60).padStart(2, '0')}:${String(value % 60).padStart(2, '0')}`;
+};
+const timerRemaining = () => {
+  if (!state?.timer) return 0;
+  if (state.timer.running && state.timer.deadline) {
+    const raw = state.timer.deadline;
+    const deadline = typeof raw === 'number' ? raw : Date.parse(raw);
+    if (Number.isFinite(deadline)) return Math.max(0, Math.ceil((deadline - Date.now()) / 1000));
+  }
+  return Math.max(0, Number(state.timer.remaining) || 0);
+};
+const formatTimer = seconds => {
+  const value = Math.max(0, Math.floor(seconds || 0));
+  return `${String(Math.floor(value / 60)).padStart(2,'0')}:${String(value % 60).padStart(2,'0')}`;
+};
+const providerCopy = status => ({
+  CONNECTED: ['Connecté', 'good'],
+  CONNECTING: ['Connexion…', 'warn'],
+  DEGRADED: ['Instable', 'warn'],
+  ERROR: ['Erreur', 'bad'],
+  NOT_CONFIGURED: ['Non configuré', 'muted'],
+  DISCONNECTED: ['Déconnecté', 'bad'],
+})[status] || ['Indisponible', 'muted'];
+
+const setProvider = (id, status) => {
+  const node = $(id);
+  if (!node) return;
+  const [copy, cls] = providerCopy(status);
+  node.textContent = copy;
+  node.className = cls;
+};
+
+const logicalScene = next => {
+  const actual = next?.obs?.scene;
+  if (!actual) return '';
+  if (next.settings?.chattingScene === actual) return 'Chatting';
+  const modes = next.settings?.modeScenes || {};
+  if (modes.intro === actual) return 'Intro';
+  if (modes.live === actual) return 'Gameplay';
+  if (modes.pause === actual) return 'Pause';
+  if (modes.end === actual) return 'Fin';
+  return actual;
+};
+
+const selectSceneVisual = scene => {
+  all('[data-scene]').forEach(item => item.classList.toggle('selected', item.dataset.scene === scene));
+};
+
+const renderChat = messages => {
+  const host = $('#home-chat-preview');
+  if (!host) return;
+  const recent = Array.isArray(messages) ? messages.slice(-2) : [];
+  host.replaceChildren();
+  for (const message of recent) {
+    const row = document.createElement('p');
+    const name = document.createElement('b');
+    const copy = document.createElement('span');
+    name.textContent = message.chatter?.displayName || message.chatter?.login || 'Twitch';
+    copy.textContent = message.text || '';
+    row.append(name, copy);
+    host.append(row);
+  }
+  if (!recent.length) {
+    const row = document.createElement('p');
+    const name = document.createElement('b');
+    const copy = document.createElement('span');
+    name.textContent = 'Chat';
+    copy.textContent = httpReady ? 'Aucun message récent.' : 'Connexion PC requise.';
+    row.append(name, copy);
+    host.append(row);
+  }
+};
+
+const renderAudio = next => {
+  const rows = all('[data-audio]');
+  const inputs = next?.obs?.inputs || {};
+  const active = Array.isArray(next?.obs?.activeAudioInputs) ? next.obs.activeAudioInputs : Object.keys(inputs);
+  const ordered = [...active].filter(name => inputs[name]).slice(0, rows.length);
+  rows.forEach((row, index) => {
+    const name = ordered[index];
+    row.hidden = !name;
+    if (!name) return;
+    const input = inputs[name];
+    row.dataset.input = name;
+    row.querySelector('b').textContent = name;
+    const db = Number.isFinite(input.volumeDb) ? input.volumeDb : -100;
+    row.querySelector('small').textContent = db <= -99 ? '-∞ dB' : `${db.toFixed(1)} dB`;
+    row.classList.toggle('on', !input.muted);
+    row.classList.toggle('muted', Boolean(input.muted));
+    const meter = row.querySelector('.meter i');
+    if (meter) meter.style.width = `${Math.max(4, Math.min(100, ((db + 60) / 66) * 100))}%`;
+  });
+};
+
+const renderCurrentWeek = () => {
+  const host = $('#week-strip');
+  if (!host) return;
+  const now = new Date();
+  const monday = new Date(now);
+  const day = (monday.getDay() + 6) % 7;
+  monday.setDate(monday.getDate() - day);
+  monday.setHours(12, 0, 0, 0);
+  host.replaceChildren();
+  for (let index = 0; index < 7; index++) {
+    const date = new Date(monday);
+    date.setDate(monday.getDate() + index);
+    const button = document.createElement('button');
+    button.type = 'button';
+    if (date.toDateString() === now.toDateString()) button.classList.add('active');
+    const small = document.createElement('small');
+    small.textContent = date.toLocaleDateString('fr-FR', { weekday: 'short' }).replace('.', '').toUpperCase();
+    const bold = document.createElement('b');
+    bold.textContent = String(date.getDate());
+    button.append(small, bold);
+    host.append(button);
+  }
+};
+
+const renderPlanning = items => {
+  const agenda = $('#agenda');
+  if (!agenda) return;
+  const now = new Date();
+  const future = (Array.isArray(items) ? items : [])
+    .filter(item => Number.isFinite(Date.parse(item.startAtUtc)) && Date.parse(item.endAtUtc || item.startAtUtc) >= now.getTime())
+    .sort((a,b) => Date.parse(a.startAtUtc) - Date.parse(b.startAtUtc))
+    .slice(0, 8);
+  agenda.replaceChildren();
+  if (!future.length) {
+    const label = document.createElement('div');
+    label.className = 'agenda-label';
+    label.innerHTML = '<span>À VENIR</span><i></i>';
+    const empty = document.createElement('article');
+    empty.className = 'event-card';
+    empty.innerHTML = '<div class="event-time"><b>—</b></div><div><small>PLANNING</small><h2>Aucun événement à venir</h2><p>Ajoute ton prochain live.</p></div><span class="event-dot"></span>';
+    agenda.append(label, empty);
+    return;
+  }
+  let previousDay = '';
+  for (const item of future) {
+    const start = new Date(item.startAtUtc);
+    const dayKey = start.toISOString().slice(0,10);
+    if (dayKey !== previousDay) {
+      previousDay = dayKey;
+      const label = document.createElement('div');
+      label.className = 'agenda-label';
+      const sameDay = start.toDateString() === now.toDateString();
+      const tomorrow = new Date(now); tomorrow.setDate(now.getDate()+1);
+      const isTomorrow = start.toDateString() === tomorrow.toDateString();
+      label.innerHTML = `<span></span><i></i>`;
+      label.querySelector('span').textContent = sameDay ? 'AUJOURD’HUI' : isTomorrow ? 'DEMAIN' : start.toLocaleDateString('fr-FR',{weekday:'long',day:'numeric',month:'short'}).toUpperCase();
+      agenda.append(label);
+    }
+    const end = new Date(item.endAtUtc || item.startAtUtc);
+    const card = document.createElement('article');
+    card.className = `event-card${item.category === 'live' ? ' live-event' : item.category === 'personal' ? ' personal' : ''}`;
+    const time = document.createElement('div'); time.className = 'event-time';
+    const sb = document.createElement('b'); sb.textContent = start.toLocaleTimeString('fr-FR',{hour:'2-digit',minute:'2-digit'});
+    const ss = document.createElement('span'); ss.textContent = `→ ${end.toLocaleTimeString('fr-FR',{hour:'2-digit',minute:'2-digit'})}`;
+    time.append(sb,ss);
+    const body = document.createElement('div');
+    const kind = document.createElement('small'); kind.textContent = item.category === 'live' ? 'LIVE TWITCH' : item.category === 'personal' ? 'PERSO' : 'PRODUCTION';
+    const title = document.createElement('h2'); title.textContent = item.title || 'Événement';
+    const desc = document.createElement('p'); desc.textContent = item.twitchCategoryName || item.description || '';
+    body.append(kind,title,desc);
+    const dot = document.createElement('span'); dot.className='event-dot';
+    card.append(time,body,dot);
+    agenda.append(card);
+  }
+};
+
+const applyState = next => {
+  if (!next || (state && !acceptsSnapshot(state, next))) return;
+  state = next;
+  const hub = next.controlHub || {};
+  const obsView = obsRuntimeView(next);
+  const isLive = obsView.live;
+  const duration = Number.isFinite(hub.live?.durationSeconds) ? hub.live.durationSeconds : 0;
+  const title = hub.live?.title || next.twitch?.channelTitle || (isLive ? 'Live en cours' : 'Prêt à streamer');
+  const category = hub.live?.category || next.twitch?.gameName || (isLive ? 'Twitch' : 'Aucun live en cours');
+  const viewers = Number.isInteger(hub.audience?.viewerCount) ? hub.audience.viewerCount : '—';
+  const chatters = Array.isArray(hub.audience?.chatters) ? hub.audience.chatters.length : '—';
+  const actualScene = next.obs?.scene || '—';
+  const logical = logicalScene(next);
+
+  $('#home-live-copy').textContent = obsView.liveLabel;
+  const homeDotCopy = $('#home-live-dot-copy'); if (homeDotCopy) homeDotCopy.textContent = obsView.liveLabel;
+  $('#home-live-pill').classList.toggle('live', isLive);
+  $('#home-live-pill').classList.toggle('offline', !isLive);
+  $('#home-duration').textContent = isLive ? formatDuration(duration) : '—';
+  $('#home-title').textContent = title;
+  $('#home-category').textContent = category;
+  $('#home-viewers').textContent = String(viewers);
+  $('#home-chatters').textContent = String(chatters);
+  $('#home-scene-name').textContent = actualScene;
+
+  $('#live-status-copy').textContent = obsView.liveLabel;
+  $('#live-status-pill').classList.toggle('live', isLive);
+  $('#live-status-pill').classList.toggle('offline', !isLive);
+  $('#scene-name').textContent = actualScene;
+  $('#scene-state').textContent = `OBS · ${obsView.connectionLabel}`;
+  $('#scene-state').classList.toggle('offline', !next.obs?.connected);
+  selectSceneVisual(logical);
+
+  const integrations = hub.integrations || {};
+  setProvider('#status-obs', obsView.providerStatus);
+  setProvider('#status-twitch', integrations.twitch?.status || (next.twitch?.connected ? 'CONNECTED' : 'DISCONNECTED'));
+  setProvider('#status-streamlabs', integrations.streamlabs?.status || 'NOT_CONFIGURED');
+  renderChat(hub.chat?.messages || []);
+  renderAudio(next);
+  renderPlanning(next.planning);
+  $('#timer-value').textContent = formatTimer(timerRemaining());
+  syncStreamerPings(next.streamerPings || []);
+
+  const stop = $('#stop-live');
+  stop.textContent = obsView.buttonLabel;
+  stop.disabled = !obsView.known;
+  stop.classList.toggle('danger-outline', obsView.streaming);
+  stop.classList.toggle('live-command', obsView.known && !obsView.streaming);
+  stop.classList.toggle('start', obsView.known && !obsView.streaming);
+  stop.dataset.action = !obsView.known ? '' : obsView.streaming ? 'stop' : 'start';
+};
+
+const notifyStreamerPing = (ping, pendingCount) => {
+  if (!productionUi || !document.hidden || !ping || notifiedStreamerPingIds.has(ping.id)) return;
+  notifiedStreamerPingIds.add(ping.id);
+  const message = `${ping.userName || 'Viewer'} · ${ping.rewardCost || 0} points${pendingCount > 1 ? ` · ${pendingCount} pings en attente` : ''}`;
+  globalThis.StreamDashboardNative?.notifyStreamerPing?.(ping.id, ping.rewardTitle || 'Streamer Ping', message);
+};
+
+const syncStreamerPings = pings => {
+  const pending = (Array.isArray(pings) ? pings : []).filter(value => !value.acknowledgedAt);
+  const ping = pending[0];
+  const dialog = $('#streamer-ping-dialog');
+  if (!dialog) return;
+  if (!ping) {
+    activeStreamerPingId = null;
+    if (dialog.open) dialog.close();
+    return;
+  }
+  notifyStreamerPing(pending.at(-1), pending.length);
+  const content = $('#streamer-ping-content');
+  if (activeStreamerPingId !== ping.id || !dialog.open) {
+    activeStreamerPingId = ping.id;
+    content.replaceChildren();
+    const label = document.createElement('small'); label.className = 'eyebrow'; label.textContent = `STREAMER PING · 1/${pending.length}`;
+    const title = document.createElement('h2'); title.textContent = ping.rewardTitle || 'Récompense Twitch';
+    const copy = document.createElement('p'); copy.textContent = `${ping.userName || 'Viewer'} a utilisé cette récompense${ping.rewardCost ? ` · ${ping.rewardCost} points` : ''}.`;
+    content.append(label, title, copy);
+    if (ping.userInput) { const quote = document.createElement('blockquote'); quote.textContent = ping.userInput; content.append(quote); }
+    globalThis.StreamDashboardNative?.haptic?.('strong');
+    if (!dialog.open) dialog.showModal();
+  } else {
+    const label = content.querySelector('.eyebrow'); if (label) label.textContent = `STREAMER PING · 1/${pending.length}`;
+  }
+};
+
+const openLegacyTools = button => {
+  const tab = button.dataset.legacyTab || 'more';
+  localStorage.setItem('streamdashboard.mobileTab', tab);
+  if (button.dataset.legacyPrepare) localStorage.setItem('streamdashboard.mobilePreparationTab', button.dataset.legacyPrepare);
+  localStorage.setItem('streamdashboard.legacyTarget', JSON.stringify({
+    tab,
+    prepare: button.dataset.legacyPrepare || '',
+    settings: button.dataset.legacySettings || '',
+    liveTool: button.dataset.legacyLiveTool || '',
+    action: button.dataset.legacyAction || '',
+  }));
+  location.href = './index.html?legacy=1';
+};
+
+const renderConnection = (copy, mode='offline') => {
+  $('#connection-copy').textContent = copy;
+  $('#sounds-pc-copy').textContent = copy;
+  const pill=$('#sounds-pc-pill');
+  pill.classList.toggle('live', mode==='online');
+  pill.classList.toggle('offline', mode==='offline');
+  pill.classList.toggle('degraded', mode==='degraded');
+};
+
+const requireConnection = () => {
+  if (httpReady && credential) return true;
+  toast('Appairage PC requis.');
+  $('#connection-dialog').showModal();
+  return false;
+};
+
+const execute = async (payload,{resource=payload.type,reconcile,critical=false}={}) => {
+  if(!requireConnection()) return false;
+  const commandId=newCommandId();
+  try{
+    const result=await commandController.execute({...payload,commandId,correlationId:commandId},{
+      resource,
+      timeoutMs:critical?CRITICAL_COMMAND_TIMEOUT_MS:undefined,
+      reconcile,
+    });
+    if(!result.accepted){if(result.reason==='busy')toast('Commande déjà en cours.');return false;}
+    globalThis.StreamDashboardNative?.haptic?.(critical?'strong':'light');
+    if(!result.reconciled) toast('Commande confirmée.');
+    return true;
+  }catch(error){toast(error.message);return false;}
+};
+
+const scenePayload = scene => ({
+  Intro:{type:'mode.set',mode:'intro'},
+  Gameplay:{type:'mode.set',mode:'live'},
+  Chatting:{type:'scene.chatting'},
+  Pause:{type:'mode.set',mode:'pause'},
+  Fin:{type:'mode.set',mode:'end'},
+})[scene];
+
+const selectScene = async scene => {
+  const payload=scenePayload(scene);
+  if(!payload) return;
+  await execute(payload,{resource:'scene'});
+};
+
+const loadSoundboard = async () => {
+  if(!httpReady || !credential) return;
+  try{
+    soundboard=await transport.soundboard();
+    const available=(soundboard.sounds||[]).filter(sound=>sound.enabled&&sound.sourceAvailable);
+    if(!quickSoundSelections.length&&available.length){
+      const defaults=[...available.filter(sound=>sound.favorite),...available.filter(sound=>!sound.favorite)].slice(0,4);
+      quickSoundSelections=defaults.map(sound=>({soundId:sound.id,category:sound.category||'Sans catégorie'}));
+      localStorage.setItem(quickSoundStorageKey,JSON.stringify(quickSoundSelections));
+    }
+    renderQuickSounds();
+    renderFullSoundboard();
+    populateSoundChoice();
+  }catch(error){toast(`Soundboard : ${error.message}`);}
+};
+
+const soundById=id=>(soundboard?.sounds||[]).find(sound=>sound.id===id);
+const playSound=async sound=>{
+  if(!requireConnection()) return;
+  const commandId=newCommandId();
+  try{
+    const ack=await transport.playSound({commandId,correlationId:commandId,soundId:sound.id,issuedAt:new Date().toISOString()});
+    if(ack.status!=='succeeded') throw new Error(ack.message||ack.errorCode||'Lecture échouée.');
+    globalThis.StreamDashboardNative?.haptic?.('light');
+    toast(`${sound.name} ✓`);
+    await loadSoundboard();
+  }catch(error){toast(error.message);}
+};
+
+const renderQuickSounds=()=>{
+  const categoryHost=$('#quick-sound-categories'),soundHost=$('#quick-sound-grid');
+  if(!categoryHost||!soundHost) return;
+  const resolved=quickSoundSelections.map(item=>({...item,sound:soundById(item.soundId)})).filter(item=>item.sound);
+  const categories=[...new Set(resolved.map(item=>item.category))];
+  if(!categories.includes(quickSoundCategory)) quickSoundCategory=categories[0]||'';
+  categoryHost.replaceChildren(...categories.map(category=>{
+    const button=document.createElement('button');button.type='button';button.textContent=category;
+    button.classList.toggle('active',category===quickSoundCategory);
+    button.onclick=()=>{quickSoundCategory=category;renderQuickSounds();};
+    return button;
+  }));
+  soundHost.replaceChildren();
+  for(const item of resolved.filter(item=>item.category===quickSoundCategory)){
+    const button=document.createElement('button');button.type='button';button.className='quick-sound-button';
+    const name=document.createElement('b');name.textContent=item.sound.name;
+    const cat=document.createElement('small');cat.textContent=item.category;
+    const glyph=document.createElement('span');glyph.className='sound-glyph';glyph.textContent='♫';
+    button.append(name,cat,glyph);button.onclick=()=>void playSound(item.sound);soundHost.append(button);
+  }
+  if(!soundHost.children.length){
+    const empty=document.createElement('div');empty.className='quick-sound-empty';
+    empty.textContent=httpReady?'Ajoute un son rapide depuis ta bibliothèque.':'Appaire le PC pour charger tes sons.';
+    soundHost.append(empty);
+  }
+};
+
+let fullSoundFilter='all';
+const renderFullSoundboard=()=>{
+  const host=$('#sound-grid');if(!host) return;
+  const query=$('#sound-search').value.trim().toLowerCase();
+  const sounds=(soundboard?.sounds||[]).filter(sound=>{
+    if(query&&!sound.name.toLowerCase().includes(query)) return false;
+    if(fullSoundFilter==='fav'&&!sound.favorite) return false;
+    if(fullSoundFilter!=='all'&&fullSoundFilter!=='fav'&&String(sound.category||'').toLowerCase()!==fullSoundFilter) return false;
+    return true;
+  });
+  host.replaceChildren();
+  for(const sound of sounds){
+    const pad=document.createElement('button');pad.type='button';pad.className=`sound-pad${sound.favorite?' favorite':''}`;
+    pad.disabled=!sound.enabled||!sound.sourceAvailable;
+    const star=document.createElement('span');star.textContent=sound.favorite?'★':'☆';
+    const name=document.createElement('b');name.textContent=sound.name;
+    const cat=document.createElement('small');cat.textContent=sound.category||'Sans catégorie';
+    pad.append(star,name,cat);
+    star.onclick=async event=>{
+      event.stopPropagation();
+      if(!requireConnection()) return;
+      try{soundboard=await transport.updateSound(sound.id,{favorite:!sound.favorite});renderFullSoundboard();}catch(error){toast(error.message);}
+    };
+    pad.onclick=()=>void playSound(sound);host.append(pad);
+  }
+  if(!host.children.length){
+    const empty=document.createElement('div');empty.className='quick-sound-empty';
+    empty.textContent=httpReady?'Aucun son ne correspond.':'Appaire le PC pour charger le Soundboard.';
+    host.append(empty);
+  }
+  renderSoundFilterChips();
+};
+
+const renderSoundFilterChips=()=>{
+  const host=$('#sound-filters');if(!host) return;
+  const categories=[...new Set((soundboard?.sounds||[]).map(sound=>sound.category).filter(Boolean))];
+  const filters=[['all','Tout'],['fav','Favoris'],...categories.map(category=>[category.toLowerCase(),category])];
+  host.replaceChildren(...filters.map(([value,label])=>{
+    const button=document.createElement('button');button.type='button';button.dataset.filter=value;button.textContent=label;
+    button.classList.toggle('active',fullSoundFilter===value);
+    button.onclick=()=>{fullSoundFilter=value;renderFullSoundboard();};
+    return button;
+  }));
+};
+
+const populateSoundChoice=()=>{
+  const select=$('#quick-sound-choice');if(!select) return;
+  const sounds=(soundboard?.sounds||[]).filter(sound=>sound.enabled&&sound.sourceAvailable);
+  select.replaceChildren(...sounds.map(sound=>new Option(`${sound.name} · ${sound.category||'Sans catégorie'}`,sound.id)));
+  select.disabled=!sounds.length;
+  if(sounds[0]) $('#quick-sound-category').value=sounds[0].category||'Sans catégorie';
+};
+
+const connectRealtime=async(generation)=>{
+  try{
+    const {ticket}=await transport.ticket();
+    if(generation!==connectionGeneration) return;
+    if (ws) { ws.onclose=null; ws.onmessage=null; ws.close(); }
+    ws=transport.websocket(ticket);
+    ws.onopen=()=>{if(generation!==connectionGeneration)return;retry=500;renderConnection('PC connecté','online');};
+    ws.onmessage=event=>{if(generation!==connectionGeneration)return;try{const value=JSON.parse(event.data);if(value.type==='state.updated')applyState(value.data);}catch{}};
+    ws.onclose=()=>{
+      if(generation!==connectionGeneration)return;
+      if(httpReady) renderConnection('PC connecté · temps réel…','degraded');
+      reconnectTimer=setTimeout(()=>void probeAndConnect(),retry);retry=nextRetry(retry);
+    };
+    const socket=ws;
+    ws.onerror=()=>socket.close();
+  }catch(error){
+    if(generation!==connectionGeneration)return;
+    renderConnection('PC connecté · temps réel indisponible','degraded');
+    reconnectTimer=setTimeout(()=>void probeAndConnect(),retry);retry=nextRetry(retry);
+  }
+};
+
+const probeAndConnect=async()=>{
+  const generation=++connectionGeneration;
+  if(ws){ws.onclose=null;ws.onmessage=null;ws.close();ws=null;}
+  clearTimeout(reconnectTimer);
+  if(!credential){httpReady=false;renderConnection('PC non appairé','offline');return;}
+  try{
+    const next=await transport.state();
+    if(generation!==connectionGeneration)return;
+    httpReady=true;retry=500;applyState(next);renderConnection('PC connecté','online');
+    await loadSoundboard();
+    if(generation===connectionGeneration) void connectRealtime(generation);
+  }catch(error){
+    if(generation!==connectionGeneration)return;
+    httpReady=false;renderConnection('PC hors ligne · vérifier réseau/adresse dans Connexions','offline');
+    $('#connection-hint').textContent=error.message;
+    if(error instanceof HttpError&&error.status===401){
+      credential='';await credentialStorage.clear();toast('Télécommande révoquée. Nouvel appairage requis.');$('#connection-dialog').showModal();return;
+    }
+    reconnectTimer=setTimeout(()=>void probeAndConnect(),retry);retry=nextRetry(retry);
+  }
+};
+
+const pair=async event=>{
+  event?.preventDefault?.();if(pairing)return;pairing=true;
+  const hint=$('#connection-hint');hint.classList.remove('error');hint.textContent='Appairage en cours…';
+  try{
+    const serverInput=$('#pair-server').value.trim();
+    server=serverInput?normalizeServer(serverInput):settingsStorage.getServer();
+    if(!server)throw new Error('Adresse du PC requise.');
+    settingsStorage.setServer(server);
+    const id=$('#pair-id').value.trim(),code=$('#pair-code').value.trim(),name=$('#pair-name').value.trim()||'Android Preview';
+    if(!id||!code) throw new Error('ID et code requis.');
+    const result=await transport.pair({id,code,name});
+    credential=result.credential;await credentialStorage.set(credential);
+    if(result.deviceId)localStorage.setItem('streamdashboard.deviceId',result.deviceId);
+    $('#pair-code').value='';hint.textContent='Appairage réussi.';$('#connection-dialog').close();
+    await probeAndConnect();
+  }catch(error){hint.classList.add('error');hint.textContent=error.message;}
+  finally{pairing=false;}
+};
+
+all('[data-nav]').forEach(button=>button.addEventListener('click',()=>go(button.dataset.nav)));
+all('[data-go]').forEach(button=>button.addEventListener('click',()=>go(button.dataset.go)));
+$('#open-camp').onclick=()=>{$('#camp-sheet').hidden=false;};
+all('[data-close-camp]').forEach(button=>button.onclick=()=>{$('#camp-sheet').hidden=true;});
+all('[data-scene]').forEach(button=>button.onclick=()=>void selectScene(button.dataset.scene));
+
+all('[data-audio]').forEach(row=>row.onclick=()=>{
+  const input=row.dataset.input;if(!input||!state?.obs?.inputs?.[input])return;
+  void execute({type:'obs.mute',input,muted:!state.obs.inputs[input].muted},{resource:`audio:${input}`,reconcile:next=>next.obs?.inputs?.[input]?.muted===!state.obs.inputs[input].muted});
+});
+
+all('[data-timer]').forEach(button=>button.onclick=()=>void execute({type:'timer.add',seconds:Number(button.dataset.timer)},{resource:'timer'}));
+$('#timer-toggle').onclick=()=>void execute({type:state?.timer?.running?'timer.pause':'timer.start'},{resource:'timer'});
+setInterval(()=>{if(state)$('#timer-value').textContent=formatTimer(timerRemaining());},1000);
+
+$('#stop-live').onclick=async()=>{
+  if(!requireConnection())return;
+  const obsView=obsRuntimeView(state);
+  if(!obsView.known){toast('État OBS inconnu : attendre la reconnexion.');return;}
+  const live=obsView.streaming;
+  if(live){
+    if(!confirm('Arrêter réellement le live ?'))return;
+    await execute({type:'session.stop'},{resource:'stream',critical:true,reconcile:next=>confirmsObsStreaming(next,false)});
+    return;
+  }
+  if(!confirm('Démarrer réellement le live ?'))return;
+  const prepared=await execute({type:'session.prepare'},{resource:'stream'});
+  if(!prepared)return;
+  const bypass=state?.preflight?.status==='action-required';
+  if(bypass&&!confirm('La checklist demande une action. Démarrer quand même ?'))return;
+  await execute({type:'session.start',force:bypass},{resource:'stream',critical:true,reconcile:next=>confirmsObsStreaming(next,true)});
+};
+
+$('#sound-search').oninput=renderFullSoundboard;
+$('#add-quick-sound').onclick=()=>{if(!requireConnection())return;populateSoundChoice();$('#quick-sound-dialog').showModal();};
+$('#close-quick-sound').onclick=()=>$('#quick-sound-dialog').close();
+$('#cancel-quick-sound').onclick=()=>$('#quick-sound-dialog').close();
+$('#quick-sound-choice').onchange=()=>{
+  const sound=soundById($('#quick-sound-choice').value);
+  if(sound)$('#quick-sound-category').value=sound.category||'Sans catégorie';
+};
+$('#quick-sound-form').onsubmit=event=>{
+  event.preventDefault();
+  const soundId=$('#quick-sound-choice').value,category=$('#quick-sound-category').value.trim()||'Sans catégorie';
+  if(!soundId)return;
+  quickSoundSelections=[...quickSoundSelections.filter(item=>item.soundId!==soundId),{soundId,category}];
+  quickSoundCategory=category;localStorage.setItem(quickSoundStorageKey,JSON.stringify(quickSoundSelections));
+  renderQuickSounds();$('#quick-sound-dialog').close();toast('Son rapide ajouté.');
+};
+
+all('[data-legacy-tab]').forEach(button => button.onclick = () => openLegacyTools(button));
+$('#open-connection').onclick=()=>{$('#camp-sheet').hidden=true;$('#pair-server').value=server||'';$('#connection-dialog').showModal();};
+$('#close-connection').onclick=()=>$('#connection-dialog').close();
+$('#connection-form').onsubmit=pair;
+$('#reconnect-address').onclick=async()=>{
+  try {
+    if(!credential) throw new Error('Appairage requis. Générez un code sur le PC.');
+    const address=normalizeServer($('#pair-server').value);
+    if(ws){ws.onclose=null;ws.onmessage=null;ws.close();ws=null;}
+    server=address;settingsStorage.setServer(server);
+    state=null;httpReady=false;
+    await probeAndConnect();
+    if(httpReady) $('#connection-dialog').close();
+  } catch(error){$('#connection-hint').textContent=error.message;}
+};
+$('#forget-connection').onclick=async()=>{
+  ++connectionGeneration;clearTimeout(reconnectTimer);
+  credential='';httpReady=false;ws?.close();await credentialStorage.clear();settingsStorage.setServer('');server='';
+  renderConnection('PC non appairé','offline');toast('Connexion locale oubliée.');
+};
+
+$('#streamer-ping-ack').onclick = async () => {
+  const id = activeStreamerPingId;
+  if (!id || !requireConnection()) return;
+  try {
+    const next = await transport.acknowledgeStreamerPing(id);
+    activeStreamerPingId = null;
+    if ($('#streamer-ping-dialog').open) $('#streamer-ping-dialog').close();
+    applyState(next);
+    toast('Streamer Ping acquitté.');
+  } catch (error) { toast(error.message); }
+};
+
+$('#add-event').onclick=()=>{
+  if(!requireConnection())return;
+  $('#event-date').value=localDateInputValue();$('#event-dialog').showModal();
+};
+$('#close-event').onclick=()=>$('#event-dialog').close();
+$('#cancel-event').onclick=()=>$('#event-dialog').close();
+$('#event-form').onsubmit=async event=>{
+  event.preventDefault();if(!requireConnection())return;
+  const date=$('#event-date').value,start=$('#event-start').value,end=$('#event-end').value;
+  try{
+    const startAtUtc=new Date(`${date}T${start}`).toISOString();
+    let endDate=new Date(`${date}T${end}`);
+    if(endDate.getTime()<=Date.parse(startAtUtc))endDate.setDate(endDate.getDate()+1);
+    const next=await transport.createPlanning({
+      title:$('#event-title').value.trim(),startAtUtc,endAtUtc:endDate.toISOString(),category:$('#event-category').value,
+      description:'',desiredPublication:{local:false,twitch:$('#event-category').value==='live',google:false},
+    });
+    applyState(next);$('#event-dialog').close();event.currentTarget.reset();toast('Événement ajouté.');
+  }catch(error){toast(error.message);}
+};
+
+$('#export-planning').onclick=async()=>{
+  if(!state)return toast('Planning indisponible.');
+  try{
+    const {exportPlanningImage}=await import('./planning-export.js');
+    const count=await exportPlanningImage(state.planning||[],state.settings?.streamerName||'Le Feu de Camp de Dam',{period:'this-week'});
+    toast(`Image prête · ${count} live${count>1?'s':''}.`);
+  }catch(error){if(error?.name!=='AbortError')toast(error.message);}
+};
+
+// HTTP also detects half-open sockets and keeps telemetry fresh during WS fallback.
+setInterval(async()=>{
+  if(document.hidden||!credential||!httpReady||healthCheckInFlight)return;
+  const generation=connectionGeneration;
+  healthCheckInFlight=true;
+  try {
+    const next=await transport.state();
+    if(generation!==connectionGeneration)return;
+    if(state?.serverInstanceId&&next.serverInstanceId&&state.serverInstanceId!==next.serverInstanceId){void probeAndConnect();return;}
+    applyState(next);
+  } catch {
+    if(generation===connectionGeneration){httpReady=false;void probeAndConnect();}
+  } finally {healthCheckInFlight=false;}
+},10000);
+
+window.addEventListener('online',()=>void probeAndConnect());
+window.addEventListener('offline',()=>{httpReady=false;renderConnection('PC hors ligne','offline');});
+document.addEventListener('visibilitychange',()=>{
+  if(!document.hidden&&credential) void probeAndConnect();
+  else if(document.hidden&&state?.streamerPings?.length){
+    const pending=state.streamerPings.filter(value=>!value.acknowledgedAt);
+    notifyStreamerPing(pending.at(-1),pending.length);
+  }
+});
+
+const handlePairingLink = link => {
+  try {
+    const parsed = parsePairing(String(link || ''));
+    server = parsed.server;
+    settingsStorage.setServer(server);
+    $('#pair-server').value = parsed.server;
+    $('#pair-id').value = parsed.id;
+    $('#pair-code').value = parsed.code;
+    $('#connection-dialog').showModal();
+    void pair();
+  } catch (error) {
+    $('#connection-hint').classList.add('error');
+    $('#connection-hint').textContent = error.message;
+    $('#connection-dialog').showModal();
+  }
+};
+
+window.addEventListener('native-pairing', event => handlePairingLink(event.detail));
+
+const resetProductionShell = () => {
+  if (!productionUi) return;
+  $('#home-live-copy').textContent = 'Prêt';
+  $('#home-live-dot-copy').textContent = 'PRÊT';
+  $('#home-duration').textContent = '—';
+  $('#home-title').textContent = 'Aucun live en cours';
+  $('#home-category').textContent = 'Connecte le PC pour charger l’état réel.';
+  $('#home-viewers').textContent = '—';
+  $('#home-chatters').textContent = '—';
+  $('#home-scene-name').textContent = '—';
+  $('#live-status-copy').textContent = 'Prêt';
+  $('#scene-name').textContent = '—';
+  $('#scene-state').textContent = 'OBS HORS LIGNE';
+  selectSceneVisual('');
+  renderChat([]);
+  renderPlanning([]);
+  renderCurrentWeek();
+  renderConnection(credential ? 'PC hors ligne' : 'PC non appairé', 'offline');
+};
+
+const boot=async()=>{
+  if (productionUi) {
+    document.title='StreamDashboard';
+    $('#preview-badge')?.remove();
+    const name=$('#pair-name'); if(name) name.value='Android Remote';
+  }
+  credential=await credentialStorage.get()||'';
+  server=settingsStorage.getServer();
+  renderCurrentWeek();
+  resetProductionShell();
+  renderQuickSounds();renderFullSoundboard();
+  $('#pair-server').value=server||'';
+  const pendingPairing = localStorage.getItem('streamdashboard.pendingPairing');
+  if (pendingPairing) {
+    localStorage.removeItem('streamdashboard.pendingPairing');
+    handlePairingLink(pendingPairing);
+    return;
+  }
+  if(!credential){
+    renderConnection('PC non appairé','offline');
+    if(isAndroidRuntime())$('#connection-dialog').showModal();
+    return;
+  }
+  await probeAndConnect();
+};
+void boot();

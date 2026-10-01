@@ -1,0 +1,68 @@
+plugins { id 'com.android.application' }
+
+dependencies {
+    // Align the Google SDK's legacy jdk7/jdk8 artifacts with AndroidX's stdlib.
+    implementation platform('org.jetbrains.kotlin:kotlin-bom:1.8.22')
+    implementation 'com.google.android.gms:play-services-auth:21.3.0'
+    implementation 'androidx.core:core:1.15.0'
+    implementation 'androidx.webkit:webkit:1.15.0'
+    testImplementation 'junit:junit:4.13.2'
+}
+
+def stableKeystore = System.getenv('ANDROID_KEYSTORE_PATH')
+def hasStableSigning = stableKeystore && System.getenv('ANDROID_KEYSTORE_PASSWORD') && System.getenv('ANDROID_KEY_ALIAS') && System.getenv('ANDROID_KEY_PASSWORD')
+def buildVersionCode = (System.getenv('ANDROID_VERSION_CODE') ?: '900001') as Integer
+def buildVersionName = System.getenv('ANDROID_VERSION_NAME') ?: '0.9.0-rc.1'
+def twitchAndroidClientId = System.getenv('TWITCH_ANDROID_CLIENT_ID') ?: ''
+def googleAndroidClientId = System.getenv('GOOGLE_ANDROID_CLIENT_ID') ?: ''
+
+android {
+    namespace 'com.rastaaslan.streamdashboard.remote'
+    compileSdk 35
+    buildFeatures {
+        buildConfig true
+    }
+    defaultConfig {
+        applicationId 'com.rastaaslan.streamdashboard.remote'
+        minSdk 26
+        targetSdk 35
+        versionCode buildVersionCode
+        versionName buildVersionName
+        buildConfigField 'String', 'TWITCH_ANDROID_CLIENT_ID', '"' + twitchAndroidClientId.replace('"', '\\"') + '"'
+        buildConfigField 'String', 'GOOGLE_ANDROID_CLIENT_ID', '"' + googleAndroidClientId.replace('"', '\\"') + '"'
+        buildConfigField 'boolean', 'PREVIEW_MODE', 'false'
+        manifestPlaceholders = [deepLinkScheme: 'streamdashboard']
+    }
+    signingConfigs {
+        if (hasStableSigning) {
+            stable {
+                storeFile file(stableKeystore)
+                storePassword System.getenv('ANDROID_KEYSTORE_PASSWORD')
+                keyAlias System.getenv('ANDROID_KEY_ALIAS')
+                keyPassword System.getenv('ANDROID_KEY_PASSWORD')
+            }
+        }
+    }
+    buildTypes {
+        release {
+            minifyEnabled false
+            proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
+            if (hasStableSigning) signingConfig signingConfigs.stable
+        }
+        preview {
+            initWith debug
+            applicationIdSuffix '.preview'
+            versionNameSuffix '-preview'
+            buildConfigField 'boolean', 'PREVIEW_MODE', 'true'
+            manifestPlaceholders = [deepLinkScheme: 'streamdashboard-preview']
+        }
+    }
+}
+
+// Enforce this for local builds as well as CI artifact publication.
+gradle.taskGraph.whenReady { graph ->
+    if (graph.allTasks.any { it.name == 'preReleaseBuild' } &&
+        (!twitchAndroidClientId.trim() || !googleAndroidClientId.trim())) {
+        throw new GradleException('Release requires TWITCH_ANDROID_CLIENT_ID and GOOGLE_ANDROID_CLIENT_ID')
+    }
+}
