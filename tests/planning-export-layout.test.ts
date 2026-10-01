@@ -44,10 +44,10 @@ describe('layout graphique du planning', () => {
   it('utilise toute la largeur et des miniatures visibles dans les cartes semaine', () => {
     const single = calculateWeeklyCards(1, 216);
     const pair = calculateWeeklyCards(2, 216);
-    expect(single[0]).toMatchObject({ x: 60, width: 960, height: 108 });
-    expect(pair[0].width).toBeGreaterThan(470);
-    expect(pair[1].x + pair[1].width).toBe(1020);
-    expect(pair[0].y + pair[0].height).toBeLessThan(216 + 143);
+    expect(single[0]).toMatchObject({ x: 60, width: 960, height: 94 });
+    expect(pair).toHaveLength(2);
+    expect(pair.every(card => card.x === 60 && card.width === 960)).toBe(true);
+    expect(pair[1].y).toBeGreaterThan(pair[0].y + pair[0].height);
   });
 
   it('rend aujourd’hui avec titres longs, miniature et fallback dans leurs zones', async () => {
