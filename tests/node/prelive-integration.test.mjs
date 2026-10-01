@@ -7,6 +7,10 @@ import { diagnosePrelive, diagnosticLabels } from '../../apps/mobile/prelive-dia
 import { fixture } from '../../apps/web/preview/fixtures.js';
 
 const read = file => readFileSync(new URL(`../../${file}`, import.meta.url), 'utf8');
+// Exercise both Git checkout line endings on every OS. Imports are supplied
+// by the VM scope, so strip them for LF and CRLF before compiling as a script.
+const lineEndings = [['LF', '\n'], ['CRLF', '\r\n']];
+const script = (file, newline) => read(file).replace(/\r?\n/g, newline).replace(/^import .*;\r?\n/gm, '');
 const moduleUrl = source => `data:text/javascript;base64,${Buffer.from(source).toString('base64')}`;
 // Execute the real server allowlist, including its actual contracts dependency, using Node's TS stripping.
 const contracts = moduleUrl(stripTypeScriptTypes(read('packages/contracts/src/index.ts')));
@@ -37,7 +41,7 @@ function element() {
     append(child) { this.children.push(child); }, replaceChildren(...children) { this.children = children; },
     setAttribute() {}, querySelector() { return element(); }, querySelectorAll() { return []; }, closest() { return null; } };
 }
-test('mobile feature keeps fresh OBS blocker when Twitch capabilities request fails', async () => {
+for (const [ending, newline] of lineEndings) test(`mobile feature keeps fresh OBS blocker when Twitch capabilities request fails (${ending})`, async () => {
   const root = element(), button = element();
   let current = {}; const received = dashboard(); received.obs.connected = false;
   const context = {
@@ -48,7 +52,7 @@ test('mobile feature keeps fresh OBS blocker when Twitch capabilities request fa
   const scope = vm.createContext({ getMobileContext: () => context, diagnosePrelive, diagnosticLabels,
     document: { getElementById: id => id === 'run-prelive' ? button : root, querySelectorAll: () => [], createElement: element } });
   // Run the shipped feature and its automatic first diagnostic, not a copied orchestration function.
-  vm.runInContext(read('apps/mobile/features/prelive.js').replace(/^import .*;\n/gm, '').replace(/void run\(\);\s*$/, 'globalThis.finished = run();'), scope);
+  vm.runInContext(script('apps/mobile/features/prelive.js', newline).replace(/void run\(\);\s*$/, 'globalThis.finished = run();'), scope);
   await scope.finished;
   assert.match(root.children[0].textContent, /^Bloquant/);
   assert.ok(root.children.some(row => /OBS déconnecté/.test(row.textContent)));
@@ -59,7 +63,7 @@ test('mobile feature keeps fresh OBS blocker when Twitch capabilities request fa
   assert.match(root.children[0].textContent, /^Avertissement/);
 });
 
-function desktop() {
+function desktop(newline) {
   const nodes = new Map(), sockets = [];
   let openButtons = [];
   const get = id => { if (!nodes.has(id)) nodes.set(id, element()); return nodes.get(id); };
@@ -77,11 +81,11 @@ function desktop() {
     fetch: async () => { throw Error('Runtime unavailable'); },
     WebSocket: class { constructor() { this.readyState = 1; sockets.push(this); } close() { this.readyState = 3; this.onclose?.(); } }
   });
-  vm.runInContext(read('apps/web/preview/preview.js').replace(/^import .*;\n/gm, '') + '\nglobalThis.api={state,applyDashboard,refreshRuntime,preliveContent,render,connectRuntimeSocket};', scope);
+  vm.runInContext(script('apps/web/preview/preview.js', newline) + '\nglobalThis.api={state,applyDashboard,refreshRuntime,preliveContent,render,connectRuntimeSocket};', scope);
   return { ...scope.api, nodes, sockets, scope, get openButtons() { return openButtons; } };
 }
-test('desktop invalidates cached positive results on refresh failure, socket close and restores them on new telemetry', async () => {
-  const app = desktop(); app.state.runtime = true; app.applyDashboard(dashboard());
+for (const [ending, newline] of lineEndings) test(`desktop invalidates cached positive results on refresh failure, socket close and restores them on new telemetry (${ending})`, async () => {
+  const app = desktop(newline); app.state.runtime = true; app.applyDashboard(dashboard());
   assert.match(app.preliveContent(), /Diagnostic pré-live · OK/);
   assert.equal(await app.refreshRuntime(), false);
   assert.equal(app.state.runtimeAvailable, false);
@@ -91,8 +95,8 @@ test('desktop invalidates cached positive results on refresh failure, socket clo
   assert.match(app.preliveContent(), /OBS non vérifiable hors connexion/);
   app.applyDashboard(dashboard()); assert.match(app.preliveContent(), /Diagnostic pré-live · OK/);
 });
-test('desktop preparation renders diagnostic with checklist disabled, without redirect or checklist controls', () => {
-  const app = desktop(); app.state.runtime = true; app.applyDashboard(dashboard());
+for (const [ending, newline] of lineEndings) test(`desktop preparation renders diagnostic with checklist disabled, without redirect or checklist controls (${ending})`, () => {
+  const app = desktop(newline); app.state.runtime = true; app.applyDashboard(dashboard());
   app.state.productProfile.modules.checklist = false;
   for (const entry of ['home', 'live']) {
     app.state.view = entry; app.render();
