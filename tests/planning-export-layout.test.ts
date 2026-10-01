@@ -74,6 +74,20 @@ describe('layout graphique du planning', () => {
     expect(harness.text.every(line => line.x >= 0 && line.x + line.width <= 1080 && line.y <= 1350)).toBe(true);
   });
 
+  it('exporte tous les événements d’une journée chargée sans troncature', async () => {
+    const harness = canvasHarness();
+    const items = Array.from({ length: 5 }, (_, index) => ({
+      ...event(14, `Live chargé ${index + 1}`, 'Just Chatting'),
+      startAtUtc: new Date(2026, 8, 14, 16 + index).toISOString(),
+      endAtUtc: new Date(2026, 8, 14, 17 + index).toISOString(),
+    }));
+    const result = await renderPlanningCanvas(items, 'Rastaaslan', { period: 'next-week', filters, now: new Date(2026, 8, 7), documentApi: harness.documentApi, loadArtwork: vi.fn().mockResolvedValue(null) });
+    expect(result.count).toBe(5);
+    for (let index = 1; index <= 5; index++) expect(harness.text.some(line => line.value === `Live chargé ${index}`)).toBe(true);
+    expect(result.canvas.height).toBeGreaterThanOrEqual(PLANNING_CANVAS.height);
+    expect(harness.text.every(line => line.y <= result.canvas.height)).toBe(true);
+  });
+
   it('dessine une miniature semaine nettement visible', async () => {
     const harness = canvasHarness();
     const image = { naturalWidth: 285, naturalHeight: 380 };
