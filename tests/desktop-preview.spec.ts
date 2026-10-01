@@ -28,7 +28,7 @@ test('Desktop Preview navigue et émet une commande unique par contrôle', async
       expect(route.request().postDataJSON()).toMatchObject({ obsUrl: 'ws://127.0.0.1:4455' });
       await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ ok: true, obsVersion: '31.0.0' }) });
     });
-    let repairedSoundboard = false; let playedDesktopSound = false;
+    let repairedSoundboard = false; let playedDesktopSounds = 0; let fixtureObsConnected = true;
     await page.route('**/api/v1/soundboard', async route => {
       await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({
         sounds: [{ id: 'bonk', name: 'BONK', category: 'Réactions', favorite: true, enabled: true, sourceAvailable: true, volume: 1, cooldownMs: 0, outputId: 'obs', monitoringMode: 'stream' }],
@@ -44,7 +44,7 @@ test('Desktop Preview navigue et émet une commande unique par contrôle', async
       await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ connected: true, inputName: 'StreamDashboard • Soundboard', inputExists: true, inputKind: 'ffmpeg_source', wrongInputKind: false, targetScenes: ['Gameplay'], attachedScenes: ['Gameplay'], missingScenes: [], ready: true }) });
     });
     await page.route('**/api/v1/soundboard/play', async route => {
-      playedDesktopSound = true;
+      playedDesktopSounds++;
       await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ commandId: route.request().postDataJSON().commandId, correlationId: route.request().postDataJSON().correlationId, status: 'succeeded', timestamp: new Date().toISOString() }) });
     });
     // This smoke mocks OBS operations, so project matching connected telemetry.
@@ -53,7 +53,7 @@ test('Desktop Preview navigue et émet une commande unique par contrôle', async
     await page.route('**/api/v1/state', async route => {
       const response = await route.fetch();
       const state = await response.json();
-      state.obs = { ...state.obs, connected: true, streamingKnown: true, scene: 'Gameplay' };
+      state.obs = { ...state.obs, connected: fixtureObsConnected, streamingKnown: true, scene: 'Gameplay' };
       await route.fulfill({ response, json: state });
     });
     await page.locator('#mode').click(); await expect(page.locator('#runtime-status')).toHaveText('Runtime PC');
@@ -63,11 +63,30 @@ test('Desktop Preview navigue et émet une commande unique par contrôle', async
     await expect(page.locator('#toast')).toContainText('OBS connecté · v31.0.0');
     expect(testedObs).toBe(true);
 
-    await page.locator('[data-view="sounds"]').click();
+    // /obs/test reports reachability; it does not connect the real OBS client.
+    // Supply the matching telemetry explicitly for each guard scenario.
+    const setFixtureObsConnected = async (connected: boolean) => {
+      fixtureObsConnected = connected;
+      await page.evaluate(connected => {
+        const state = (window as any).__preview.state;
+        state.dashboard.obs = { ...state.dashboard.obs, connected, streamingKnown: true, scene: 'Gameplay' };
+      }, connected);
+      await page.locator('[data-view="sounds"]').click();
+    };
+    const beforeRuntimeSound = await page.evaluate(() => (window as any).__preview.commandLog.length);
+    await setFixtureObsConnected(false);
+    await expect(page.locator('[data-sound="bonk"]')).toBeDisabled();
+    await expect(page.locator('[data-sound="bonk"]')).toHaveAttribute('title', /OBS hors ligne/);
+    expect(playedDesktopSounds).toBe(0);
+    expect(await page.evaluate(() => (window as any).__preview.commandLog.length)).toBe(beforeRuntimeSound);
+    await setFixtureObsConnected(true);
+    await expect(page.locator('[data-sound="bonk"]')).toBeEnabled();
     await page.locator('[data-sound="bonk"]').click();
     await expect(page.locator('#toast')).toContainText('Son envoyé à OBS');
     expect(repairedSoundboard).toBe(true);
-    expect(playedDesktopSound).toBe(true);
+    expect(playedDesktopSounds).toBe(1);
+    expect(await page.evaluate(() => (window as any).__preview.commandLog.slice(-1)[0])).toMatchObject({ type: 'soundboard.play', payload: { soundId: 'bonk' } });
+    expect(await page.evaluate(() => (window as any).__preview.commandLog.length)).toBe(beforeRuntimeSound + 1);
 
     // Runtime sections in Le Camp are no longer placeholders.
     await page.locator('[data-view="camp"]').click();
