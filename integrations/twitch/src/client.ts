@@ -424,8 +424,9 @@ export class TwitchClient {
     const payload: Record<string, string> = {};
     if (item.title !== current.title) payload.title = item.title;
     if (Date.parse(item.startAtUtc) !== Date.parse(current.start_time)) {
+      if (current.is_recurring || item.recurrence) throw new Error('Twitch ne permet pas de déplacer l’horaire d’une série récurrente existante. Créez une nouvelle série pour changer son jour ou son heure.');
       payload.start_time = item.startAtUtc;
-      payload.timezone = item.recurrence?.timeZone || 'UTC';
+      payload.timezone = 'UTC';
     }
     if (duration !== Math.ceil((Date.parse(current.end_time) - Date.parse(current.start_time)) / 60_000)) payload.duration = String(duration);
     if (item.twitchCategoryId && item.twitchCategoryId !== current.category?.id) payload.category_id = item.twitchCategoryId;
