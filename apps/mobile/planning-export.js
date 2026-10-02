@@ -173,7 +173,7 @@ export function drawEventCard(ctx, item, card, image, compact = false) {
 function drawHeader(ctx, streamer, weekly, height) {
   const gradient = ctx.createLinearGradient(0, 0, WIDTH, height);
   gradient.addColorStop(0, '#090914'); gradient.addColorStop(.62, '#18112c'); gradient.addColorStop(1, '#321827');
-  ctx.fillStyle = gradient; ctx.fillRect(0, 0, WIDTH, HEIGHT);
+  ctx.fillStyle = gradient; ctx.fillRect(0, 0, WIDTH, height);
   ctx.fillStyle = '#bca8ff'; setFont(ctx, 750, 25); ctx.fillText('LE FEU DE CAMP', 70, 68);
   ctx.fillStyle = '#fff'; setFont(ctx, 850, 55); ctx.fillText(weekly ? 'AGENDA DE LA SEMAINE' : 'AUJOURD’HUI EN LIVE', 70, 137);
   ctx.fillStyle = '#aaa2bb'; setFont(ctx, 500, 23); ctx.fillText(streamer, 72, 180);
