@@ -144,7 +144,8 @@ export function drawEventCard(ctx, item, card, image, compact = false) {
   drawCoverImage(ctx, image, art);
   const textX = art.x + art.width + (compact ? 16 : 22);
   const timeWidth = compact ? (width > 700 ? 126 : 82) : 0;
-  const textWidth = x + width - pad - timeWidth - (compact ? 14 : 0) - textX;
+  const rightEdge = x + width - pad - (compact ? timeWidth + 14 : 0);
+  const textWidth = Math.max(80, rightEdge - textX);
   if (compact) {
     const timeX = x + width - pad - timeWidth;
     rounded(ctx, timeX, y + 13, timeWidth, 38, 12);
