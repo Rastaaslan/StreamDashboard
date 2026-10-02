@@ -44,10 +44,10 @@ describe('layout graphique du planning', () => {
   it('utilise toute la largeur et des miniatures visibles dans les cartes semaine', () => {
     const single = calculateWeeklyCards(1, 216);
     const pair = calculateWeeklyCards(2, 216);
-    expect(single[0]).toMatchObject({ x: 60, width: 960, height: 108 });
-    expect(pair[0].width).toBeGreaterThan(470);
-    expect(pair[1].x + pair[1].width).toBe(1020);
-    expect(pair[0].y + pair[0].height).toBeLessThan(216 + 143);
+    expect(single[0]).toMatchObject({ x: 60, width: 960, height: 94 });
+    expect(pair).toHaveLength(2);
+    expect(pair.every(card => card.x === 60 && card.width === 960)).toBe(true);
+    expect(pair[1].y).toBeGreaterThan(pair[0].y + pair[0].height);
   });
 
   it('rend aujourd’hui avec titres longs, miniature et fallback dans leurs zones', async () => {
@@ -60,7 +60,7 @@ describe('layout graphique du planning', () => {
     const result = await renderPlanningCanvas(items, 'Rastaaslan', { period: 'today', filters, now: new Date(2026, 8, 13, 12), documentApi: harness.documentApi, loadArtwork: vi.fn().mockResolvedValueOnce(image).mockResolvedValueOnce(null) });
     expect(result.canvas).toMatchObject({ width: 1080, height: 1350 }); expect(result.count).toBe(2);
     expect(harness.context.drawImage).toHaveBeenCalledOnce();
-    expect(harness.text.every(line => line.x >= 0 && line.x + line.width <= 1080 && line.y >= 0 && line.y <= 1350)).toBe(true);
+    expect(harness.text.every(line => line.x >= 0 && line.x + line.width <= 1080 && line.y >= 0 && line.y <= result.canvas.height)).toBe(true);
   });
 
   it('rend les sept jours et distingue deux lives le même jour sans réseau', async () => {
@@ -71,7 +71,21 @@ describe('layout graphique du planning', () => {
     expect(result.count).toBe(8); expect(harness.context.drawImage).not.toHaveBeenCalled();
     expect(harness.text.filter(line => line.value.startsWith('Live '))).toHaveLength(7);
     expect(harness.text.some(line => line.value.startsWith('Deuxième rendez-vous'))).toBe(true);
-    expect(harness.text.every(line => line.x >= 0 && line.x + line.width <= 1080 && line.y <= 1350)).toBe(true);
+    expect(harness.text.filter(line => line.x < 0 || line.x + line.width > result.canvas.width || line.y > result.canvas.height)).toEqual([]);
+  });
+
+  it('exporte tous les événements d’une journée chargée sans troncature', async () => {
+    const harness = canvasHarness();
+    const items = Array.from({ length: 5 }, (_, index) => ({
+      ...event(14, `Live chargé ${index + 1}`, 'Just Chatting'),
+      startAtUtc: new Date(2026, 8, 14, 16 + index).toISOString(),
+      endAtUtc: new Date(2026, 8, 14, 17 + index).toISOString(),
+    }));
+    const result = await renderPlanningCanvas(items, 'Rastaaslan', { period: 'next-week', filters, now: new Date(2026, 8, 7), documentApi: harness.documentApi, loadArtwork: vi.fn().mockResolvedValue(null) });
+    expect(result.count).toBe(5);
+    for (let index = 1; index <= 5; index++) expect(harness.text.some(line => line.value === `Live chargé ${index}`)).toBe(true);
+    expect(result.canvas.height).toBeGreaterThanOrEqual(PLANNING_CANVAS.height);
+    expect(harness.text.every(line => line.y <= result.canvas.height)).toBe(true);
   });
 
   it('dessine une miniature semaine nettement visible', async () => {

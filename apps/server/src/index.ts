@@ -266,8 +266,8 @@ function sanitizeCalendarItem(value: unknown): CalendarItem | null {
 }
 
 function validateRecurrence(value: unknown): CalendarItem['recurrence'] {
-  if (!object(value) || !['weekly', 'monthly'].includes(String(value.frequency)) || ![1, 2].includes(Number(value.interval))) throw new Error('Récurrence invalide.');
-  if (value.frequency === 'monthly' && Number(value.interval) !== 1) throw new Error('Intervalle mensuel invalide.');
+  if (!object(value) || !['daily', 'weekly', 'monthly'].includes(String(value.frequency)) || ![1, 2].includes(Number(value.interval))) throw new Error('Récurrence invalide.');
+  if (['daily', 'monthly'].includes(String(value.frequency)) && Number(value.interval) !== 1) throw new Error('Intervalle de récurrence invalide.');
   const timeZone = typeof value.timeZone === 'string' ? value.timeZone : '';
   try { new Intl.DateTimeFormat('fr-FR', { timeZone }).format(); } catch { throw new Error('Fuseau horaire invalide.'); }
   const until = value.until == null ? null : String(value.until);
@@ -282,7 +282,7 @@ function validateRecurrence(value: unknown): CalendarItem['recurrence'] {
       exceptions[key] = { ...(exception.cancelled === true ? { cancelled: true } : {}), ...(patch ? { patch: structuredClone(patch) } : {}) };
     }
   }
-  return { frequency: value.frequency as 'weekly' | 'monthly', interval: Number(value.interval) as 1 | 2, timeZone, until, exceptions };
+  return { frequency: value.frequency as 'daily' | 'weekly' | 'monthly', interval: Number(value.interval) as 1 | 2, timeZone, until, exceptions };
 }
 
 function parseGoogleTokens(value: Record<string, string> | null): GoogleTokens | null {

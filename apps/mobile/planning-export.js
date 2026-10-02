@@ -3,6 +3,7 @@ import { filterPlanning, weekAgenda } from './planning-model.js';
 
 export const PLANNING_CANVAS = Object.freeze({ width: 1080, height: 1350 });
 const { width: WIDTH, height: HEIGHT } = PLANNING_CANVAS;
+const HEADER_BOTTOM = 210, FOOTER_HEIGHT = 90;
 const FONT = 'system-ui, -apple-system, "Segoe UI", sans-serif';
 
 function rounded(ctx, x, y, width, height, radius) {
@@ -115,19 +116,21 @@ function drawLines(ctx, lines, x, y, lineHeight) { lines.forEach((line, index) =
 function eventTime(item) { return new Date(item.startAtUtc).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' }); }
 
 export function calculateTodayCards(count) {
-  const safeCount = Math.max(1, Math.min(5, count));
-  const top = 230, bottom = 1240, gap = safeCount === 5 ? 14 : 20;
-  const height = Math.min(190, (bottom - top - gap * (safeCount - 1)) / safeCount);
+  const safeCount = Math.max(1, count);
+  const top = 230, gap = 16, height = 170;
   return Array.from({ length: safeCount }, (_, index) => ({ x: 60, y: top + index * (height + gap), width: 960, height }));
 }
 
 export function calculateWeeklyCards(eventCount, rowY) {
-  const count = Math.max(1, Math.min(2, eventCount));
-  const gap = 12;
-  const width = (960 - gap * (count - 1)) / count;
+  const count = Math.max(1, eventCount);
+  const gap = 10, height = 94;
   return Array.from({ length: count }, (_, index) => ({
-    x: 60 + index * (width + gap), y: rowY + 29, width, height: 108,
+    x: 60, y: rowY + 32 + index * (height + gap), width: 960, height,
   }));
+}
+
+export function weeklyDayHeight(eventCount) {
+  return eventCount ? 42 + eventCount * 104 : 118;
 }
 
 export function drawEventCard(ctx, item, card, image, compact = false) {
@@ -141,7 +144,8 @@ export function drawEventCard(ctx, item, card, image, compact = false) {
   drawCoverImage(ctx, image, art);
   const textX = art.x + art.width + (compact ? 16 : 22);
   const timeWidth = compact ? (width > 700 ? 126 : 82) : 0;
-  const textWidth = x + width - pad - timeWidth - (compact ? 14 : 0) - textX;
+  const rightEdge = x + width - pad - (compact ? timeWidth + 14 : 0);
+  const textWidth = Math.max(80, rightEdge - textX);
   if (compact) {
     const timeX = x + width - pad - timeWidth;
     rounded(ctx, timeX, y + 13, timeWidth, 38, 12);
@@ -166,10 +170,10 @@ export function drawEventCard(ctx, item, card, image, compact = false) {
   }
 }
 
-function drawHeader(ctx, streamer, weekly) {
-  const gradient = ctx.createLinearGradient(0, 0, WIDTH, HEIGHT);
+function drawHeader(ctx, streamer, weekly, height) {
+  const gradient = ctx.createLinearGradient(0, 0, WIDTH, height);
   gradient.addColorStop(0, '#090914'); gradient.addColorStop(.62, '#18112c'); gradient.addColorStop(1, '#321827');
-  ctx.fillStyle = gradient; ctx.fillRect(0, 0, WIDTH, HEIGHT);
+  ctx.fillStyle = gradient; ctx.fillRect(0, 0, WIDTH, height);
   ctx.fillStyle = '#bca8ff'; setFont(ctx, 750, 25); ctx.fillText('LE FEU DE CAMP', 70, 68);
   ctx.fillStyle = '#fff'; setFont(ctx, 850, 55); ctx.fillText(weekly ? 'AGENDA DE LA SEMAINE' : 'AUJOURD’HUI EN LIVE', 70, 137);
   ctx.fillStyle = '#aaa2bb'; setFont(ctx, 500, 23); ctx.fillText(streamer, 72, 180);
@@ -190,33 +194,46 @@ async function resolveImages(items, options) {
 export async function renderPlanningCanvas(items, streamerName = 'StreamDashboard', options = {}) {
   const weekly = options.period === 'next-week' || options.period === 'this-week';
   const documentApi = options.documentApi || globalThis.document;
-  const canvas = documentApi.createElement('canvas'); canvas.width = WIDTH; canvas.height = HEIGHT;
-  const ctx = canvas.getContext('2d'); if (!ctx) throw new Error('Canvas indisponible.');
-  drawHeader(ctx, streamerName, weekly);
-  let count = 0;
+  const canvas = documentApi.createElement('canvas');
+  let count = 0, footerY;
+  let days, events;
   if (weekly) {
-    const days = weekAgenda(items, options.filters, options.now, options.period);
-    const visible = days.flatMap(day => day.events.slice(0, 2));
-    const images = await resolveImages(visible, options); let imageIndex = 0;
-    days.forEach((day, index) => {
-      const y = 216 + index * 143;
-      ctx.fillStyle = '#cdbaff'; setFont(ctx, 800, 20); ctx.fillText(day.date.toLocaleDateString('fr-FR', { weekday: 'long', day: '2-digit', month: 'long' }).toUpperCase(), 65, y + 22);
-      if (!day.events.length) { ctx.fillStyle = '#706a7d'; setFont(ctx, 550, 19); ctx.fillText('Pas de live prévu', 70, y + 75); }
-      else {
-        const entries = day.events.slice(0, 2);
-        calculateWeeklyCards(entries.length, y).forEach((card, eventIndex) => drawEventCard(ctx, entries[eventIndex], card, images[imageIndex++], true));
-        count += day.events.length;
-      }
-    });
+    days = weekAgenda(items, options.filters, options.now, options.period);
+    count = days.reduce((total, day) => total + day.events.length, 0);
+    const contentHeight = days.reduce((total, day) => total + weeklyDayHeight(day.events.length), 0);
+    canvas.height = Math.max(PLANNING_CANVAS.height, HEADER_BOTTOM + contentHeight + FOOTER_HEIGHT);
   } else {
-    const events = filterPlanning(items, options.filters, 'today', options.now);
+    events = filterPlanning(items, options.filters, 'today', options.now);
     if (!events.length) throw new Error('Aucun live aujourd’hui à exporter.');
-    const shown = events.slice(0, 5); const images = await resolveImages(shown, options);
-    calculateTodayCards(shown.length).forEach((card, index) => drawEventCard(ctx, shown[index], card, images[index]));
     count = events.length;
+    const cards = calculateTodayCards(events.length);
+    const contentBottom = cards.at(-1).y + cards.at(-1).height;
+    canvas.height = Math.max(PLANNING_CANVAS.height, contentBottom + FOOTER_HEIGHT);
   }
-  if (options.noteEnabled && options.noteText) { ctx.fillStyle = '#aaa2bb'; setFont(ctx, 500, 20, 'italic '); ctx.fillText(options.noteText, 70, 1288); }
-  ctx.fillStyle = '#6f687e'; setFont(ctx, 500, 18); ctx.fillText('Planning prévisionnel · StreamDashboard', 70, 1325);
+  canvas.width = WIDTH;
+  const ctx = canvas.getContext('2d'); if (!ctx) throw new Error('Canvas indisponible.');
+  drawHeader(ctx, streamerName, weekly, canvas.height);
+  if (weekly) {
+    const visible = days.flatMap(day => day.events);
+    const images = await resolveImages(visible, options); let imageIndex = 0, y = 216;
+    days.forEach(day => {
+      ctx.fillStyle = '#cdbaff'; setFont(ctx, 800, 20); ctx.fillText(day.date.toLocaleDateString('fr-FR', { weekday: 'long', day: '2-digit', month: 'long' }).toUpperCase(), 65, y + 22);
+      if (!day.events.length) {
+        ctx.fillStyle = '#706a7d'; setFont(ctx, 550, 19); ctx.fillText('Pas de live prévu', 70, y + 72);
+      } else {
+        calculateWeeklyCards(day.events.length, y).forEach((card, eventIndex) => drawEventCard(ctx, day.events[eventIndex], card, images[imageIndex++], true));
+      }
+      y += weeklyDayHeight(day.events.length);
+    });
+    footerY = y + 24;
+  } else {
+    const images = await resolveImages(events, options);
+    const cards = calculateTodayCards(events.length);
+    cards.forEach((card, index) => drawEventCard(ctx, events[index], card, images[index]));
+    footerY = cards.at(-1).y + cards.at(-1).height + 34;
+  }
+  if (options.noteEnabled && options.noteText) { ctx.fillStyle = '#aaa2bb'; setFont(ctx, 500, 20, 'italic '); ctx.fillText(options.noteText, 70, footerY); footerY += 37; }
+  ctx.fillStyle = '#6f687e'; setFont(ctx, 500, 18); ctx.fillText('Planning prévisionnel · StreamDashboard', 70, Math.min(canvas.height - 24, footerY));
   return { canvas, count };
 }
 

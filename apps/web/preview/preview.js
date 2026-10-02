@@ -1180,6 +1180,7 @@ function populateEventForm(item,scope='item'){
   document.querySelector('#event-recurrence-until').disabled=occurrence&&scope!=='series';
   document.querySelector('#event-dialog-title').textContent=source.id?'Modifier l’événement':'Nouvel événement';
   document.querySelector('#event-delete').hidden=!source.id;
+  document.querySelector('#event-duplicate').hidden=!source.id;
   document.querySelector('#event-submit').textContent=source.id?'Enregistrer':'Ajouter';
   renderEventProviderStatus(eventCanonical(source));
 }
@@ -1236,6 +1237,24 @@ document.querySelector('#event-form').onsubmit=async event=>{
     const partial=matches.some(value=>value.syncError||value.conflict||Object.values(value.providerLinks||value.providers||{}).some(link=>['error','conflict','pending'].includes(link.status)));
     document.querySelector('#event-dialog').close();state.eventEdit=null;form.reset();const refreshed=await refreshRuntime();toast(partial?'Événement enregistré localement · publication fournisseur à vérifier dans le Planning.':refreshed?'Événement enregistré':'Événement enregistré · rafraîchissement impossible, réessaie.',partial||!refreshed);
   }catch(error){toast(error.message,true)}
+};
+document.querySelector('#event-duplicate').onclick=()=>{
+  if(!state.eventEdit)return;
+  const source=eventCanonical(state.eventEdit.scope==='series'?state.eventEdit.series:state.eventEdit.occurrence);
+  if(!source)return;
+  const duplicate={
+    title:source.title,description:source.description||'',startAtUtc:source.startAtUtc,endAtUtc:source.endAtUtc,
+    category:source.category||'live',twitchCategoryId:source.twitchCategoryId,twitchCategoryName:source.twitchCategoryName,
+    desiredPublication:{local:true,twitch:false,google:false},
+    ...(source.recurrence?{recurrence:structuredClone(source.recurrence)}:{})
+  };
+  state.eventEdit=null;
+  populateEventForm(duplicate,'item');
+  document.querySelector('#event-dialog-title').textContent='Dupliquer l’événement';
+  document.querySelector('#event-delete').hidden=true;
+  document.querySelector('#event-duplicate').hidden=true;
+  document.querySelector('#event-submit').textContent='Créer la copie';
+  toast('Copie prête · vérifie les dates et publications avant de créer.');
 };
 document.querySelector('#event-delete').onclick=async()=>{
   if(!state.eventEdit)return;

@@ -391,6 +391,7 @@ export class TwitchClient {
 
   async createSegment(item: CalendarItem) {
     try {
+      this.validateTwitchRecurrence(item);
       this.requireScope(SCHEDULE_SCOPE);
       if (!this.state.connected) throw new Error('Connectez Twitch avant de modifier son planning.');
       this.validateScheduleItem(item);
@@ -405,6 +406,7 @@ export class TwitchClient {
 
   async updateSegment(id: string, item: CalendarItem) {
     this.requireScope(SCHEDULE_SCOPE);
+    this.validateTwitchRecurrence(item);
     if (!this.state.connected) throw new Error('Connectez Twitch avant de modifier son planning.');
     const duration = this.validateScheduleItem(item);
     const fingerprint = item.providers?.twitch?.fingerprint;
@@ -422,8 +424,9 @@ export class TwitchClient {
     const payload: Record<string, string> = {};
     if (item.title !== current.title) payload.title = item.title;
     if (Date.parse(item.startAtUtc) !== Date.parse(current.start_time)) {
+      if (current.is_recurring || item.recurrence) throw new Error('Twitch ne permet pas de déplacer l’horaire d’une série récurrente existante. Créez une nouvelle série pour changer son jour ou son heure.');
       payload.start_time = item.startAtUtc;
-      payload.timezone = item.recurrence?.timeZone || 'UTC';
+      payload.timezone = 'UTC';
     }
     if (duration !== Math.ceil((Date.parse(current.end_time) - Date.parse(current.start_time)) / 60_000)) payload.duration = String(duration);
     if (item.twitchCategoryId && item.twitchCategoryId !== current.category?.id) payload.category_id = item.twitchCategoryId;
@@ -733,6 +736,12 @@ export class TwitchClient {
     return segments;
   }
 
+  private validateTwitchRecurrence(item: CalendarItem) {
+    if (!item.recurrence) return;
+    if (item.recurrence.frequency === 'weekly' && item.recurrence.interval === 1) return;
+    throw new Error('Twitch ne prend en charge nativement que la récurrence hebdomadaire. Cette récurrence reste disponible dans StreamDashboard, sans publication Twitch automatique.');
+  }
+
   private async createSegmentUnchecked(item: CalendarItem) {
     this.requireScope(SCHEDULE_SCOPE);
     assertProviderCreationCertain(item, 'twitch');
@@ -744,6 +753,7 @@ export class TwitchClient {
           start_time: item.startAtUtc,
           timezone: item.recurrence?.timeZone || 'UTC',
           duration: String(duration),
+          is_recurring: item.recurrence?.frequency === 'weekly' && item.recurrence.interval === 1,
           title: item.title,
           ...(item.twitchCategoryId ? { category_id: item.twitchCategoryId } : {}),
         }),
