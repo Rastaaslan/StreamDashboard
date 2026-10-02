@@ -9,6 +9,11 @@ export interface PlanningProvider {
   delete(id: string, item: CalendarItem, revision?: string): Promise<void>;
 }
 
+function providerSupportsRecurrence(provider: ProviderName, item: CalendarItem) {
+  if (!item.recurrence) return true;
+  return provider === 'twitch' && item.recurrence.frequency === 'weekly' && item.recurrence.interval === 1;
+}
+
 export interface PlanningUpdateOptions {
   desiredPublication?: Partial<NonNullable<CalendarItem['desiredPublication']>>;
   confirmRecurring?: boolean;
@@ -100,7 +105,7 @@ export class PlanningOrchestrator {
       const item = this.required(id);
       if (!this.remoteId(item, provider)) assertProviderCreationCertain(item, provider);
       const desired = item.desiredPublication?.[provider] ?? false;
-      if (desired && item.recurrence) {
+      if (desired && item.recurrence && !providerSupportsRecurrence(provider, item)) {
         item.providers ??= {}; const link = item.providers[provider] ??= { status: 'error' };
         link.status = 'error'; link.lastError = `La récurrence locale ne peut pas encore être représentée fidèlement sur ${provider}. L’événement local est conservé.`;
         await this.persist(this.items); throw new Error(link.lastError);
@@ -262,7 +267,7 @@ export class PlanningOrchestrator {
       }
       // V1 provider APIs do not expose a reliable exception-aware recurring model.
       // Refuse rather than silently publishing only the anchor or duplicating retries.
-      if (desired && item.recurrence) {
+      if (desired && item.recurrence && !providerSupportsRecurrence(name, item)) {
         item.providers ??= {};
         const link = item.providers[name] ??= { status: 'error' };
         link.status = 'error';
