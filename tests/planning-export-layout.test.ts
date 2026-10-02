@@ -71,7 +71,7 @@ describe('layout graphique du planning', () => {
     expect(result.count).toBe(8); expect(harness.context.drawImage).not.toHaveBeenCalled();
     expect(harness.text.filter(line => line.value.startsWith('Live '))).toHaveLength(7);
     expect(harness.text.some(line => line.value.startsWith('Deuxième rendez-vous'))).toBe(true);
-    expect(harness.text.every(line => line.x >= 0 && line.x + line.width <= 1080 && line.y <= 1350)).toBe(true);
+    expect(harness.text.filter(line => line.x < 0 || line.x + line.width > result.canvas.width || line.y > result.canvas.height)).toEqual([]);
   });
 
   it('exporte tous les événements d’une journée chargée sans troncature', async () => {
