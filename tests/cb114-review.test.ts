@@ -32,7 +32,10 @@ async function runtime(loseResponse = false) {
   folder = await mkdtemp(join(tmpdir(), 'cb114-review-'));
   const secrets = new MemorySecretStore();
   await secrets.setGoogleTokens({ accessToken: 'token', refreshToken: 'refresh', expiresAt: String(Date.now() + 3600000) });
-  const google = new Map<string, any>(); const twitch = new Map<string, any>();
+  const google = new Map<string, any>(); const tombstones = new Set<string>();
+  const retireGoogle = (key: string) => { google.delete(key); tombstones.add(key); };
+  let hideLists = false; let conflicts = 0; let unavailableReads = false;
+  const twitch = new Map<string, any>();
   const posts: string[] = []; let next = 0; let lose = loseResponse;
   const googleFetch: typeof fetch = async (input, init) => {
     const url = new URL(String(input));
@@ -45,15 +48,21 @@ async function runtime(loseResponse = false) {
       const saved = JSON.parse(await readFile(join(folder, 'dashboard.json'), 'utf8'));
       const entry = Object.values(saved.planning[0].providers.google.projections).find((v: any) => v.event.localId === body.extendedProperties.private.streamDashboardId) as any;
       expect(entry.calendarId).toBe(calendar); expect(entry.uncertainCreate).toBeTruthy();
-      posts.push(key); google.set(key, { ...body, id: body.id, etag: 'v1' });
+      expect(entry.creationId).toBe(body.extendedProperties.private.streamDashboardCreationId);
+      expect(entry.uncertainCreate.event.projection.creationId).toBe(entry.creationId);
+      posts.push(key);
+      if (google.has(key) || tombstones.has(key)) { conflicts++; return Response.json({ error: { message: 'Identifier already exists' } }, { status: 409 }); }
+      google.set(key, { ...body, id: body.id, etag: 'v1' });
       if (lose) { lose = false; throw new TypeError('Lost response'); }
       return Response.json(google.get(key));
     }
-    if (init?.method === 'DELETE') { google.delete(calendar + '/' + id); return new Response(null, { status: 204 }); }
+    if (init?.method === 'DELETE') { retireGoogle(calendar + '/' + id); return new Response(null, { status: 204 }); }
     if (init?.method === 'PATCH') { const value = { ...google.get(calendar + '/' + id), ...JSON.parse(String(init.body)), etag: 'v2' }; google.set(calendar + '/' + id, value); return Response.json(value); }
+    if (id && unavailableReads) return Response.json({}, { status: 404 });
+    if (id && tombstones.has(calendar + '/' + id)) return Response.json({ id, status: 'cancelled' });
     if (id) return google.has(calendar + '/' + id) ? Response.json(google.get(calendar + '/' + id)) : Response.json({}, { status: 404 });
     const identity = url.searchParams.get('privateExtendedProperty')?.split('=').slice(1).join('=');
-    return Response.json({ items: [...google].filter(([key, value]) => key.startsWith(calendar + '/') && (!identity || value.extendedProperties.private.streamDashboardId === identity)).map(([, value]) => value) });
+    return Response.json({ items: hideLists ? [] : [...google].filter(([key, value]) => key.startsWith(calendar + '/') && (!identity || value.extendedProperties.private.streamDashboardId === identity)).map(([, value]) => value) });
   };
   const nativeFetch = globalThis.fetch;
   vi.stubGlobal('fetch', async (input: any, init: any) => {
@@ -74,11 +83,12 @@ async function runtime(loseResponse = false) {
   await secrets.setTwitchTokens({ accessToken: 'token', refreshToken: '' });
   const restart = async () => { await server?.stop(); server = await startDashboardServer(options); };
   await restart();
-  const request = async (route: string, body: unknown = {}, method = 'POST') => { const res = await nativeFetch(server!.url + '/api/v1/' + route, { method, headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) }); expect(res.ok, await res.clone().text()).toBe(true); return res.json(); };
+  const request = async (route: string, body: unknown = {}, method = 'POST', expectedSuccess = true) => { const res = await nativeFetch(server!.url + '/api/v1/' + route, { method, headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) }); expect(res.ok, await res.clone().text()).toBe(expectedSuccess); return res.json(); };
   await request('google/target', { calendarId: 'A' }, 'PUT');
   const start = new Date(Date.now() + 86400000); start.setUTCMilliseconds(0);
   const event = { title: 'Review', category: 'live', startAtUtc: start.toISOString(), endAtUtc: new Date(+start + 3600000).toISOString(), desiredPublication: { local: true, twitch: true, google: true }, recurrence: { frequency: 'daily', interval: 1, timeZone: 'UTC', until: start.toISOString(), exceptions: {} } };
-  return { google, twitch, posts, event, request, restart };
+  return { google, twitch, posts, event, request, restart, retireGoogle, tombstones,
+    loseNextResponse: () => { lose = true; }, hideLists: () => { hideLists = true; }, unavailableReads: (value: boolean) => { unavailableReads = value; }, conflicts: () => conflicts };
 }
 
 it.each([false, true])('lost Google CREATE remains scoped to A after selecting B and restart; withdraw=%s', async withdraw => {
@@ -110,4 +120,71 @@ it('occurrence editor API honors both publication toggles before publication, af
   await ctx.restart();
   for (const provider of ['twitch', 'google']) await ctx.request(`planning/${item.id}/retry/${provider}`);
   expect(ctx.twitch.size).toBe(0); expect(ctx.google.size).toBe(0);
+});
+
+
+async function projected(ctx: Awaited<ReturnType<typeof runtime>>) {
+  await ctx.request('planning', { ...ctx.event, desiredPublication: { local: true, twitch: false, google: false } });
+  const item = server!.state().planning[0]; const key = `${item.localId}:${ctx.event.startAtUtc.slice(0, 19)}`;
+  await ctx.request(`planning/${item.id}/occurrence`, { occurrenceKey: key, patch: { title: 'Projected' } }, 'PUT');
+  const publication = (enabled: boolean) => ctx.request(`planning/${item.id}`, { ...ctx.event,
+    recurrence: server!.state().planning[0].recurrence, desiredPublication: { local: true, twitch: false, google: enabled } }, 'PUT');
+  await publication(true);
+  return { id: item.id, key, publication };
+}
+
+it.each(['withdraw', 'cancel', 'remote'] as const)('Google tombstones allow explicit %s republication, restart and lost-response recovery via 409', async mode => {
+  const ctx = await runtime(); const { id, key, publication } = await projected(ctx);
+  const old = [...ctx.google.keys()][0];
+  const logicalId = ctx.google.get(old).extendedProperties.private.streamDashboardId;
+  if (mode === 'withdraw') await publication(false);
+  else if (mode === 'cancel') await ctx.request(`planning/${id}/occurrence`, { occurrenceKey: key }, 'DELETE');
+  else ctx.retireGoogle(old);
+  expect(ctx.tombstones.has(old)).toBe(true); expect(ctx.google.size).toBe(0);
+  await ctx.request('google/target', { calendarId: 'B' }, 'PUT');
+  await ctx.restart();
+  expect(ctx.google.size).toBe(0); expect(ctx.posts).toHaveLength(1);
+  ctx.loseNextResponse(); ctx.hideLists();
+  if (mode === 'withdraw') await publication(true);
+  else if (mode === 'cancel') await ctx.request(`planning/${id}/occurrence`, { occurrenceKey: key, patch: { title: 'Restored' } }, 'PUT');
+  else await ctx.request(`planning/${id}/retry/google`, {}, 'POST', false);
+  expect(ctx.google.size).toBe(1);
+  const replacement = [...ctx.google.keys()][0];
+  expect(replacement).not.toBe(old); expect(replacement).toMatch(/^A\//);
+  expect(ctx.google.get(replacement).extendedProperties.private.streamDashboardId).toBe(logicalId);
+  const pending = server!.state().planning[0].providers!.google!.projections![key];
+  expect(pending.creationId).toBeTruthy(); expect(pending.uncertainCreate).toBeTruthy();
+  const creationId = pending.creationId;
+  await ctx.restart(); await ctx.request(`planning/${id}/retry/google`);
+  expect(ctx.conflicts()).toBe(1); // Stale list -> POST same incarnation -> 409 -> GET active event.
+  expect(ctx.posts).toEqual([old, replacement, replacement]);
+  expect(ctx.google.size).toBe(1);
+  expect(server!.state().planning[0].providers!.google!.projections![key]).toMatchObject({ status: 'synced', creationId, calendarId: 'A' });
+  await ctx.request(`planning/${id}`, { local: true, google: true }, 'DELETE'); expect(ctx.google.size).toBe(0);
+});
+
+it('settles a legacy uncertain CREATE whose deterministic ID became a tombstone before authorizing a new incarnation', async () => {
+  const ctx = await runtime(true); const { id, key } = await projected(ctx);
+  const old = [...ctx.google.keys()][0]; ctx.retireGoogle(old); ctx.hideLists();
+  await ctx.request('google/target', { calendarId: 'B' }, 'PUT');
+  await ctx.restart();
+  const entry = server!.state().planning[0].providers!.google!.projections![key];
+  expect(entry.uncertainCreate).toBeUndefined(); expect(entry.deletedRemotely).toBe(true);
+  expect(ctx.conflicts()).toBe(1); expect(ctx.google.size).toBe(0);
+  await ctx.request(`planning/${id}/retry/google`);
+  expect(ctx.google.size).toBe(1); expect([...ctx.google.keys()][0]).not.toBe(old);
+  expect([...ctx.google.keys()][0]).toMatch(/^A\//);
+  await ctx.restart(); expect(ctx.google.size).toBe(1);
+});
+
+
+it('409 followed by an unavailable GET retains the same uncertain CREATE instead of issuing a new incarnation', async () => {
+  const ctx = await runtime(true); const { id, key } = await projected(ctx);
+  const active = [...ctx.google.keys()][0]; ctx.hideLists(); ctx.unavailableReads(true);
+  await ctx.restart(); await ctx.request(`planning/${id}/retry/google`, {}, 'POST', false);
+  expect(server!.state().planning[0].providers!.google!.projections![key].uncertainCreate).toBeTruthy();
+  expect(new Set(ctx.posts)).toEqual(new Set([active])); expect(ctx.google.size).toBe(1);
+  ctx.unavailableReads(false); await ctx.restart(); await ctx.request(`planning/${id}/retry/google`);
+  expect(server!.state().planning[0].providers!.google!.projections![key].status).toBe('synced');
+  expect(new Set(ctx.posts)).toEqual(new Set([active])); expect(ctx.google.size).toBe(1);
 });

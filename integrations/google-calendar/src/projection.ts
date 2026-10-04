@@ -99,6 +99,7 @@ export async function resolveGoogleOccurrenceConflict(item: CalendarItem, key: s
     const projected = projectGoogleSeries(item, link.projectionWindow).entries.find(value => value.identity.mode === 'materialized' && value.identity.occurrenceKey === key);
     if (!projected) throw new Error('Occurrence hors fenêtre : actualisez la projection.');
     let event: CalendarItem = { ...entry.event, ...projected.input };
+    if (event.projection?.mode === 'materialized') event.projection = { ...event.projection, creationId: entry.creationId };
     entry.remoteRevision = latest.revision;
     await persist();
     if (strategy === 'local') {

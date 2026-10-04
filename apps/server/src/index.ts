@@ -190,6 +190,13 @@ function sanitizeProviderLink(value: unknown): ProviderLink | undefined {
   if (value.projectionMode === 'native' || value.projectionMode === 'materialized') link.projectionMode = value.projectionMode;
   if (typeof value.projectionOwned === 'boolean') link.projectionOwned = value.projectionOwned;
   if (object(value.projectionWindow)) link.projectionWindow = { from: String(value.projectionWindow.from), to: String(value.projectionWindow.to) };
+  if (object(value.projectionRetirements)) {
+    link.projectionRetirements = {};
+    for (const [key, retired] of Object.entries(value.projectionRetirements)) {
+      if (object(retired) && typeof retired.creationId === 'string' && /^[a-zA-Z0-9-]{1,80}$/.test(retired.creationId))
+        link.projectionRetirements[key] = { creationId: retired.creationId, ...(typeof retired.calendarId === 'string' ? { calendarId: retired.calendarId } : {}) };
+    }
+  }
   if (object(value.projections)) {
     link.projections = {};
     for (const [key, raw] of Object.entries(value.projections)) {
@@ -201,7 +208,7 @@ function sanitizeProviderLink(value: unknown): ProviderLink | undefined {
         ...(typeof raw.appliedContent === 'string' ? { appliedContent: raw.appliedContent } : {}) };
     }
   }
-  for (const key of ['remoteId', 'calendarId', 'remoteRevision', 'fingerprint', 'lastError'] as const) {
+  for (const key of ['remoteId', 'calendarId', 'remoteRevision', 'fingerprint', 'lastError', 'creationId'] as const) {
     if (typeof value[key] === 'string') link[key] = String(value[key]).slice(0, 500);
   }
   if (object(value.deletionPeriod)) link.deletionPeriod = { start: String(value.deletionPeriod.start ?? ''), end: String(value.deletionPeriod.end ?? '') };
@@ -249,7 +256,7 @@ function sanitizeCalendarItem(value: unknown): CalendarItem | null {
     tags: tagMetadata(value.tags),
     tagPreferences: tagPreferences(value.tagPreferences),
   };
-  if (object(value.projection) && value.projection.mode === 'materialized' && typeof value.projection.seriesLocalId === 'string' && typeof value.projection.occurrenceKey === 'string') item.projection = { mode: 'materialized', seriesLocalId: value.projection.seriesLocalId, occurrenceKey: value.projection.occurrenceKey };
+  if (object(value.projection) && value.projection.mode === 'materialized' && typeof value.projection.seriesLocalId === 'string' && typeof value.projection.occurrenceKey === 'string') item.projection = { mode: 'materialized', seriesLocalId: value.projection.seriesLocalId, occurrenceKey: value.projection.occurrenceKey, ...(typeof value.projection.creationId === 'string' ? { creationId: value.projection.creationId } : {}) };
   if (typeof value.description === 'string') item.description = value.description.slice(0, 4000);
   if (typeof value.allDay === 'boolean') item.allDay = value.allDay;
   if (['live', 'production', 'personal'].includes(String(value.category))) item.category = value.category as CalendarItem['category'];

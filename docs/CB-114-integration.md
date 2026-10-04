@@ -63,7 +63,7 @@ ELECTRON_CACHE=/var/lib/codexbridge/.npm/electron
 ```
 
 - `npm ci --cache /var/lib/codexbridge/.npm`: success, 0 vulnerabilities.
-- `npm test`: 113 Vitest files / 898 tests, plus 140 Node tests (including Chromium UI).
+- `npm test`: 113 Vitest files / 903 tests, plus 140 Node tests (including Chromium UI).
 - `npm run test:browser`: 13 passed.
 - `npm run mobile:smoke`: passed, LAN auth/pairing/redaction/WS/revocation.
 - `npm run build`: passed (also run by test and desktop package).
@@ -120,3 +120,35 @@ After correction, `npm test` (898 Vitest + 140 Node), browser (13), mobile smoke
 build, security, shipped-JS, both audits, isolated server smoke and Windows
 package/ASAR checks passed again. Desktop smoke was rerun and all four Electron
 launches still fail with `Missing X server or $DISPLAY`; no desktop assertion ran.
+
+## Review iteration 2 — Google tombstones
+
+Google keeps deleted event IDs reserved. Logical occurrence identity is therefore
+now distinct from its CREATE incarnation: `creationId` salts the deterministic
+remote ID while the series identity, occurrence key and logical Google local ID
+stay unchanged. Existing links without a creationId retain their original ID.
+
+Confirmed removals keep a compact `projectionRetirements` record with the original
+calendar and the next creationId. Explicit reactivation or restoration consumes
+that record. Explicit retry of a remotely deleted occurrence first verifies the
+old object is gone, then persists a new creationId and CREATE intent before I/O.
+The original calendar remains fixed across restart and target-calendar changes.
+These retirement records remain with the local series to support later restoration.
+
+A lost response is recovered using the same incarnation, including when a stale
+list leads to POST 409 followed by GET of the active event. A confirmed tombstone
+settles an old uncertain intent but does not authorize implicit republication.
+409 followed by GET 404 remains ambiguous and preserves the original intent;
+it cannot mint another ID. Private metadata and conflict resolution also preserve
+and validate the incarnation.
+
+The HTTP mock now retains tombstones and returns 409 on reserved IDs. Regression
+coverage includes publication/withdrawal/reactivation, exception cancellation and
+restoration, remote deletion/explicit retry, restart, lost responses, calendar
+changes, recovery of a legacy uncertain tombstoned CREATE, and ambiguous 409/404.
+The tests inspect persisted creationId/calendar/intent at the exact POST boundary.
+
+Final validation: 903 Vitest tests, 140 Node tests and 13 browser tests passed.
+Mobile smoke, build, security, shipped-JS, both npm audits, isolated server smoke,
+and Windows packaging/ASAR gates passed. Desktop smoke was attempted again: four
+launch failures due to missing X server/DISPLAY, as permitted by the ticket.

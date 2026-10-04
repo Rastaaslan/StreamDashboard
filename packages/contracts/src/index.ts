@@ -101,6 +101,10 @@ export interface ProviderProjectionOccurrence extends ProviderLink {
 export type TwitchProjectionOccurrence = ProviderProjectionOccurrence;
 
 export interface ProviderLink {
+  /** Google CREATE incarnation, distinct from the stable logical occurrence key. */
+  creationId?: string;
+  /** Confirmed removals retain calendar scope and the next CREATE incarnation. */
+  projectionRetirements?: Record<string, { calendarId?: string; creationId: string }>;
   projectionMode?: 'native' | 'materialized';
   projectionOwned?: boolean;
   projectionWindow?: { from: string; to: string };
@@ -137,7 +141,7 @@ export interface RecurrenceRule {
 /** Provider identity is scoped to the target calendar by the rolling reconciler. */
 export type RecurrenceProjectionIdentity =
   | { mode: 'master'; seriesLocalId: string }
-  | { mode: 'materialized'; seriesLocalId: string; occurrenceKey: string };
+  | { mode: 'materialized'; seriesLocalId: string; occurrenceKey: string; creationId?: string };
 
 export interface TagMetadata { values: string[]; source: 'manual' | 'generated'; generatedAt?: string }
 export interface TagPreferences { automatic?: boolean; language?: string; preferredTags?: string[] }

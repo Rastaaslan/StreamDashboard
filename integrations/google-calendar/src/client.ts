@@ -274,7 +274,14 @@ export class GoogleCalendarClient {
     try { return await this.mutate('POST', calendarId, '', input); }
     catch (error) {
       if (!(error instanceof GoogleCalendarError) || error.status !== 409 || input.projection?.mode !== 'materialized') throw error;
-      const recovered = await this.event(calendarId, this.materializedRemoteId(input));
+      let recovered: GoogleEvent;
+      try { recovered = await this.event(calendarId, this.materializedRemoteId(input)); }
+      catch (readError) {
+        if ((readError as { code?: string }).code !== 'DELETED_REMOTELY') throw readError;
+        // 409 + 404 can be delayed visibility, not a confirmed tombstone.
+        if ((readError as { status?: number }).status === 404) throw new Error('Identité Google encore indisponible après 409 : création incertaine, réconciliation requise.');
+        throw Object.assign(new Error('Identité Google supprimée : retry explicite requis pour republier cette occurrence.'), { code: 'GOOGLE_PROJECTION_RETIRED', mutationNotStarted: true });
+      }
       this.assertProjection(input, recovered);
       return recovered;
     }
@@ -309,14 +316,15 @@ export class GoogleCalendarClient {
   }
 
   private materializedRemoteId(input: GoogleEventInput) {
-    return `sd${createHash('sha256').update(input.localId).digest('hex')}`;
+    const creationId = input.projection?.mode === 'materialized' ? input.projection.creationId : undefined;
+    return `sd${createHash('sha256').update(creationId ? JSON.stringify([input.localId, creationId]) : input.localId).digest('hex')}`;
   }
 
   private validateProjection(input: GoogleEventInput) {
     const identity = input.projection;
     if (identity?.mode === 'materialized') assertGoogleMaterializedAllDay(input);
     if (identity && (!['master', 'materialized'].includes(identity.mode) || !identity.seriesLocalId
-      || identity.mode === 'materialized' && !identity.occurrenceKey
+      || identity.mode === 'materialized' && (!identity.occurrenceKey || identity.creationId !== undefined && !/^[a-zA-Z0-9-]{1,80}$/.test(identity.creationId))
       || input.localId !== googleProjectionLocalId(identity)
       || identity.mode === 'materialized' && (input.recurrence || input.seriesId || input.occurrenceKey))) {
       throw Object.assign(new Error('Identité de projection Google invalide.'), { mutationNotStarted: true });
@@ -329,7 +337,7 @@ export class GoogleCalendarClient {
     if (!event.managed || event.localId !== input.localId || actual.mode !== input.projection.mode
       || actual.seriesLocalId !== input.projection.seriesLocalId
       || (actual.mode === 'materialized' && input.projection.mode === 'materialized'
-        && (actual.occurrenceKey !== input.projection.occurrenceKey || Boolean(event.recurrenceLines?.length)
+        && (actual.occurrenceKey !== input.projection.occurrenceKey || actual.creationId !== input.projection.creationId || Boolean(event.recurrenceLines?.length)
           || compareContent && (event.title !== input.title || (event.description ?? '') !== (input.description ?? '')
             || Date.parse(event.startAtUtc) !== Date.parse(input.startAtUtc) || Date.parse(event.endAtUtc) !== Date.parse(input.endAtUtc)
             || Boolean(event.allDay) !== Boolean(input.allDay))))) {
@@ -349,7 +357,7 @@ export class GoogleCalendarClient {
       end: input.allDay ? { date: dateOnly(input.endAtUtc) } : { dateTime: input.endAtUtc, ...(timeZone ? { timeZone } : {}) },
       extendedProperties: { private: { streamDashboardManaged: 'true', streamDashboardId: input.localId,
         ...(input.projection ? { streamDashboardProjection: input.projection.mode, streamDashboardSeriesId: input.projection.seriesLocalId,
-          ...(input.projection.mode === 'materialized' ? { streamDashboardOccurrenceKey: input.projection.occurrenceKey } : {}) } : {}),
+          ...(input.projection.mode === 'materialized' ? { streamDashboardOccurrenceKey: input.projection.occurrenceKey, ...(input.projection.creationId ? { streamDashboardCreationId: input.projection.creationId } : {}) } : {}) } : {}),
       } },
     };
     const value = await this.api<Record<string, unknown>>(`/calendars/${encodeURIComponent(calendarId)}/events${suffix}`, {
@@ -376,6 +384,7 @@ export class GoogleCalendarClient {
       ...(privateProperties?.streamDashboardProjection === 'materialized' ? { projection: {
         mode: 'materialized' as const, seriesLocalId: privateProperties.streamDashboardSeriesId,
         occurrenceKey: privateProperties.streamDashboardOccurrenceKey,
+        ...(privateProperties.streamDashboardCreationId ? { creationId: privateProperties.streamDashboardCreationId } : {}),
       } } : {}),
       localId: privateProperties?.streamDashboardId ?? privateProperties?.streamDashboardEventId ?? `google:${value.id}`,
       title: typeof value.summary === 'string' ? value.summary : '(sans titre)',

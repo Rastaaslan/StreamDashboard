@@ -8,6 +8,7 @@ export function projectionContent(item: CalendarItem) {
 function request(event: CalendarItem, link: ProviderLink, name: 'twitch' | 'google'): CalendarItem {
   // A projected occurrence is a provider one-off, with identity kept locally.
   const { recurrence, seriesId, occurrenceKey, providers, conflict, twitchSegmentId, ...body } = event;
+  if (name === 'google' && body.projection?.mode === 'materialized') body.projection = { ...body.projection, creationId: link.creationId };
   return { ...body, twitchRecurring: false, providers: { [name]: link } };
 }
 
@@ -33,7 +34,7 @@ export async function reconcileProviderProjection(
     const failure = error as { code?: string; status?: number };
     target.status = failure.code === 'CONFLICT' || failure.code === 'GOOGLE_PROJECTION_CONFLICT' || failure.status === 412 ? 'conflict' : 'error';
     target.lastError = error instanceof Error ? error.message : String(error);
-    if (failure.code === 'DELETED_REMOTELY' || [404, 410].includes(failure.status ?? 0)) target.deletedRemotely = true;
+    if (failure.code === 'GOOGLE_PROJECTION_RETIRED' || failure.code === 'DELETED_REMOTELY' || [404, 410].includes(failure.status ?? 0)) target.deletedRemotely = true;
   };
   if (link.uncertainCreate || (desired && link.deletedRemotely && !options.retry)) {
     fail(link, new Error(link.uncertainCreate
@@ -42,14 +43,20 @@ export async function reconcileProviderProjection(
     await persist(); return true;
   }
   const recover = async (entry: NonNullable<ProviderLink['projections']>[string]) => {
-    if (!provider) return;
-      if (entry.uncertainCreate && name === 'google' && entry.event.projection?.mode === 'materialized') {
-        const original = request(entry.uncertainCreate.event as unknown as CalendarItem, { ...entry, uncertainCreate: undefined }, name);
-        const recovered = await provider.create(original);
-        entry.remoteId = recovered.id; entry.remoteRevision = recovered.revision; entry.calendarId = recovered.calendarId ?? entry.calendarId;
-        delete entry.uncertainCreate;
-        await persist();
-      }
+    if (!provider || !entry.uncertainCreate || name !== 'google' || entry.event.projection?.mode !== 'materialized') return;
+    const original = request(entry.uncertainCreate.event as unknown as CalendarItem, { ...entry, uncertainCreate: undefined }, name);
+    try {
+      const recovered = await provider.create(original);
+      entry.remoteId = recovered.id; entry.remoteRevision = recovered.revision; entry.calendarId = recovered.calendarId ?? entry.calendarId;
+    } catch (error) {
+      // A 409 followed by a confirmed tombstone settles this CREATE. Only an
+      // explicit retry may authorize a new incarnation of this logical occurrence.
+      if ((error as { code?: string }).code !== 'GOOGLE_PROJECTION_RETIRED') throw error;
+      entry.deletedRemotely = true;
+      delete entry.remoteId; delete entry.remoteRevision;
+    }
+    delete entry.uncertainCreate;
+    await persist();
   };
   const expected = new Map<string, CalendarItem>();
   if (desired && materialized) {
@@ -85,6 +92,7 @@ export async function reconcileProviderProjection(
         try { await provider.delete(entry.remoteId, request(entry.event, entry, name), entry.remoteRevision); }
         catch (error) { if (![404, 410].includes((error as { status?: number }).status ?? 0) && (error as { code?: string }).code !== 'DELETED_REMOTELY') throw error; }
       }
+      if (name === 'google') (link.projectionRetirements ??= {})[key] = { calendarId: entry.calendarId, creationId: crypto.randomUUID() };
       delete entries[key];
     } catch (error) { fail(entry, error); }
     await persist();
@@ -92,7 +100,12 @@ export async function reconcileProviderProjection(
   for (const [key, event] of expected) {
     let entry = entries[key];
     if (entry && entry.managedBy !== 'StreamDashboard') continue;
-    if (!entry) entry = entries[key] = { occurrenceKey: key, managedBy: 'StreamDashboard', event, status: 'pending', projectionOwned: true, calendarId: link.calendarId };
+    if (!entry) {
+      const retired = name === 'google' ? link.projectionRetirements?.[key] : undefined;
+      entry = entries[key] = { occurrenceKey: key, managedBy: 'StreamDashboard', event, status: 'pending', projectionOwned: true,
+        calendarId: retired?.calendarId ?? link.calendarId, creationId: retired?.creationId };
+      if (retired) delete link.projectionRetirements![key];
+    }
     try {
       if (entry.status === 'conflict') continue; // Only an explicit local/remote resolution releases this guard.
       if (!provider) throw new Error(`${name} non connecté.`);
@@ -110,7 +123,10 @@ export async function reconcileProviderProjection(
         // Verify the previous identity before authorizing a replacement.
         if (entry.remoteId && !provider.read) throw new Error('Lecture distante requise avant republication.');
         const remote = entry.remoteId ? await provider.read!(entry.remoteId, request(entry.event, entry, name)) : undefined;
-        if (!remote || remote.deleted) { delete entry.remoteId; delete entry.fingerprint; delete entry.remoteRevision; }
+        if (!remote || remote.deleted) {
+          delete entry.remoteId; delete entry.fingerprint; delete entry.remoteRevision;
+          if (name === 'google') entry.creationId = crypto.randomUUID();
+        }
         entry.deletedRemotely = false;
       }
       if (!entry.remoteId || entry.appliedContent !== projectionContent(event) || entry.status !== 'synced') {
@@ -124,7 +140,7 @@ export async function reconcileProviderProjection(
           const result = await createWithDurableIntent(body, name, persist, value => provider.create(value), provider.prepareCreate);
           entry.calendarId = result.calendarId ?? entry.calendarId; entry.remoteId = result.id; entry.fingerprint = result.fingerprint; entry.remoteRevision = result.revision;
         }
-        entry.event = event; entry.appliedContent = projectionContent(event);
+        entry.event = { ...event, projection: body.projection }; entry.appliedContent = projectionContent(event);
         entry.status = 'synced'; entry.lastSyncedAt = new Date(now).toISOString(); delete entry.lastError;
       }
     } catch (error) { fail(entry, error); }
