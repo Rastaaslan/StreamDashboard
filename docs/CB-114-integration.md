@@ -233,3 +233,23 @@ Final validation: 919 Vitest tests and 141 Node tests passed, as did 13 browser
 tests, mobile smoke, build, security, shipped-JS, both audits (zero vulnerabilities),
 isolated server smoke and Windows packaging/ASAR checks. Desktop smoke was
 attempted: four launch failures due to missing X server/DISPLAY, as permitted.
+
+## Review iteration 6 — real adapter reads for native withdrawal
+
+The server Google adapter now reads an explicitly withdrawn native object even
+when local exceptions make its recurrence unrepresentable as a native RRULE.
+This narrowly bypasses recurrence equivalence for the saved withdrawal intent;
+normal publication conflict reads retain that guard. Resolution requires the
+saved calendar and remote ID, a current ETag, matching managed local identity,
+and managed ownership for projection-owned native links.
+
+HTTP/API regressions use the actual adapter for legacy and owned native links,
+both decisions, DELETE 412, local exceptions, a changed target calendar, restart,
+refresh and retry. They reject foreign managed identities and missing ETags,
+inspect the saved calendar/ETag, and verify no PATCH, extra CREATE or orphan.
+
+Validation: `npm test` passed 923 Vitest and 141 Node tests. The final targeted
+HTTP regression suite passed all 23 tests. Browser tests (13), mobile smoke,
+build, security, shipped-JS, both audits (zero vulnerabilities), isolated server
+smoke and Windows packaging/ASAR checks passed. Desktop smoke was attempted:
+four launch failures from missing X server/DISPLAY, the permitted residual.

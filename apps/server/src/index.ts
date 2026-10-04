@@ -1065,7 +1065,15 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
           throw error;
         });
         if (!event || event.deleted) return { deleted: true };
-        if (!sameGoogleRecurrence(item, event)) {
+        const withdrawingNative = !item.projection && item.providers?.google?.nativeWithdrawalRequested === true;
+        if (withdrawingNative) {
+          const link = item.providers!.google!;
+          // Resolve the saved native object, not a new projection of the edited rule.
+          if (link.calendarId !== calendarId || link.remoteId !== id || event.id !== id || !event.etag
+            || (event.managed && event.localId !== (item.localId ?? item.id))
+            || (link.projectionOwned && !event.managed)) throw new Error('Identité ou ETag du retrait Google invalide.');
+        }
+        if (!withdrawingNative && !sameGoogleRecurrence(item, event)) {
           throw new Error('La récurrence Google distante diffère du modèle local. Résolution automatique refusée pour préserver la série.');
         }
         return { revision: event.etag, deleted: event.deleted, remote: {

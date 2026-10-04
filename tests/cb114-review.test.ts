@@ -36,20 +36,26 @@ async function runtime(loseResponse = false) {
   const retireGoogle = (key: string) => { google.delete(key); tombstones.add(key); };
   let hideLists = false; let conflicts = 0; let unavailableReads = false;
   const twitch = new Map<string, any>();
+  const mutations: { method: string; calendar: string; id?: string }[] = [];
   const posts: string[] = []; let next = 0; let lose = loseResponse;
   const googleFetch: typeof fetch = async (input, init) => {
     const url = new URL(String(input));
     if (url.pathname.endsWith('/calendarList')) return Response.json({ items: ['A', 'B'].map(id => ({ id, summary: id, accessRole: 'owner' })) });
     const match = /\/calendars\/([^/]+)\/events(?:\/([^/]+))?$/.exec(url.pathname)!;
     const calendar = decodeURIComponent(match[1]); const id = match[2];
+    if (['POST', 'PATCH', 'DELETE'].includes(init?.method ?? '')) mutations.push({ method: init!.method!, calendar, id });
     if (init?.method === 'POST') {
-      const body = JSON.parse(String(init.body)); const key = calendar + '/' + body.id;
+      const body = JSON.parse(String(init.body)); body.id ??= `native-${++next}`; const key = calendar + '/' + body.id;
       // Observe the disk checkpoint at the exact moment remote mutation starts.
       const saved = JSON.parse(await readFile(join(folder, 'dashboard.json'), 'utf8'));
-      const entry = Object.values(saved.planning[0].providers.google.projections).find((v: any) => v.event.localId === body.extendedProperties.private.streamDashboardId) as any;
-      expect(entry.calendarId).toBe(calendar); expect(entry.uncertainCreate).toBeTruthy();
-      expect(entry.creationId).toBe(body.extendedProperties.private.streamDashboardCreationId);
-      expect(entry.uncertainCreate.event.projection.creationId).toBe(entry.creationId);
+      if (body.extendedProperties.private.streamDashboardProjection === 'materialized') {
+        const entry = Object.values(saved.planning[0].providers.google.projections).find((v: any) => v.event.localId === body.extendedProperties.private.streamDashboardId) as any;
+        expect(entry.calendarId).toBe(calendar); expect(entry.uncertainCreate).toBeTruthy();
+        expect(entry.creationId).toBe(body.extendedProperties.private.streamDashboardCreationId);
+        expect(entry.uncertainCreate.event.projection.creationId).toBe(entry.creationId);
+      } else {
+        expect(saved.planning[0].providers.google).toMatchObject({ calendarId: calendar, uncertainCreate: expect.any(Object) });
+      }
       posts.push(key);
       if (google.has(key) || tombstones.has(key)) { conflicts++; return Response.json({ error: { message: 'Identifier already exists' } }, { status: 409 }); }
       google.set(key, { ...body, id: body.id, etag: 'v1' });
@@ -88,7 +94,7 @@ async function runtime(loseResponse = false) {
   await request('google/target', { calendarId: 'A' }, 'PUT');
   const start = new Date(Date.now() + 86400000); start.setUTCMilliseconds(0);
   const event = { title: 'Review', category: 'live', startAtUtc: start.toISOString(), endAtUtc: new Date(+start + 3600000).toISOString(), desiredPublication: { local: true, twitch: true, google: true }, recurrence: { frequency: 'daily', interval: 1, timeZone: 'UTC', until: start.toISOString(), exceptions: {} } };
-  return { google, twitch, posts, event, request, restart, retireGoogle, tombstones,
+  return { google, twitch, posts, mutations, event, request, restart, retireGoogle, tombstones,
     loseNextResponse: () => { lose = true; }, hideLists: () => { hideLists = true; }, unavailableReads: (value: boolean) => { unavailableReads = value; }, conflicts: () => conflicts };
 }
 
@@ -263,3 +269,46 @@ it('a new remote edit after deletion approval requires a fresh decision, and a f
   await ctx.request(`planning/${id}/conflict/google`, { occurrenceKey: key, strategy: 'local' });
   await ctx.restart(); expect(ctx.google.size).toBe(0);
 });
+
+it.each([false, true].flatMap(owned => (['local', 'remote'] as const).map(strategy => ({ owned, strategy }))))(
+  'real Google adapter resolves native DELETE 412 despite local exceptions: owned=$owned choice=$strategy', async ({ owned, strategy }) => {
+    const ctx = await runtime();
+    await ctx.request('planning', { ...ctx.event, desiredPublication: { local: true, twitch: false, google: true } });
+    const item = server!.state().planning[0]; const id = item.id;
+    const remoteKey = [...ctx.google.keys()][0]; const remote = ctx.google.get(remoteKey);
+    expect(remote.recurrence).toHaveLength(1);
+    if (!owned) {
+      await server!.stop();
+      const file = join(folder, 'dashboard.json'); const disk = JSON.parse(await readFile(file, 'utf8'));
+      delete disk.planning[0].providers.google.projectionOwned; delete disk.planning[0].providers.google.projectionMode;
+      await writeFile(file, JSON.stringify(disk)); await ctx.restart();
+    }
+    remote.etag = 'v2'; remote.summary = 'Remote retained';
+    const key = `${item.localId}:${ctx.event.startAtUtc.slice(0, 19)}`;
+    await ctx.request(`planning/${id}/occurrence`, { occurrenceKey: key, patch: { title: 'Local exception' } }, 'PUT');
+    await ctx.request(`planning/${id}`, { local: true, google: true }, 'DELETE', false);
+    expect(server!.state().planning[0].providers!.google!.status).toBe('conflict');
+    expect(ctx.mutations.some(value => value.method === 'DELETE')).toBe(true);
+    await ctx.request('google/target', { calendarId: 'B' }, 'PUT');
+    await ctx.restart();
+    await ctx.request(`planning/${id}/retry/google`, {}, 'POST', false);
+    const identity = remote.extendedProperties.private.streamDashboardId;
+    remote.extendedProperties.private.streamDashboardId = 'different-owner';
+    await ctx.request(`planning/${id}/conflict/google`, { strategy }, 'POST', false);
+    remote.extendedProperties.private.streamDashboardId = identity;
+    delete remote.etag;
+    await ctx.request(`planning/${id}/conflict/google`, { strategy }, 'POST', false);
+    remote.etag = 'v2';
+    await ctx.request(`planning/${id}/conflict/google`, { strategy });
+    const disk = JSON.parse(await readFile(join(folder, 'dashboard.json'), 'utf8'));
+    expect(disk.planning[0].providers.google).toMatchObject({ calendarId: 'A', remoteRevision: 'v2' });
+    await ctx.restart(); await ctx.request(`planning/${id}/retry/google`); await ctx.restart();
+    expect(ctx.posts).toHaveLength(1);
+    expect(ctx.mutations.every(value => value.calendar === 'A' && value.method !== 'PATCH')).toBe(true);
+    if (strategy === 'remote') {
+      expect(ctx.google.get(remoteKey)).toBe(remote);
+      expect(server!.state().planning[0].providers!.google).toMatchObject({ nativeRetained: true, status: 'synced' });
+      await ctx.request(`planning/${id}`, { local: true, google: true }, 'DELETE');
+    }
+    expect(ctx.google.size).toBe(0);
+  });
