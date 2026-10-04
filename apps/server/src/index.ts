@@ -1043,8 +1043,13 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
       },
     } : undefined,
     google: google.connected ? {
-      read: async (id, item) => {
+      prepareCreate: item => {
         const calendarId = item.providers?.google?.calendarId ?? local.google.targetCalendarId;
+        if (!calendarId) throw Object.assign(new Error('Choisissez un calendrier Google cible.'), { mutationNotStarted: true });
+        return { calendarId };
+      },
+      read: async (id, item) => {
+        const calendarId = item.providers?.google?.calendarId ?? (item.projection ? undefined : local.google.targetCalendarId);
         if (!calendarId) throw new Error('Calendrier Google lié introuvable.');
         const event = await google.event(calendarId, id).catch(error => {
           if (error?.code === 'DELETED_REMOTELY') return undefined;
@@ -1059,20 +1064,21 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
         } };
       },
       create: async item => {
-        const calendarId = item.providers?.google?.calendarId ?? local.google.targetCalendarId;
+        // A projection recovery must never inherit a newly selected calendar.
+        const calendarId = item.providers?.google?.calendarId ?? (item.projection ? undefined : local.google.targetCalendarId);
         if (!calendarId) throw Object.assign(new Error('Choisissez un calendrier Google cible.'), { mutationNotStarted: true });
         assertProviderCreationCertain(item, 'google');
         const event = await google.create(calendarId, googleEventInput(item));
         return { id: event.id, revision: event.etag, calendarId };
       },
       update: async (id, item, revision) => {
-        const calendarId = item.providers?.google?.calendarId ?? local.google.targetCalendarId;
+        const calendarId = item.providers?.google?.calendarId ?? (item.projection ? undefined : local.google.targetCalendarId);
         if (!calendarId) throw new Error('Calendrier Google lié introuvable.');
         const event = await google.update(calendarId, id, googleEventInput(item), revision);
         return { revision: event.etag };
       },
       delete: async (id, item, revision) => {
-        const calendarId = item.providers?.google?.calendarId ?? local.google.targetCalendarId;
+        const calendarId = item.providers?.google?.calendarId ?? (item.projection ? undefined : local.google.targetCalendarId);
         if (!calendarId) throw new Error('Calendrier Google lié introuvable.');
         const period = item.providers?.google?.deletionPeriod;
         if (period) {

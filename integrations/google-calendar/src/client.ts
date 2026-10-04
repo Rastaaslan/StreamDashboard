@@ -16,6 +16,7 @@ const OAUTH_ATTEMPT_TTL_MS = 10 * 60_000;
 export interface GoogleTokens { accessToken: string; refreshToken: string; expiresAt: number }
 export interface GoogleOAuthAttempt { authorizationUrl: string; state: string; verifier: string; redirectUri: string; expiresAt: number }
 export interface GoogleEventInput {
+  desiredPublication?: CalendarItem['desiredPublication'];
   projection?: RecurrenceProjectionIdentity;
   localId: string;
   title: string;

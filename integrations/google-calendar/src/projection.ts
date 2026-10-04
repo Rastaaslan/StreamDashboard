@@ -50,6 +50,7 @@ export function projectGoogleSeries(item: CalendarItem, window: RecurrenceWindow
     // Never reuse a master link or its etag for an occurrence.
     const input: GoogleEventInput = {
       localId: googleProjectionLocalId(identity), projection: identity,
+      desiredPublication: structuredClone(occurrence.desiredPublication),
       title: occurrence.title, description: occurrence.description,
       startAtUtc: occurrence.startAtUtc, endAtUtc: occurrence.endAtUtc, allDay: occurrence.allDay,
     };

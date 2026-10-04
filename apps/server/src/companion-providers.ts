@@ -87,7 +87,7 @@ export async function drainCompanionProviders(
         if (work.provider === 'twitch') link.fingerprint = result.fingerprint;
         link.status = 'synced';
       } else {
-        const result = await createWithDurableIntent(item, work.provider, persist, request => provider.create(request));
+        const result = await createWithDurableIntent(item, work.provider, persist, request => provider.create(request), provider.prepareCreate);
         link.remoteId = result.id; link.remoteRevision = result.revision;
         link.calendarId = result.calendarId ?? link.calendarId;
         if (work.provider === 'twitch') { link.projectionMode = 'native'; link.projectionOwned = result.owned !== false; item.twitchSegmentId = result.id; link.fingerprint = result.fingerprint; item.twitchRecurring = Boolean(item.recurrence) || item.twitchRecurring === true; }

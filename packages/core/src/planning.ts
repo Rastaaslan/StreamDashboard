@@ -7,6 +7,8 @@ import type { CalendarItem, ProviderLink } from '../../contracts/src/index.js';
 
 export type ProviderName = 'twitch' | 'google';
 export interface PlanningProvider {
+  /** Resolve the immutable destination before persisting a CREATE intent. No remote mutation. */
+  prepareCreate?(item: CalendarItem): { calendarId?: string } | Promise<{ calendarId?: string }>;
   read?(id: string, item: CalendarItem): Promise<{ remote?: NonNullable<CalendarItem['conflict']>['remote']; revision?: string; fingerprint?: string; deleted?: boolean }>;
   create(item: CalendarItem): Promise<{ id: string; revision?: string; calendarId?: string; fingerprint?: string; owned?: boolean }>;
   update(id: string, item: CalendarItem, revision?: string): Promise<{ revision?: string; fingerprint?: string }>;
@@ -404,7 +406,7 @@ export class PlanningOrchestrator {
         if (result.revision !== undefined) link.remoteRevision = result.revision;
         if (name === 'twitch') link.fingerprint = result.fingerprint;
       } else {
-        const result = await createWithDurableIntent(item, name, () => this.persist(this.items), request => remoteProvider.create(request));
+        const result = await createWithDurableIntent(item, name, () => this.persist(this.items), request => remoteProvider.create(request), remoteProvider.prepareCreate);
         link.projectionOwned = result.owned !== false;
         link.projectionMode = 'native';
         link.remoteId = result.id;

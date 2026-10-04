@@ -63,7 +63,7 @@ ELECTRON_CACHE=/var/lib/codexbridge/.npm/electron
 ```
 
 - `npm ci --cache /var/lib/codexbridge/.npm`: success, 0 vulnerabilities.
-- `npm test`: 112 Vitest files / 893 tests, plus 140 Node tests (including Chromium UI).
+- `npm test`: 113 Vitest files / 898 tests, plus 140 Node tests (including Chromium UI).
 - `npm run test:browser`: 13 passed.
 - `npm run mobile:smoke`: passed, LAN auth/pairing/redaction/WS/revocation.
 - `npm run build`: passed (also run by test and desktop package).
@@ -95,3 +95,28 @@ standalone invocation was rerun against the isolated test server.
 - Custom rule types and injection seams exist; no custom editor/engine ships here.
 - Live provider credentials were not used; provider interactions use contract mocks.
 - Native desktop UI execution remains unverified in this headless environment.
+
+## Review iteration 1
+
+The three reproduced issues in `55ca157` are corrected:
+
+- Rolling selection now uses effective overlap (`end > now`, `start < windowEnd`),
+  retaining events already in progress until their exclusive end. Regression tests
+  refresh and retry both providers at 12:01 for a 12:00–13:00 occurrence after reload.
+- CREATE preparation resolves the Google calendar before the durable intent is
+  saved. This applies to planning, companion and projected creates. Recovery,
+  reads, updates and cleanup use that saved calendar, never a newly selected
+  target. A projected journal with no saved calendar fails closed rather than
+  guessing. HTTP-level tests inspect the disk checkpoint inside POST, lose the
+  response in A, select B, restart and retry/withdraw: only A is ever created and
+  its occurrence is cleaned up without an orphan.
+- Projection honors each occurrence's effective publication preferences. Google
+  preserves those preferences through its input mapping. Editor browser coverage
+  verifies both false flags in the occurrence patch; API tests verify suppression
+  before CREATE, publication when enabled, withdrawal when disabled, and no
+  recreation after restart/retry for both providers.
+
+After correction, `npm test` (898 Vitest + 140 Node), browser (13), mobile smoke,
+build, security, shipped-JS, both audits, isolated server smoke and Windows
+package/ASAR checks passed again. Desktop smoke was rerun and all four Electron
+launches still fail with `Missing X server or $DISPLAY`; no desktop assertion ran.

@@ -56,7 +56,7 @@ export async function reconcileProviderProjection(
     for (const occurrence of (options.expand ?? expandRecurringItems)([{ ...item, providers: undefined }], bounds)) {
       if (occurrence.occurrenceKey && expected.has(occurrence.occurrenceKey)) throw new Error('Duplicate projected occurrence identity');
       if (!occurrence.occurrenceKey) throw new Error('Le moteur doit fournir une occurrenceKey stable.');
-      if (Date.parse(occurrence.startAtUtc) >= now && Date.parse(occurrence.startAtUtc) < Date.parse(bounds.to)) {
+      if (occurrence.desiredPublication?.[name] !== false && Date.parse(occurrence.endAtUtc) > now && Date.parse(occurrence.startAtUtc) < Date.parse(bounds.to)) {
         expected.set(occurrence.occurrenceKey, request(occurrence, { status: 'pending', projectionOwned: true, calendarId: link.calendarId }, name));
       }
     }
@@ -121,7 +121,7 @@ export async function reconcileProviderProjection(
           const result = await provider.update(entry.remoteId, body, entry.remoteRevision);
           entry.fingerprint = result.fingerprint; entry.remoteRevision = result.revision;
         } else {
-          const result = await createWithDurableIntent(body, name, persist, value => provider.create(value));
+          const result = await createWithDurableIntent(body, name, persist, value => provider.create(value), provider.prepareCreate);
           entry.calendarId = result.calendarId ?? entry.calendarId; entry.remoteId = result.id; entry.fingerprint = result.fingerprint; entry.remoteRevision = result.revision;
         }
         entry.event = event; entry.appliedContent = projectionContent(event);
