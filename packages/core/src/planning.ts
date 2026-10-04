@@ -346,6 +346,9 @@ export class PlanningOrchestrator {
       }
     }
     link.status = 'pending';
+    // This retry passed the current guards. Do not expose a previous rejection
+    // (including the old weekly Twitch gate) while the provider is in flight.
+    if (explicitRetry) delete link.lastError;
     await this.persist(this.items);
     await this.attempt(item, name, async remoteProvider => {
       if (explicitRetry && link.deletedRemotely) {
