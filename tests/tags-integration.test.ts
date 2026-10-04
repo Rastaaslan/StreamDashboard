@@ -9,7 +9,7 @@ import { startDashboardServer } from '../apps/server/src/index.js';
 
 const tags = { values: ['Français', 'Gaming'], source: 'generated' as const, generatedAt: '2026-10-04T10:00:00Z' };
 const event = { title: 'Mon live', twitchCategoryId: '42', tags };
-afterEach(() => vi.unstubAllGlobals());
+afterEach(() => { vi.unstubAllGlobals(); vi.restoreAllMocks(); });
 describe('tags integration', () => {
   it('uses the injected engine and bounds/validates its output', async () => {
     const generate = vi.fn(async () => ['Français', 'Gaming', 'Gaming', 'bad tag']);
@@ -72,6 +72,51 @@ describe('tags integration', () => {
       server = await startDashboardServer({ port: 0, dataDir, logger: { info() {}, warn() {}, error() {} } });
       const state = await fetch(server.url + '/api/v1/state').then(r => r.json());
       expect(state.planning.find((value: any) => value.id === item.id)).toMatchObject({ tags, tagPreferences: { automatic: false, language: 'fr' } });
+    } finally { await server.stop(); await rm(dataDir, { recursive: true, force: true }); }
+  });
+  it('uses the production engine cache and learns persisted game/series choices without occurrence pollution', async () => {
+    const observe = vi.spyOn(TwitchClient.prototype, 'getStreamsForGame').mockResolvedValue([{ tags: ['Zombie', 'Coop'], viewer_count: 20, language: 'fr' }]);
+    const dataDir = await mkdtemp(resolve('.tags-test-'));
+    let server = await startDashboardServer({ port: 0, dataDir, logger: { info() {}, warn() {}, error() {} } });
+    const request = async (path: string, body: unknown, method = 'POST') => {
+      const response = await fetch(server.url + path, { method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+      expect(response.ok).toBe(true); return response.json();
+    };
+    try {
+      const base = { title: 'Weekly', twitchCategoryId: '42', twitchCategoryName: 'Dead Island 2' };
+      const first = await request('/api/v1/planning/tags/regenerate', { ...base, refreshTwitch: true });
+      expect(first.tags.values).toContain('Zombie');
+      await request('/api/v1/planning/tags/regenerate', base);
+      expect(observe).toHaveBeenCalledTimes(1);
+      const state = await request('/api/v1/planning', { ...base, startAtUtc: '2030-01-01T10:00:00Z', endAtUtc: '2030-01-01T11:00:00Z', tags: { values: ['GameChoice'], source: 'manual' }, recurrence: { frequency: 'weekly', interval: 1, timeZone: 'Europe/Paris' } });
+      const series = state.planning.find((item: any) => item.title === 'Weekly');
+      await request(`/api/v1/planning/${series.id}/occurrence`, { occurrenceKey: `${series.localId || series.id}:2030-01-01T11:00:00`, patch: { tags: { values: ['Birthday'], source: 'manual' } } }, 'PUT');
+      await server.stop();
+      server = await startDashboardServer({ port: 0, dataDir, logger: { info() {}, warn() {}, error() {} } });
+      const learned = await request('/api/v1/planning/tags/regenerate', base);
+      expect(learned.tags.values).toContain('GameChoice');
+      expect(learned.tags.values).not.toContain('Birthday');
+      const seriesLearned = await request('/api/v1/planning/tags/regenerate', { title: 'Another game', twitchCategoryId: '99', seriesId: series.id });
+      expect(seriesLearned.tags.values).toContain('GameChoice');
+      expect(seriesLearned.tags.values).not.toContain('Birthday');
+      await request('/api/v1/settings', { tagPreferences: { preferredTags: ['Community'], language: 'fr' } }, 'PUT');
+      const channel = await request('/api/v1/planning/tags/regenerate', { title: 'Live' });
+      expect(channel.tags.values).toEqual(expect.arrayContaining(['Community', 'French']));
+    } finally { await server.stop(); await rm(dataDir, { recursive: true, force: true }); }
+  });
+  it('returns API suggestions while the Twitch observation remains unresolved', async () => {
+    vi.spyOn(TwitchClient.prototype, 'getStreamsForGame').mockImplementation(() => new Promise(() => {}));
+    const dataDir = await mkdtemp(resolve('.tags-test-'));
+    const server = await startDashboardServer({ port: 0, dataDir, logger: { info() {}, warn() {}, error() {} } });
+    try {
+      const start = performance.now();
+      const response = await fetch(server.url + '/api/v1/planning/tags/regenerate', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ title: 'Spooktober', twitchCategoryId: '42', twitchCategoryName: 'Dead Island 2' }) });
+      expect((await response.json()).tags.values).toContain('DeadIsland2');
+      expect(performance.now() - start).toBeLessThan(500);
+      const refreshStart = performance.now();
+      const refreshed = await fetch(server.url + '/api/v1/planning/tags/regenerate', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ title: 'Spooktober', twitchCategoryId: '42', refreshTwitch: true }) });
+      expect((await refreshed.json()).tags.values).toContain('Horror');
+      expect(performance.now() - refreshStart).toBeLessThan(1300);
     } finally { await server.stop(); await rm(dataDir, { recursive: true, force: true }); }
   });
   it('Planning duplication preserves independent tag metadata and preferences', async () => {

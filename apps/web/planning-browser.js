@@ -1,3 +1,4 @@
+import { openBulkDelete } from './planning-bulk-delete.js';
 import { createThumbnail } from '../mobile/thumbnails.js';
 import { filterPlanningTemporal, paginatePlanning, TEMPORAL_FILTERS } from '../mobile/planning-model.js';
 import { expandRecurringItems } from '../mobile/shared/recurrence.js';
@@ -38,13 +39,14 @@ function controlsFor(schedule) {
           <option value="all">Tous</option>
         </select>
       </label>
-      <div class="button-row">
+      <div class="button-row"><button class="ghost compact" id="planning-bulk-delete" type="button">Supprimer une période</button>
         <button class="ghost compact" id="planning-page-prev" type="button">← Précédent</button>
         <small class="muted" id="planning-page-label"></small>
         <button class="ghost compact" id="planning-page-next" type="button">Suivant →</button>
       </div>
     </div>`;
   parent?.insertBefore(controls, schedule);
+  controls.querySelector('#planning-bulk-delete').onclick = () => openBulkDelete();
   const select = controls.querySelector('#planning-temporal-filter');
   select.value = preferences.temporal;
   select.onchange = () => {

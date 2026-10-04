@@ -65,8 +65,12 @@ const languages: Readonly<Record<string, string>> = {
   zh: 'Chinese', chinese: 'Chinese', chinois: 'Chinese',
 };
 
-function languageTag(language: string): string | undefined {
-  return Object.hasOwn(languages, language) ? languages[language] : undefined;
+/** Shared canonical language tag for local suggestions and Helix language matching. */
+export function normalizeTwitchLanguage(value: string): string | undefined {
+  const language = words(value);
+  const primary = language.split(' ')[0];
+  return Object.hasOwn(languages, language) ? languages[language]
+    : Object.hasOwn(languages, primary) ? languages[primary] : undefined;
 }
 
 /**
@@ -81,8 +85,8 @@ export function generateTwitchTags(input: TwitchTagInput = {}): string[] {
   const title = input.title ?? input.twitch?.title ?? '';
   const sources = [category, input.game ?? '', title, input.description ?? '', ...(input.context ?? [])]
     .map(value => ` ${words(value)} `);
-  const language = words(input.language ?? input.twitch?.language ?? '');
-  const candidates = [category, input.game ?? '', languageTag(language) ?? languageTag(language.split(' ')[0]) ?? ''];
+  const language = normalizeTwitchLanguage(input.language ?? input.twitch?.language ?? '');
+  const candidates = [category, input.game ?? '', language ?? ''];
   for (const [tag, phrases] of rules) {
     if (sources.some(source => phrases.some(phrase => source.includes(` ${phrase} `)))) candidates.push(tag);
   }

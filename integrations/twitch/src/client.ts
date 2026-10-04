@@ -168,6 +168,17 @@ export class TwitchClient {
     };
   }
 
+  /** One observation request, no pagination or auth retry on this optional path. */
+  async getStreamsForGame(gameId: string, signal: AbortSignal) {
+    this.requireConnected();
+    const response = await this.request(`${API}/streams?game_id=${encodeURIComponent(gameId)}&first=100`, {
+      headers: { Authorization: `Bearer ${this.credentials.accessToken}`, 'Client-Id': this.credentials.clientId },
+      signal: AbortSignal.any([signal, this.networkAbort.signal, AbortSignal.timeout(800)]),
+    });
+    const value = await this.json<{ data: Array<{ tags?: string[]; viewer_count: number; language: string }> }>(response);
+    return value.data.slice(0, 100).map(stream => ({ tags: (stream.tags ?? []).filter(tag => typeof tag === 'string'), viewer_count: stream.viewer_count, language: stream.language ?? '' }));
+  }
+
   async getLiveState(): Promise<TwitchLiveState> {
     this.requireConnected();
     const value = await this.api<{ data: Array<{ title: string; game_id: string; game_name: string; started_at: string; viewer_count: number; thumbnail_url: string }> }>(`/streams?user_id=${encodeURIComponent(this.credentials.broadcasterId)}&first=1`);
@@ -443,7 +454,7 @@ export class TwitchClient {
   async readSegment(id: string) {
     const segment = (await this.scheduleSegments(id)).find(value => value.id === id);
     if (!segment) return { deleted: true };
-    return { fingerprint: this.segmentFingerprint(segment), remote: {
+    return { recurring: Boolean(segment.is_recurring), fingerprint: this.segmentFingerprint(segment), remote: {
       title: segment.title, startAtUtc: segment.start_time, endAtUtc: segment.end_time,
       twitchCategoryId: segment.category?.id, twitchCategoryName: segment.category?.name,
     } };
@@ -554,7 +565,7 @@ export class TwitchClient {
           desiredPublication: recoveredLocal?.desiredPublication ?? { local: true, twitch: true, google: false },
           providers: {
             ...(recoveredLocal?.providers ?? {}),
-            twitch: { status: 'synced', remoteId: segment.id, fingerprint: this.segmentFingerprint(segment), lastSyncedAt: syncedAt, deletedRemotely: false },
+            twitch: { ...(recoveredLocal?.providers?.twitch ?? {}), status: 'synced', remoteId: segment.id, fingerprint: this.segmentFingerprint(segment), lastSyncedAt: syncedAt, deletedRemotely: false },
           },
         };
         if (recoveredLocal) {

@@ -1,4 +1,6 @@
-import { localTagEngine, resolveTags, tagMetadata, tagPreferences, type TagEngine } from '../../../packages/core/src/tags.js';
+import { bulkDeleteSelection } from '../../../packages/core/src/planning-bulk-delete.js';
+import { TwitchTagIntelligence } from '../../../packages/core/src/tag-intelligence.js';
+import { resolveTags, tagMetadata, tagPreferences, type TagEngine } from '../../../packages/core/src/tags.js';
 import { googleRecurrence, parseGoogleRecurrence } from '../../../integrations/google-calendar/src/recurrence.js';
 import express from 'express';
 import { createServer, type Server } from 'node:http';
@@ -188,6 +190,7 @@ function sanitizeProviderLink(value: unknown): ProviderLink | undefined {
   for (const key of ['remoteId', 'calendarId', 'remoteRevision', 'fingerprint', 'lastError'] as const) {
     if (typeof value[key] === 'string') link[key] = String(value[key]).slice(0, 500);
   }
+  if (object(value.deletionPeriod)) link.deletionPeriod = { start: String(value.deletionPeriod.start ?? ''), end: String(value.deletionPeriod.end ?? '') };
   if (object(value.uncertainCreate)) link.uncertainCreate = structuredClone(value.uncertainCreate) as ProviderLink['uncertainCreate'];
   if (typeof value.publishedContent === 'string') link.publishedContent = value.publishedContent;
   if (typeof value.lastSyncedAt === 'string' && Number.isFinite(Date.parse(value.lastSyncedAt))) link.lastSyncedAt = value.lastSyncedAt;
@@ -468,6 +471,7 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
       ? rawSettings.timerBrowserSource.trim() || undefined : undefined,
     primaryMicInput: typeof rawSettings.primaryMicInput === 'string' && rawSettings.primaryMicInput.trim().length <= 200
       ? rawSettings.primaryMicInput.trim() || undefined : undefined,
+    tagPreferences: tagPreferences(rawSettings.tagPreferences),
     requireTimerOverlayOnStart: rawSettings.requireTimerOverlayOnStart === true,
     remoteEnabled: rawSettings.remoteEnabled === true,
     streamerPingRewardIds: Array.isArray(rawSettings.streamerPingRewardIds)
@@ -548,6 +552,7 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
     if (tokens) await secrets.setTwitchTokens(tokens);
     else await secrets.clearTwitchTokens();
   });
+  const tagIntelligence = new TwitchTagIntelligence((gameId, signal) => twitch.getStreamsForGame(gameId, signal), () => local.planning, Date.now, undefined, undefined, () => local.settings.tagPreferences ?? {});
   const googleClientId = options.googleClientId ?? process.env.GOOGLE_CLIENT_ID ?? '';
   const google = new GoogleCalendarClient(
     googleClientId,
@@ -784,6 +789,7 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
     ? Math.max(0, Math.ceil((local.timer.deadline - Date.now()) / 1000))
     : local.timer.remaining;
   const publicSettings = (): DashboardSettings => ({
+    tagPreferences: local.settings.tagPreferences,
     streamerName: local.settings.streamerName,
     accent: local.settings.accent,
     confirmStop: local.settings.confirmStop,
@@ -1010,13 +1016,26 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
       read: id => twitch.readSegment(id),
       create: item => twitch.createSegment(item),
       update: (id, item) => twitch.updateSegment(id, item),
-      delete: id => twitch.deleteSegment(id),
+      delete: async (id, item) => {
+        const period = item.providers?.twitch?.deletionPeriod;
+        if (period) {
+          const remote = await twitch.readSegment(id);
+          if (remote.deleted) return;
+          if (remote.recurring || !remote.remote || !bulkDeleteSelection([{ ...remote.remote, id, ownership: 'LOCAL' }], period.start, period.end).eligible.length)
+            throw new Error('Événement Twitch distant récurrent ou hors période : suppression refusée.');
+        }
+        await twitch.deleteSegment(id);
+      },
     } : undefined,
     google: google.connected ? {
       read: async (id, item) => {
         const calendarId = item.providers?.google?.calendarId ?? local.google.targetCalendarId;
         if (!calendarId) throw new Error('Calendrier Google lié introuvable.');
-        const event = await google.event(calendarId, id);
+        const event = await google.event(calendarId, id).catch(error => {
+          if (error?.code === 'DELETED_REMOTELY') return undefined;
+          throw error;
+        });
+        if (!event || event.deleted) return { deleted: true };
         if (!sameGoogleRecurrence(item, event)) {
           throw new Error('La récurrence Google distante diffère du modèle local. Résolution automatique refusée pour préserver la série.');
         }
@@ -1040,6 +1059,18 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
       delete: async (id, item, revision) => {
         const calendarId = item.providers?.google?.calendarId ?? local.google.targetCalendarId;
         if (!calendarId) throw new Error('Calendrier Google lié introuvable.');
+        const period = item.providers?.google?.deletionPeriod;
+        if (period) {
+          if (!item.providers?.google?.calendarId) throw new Error('Calendrier Google lié introuvable : suppression refusée.');
+          let remote: GoogleEvent;
+          try { remote = await google.event(calendarId, id); }
+          catch (error) { if ((error as { code?: string }).code === 'DELETED_REMOTELY' || [404, 410].includes((error as { status?: number }).status ?? 0)) return; throw error; }
+          if (remote.deleted) return;
+          if (remote.recurrenceLines?.length || !bulkDeleteSelection([{ ...remote, ownership: 'LOCAL' }], period.start, period.end).eligible.length)
+            throw new Error('Événement Google distant récurrent ou hors période : suppression refusée.');
+          if (!remote.etag) throw new Error('Version Google distante inconnue : suppression refusée.');
+          revision = remote.etag;
+        }
         await google.delete(calendarId, id, revision);
       },
     } : undefined,
@@ -1080,7 +1111,7 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
       return changed();
     }
     try {
-      const resolved = await resolveTags(event, options.tagEngine ?? localTagEngine);
+      const resolved = await resolveTags(event, options.tagEngine ?? tagIntelligence);
       const result = await twitchPreflight.prepare({
         tags: resolved.tags?.values,
         eventId: event.id,
@@ -1779,8 +1810,9 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
   });
 
   app.post('/api/v1/planning/tags/regenerate', async (req, res) => {
-    const event = { title: String(req.body.title ?? '').slice(0, 140), description: String(req.body.description ?? '').slice(0, 4000), twitchCategoryId: String(req.body.twitchCategoryId ?? ''), twitchCategoryName: String(req.body.twitchCategoryName ?? ''), tags: tagMetadata(req.body.tags), tagPreferences: tagPreferences(req.body.tagPreferences) };
-    res.json(await resolveTags(event, options.tagEngine ?? localTagEngine, true));
+    const event = { id: typeof req.body.id === 'string' ? req.body.id : undefined, seriesId: typeof req.body.seriesId === 'string' ? req.body.seriesId : local.planning.find(item => item.id === req.body.id && item.recurrence)?.id, title: String(req.body.title ?? '').slice(0, 140), description: String(req.body.description ?? '').slice(0, 4000), twitchCategoryId: String(req.body.twitchCategoryId ?? ''), twitchCategoryName: String(req.body.twitchCategoryName ?? ''), tags: tagMetadata(req.body.tags), tagPreferences: tagPreferences(req.body.tagPreferences) };
+    if (req.body.refreshTwitch === true && !options.tagEngine) await tagIntelligence.refresh(event.twitchCategoryId, true);
+    res.json(await resolveTags(event, options.tagEngine ?? tagIntelligence, true));
   });
 
   const planningCreate: express.RequestHandler = async (req, res, next) => {
@@ -1936,6 +1968,78 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
     } catch (error) { next(error); }
   };
 
+  // Short-lived, one-use previews bind confirmation to the exact canonical records and destinations.
+  const bulkPreviews = new Map<string, { start: string; end: string; destinations: { local: true; twitch: boolean; google: boolean }; fingerprint: string; expires: number }>();
+  const bulkSelection = (start: string, end: string) => bulkDeleteSelection(local.planning, start, end,
+    Object.values(local.companion.providerWork).map(work => work.item.id));
+  const bulkFingerprint = (selection: ReturnType<typeof bulkSelection>) => createHash('sha256').update(JSON.stringify(selection)).digest('hex');
+  const planningBulkPreview: express.RequestHandler = async (req, res, next) => {
+    try {
+      await plan(async () => {
+        const { start, end, destinations } = req.body ?? {};
+        if (typeof start !== 'string' || typeof end !== 'string') throw new Error('Début et fin requis.');
+        const selected = { local: true as const, twitch: destinations?.twitch === true, google: destinations?.google === true };
+        const selection = bulkSelection(start, end);
+        for (const [key, value] of bulkPreviews) if (value.expires < Date.now()) bulkPreviews.delete(key);
+        if (bulkPreviews.size >= 100) bulkPreviews.delete(bulkPreviews.keys().next().value!);
+        const token = randomUUID();
+        bulkPreviews.set(token, { start, end, destinations: selected, fingerprint: bulkFingerprint(selection), expires: Date.now() + 10 * 60_000 });
+        res.json({ token, start, end, destinations: selected, count: selection.eligible.length,
+          items: selection.eligible.map(({ id, title, startAtUtc, endAtUtc }) => ({ id, title, startAtUtc, endAtUtc })), excluded: selection.excluded });
+      });
+    } catch (error) { next(error); }
+  };
+  const planningBulkDelete: express.RequestHandler = async (req, res, next) => {
+    try {
+      const result = await plan(async () => {
+        const preview = bulkPreviews.get(req.body?.token);
+        if (req.body?.confirm !== true || !preview || preview.expires < Date.now()) throw new Error('Confirmation explicite et aperçu récent requis.');
+        const selection = bulkSelection(preview.start, preview.end);
+        if (bulkFingerprint(selection) !== preview.fingerprint) {
+          bulkPreviews.delete(req.body.token);
+          throw new Error('Le planning a changé. Refaire l’aperçu avant de confirmer.');
+        }
+        bulkPreviews.delete(req.body.token);
+        const deleted: string[] = [], failed: { id: string; title: string; error: string }[] = [];
+        for (const item of selection.eligible) {
+          try {
+            // Work on a copy: commit local removal and its companion tombstone together.
+            const working = structuredClone(local.planning);
+            const target = working.find(value => value.id === item.id)!;
+            const persist = async (items: CalendarItem[]) => {
+              const companion = structuredClone(local.companion);
+              if (!items.some(value => value.id === item.id)) {
+                const revision = (companion.eventRevisions[item.id] ?? 1) + 1;
+                companion.eventRevisions[item.id] = revision;
+                companion.tombstones[item.id] = { id: item.id, revision, updatedAt: new Date().toISOString() };
+                delete companion.eventHistory[item.id];
+                companion.serverRevision++;
+              }
+              await store.write({ ...local, planning: items, companion });
+              local.planning = structuredClone(items);
+              local.companion = companion;
+            };
+            // Durable withdrawal prevents provider retry from republishing a failed deletion.
+            for (const provider of ['twitch', 'google'] as const) if (preview.destinations[provider]) {
+              target.desiredPublication ??= { local: true, twitch: false, google: false };
+              target.desiredPublication[provider] = false;
+              target.providers ??= {};
+              const link = target.providers[provider] ??= { status: 'not-published' };
+              link.deletionPeriod = { start: preview.start, end: preview.end };
+            }
+            await persist(working);
+            await new PlanningOrchestrator(working, providerAdapters(), persist).remove(item.id, preview.destinations);
+            deleted.push(item.id);
+          } catch (error) { failed.push({ id: item.id, title: item.title, error: (error as Error).message }); }
+        }
+        return { deleted, failed };
+      });
+      invalidatePreflight();
+      await changed();
+      res.json(result);
+    } catch (error) { next(error); }
+  };
+
   const planningDelete: express.RequestHandler = async (req, res, next) => {
     try {
       const id = String(req.params.id);
@@ -2003,6 +2107,7 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
           if (!ACCENTS.includes(input.accent)) throw new Error('Couleur d’accent invalide.');
           local.settings.accent = input.accent;
         }
+        if (input.tagPreferences !== undefined) local.settings.tagPreferences = tagPreferences(input.tagPreferences);
         if (typeof input.confirmStop === 'boolean') local.settings.confirmStop = input.confirmStop;
         if (typeof input.launchObs === 'boolean') local.settings.launchObs = input.launchObs;
         if (input.startMode !== undefined) {
@@ -2054,6 +2159,8 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
   };
 
   for (const prefix of ['/api', '/api/v1']) {
+    app.post(`${prefix}/planning/bulk-delete/preview`, planningBulkPreview);
+    app.post(`${prefix}/planning/bulk-delete/confirm`, planningBulkDelete);
     app.post(`${prefix}/planning`, planningCreate);
     app.put(`${prefix}/planning/:id`, planningUpdate);
     app.delete(`${prefix}/planning/:id`, planningDelete);
@@ -2302,6 +2409,7 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
               continue;
             }
             managedLocal.providers.google = {
+              ...(existingLink ?? {}),
               status: 'synced',
               remoteId: event.id,
               calendarId,
@@ -2310,7 +2418,7 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
               deletedRemotely: false,
             };
             managedLocal.desiredPublication ??= { local: true, twitch: false, google: true };
-            managedLocal.desiredPublication.google = true;
+            if (!existingLink?.deletionPeriod) managedLocal.desiredPublication.google = true;
             continue;
           }
           if (local.planning.some(item => item.providers?.google?.remoteId === event.id)) continue;

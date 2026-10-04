@@ -117,7 +117,7 @@ export class PlanningOrchestrator {
         link.status = 'error'; link.lastError = `La récurrence locale ne peut pas encore être représentée fidèlement sur ${provider}. L’événement local est conservé.`;
         await this.persist(this.items); throw new Error(link.lastError);
       }
-      if (item.conflict?.provider === provider && desired) {
+      if (desired && (item.conflict?.provider === provider || item.providers?.[provider]?.status === 'conflict')) {
         throw new Error(`Conflit ${provider} non résolu — choisissez d’abord la version locale ou distante.`);
       }
 
@@ -335,10 +335,6 @@ export class PlanningOrchestrator {
       return;
     }
     if (link.deletedRemotely && !explicitRetry) return;
-    if (explicitRetry && link.deletedRemotely) {
-      this.clearRemoteIdentity(item, name);
-      link.deletedRemotely = false;
-    }
 
     if (!this.remoteId(item, name)) {
       try { assertProviderCreationCertain(item, name); }
@@ -352,6 +348,17 @@ export class PlanningOrchestrator {
     link.status = 'pending';
     await this.persist(this.items);
     await this.attempt(item, name, async remoteProvider => {
+      if (explicitRetry && link.deletedRemotely) {
+        const previousId = this.remoteId(item, name);
+        // A failed request can leave a stale deletion marker. Verify the linked
+        // object before discarding its identity; otherwise retry can duplicate it
+        // or adopt old content as a successful publication. Keep the original
+        // ETag/fingerprint so a concurrent edit still requires conflict resolution.
+        const remote = previousId && remoteProvider.read ? await remoteProvider.read(previousId, item) : undefined;
+        if (!remote || remote.deleted) this.clearRemoteIdentity(item, name);
+        link.deletedRemotely = false;
+        await this.persist(this.items);
+      }
       const remoteId = this.remoteId(item, name);
       if (remoteId) {
         const result = await remoteProvider.update(remoteId, item, link.remoteRevision);
@@ -386,6 +393,7 @@ export class PlanningOrchestrator {
     await this.persist(this.items);
     const ok = await this.attempt(item, name, remoteProvider => remoteProvider.delete(remoteId, item, link.remoteRevision));
     if (ok) {
+      delete link.deletionPeriod;
       this.clearRemoteIdentity(item, name);
       link.status = 'not-published';
       link.deletedRemotely = false;

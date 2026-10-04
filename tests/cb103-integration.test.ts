@@ -49,7 +49,7 @@ it('preserves daily companion series and normalizes tags in events and exception
   expect(store.snapshot().pending).toEqual(before);
 });
 
-it('uses the production engine through regeneration and live preflight without injection', async () => {
+it.each(['ordinary', 'Spooktober'])('uses the dynamic production engine through regeneration and auto-tag preflight: %s', async scenario => {
   vi.spyOn(ObsClient.prototype, 'configure').mockImplementation(async function (this: ObsClient) { this.state.connected = true; this.state.streamingKnown = true; return this.state; });
   vi.spyOn(ObsClient.prototype, 'refresh').mockResolvedValue(undefined);
   const dataDir = await mkdtemp(path.join(os.tmpdir(), 'cb103-tags-'));
@@ -62,6 +62,10 @@ it('uses the production engine through regeneration and live preflight without i
     const url = String(input);
     if (url.startsWith('http://127.0.0.1:')) return nativeFetch(input, init);
     if (url.endsWith('/validate')) return Response.json({ client_id: 'client', user_id: '42', scopes: ['channel:manage:broadcast'] });
+    if (url.includes('/streams?game_id=')) {
+      expect(url).toContain('game_id=1&first=100');
+      return Response.json({ data: [{ tags: ['Zombie', 'Coop', 'Halloween'], viewer_count: 20, language: 'fr' }, { tags: ['Zombie', 'Horror', 'Action'], viewer_count: 10, language: 'fr' }] });
+    }
     if (url.includes('/channels?')) {
       if (init?.method === 'PATCH') { patches.push(JSON.parse(String(init.body))); return new Response(null, { status: 204 }); }
       return Response.json({ data: [{ title: 'Old', game_id: 'old', tags: [] }] });
@@ -75,9 +79,11 @@ it('uses the production engine through regeneration and live preflight without i
     return response.json();
   };
   try {
-    const input = { title: 'Découverte en coop', twitchCategoryName: 'Minecraft', twitchCategoryId: '1', tagPreferences: { automatic: true, language: 'fr' } };
-    const expected = ['Minecraft', 'French', 'Coop', 'FirstPlaythrough'];
-    const generated = await request('planning/tags/regenerate', input);
+    const input = { title: scenario === 'Spooktober' ? 'Spooktober' : 'Live ordinaire', twitchCategoryName: 'Dead Island 2', twitchCategoryId: '1', tagPreferences: { automatic: true, language: 'fr' } };
+    const generated = await request('planning/tags/regenerate', { ...input, refreshTwitch: true });
+    const expected = generated.tags.values;
+    expect(expected).toEqual(expect.arrayContaining(['DeadIsland2', 'Zombie', 'Horror', 'Action', 'Coop']));
+    expect(expected.includes('Halloween')).toBe(scenario === 'Spooktober');
     expect(generated.tags).toMatchObject({ values: expected, source: 'generated' });
     expect(generated.warning).toBeUndefined();
     await request('planning', { ...input, category: 'live', startAtUtc: new Date(Date.now() + 60000).toISOString(), endAtUtc: new Date(Date.now() + 3660000).toISOString(), desiredPublication: { local: true, google: false, twitch: false } });

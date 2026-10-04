@@ -91,6 +91,8 @@ export interface TimerState {
 
 export type ProviderSyncStatus = 'synced' | 'pending' | 'error' | 'not-published' | 'conflict';
 export interface ProviderLink {
+  /** Durable scope of a confirmed period deletion, including standard retries. */
+  deletionPeriod?: { start: string; end: string };
   status: ProviderSyncStatus;
   remoteId?: string;
   calendarId?: string;
@@ -115,7 +117,7 @@ export interface RecurrenceRule {
 }
 
 export interface TagMetadata { values: string[]; source: 'manual' | 'generated'; generatedAt?: string }
-export interface TagPreferences { automatic?: boolean; language?: string }
+export interface TagPreferences { automatic?: boolean; language?: string; preferredTags?: string[] }
 
 export interface CalendarItem {
   tags?: TagMetadata;
@@ -222,6 +224,7 @@ export interface ObsState {
 }
 
 export interface DashboardSettings {
+  tagPreferences?: TagPreferences;
   streamerName: string;
   accent: 'violet' | 'cyan' | 'rose';
   confirmStop: boolean;
