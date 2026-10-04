@@ -1,3 +1,5 @@
+import { localTagEngine, resolveTags, tagMetadata, tagPreferences, type TagEngine } from '../../../packages/core/src/tags.js';
+import { googleRecurrence, parseGoogleRecurrence } from '../../../integrations/google-calendar/src/recurrence.js';
 import express from 'express';
 import { createServer, type Server } from 'node:http';
 import { mkdir, stat, unlink } from 'node:fs/promises';
@@ -110,6 +112,7 @@ interface LocalData {
   streamerPings: StreamerPing[];
 }
 export interface DashboardServerOptions {
+  tagEngine?: TagEngine;
   port?: number;
   host?: string;
   remoteEnabled?: boolean;
@@ -226,6 +229,8 @@ function sanitizeCalendarItem(value: unknown): CalendarItem | null {
     startAtUtc,
     endAtUtc,
     desiredPublication: inferDesiredPublication(value),
+    tags: tagMetadata(value.tags),
+    tagPreferences: tagPreferences(value.tagPreferences),
   };
   if (typeof value.description === 'string') item.description = value.description.slice(0, 4000);
   if (typeof value.allDay === 'boolean') item.allDay = value.allDay;
@@ -278,7 +283,9 @@ function validateRecurrence(value: unknown): CalendarItem['recurrence'] {
     for (const [key, exception] of Object.entries(value.exceptions)) {
       if (!/^[A-Za-z0-9._:-]{1,128}:\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}$/.test(key) || !object(exception) || Object.keys(exception).some(field => !['cancelled', 'patch'].includes(field))) throw new Error('Exception de récurrence invalide.');
       const patch = exception.patch;
-      if (patch !== undefined && (!object(patch) || Object.keys(patch).length > 11 || Object.keys(patch).some(field => !['title', 'description', 'startAtUtc', 'endAtUtc', 'category', 'kind', 'twitchCategoryId', 'twitchCategoryName', 'desiredPublication'].includes(field)))) throw new Error('Patch de récurrence invalide.');
+      if (patch !== undefined && (!object(patch) || Object.keys(patch).length > 11 || Object.keys(patch).some(field => !['title', 'description', 'startAtUtc', 'endAtUtc', 'category', 'kind', 'twitchCategoryId', 'twitchCategoryName', 'tags', 'tagPreferences', 'desiredPublication'].includes(field)))) throw new Error('Patch de récurrence invalide.');
+      if (patch && patch.tags !== undefined) patch.tags = tagMetadata(patch.tags);
+      if (patch && patch.tagPreferences !== undefined) patch.tagPreferences = tagPreferences(patch.tagPreferences);
       exceptions[key] = { ...(exception.cancelled === true ? { cancelled: true } : {}), ...(patch ? { patch: structuredClone(patch) } : {}) };
     }
   }
@@ -295,9 +302,17 @@ function parseGoogleTokens(value: Record<string, string> | null): GoogleTokens |
   };
 }
 
+function sameGoogleRecurrence(local: CalendarItem, remote: GoogleEvent) {
+  try {
+    return JSON.stringify(googleRecurrence(local)) === JSON.stringify(googleRecurrence({ ...remote, recurrence: parseGoogleRecurrence(remote) }))
+      && (!local.recurrence || local.allDay || local.recurrence.timeZone === remote.recurrenceTimeZone);
+  } catch { return false; }
+}
+
 function sameCalendarData(local: CalendarItem, remote: GoogleEvent) {
   return local.title === remote.title
     && (local.description ?? '') === (remote.description ?? '')
+    && sameGoogleRecurrence(local, remote)
     && Boolean(local.allDay) === Boolean(remote.allDay)
     && Date.parse(local.startAtUtc) === Date.parse(remote.startAtUtc)
     && Date.parse(local.endAtUtc) === Date.parse(remote.endAtUtc);
@@ -311,6 +326,9 @@ function googleEventInput(item: CalendarItem): GoogleEventInput {
     startAtUtc: item.startAtUtc,
     endAtUtc: item.endAtUtc,
     allDay: item.allDay,
+    recurrence: item.recurrence,
+    seriesId: item.seriesId,
+    occurrenceKey: item.occurrenceKey,
   };
 }
 
@@ -999,6 +1017,9 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
         const calendarId = item.providers?.google?.calendarId ?? local.google.targetCalendarId;
         if (!calendarId) throw new Error('Calendrier Google lié introuvable.');
         const event = await google.event(calendarId, id);
+        if (!sameGoogleRecurrence(item, event)) {
+          throw new Error('La récurrence Google distante diffère du modèle local. Résolution automatique refusée pour préserver la série.');
+        }
         return { revision: event.etag, deleted: event.deleted, remote: {
           title: event.title, description: event.description, startAtUtc: event.startAtUtc, endAtUtc: event.endAtUtc, allDay: event.allDay,
         } };
@@ -1059,7 +1080,9 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
       return changed();
     }
     try {
+      const resolved = await resolveTags(event, options.tagEngine ?? localTagEngine);
       const result = await twitchPreflight.prepare({
+        tags: resolved.tags?.values,
         eventId: event.id,
         title: event.title,
         category: category ?? undefined,
@@ -1068,6 +1091,8 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
       preflightState = {
         eventId: event.id,
         status: result.status,
+        tags: resolved.tags?.values,
+        tagsWarning: ('tagsWarning' in result ? result.tagsWarning : undefined) ?? resolved.warning,
         title: event.title,
         category,
         gameId: 'gameId' in result ? result.gameId : null,
@@ -1753,6 +1778,11 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
     catch (error) { next(error); }
   });
 
+  app.post('/api/v1/planning/tags/regenerate', async (req, res) => {
+    const event = { title: String(req.body.title ?? '').slice(0, 140), description: String(req.body.description ?? '').slice(0, 4000), twitchCategoryId: String(req.body.twitchCategoryId ?? ''), twitchCategoryName: String(req.body.twitchCategoryName ?? ''), tags: tagMetadata(req.body.tags), tagPreferences: tagPreferences(req.body.tagPreferences) };
+    res.json(await resolveTags(event, options.tagEngine ?? localTagEngine, true));
+  });
+
   const planningCreate: express.RequestHandler = async (req, res, next) => {
     try {
       const input = req.body as Partial<CalendarItem>;
@@ -1785,6 +1815,8 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
         desiredPublication: desired,
         twitchCategoryId: typeof input.twitchCategoryId === 'string' ? input.twitchCategoryId : undefined,
         twitchCategoryName: typeof input.twitchCategoryName === 'string' ? input.twitchCategoryName : undefined,
+        tags: tagMetadata(input.tags),
+        tagPreferences: tagPreferences(input.tagPreferences),
         recurrence: input.recurrence ? validateRecurrence(input.recurrence) : undefined,
       }));
       for (const created of local.planning.filter(item => !beforeIds.has(item.id))) {
@@ -1832,6 +1864,8 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
         kind,
         twitchCategoryId: typeof req.body.twitchCategoryId === 'string' ? req.body.twitchCategoryId : item.twitchCategoryId,
         twitchCategoryName: typeof req.body.twitchCategoryName === 'string' ? req.body.twitchCategoryName : item.twitchCategoryName,
+        tags: req.body.tags === undefined ? item.tags : tagMetadata(req.body.tags),
+        tagPreferences: req.body.tagPreferences === undefined ? item.tagPreferences : tagPreferences(req.body.tagPreferences),
         recurrence: req.body.recurrence === null ? undefined : req.body.recurrence !== undefined ? validateRecurrence(req.body.recurrence) : item.recurrence,
       }, {
         desiredPublication,
@@ -2179,6 +2213,15 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
         const timeMin = new Date(Date.now() - 30 * DAY_MS).toISOString();
         const timeMax = new Date(Date.now() + 730 * DAY_MS).toISOString();
         const remote = await google.events(calendarId, { timeMin, timeMax });
+        for (const item of local.planning) {
+          const link = item.providers?.google;
+          if (!item.recurrence || !link?.remoteId || (link.calendarId && link.calendarId !== calendarId) || remote.some(event => event.id === link.remoteId)) continue;
+          try { remote.push(await google.event(calendarId, link.remoteId)); }
+          catch (error) { if (![404, 410].includes((error as { status?: number }).status ?? 0)) throw error; }
+        }
+        // Validate every recovered master before changing any local row. A refused
+        // rule must not leave behind an editable single event or partial import.
+        for (const event of remote) event.recurrence = parseGoogleRecurrence(event);
         const remoteById = new Map(remote.map(event => [event.id, event]));
         const localById = new Map(local.planning.map(item => [item.localId ?? item.id, item]));
         const remoteIds = new Set(remote.filter(event => !event.deleted).map(event => event.id));
@@ -2192,7 +2235,7 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
 
         for (const item of local.planning) {
           const link = item.providers?.google;
-          if (!link?.remoteId || !overlapsWindow(item, timeMin, timeMax)) continue;
+          if (!link?.remoteId || (link.calendarId && link.calendarId !== calendarId) || (!item.recurrence && !overlapsWindow(item, timeMin, timeMax))) continue;
           const event = remoteById.get(link.remoteId);
           if (!event || event.deleted) {
             link.deletedRemotely = true;
@@ -2274,6 +2317,7 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
           local.planning.push({
             id: `google:${calendarId}:${event.id}`,
             localId: event.localId,
+            recurrence: event.recurrence,
             title: event.title,
             description: event.description,
             startAtUtc: event.startAtUtc,

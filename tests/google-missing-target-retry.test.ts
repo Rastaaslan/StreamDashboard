@@ -13,7 +13,7 @@ afterEach(async () => {
   if (dataDir) await rm(dataDir, { recursive: true, force: true });
 });
 
-it.each(['desktop', 'companion'] as const)('retries Google creation from %s after missing target, restart and calendar selection', async origin => {
+it.each([['desktop', false], ['companion', false], ['desktop', true], ['companion', true]] as const)('retries Google creation from %s (recurring=%s) after missing target, restart and calendar selection', async (origin, recurring) => {
   dataDir = await mkdtemp(path.join(os.tmpdir(), 'cb16-missing-target-'));
   const secrets = new MemorySecretStore();
   await secrets.setGoogleTokens({ accessToken: 'token', refreshToken: 'refresh', expiresAt: String(Date.now() + 3600_000) });
@@ -26,7 +26,7 @@ it.each(['desktop', 'companion'] as const)('retries Google creation from %s afte
     if (url.includes('/users/me/calendarList')) return Response.json({ items: [{ id: 'calendar', summary: 'Target', accessRole: 'owner' }] });
     if (url.includes('/calendars/calendar/events')) {
       if (init?.method === 'POST') {
-        writes();
+        writes(JSON.parse(String(init.body)));
         return Response.json({ ...JSON.parse(String(init.body)), id: 'remote-one', etag: 'r1' });
       }
       eventReads();
@@ -41,7 +41,8 @@ it.each(['desktop', 'companion'] as const)('retries Google creation from %s afte
     method, headers: { 'content-type': 'application/json', ...(authorization ? { authorization } : {}) }, body: JSON.stringify(body),
   });
   const item = { id: 'missing-target', title: 'Live', startAtUtc: '2030-10-01T18:00:00Z', endAtUtc: '2030-10-01T19:00:00Z',
-    desiredPublication: { local: true, twitch: false, google: true } };
+    desiredPublication: { local: true, twitch: false, google: true },
+    ...(recurring ? { recurrence: { frequency: 'weekly', interval: 2, timeZone: 'Europe/Paris', until: '2031-01-01T00:00:00Z' } } : {}) };
   if (origin === 'desktop') {
     const response = await request('planning', item);
     expect(response.ok, await response.clone().text()).toBe(true);
@@ -75,4 +76,9 @@ it.each(['desktop', 'companion'] as const)('retries Google creation from %s afte
   expect(finished.planning[0].providers.google.uncertainCreate).toBeUndefined();
   expect(finished.providerWork).toEqual({});
   expect(writes).toHaveBeenCalledTimes(1);
+  if (recurring) expect(writes.mock.calls[0][0]).toMatchObject({
+    recurrence: ['RRULE:FREQ=WEEKLY;INTERVAL=2;UNTIL=20310101T000000Z'],
+    start: { dateTime: item.startAtUtc, timeZone: 'Europe/Paris' },
+    end: { dateTime: item.endAtUtc, timeZone: 'Europe/Paris' },
+  });
 });

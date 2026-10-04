@@ -36,6 +36,7 @@ it.each([
     if (url.endsWith('/validate')) return Response.json({ client_id: 'twitch-client', user_id: '42', scopes: ['channel:manage:schedule'] });
     if (url.startsWith('http://127.0.0.1:')) return nativeFetch(input, init);
     if (url.includes('/users/me/calendarList')) return Response.json({ items: [] });
+    if (url.includes('/calendars/calendar/events?')) return Response.json({ items: [googleEvent()] });
     const isGoogle = url.includes('/calendars/calendar/events/remote-one');
     const isTwitch = url.includes('api.twitch.tv/helix/schedule');
     if (isGoogle || isTwitch) {

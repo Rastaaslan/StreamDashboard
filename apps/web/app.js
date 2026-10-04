@@ -183,7 +183,7 @@ function preflightBlock() {
     return '<div class="panel space"><span class="label">INFOS TWITCH</span><p class="muted">Le prochain live sera analysé pendant Préparer.</p></div>';
   }
   const label = { preparing: 'Préparation…', ready: 'Prêt', 'action-required': 'Action requise', error: 'Erreur' }[value.status] || value.status;
-  return `<div class="panel space"><span class="label">INFOS TWITCH · ${esc(label)}</span><h3>${esc(value.title || 'Prochain live')}</h3><p>${esc(value.category || 'Catégorie non définie')}${value.gameId ? ` · ID ${esc(value.gameId)}` : ''}</p>${value.error ? `<p class="muted">⚠ ${esc(value.error)}</p>` : ''}</div>`;
+  return `<div class="panel space"><span class="label">INFOS TWITCH · ${esc(label)}</span><h3>${esc(value.title || 'Prochain live')}</h3><p>${esc(value.category || 'Catégorie non définie')}${value.gameId ? ` · ID ${esc(value.gameId)}` : ''}</p>${value.tags?.length ? `<p>Tags proposés : ${value.tags.map(esc).join(', ')}</p>` : ''}${value.tagsWarning ? `<p role="status">${esc(value.tagsWarning)}</p>` : ''}${value.error ? `<p class="muted">⚠ ${esc(value.error)}</p>` : ''}</div>`;
 }
 
 function prepare() {

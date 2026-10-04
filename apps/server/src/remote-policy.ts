@@ -11,7 +11,7 @@ const REMOTE_MODES = new Set(['intro', 'live', 'pause', 'end']);
 
 type RemotePlanningProvider = Pick<NonNullable<NonNullable<CalendarItem['providers']>['twitch']>, 'status' | 'lastError' | 'lastSyncedAt' | 'deletedRemotely'>;
 type RemotePlanningItem = Pick<CalendarItem,
-  'id' | 'title' | 'description' | 'startAtUtc' | 'endAtUtc' | 'allDay' | 'category' | 'kind' | 'source' | 'editable' | 'twitchCategoryId' | 'twitchCategoryName' | 'desiredPublication' | 'recurrence' | 'seriesId' | 'occurrenceKey' | 'syncError'
+  'id' | 'title' | 'description' | 'startAtUtc' | 'endAtUtc' | 'allDay' | 'category' | 'kind' | 'source' | 'editable' | 'twitchCategoryId' | 'twitchCategoryName' | 'tags' | 'tagPreferences' | 'desiredPublication' | 'recurrence' | 'seriesId' | 'occurrenceKey' | 'syncError'
 > & {
   providers?: Partial<Record<'twitch' | 'google', RemotePlanningProvider>>;
   conflict?: Pick<NonNullable<CalendarItem['conflict']>, 'provider' | 'detectedAt'>;
@@ -84,6 +84,8 @@ export function toRemoteDashboardState(state: DashboardState): ExtendedRemoteDas
       ...(link.deletedRemotely !== undefined ? { deletedRemotely: link.deletedRemotely } : {}),
     } : undefined]).filter(([, link]) => link !== undefined)) as RemotePlanningItem['providers'] } : {}),
     ...(item.conflict !== undefined ? { conflict: { provider: item.conflict.provider, detectedAt: item.conflict.detectedAt } } : {}),
+    ...(item.tags !== undefined ? { tags: structuredClone(item.tags) } : {}),
+    ...(item.tagPreferences !== undefined ? { tagPreferences: structuredClone(item.tagPreferences) } : {}),
     ...(item.recurrence !== undefined ? { recurrence: structuredClone(item.recurrence) } : {}),
     ...(item.seriesId !== undefined ? { seriesId: item.seriesId } : {}),
     ...(item.occurrenceKey !== undefined ? { occurrenceKey: item.occurrenceKey } : {}),

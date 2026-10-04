@@ -1,3 +1,5 @@
+import { assertTwitchRecurrence } from '../../../integrations/twitch/src/recurrence.js';
+import { googleRecurrence } from '../../../integrations/google-calendar/src/recurrence.js';
 import { createWithDurableIntent, isDefinitiveCreateFailure } from '../../../packages/core/src/provider-identity.js';
 import { publicationContent } from '../../mobile/shared/publication-content.js';
 import type { CalendarItem } from '../../../packages/contracts/src/index.js';
@@ -38,11 +40,13 @@ export async function drainCompanionProviders(
       await fail('Création distante incertaine après interruption. Réconciliez le provider avant de republier.');
       continue;
     }
-    if (work.action === 'publish' && (item.recurrence || item.seriesId || item.occurrenceKey)) {
-      await fail('La récurrence locale ne peut pas encore être représentée fidèlement sur ce provider.');
-      continue;
+    if (work.action === 'publish' && work.provider === 'google') {
+      try { googleRecurrence(item); } catch (error) { await fail((error as Error).message); continue; }
     }
-    if (work.action === 'delete' && item.twitchRecurring) {
+    if (work.action === 'publish' && work.provider === 'twitch') {
+      try { assertTwitchRecurrence(item); } catch (error) { await fail((error as Error).message); continue; }
+    }
+    if (work.action === 'delete' && work.provider === 'twitch' && item.twitchRecurring) {
       await fail('Suppression explicite de la série Twitch récurrente requise.');
       continue;
     }
@@ -71,7 +75,7 @@ export async function drainCompanionProviders(
         const result = await createWithDurableIntent(item, work.provider, persist, request => provider.create(request));
         link.remoteId = result.id; link.remoteRevision = result.revision;
         link.calendarId = result.calendarId ?? link.calendarId;
-        if (work.provider === 'twitch') item.twitchSegmentId = result.id;
+        if (work.provider === 'twitch') { item.twitchSegmentId = result.id; link.fingerprint = result.fingerprint; item.twitchRecurring = Boolean(item.recurrence) || item.twitchRecurring === true; }
         link.status = 'synced';
       }
       work.uncertain = false;

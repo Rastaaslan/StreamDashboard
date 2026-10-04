@@ -111,10 +111,15 @@ export interface RecurrenceRule {
   interval: 1 | 2;
   timeZone: string;
   until?: string | null;
-  exceptions?: Record<string, { cancelled?: boolean; patch?: Partial<Pick<CalendarItem, 'title' | 'description' | 'startAtUtc' | 'endAtUtc' | 'category' | 'kind' | 'twitchCategoryId' | 'twitchCategoryName' | 'desiredPublication'>> }>;
+  exceptions?: Record<string, { cancelled?: boolean; patch?: Partial<Pick<CalendarItem, 'title' | 'description' | 'startAtUtc' | 'endAtUtc' | 'category' | 'kind' | 'twitchCategoryId' | 'twitchCategoryName' | 'tags' | 'tagPreferences' | 'desiredPublication'>> }>;
 }
 
+export interface TagMetadata { values: string[]; source: 'manual' | 'generated'; generatedAt?: string }
+export interface TagPreferences { automatic?: boolean; language?: string }
+
 export interface CalendarItem {
+  tags?: TagMetadata;
+  tagPreferences?: TagPreferences;
   id: string;
   /** Stable StreamDashboard identifier. `id` remains as a V1 compatibility alias. */
   localId?: string;
@@ -163,6 +168,8 @@ export interface DiscordState { defaultMessage?: string; configured: boolean; co
 export interface DiscordSettings { guildId: string | null; channelId: string | null; defaultMessage: string }
 
 export interface PreflightState {
+  tags?: string[];
+  tagsWarning?: string;
   eventId: string | null;
   status: 'idle' | 'preparing' | 'ready' | 'action-required' | 'error';
   title: string | null;

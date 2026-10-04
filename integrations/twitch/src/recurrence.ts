@@ -1,0 +1,11 @@
+import type { CalendarItem } from '../../../packages/contracts/src/index.js';
+
+/** Twitch only represents unbounded weekly series, never local exceptions. */
+export function assertTwitchRecurrence(item: Pick<CalendarItem, 'recurrence' | 'seriesId' | 'occurrenceKey'>) {
+  const rule = item.recurrence;
+  const fail = (): never => { throw Object.assign(new Error('Twitch : récurrence non représentable ; seules les séries weekly-1 sans fin ni exceptions sont acceptées.'), { mutationNotStarted: true }); };
+  if (item.seriesId || item.occurrenceKey) fail();
+  if (!rule) return;
+  if (rule.frequency !== 'weekly' || rule.interval !== 1 || rule.until || Object.keys(rule.exceptions ?? {}).length || !rule.timeZone) fail();
+  try { new Intl.DateTimeFormat('en', { timeZone: rule.timeZone }); } catch { fail(); }
+}

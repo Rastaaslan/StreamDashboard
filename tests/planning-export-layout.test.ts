@@ -3,15 +3,39 @@ import { calculateTodayCards, calculateWeeklyCards, loadArtwork, PLANNING_CANVAS
 
 function canvasHarness() {
   const text: Array<{ value: string; x: number; y: number; width: number }> = [];
+  const fills: Array<{ x: number; y: number; width: number; height: number; style: unknown }> = [];
   const context: any = {
     font: '16px sans-serif', fillStyle: '', strokeStyle: '', lineWidth: 1, textAlign: 'left',
     measureText(value: string) { const size = Number(/(\d+)px/.exec(this.font)?.[1] || 16); return { width: [...value].length * size * .54 }; },
     fillText(value: string, x: number, y: number) { const width = this.measureText(value).width; text.push({ value, x: this.textAlign === 'right' ? x - width : x, y, width }); },
-    beginPath() {}, roundRect() {}, fill() {}, fillRect() {}, strokeRect() {}, clip() {}, save() {}, restore() {}, drawImage: vi.fn(),
-    createLinearGradient() { return { addColorStop() {} }; },
+    beginPath() {}, roundRect: vi.fn(), fill() {},
+    fillRect(x: number, y: number, width: number, height: number) { fills.push({ x, y, width, height, style: this.fillStyle }); },
+    strokeRect() {}, clip() {}, save() {}, restore() {}, drawImage: vi.fn(),
+    createLinearGradient: vi.fn(() => ({ addColorStop: vi.fn() })),
   };
   const canvas: any = { width: 0, height: 0, getContext: () => context };
-  return { documentApi: { createElement: () => canvas }, canvas, context, text };
+  return { documentApi: { createElement: () => canvas }, canvas, context, text, fills };
+}
+
+function expectFullBackground(harness: ReturnType<typeof canvasHarness>) {
+  const { canvas, context, fills } = harness;
+  expect(context.createLinearGradient.mock.calls[0]).toEqual([0, 0, canvas.width, canvas.height]);
+  const gradient = context.createLinearGradient.mock.results[0].value;
+  expect(gradient.addColorStop.mock.calls).toEqual([[0, '#090914'], [.62, '#18112c'], [1, '#321827']]);
+  expect(fills[0]).toEqual({ x: 0, y: 0, width: canvas.width, height: canvas.height, style: gradient });
+}
+
+function expectVisibleCards(harness: ReturnType<typeof canvasHarness>, count: number) {
+  const cards = harness.context.roundRect.mock.calls.filter(([, , width]: number[]) => width === 960);
+  expect(cards).toHaveLength(count);
+  cards.forEach(([x, y, width, height]: number[], index: number) => {
+    expect(x).toBeGreaterThanOrEqual(0);
+    expect(x + width).toBeLessThanOrEqual(harness.canvas.width);
+    expect(y).toBeGreaterThanOrEqual(210);
+    expect(y + height).toBeLessThanOrEqual(harness.canvas.height - 90);
+    if (index) expect(y).toBeGreaterThan(cards[index - 1][1] + cards[index - 1][3]);
+  });
+  expect(harness.text.every(line => line.x >= 0 && line.x + line.width <= harness.canvas.width && line.y > 0 && line.y <= harness.canvas.height - 24)).toBe(true);
 }
 
 const event = (day: number, title: string, category: string, art?: string) => ({
@@ -59,6 +83,7 @@ describe('layout graphique du planning', () => {
     const image = { naturalWidth: 285, naturalHeight: 380 };
     const result = await renderPlanningCanvas(items, 'Rastaaslan', { period: 'today', filters, now: new Date(2026, 8, 13, 12), documentApi: harness.documentApi, loadArtwork: vi.fn().mockResolvedValueOnce(image).mockResolvedValueOnce(null) });
     expect(result.canvas).toMatchObject({ width: 1080, height: 1350 }); expect(result.count).toBe(2);
+    expectFullBackground(harness);
     expect(harness.context.drawImage).toHaveBeenCalledOnce();
     expect(harness.text.every(line => line.x >= 0 && line.x + line.width <= 1080 && line.y >= 0 && line.y <= result.canvas.height)).toBe(true);
   });
@@ -95,6 +120,46 @@ describe('layout graphique du planning', () => {
     const [, , , drawWidth, drawHeight] = harness.context.drawImage.mock.calls[0];
     expect(drawWidth).toBeGreaterThanOrEqual(82);
     expect(drawHeight).toBeGreaterThanOrEqual(88);
+  });
+
+  it.each(['today', 'this-week', 'next-week'])('couvre toute la hauteur dynamique et garde toutes les cartes : %s', async period => {
+    const harness = canvasHarness();
+    const items = Array.from({ length: 12 }, (_, index) => event(14, `Rendez-vous ${index + 1}`, 'Just Chatting'));
+    // Include the last day as well as a busy first day to catch clipping of later rows.
+    if (period !== 'today') items.push(event(20, 'Dernier rendez-vous', 'Just Chatting'));
+    const result = await renderPlanningCanvas(items, 'Rastaaslan', {
+      period, filters, now: new Date(2026, 8, period === 'next-week' ? 7 : 14, 12),
+      documentApi: harness.documentApi, loadArtwork: vi.fn().mockResolvedValue(null),
+      noteEnabled: true, noteText: 'À bientôt !',
+    });
+    expect(result.canvas.height).toBeGreaterThan(1350);
+    expect(result.count).toBe(items.length);
+    expectFullBackground(harness);
+    expectVisibleCards(harness, items.length);
+    for (const item of items) expect(harness.text.filter(line => line.value === item.title)).toHaveLength(1);
+    expect(harness.text.some(line => line.value === 'À bientôt !')).toBe(true);
+    expect(harness.text.at(-1)?.value).toBe('Planning prévisionnel · StreamDashboard');
+  });
+
+  it.each(['today', 'this-week', 'next-week'])('conserve les copies distinctes et les occurrences daily : %s', async period => {
+    const harness = canvasHarness();
+    const original = {
+      ...event(14, 'Live quotidien', 'Just Chatting'),
+      recurrence: { frequency: 'daily', interval: 1, timeZone: 'Europe/Paris', until: null, exceptions: {} },
+    };
+    const copy = { ...structuredClone(original), id: 'copie', desiredPublication: { local: true, twitch: false } };
+    const items = [original, copy];
+    const before = structuredClone(items);
+    const expectedCount = period === 'today' ? 2 : 14;
+    const result = await renderPlanningCanvas(items, 'Rastaaslan', {
+      period, filters, now: new Date(2026, 8, period === 'next-week' ? 7 : 16, 12),
+      documentApi: harness.documentApi, loadArtwork: vi.fn().mockResolvedValue(null),
+    });
+    expect(result.count).toBe(expectedCount);
+    expect(harness.text.filter(line => line.value === original.title)).toHaveLength(expectedCount);
+    expectFullBackground(harness);
+    expectVisibleCards(harness, expectedCount);
+    expect(items).toEqual(before);
   });
 });
 

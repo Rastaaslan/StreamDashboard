@@ -1,9 +1,10 @@
+import { tagMetadata, tagPreferences } from '../../../packages/core/src/tags.js';
 import { publicationContent } from '../../mobile/shared/publication-content.js';
 import type { CalendarItem, ChecklistItem } from '../../../packages/contracts/src/index.js';
 
 export const COMPANION_SYNC_SCHEMA_VERSION = 3;
 const MAX_JOURNAL = 5_000;
-const EVENT_FIELDS = new Set(['id', 'localId', 'title', 'description', 'startAtUtc', 'endAtUtc', 'allDay', 'category', 'kind', 'draft', 'twitchCategoryId', 'twitchCategoryName', 'desiredPublication', 'providerLinks', 'providers', 'recurrence']);
+const EVENT_FIELDS = new Set(['id', 'localId', 'title', 'description', 'startAtUtc', 'endAtUtc', 'allDay', 'category', 'kind', 'draft', 'twitchCategoryId', 'twitchCategoryName', 'tags', 'tagPreferences', 'desiredPublication', 'providerLinks', 'providers', 'recurrence']);
 
 export interface CompanionEntity { id: string; revision: number; updatedAt: string; [key: string]: unknown }
 export interface CompanionConflict { operationId: string; entityType: string; entityId: string; fields: string[]; pc: unknown; android: unknown; baseRevision: number }
@@ -51,7 +52,7 @@ function validatePatch(patch: unknown, allowed: Set<string>) {
   for (const [key, value] of Object.entries(patch)) {
     if (!allowed.has(key) || ['__proto__', 'prototype', 'constructor'].includes(key)) throw Object.assign(new Error(`Champ compagnon interdit: ${key}`), { code: 'COMPANION_PAYLOAD_INVALID' });
     if (typeof value === 'string' && value.length > (key === 'description' ? 4_000 : 500)) throw Object.assign(new Error('Champ compagnon trop long.'), { code: 'COMPANION_PAYLOAD_INVALID' });
-    output[key] = key === 'recurrence' ? validateRecurrence(value) : clone(value);
+    output[key] = key === 'recurrence' ? validateRecurrence(value) : key === 'tags' ? tagMetadata(value) : key === 'tagPreferences' ? tagPreferences(value) : clone(value);
   }
   return output;
 }
@@ -59,14 +60,19 @@ function validatePatch(patch: unknown, allowed: Set<string>) {
 function validateRecurrence(value: unknown) {
   if (value === null) return null;
   if (!plain(value) || Object.keys(value).some(key => !['frequency', 'interval', 'timeZone', 'until', 'exceptions'].includes(key))) throw Object.assign(new Error('Récurrence compagnon invalide.'), { code: 'COMPANION_PAYLOAD_INVALID' });
-  if (!['weekly', 'monthly'].includes(String(value.frequency)) || ![1, 2].includes(Number(value.interval)) || (value.frequency === 'monthly' && value.interval !== 1)) throw Object.assign(new Error('Règle compagnon invalide.'), { code: 'COMPANION_PAYLOAD_INVALID' });
+  if (!['daily', 'weekly', 'monthly'].includes(String(value.frequency)) || ![1, 2].includes(Number(value.interval)) || (value.frequency !== 'weekly' && value.interval !== 1)) throw Object.assign(new Error('Règle compagnon invalide.'), { code: 'COMPANION_PAYLOAD_INVALID' });
   const timeZone = String(value.timeZone ?? ''); try { new Intl.DateTimeFormat('fr-FR', { timeZone }).format(); } catch { throw Object.assign(new Error('Fuseau compagnon invalide.'), { code: 'COMPANION_PAYLOAD_INVALID' }); }
   if (value.until != null && !Number.isFinite(Date.parse(String(value.until)))) throw Object.assign(new Error('Fin de série invalide.'), { code: 'COMPANION_PAYLOAD_INVALID' });
   if (value.exceptions !== undefined && (!plain(value.exceptions) || Object.keys(value.exceptions).length > 500)) throw Object.assign(new Error('Exceptions compagnon invalides.'), { code: 'COMPANION_PAYLOAD_INVALID' });
   for (const [key, exception] of Object.entries(value.exceptions || {})) {
-    if (!/^[A-Za-z0-9._:-]{1,128}:\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}$/.test(key) || !plain(exception) || Object.keys(exception).some(field => !['cancelled', 'patch'].includes(field)) || (exception.patch !== undefined && (!plain(exception.patch) || Object.keys(exception.patch).some(field => !['title', 'description', 'startAtUtc', 'endAtUtc', 'category', 'kind', 'twitchCategoryId', 'twitchCategoryName', 'desiredPublication'].includes(field))))) throw Object.assign(new Error('Exception compagnon invalide.'), { code: 'COMPANION_PAYLOAD_INVALID' });
+    if (!/^[A-Za-z0-9._:-]{1,128}:\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}$/.test(key) || !plain(exception) || Object.keys(exception).some(field => !['cancelled', 'patch'].includes(field)) || (exception.patch !== undefined && (!plain(exception.patch) || Object.keys(exception.patch).some(field => !['title', 'description', 'startAtUtc', 'endAtUtc', 'category', 'kind', 'twitchCategoryId', 'twitchCategoryName', 'tags', 'tagPreferences', 'desiredPublication'].includes(field))))) throw Object.assign(new Error('Exception compagnon invalide.'), { code: 'COMPANION_PAYLOAD_INVALID' });
   }
-  return clone(value);
+  const normalized = clone(value);
+  for (const exception of Object.values(normalized.exceptions ?? {})) {
+    if (exception.patch?.tags !== undefined) exception.patch.tags = tagMetadata(exception.patch.tags);
+    if (exception.patch?.tagPreferences !== undefined) exception.patch.tagPreferences = tagPreferences(exception.patch.tagPreferences);
+  }
+  return normalized;
 }
 
 // Translate the Android wire representation into the Desktop provider model.
@@ -161,7 +167,7 @@ export function reconcileCompanionBatch(planning: CalendarItem[], desktopCheckli
       }
       if (collectionMatch[2] === 'delete') { if (index >= 0) list.splice(index, 1); }
       else {
-        const patch = validatePatch(raw.patch, new Set(kind === 'notes' ? ['text'] : kind === 'checklist' ? ['label', 'done'] : ['title', 'description', 'twitchCategoryId', 'twitchCategoryName', 'desiredPublication']));
+        const patch = validatePatch(raw.patch, new Set(kind === 'notes' ? ['text'] : kind === 'checklist' ? ['label', 'done'] : ['title', 'description', 'twitchCategoryId', 'twitchCategoryName', 'tags', 'tagPreferences', 'desiredPublication']));
         const item = { ...(current ?? {}), ...patch, id: entityId, revision: (current?.revision ?? 0) + 1, updatedAt: new Date().toISOString() };
         if (index < 0) list.push(item); else list[index] = item;
       }
@@ -322,7 +328,7 @@ export function resolveCompanionConflict(planning: CalendarItem[], state: Compan
       state.eventRevisions[conflict.entityId] = (state.eventRevisions[conflict.entityId] ?? 1) + 1;
       state.eventHistory[conflict.entityId] = clone(merged as unknown as Record<string, unknown>);
     } else {
-      const patch = validatePatch(conflict.android, new Set(kind === 'notes' ? ['text'] : kind === 'checklist' ? ['label', 'done'] : ['title', 'description', 'twitchCategoryId', 'twitchCategoryName', 'desiredPublication']));
+      const patch = validatePatch(conflict.android, new Set(kind === 'notes' ? ['text'] : kind === 'checklist' ? ['label', 'done'] : ['title', 'description', 'twitchCategoryId', 'twitchCategoryName', 'tags', 'tagPreferences', 'desiredPublication']));
       const item = { ...current, ...patch, id: conflict.entityId, revision: Number((current as CompanionEntity | undefined)?.revision ?? 0) + 1, updatedAt: new Date().toISOString() };
       if (index < 0) state[kind].push(item); else state[kind][index] = item;
     }
