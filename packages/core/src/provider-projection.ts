@@ -19,12 +19,16 @@ function request(event: CalendarItem, link: ProviderLink, name: 'twitch' | 'goog
  */
 export async function reconcileProviderProjection(
   item: CalendarItem, provider: PlanningProvider | undefined, persist: () => Promise<void>,
-  options: { now?: number; retry?: boolean; expand: typeof expandRecurringItems; name: 'twitch' | 'google'; materialized: boolean },
+  options: { now?: number; retry?: boolean; explicitWithdrawal?: boolean; expand: typeof expandRecurringItems; name: 'twitch' | 'google'; materialized: boolean },
 ): Promise<boolean> {
   const { name, materialized } = options;
   if (!materialized && !item.providers?.[name]?.projections) return false;
   if (item.ownership !== 'LOCAL') return true;
   const link = (item.providers ??= {})[name] ??= { status: 'pending' };
+  if (name === 'google' && options.explicitWithdrawal && item.desiredPublication?.google === false) {
+    link.nativeWithdrawalRequested = true;
+    await persist();
+  }
   const entries = link.projections ??= {};
   const now = options.now ?? Date.now();
   const bounds = { from: new Date(now).toISOString(), to: new Date(now + 28 * 86400000).toISOString() };
@@ -72,13 +76,13 @@ export async function reconcileProviderProjection(
   // Only a native identity created by this projection-aware publisher is eligible
   // for automatic replacement. Legacy/imported identities require manual removal.
   if (link.remoteId || (name === 'twitch' && item.twitchSegmentId)) {
-    if (!link.projectionOwned || !provider) {
+    if ((!link.projectionOwned && !(name === 'google' && !desired && link.nativeWithdrawalRequested)) || !provider) {
       fail(link, new Error(`Retirez explicitement la publication ${name} existante avant de matérialiser cette série.`));
       await persist(); return true;
     }
     try {
       await provider.delete(link.remoteId ?? item.twitchSegmentId!, item, link.remoteRevision);
-      delete link.remoteId; delete link.remoteRevision; delete link.fingerprint;
+      delete link.remoteId; delete link.remoteRevision; delete link.fingerprint; delete link.nativeWithdrawalRequested;
       if (name === 'twitch') { delete item.twitchSegmentId; item.twitchRecurring = false; }
       await persist();
     } catch (error) { fail(link, error); await persist(); return true; }

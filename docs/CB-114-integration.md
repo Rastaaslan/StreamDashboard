@@ -185,3 +185,27 @@ environment has no X server/DISPLAY; no desktop assertions ran.
 One intermediate rerun omitted PLAYWRIGHT_BROWSERS_PATH: its Vitest tests passed,
 but Node browser launches failed and the run was interrupted. The final full run
 uses the installed browser cache and the writable TMPDIR, as do browser gates.
+
+## Review iteration 4 — legacy native withdrawal and companion ownership
+
+A failed legacy Google native-to-materialized conversion still cannot authorize
+an automatic DELETE. Explicit withdrawal instead persists a separate
+`nativeWithdrawalRequested` intent before remote I/O. Cleanup retains the original
+calendar, ETag and occurrence journal until successful deletion. Restart/retry can
+resume this intent without granting projection ownership to legacy events.
+The server preserves the intent when loading saved data; companion deletion work
+uses the same path. Failed or conflicting cleanup keeps the local row/work.
+
+Companion native CREATE now stores projection ownership and native mode for Google
+as well as Twitch, matching PlanningOrchestrator. An exception can consequently
+convert a newly owned native Google series into rolling occurrences safely.
+
+Regression tests cover refused automatic legacy conversion, explicit removal with
+failure/restart/retry, companion native CREATE followed by exception/conversion,
+and companion tombstone cleanup of both owned and legacy links. They assert
+calendar/ETag preservation, CREATE counts and absence of remaining remote events.
+
+Validation: `npm test` (915 Vitest + 141 Node), browser (13), mobile smoke,
+build, security, shipped-JS, both npm audits (zero vulnerabilities), isolated
+server smoke and Windows package/ASAR checks passed. Desktop smoke was attempted;
+its four launches fail for missing X server/DISPLAY, the permitted residual.

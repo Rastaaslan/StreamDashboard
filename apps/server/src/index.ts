@@ -189,6 +189,7 @@ function sanitizeProviderLink(value: unknown): ProviderLink | undefined {
   const link: ProviderLink = { status: value.status as ProviderLink['status'] };
   if (value.projectionMode === 'native' || value.projectionMode === 'materialized') link.projectionMode = value.projectionMode;
   if (typeof value.projectionOwned === 'boolean') link.projectionOwned = value.projectionOwned;
+  if (value.nativeWithdrawalRequested === true) link.nativeWithdrawalRequested = true;
   if (object(value.projectionWindow)) link.projectionWindow = { from: String(value.projectionWindow.from), to: String(value.projectionWindow.to) };
   if (object(value.projectionRetirements)) {
     link.projectionRetirements = {};

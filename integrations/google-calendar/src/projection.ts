@@ -68,7 +68,7 @@ export function needsGoogleMaterialization(item: CalendarItem) {
 }
 
 export async function reconcileGoogleProjection(item: CalendarItem, provider: PlanningProvider | undefined,
-  persist: () => Promise<void>, options: { now?: number; retry?: boolean } = {}) {
+  persist: () => Promise<void>, options: { now?: number; retry?: boolean; explicitWithdrawal?: boolean } = {}) {
   try {
     return await reconcileProviderProjection(item, provider, persist, {
       ...options, name: 'google', materialized: needsGoogleMaterialization(item),

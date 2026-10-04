@@ -38,10 +38,10 @@ export async function drainCompanionProviders(
     if ((work.provider === 'twitch' ? needsTwitchMaterialization(item) : needsGoogleMaterialization(item)) || link.projections) {
       item.desiredPublication ??= { local: true, twitch: false, google: false };
       item.desiredPublication[work.provider] = work.action === 'publish';
-      const handled = await (work.provider === 'twitch' ? reconcileTwitchProjection : reconcileGoogleProjection)(item, providers[work.provider], persist);
+      const handled = await (work.provider === 'twitch' ? reconcileTwitchProjection : reconcileGoogleProjection)(item, providers[work.provider], persist, { explicitWithdrawal: work.provider === 'google' && work.action === 'delete' });
       updateTombstone();
       if (handled) {
-        if (link.status === 'error') await fail(link.lastError ?? 'Projection Twitch incomplète.');
+        if (link.status === 'error' || link.status === 'conflict') await fail(link.lastError ?? 'Projection Twitch incomplète.');
         else { delete state.providerWork[key]; await persist(); }
         continue;
       }
@@ -90,6 +90,7 @@ export async function drainCompanionProviders(
         const result = await createWithDurableIntent(item, work.provider, persist, request => provider.create(request), provider.prepareCreate);
         link.remoteId = result.id; link.remoteRevision = result.revision;
         link.calendarId = result.calendarId ?? link.calendarId;
+        link.projectionMode = 'native'; link.projectionOwned = result.owned !== false;
         if (work.provider === 'twitch') { link.projectionMode = 'native'; link.projectionOwned = result.owned !== false; item.twitchSegmentId = result.id; link.fingerprint = result.fingerprint; item.twitchRecurring = Boolean(item.recurrence) || item.twitchRecurring === true; }
         link.status = 'synced';
       }

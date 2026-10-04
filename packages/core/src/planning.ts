@@ -300,7 +300,7 @@ export class PlanningOrchestrator {
     for (const name of ['twitch', 'google'] as const) {
       const desired = item.desiredPublication?.[name] ?? false;
       if (name === 'twitch' && await reconcileTwitchProjection(item, this.providers.twitch, () => this.persist(this.items))) continue;
-      if (name === 'google' && await reconcileGoogleProjection(item, this.providers.google, () => this.persist(this.items))) continue;
+      if (name === 'google' && await reconcileGoogleProjection(item, this.providers.google, () => this.persist(this.items), { explicitWithdrawal: !desired })) continue;
       const remoteId = this.remoteId(item, name);
 
       if (!remoteId && item.providers?.[name]?.uncertainCreate) {
@@ -440,8 +440,8 @@ export class PlanningOrchestrator {
       item.desiredPublication ??= { local: true, twitch: false, google: false };
       item.desiredPublication.google = false;
       await this.persist(this.items);
-      await reconcileGoogleProjection(item, this.providers.google, () => this.persist(this.items));
-      return item.providers.google.status !== 'error';
+      await reconcileGoogleProjection(item, this.providers.google, () => this.persist(this.items), { explicitWithdrawal: true });
+      return !['error', 'conflict'].includes(item.providers.google.status);
     }
     if (!remoteId) {
       if (name === 'twitch') { assertProviderCreationCertain(item, name); item.twitchRecurring = false; }

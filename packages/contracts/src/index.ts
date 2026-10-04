@@ -109,6 +109,7 @@ export interface ProviderLink {
   projectionRetirements?: Record<string, { calendarId?: string; creationId: string; retained?: boolean }>;
   projectionMode?: 'native' | 'materialized';
   projectionOwned?: boolean;
+  nativeWithdrawalRequested?: boolean;
   projectionWindow?: { from: string; to: string };
   projections?: Record<string, ProviderProjectionOccurrence>;
   /** Durable scope of a confirmed period deletion, including standard retries. */
