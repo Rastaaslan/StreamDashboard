@@ -1,4 +1,4 @@
-import { needsGoogleMaterialization, reconcileGoogleProjection } from '../../../integrations/google-calendar/src/projection.js';
+import { needsGoogleMaterialization, reconcileGoogleProjection, resolveGoogleOccurrenceConflict } from '../../../integrations/google-calendar/src/projection.js';
 import { needsTwitchMaterialization, reconcileTwitchProjection } from '../../../integrations/twitch/src/projection.js';
 import { assertTwitchRecurrence } from '../../../integrations/twitch/src/recurrence.js';
 import { googleRecurrence } from '../../../integrations/google-calendar/src/recurrence.js';
@@ -121,7 +121,7 @@ export async function drainCompanionProviders(
  */
 export async function resolveCompanionDeletion(
   planning: CalendarItem[], state: CompanionState, id: string, provider: 'twitch' | 'google',
-  strategy: 'local' | 'remote', adapters: Partial<Record<'twitch' | 'google', PlanningProvider>>,
+  strategy: 'local' | 'remote', adapters: Partial<Record<'twitch' | 'google', PlanningProvider>>, occurrenceKey?: string,
 ) {
   const key = id + ':' + provider;
   const work = state.providerWork[key];
@@ -130,6 +130,15 @@ export async function resolveCompanionDeletion(
   const item = structuredClone(work.item);
   item.providers = { ...item.providers, ...(tombstone.providerLinks as CalendarItem['providers']) };
   const link = item.providers[provider];
+  if (provider === 'google' && occurrenceKey && link?.projections?.[occurrenceKey]) {
+    // Older tombstones predate the per-occurrence marker; the delete work is authoritative.
+    link.projections[occurrenceKey].pendingDeletion = true;
+    await resolveGoogleOccurrenceConflict(item, occurrenceKey, strategy, adapters.google, async () => {}, restored => planning.push(restored));
+    state.providerWork[key] = { item, provider, action: 'delete', status: 'queued' };
+    tombstone.item = structuredClone(item); tombstone.providerLinks = structuredClone(item.providers);
+    state.serverRevision++;
+    return;
+  }
   if (!link?.remoteId) throw new Error('Identité distante introuvable.');
   const adapter = adapters[provider];
   if (!adapter?.read) throw new Error(provider + ' non connecté. Reconnectez-le pour résoudre la suppression.');

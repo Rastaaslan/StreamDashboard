@@ -249,6 +249,13 @@ export class GoogleCalendarClient {
     return event;
   }
 
+  async readProjected(calendarId: string, id: string, input: GoogleEventInput) {
+    this.validateProjection(input);
+    const event = await this.event(calendarId, id);
+    this.assertProjection(input, event, false);
+    return event;
+  }
+
   async create(calendarId: string, input: GoogleEventInput) {
     this.validateProjection(input);
     if (input.allDay && input.recurrence) assertGoogleMaterializedAllDay(input);

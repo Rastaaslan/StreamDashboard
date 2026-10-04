@@ -9,7 +9,7 @@ import { MemorySecretStore } from '../apps/server/src/storage.js';
 
 let server: DashboardServerHandle | undefined;
 let folder = '';
-afterEach(async () => { vi.useRealTimers(); await server?.stop(); server = undefined; vi.unstubAllGlobals(); if (folder) await rm(folder, { recursive: true, force: true }); });
+afterEach(async () => { vi.useRealTimers(); vi.restoreAllMocks(); await server?.stop(); server = undefined; vi.unstubAllGlobals(); if (folder) await rm(folder, { recursive: true, force: true }); });
 
 it.each(['twitch', 'google'] as const)('%s retains an in-progress occurrence after restart until its exclusive end', async name => {
   vi.useFakeTimers(); vi.setSystemTime('2026-10-05T11:00:00Z');
@@ -31,7 +31,7 @@ it.each(['twitch', 'google'] as const)('%s retains an in-progress occurrence aft
 async function runtime(loseResponse = false) {
   folder = await mkdtemp(join(tmpdir(), 'cb114-review-'));
   const secrets = new MemorySecretStore();
-  await secrets.setGoogleTokens({ accessToken: 'token', refreshToken: 'refresh', expiresAt: String(Date.now() + 3600000) });
+  await secrets.setGoogleTokens({ accessToken: 'token', refreshToken: 'refresh', expiresAt: String(Date.now() + 365 * 86400000) });
   const google = new Map<string, any>(); const tombstones = new Set<string>();
   const retireGoogle = (key: string) => { google.delete(key); tombstones.add(key); };
   let hideLists = false; let conflicts = 0; let unavailableReads = false;
@@ -56,6 +56,7 @@ async function runtime(loseResponse = false) {
       if (lose) { lose = false; throw new TypeError('Lost response'); }
       return Response.json(google.get(key));
     }
+    if (init?.method === 'DELETE' && google.has(calendar + '/' + id) && new Headers(init.headers).get('If-Match') !== google.get(calendar + '/' + id).etag) return Response.json({ error: { message: 'ETag conflict' } }, { status: 412 });
     if (init?.method === 'DELETE') { retireGoogle(calendar + '/' + id); return new Response(null, { status: 204 }); }
     if (init?.method === 'PATCH') { const value = { ...google.get(calendar + '/' + id), ...JSON.parse(String(init.body)), etag: 'v2' }; google.set(calendar + '/' + id, value); return Response.json(value); }
     if (id && unavailableReads) return Response.json({}, { status: 404 });
@@ -187,4 +188,78 @@ it('409 followed by an unavailable GET retains the same uncertain CREATE instead
   ctx.unavailableReads(false); await ctx.restart(); await ctx.request(`planning/${id}/retry/google`);
   expect(server!.state().planning[0].providers!.google!.projections![key].status).toBe('synced');
   expect(new Set(ctx.posts)).toEqual(new Set([active])); expect(ctx.google.size).toBe(1);
+});
+
+
+it.each(['withdraw', 'cancel', 'window', 'companion'] as const)('Google DELETE 412 for %s supports durable local resolution from retained inventory', async mode => {
+  const ctx = await runtime(); const { id, key } = await projected(ctx);
+  const remoteId = [...ctx.google.keys()][0]; ctx.google.get(remoteId).etag = 'remote-edited'; ctx.google.get(remoteId).summary = 'Remote edit';
+  if (mode === 'withdraw') await ctx.request(`planning/${id}`, { local: true, google: true }, 'DELETE', false);
+  else if (mode === 'cancel') await ctx.request(`planning/${id}/occurrence`, { occurrenceKey: key }, 'DELETE');
+  else if (mode === 'window') vi.spyOn(Date, 'now').mockReturnValue(Date.now() + 2 * 86400000);
+  else {
+    const { reconcileCompanionBatch } = await import('../apps/server/src/companion-sync.js');
+    await server!.stop();
+    const file = join(folder, 'dashboard.json'); const saved = JSON.parse(await readFile(file, 'utf8'));
+    const batch = reconcileCompanionBatch(saved.planning, saved.checklist, saved.companion, [{ id: 'delete-companion', eventId: id, type: 'delete', baseRevision: saved.companion.eventRevisions[id], patch: {} }]);
+    await writeFile(file, JSON.stringify({ ...saved, planning: batch.planning, companion: batch.companion }));
+  }
+  await ctx.restart(); await ctx.restart();
+  if (mode === 'companion') expect(server!.state().planning).toHaveLength(0);
+  else expect(server!.state().planning[0].providers!.google!.projections![key]).toMatchObject({ pendingDeletion: true, status: 'conflict', remoteRevision: 'v1' });
+  await ctx.request(`planning/${id}/retry/google`, {}, 'POST', false);
+  expect(ctx.google.size).toBe(1); expect(ctx.posts).toHaveLength(1);
+  await ctx.request(`planning/${id}/conflict/google`, { occurrenceKey: key, strategy: 'local' });
+  // Resolution arms a new precondition, but performs no remote DELETE before its checkpoint.
+  expect(ctx.google.size).toBe(1);
+  const saved = JSON.parse(await readFile(join(folder, 'dashboard.json'), 'utf8'));
+  const journal = mode === 'companion' ? saved.companion.tombstones[id].providerLinks.google : saved.planning.find((item: any) => item.id === id).providers.google;
+  expect(journal.projections[key]).toMatchObject({ deletionDecision: 'delete', pendingDeletion: true, remoteRevision: 'remote-edited' });
+  await ctx.restart();
+  if (mode !== 'companion') await ctx.request(`planning/${id}/retry/google`);
+  expect(ctx.google.size).toBe(0); expect(ctx.posts).toHaveLength(1);
+  if (mode === 'withdraw') { await ctx.request(`planning/${id}`, { local: true, google: true }, 'DELETE'); expect(server!.state().planning).toHaveLength(0); }
+});
+
+it.each(['withdraw', 'cancel', 'window', 'companion'] as const)('Google DELETE conflict %s can keep the remote event as a standalone local row without republishing', async mode => {
+  const ctx = await runtime(); const { id, key, publication } = await projected(ctx);
+  const remoteId = [...ctx.google.keys()][0]; ctx.google.get(remoteId).etag = 'remote-edited'; ctx.google.get(remoteId).summary = 'Keep remote';
+  if (mode === 'withdraw') await publication(false);
+  else if (mode === 'cancel') await ctx.request(`planning/${id}/occurrence`, { occurrenceKey: key }, 'DELETE');
+  else if (mode === 'window') vi.spyOn(Date, 'now').mockReturnValue(Date.now() + 2 * 86400000);
+  else {
+    const { reconcileCompanionBatch } = await import('../apps/server/src/companion-sync.js');
+    await server!.stop(); const file = join(folder, 'dashboard.json'); const saved = JSON.parse(await readFile(file, 'utf8'));
+    const batch = reconcileCompanionBatch(saved.planning, saved.checklist, saved.companion, [{ id: 'delete-remote', eventId: id, type: 'delete', baseRevision: saved.companion.eventRevisions[id], patch: {} }]);
+    await writeFile(file, JSON.stringify({ ...saved, planning: batch.planning, companion: batch.companion }));
+  }
+  await ctx.restart();
+  await ctx.request(`planning/${id}/conflict/google`, { occurrenceKey: key, strategy: 'remote' });
+  await ctx.restart();
+  expect(ctx.google.size).toBe(1); expect(ctx.posts).toHaveLength(1);
+  const kept = server!.state().planning.find(item => item.id !== id)!;
+  expect(kept).toMatchObject({ title: 'Keep remote', desiredPublication: { google: true }, providers: { google: { remoteRevision: 'remote-edited', calendarId: 'A', status: 'synced' } } });
+  expect(kept.recurrence).toBeUndefined();
+  if (mode !== 'companion') await ctx.request(`planning/${id}`, { local: true, google: true }, 'DELETE');
+  expect(ctx.google.size).toBe(1);
+  await ctx.request(`planning/${kept.id}`, { local: true, google: true }, 'DELETE');
+  expect(ctx.google.size).toBe(0);
+});
+
+
+it('a new remote edit after deletion approval requires a fresh decision, and a foreign identity is never deleted', async () => {
+  const ctx = await runtime(); const { id, key, publication } = await projected(ctx);
+  const remoteId = [...ctx.google.keys()][0]; const event = ctx.google.get(remoteId);
+  event.etag = 'v2'; await publication(false);
+  await ctx.request(`planning/${id}/conflict/google`, { occurrenceKey: key, strategy: 'local' });
+  event.etag = 'v3'; await ctx.restart();
+  expect(ctx.google.size).toBe(1);
+  await ctx.request(`planning/${id}/retry/google`, {}, 'POST', false);
+  expect(server!.state().planning[0].providers!.google!.projections![key].status).toBe('conflict');
+  event.extendedProperties.private.streamDashboardManaged = 'false';
+  await ctx.request(`planning/${id}/conflict/google`, { occurrenceKey: key, strategy: 'local' }, 'POST', false);
+  expect(ctx.google.size).toBe(1); expect(ctx.posts).toHaveLength(1);
+  event.extendedProperties.private.streamDashboardManaged = 'true';
+  await ctx.request(`planning/${id}/conflict/google`, { occurrenceKey: key, strategy: 'local' });
+  await ctx.restart(); expect(ctx.google.size).toBe(0);
 });

@@ -171,3 +171,24 @@ test('occurrence conflict choices target the canonical series and selected occur
   assert.deepEqual(calls, [['series', 'twitch', 'local', key], ['series', 'twitch', 'remote', key]]);
   assert.deepEqual(rendered, [{ resolved: 'local' }, { resolved: 'remote' }]);
 });
+
+test('Google tombstone deletion conflict choices use the retained provider journal', async () => {
+  const source = readFileSync(new URL('../apps/mobile/mobile.js', import.meta.url), 'utf8');
+  const node = () => ({ children: [], append(...items) { this.children.push(...items); } });
+  const calls = [], rendered = [];
+  const context = { CompanionMode: M, document: { createElement: node }, text: (tag, label) => ({ ...node(), tag, label }),
+    eventProviderState, companionMode: M.ONLINE_PC, planningProviderNames: { twitch: 'Twitch', google: 'Google' }, state: null,
+    transport: { resolvePlanningProvider: async (...args) => { calls.push(args); return { resolved: args[2] }; } },
+    render: value => rendered.push(value), note: message => assert.fail(message), globalThis: {} };
+  vm.createContext(context);
+  vm.runInContext(source.slice(source.indexOf('function renderOnlinePlanningProviders'), source.indexOf('function updatePlanningProviderReadiness')), context);
+  const row = node(), key = 'series:2026-10-01T12:00:00';
+  context.renderOnlinePlanningProviders({ id: 'series', deleted: true, providerLinks: { google: {
+    status: 'error', projectionMode: 'materialized', projections: { [key]: { status: 'conflict', pendingDeletion: true, lastError: 'Remote edit' } },
+  } } }, row, 'google');
+  const choices = row.children[0].children.filter(value => value.tag === 'button' && (value.label.includes('Confirmer le retrait') || value.label.includes('Conserver l’événement distant')));
+  assert.equal(choices.length, 2);
+  await choices[0].onclick(); await choices[1].onclick();
+  assert.deepEqual(calls, [['series', 'google', 'local', key], ['series', 'google', 'remote', key]]);
+  assert.deepEqual(rendered, [{ resolved: 'local' }, { resolved: 'remote' }]);
+});

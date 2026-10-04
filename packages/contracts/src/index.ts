@@ -91,6 +91,8 @@ export interface TimerState {
 
 export type ProviderSyncStatus = 'synced' | 'pending' | 'error' | 'not-published' | 'conflict';
 export interface ProviderProjectionOccurrence extends ProviderLink {
+  pendingDeletion?: boolean;
+  deletionDecision?: 'delete';
   occurrenceKey: string;
   managedBy: 'StreamDashboard';
   event: CalendarItem;
@@ -104,7 +106,7 @@ export interface ProviderLink {
   /** Google CREATE incarnation, distinct from the stable logical occurrence key. */
   creationId?: string;
   /** Confirmed removals retain calendar scope and the next CREATE incarnation. */
-  projectionRetirements?: Record<string, { calendarId?: string; creationId: string }>;
+  projectionRetirements?: Record<string, { calendarId?: string; creationId: string; retained?: boolean }>;
   projectionMode?: 'native' | 'materialized';
   projectionOwned?: boolean;
   projectionWindow?: { from: string; to: string };

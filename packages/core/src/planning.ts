@@ -185,7 +185,8 @@ export class PlanningOrchestrator {
     return this.serial(async () => {
       const item = this.required(id);
       if (occurrenceKey !== undefined) {
-        await (provider === 'twitch' ? resolveTwitchOccurrenceConflict : resolveGoogleOccurrenceConflict)(item, occurrenceKey, strategy, this.providers[provider], () => this.persist(this.items));
+        if (provider === 'google') await resolveGoogleOccurrenceConflict(item, occurrenceKey, strategy, this.providers.google, () => this.persist(this.items), restored => this.items.push(restored));
+        else await resolveTwitchOccurrenceConflict(item, occurrenceKey, strategy, this.providers.twitch, () => this.persist(this.items));
         return structuredClone(item);
       }
       // Android persists conflicts per provider. Its native snapshot is not a

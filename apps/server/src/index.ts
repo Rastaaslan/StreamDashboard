@@ -194,7 +194,7 @@ function sanitizeProviderLink(value: unknown): ProviderLink | undefined {
     link.projectionRetirements = {};
     for (const [key, retired] of Object.entries(value.projectionRetirements)) {
       if (object(retired) && typeof retired.creationId === 'string' && /^[a-zA-Z0-9-]{1,80}$/.test(retired.creationId))
-        link.projectionRetirements[key] = { creationId: retired.creationId, ...(typeof retired.calendarId === 'string' ? { calendarId: retired.calendarId } : {}) };
+        link.projectionRetirements[key] = { creationId: retired.creationId, ...(retired.retained === true ? { retained: true } : {}), ...(typeof retired.calendarId === 'string' ? { calendarId: retired.calendarId } : {}) };
     }
   }
   if (object(value.projections)) {
@@ -204,7 +204,7 @@ function sanitizeProviderLink(value: unknown): ProviderLink | undefined {
       const event = sanitizeCalendarItem({ ...raw.event, providers: undefined });
       const status = sanitizeProviderLink({ ...raw, projections: undefined });
       if (!event || !status) continue;
-      link.projections[key] = { ...status, occurrenceKey: key, managedBy: 'StreamDashboard', event,
+      link.projections[key] = { ...status, ...(raw.pendingDeletion === true ? { pendingDeletion: true } : {}), ...(raw.deletionDecision === 'delete' ? { deletionDecision: 'delete' as const } : {}), occurrenceKey: key, managedBy: 'StreamDashboard', event,
         ...(typeof raw.appliedContent === 'string' ? { appliedContent: raw.appliedContent } : {}) };
     }
   }
@@ -1058,7 +1058,7 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
       read: async (id, item) => {
         const calendarId = item.providers?.google?.calendarId ?? (item.projection ? undefined : local.google.targetCalendarId);
         if (!calendarId) throw new Error('Calendrier Google lié introuvable.');
-        const event = await google.event(calendarId, id).catch(error => {
+        const event = await (item.projection ? google.readProjected(calendarId, id, googleEventInput(item)) : google.event(calendarId, id)).catch(error => {
           if (error?.code === 'DELETED_REMOTELY') return undefined;
           throw error;
         });
@@ -1974,19 +1974,19 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
       const id = String(req.params.id);
       const strategy = String(req.body?.strategy ?? '');
       if (!['twitch', 'google'].includes(provider) || !['local', 'remote'].includes(strategy)) throw new Error('Résolution de conflit invalide.');
+      const occurrenceKey = req.body?.occurrenceKey;
+      if (occurrenceKey !== undefined && (typeof occurrenceKey !== 'string' || !occurrenceKey || occurrenceKey.length > 180)) throw new Error('Occurrence invalide.');
       await plan(async () => {
         if (!local.planning.some(item => item.id === id) && local.companion.tombstones[id]) {
           const nextPlanning = structuredClone(local.planning);
           const nextCompanion = structuredClone(local.companion);
           await resolveCompanionDeletion(nextPlanning, nextCompanion, id, provider as 'twitch' | 'google',
-            strategy as 'local' | 'remote', providerAdapters());
+            strategy as 'local' | 'remote', providerAdapters(), occurrenceKey);
           // Commit the resolution before exposing it or allowing a retry.
           await store.write({ ...local, planning: nextPlanning, companion: nextCompanion });
           local.planning = nextPlanning; local.companion = nextCompanion;
           return;
         }
-        const occurrenceKey = req.body?.occurrenceKey;
-        if (occurrenceKey !== undefined && (typeof occurrenceKey !== 'string' || !occurrenceKey || occurrenceKey.length > 180)) throw new Error('Occurrence invalide.');
         await planning().resolveConflict(id, provider as 'twitch' | 'google', strategy as 'local' | 'remote', occurrenceKey);
         if (!occurrenceKey || local.planning.find(item => item.id === id)?.providers?.twitch?.status === 'synced') delete local.companion.providerWork[id + ':' + provider];
         local.companion.eventRevisions[id] = (local.companion.eventRevisions[id] ?? 1) + 1;

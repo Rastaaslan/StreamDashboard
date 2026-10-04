@@ -87,11 +87,35 @@ export async function reconcileGoogleProjection(item: CalendarItem, provider: Pl
 import { projectionContent, summarizeProjection } from '../../../packages/core/src/provider-projection.js';
 
 export async function resolveGoogleOccurrenceConflict(item: CalendarItem, key: string, strategy: 'local' | 'remote',
-  provider: PlanningProvider | undefined, persist: () => Promise<void>) {
+  provider: PlanningProvider | undefined, persist: () => Promise<void>, restore?: (event: CalendarItem) => void) {
   const link = item.providers?.google;
   const entry = link?.projections?.[key];
   if (item.ownership !== 'LOCAL' || !entry || entry.managedBy !== 'StreamDashboard' || entry.status !== 'conflict') throw new Error('Aucun conflit Google pour cette occurrence.');
   try {
+    if (entry.pendingDeletion) {
+      if (!entry.remoteId || !provider?.read) throw new Error('Lecture Google requise pour résoudre le retrait.');
+      const body = { ...entry.event, providers: { google: entry } };
+      if (body.projection?.mode === 'materialized') body.projection = { ...body.projection, creationId: entry.creationId };
+      const latest = await provider.read(entry.remoteId, body);
+      if (!latest.deleted && (!latest.remote || !latest.revision)) throw new Error('Version Google distante indisponible.');
+      if (strategy === 'remote') {
+        if (latest.deleted) throw new Error('Occurrence déjà supprimée : confirmez le retrait local.');
+        if (!restore) throw new Error('Restauration locale indisponible.');
+        const restored: CalendarItem = { ...entry.event, ...latest.remote,
+          id: `${item.id}::google-retained::${key}`, projection: body.projection, recurrence: undefined, seriesId: undefined, occurrenceKey: undefined,
+          desiredPublication: { local: true, twitch: false, google: true }, ownership: 'LOCAL', editable: true,
+          providers: { google: { status: 'synced', remoteId: entry.remoteId, calendarId: entry.calendarId, remoteRevision: latest.revision } } };
+        restore(restored);
+        (link!.projectionRetirements ??= {})[key] = { calendarId: entry.calendarId, creationId: entry.creationId ?? crypto.randomUUID(), retained: true };
+        delete link!.projections![key];
+      } else {
+        // Arm only this DELETE with its newly read precondition. Persist before
+        // any mutation; refresh/retry can resume this decision after a crash.
+        entry.remoteRevision = latest.revision ?? entry.remoteRevision;
+        entry.deletionDecision = 'delete'; entry.status = 'pending'; delete entry.lastError;
+      }
+      summarizeProjection(item, 'google'); await persist(); return;
+    }
     if (!item.recurrence || !link?.projectionWindow || !item.desiredPublication?.google || !entry.remoteId || !provider?.read) throw new Error('Occurrence Google inactive ou lecture indisponible.');
     const latest = await provider.read(entry.remoteId, { ...entry.event, providers: { google: entry } });
     if (latest.deleted) throw Object.assign(new Error('Occurrence supprimée à distance — retry explicite requis.'), { code: 'DELETED_REMOTELY' });

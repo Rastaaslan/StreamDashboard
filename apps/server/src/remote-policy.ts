@@ -9,7 +9,7 @@ import {
 
 const REMOTE_MODES = new Set(['intro', 'live', 'pause', 'end']);
 
-type RemotePlanningProvider = Pick<NonNullable<NonNullable<CalendarItem['providers']>['twitch']>, 'status' | 'lastError' | 'lastSyncedAt' | 'deletedRemotely' | 'projectionMode'> & { occurrenceStatuses?: Record<string, { status: string; lastError?: string }> };
+type RemotePlanningProvider = Pick<NonNullable<NonNullable<CalendarItem['providers']>['twitch']>, 'status' | 'lastError' | 'lastSyncedAt' | 'deletedRemotely' | 'projectionMode'> & { occurrenceStatuses?: Record<string, { status: string; lastError?: string; pendingDeletion?: boolean }> };
 type RemotePlanningItem = Pick<CalendarItem,
   'id' | 'title' | 'description' | 'startAtUtc' | 'endAtUtc' | 'allDay' | 'category' | 'kind' | 'source' | 'editable' | 'twitchCategoryId' | 'twitchCategoryName' | 'tags' | 'tagPreferences' | 'desiredPublication' | 'recurrence' | 'seriesId' | 'occurrenceKey' | 'syncError'
 > & {
@@ -80,7 +80,7 @@ export function toRemoteDashboardState(state: DashboardState): ExtendedRemoteDas
     ...(item.providers !== undefined ? { providers: Object.fromEntries(Object.entries(item.providers).map(([provider, link]) => [provider, link ? {
       status: link.status,
       ...(link.projectionMode ? { projectionMode: link.projectionMode } : {}),
-      ...(link.projections ? { occurrenceStatuses: Object.fromEntries(Object.entries(link.projections).map(([key, entry]) => [key, { status: entry.status, ...(entry.lastError ? { lastError: entry.lastError } : {}) }])) } : {}),
+      ...(link.projections ? { occurrenceStatuses: Object.fromEntries(Object.entries(link.projections).map(([key, entry]) => [key, { status: entry.status, ...(entry.pendingDeletion ? { pendingDeletion: true } : {}), ...(entry.lastError ? { lastError: entry.lastError } : {}) }])) } : {}),
       ...(link.lastError !== undefined ? { lastError: link.lastError } : {}),
       ...(link.lastSyncedAt !== undefined ? { lastSyncedAt: link.lastSyncedAt } : {}),
       ...(link.deletedRemotely !== undefined ? { deletedRemotely: link.deletedRemotely } : {}),

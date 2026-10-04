@@ -63,6 +63,7 @@ export async function reconcileProviderProjection(
     for (const occurrence of (options.expand ?? expandRecurringItems)([{ ...item, providers: undefined }], bounds)) {
       if (occurrence.occurrenceKey && expected.has(occurrence.occurrenceKey)) throw new Error('Duplicate projected occurrence identity');
       if (!occurrence.occurrenceKey) throw new Error('Le moteur doit fournir une occurrenceKey stable.');
+      if (name === 'google' && link.projectionRetirements?.[occurrence.occurrenceKey]?.retained) continue;
       if (occurrence.desiredPublication?.[name] !== false && Date.parse(occurrence.endAtUtc) > now && Date.parse(occurrence.startAtUtc) < Date.parse(bounds.to)) {
         expected.set(occurrence.occurrenceKey, request(occurrence, { status: 'pending', projectionOwned: true, calendarId: link.calendarId }, name));
       }
@@ -83,8 +84,13 @@ export async function reconcileProviderProjection(
     } catch (error) { fail(link, error); await persist(); return true; }
   }
   for (const [key, entry] of Object.entries(entries)) {
-    if (expected.has(key) || entry.managedBy !== 'StreamDashboard') continue;
+    if ((expected.has(key) && !entry.pendingDeletion) || entry.managedBy !== 'StreamDashboard') continue;
     try {
+      if (name === 'google') {
+        entry.pendingDeletion = true;
+        await persist();
+        if (entry.status === 'conflict') continue;
+      }
       await recover(entry);
       if (entry.uncertainCreate) throw new Error('Création distante incertaine : identité à réconcilier avant nettoyage.');
       if (entry.remoteId) {
@@ -94,6 +100,7 @@ export async function reconcileProviderProjection(
       }
       if (name === 'google') (link.projectionRetirements ??= {})[key] = { calendarId: entry.calendarId, creationId: crypto.randomUUID() };
       delete entries[key];
+      expected.delete(key); // A confirmed withdrawal never republishes in the same pass.
     } catch (error) { fail(entry, error); }
     await persist();
   }
@@ -107,6 +114,7 @@ export async function reconcileProviderProjection(
       if (retired) delete link.projectionRetirements![key];
     }
     try {
+      if (entry.pendingDeletion) continue;
       if (entry.status === 'conflict') continue; // Only an explicit local/remote resolution releases this guard.
       if (!provider) throw new Error(`${name} non connecté.`);
       await recover(entry);
@@ -157,7 +165,7 @@ export function summarizeProjection(item: CalendarItem, name: 'twitch' | 'google
   const desired = item.desiredPublication?.[name] === true;
   link.projectionMode = 'materialized';
   const failures = Object.values(link.projections ?? {}).filter(entry => entry.status === 'error' || entry.status === 'conflict');
-  link.status = failures.length ? 'error' : desired ? 'synced' : 'not-published';
+  link.status = failures.length ? 'error' : Object.values(link.projections ?? {}).some(entry => entry.status === 'pending') ? 'pending' : desired ? 'synced' : 'not-published';
   if (failures.length) link.lastError = `${failures.length} occurrence(s) ${name} en erreur : ${failures[0].lastError}`;
   else { delete link.lastError; link.deletedRemotely = false; link.lastSyncedAt = new Date(now).toISOString(); }
 }

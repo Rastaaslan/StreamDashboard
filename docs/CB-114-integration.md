@@ -152,3 +152,36 @@ Final validation: 903 Vitest tests, 140 Node tests and 13 browser tests passed.
 Mobile smoke, build, security, shipped-JS, both npm audits, isolated server smoke,
 and Windows packaging/ASAR gates passed. Desktop smoke was attempted again: four
 launch failures due to missing X server/DISPLAY, as permitted by the ticket.
+
+## Review iteration 3 — deletion conflicts and companion tombstones
+
+Google cleanup now persists its deletion intent in the occurrence journal. A 412
+keeps the occurrence in conflict; automatic refresh and retry cannot silently
+approve a newer remote version. Resolution works from that journal even after
+unpublication, cancellation, window expiry or deletion of the companion row.
+The adapter re-reads and validates the managed identity, calendar and incarnation.
+
+“Confirmer le retrait” checkpoints the current ETag and explicit deletion decision
+before any DELETE. Restart/retry resumes that removal without publishing the
+occurrence. Another remote edit requires another explicit decision.
+“Conserver l’événement distant” restores a separately linked local event and
+suppresses the parent occurrence, preserving ownership tracking without CREATE.
+Companion tombstone resolution commits the updated journal and restored row
+atomically. Desktop/mobile controls expose both deletion-specific choices,
+including companion records that only carry providerLinks.
+
+Regression coverage uses real HTTP 412 responses for withdrawal, cancellation,
+window shift and companion tombstone-only deletion, both decisions, disk
+checkpoints, restart/retry, a second remote modification and invalid remote
+ownership. A mobile regression checks tombstone occurrence resolution controls.
+
+Validation: `npm test` (912 Vitest + 141 Node), `npm run test:browser` (13),
+`npm run mobile:smoke`, `npm run build`, `npm run security:check`,
+`npm run check:shipped-js`, `npm audit`, `npm audit --omit=dev`, isolated
+`npm run smoke`, and `npm run desktop:package` including ASAR checks passed.
+`npm run desktop:smoke` was attempted: all four launches fail because this
+environment has no X server/DISPLAY; no desktop assertions ran.
+
+One intermediate rerun omitted PLAYWRIGHT_BROWSERS_PATH: its Vitest tests passed,
+but Node browser launches failed and the run was interrupted. The final full run
+uses the installed browser cache and the writable TMPDIR, as do browser gates.

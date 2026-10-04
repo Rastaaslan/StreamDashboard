@@ -238,7 +238,7 @@ function planningActions(item) {
     const link = item.providers?.[provider];
     for (const [key, entry] of Object.entries(link?.projections || {})) {
       if (entry.status !== 'conflict' || (item.occurrenceKey && item.occurrenceKey !== key)) continue;
-      for (const strategy of ['local', 'remote']) actions.push(`<button class="ghost compact" data-action="resolve-conflict" data-provider="${provider}" data-strategy="${strategy}" data-occurrence-key="${esc(key)}" data-value="${encodeURIComponent(item.seriesId || item.id)}">${esc(key)} · Garder ${strategy === 'local' ? 'local' : provider}</button>`);
+      for (const strategy of ['local', 'remote']) actions.push(`<button class="ghost compact" data-action="resolve-conflict" data-provider="${provider}" data-strategy="${strategy}" data-occurrence-key="${esc(key)}" data-value="${encodeURIComponent(item.seriesId || item.id)}">${esc(key)} · ${entry.pendingDeletion ? (strategy === 'local' ? 'Confirmer le retrait' : 'Conserver distant') : `Garder ${strategy === 'local' ? 'local' : provider}`}</button>`);
     }
     if (link?.status === 'error' && !item.conflict) {
       const desired = item.desiredPublication?.[provider] === true;
