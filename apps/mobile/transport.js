@@ -100,7 +100,7 @@ export function createTransport(getServer, getCredential, getGeneration = () => 
     searchTwitch: query => request(`/api/v1/twitch/categories?q=${encodeURIComponent(query)}`, { headers: { authorization: `Device ${getCredential()}` } }),
     updateTwitch: value => request('/api/v1/twitch/channel', { method: 'POST', headers: authHeaders(), body: JSON.stringify(value) }),
     createPlanning: value => request('/api/v1/planning', { method: 'POST', headers: authHeaders(), body: JSON.stringify(value) }),
-    resolvePlanningProvider: (id, provider, strategy) => request(`/api/v1/planning/${encodeURIComponent(id)}/conflict/${encodeURIComponent(provider)}`, { method: 'POST', headers: authHeaders(), body: JSON.stringify({ strategy }) }),
+    resolvePlanningProvider: (id, provider, strategy, occurrenceKey) => request(`/api/v1/planning/${encodeURIComponent(id)}/conflict/${encodeURIComponent(provider)}`, { method: 'POST', headers: authHeaders(), body: JSON.stringify({ strategy, ...(occurrenceKey !== undefined ? { occurrenceKey } : {}) }) }),
     retryPlanningProvider: (id, provider) => request(`/api/v1/planning/${encodeURIComponent(id)}/retry/${encodeURIComponent(provider)}`, { method: 'POST', headers: authHeaders(), body: '{}' }),
     updatePlanning: async (id, value) => {
       try { return await request(`/api/v1/planning/${encodeURIComponent(id)}`, { method: 'PUT', headers: authHeaders(), body: JSON.stringify(value) }); }

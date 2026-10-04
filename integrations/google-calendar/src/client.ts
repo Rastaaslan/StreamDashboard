@@ -1,5 +1,6 @@
-import type { CalendarItem } from '../../../packages/contracts/src/index.js';
-import { googleRecurrence } from './recurrence.js';
+import type { CalendarItem, RecurrenceProjectionIdentity } from '../../../packages/contracts/src/index.js';
+import { googleProjectionLocalId } from './projection.js';
+import { assertGoogleMaterializedAllDay, googleRecurrence } from './recurrence.js';
 import { createHash, randomBytes, timingSafeEqual } from 'node:crypto';
 
 const AUTH = 'https://accounts.google.com/o/oauth2/v2/auth';
@@ -15,6 +16,7 @@ const OAUTH_ATTEMPT_TTL_MS = 10 * 60_000;
 export interface GoogleTokens { accessToken: string; refreshToken: string; expiresAt: number }
 export interface GoogleOAuthAttempt { authorizationUrl: string; state: string; verifier: string; redirectUri: string; expiresAt: number }
 export interface GoogleEventInput {
+  projection?: RecurrenceProjectionIdentity;
   localId: string;
   title: string;
   description?: string;
@@ -247,24 +249,43 @@ export class GoogleCalendarClient {
   }
 
   async create(calendarId: string, input: GoogleEventInput) {
+    this.validateProjection(input);
+    if (input.allDay && input.recurrence) assertGoogleMaterializedAllDay(input);
     googleRecurrence(input);
     // Recovery/idempotence: a previous POST may have succeeded remotely while its
     // response was lost. The private local id lets a retry recover that event.
-    const existing = (await this.events(calendarId, { managedLocalId: input.localId }).catch(error => {
+    const matches = (await this.events(calendarId, { managedLocalId: input.localId }).catch(error => {
       throw Object.assign(error instanceof Error ? error : new Error(String(error)), { mutationNotStarted: true });
     }))
-      .find(event => !event.deleted && event.managed && event.localId === input.localId);
+      .filter(event => !event.deleted && event.managed && event.localId === input.localId);
+    if (input.projection && matches.length > 1) {
+      throw Object.assign(new Error('Plusieurs événements Google portent cette identité de projection.'), { code: 'GOOGLE_PROJECTION_CONFLICT', mutationNotStarted: true });
+    }
+    const existing = matches[0];
     if (existing) {
+      this.assertProjection(input, existing);
       if (JSON.stringify(googleRecurrence(input)) !== JSON.stringify(existing.recurrenceLines ?? [])
         || (input.recurrence && !input.allDay && input.recurrence.timeZone !== existing.recurrenceTimeZone)) {
         throw Object.assign(new Error('La série Google retrouvée diffère de la récurrence locale. Réconciliation explicite requise.'), { mutationNotStarted: true });
       }
       return existing;
     }
-    return this.mutate('POST', calendarId, '', input);
+    try { return await this.mutate('POST', calendarId, '', input); }
+    catch (error) {
+      if (!(error instanceof GoogleCalendarError) || error.status !== 409 || input.projection?.mode !== 'materialized') throw error;
+      const recovered = await this.event(calendarId, this.materializedRemoteId(input));
+      this.assertProjection(input, recovered);
+      return recovered;
+    }
   }
 
   async update(calendarId: string, id: string, input: GoogleEventInput, etag?: string) {
+    this.validateProjection(input);
+    if (input.allDay && input.recurrence) assertGoogleMaterializedAllDay(input);
+    if (input.projection) {
+      if (!etag) throw Object.assign(new Error('ETag requis pour une projection Google.'), { mutationNotStarted: true });
+      this.assertProjection(input, await this.event(calendarId, id), false);
+    }
     googleRecurrence(input);
     this.assertNoRemoteExceptions(await this.recurrenceInventory(calendarId), new Set([id]));
     return this.mutate('PATCH', calendarId, `/${encodeURIComponent(id)}`, input, etag);
@@ -277,16 +298,58 @@ export class GoogleCalendarClient {
     }); } catch (error) { if (!(error instanceof GoogleCalendarError && [404, 410].includes(error.status))) throw error; }
   }
 
+  /** Rolling callers persist a separate id/etag per identity and calendar. */
+  async deleteProjected(calendarId: string, id: string, input: GoogleEventInput, etag: string) {
+    this.validateProjection(input);
+    if (!input.projection || !etag) throw Object.assign(new Error('Identité et ETag requis.'), { mutationNotStarted: true });
+    try { this.assertProjection(input, await this.event(calendarId, id), false); }
+    catch (error) { if ((error as { code?: string }).code === 'DELETED_REMOTELY') return; throw error; }
+    return this.delete(calendarId, id, etag);
+  }
+
+  private materializedRemoteId(input: GoogleEventInput) {
+    return `sd${createHash('sha256').update(input.localId).digest('hex')}`;
+  }
+
+  private validateProjection(input: GoogleEventInput) {
+    const identity = input.projection;
+    if (identity?.mode === 'materialized') assertGoogleMaterializedAllDay(input);
+    if (identity && (!['master', 'materialized'].includes(identity.mode) || !identity.seriesLocalId
+      || identity.mode === 'materialized' && !identity.occurrenceKey
+      || input.localId !== googleProjectionLocalId(identity)
+      || identity.mode === 'materialized' && (input.recurrence || input.seriesId || input.occurrenceKey))) {
+      throw Object.assign(new Error('Identité de projection Google invalide.'), { mutationNotStarted: true });
+    }
+  }
+
+  private assertProjection(input: GoogleEventInput, event: GoogleEvent, compareContent = true) {
+    if (!input.projection) return;
+    const actual = event.projection ?? { mode: 'master', seriesLocalId: event.localId };
+    if (!event.managed || event.localId !== input.localId || actual.mode !== input.projection.mode
+      || actual.seriesLocalId !== input.projection.seriesLocalId
+      || (actual.mode === 'materialized' && input.projection.mode === 'materialized'
+        && (actual.occurrenceKey !== input.projection.occurrenceKey || Boolean(event.recurrenceLines?.length)
+          || compareContent && (event.title !== input.title || (event.description ?? '') !== (input.description ?? '')
+            || Date.parse(event.startAtUtc) !== Date.parse(input.startAtUtc) || Date.parse(event.endAtUtc) !== Date.parse(input.endAtUtc)
+            || Boolean(event.allDay) !== Boolean(input.allDay))))) {
+      throw Object.assign(new Error('Conflit de projection Google : réconciliation explicite requise.'), { code: 'GOOGLE_PROJECTION_CONFLICT', mutationNotStarted: true });
+    }
+  }
+
   private async mutate(method: string, calendarId: string, suffix: string, input: GoogleEventInput, etag?: string) {
     const recurrence = googleRecurrence(input);
     const timeZone = input.recurrence?.timeZone;
     const body = {
+      ...(method === 'POST' && input.projection?.mode === 'materialized' ? { id: this.materializedRemoteId(input) } : {}),
       recurrence,
       summary: input.title,
       description: input.description ?? '',
       start: input.allDay ? { date: dateOnly(input.startAtUtc) } : { dateTime: input.startAtUtc, ...(timeZone ? { timeZone } : {}) },
       end: input.allDay ? { date: dateOnly(input.endAtUtc) } : { dateTime: input.endAtUtc, ...(timeZone ? { timeZone } : {}) },
-      extendedProperties: { private: { streamDashboardManaged: 'true', streamDashboardId: input.localId } },
+      extendedProperties: { private: { streamDashboardManaged: 'true', streamDashboardId: input.localId,
+        ...(input.projection ? { streamDashboardProjection: input.projection.mode, streamDashboardSeriesId: input.projection.seriesLocalId,
+          ...(input.projection.mode === 'materialized' ? { streamDashboardOccurrenceKey: input.projection.occurrenceKey } : {}) } : {}),
+      } },
     };
     const value = await this.api<Record<string, unknown>>(`/calendars/${encodeURIComponent(calendarId)}/events${suffix}`, {
       method,
@@ -309,6 +372,10 @@ export class GoogleCalendarClient {
     const managed = privateProperties?.streamDashboardManaged === 'true' || Boolean(privateProperties?.streamDashboardEventId);
     return {
       id: value.id,
+      ...(privateProperties?.streamDashboardProjection === 'materialized' ? { projection: {
+        mode: 'materialized' as const, seriesLocalId: privateProperties.streamDashboardSeriesId,
+        occurrenceKey: privateProperties.streamDashboardOccurrenceKey,
+      } } : {}),
       localId: privateProperties?.streamDashboardId ?? privateProperties?.streamDashboardEventId ?? `google:${value.id}`,
       title: typeof value.summary === 'string' ? value.summary : '(sans titre)',
       description: typeof value.description === 'string' ? value.description : undefined,

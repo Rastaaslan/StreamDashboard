@@ -36,6 +36,13 @@ describe('transaction compagnon', () => {
     expect(companionSnapshot(result.planning, result.companion)).toMatchObject({ notes: [{ text: 'Idée' }], checklist: [{ done: true }], templates: [{ title: 'FC26' }] });
   });
 
+  it('préserve la version V2 et refuse les versions futures sans écraser les données', () => {
+    const recurrence = { version: 2, frequency: 'daily', interval: 3, timeZone: 'Europe/Paris', until: '2026-12-01T00:00:00Z', exceptions: {} };
+    const created = reconcileCompanionBatch([], [], emptyCompanionState(), [op('v2', 'create', { ...event(), recurrence })]);
+    expect(created.planning[0].recurrence).toEqual(recurrence);
+    expect(() => reconcileCompanionBatch([], [], emptyCompanionState(), [op('future', 'create', { ...event(), recurrence: { ...recurrence, version: 3 } })])).toThrow();
+  });
+
   it('traite la récurrence comme un champ atomique concurrent', () => {
     const recurrence = { frequency: 'weekly', interval: 1, timeZone: 'Europe/Paris', until: null, exceptions: {} };
     const created = reconcileCompanionBatch([], [], emptyCompanionState(), [op('create-series', 'create', { ...event(), recurrence })]);

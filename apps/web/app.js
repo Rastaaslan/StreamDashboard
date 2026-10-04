@@ -236,6 +236,10 @@ function planningActions(item) {
   }
   for (const provider of ['twitch', 'google']) {
     const link = item.providers?.[provider];
+    for (const [key, entry] of Object.entries(link?.projections || {})) {
+      if (entry.status !== 'conflict' || (item.occurrenceKey && item.occurrenceKey !== key)) continue;
+      for (const strategy of ['local', 'remote']) actions.push(`<button class="ghost compact" data-action="resolve-conflict" data-provider="${provider}" data-strategy="${strategy}" data-occurrence-key="${esc(key)}" data-value="${encodeURIComponent(item.seriesId || item.id)}">${esc(key)} · Garder ${strategy === 'local' ? 'local' : provider}</button>`);
+    }
     if (link?.status === 'error' && !item.conflict) {
       const desired = item.desiredPublication?.[provider] === true;
       actions.push(`<button class="ghost compact" data-action="retry-provider" data-provider="${provider}" data-value="${encodeURIComponent(item.id)}">${desired ? `Retry ${provider}` : `Retirer ${provider}`}</button>`);
@@ -704,11 +708,11 @@ window.retryProvider = async (id, provider) => {
     toast(error.message, true);
   }
 };
-window.resolveConflict = async (id, provider, strategy) => {
+window.resolveConflict = async (id, provider, strategy, occurrenceKey) => {
   const wording = strategy === 'local' ? 'écraser la version distante avec ta version locale' : `remplacer ta version locale par la version ${provider}`;
   if (!confirm(`Confirmer : ${wording} ?`)) return;
   try {
-    applyStateUpdate(await request(`/api/v1/planning/${encodeURIComponent(id)}/conflict/${encodeURIComponent(provider)}`, 'POST', { strategy }), true);
+    applyStateUpdate(await request(`/api/v1/planning/${encodeURIComponent(id)}/conflict/${encodeURIComponent(provider)}`, 'POST', { strategy, ...(occurrenceKey ? { occurrenceKey } : {}) }), true);
     toast('Conflit résolu');
   } catch (error) {
     toast(error.message, true);
@@ -865,7 +869,7 @@ document.addEventListener('click', event => {
     'edit-event': () => window.editEvent(value),
     'edit-occurrence': () => window.editOccurrence(value),
     'retry-provider': () => window.retryProvider(value, element.dataset.provider),
-    'resolve-conflict': () => window.resolveConflict(value, element.dataset.provider, element.dataset.strategy),
+    'resolve-conflict': () => window.resolveConflict(value, element.dataset.provider, element.dataset.strategy, element.dataset.occurrenceKey),
     'remove-event': () => window.removeEvent(value),
     'remove-occurrence': () => window.removeOccurrence(value),
     'close-dialog': () => { resetEventDialogState(); element.closest('dialog')?.close(); },

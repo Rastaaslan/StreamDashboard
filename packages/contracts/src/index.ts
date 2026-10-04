@@ -90,7 +90,21 @@ export interface TimerState {
 }
 
 export type ProviderSyncStatus = 'synced' | 'pending' | 'error' | 'not-published' | 'conflict';
+export interface ProviderProjectionOccurrence extends ProviderLink {
+  occurrenceKey: string;
+  managedBy: 'StreamDashboard';
+  event: CalendarItem;
+  appliedContent?: string;
+}
+
+/** Backward-compatible name for existing Twitch callers. */
+export type TwitchProjectionOccurrence = ProviderProjectionOccurrence;
+
 export interface ProviderLink {
+  projectionMode?: 'native' | 'materialized';
+  projectionOwned?: boolean;
+  projectionWindow?: { from: string; to: string };
+  projections?: Record<string, ProviderProjectionOccurrence>;
   /** Durable scope of a confirmed period deletion, including standard retries. */
   deletionPeriod?: { start: string; end: string };
   status: ProviderSyncStatus;
@@ -109,17 +123,27 @@ export interface ProviderLink {
 
 export type RecurrenceFrequency = 'daily' | 'weekly' | 'monthly';
 export interface RecurrenceRule {
+  /** Absent means legacy V1. V2 allows arbitrary positive intervals and custom engines. */
+  version?: 1 | 2;
   frequency: RecurrenceFrequency;
-  interval: 1 | 2;
+  interval: number;
+  /** Opaque, versioned engine payload; never interpret it as the base frequency. */
+  custom?: { engine: string; version: number; parameters: Record<string, unknown> };
   timeZone: string;
   until?: string | null;
-  exceptions?: Record<string, { cancelled?: boolean; patch?: Partial<Pick<CalendarItem, 'title' | 'description' | 'startAtUtc' | 'endAtUtc' | 'category' | 'kind' | 'twitchCategoryId' | 'twitchCategoryName' | 'tags' | 'tagPreferences' | 'desiredPublication'>> }>;
+  exceptions?: Record<string, { cancelled?: boolean; patch?: Partial<Pick<CalendarItem, 'title' | 'description' | 'startAtUtc' | 'endAtUtc' | 'allDay' | 'category' | 'kind' | 'twitchCategoryId' | 'twitchCategoryName' | 'tags' | 'tagPreferences' | 'desiredPublication'>> }>;
 }
+
+/** Provider identity is scoped to the target calendar by the rolling reconciler. */
+export type RecurrenceProjectionIdentity =
+  | { mode: 'master'; seriesLocalId: string }
+  | { mode: 'materialized'; seriesLocalId: string; occurrenceKey: string };
 
 export interface TagMetadata { values: string[]; source: 'manual' | 'generated'; generatedAt?: string }
 export interface TagPreferences { automatic?: boolean; language?: string; preferredTags?: string[] }
 
 export interface CalendarItem {
+  projection?: RecurrenceProjectionIdentity;
   tags?: TagMetadata;
   tagPreferences?: TagPreferences;
   id: string;

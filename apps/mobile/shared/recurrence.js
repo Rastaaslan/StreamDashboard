@@ -1,92 +1,191 @@
 const DEFAULT_ZONE = 'Europe/Paris';
+/** Lazy, lossless migration: callers persist the returned value on their next write. */
+export function migrateRecurrence(rule) {
+    if (!rule || ![undefined, 1, 2].includes(rule.version)
+        || !['daily', 'weekly', 'monthly'].includes(rule.frequency)
+        || !Number.isSafeInteger(rule.interval) || rule.interval < 1
+        || (rule.version !== 2 && !(rule.interval === 1 || rule.interval === 2))
+        || (rule.custom && (rule.version !== 2 || typeof rule.custom.engine !== 'string' || !rule.custom.engine
+            || !Number.isSafeInteger(rule.custom.version) || rule.custom.version < 1
+            || !rule.custom.parameters || typeof rule.custom.parameters !== 'object' || Array.isArray(rule.custom.parameters)))) {
+        throw new Error('Version ou règle de récurrence non prise en charge.');
+    }
+    return { ...structuredClone(rule), version: 2 };
+}
 const formatterCache = new Map();
-
 function formatter(zone) {
-  if (!formatterCache.has(zone)) formatterCache.set(zone, new Intl.DateTimeFormat('en-CA', {
-    timeZone: zone, year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit', hourCycle: 'h23',
-  }));
-  return formatterCache.get(zone);
+    if (!formatterCache.has(zone))
+        formatterCache.set(zone, new Intl.DateTimeFormat('en-CA', {
+            timeZone: zone, year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit', hourCycle: 'h23',
+        }));
+    return formatterCache.get(zone);
 }
-
 function parts(at, zone) {
-  return Object.fromEntries(formatter(zone).formatToParts(at).filter(value => value.type !== 'literal').map(value => [value.type, Number(value.value)]));
+    return Object.fromEntries(formatter(zone).formatToParts(at).filter(value => value.type !== 'literal').map(value => [value.type, Number(value.value)]));
 }
-
 function validZone(zone) {
-  try { formatter(zone); return zone; } catch { return DEFAULT_ZONE; }
+    try {
+        formatter(zone);
+        return zone;
+    }
+    catch {
+        return DEFAULT_ZONE;
+    }
 }
-
-/** Converts wall-clock components to UTC, iterating across DST offset changes. */
-function wallToUtc(value, zone) {
-  const target = Date.UTC(value.year, value.month - 1, value.day, value.hour, value.minute, value.second);
-  let guess = target;
-  for (let index = 0; index < 4; index++) {
-    const rendered = parts(new Date(guess), zone);
-    const renderedUtc = Date.UTC(rendered.year, rendered.month - 1, rendered.day, rendered.hour, rendered.minute, rendered.second);
-    const correction = target - renderedUtc;
-    guess += correction;
-    if (!correction) break;
-  }
-  return new Date(guess);
+const DAY = 86400000;
+const pad = (value) => String(value).padStart(2, '0');
+const wallKey = (v) => `${v.year}-${pad(v.month)}-${pad(v.day)}T${pad(v.hour)}:${pad(v.minute)}:${pad(v.second)}`;
+const wallEpoch = (v) => Date.UTC(v.year, v.month - 1, v.day, v.hour, v.minute, v.second);
+function instant(value) {
+    const result = +new Date(value);
+    if (!Number.isFinite(result))
+        throw new Error('Invalid recurrence date');
+    return result;
 }
-
-const pad = value => String(value).padStart(2, '0');
-const localKey = value => `${value.year}-${pad(value.month)}-${pad(value.day)}T${pad(value.hour)}:${pad(value.minute)}:${pad(value.second)}`;
-const daysInMonth = (year, month) => new Date(Date.UTC(year, month, 0)).getUTCDate();
-
-function occurrenceWall(anchor, rule, step) {
-  if (rule.frequency === 'daily') {
-    const date = new Date(Date.UTC(anchor.year, anchor.month - 1, anchor.day + step * rule.interval, anchor.hour, anchor.minute, anchor.second));
-    return { year: date.getUTCFullYear(), month: date.getUTCMonth() + 1, day: date.getUTCDate(), hour: anchor.hour, minute: anchor.minute, second: anchor.second };
-  }
-  if (rule.frequency === 'weekly') {
-    const date = new Date(Date.UTC(anchor.year, anchor.month - 1, anchor.day + step * 7 * rule.interval, anchor.hour, anchor.minute, anchor.second));
-    return { year: date.getUTCFullYear(), month: date.getUTCMonth() + 1, day: date.getUTCDate(), hour: anchor.hour, minute: anchor.minute, second: anchor.second };
-  }
-  const absoluteMonth = anchor.year * 12 + anchor.month - 1 + step * rule.interval;
-  const year = Math.floor(absoluteMonth / 12); const month = absoluteMonth % 12 + 1;
-  return { year, month, day: Math.min(anchor.day, daysInMonth(year, month)), hour: anchor.hour, minute: anchor.minute, second: anchor.second };
+function bounds(window) {
+    const start = instant(window.windowStart), end = instant(window.windowEnd);
+    if (end <= start)
+        throw new Error('Invalid projection window');
+    return [start, end];
 }
-
-/** Expands canonical series only inside a finite half-open interval [from,to). */
+function clock(zone) {
+    const formatter = new Intl.DateTimeFormat('en-CA', { timeZone: zone, year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit', hourCycle: 'h23' });
+    const parts = (at) => Object.fromEntries(formatter.formatToParts(new Date(at)).filter(p => p.type !== 'literal').map(p => [p.type, Number(p.value)]));
+    // Compatible disambiguation: earlier instant in a fold; shift forward by the gap.
+    const resolve = (wall) => {
+        const target = wallEpoch(wall);
+        const offsets = new Set([-2, -1, 0, 1, 2].map(days => {
+            const probe = target + days * DAY;
+            return wallEpoch(parts(probe)) - probe;
+        }));
+        const candidates = [...offsets].map(offset => target - offset).sort((a, b) => a - b);
+        return candidates.find(at => wallEpoch(parts(at)) === target) ?? Math.max(...candidates);
+    };
+    return { parts, resolve };
+}
+/** Indexed wall-clock schedule. Add custom cadence generation here, independently of identity,
+ * exception handling, window selection and reconciliation. No UI/provider rules live here. */
+function schedule(anchor, rule) {
+    if (!['daily', 'weekly', 'monthly'].includes(rule.frequency) || !Number.isSafeInteger(rule.interval) || rule.interval < 1)
+        throw new Error('Invalid recurrence cadence');
+    const stride = rule.interval * (rule.frequency === 'weekly' ? 7 : 1);
+    return (step) => {
+        if (rule.frequency === 'monthly') {
+            const monthIndex = anchor.year * 12 + anchor.month - 1 + step * stride;
+            const year = Math.floor(monthIndex / 12), month = monthIndex % 12 + 1;
+            return { ...anchor, year, month, day: Math.min(anchor.day, new Date(Date.UTC(year, month, 0)).getUTCDate()) };
+        }
+        const date = new Date(wallEpoch(anchor) + step * stride * DAY);
+        return { ...anchor, year: date.getUTCFullYear(), month: date.getUTCMonth() + 1, day: date.getUTCDate() };
+    };
+}
+/** Pure projection of a canonical recurring master. Effective ranges overlap [start,end).
+ * until is inclusive on the ORIGINAL start, before exceptions; duration is elapsed UTC time. */
+export function projectRecurrence(source, window) {
+    const [from, to] = bounds(window);
+    if (!source.recurrence || source.occurrenceKey)
+        throw new Error('Expected a canonical recurring master');
+    const rule = migrateRecurrence(source.recurrence);
+    if (rule.custom)
+        throw new Error('Moteur de récurrence requis : ' + rule.custom.engine);
+    const start = instant(source.startAtUtc), duration = instant(source.endAtUtc) - start;
+    if (duration <= 0)
+        throw new Error('Invalid recurrence duration');
+    const until = rule.until == null ? Infinity : instant(rule.until);
+    const { parts, resolve } = clock(rule.timeZone || 'Europe/Paris');
+    const anchor = parts(start), at = schedule(anchor, rule);
+    const seriesId = source.localId || source.id;
+    if (!seriesId)
+        throw new Error('Missing series identity');
+    const key = (wall) => `${seriesId}:${wallKey(wall)}`;
+    // Seek directly, avoiding a historical iteration cap (even for decades-old series).
+    const seek = (target) => {
+        let low = 0, high = 1;
+        while (resolve(at(high)) < target)
+            high *= 2;
+        while (low < high) {
+            const mid = Math.floor((low + high) / 2);
+            if (resolve(at(mid)) < target)
+                low = mid + 1;
+            else
+                high = mid;
+        }
+        return low;
+    };
+    const candidates = new Map();
+    for (let step = seek(from - duration - 2 * DAY);; step++) {
+        const wall = at(step), original = resolve(wall);
+        if (original >= to || original > until)
+            break;
+        candidates.set(key(wall), wall);
+    }
+    // Moved exceptions can enter the window from either side of the nominal range.
+    for (const exceptionKey of Object.keys(rule.exceptions ?? {})) {
+        const prefix = `${seriesId}:`;
+        if (!exceptionKey.startsWith(prefix))
+            continue;
+        const local = exceptionKey.slice(prefix.length);
+        if (!/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}$/.test(local))
+            continue;
+        const target = Date.parse(`${local}Z`);
+        if (!Number.isFinite(target))
+            continue;
+        // Seek using wall time so a gap-shifted occurrence retains its nominal key.
+        let low = 0, high = 1;
+        while (wallEpoch(at(high)) < target)
+            high *= 2;
+        while (low < high) {
+            const mid = Math.floor((low + high) / 2);
+            if (wallEpoch(at(mid)) < target)
+                low = mid + 1;
+            else
+                high = mid;
+        }
+        const wall = at(low);
+        if (key(wall) === exceptionKey && resolve(wall) <= until)
+            candidates.set(exceptionKey, wall);
+    }
+    const output = [];
+    for (const [occurrenceKey, wall] of candidates) {
+        const exception = rule.exceptions?.[occurrenceKey];
+        if (exception?.cancelled)
+            continue;
+        const original = resolve(wall);
+        const item = {
+            ...structuredClone(source), ...structuredClone(exception?.patch ?? {}),
+            id: `${source.id}::${wallKey(wall)}`, seriesId: source.id, occurrenceKey, recurrence: structuredClone(source.recurrence),
+            startAtUtc: exception?.patch?.startAtUtc ?? new Date(original).toISOString(),
+            endAtUtc: exception?.patch?.endAtUtc ?? new Date(original + duration).toISOString(),
+        };
+        const effectiveStart = instant(item.startAtUtc), effectiveEnd = instant(item.endAtUtc);
+        if (effectiveEnd <= effectiveStart)
+            throw new Error('Invalid occurrence duration');
+        if (effectiveStart < to && effectiveEnd > from)
+            output.push(item);
+    }
+    return output.sort((a, b) => instant(a.startAtUtc) - instant(b.startAtUtc) || (a.occurrenceKey < b.occurrenceKey ? -1 : a.occurrenceKey > b.occurrenceKey ? 1 : 0));
+}
 export function expandRecurringItems(items, { from, to }) {
-  const fromMs = +new Date(from); const toMs = +new Date(to);
-  if (!Number.isFinite(fromMs) || !Number.isFinite(toMs) || toMs <= fromMs) throw new Error('Fenêtre de récurrence invalide.');
-  const output = [];
-  for (const source of items || []) {
-    const start = Date.parse(source.startAtUtc); const end = Date.parse(source.endAtUtc);
-    if (!source.recurrence) {
-      if (start < toMs && (Number.isFinite(end) ? end > fromMs : start >= fromMs)) output.push(structuredClone(source));
-      continue;
-    }
-    const rule = source.recurrence; const zone = validZone(rule.timeZone || DEFAULT_ZONE);
-    const anchor = parts(new Date(start), zone); const duration = end - start;
-    const until = rule.until ? Date.parse(rule.until) : Infinity;
-    // The hard cap is defensive only; a finite requested window normally ends first.
-    for (let step = 0; step < 20_000; step++) {
-      const wall = occurrenceWall(anchor, rule, step); const occurrenceStart = wallToUtc(wall, zone); const occurrenceMs = +occurrenceStart;
-      if (occurrenceMs >= toMs || occurrenceMs > until) break;
-      const key = `${source.localId || source.id}:${localKey(wall)}`;
-      const exception = rule.exceptions?.[key];
-      if (!exception?.cancelled && occurrenceMs + duration > fromMs) {
-        const item = { ...structuredClone(source), ...structuredClone(exception?.patch || {}), id: `${source.id}::${localKey(wall)}`, seriesId: source.id, occurrenceKey: key, recurrence: structuredClone(rule), startAtUtc: occurrenceStart.toISOString(), endAtUtc: new Date(occurrenceMs + duration).toISOString() };
-        if (exception?.patch?.startAtUtc) item.startAtUtc = exception.patch.startAtUtc;
-        if (exception?.patch?.endAtUtc) item.endAtUtc = exception.patch.endAtUtc;
-        output.push(item);
-      }
-    }
-  }
-  return output.sort((left, right) => Date.parse(left.startAtUtc) - Date.parse(right.startAtUtc));
+    const [start, end] = bounds({ windowStart: from, windowEnd: to });
+    return (items || []).flatMap(item => item.recurrence && !item.occurrenceKey
+        ? projectRecurrence(item, { windowStart: from, windowEnd: to })
+        : Date.parse(item.startAtUtc) < end && (Number.isFinite(Date.parse(item.endAtUtc)) ? Date.parse(item.endAtUtc) > start : Date.parse(item.startAtUtc) >= start) ? [structuredClone(item)] : [])
+        .sort((a, b) => Date.parse(a.startAtUtc) - Date.parse(b.startAtUtc));
 }
-
 export function recurrenceSummary(item, locale = 'fr-FR') {
-  if (!item?.recurrence) return '';
-  const rule = item.recurrence; const zone = validZone(rule.timeZone || DEFAULT_ZONE);
-  const date = new Date(item.startAtUtc);
-  const local = parts(date, zone);
-  const weekday = new Intl.DateTimeFormat(locale, { timeZone: zone, weekday: 'long' }).format(date);
-  const time = new Intl.DateTimeFormat(locale, { timeZone: zone, hour: '2-digit', minute: '2-digit' }).format(date);
-  if (rule.frequency === 'daily') return `↻ Tous les jours · ${time}`;
-  if (rule.frequency === 'monthly') return `↻ Chaque mois · le ${local.day} à ${time}`;
-  return rule.interval === 2 ? `↻ Toutes les 2 semaines · ${weekday} ${time}` : `↻ Chaque ${weekday} à ${time}`;
+    if (!item?.recurrence)
+        return '';
+    const rule = item.recurrence;
+    const zone = validZone(rule.timeZone || DEFAULT_ZONE);
+    const date = new Date(item.startAtUtc);
+    const local = parts(date, zone);
+    const weekday = new Intl.DateTimeFormat(locale, { timeZone: zone, weekday: 'long' }).format(date);
+    const time = new Intl.DateTimeFormat(locale, { timeZone: zone, hour: '2-digit', minute: '2-digit' }).format(date);
+    if (rule.custom)
+        return `↻ Récurrence personnalisée · ${time}`;
+    if (rule.frequency === 'daily')
+        return rule.interval === 1 ? `↻ Tous les jours · ${time}` : `↻ Tous les ${rule.interval} jours · ${time}`;
+    if (rule.frequency === 'monthly')
+        return rule.interval === 1 ? `↻ Chaque mois · le ${local.day} à ${time}` : `↻ Tous les ${rule.interval} mois · le ${local.day} à ${time}`;
+    return rule.interval > 1 ? `↻ Toutes les ${rule.interval} semaines · ${weekday} ${time}` : `↻ Chaque ${weekday} à ${time}`;
 }

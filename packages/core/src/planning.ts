@@ -1,3 +1,5 @@
+import { reconcileGoogleProjection, needsGoogleMaterialization, resolveGoogleOccurrenceConflict } from '../../../integrations/google-calendar/src/projection.js';
+import { reconcileTwitchProjection, needsTwitchMaterialization, resolveTwitchOccurrenceConflict } from '../../../integrations/twitch/src/projection.js';
 import { assertTwitchRecurrence } from '../../../integrations/twitch/src/recurrence.js';
 import { googleRecurrence } from '../../../integrations/google-calendar/src/recurrence.js';
 import { assertProviderCreationCertain, createWithDurableIntent } from './provider-identity.js';
@@ -6,7 +8,7 @@ import type { CalendarItem, ProviderLink } from '../../contracts/src/index.js';
 export type ProviderName = 'twitch' | 'google';
 export interface PlanningProvider {
   read?(id: string, item: CalendarItem): Promise<{ remote?: NonNullable<CalendarItem['conflict']>['remote']; revision?: string; fingerprint?: string; deleted?: boolean }>;
-  create(item: CalendarItem): Promise<{ id: string; revision?: string; calendarId?: string; fingerprint?: string }>;
+  create(item: CalendarItem): Promise<{ id: string; revision?: string; calendarId?: string; fingerprint?: string; owned?: boolean }>;
   update(id: string, item: CalendarItem, revision?: string): Promise<{ revision?: string; fingerprint?: string }>;
   delete(id: string, item: CalendarItem, revision?: string): Promise<void>;
 }
@@ -36,6 +38,25 @@ export class PlanningOrchestrator {
     private providers: Partial<Record<ProviderName, PlanningProvider>>,
     private persist: (items: CalendarItem[]) => Promise<void>,
   ) {}
+
+  refreshTwitch(now = Date.now()) {
+    return this.serial(async () => {
+      for (const item of this.items) {
+        const transitioning = item.providers?.twitch?.projectionMode === 'materialized' && !needsTwitchMaterialization(item);
+        const handled = await reconcileTwitchProjection(item, this.providers.twitch, () => this.persist(this.items), { now });
+        if (!handled && transitioning && item.ownership === 'LOCAL' && item.desiredPublication?.twitch
+          && !this.remoteId(item, 'twitch') && item.conflict?.provider !== 'twitch') {
+          await this.publishOne(item, 'twitch');
+        }
+      }
+      for (const item of this.items) {
+        const transitioning = item.providers?.google?.projectionMode === 'materialized' && !needsGoogleMaterialization(item);
+        const handled = await reconcileGoogleProjection(item, this.providers.google, () => this.persist(this.items), { now });
+        if (!handled && transitioning && item.ownership === 'LOCAL' && item.desiredPublication?.google && !this.remoteId(item, 'google')) await this.publishOne(item, 'google');
+      }
+      return this.all();
+    });
+  }
 
   all() { return structuredClone(this.items); }
 
@@ -88,7 +109,7 @@ export class PlanningOrchestrator {
         if (!destinations[name]) continue;
         const remoteId = this.remoteId(item, name);
         if (!remoteId) {
-          if (name === 'twitch') await this.unpublishOne(item, name);
+          if (!await this.unpublishOne(item, name)) failed.push(name);
           continue;
         }
         if (name === 'twitch' && item.twitchRecurring && !destinations.confirmRecurring) {
@@ -110,6 +131,14 @@ export class PlanningOrchestrator {
   retry(id: string, provider: ProviderName, options: { confirmRecurring?: boolean } = {}) {
     return this.serial(async () => {
       const item = this.required(id);
+      if (provider === 'twitch' && await reconcileTwitchProjection(item, this.providers.twitch, () => this.persist(this.items), { retry: true })) {
+        if (item.providers?.twitch?.status === 'error') throw new Error(item.providers.twitch.lastError);
+        return structuredClone(item);
+      }
+      if (provider === 'google' && await reconcileGoogleProjection(item, this.providers.google, () => this.persist(this.items), { retry: true })) {
+        if (item.providers?.google?.status === 'error') throw new Error(item.providers.google.lastError);
+        return structuredClone(item);
+      }
       if (!this.remoteId(item, provider)) assertProviderCreationCertain(item, provider);
       const desired = item.desiredPublication?.[provider] ?? false;
       if (desired && !providerSupportsRecurrence(provider, item)) {
@@ -150,9 +179,13 @@ export class PlanningOrchestrator {
     });
   }
 
-  resolveConflict(id: string, provider: ProviderName, strategy: 'local' | 'remote') {
+  resolveConflict(id: string, provider: ProviderName, strategy: 'local' | 'remote', occurrenceKey?: string) {
     return this.serial(async () => {
       const item = this.required(id);
+      if (occurrenceKey !== undefined) {
+        await (provider === 'twitch' ? resolveTwitchOccurrenceConflict : resolveGoogleOccurrenceConflict)(item, occurrenceKey, strategy, this.providers[provider], () => this.persist(this.items));
+        return structuredClone(item);
+      }
       // Android persists conflicts per provider. Its native snapshot is not a
       // Desktop CalendarItem: materialize a conflict and fetch the authoritative
       // remote body below instead of trusting or requiring that snapshot.
@@ -263,6 +296,8 @@ export class PlanningOrchestrator {
   private async reconcileDesiredPublication(item: CalendarItem, confirmRecurring = false, updateLinked = false) {
     for (const name of ['twitch', 'google'] as const) {
       const desired = item.desiredPublication?.[name] ?? false;
+      if (name === 'twitch' && await reconcileTwitchProjection(item, this.providers.twitch, () => this.persist(this.items))) continue;
+      if (name === 'google' && await reconcileGoogleProjection(item, this.providers.google, () => this.persist(this.items))) continue;
       const remoteId = this.remoteId(item, name);
 
       if (!remoteId && item.providers?.[name]?.uncertainCreate) {
@@ -370,11 +405,15 @@ export class PlanningOrchestrator {
         if (name === 'twitch') link.fingerprint = result.fingerprint;
       } else {
         const result = await createWithDurableIntent(item, name, () => this.persist(this.items), request => remoteProvider.create(request));
+        link.projectionOwned = result.owned !== false;
+        link.projectionMode = 'native';
         link.remoteId = result.id;
         if (result.revision !== undefined) link.remoteRevision = result.revision;
         if (name === 'twitch') link.fingerprint = result.fingerprint;
         link.calendarId = result.calendarId ?? link.calendarId;
         if (name === 'twitch') {
+          link.projectionMode = 'native';
+          link.projectionOwned = result.owned !== false;
           item.twitchSegmentId = result.id;
           item.twitchRecurring = item.recurrence ? item.recurrence.frequency === 'weekly' && item.recurrence.interval === 1 : item.twitchRecurring === true;
         }
@@ -390,19 +429,38 @@ export class PlanningOrchestrator {
       // Withdrawal is durable even when reconciliation already cleared the identity.
       await this.persist(this.items);
     }
-    if (!remoteId) return true;
+    if (name === 'twitch' && (!remoteId || item.providers?.twitch?.projectionOwned) && (needsTwitchMaterialization(item) || item.providers?.twitch?.projections)) {
+      await reconcileTwitchProjection(item, this.providers.twitch, () => this.persist(this.items));
+      return item.providers?.twitch?.status !== 'error';
+    }
+    if (name === 'google' && item.providers?.google?.projections) {
+      item.desiredPublication ??= { local: true, twitch: false, google: false };
+      item.desiredPublication.google = false;
+      await this.persist(this.items);
+      await reconcileGoogleProjection(item, this.providers.google, () => this.persist(this.items));
+      return item.providers.google.status !== 'error';
+    }
+    if (!remoteId) {
+      if (name === 'twitch') { assertProviderCreationCertain(item, name); item.twitchRecurring = false; }
+      return true;
+    }
     const link = this.ensureLink(item, name, remoteId);
     link.status = 'pending';
     await this.persist(this.items);
     const ok = await this.attempt(item, name, remoteProvider => remoteProvider.delete(remoteId, item, link.remoteRevision));
     if (ok) {
       delete link.deletionPeriod;
+      if (name === 'twitch') item.twitchRecurring = false;
       this.clearRemoteIdentity(item, name);
       link.status = 'not-published';
       link.deletedRemotely = false;
       delete link.lastError;
       if (item.conflict?.provider === name) delete item.conflict;
       await this.persist(this.items);
+      if (name === 'twitch' && item.providers?.twitch?.projections) {
+        await reconcileTwitchProjection(item, this.providers.twitch, () => this.persist(this.items));
+        return item.providers.twitch.status !== 'error';
+      }
     }
     return ok;
   }
@@ -432,7 +490,7 @@ export class PlanningOrchestrator {
         item.conflict = { provider: name, detectedAt: new Date().toISOString(), remote: failure.remote };
         if (failure.fingerprint) link.fingerprint = failure.fingerprint;
       }
-      if (failure.code === 'DELETED_REMOTELY' || failure.status === 404 || failure.status === 410) link.deletedRemotely = true;
+      if ((failure.code === 'DELETED_REMOTELY' || failure.status === 404 || failure.status === 410) && (name !== 'twitch' || this.remoteId(item, name))) link.deletedRemotely = true;
       link.lastError = error instanceof Error ? error.message : String(error);
       await this.persist(this.items);
       return false;

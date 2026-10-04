@@ -6,7 +6,7 @@ export function bulkDeleteSelection(items: CalendarItem[], start: string, end: s
   const eligible: CalendarItem[] = [];
   const excluded: { id: string; title: string; reason: string }[] = [];
   for (const item of items) {
-    const recurring = item.recurrence || item.seriesId || item.occurrenceKey || item.twitchRecurring || Object.values(item.providers ?? {}).some(link => link.occurrences && Object.keys(link.occurrences).length);
+    const recurring = item.recurrence || item.seriesId || item.occurrenceKey || item.twitchRecurring || Object.values(item.providers ?? {}).some(link => (link.occurrences && Object.keys(link.occurrences).length) || (link.projections && Object.keys(link.projections).length));
     const a = Date.parse(item.startAtUtc), b = Date.parse(item.endAtUtc);
     // Include canonical series in the exclusions even if their first occurrence predates the window.
     if (!recurring && !(a < to && b > from)) continue;

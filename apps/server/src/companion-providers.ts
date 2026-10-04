@@ -1,3 +1,5 @@
+import { needsGoogleMaterialization, reconcileGoogleProjection } from '../../../integrations/google-calendar/src/projection.js';
+import { needsTwitchMaterialization, reconcileTwitchProjection } from '../../../integrations/twitch/src/projection.js';
 import { assertTwitchRecurrence } from '../../../integrations/twitch/src/recurrence.js';
 import { googleRecurrence } from '../../../integrations/google-calendar/src/recurrence.js';
 import { createWithDurableIntent, isDefinitiveCreateFailure } from '../../../packages/core/src/provider-identity.js';
@@ -33,6 +35,19 @@ export async function drainCompanionProviders(
       updateTombstone();
       await persist();
     };
+    if ((work.provider === 'twitch' ? needsTwitchMaterialization(item) : needsGoogleMaterialization(item)) || link.projections) {
+      item.desiredPublication ??= { local: true, twitch: false, google: false };
+      item.desiredPublication[work.provider] = work.action === 'publish';
+      const handled = await (work.provider === 'twitch' ? reconcileTwitchProjection : reconcileGoogleProjection)(item, providers[work.provider], persist);
+      updateTombstone();
+      if (handled) {
+        if (link.status === 'error') await fail(link.lastError ?? 'Projection Twitch incomplète.');
+        else { delete state.providerWork[key]; await persist(); }
+        continue;
+      }
+      // Cleanup completed a materialized-to-native transition. The native write
+      // below still needs its durable intent and identity before work can be ACKed.
+    }
     // A create may have succeeded just before the process died. Providers without
     // idempotency keys cannot safely be retried until the remote object is reconciled.
     if (work.status === 'running' && work.action === 'publish' && !link.remoteId) {
@@ -63,7 +78,7 @@ export async function drainCompanionProviders(
       if (work.action === 'delete') {
         if (link.remoteId) await provider.delete(link.remoteId, item, link.remoteRevision);
         delete link.remoteId; delete link.remoteRevision;
-        if (work.provider === 'twitch') delete item.twitchSegmentId;
+        if (work.provider === 'twitch') { delete item.twitchSegmentId; item.twitchRecurring = false; }
         link.status = 'not-published';
       } else if (link.remoteId) {
         const result = await provider.update(link.remoteId, item, link.remoteRevision);
@@ -75,7 +90,7 @@ export async function drainCompanionProviders(
         const result = await createWithDurableIntent(item, work.provider, persist, request => provider.create(request));
         link.remoteId = result.id; link.remoteRevision = result.revision;
         link.calendarId = result.calendarId ?? link.calendarId;
-        if (work.provider === 'twitch') { item.twitchSegmentId = result.id; link.fingerprint = result.fingerprint; item.twitchRecurring = Boolean(item.recurrence) || item.twitchRecurring === true; }
+        if (work.provider === 'twitch') { link.projectionMode = 'native'; link.projectionOwned = result.owned !== false; item.twitchSegmentId = result.id; link.fingerprint = result.fingerprint; item.twitchRecurring = Boolean(item.recurrence) || item.twitchRecurring === true; }
         link.status = 'synced';
       }
       work.uncertain = false;

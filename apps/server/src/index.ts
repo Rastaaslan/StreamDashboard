@@ -187,6 +187,20 @@ function modeScenes(value: unknown): DashboardSettings['modeScenes'] {
 function sanitizeProviderLink(value: unknown): ProviderLink | undefined {
   if (!object(value) || !PROVIDER_STATUSES.has(String(value.status))) return undefined;
   const link: ProviderLink = { status: value.status as ProviderLink['status'] };
+  if (value.projectionMode === 'native' || value.projectionMode === 'materialized') link.projectionMode = value.projectionMode;
+  if (typeof value.projectionOwned === 'boolean') link.projectionOwned = value.projectionOwned;
+  if (object(value.projectionWindow)) link.projectionWindow = { from: String(value.projectionWindow.from), to: String(value.projectionWindow.to) };
+  if (object(value.projections)) {
+    link.projections = {};
+    for (const [key, raw] of Object.entries(value.projections)) {
+      if (!object(raw) || raw.managedBy !== 'StreamDashboard' || raw.occurrenceKey !== key || !object(raw.event)) continue;
+      const event = sanitizeCalendarItem({ ...raw.event, providers: undefined });
+      const status = sanitizeProviderLink({ ...raw, projections: undefined });
+      if (!event || !status) continue;
+      link.projections[key] = { ...status, occurrenceKey: key, managedBy: 'StreamDashboard', event,
+        ...(typeof raw.appliedContent === 'string' ? { appliedContent: raw.appliedContent } : {}) };
+    }
+  }
   for (const key of ['remoteId', 'calendarId', 'remoteRevision', 'fingerprint', 'lastError'] as const) {
     if (typeof value[key] === 'string') link[key] = String(value[key]).slice(0, 500);
   }
@@ -235,6 +249,7 @@ function sanitizeCalendarItem(value: unknown): CalendarItem | null {
     tags: tagMetadata(value.tags),
     tagPreferences: tagPreferences(value.tagPreferences),
   };
+  if (object(value.projection) && value.projection.mode === 'materialized' && typeof value.projection.seriesLocalId === 'string' && typeof value.projection.occurrenceKey === 'string') item.projection = { mode: 'materialized', seriesLocalId: value.projection.seriesLocalId, occurrenceKey: value.projection.occurrenceKey };
   if (typeof value.description === 'string') item.description = value.description.slice(0, 4000);
   if (typeof value.allDay === 'boolean') item.allDay = value.allDay;
   if (['live', 'production', 'personal'].includes(String(value.category))) item.category = value.category as CalendarItem['category'];
@@ -274,8 +289,7 @@ function sanitizeCalendarItem(value: unknown): CalendarItem | null {
 }
 
 function validateRecurrence(value: unknown): CalendarItem['recurrence'] {
-  if (!object(value) || !['daily', 'weekly', 'monthly'].includes(String(value.frequency)) || ![1, 2].includes(Number(value.interval))) throw new Error('Récurrence invalide.');
-  if (['daily', 'monthly'].includes(String(value.frequency)) && Number(value.interval) !== 1) throw new Error('Intervalle de récurrence invalide.');
+  if (!object(value) || ![undefined, 1, 2].includes(value.version as number | undefined) || value.custom !== undefined || !['daily', 'weekly', 'monthly'].includes(String(value.frequency)) || !(value.version === 2 ? Number.isSafeInteger(value.interval) && Number(value.interval) > 0 : [1, 2].includes(Number(value.interval)))) throw new Error('Récurrence invalide.');
   const timeZone = typeof value.timeZone === 'string' ? value.timeZone : '';
   try { new Intl.DateTimeFormat('fr-FR', { timeZone }).format(); } catch { throw new Error('Fuseau horaire invalide.'); }
   const until = value.until == null ? null : String(value.until);
@@ -286,13 +300,13 @@ function validateRecurrence(value: unknown): CalendarItem['recurrence'] {
     for (const [key, exception] of Object.entries(value.exceptions)) {
       if (!/^[A-Za-z0-9._:-]{1,128}:\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}$/.test(key) || !object(exception) || Object.keys(exception).some(field => !['cancelled', 'patch'].includes(field))) throw new Error('Exception de récurrence invalide.');
       const patch = exception.patch;
-      if (patch !== undefined && (!object(patch) || Object.keys(patch).length > 11 || Object.keys(patch).some(field => !['title', 'description', 'startAtUtc', 'endAtUtc', 'category', 'kind', 'twitchCategoryId', 'twitchCategoryName', 'tags', 'tagPreferences', 'desiredPublication'].includes(field)))) throw new Error('Patch de récurrence invalide.');
+      if (patch !== undefined && (!object(patch) || Object.keys(patch).length > 12 || Object.keys(patch).some(field => !['title', 'description', 'startAtUtc', 'endAtUtc', 'allDay', 'category', 'kind', 'twitchCategoryId', 'twitchCategoryName', 'tags', 'tagPreferences', 'desiredPublication'].includes(field)))) throw new Error('Patch de récurrence invalide.');
       if (patch && patch.tags !== undefined) patch.tags = tagMetadata(patch.tags);
       if (patch && patch.tagPreferences !== undefined) patch.tagPreferences = tagPreferences(patch.tagPreferences);
       exceptions[key] = { ...(exception.cancelled === true ? { cancelled: true } : {}), ...(patch ? { patch: structuredClone(patch) } : {}) };
     }
   }
-  return { frequency: value.frequency as 'daily' | 'weekly' | 'monthly', interval: Number(value.interval) as 1 | 2, timeZone, until, exceptions };
+  return { ...(value.version !== undefined ? { version: value.version as 1 | 2 } : {}), frequency: value.frequency as 'daily' | 'weekly' | 'monthly', interval: Number(value.interval), timeZone, until, exceptions };
 }
 
 function parseGoogleTokens(value: Record<string, string> | null): GoogleTokens | null {
@@ -323,6 +337,7 @@ function sameCalendarData(local: CalendarItem, remote: GoogleEvent) {
 
 function googleEventInput(item: CalendarItem): GoogleEventInput {
   return {
+    projection: item.projection,
     localId: item.localId ?? item.id,
     title: item.title,
     description: item.description,
@@ -1071,7 +1086,8 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
           if (!remote.etag) throw new Error('Version Google distante inconnue : suppression refusée.');
           revision = remote.etag;
         }
-        await google.delete(calendarId, id, revision);
+        if (item.projection) await google.deleteProjected(calendarId, id, googleEventInput(item), revision ?? '');
+        else await google.delete(calendarId, id, revision);
       },
     } : undefined,
   });
@@ -1956,8 +1972,10 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
           local.planning = nextPlanning; local.companion = nextCompanion;
           return;
         }
-        await planning().resolveConflict(id, provider as 'twitch' | 'google', strategy as 'local' | 'remote');
-        delete local.companion.providerWork[id + ':' + provider];
+        const occurrenceKey = req.body?.occurrenceKey;
+        if (occurrenceKey !== undefined && (typeof occurrenceKey !== 'string' || !occurrenceKey || occurrenceKey.length > 180)) throw new Error('Occurrence invalide.');
+        await planning().resolveConflict(id, provider as 'twitch' | 'google', strategy as 'local' | 'remote', occurrenceKey);
+        if (!occurrenceKey || local.planning.find(item => item.id === id)?.providers?.twitch?.status === 'synced') delete local.companion.providerWork[id + ':' + provider];
         local.companion.eventRevisions[id] = (local.companion.eventRevisions[id] ?? 1) + 1;
         local.companion.serverRevision++;
         await save();
@@ -2053,8 +2071,8 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
         confirmRecurring: req.body.confirmRecurring === true || req.query.confirmRecurring === 'true',
       } : {
         local: true,
-        twitch: Boolean(item.twitchSegmentId || item.providers?.twitch?.remoteId),
-        google: Boolean(item.providers?.google?.remoteId),
+        twitch: Boolean(item.twitchSegmentId || item.providers?.twitch?.remoteId || item.providers?.twitch?.projections),
+        google: Boolean(item.providers?.google?.remoteId || item.providers?.google?.projections),
         confirmRecurring: req.body?.confirmRecurring === true || req.query.confirmRecurring === 'true',
       };
       const oldRevision = local.companion.eventRevisions[id] ?? 1;
@@ -2202,6 +2220,7 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
     try {
       res.json(await plan(async () => {
         local.planning = await twitch.sync(structuredClone(local.planning));
+        await planning().refreshTwitch();
         local.twitchLastSyncedAt = new Date().toISOString();
         invalidatePreflight();
         return changed();
@@ -2377,6 +2396,7 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
 
         for (const event of remote) {
           if (event.deleted) continue;
+          if (event.projection?.mode === 'materialized' && local.planning.some(item => (item.localId ?? item.id) === event.projection?.seriesLocalId)) continue;
           if (Object.values(local.companion.tombstones).some(tombstone => {
             const links = tombstone.providerLinks as CalendarItem['providers'];
             return links?.google?.remoteId === event.id && links.google.calendarId === calendarId;
@@ -2551,11 +2571,14 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
     }
     broadcast();
   });
+  const recurrenceRefresher = setInterval(() => { void plan(() => planning().refreshTwitch()).catch(logError); }, 60_000);
+  recurrenceRefresher.unref();
   const validator = setInterval(() => { void validateTwitch().catch(logError); }, 60 * 60_000);
   validator.unref();
   const twitchLivePoller = setInterval(() => { void refreshTwitchLive(); }, 30_000);
   twitchLivePoller.unref();
   await validateTwitch().catch(logError);
+  await plan(() => planning().refreshTwitch()).catch(logError);
   await streamlabs.connect();
   await wizebot.refresh();
   if (google.connected) await refreshGoogleCalendars().catch(logError);
@@ -2568,6 +2591,7 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
     unsubscribeObs();
     clearTimeout(googleOAuthTimeout);
     clearInterval(validator);
+    clearInterval(recurrenceRefresher);
     clearInterval(twitchLivePoller);
     if (timerExpiry) clearTimeout(timerExpiry);
     if (remoteActivitySaveTimer) clearTimeout(remoteActivitySaveTimer);

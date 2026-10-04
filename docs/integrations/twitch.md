@@ -85,3 +85,34 @@ temporary directory inside the worktree:
 mkdir -p .tmp
 TMPDIR="$PWD/.tmp" npm test
 ```
+
+### Projection des récurrences
+
+Une série weekly-1 sans fin ni exception reste native. Les autres règles utilisent
+le moteur générique `expandRecurringItems`, derrière l’interface `OccurrenceEngine`,
+pour publier des segments simples dans une fenêtre `[maintenant, maintenant + 28 jours)`.
+La projection est rafraîchie au démarrage après validation Twitch, à la synchronisation,
+aux modifications du planning, au retry et toutes les 60 secondes dans la file de réconciliation.
+
+Le lien Twitch expose `projectionMode`, `projectionWindow` et `projections`, indexé
+par `occurrenceKey`. Chaque entrée conserve l’identité distante, le contenu appliqué,
+son état et son erreur. Le téléphone reçoit les états par occurrence sans identités
+ni journal interne. Une erreur isolée ne bloque pas les autres occurrences.
+Seules les identités marquées comme gérées par StreamDashboard sont nettoyées lorsque
+la fenêtre ou les exceptions changent. Un ancien lien natif dont l’ownership de
+création n’est pas connu doit être retiré explicitement avant conversion.
+
+Chaque CREATE est précédé d’une intention persistée. Une erreur certaine (par exemple
+429) permet un retry ; une réponse perdue reste signalée comme création incertaine,
+sans nouveau CREATE automatique, car Twitch ne fournit pas de clé d’idempotence.
+Une simple correspondance de titre/horaire ne permet pas d’adopter puis supprimer
+un segment externe. Les suppressions distantes connues nécessitent un retry explicite.
+
+Les conflits de contenu restent bloqués par occurrence jusqu’à un choix explicite
+« Conserver la version locale » ou « Conserver la version distante ». La route
+`POST /api/v1/planning/:id/conflict/twitch` accepte `occurrenceKey` avec `strategy`
+(`local` ou `remote`). Elle relit le segment et son empreinte avant résolution ;
+le choix distant devient une exception persistée sur cette seule occurrence.
+Un retry simple ne peut pas écraser une modification distante en conflit.
+Le refresh reprend aussi une conversion matérialisée → native interrompue pendant
+le nettoyage, puis conserve l’identité native lors des refresh suivants.

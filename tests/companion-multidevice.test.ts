@@ -202,12 +202,12 @@ describe('CB-16 real mobile journal / Desktop provider handover', () => {
     expect(batch.planning[0].providers?.google?.lastError).toMatch(/incertaine/);
   });
 
-  it('blocks both providers for a local series and preserves remotely deleted links', async () => {
+  it('projects both providers for a local series and preserves remotely deleted links', async () => {
     const store = mobile(); store.createEvent({ ...event, recurrence: { frequency: 'weekly', interval: 1, timeZone: 'Europe/Paris', exceptions: { 'android-live:2026-10-08T20:00:00': { cancelled: true } } } });
     const batch = sync(store); const remote = providers();
     await drainCompanionProviders(batch.planning, batch.companion, remote, async () => {});
-    expect(remote.google.create).not.toHaveBeenCalled(); expect(remote.twitch.create).not.toHaveBeenCalled();
-    expect(batch.planning[0].providers?.google?.status).toBe('error');
+    expect(remote.google.create).toHaveBeenCalled(); expect(remote.twitch.create).toHaveBeenCalled();
+    expect(batch.planning[0].providers?.google?.status).toBe('synced');
     const single = mobile(); single.createEvent({ ...event, providerLinks: { google: { status: 'error', remoteId: 'gone', deletedRemotely: true } } });
     const deleted = sync(single);
     await drainCompanionProviders(deleted.planning, deleted.companion, remote, async () => {});
