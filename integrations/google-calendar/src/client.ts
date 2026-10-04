@@ -226,9 +226,19 @@ export class GoogleCalendarClient {
   }
 
   async event(calendarId: string, id: string) {
-    const value = await this.api<Record<string, unknown>>(`/calendars/${encodeURIComponent(calendarId)}/events/${encodeURIComponent(id)}`);
+    const value = await this.api<Record<string, unknown>>(`/calendars/${encodeURIComponent(calendarId)}/events/${encodeURIComponent(id)}`).catch(error => {
+      if (error instanceof GoogleCalendarError && [404, 410].includes(error.status)) {
+        throw Object.assign(error, { code: 'DELETED_REMOTELY' });
+      }
+      throw error;
+    });
     if (value.recurringEventId !== undefined || value.originalStartTime !== undefined) {
       throw Object.assign(new Error('Exceptions Google distantes : une occurrence ne peut pas remplacer son maître.'), { code: 'GOOGLE_RECURRENCE_EXCEPTION_UNSUPPORTED', mutationNotStarted: true });
+    }
+    // Google can return only id/status for a deleted event or series master.
+    // Check after the exception guard, before requiring a complete event body.
+    if (value.id === id && value.status === 'cancelled') {
+      throw Object.assign(new Error('Événement Google supprimé à distance.'), { code: 'DELETED_REMOTELY' });
     }
     const event = this.toEvent(value);
     if (!event) throw new Error('Réponse Google Calendar invalide.');

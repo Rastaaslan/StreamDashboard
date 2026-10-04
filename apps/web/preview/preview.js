@@ -1,3 +1,4 @@
+import { openBulkDelete } from '/planning-bulk-delete.js';
 import { eventTimes, editedRecurrence } from '/mobile/shared/planning-editor.js';
 import { diagnosePrelive, diagnosticLabels } from '/mobile/prelive-diagnostic.js';
 import { fixture } from './fixtures.js';
@@ -420,7 +421,7 @@ function planning(){
       <div><h2>Planning</h2><span class="label">${state.planningFilter==='past'?'Historique':state.planningFilter==='all'?'Tous les événements':'Planning à venir'}</span></div>
       <button class="action" data-add-event>+ Nouvel événement</button>
     </div>
-    <div class="planning-primary-tools"><select data-planning-filter aria-label="Filtrer le planning"><option value="upcoming" ${state.planningFilter==='upcoming'?'selected':''}>À venir</option><option value="past" ${state.planningFilter==='past'?'selected':''}>Passés</option><option value="all" ${state.planningFilter==='all'?'selected':''}>Tous</option></select><details class="planning-more"><summary>Partager & exporter</summary><div><select data-planning-period aria-label="Période d’export"><option value="today" ${state.planningPeriod==='today'?'selected':''}>Aujourd’hui</option><option value="this-week" ${state.planningPeriod==='this-week'?'selected':''}>Cette semaine</option><option value="next-week" ${state.planningPeriod==='next-week'?'selected':''}>Semaine prochaine</option></select><button class="secondary" data-planning-export>Exporter l’image</button><button class="secondary" data-planning-discord ${state.dashboard?.discord?.connected&&state.dashboard?.discord?.channelId?'':'disabled'}>Publier sur Discord</button></div></details></div>
+    <div class="planning-primary-tools"><button class="secondary" data-planning-bulk-delete ${state.runtime?'':'disabled'}>Supprimer une période</button><select data-planning-filter aria-label="Filtrer le planning"><option value="upcoming" ${state.planningFilter==='upcoming'?'selected':''}>À venir</option><option value="past" ${state.planningFilter==='past'?'selected':''}>Passés</option><option value="all" ${state.planningFilter==='all'?'selected':''}>Tous</option></select><details class="planning-more"><summary>Partager & exporter</summary><div><select data-planning-period aria-label="Période d’export"><option value="today" ${state.planningPeriod==='today'?'selected':''}>Aujourd’hui</option><option value="this-week" ${state.planningPeriod==='this-week'?'selected':''}>Cette semaine</option><option value="next-week" ${state.planningPeriod==='next-week'?'selected':''}>Semaine prochaine</option></select><button class="secondary" data-planning-export>Exporter l’image</button><button class="secondary" data-planning-discord ${state.dashboard?.discord?.connected&&state.dashboard?.discord?.channelId?'':'disabled'}>Publier sur Discord</button></div></details></div>
     <div class="agenda">${items.map((e,index)=>`<article class="planning-entry"><div data-planning-thumbnail="${index}"></div><button class="event" data-event-index="${index}"><span class="event-when"><b>${esc(e.day)}</b><small>${esc(e.time)}</small></span><strong>${esc(e.title)}</strong><span class="kind">${esc([e.kind,providerCopy(e.raw)].filter(Boolean).join(' · '))}</span><i>›</i></button></article>`).join('')||'<p class="label">Aucun événement pour ce filtre.</p>'}</div>
   </section>`;
 }
@@ -992,6 +993,7 @@ async function exportPlanning(publishDiscord=false){
 }
 function bindPlanning(){
   if(state.view!=='planning')return;
+  document.querySelector('[data-planning-bulk-delete]')?.addEventListener('click',()=>openBulkDelete({onComplete:()=>refreshRuntime()}));
   document.querySelector('[data-planning-filter]')?.addEventListener('change',event=>{state.planningFilter=event.currentTarget.value;render()});
   document.querySelector('[data-planning-period]')?.addEventListener('change',event=>{state.planningPeriod=event.currentTarget.value});
   document.querySelector('[data-planning-export]')?.addEventListener('click',()=>void exportPlanning(false));
@@ -1171,7 +1173,7 @@ document.querySelector('#event-tags-regenerate').onclick=async()=>{
   const generation=++eventTagsGeneration,button=document.querySelector('#event-tags-regenerate'),input=document.querySelector('#event-tags'),previous=input.value;
   button.disabled=true;
   try{
-    const result=await request('/api/v1/planning/tags/regenerate',{method:'POST',body:JSON.stringify({title:document.querySelector('#event-title').value,description:document.querySelector('#event-description').value,twitchCategoryId:document.querySelector('#event-twitch-game-id').value,twitchCategoryName:document.querySelector('#event-twitch-category').value,tags:readEventTags(),tagPreferences:readTagPreferences()})});
+    const result=await request('/api/v1/planning/tags/regenerate',{method:'POST',body:JSON.stringify({refreshTwitch:true,id:state.eventEdit?.occurrence?.id,seriesId:state.eventEdit?.occurrence?.seriesId,title:document.querySelector('#event-title').value,description:document.querySelector('#event-description').value,twitchCategoryId:document.querySelector('#event-twitch-game-id').value,twitchCategoryName:document.querySelector('#event-twitch-category').value,tags:readEventTags(),tagPreferences:readTagPreferences()})});
     if(generation!==eventTagsGeneration||input.value!==previous)return;
     if(result.tags){eventTagMetadata=result.tags;input.value=result.tags.values.join(', ');}
     document.querySelector('#event-tags-status').textContent=result.warning||'Tags générés. Enregistrez pour les conserver.';
@@ -1218,7 +1220,7 @@ function populateEventForm(item,scope='item'){
 function renderEventProviderStatus(item){
   const host=document.querySelector('#event-provider-status');if(!item?.id){host.hidden=true;host.replaceChildren();return}
   const providers=['twitch','google'].flatMap(provider=>{const link=item.providers?.[provider];if(!link)return[];return[{provider,link}]});
-  const conflict=item.conflict;
+  const conflict=item.conflict||providers.find(({link})=>link.status==='conflict');
   if(!providers.length&&!conflict){host.hidden=true;host.replaceChildren();return}
   host.hidden=false;host.innerHTML=`${providers.map(({provider,link})=>`<div class="provider-line"><b>${provider==='twitch'?'Twitch':'Google'}</b><span>${esc(link.status||'—')}${link.lastError?` · ${esc(link.lastError)}`:''}</span>${['error','conflict'].includes(link.status)?`<button type="button" class="secondary" data-provider-retry="${provider}">Réessayer</button>`:''}</div>`).join('')}${conflict?`<div class="provider-line warning"><b>Conflit ${esc(conflict.provider)}</b><span>Choisis la version à conserver.</span><button type="button" class="secondary" data-provider-conflict="${esc(conflict.provider)}" data-strategy="local">Garder StreamDashboard</button><button type="button" class="secondary" data-provider-conflict="${esc(conflict.provider)}" data-strategy="remote">Garder distant</button></div>`:''}`;
   host.querySelectorAll('[data-provider-retry]').forEach(button=>button.onclick=async()=>{try{if(item.twitchRecurring&&!confirm('Republier toute la série Twitch et ses occurrences futures ?'))return;const id=eventCanonical(state.eventEdit?.scope==='series'?state.eventEdit?.series:state.eventEdit?.occurrence)?.id||item.id;const next=await request(`/api/v1/planning/${encodeURIComponent(id)}/retry/${encodeURIComponent(button.dataset.providerRetry)}`,{method:'POST',body:JSON.stringify({confirmRecurring:item.twitchRecurring===true})});applyDashboard(next);toast('Synchronisation relancée');document.querySelector('#event-dialog').close();render()}catch(error){toast(error.message,true)}});
@@ -1229,15 +1231,22 @@ async function searchEventCategory(){
   hidden.value='';if(query.length<2){host.replaceChildren();return}
   try{const values=await request(`/api/v1/twitch/categories?q=${encodeURIComponent(query)}`);host.replaceChildren(...values.slice(0,8).map(value=>{const button=document.createElement('button');button.type='button';button.className='secondary';button.textContent=value.name;button.onclick=()=>{input.value=value.name;hidden.value=value.id;host.replaceChildren()};return button}))}catch(error){toast(error.message,true)}
 }
+let eventDialogOpening=false;
 async function openEventDialog(item=null,template=null){
-  if(state.runtime&&!state.companion)await loadCompanion().catch(()=>undefined);
-  populateEventTemplates(template?.id||'');
-  state.eventEdit=item?{occurrence:item,series:item.seriesId?eventCanonical(item):item,scope:item.seriesId?'occurrence':'item'}:null;
-  const seed=item||template||{category:'live',desiredPublication:{local:true,twitch:false,google:false}};
-  populateEventForm(seed,state.eventEdit?.scope||'item');
-  if(template){document.querySelector('#event-title').value=template.title||'';document.querySelector('#event-description').value=template.description||'';document.querySelector('#event-twitch-category').value=template.twitchCategoryName||'';document.querySelector('#event-twitch-game-id').value=template.twitchCategoryId||'';document.querySelector('#event-publish-twitch').checked=template.desiredPublication?.twitch===true;document.querySelector('#event-publish-google').checked=template.desiredPublication?.google===true}
-  document.querySelector('#event-dialog').showModal();
-  document.querySelector('#event-title').focus();
+  const dialog=document.querySelector('#event-dialog');
+  // Repeated clicks during the template request must not later reset an active draft.
+  if(eventDialogOpening||dialog.open)return;
+  eventDialogOpening=true;
+  try{
+    if(state.runtime&&!state.companion)await loadCompanion().catch(()=>undefined);
+    populateEventTemplates(template?.id||'');
+    state.eventEdit=item?{occurrence:item,series:item.seriesId?eventCanonical(item):item,scope:item.seriesId?'occurrence':'item'}:null;
+    const seed=item||template||{category:'live',desiredPublication:{local:true,twitch:false,google:false}};
+    populateEventForm(seed,state.eventEdit?.scope||'item');
+    if(template){document.querySelector('#event-title').value=template.title||'';document.querySelector('#event-description').value=template.description||'';document.querySelector('#event-twitch-category').value=template.twitchCategoryName||'';document.querySelector('#event-twitch-game-id').value=template.twitchCategoryId||'';document.querySelector('#event-publish-twitch').checked=template.desiredPublication?.twitch===true;document.querySelector('#event-publish-google').checked=template.desiredPublication?.google===true}
+    dialog.showModal();
+    document.querySelector('#event-title').focus();
+  }finally{eventDialogOpening=false}
 }
 let eventCategoryTimer;
 document.querySelector('#event-twitch-category').oninput=()=>{clearTimeout(eventCategoryTimer);eventCategoryTimer=setTimeout(()=>void searchEventCategory(),300)};

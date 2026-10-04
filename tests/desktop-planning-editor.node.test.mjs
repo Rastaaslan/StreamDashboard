@@ -34,6 +34,7 @@ test('Planning Desktop preserves the editable draft across telemetry, reconnect 
     await page.route('**/api/v1/twitch/categories?*', route => route.fulfill({ json: [{ id: '509658', name: 'Just Chatting' }] }));
     await page.route('**/api/v1/planning/tags/regenerate', route => route.fulfill({ json: { tags: { values: ['Français', 'Gaming'], source: 'generated', generatedAt: '2026-10-04T10:00:00Z' } } }));
     await page.route('**/api/v1/planning', async route => {
+      assert.equal(route.request().method(), 'POST');
       submitted = route.request().postDataJSON();
       if (failSave) return route.fulfill({ status: 503, json: { message: 'Sauvegarde indisponible' } });
       dashboard.planning = [{ ...submitted, id: 'saved' }];
@@ -48,6 +49,30 @@ test('Planning Desktop preserves the editable draft across telemetry, reconnect 
     await page.goto(`http://127.0.0.1:${server.address().port}/preview/?runtime=1`);
     await expect.poll(() => connections).toBe(1);
     await expect(page.locator('#runtime-status')).toHaveText('Runtime PC');
+    await page.locator('[data-view="planning"]').click();
+    // A double click while templates are loading must open just one editor.
+    // Otherwise the second response resets fields after the user starts typing.
+    const pendingCompanion = [];
+    await page.route('**/api/v1/companion/snapshot', route => { pendingCompanion.push(route); });
+    await page.locator('[data-add-event]').dblclick();
+    await expect.poll(() => pendingCompanion.length).toBeGreaterThan(0);
+    await pendingCompanion[0].fulfill({ json: { templates: [], revision: 1 } });
+    const openingTitle = page.locator('#event-title');
+    await openingTitle.click();
+    await page.keyboard.type('Saisie pendant le chargement');
+    for (const [index, route] of pendingCompanion.slice(1).entries()) {
+      await route.fulfill({ json: { templates: [], revision: index + 2 } });
+      await page.waitForFunction(revision => window.__preview.state.companion.revision === revision, index + 2);
+    }
+    await expect(openingTitle).toHaveValue('Saisie pendant le chargement');
+    await expect(openingTitle).toBeFocused();
+    assert.equal(pendingCompanion.length, 1);
+    await page.keyboard.press('End');
+    await page.keyboard.type(' !');
+    await expect(openingTitle).toHaveValue('Saisie pendant le chargement !');
+    await page.keyboard.press('Escape');
+    await expect(page.locator('#event-dialog')).not.toBeVisible();
+    await page.unroute('**/api/v1/companion/snapshot');
     await page.locator('[data-view="planning"]').click();
     dashboard.planning=Array.from({length:45},(_,i)=>({id:`bulk-${i}`,title:`Event ${i}`,startAtUtc:'2027-06-02T22:30:00Z',endAtUtc:'2027-06-05T23:30:00Z'}));
     socket.send(JSON.stringify({type:'state.updated',data:dashboard}));
@@ -189,6 +214,27 @@ test('Planning Desktop preserves the editable draft across telemetry, reconnect 
     await expect(title).toHaveValue('Titre modifié');
     await page.keyboard.press('Escape');
     await expect(dialog).not.toBeVisible();
+    // Save a real duplicate, keeping tags and allowing recurrence edits.
+    dashboard.planning[0].recurrence = { frequency: 'weekly', interval: 1, timeZone: 'Europe/Paris', until: null };
+    await page.locator('[data-view="planning"]').click();
+    await emit(145);
+    await page.locator('[data-event-index]').first().click();
+    await page.locator('#event-duplicate').click();
+    await expect(page.locator('#event-recurrence')).toHaveValue('weekly-1');
+    await expect(page.locator('#event-tags')).toHaveValue('Français, Communauté');
+    await title.click();
+    await page.keyboard.press('ControlOrMeta+A');
+    await page.keyboard.type('Copie récurrente');
+    await page.locator('#event-recurrence').selectOption('weekly-2');
+    await page.locator('#event-submit').click();
+    await expect(dialog).not.toBeVisible();
+    assert.equal(submitted.title, 'Copie récurrente');
+    assert.equal(submitted.id, undefined);
+    assert.deepEqual(submitted.tags.values, ['Français', 'Communauté']);
+    assert.deepEqual(submitted.recurrence, { frequency: 'weekly', interval: 2, timeZone: 'Europe/Paris', until: null });
+    await expect(page.locator('#toast')).toHaveText('Événement enregistré');
+    delete dashboard.planning[0].recurrence;
+    await emit(146);
     // A local save with a failed provider must never report full success.
     await page.route('**/api/v1/planning/saved', async route => {
       submitted=route.request().postDataJSON();

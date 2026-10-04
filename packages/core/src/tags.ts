@@ -3,7 +3,7 @@ import type { CalendarItem, TagMetadata, TagPreferences } from '../../contracts/
 
 /** Adapter boundary only: the engine owns selection/ranking, Dashboard owns fallback. */
 export interface TagEngine {
-  generate(input: { event: Pick<CalendarItem, 'title' | 'description' | 'twitchCategoryId' | 'twitchCategoryName'>; preferences: TagPreferences }, signal: AbortSignal): Promise<string[]>;
+  generate(input: { event: Pick<CalendarItem, 'title' | 'description' | 'twitchCategoryId' | 'twitchCategoryName'> & Partial<Pick<CalendarItem, 'id' | 'seriesId' | 'recurrence' | 'occurrenceKey'>>; preferences: TagPreferences }, signal: AbortSignal): Promise<string[]>;
 }
 export function normalizeTags(value: unknown): string[] {
   if (!Array.isArray(value)) return [];
@@ -21,9 +21,9 @@ export function tagMetadata(value: unknown): TagMetadata | undefined {
 }
 export function tagPreferences(value: unknown): TagPreferences {
   const data = (value && typeof value === 'object' ? value : {}) as Partial<TagPreferences>;
-  return { automatic: data.automatic !== false, ...(typeof data.language === 'string' ? { language: data.language.slice(0, 35) } : {}) };
+  return { automatic: data.automatic !== false, ...(Array.isArray(data.preferredTags) ? { preferredTags: normalizeTags(data.preferredTags) } : {}), ...(typeof data.language === 'string' ? { language: data.language.slice(0, 35) } : {}) };
 }
-export async function resolveTags(event: Pick<CalendarItem, 'title' | 'description' | 'twitchCategoryId' | 'twitchCategoryName' | 'tags' | 'tagPreferences'>, engine?: TagEngine, force = false, timeoutMs = 1500): Promise<{ tags?: TagMetadata; warning?: string }> {
+export async function resolveTags(event: Pick<CalendarItem, 'title' | 'description' | 'twitchCategoryId' | 'twitchCategoryName' | 'tags' | 'tagPreferences'> & Partial<Pick<CalendarItem, 'id' | 'seriesId' | 'recurrence' | 'occurrenceKey'>>, engine?: TagEngine, force = false, timeoutMs = 1500): Promise<{ tags?: TagMetadata; warning?: string }> {
   if (!force && (event.tags?.values.length || event.tagPreferences?.automatic === false)) return { tags: event.tags };
   const fallback = event.tags?.values.length ? event.tags : undefined;
   if (!engine) return { tags: fallback, warning: 'Moteur de tags indisponible ; tags existants conservés.' };
@@ -31,7 +31,7 @@ export async function resolveTags(event: Pick<CalendarItem, 'title' | 'descripti
   let timer: ReturnType<typeof setTimeout> | undefined;
   try {
     const values = await Promise.race([
-      Promise.resolve().then(() => engine.generate({ event: { title: event.title, description: event.description, twitchCategoryId: event.twitchCategoryId, twitchCategoryName: event.twitchCategoryName }, preferences: tagPreferences(event.tagPreferences) }, controller.signal)),
+      Promise.resolve().then(() => engine.generate({ event: { id: event.id, seriesId: event.seriesId, recurrence: event.recurrence, occurrenceKey: event.occurrenceKey, title: event.title, description: event.description, twitchCategoryId: event.twitchCategoryId, twitchCategoryName: event.twitchCategoryName }, preferences: tagPreferences(event.tagPreferences) }, controller.signal)),
       new Promise<never>((_, reject) => { timer = setTimeout(() => { reject(new Error('timeout')); controller.abort(); }, timeoutMs); }),
     ]);
     const normalized = normalizeTags(values);
@@ -42,7 +42,7 @@ export async function resolveTags(event: Pick<CalendarItem, 'title' | 'descripti
   } finally { clearTimeout(timer); }
 }
 
-/** Production default: CB-100's deterministic engine, with no external API. */
+/** Compatible CB-100 adapter for callers needing a purely local engine. */
 export const localTagEngine: TagEngine = {
   async generate({ event, preferences }) {
     return generateTwitchTags({ category: event.twitchCategoryName, title: event.title, description: event.description, language: preferences.language });
