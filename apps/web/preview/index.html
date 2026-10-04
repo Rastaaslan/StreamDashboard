@@ -67,6 +67,11 @@
     <div class="form-grid"><label>Date<input id="event-date" type="date" required></label><label>Type<select id="event-category"><option value="live">Live</option><option value="production">Production</option><option value="personal">Personnel</option></select></label></div>
     <div class="form-grid"><label>Début<input id="event-start" type="time" required value="20:30"></label><label>Date de fin (facultative)<input id="event-end-date" type="date"></label><label>Fin<input id="event-end" type="time" required value="23:30"></label></div>
     <label>Catégorie Twitch<input id="event-twitch-category" maxlength="80" autocomplete="off" placeholder="Rechercher une catégorie officielle"><input id="event-twitch-game-id" type="hidden"></label>
+    <label>Tags Twitch (facultatifs)<input id="event-tags" placeholder="Français, Communauté"><small>10 tags maximum, lettres et chiffres, 25 caractères par tag. Sans saisie, préparation automatique.</small></label>
+    <label><input id="event-tags-auto" type="checkbox" checked> Générer automatiquement les tags manquants</label>
+    <label>Langue des tags (facultative)<input id="event-tags-language" maxlength="35"></label>
+    <button type="button" class="secondary" id="event-tags-regenerate">Régénérer les tags</button>
+    <p id="event-tags-status" role="status"></p>
     <div id="event-twitch-results" class="category-results"></div>
     <div class="form-grid"><label>Récurrence<select id="event-recurrence"><option value="">Aucune</option><option value="daily-1">Tous les jours</option><option value="weekly-1">Chaque semaine</option><option value="weekly-2">Toutes les 2 semaines</option><option value="monthly-1">Chaque mois</option></select></label><label>Jusqu’au<input id="event-recurrence-until" type="date"></label></div>
     <label id="event-scope-wrap" hidden>Portée<select id="event-scope"><option value="occurrence">Cette occurrence uniquement</option><option value="series">Toute la série</option></select></label>

@@ -1,3 +1,5 @@
+import type { CalendarItem } from '../../../packages/contracts/src/index.js';
+import { googleRecurrence } from './recurrence.js';
 import { createHash, randomBytes, timingSafeEqual } from 'node:crypto';
 
 const AUTH = 'https://accounts.google.com/o/oauth2/v2/auth';
@@ -19,6 +21,9 @@ export interface GoogleEventInput {
   startAtUtc: string;
   endAtUtc: string;
   allDay?: boolean;
+  recurrence?: CalendarItem['recurrence'];
+  seriesId?: string;
+  occurrenceKey?: string;
 }
 export interface GoogleEvent extends GoogleEventInput {
   id: string;
@@ -26,6 +31,8 @@ export interface GoogleEvent extends GoogleEventInput {
   editable: boolean;
   deleted?: boolean;
   managed: boolean;
+  recurrenceLines?: string[];
+  recurrenceTimeZone?: string;
 }
 
 const base64url = (value: Buffer) => value.toString('base64url');
@@ -156,7 +163,43 @@ export class GoogleCalendarClient {
       .map(item => ({ id: item.id, summary: item.summary, writable: ['owner', 'writer'].includes(item.accessRole) }));
   }
 
+  /** Without expansion Google returns series masters and detached exceptions, including
+   * cancelled exceptions that have only id/recurringEventId/originalStartTime.
+   * Do not filter by dates or private properties: exceptions may omit both.
+   */
+  private async recurrenceInventory(calendarId: string) {
+    const items: Array<Record<string, unknown>> = [];
+    let pageToken = '';
+    do {
+      const query = new URLSearchParams({ showDeleted: 'true', singleEvents: 'false', maxResults: '2500' });
+      if (pageToken) query.set('pageToken', pageToken);
+      const page = await this.api<{ items?: Array<Record<string, unknown>>; nextPageToken?: string }>(`/calendars/${encodeURIComponent(calendarId)}/events?${query}`);
+      items.push(...(page.items ?? []));
+      pageToken = page.nextPageToken ?? '';
+    } while (pageToken);
+    return items;
+  }
+
+  private assertNoRemoteExceptions(items: Array<Record<string, unknown>>, ids: Set<string>) {
+    if (items.some(value => typeof value.recurringEventId === 'string' && (ids.has(value.recurringEventId) || typeof value.id === 'string' && ids.has(value.id))
+      || typeof value.id === 'string' && ids.has(value.id) && Array.isArray(value.recurrence)
+        && value.recurrence.some(line => typeof line === 'string' && /^(EXDATE|RDATE|EXRULE)[;:]/i.test(line)))) {
+      throw Object.assign(new Error('Exceptions Google distantes non représentables : synchronisation et modification refusées pour préserver les occurrences déplacées, renommées ou annulées.'), { code: 'GOOGLE_RECURRENCE_EXCEPTION_UNSUPPORTED', mutationNotStarted: true });
+    }
+  }
+
   async events(calendarId: string, options: { timeMin?: string; timeMax?: string; managedLocalId?: string } = {}) {
+    const inventory = await this.recurrenceInventory(calendarId);
+    const managed = inventory.map(this.toEvent).filter((event): event is GoogleEvent => Boolean(event?.managed));
+    if (options.managedLocalId) {
+      const matching = managed.filter(event => event.localId === options.managedLocalId);
+      // Scope recovery to this identity, but inspect the full inventory because
+      // its cancelled exceptions may not carry any private properties or dates.
+      this.assertNoRemoteExceptions(inventory, new Set(matching.map(event => event.id)));
+      return matching;
+    }
+    this.assertNoRemoteExceptions(inventory, new Set(managed.map(event => event.id)));
+
     const items: Array<Record<string, unknown>> = [];
     let pageToken = '';
     do {
@@ -169,28 +212,51 @@ export class GoogleCalendarClient {
       items.push(...(value.items ?? []));
       pageToken = value.nextPageToken ?? '';
     } while (pageToken);
-    return items.map(this.toEvent).filter((item): item is GoogleEvent => Boolean(item));
+    // Expanded managed instances share the local ID: reconcile only their master.
+    const masters = new Map<string, GoogleEvent>();
+    const events: GoogleEvent[] = [];
+    for (const value of items) {
+      const event = this.toEvent(value);
+      if (!event) continue;
+      if (event.managed && typeof value.recurringEventId === 'string') {
+        if (!masters.has(value.recurringEventId)) masters.set(value.recurringEventId, managed.find(master => master.id === value.recurringEventId) ?? await this.event(calendarId, value.recurringEventId));
+      } else events.push(event);
+    }
+    return [...events, ...masters.values()];
   }
 
   async event(calendarId: string, id: string) {
     const value = await this.api<Record<string, unknown>>(`/calendars/${encodeURIComponent(calendarId)}/events/${encodeURIComponent(id)}`);
+    if (value.recurringEventId !== undefined || value.originalStartTime !== undefined) {
+      throw Object.assign(new Error('Exceptions Google distantes : une occurrence ne peut pas remplacer son maître.'), { code: 'GOOGLE_RECURRENCE_EXCEPTION_UNSUPPORTED', mutationNotStarted: true });
+    }
     const event = this.toEvent(value);
     if (!event) throw new Error('Réponse Google Calendar invalide.');
+    if (event.recurrenceLines?.length || typeof value.recurringEventId === 'string') this.assertNoRemoteExceptions(await this.recurrenceInventory(calendarId), new Set([id]));
     return event;
   }
 
   async create(calendarId: string, input: GoogleEventInput) {
+    googleRecurrence(input);
     // Recovery/idempotence: a previous POST may have succeeded remotely while its
     // response was lost. The private local id lets a retry recover that event.
     const existing = (await this.events(calendarId, { managedLocalId: input.localId }).catch(error => {
       throw Object.assign(error instanceof Error ? error : new Error(String(error)), { mutationNotStarted: true });
     }))
       .find(event => !event.deleted && event.managed && event.localId === input.localId);
-    if (existing) return existing;
+    if (existing) {
+      if (JSON.stringify(googleRecurrence(input)) !== JSON.stringify(existing.recurrenceLines ?? [])
+        || (input.recurrence && !input.allDay && input.recurrence.timeZone !== existing.recurrenceTimeZone)) {
+        throw Object.assign(new Error('La série Google retrouvée diffère de la récurrence locale. Réconciliation explicite requise.'), { mutationNotStarted: true });
+      }
+      return existing;
+    }
     return this.mutate('POST', calendarId, '', input);
   }
 
   async update(calendarId: string, id: string, input: GoogleEventInput, etag?: string) {
+    googleRecurrence(input);
+    this.assertNoRemoteExceptions(await this.recurrenceInventory(calendarId), new Set([id]));
     return this.mutate('PATCH', calendarId, `/${encodeURIComponent(id)}`, input, etag);
   }
 
@@ -202,11 +268,14 @@ export class GoogleCalendarClient {
   }
 
   private async mutate(method: string, calendarId: string, suffix: string, input: GoogleEventInput, etag?: string) {
+    const recurrence = googleRecurrence(input);
+    const timeZone = input.recurrence?.timeZone;
     const body = {
+      recurrence,
       summary: input.title,
       description: input.description ?? '',
-      start: input.allDay ? { date: dateOnly(input.startAtUtc) } : { dateTime: input.startAtUtc },
-      end: input.allDay ? { date: dateOnly(input.endAtUtc) } : { dateTime: input.endAtUtc },
+      start: input.allDay ? { date: dateOnly(input.startAtUtc) } : { dateTime: input.startAtUtc, ...(timeZone ? { timeZone } : {}) },
+      end: input.allDay ? { date: dateOnly(input.endAtUtc) } : { dateTime: input.endAtUtc, ...(timeZone ? { timeZone } : {}) },
       extendedProperties: { private: { streamDashboardManaged: 'true', streamDashboardId: input.localId } },
     };
     const value = await this.api<Record<string, unknown>>(`/calendars/${encodeURIComponent(calendarId)}/events${suffix}`, {
@@ -220,7 +289,7 @@ export class GoogleCalendarClient {
   }
 
   private toEvent = (value: Record<string, unknown>): GoogleEvent | null => {
-    const start = value.start as { dateTime?: string; date?: string } | undefined;
+    const start = value.start as { dateTime?: string; date?: string; timeZone?: string } | undefined;
     const end = value.end as { dateTime?: string; date?: string } | undefined;
     const privateProperties = (value.extendedProperties as { private?: Record<string, string> } | undefined)?.private;
     const allDay = Boolean(start?.date && end?.date);
@@ -240,6 +309,8 @@ export class GoogleCalendarClient {
       editable: value.locked !== true,
       deleted: value.status === 'cancelled',
       managed,
+      recurrenceTimeZone: start?.timeZone,
+      recurrenceLines: Array.isArray(value.recurrence) ? value.recurrence as string[] : [],
     };
   };
 

@@ -135,7 +135,8 @@ describe('Google Calendar OAuth et synchronisation', () => {
     });
     const client = new GoogleCalendarClient('client', { accessToken: 'a', refreshToken: 'r', expiresAt: Date.now() + 60_000 }, async () => undefined, request as typeof fetch);
     const created = await client.create('primary', { localId: 'local-1', ...event }); expect(created.id).toBe('g-existing');
-    expect(request).toHaveBeenCalledOnce(); expect(String(request.mock.calls[0][0])).toContain('privateExtendedProperty=streamDashboardId%3Dlocal-1');
+    expect(request).toHaveBeenCalledOnce(); expect(String(request.mock.calls[0][0])).toContain('singleEvents=false');
+    expect(String(request.mock.calls[0][0])).not.toContain('privateExtendedProperty');
   });
 
   it('écrit la propriété privée streamDashboardId sur une vraie création', async () => {

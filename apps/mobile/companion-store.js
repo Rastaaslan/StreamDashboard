@@ -33,7 +33,7 @@ export function createCompanionStore(storage = localStorage, clock = now) {
     if (current && baseRevision !== undefined && current.revision !== baseRevision) return { conflict: true, current: clone(current), proposed: clone(input) };
     const item = { ...(current || {}), ...clone(input), id: input.id || uid('live'), revision: (current?.revision || 0) + 1, updatedAt: clock(), origin: 'ANDROID', providerLinks: { ...(current?.providerLinks || {}), ...(input.providerLinks || {}) } };
     if (index < 0) data.planning.push(item); else data.planning[index] = item;
-    const eventFields = new Set(['id', 'localId', 'title', 'description', 'startAtUtc', 'endAtUtc', 'allDay', 'category', 'kind', 'draft', 'twitchCategoryId', 'twitchCategoryName', 'desiredPublication', 'providerLinks', 'recurrence']);
+    const eventFields = new Set(['id', 'localId', 'title', 'description', 'startAtUtc', 'endAtUtc', 'allDay', 'category', 'kind', 'draft', 'twitchCategoryId', 'twitchCategoryName', 'tags', 'tagPreferences', 'desiredPublication', 'providerLinks', 'recurrence']);
     const patch = current ? Object.fromEntries(Object.entries(input).filter(([key, value]) => !['id', 'revision', 'updatedAt', 'origin', 'providerLinks', 'providers'].includes(key) && JSON.stringify(current[key]) !== JSON.stringify(value))) : Object.fromEntries(Object.entries(input).filter(([key]) => eventFields.has(key)));
     data.pending.push(operation(current ? 'update' : 'create', item.id, current?.revision || 0, patch, item.desiredPublication, current));
     persist(); return { item: clone(item) };

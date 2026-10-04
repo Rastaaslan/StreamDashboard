@@ -1,3 +1,5 @@
+import { assertTwitchRecurrence } from '../../../integrations/twitch/src/recurrence.js';
+import { googleRecurrence } from '../../../integrations/google-calendar/src/recurrence.js';
 import { assertProviderCreationCertain, createWithDurableIntent } from './provider-identity.js';
 import type { CalendarItem, ProviderLink } from '../../contracts/src/index.js';
 
@@ -10,8 +12,10 @@ export interface PlanningProvider {
 }
 
 function providerSupportsRecurrence(provider: ProviderName, item: CalendarItem) {
-  if (!item.recurrence) return true;
-  return provider === 'twitch' && item.recurrence.frequency === 'weekly' && item.recurrence.interval === 1;
+  if (provider === 'google') {
+    try { googleRecurrence(item); return true; } catch { return false; }
+  }
+  try { assertTwitchRecurrence(item); return true; } catch { return false; }
 }
 
 export interface PlanningUpdateOptions {
@@ -56,7 +60,7 @@ export class PlanningOrchestrator {
 
   update(
     id: string,
-    changes: Pick<CalendarItem, 'title' | 'description' | 'startAtUtc' | 'endAtUtc' | 'allDay' | 'category' | 'kind' | 'twitchCategoryId' | 'twitchCategoryName'> & { recurrence?: CalendarItem['recurrence'] },
+    changes: Pick<CalendarItem, 'title' | 'description' | 'startAtUtc' | 'endAtUtc' | 'allDay' | 'category' | 'kind' | 'twitchCategoryId' | 'twitchCategoryName' | 'tags' | 'tagPreferences'> & { recurrence?: CalendarItem['recurrence'] },
     options: PlanningUpdateOptions = {},
   ) {
     return this.serial(async () => {
@@ -83,7 +87,10 @@ export class PlanningOrchestrator {
       for (const name of ['twitch', 'google'] as const) {
         if (!destinations[name]) continue;
         const remoteId = this.remoteId(item, name);
-        if (!remoteId) continue;
+        if (!remoteId) {
+          if (name === 'twitch') await this.unpublishOne(item, name);
+          continue;
+        }
         if (name === 'twitch' && item.twitchRecurring && !destinations.confirmRecurring) {
           throw new Error('Suppression explicite de la série Twitch récurrente requise.');
         }
@@ -105,7 +112,7 @@ export class PlanningOrchestrator {
       const item = this.required(id);
       if (!this.remoteId(item, provider)) assertProviderCreationCertain(item, provider);
       const desired = item.desiredPublication?.[provider] ?? false;
-      if (desired && item.recurrence && !providerSupportsRecurrence(provider, item)) {
+      if (desired && !providerSupportsRecurrence(provider, item)) {
         item.providers ??= {}; const link = item.providers[provider] ??= { status: 'error' };
         link.status = 'error'; link.lastError = `La récurrence locale ne peut pas encore être représentée fidèlement sur ${provider}. L’événement local est conservé.`;
         await this.persist(this.items); throw new Error(link.lastError);
@@ -265,9 +272,8 @@ export class PlanningOrchestrator {
         await this.persist(this.items);
         continue;
       }
-      // V1 provider APIs do not expose a reliable exception-aware recurring model.
-      // Refuse rather than silently publishing only the anchor or duplicating retries.
-      if (desired && item.recurrence && !providerSupportsRecurrence(name, item)) {
+      // Reject unsupported recurrence before creating an intent or mutating a provider.
+      if (desired && !providerSupportsRecurrence(name, item)) {
         item.providers ??= {};
         const link = item.providers[name] ??= { status: 'error' };
         link.status = 'error';
@@ -308,7 +314,9 @@ export class PlanningOrchestrator {
       }
 
       if (!remoteId) {
-        await this.publishOne(item, name, true);
+        // Ordinary Twitch edits must preserve the remote-deletion guard.
+        // Only retry() may explicitly authorize recreating a deleted segment.
+        await this.publishOne(item, name, name !== 'twitch');
         continue;
       }
       if (updateLinked) await this.publishOne(item, name);
@@ -356,13 +364,22 @@ export class PlanningOrchestrator {
         if (result.revision !== undefined) link.remoteRevision = result.revision;
         if (name === 'twitch') link.fingerprint = result.fingerprint;
         link.calendarId = result.calendarId ?? link.calendarId;
-        if (name === 'twitch') item.twitchSegmentId = result.id;
+        if (name === 'twitch') {
+          item.twitchSegmentId = result.id;
+          item.twitchRecurring = item.recurrence ? item.recurrence.frequency === 'weekly' && item.recurrence.interval === 1 : item.twitchRecurring === true;
+        }
       }
     });
   }
 
   private async unpublishOne(item: CalendarItem, name: ProviderName) {
     const remoteId = this.remoteId(item, name);
+    if (name === 'twitch') {
+      item.desiredPublication ??= { local: true, twitch: false, google: false };
+      item.desiredPublication.twitch = false;
+      // Withdrawal is durable even when reconciliation already cleared the identity.
+      await this.persist(this.items);
+    }
     if (!remoteId) return true;
     const link = this.ensureLink(item, name, remoteId);
     link.status = 'pending';
@@ -394,6 +411,7 @@ export class PlanningOrchestrator {
       link.lastSyncedAt = new Date().toISOString();
       link.deletedRemotely = false;
       delete link.lastError;
+      if (name === 'twitch') delete item.syncError;
       await this.persist(this.items);
       return true;
     } catch (error) {
@@ -427,7 +445,7 @@ export class PlanningOrchestrator {
       delete link.remoteId;
       delete link.remoteRevision;
     }
-    if (name === 'twitch') delete item.twitchSegmentId;
+    if (name === 'twitch') { delete item.twitchSegmentId; delete link?.fingerprint; }
   }
 
   private required(id: string) {

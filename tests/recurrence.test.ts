@@ -41,7 +41,7 @@ describe('moteur canonique de récurrence', () => {
   });
 
   it('refuse une représentation provider inexacte sans perdre la série ni créer de doublon', async () => {
-    const item = series('2026-01-06T19:00:00.000Z', { frequency: 'weekly', interval: 1, timeZone: 'Europe/Paris', until: null, exceptions: {} });
+    const item = series('2026-01-06T19:00:00.000Z', { frequency: 'weekly', interval: 1, timeZone: 'Europe/Paris', until: null, exceptions: { skipped: { cancelled: true } } });
     item.desiredPublication = { local: true, twitch: true, google: true };
     const create = vi.fn(); const values: CalendarItem[] = []; const orchestrator = new PlanningOrchestrator(values, { twitch: { create, update: vi.fn(), delete: vi.fn() }, google: { create, update: vi.fn(), delete: vi.fn() } }, async () => undefined);
     const created = await orchestrator.create(item);

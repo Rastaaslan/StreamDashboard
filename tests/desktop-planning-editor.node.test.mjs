@@ -32,6 +32,7 @@ test('Planning Desktop preserves the editable draft across telemetry, reconnect 
     await page.route('**/api/v1/state', route => route.fulfill({ json: dashboard }));
     await page.route('**/api/v1/soundboard', route => route.fulfill({ json: { sounds: [] } }));
     await page.route('**/api/v1/twitch/categories?*', route => route.fulfill({ json: [{ id: '509658', name: 'Just Chatting' }] }));
+    await page.route('**/api/v1/planning/tags/regenerate', route => route.fulfill({ json: { tags: { values: ['Français', 'Gaming'], source: 'generated', generatedAt: '2026-10-04T10:00:00Z' } } }));
     await page.route('**/api/v1/planning', async route => {
       submitted = route.request().postDataJSON();
       if (failSave) return route.fulfill({ status: 503, json: { message: 'Sauvegarde indisponible' } });
@@ -117,6 +118,9 @@ test('Planning Desktop preserves the editable draft across telemetry, reconnect 
     await page.locator('#event-category').selectOption('production');
     await page.locator('#event-twitch-category').fill('Just');
     await page.locator('#event-twitch-results').getByRole('button', { name: 'Just Chatting' }).click();
+    await page.locator('#event-tags-regenerate').click();
+    await expect(page.locator('#event-tags')).toHaveValue('Français, Gaming');
+    await page.locator('#event-tags').fill('Français, Communauté');
     await title.click();
     await title.press('End');
     const draft = await dialog.locator('input,textarea,select').evaluateAll(fields => fields.map(field => ({ id: field.id, value: field.value, checked: field.checked })));
@@ -149,6 +153,7 @@ test('Planning Desktop preserves the editable draft across telemetry, reconnect 
     await expect(dialog).not.toBeVisible();
     await expect(page.locator('#toast')).toHaveText('Événement enregistré');
     assert.deepEqual(submitted, {
+      tags: { values: ['Français', 'Communauté'], source: 'manual' }, tagPreferences: { automatic: true, language: '' },
       title: 'Mon live saisi !', description: 'Description personnelle\nDeuxième ligne',
       startAtUtc: '2027-04-15T16:45:00.000Z', endAtUtc: '2027-04-15T19:15:00.000Z', category: 'production',
       twitchCategoryId: '509658', twitchCategoryName: 'Just Chatting', desiredPublication: { local: true, twitch: false, google: false },
@@ -156,6 +161,10 @@ test('Planning Desktop preserves the editable draft across telemetry, reconnect 
     await expect(page.locator('#view')).toContainText('Mon live saisi !');
     await page.locator('[data-event-index]').first().click();
     await expect(title).toHaveValue('Mon live saisi !');
+    await expect(page.locator('#event-tags')).toHaveValue('Français, Communauté');
+    await page.locator('#event-duplicate').click();
+    await expect(page.locator('#event-tags')).toHaveValue('Français, Communauté');
+    await expect(page.locator('#event-id')).toHaveValue('');
     await title.fill('Brouillon annulé');
     await emit(130);
     await page.locator('[data-close-dialog="event-dialog"]').click();

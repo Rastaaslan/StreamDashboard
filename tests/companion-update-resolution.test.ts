@@ -27,6 +27,7 @@ it.each(['local', 'remote'] as const)('resolves a live Google 412 after restart 
     const url = String(input);
     if (url.startsWith('http://127.0.0.1:')) return nativeFetch(input, init);
     if (url.includes('googleapis.com/calendar/v3/users/me/calendarList')) return Response.json({ items: [] });
+    if (url.includes('/calendars/calendar/events?')) return Response.json({ items: [remote] });
     if (url.includes('/calendars/calendar/events/google-id')) {
       if (init?.method === 'PATCH') {
         const revision = new Headers(init.headers).get('If-Match') ?? '';

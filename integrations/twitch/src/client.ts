@@ -1,3 +1,4 @@
+import { assertTwitchRecurrence } from './recurrence.js';
 import { assertProviderCreationCertain } from '../../../packages/core/src/provider-identity.js';
 import { createHash } from 'node:crypto';
 import type { CalendarItem, TwitchState, TwitchControlCapabilities } from '../../../packages/contracts/src/index.js';
@@ -362,10 +363,10 @@ export class TwitchClient {
 
   async getChannelMetadata() {
     if (!this.state.connected) throw new Error('Connectez Twitch avant de préparer le live.');
-    const value = await this.api<{ data: Array<{ title: string; game_id: string; game_name?: string }> }>(`/channels?broadcaster_id=${encodeURIComponent(this.credentials.broadcasterId)}`);
+    const value = await this.api<{ data: Array<{ title: string; game_id: string; game_name?: string; tags?: string[] }> }>(`/channels?broadcaster_id=${encodeURIComponent(this.credentials.broadcasterId)}`);
     const channel = value.data[0];
     if (!channel) throw new Error('Twitch n’a renvoyé aucune information de chaîne.');
-    return { title: channel.title, gameId: channel.game_id, gameName: channel.game_name ?? '' };
+    return { title: channel.title, gameId: channel.game_id, gameName: channel.game_name ?? '', tags: channel.tags };
   }
 
   async searchGames(query: string) {
@@ -373,13 +374,13 @@ export class TwitchClient {
     return value.data ?? [];
   }
 
-  async updateChannelMetadata(value: { title: string; gameId: string }) {
+  async updateChannelMetadata(value: { title: string; gameId: string; tags?: string[] }) {
     if (!this.state.connected) throw new Error('Connectez Twitch avant de préparer le live.');
     this.requireScope(BROADCAST_SCOPE);
     try {
       await this.api(`/channels?broadcaster_id=${encodeURIComponent(this.credentials.broadcasterId)}`, {
         method: 'PATCH',
-        body: JSON.stringify({ title: value.title, game_id: value.gameId }),
+        body: JSON.stringify({ title: value.title, game_id: value.gameId, ...(value.tags !== undefined ? { tags: value.tags } : {}) }),
       });
     } catch (error) {
       if (error instanceof TwitchHttpError && (error.status === 401 || error.status === 403)) {
@@ -397,7 +398,7 @@ export class TwitchClient {
       this.validateScheduleItem(item);
       const exact = (await this.scheduleSegments()).filter(segment => this.sameIdentity(item, segment) && this.sameCategory(item, segment));
       if (exact.length > 1) throw new Error('Plusieurs segments Twitch identiques existent déjà. Synchronisez puis choisissez explicitement celui à conserver.');
-      if (exact.length === 1) return { id: exact[0]!.id };
+      if (exact.length === 1) return { id: exact[0]!.id, fingerprint: this.segmentFingerprint(exact[0]!) };
     } catch (error) {
       throw Object.assign(error instanceof Error ? error : new Error(String(error)), { mutationNotStarted: true });
     }
@@ -412,6 +413,7 @@ export class TwitchClient {
     const fingerprint = item.providers?.twitch?.fingerprint;
     const current = (await this.scheduleSegments(id)).find(segment => segment.id === id);
     if (!current) throw Object.assign(new Error('Événement Twitch supprimé à distance.'), { code: 'DELETED_REMOTELY' });
+    if (item.recurrence && !current.is_recurring) throw new Error('Twitch ne permet pas de convertir un segment simple en série récurrente. Créez une nouvelle série.');
     if (fingerprint) {
       if (this.segmentFingerprint(current) !== fingerprint) {
         throw Object.assign(new Error('Le planning Twitch a changé ailleurs.'), { code: 'CONFLICT', remote: {
@@ -424,7 +426,7 @@ export class TwitchClient {
     const payload: Record<string, string> = {};
     if (item.title !== current.title) payload.title = item.title;
     if (Date.parse(item.startAtUtc) !== Date.parse(current.start_time)) {
-      if (current.is_recurring || item.recurrence) throw new Error('Twitch ne permet pas de déplacer l’horaire d’une série récurrente existante. Créez une nouvelle série pour changer son jour ou son heure.');
+      if (current.is_recurring || item.twitchRecurring || item.recurrence) throw new Error('Twitch ne permet pas de déplacer l’horaire d’une série récurrente existante. Créez une nouvelle série pour changer son jour ou son heure.');
       payload.start_time = item.startAtUtc;
       payload.timezone = 'UTC';
     }
@@ -439,7 +441,7 @@ export class TwitchClient {
   }
 
   async readSegment(id: string) {
-    const segment = (await this.scheduleSegments()).find(value => value.id === id);
+    const segment = (await this.scheduleSegments(id)).find(value => value.id === id);
     if (!segment) return { deleted: true };
     return { fingerprint: this.segmentFingerprint(segment), remote: {
       title: segment.title, startAtUtc: segment.start_time, endAtUtc: segment.end_time,
@@ -461,6 +463,9 @@ export class TwitchClient {
 
   private async performSync(items: CalendarItem[]) {
     if (!this.state.connected) throw new Error('Connectez Twitch avant de synchroniser le planning.');
+    for (const item of items) {
+      if (item.desiredPublication?.twitch) this.validateTwitchRecurrence(item);
+    }
     const generation = this.generation;
     this.syncing = true;
     try {
@@ -538,10 +543,10 @@ export class TwitchClient {
           endAtUtc: segment.end_time,
           category: 'live',
           source: 'TWITCH',
-          ownership: recoveredLocal ? 'LOCAL' : 'EXTERNAL',
+          ownership: recoveredLocal?.ownership ?? (recoveredLocal ? 'LOCAL' : 'EXTERNAL'),
           editable: true,
           kind: 'LIVE',
-          external: !recoveredLocal,
+          external: recoveredLocal ? recoveredLocal.ownership === 'EXTERNAL' : true,
           twitchRecurring: Boolean(segment.is_recurring),
           twitchCategoryId: segment.category?.id ?? recoveredLocal?.twitchCategoryId,
           twitchCategoryName: segment.category?.name ?? recoveredLocal?.twitchCategoryName,
@@ -549,7 +554,7 @@ export class TwitchClient {
           desiredPublication: recoveredLocal?.desiredPublication ?? { local: true, twitch: true, google: false },
           providers: {
             ...(recoveredLocal?.providers ?? {}),
-            twitch: { status: 'synced', remoteId: segment.id, lastSyncedAt: syncedAt, deletedRemotely: false },
+            twitch: { status: 'synced', remoteId: segment.id, fingerprint: this.segmentFingerprint(segment), lastSyncedAt: syncedAt, deletedRemotely: false },
           },
         };
         if (recoveredLocal) {
@@ -570,6 +575,7 @@ export class TwitchClient {
         && !missingLocalIds.has(item.id)
         && !item.syncError)) {
         const created = await this.createSegmentUnchecked(item);
+        item.twitchRecurring = item.recurrence ? item.recurrence.frequency === 'weekly' && item.recurrence.interval === 1 : item.twitchRecurring === true;
         if (generation !== this.generation) throw new Error('Synchronisation Twitch annulée.');
         const syncedAt = new Date().toISOString();
         item.twitchSegmentId = created.id;
@@ -578,7 +584,7 @@ export class TwitchClient {
         item.syncedAt = syncedAt;
         delete item.syncError;
         item.providers ??= {};
-        item.providers.twitch = { status: 'synced', remoteId: created.id, lastSyncedAt: syncedAt, deletedRemotely: false };
+        item.providers.twitch = { status: 'synced', remoteId: created.id, fingerprint: created.fingerprint, lastSyncedAt: syncedAt, deletedRemotely: false };
       }
 
       if (generation !== this.generation) throw new Error('Synchronisation Twitch annulée.');
@@ -706,7 +712,8 @@ export class TwitchClient {
   }
 
   private sameIdentity(item: CalendarItem, segment: ScheduleSegment) {
-    return item.title === segment.title
+    return (item.recurrence ? item.recurrence.frequency === 'weekly' && item.recurrence.interval === 1 && Boolean(segment.is_recurring) : Boolean(item.twitchRecurring) === Boolean(segment.is_recurring))
+      && item.title === segment.title
       && Date.parse(item.startAtUtc) === Date.parse(segment.start_time)
       && Date.parse(item.endAtUtc) === Date.parse(segment.end_time);
   }
@@ -737,30 +744,30 @@ export class TwitchClient {
   }
 
   private validateTwitchRecurrence(item: CalendarItem) {
-    if (!item.recurrence) return;
-    if (item.recurrence.frequency === 'weekly' && item.recurrence.interval === 1) return;
-    throw new Error('Twitch ne prend en charge nativement que la récurrence hebdomadaire. Cette récurrence reste disponible dans StreamDashboard, sans publication Twitch automatique.');
+    assertTwitchRecurrence(item);
   }
 
   private async createSegmentUnchecked(item: CalendarItem) {
+    this.validateTwitchRecurrence(item);
     this.requireScope(SCHEDULE_SCOPE);
     assertProviderCreationCertain(item, 'twitch');
     const duration = this.validateScheduleItem(item);
     try {
-      const result = await this.api<{ data: { segments: Array<{ id: string }> } }>(`/schedule/segment?broadcaster_id=${encodeURIComponent(this.credentials.broadcasterId)}`, {
+      const result = await this.api<{ data: { segments: ScheduleSegment[] } }>(`/schedule/segment?broadcaster_id=${encodeURIComponent(this.credentials.broadcasterId)}`, {
         method: 'POST',
         body: JSON.stringify({
           start_time: item.startAtUtc,
           timezone: item.recurrence?.timeZone || 'UTC',
           duration: String(duration),
-          is_recurring: item.recurrence?.frequency === 'weekly' && item.recurrence.interval === 1,
+          is_recurring: item.recurrence ? item.recurrence.frequency === 'weekly' && item.recurrence.interval === 1 : item.twitchRecurring === true,
           title: item.title,
           ...(item.twitchCategoryId ? { category_id: item.twitchCategoryId } : {}),
         }),
       });
       const id = result.data.segments[0]?.id;
       if (!id) throw new Error('Twitch a accepté la création mais n’a renvoyé aucun identifiant de segment.');
-      return { id };
+      const segment = result.data.segments[0]!;
+      return { id, fingerprint: segment.start_time && segment.end_time ? this.segmentFingerprint(segment) : undefined };
     } catch (error) {
       if (error instanceof TwitchHttpError && error.status === 403) {
         throw new TwitchHttpError(403, 'Votre compte Twitch ne permet pas la création de segments de planning via l’API. Le planning local reste disponible.');

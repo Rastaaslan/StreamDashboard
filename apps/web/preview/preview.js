@@ -569,11 +569,16 @@ function preliveContent(){
   const targets={connections:'Connexions',audio:'Réglages',scenes:'Réglages',timer:'Réglages',twitch:'Connexions',planning:'Planning'};
   return `<section class="setup-status" aria-label="Diagnostic pré-live"><h2>Diagnostic pré-live · ${diagnosticLabels[result.status]}</h2><p class="help">État actuel ; les protections au démarrage restent actives.</p><button class="secondary" data-refresh-prelive>Actualiser le diagnostic</button>${result.checks.map(check=>`<p><b>${check.applicable?diagnosticLabels[check.status]:'Non applicable'}</b> — ${esc(check.message)} ${check.status!=='ok'&&check.action?(check.action==='planning'?'<button class="secondary" data-diagnostic-planning>Ouvrir le planning</button>':`<button class="secondary" data-open-camp="${targets[check.action]}">Ouvrir la correction</button>`):''}</p>`).join('')}</section>`;
 }
+function preflightTagsContent(){
+  const value=state.dashboard?.preflight;
+  if(!value||value.status==='idle')return '';
+  return `<section class="setup-status" aria-label="Préparation Twitch"><b>${esc(value.title||'Prochain live')}</b><p>${esc(value.category||'Catégorie non définie')}</p>${value.tags?.length?`<p>Tags proposés : ${value.tags.map(esc).join(', ')}</p>`:''}${value.tagsWarning?`<p role="status">${esc(value.tagsWarning)}</p>`:''}${value.error?`<p role="alert">${esc(value.error)}</p>`:''}</section>`;
+}
 function preparationContent(){
-  if(!moduleEnabled('checklist'))return preliveContent();
+  if(!moduleEnabled('checklist'))return preliveContent()+preflightTagsContent();
   const items=state.companion?.checklist||state.dashboard?.checklist||[];
   const done=items.filter(item=>item.done===true).length;
-  return `<div class="connection-stack">${preliveContent()}<div class="setup-status"><div class="section-head"><div><b>Checklist avant direct</b><span class="label">${done} / ${items.length} terminés</span></div><div class="connection-actions"><button class="secondary" data-camp-action="prepare">Préparer le direct</button><button class="secondary" data-camp-action="check-reset">Tout décocher</button></div></div><div class="camp-list">${items.map(item=>`<div class="camp-row"><button class="check-button ${item.done?'active':''}" data-check-toggle="${esc(item.id)}">${item.done?'✓':'○'} ${esc(item.label)}</button><button class="critical" data-check-delete="${esc(item.id)}">Suppr.</button></div>`).join('')||'<p class="help">Checklist vide.</p>'}</div><form id="camp-check-add" class="toolbar"><input name="label" maxlength="500" placeholder="Nouvel élément" required><button class="action">Ajouter</button></form></div></div>`;
+  return `<div class="connection-stack">${preliveContent()}${preflightTagsContent()}<div class="setup-status"><div class="section-head"><div><b>Checklist avant direct</b><span class="label">${done} / ${items.length} terminés</span></div><div class="connection-actions"><button class="secondary" data-camp-action="prepare">Préparer le direct</button><button class="secondary" data-camp-action="check-reset">Tout décocher</button></div></div><div class="camp-list">${items.map(item=>`<div class="camp-row"><button class="check-button ${item.done?'active':''}" data-check-toggle="${esc(item.id)}">${item.done?'✓':'○'} ${esc(item.label)}</button><button class="critical" data-check-delete="${esc(item.id)}">Suppr.</button></div>`).join('')||'<p class="help">Checklist vide.</p>'}</div><form id="camp-check-add" class="toolbar"><input name="label" maxlength="500" placeholder="Nouvel élément" required><button class="action">Ajouter</button></form></div></div>`;
 }
 function notesContent(){
   const notes=state.companion?.notes||[];
@@ -1152,8 +1157,34 @@ function populateEventTemplates(selected=''){
   const select=document.querySelector('#event-template');const templates=state.companion?.templates||[];
   select.replaceChildren(new Option('Aucun',''),...templates.map(template=>new Option(template.title||'Template',template.id)));select.value=selected;
 }
+let eventTagMetadata;
+let eventTagsGeneration = 0;
+function readEventTags() {
+  const values=document.querySelector('#event-tags').value.split(',').map(value=>value.trim()).filter(Boolean);
+  if(values.length>10||values.some(value=>! /^[\p{L}\p{N}]{1,25}$/u.test(value)))throw new Error('Tags : 10 maximum, lettres et chiffres uniquement, 25 caractères maximum.');
+  if(eventTagMetadata && JSON.stringify(values)===JSON.stringify(eventTagMetadata.values))return structuredClone(eventTagMetadata);
+  return values.length ? {values,source:'manual'} : undefined;
+}
+function readTagPreferences(){return {automatic:document.querySelector('#event-tags-auto').checked,language:document.querySelector('#event-tags-language').value.trim()};}
+document.querySelector('#event-tags-regenerate').onclick=async()=>{
+  if(!requireRuntime())return;
+  const generation=++eventTagsGeneration,button=document.querySelector('#event-tags-regenerate'),input=document.querySelector('#event-tags'),previous=input.value;
+  button.disabled=true;
+  try{
+    const result=await request('/api/v1/planning/tags/regenerate',{method:'POST',body:JSON.stringify({title:document.querySelector('#event-title').value,description:document.querySelector('#event-description').value,twitchCategoryId:document.querySelector('#event-twitch-game-id').value,twitchCategoryName:document.querySelector('#event-twitch-category').value,tags:readEventTags(),tagPreferences:readTagPreferences()})});
+    if(generation!==eventTagsGeneration||input.value!==previous)return;
+    if(result.tags){eventTagMetadata=result.tags;input.value=result.tags.values.join(', ');}
+    document.querySelector('#event-tags-status').textContent=result.warning||'Tags générés. Enregistrez pour les conserver.';
+  }catch(error){if(generation===eventTagsGeneration)document.querySelector('#event-tags-status').textContent=error.message;}
+  finally{button.disabled=false;}
+};
 function populateEventForm(item,scope='item'){
   const form=document.querySelector('#event-form'),source=item||{};form.reset();
+  ++eventTagsGeneration;eventTagMetadata=source.tags?structuredClone(source.tags):undefined;
+  document.querySelector('#event-tags').value=source.tags?.values?.join(', ')||'';
+  document.querySelector('#event-tags-auto').checked=source.tagPreferences?.automatic!==false;
+  document.querySelector('#event-tags-language').value=source.tagPreferences?.language||'';
+  document.querySelector('#event-tags-status').textContent='';
   document.querySelector('#event-id').value=source.id||'';
   document.querySelector('#event-series-id').value=source.seriesId||'';
   document.querySelector('#event-occurrence-key').value=source.occurrenceKey||'';
@@ -1222,7 +1253,8 @@ document.querySelector('#event-form').onsubmit=async event=>{
   let times;try{times=eventTimes(date,start,end,document.querySelector('#event-end-date').value)}catch(error){return toast(error.message,true)}
   const category=document.querySelector('#event-category').value,publishTwitch=document.querySelector('#event-publish-twitch').checked,publishGoogle=document.querySelector('#event-publish-google').checked,gameId=document.querySelector('#event-twitch-game-id').value,gameName=document.querySelector('#event-twitch-category').value.trim();
   if(publishTwitch&&!gameId)return toast('Choisis une catégorie Twitch officielle.',true);
-  const item={title:document.querySelector('#event-title').value.trim(),description:document.querySelector('#event-description').value.trim(),...times,category,twitchCategoryId:gameId||undefined,twitchCategoryName:gameName||undefined,desiredPublication:{local:true,twitch:publishTwitch,google:publishGoogle}};
+  let tags;try{tags=readEventTags()}catch(error){return toast(error.message,true)}
+  const item={tags:tags||{values:[],source:'manual'},tagPreferences:readTagPreferences(),title:document.querySelector('#event-title').value.trim(),description:document.querySelector('#event-description').value.trim(),...times,category,twitchCategoryId:gameId||undefined,twitchCategoryName:gameName||undefined,desiredPublication:{local:true,twitch:publishTwitch,google:publishGoogle}};
   if(!state.runtime){state.planning.unshift({raw:{...item,id:`demo-${Date.now()}`},day:'Démo',time:start,title:item.title,kind:category==='live'?'Twitch':category});document.querySelector('#event-dialog').close();render();return}
   try{
     let saved;
@@ -1244,6 +1276,7 @@ document.querySelector('#event-duplicate').onclick=()=>{
   if(!source)return;
   const duplicate={
     title:source.title,description:source.description||'',startAtUtc:source.startAtUtc,endAtUtc:source.endAtUtc,
+    tags:source.tags?structuredClone(source.tags):undefined,tagPreferences:source.tagPreferences?structuredClone(source.tagPreferences):undefined,
     category:source.category||'live',twitchCategoryId:source.twitchCategoryId,twitchCategoryName:source.twitchCategoryName,
     desiredPublication:{local:true,twitch:false,google:false},
     ...(source.recurrence?{recurrence:structuredClone(source.recurrence)}:{})
@@ -1267,6 +1300,7 @@ document.querySelector('#event-delete').onclick=async()=>{
   }catch(error){toast(error.message,true)}
 };
 document.querySelector('#event-dialog').addEventListener('close',()=>{
+  ++eventTagsGeneration;
   state.eventEdit=null;
   if(deferredRuntimeRender)render();
 });
