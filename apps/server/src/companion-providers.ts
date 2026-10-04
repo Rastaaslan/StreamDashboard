@@ -21,6 +21,7 @@ export async function drainCompanionProviders(
     const item = planning.find(item => item.id === work.item.id) ?? work.item;
     item.providers ??= {};
     const link = item.providers[work.provider] ??= { status: 'pending' };
+    if (work.provider === 'google' && work.action === 'publish') delete link.nativeRetained;
     const updateTombstone = () => {
       const tombstone = state.tombstones[item.id];
       if (!tombstone) return;
@@ -161,6 +162,7 @@ export async function resolveCompanionDeletion(
   } else {
     if (!latest.remote) throw new Error('Version distante indisponible.');
     Object.assign(item, latest.remote);
+    if (provider === 'google') { delete link.nativeWithdrawalRequested; link.nativeRetained = true; link.projectionMode = 'native'; }
     link.status = 'synced';
     link.lastSyncedAt = new Date().toISOString();
     item.desiredPublication = { twitch: false, google: false, ...item.desiredPublication, local: true, [provider]: true,

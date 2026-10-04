@@ -22,6 +22,7 @@ export async function reconcileProviderProjection(
   options: { now?: number; retry?: boolean; explicitWithdrawal?: boolean; expand: typeof expandRecurringItems; name: 'twitch' | 'google'; materialized: boolean },
 ): Promise<boolean> {
   const { name, materialized } = options;
+  if (name === 'google' && item.providers?.google?.nativeRetained && item.providers.google.remoteId && item.desiredPublication?.google) return true;
   if (!materialized && !item.providers?.[name]?.projections) return false;
   if (item.ownership !== 'LOCAL') return true;
   const link = (item.providers ??= {})[name] ??= { status: 'pending' };
@@ -76,6 +77,7 @@ export async function reconcileProviderProjection(
   // Only a native identity created by this projection-aware publisher is eligible
   // for automatic replacement. Legacy/imported identities require manual removal.
   if (link.remoteId || (name === 'twitch' && item.twitchSegmentId)) {
+    if (name === 'google' && link.status === 'conflict') return true;
     if ((!link.projectionOwned && !(name === 'google' && !desired && link.nativeWithdrawalRequested)) || !provider) {
       fail(link, new Error(`Retirez explicitement la publication ${name} existante avant de matérialiser cette série.`));
       await persist(); return true;

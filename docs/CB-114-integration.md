@@ -209,3 +209,27 @@ Validation: `npm test` (915 Vitest + 141 Node), browser (13), mobile smoke,
 build, security, shipped-JS, both npm audits (zero vulnerabilities), isolated
 server smoke and Windows package/ASAR checks passed. Desktop smoke was attempted;
 its four launches fail for missing X server/DISPLAY, the permitted residual.
+
+## Review iteration 5 — native withdrawal conflict decisions
+
+Native Google withdrawal conflicts now have their own resolution path. Both
+choices re-read the saved calendar/link and require the current ETag. The local
+choice checkpoints the approved DELETE as pending; refresh/retry removes it
+without a publication PATCH. An unresolved 412 cannot be retried implicitly.
+
+The remote choice clears the durable withdrawal intent, restores desired Google
+publication and records that the native link was deliberately retained. Refresh
+and retry preserve that link even if the local rule contains exceptions that
+would normally trigger conversion. A subsequent explicit edit/publication or
+withdrawal releases this retention. The same retention applies when restoring a
+companion tombstone. Server migration preserves this decision across restart.
+
+Four regression cases cover legacy/owned links and both decisions, current ETag
+checkpoints, restart, refresh, retry, final explicit removal, and absence of
+CREATE/PATCH or remote orphans. An initial global run had one timer-test timing
+failure (918 other Vitest tests passed); the complete suite was rerun separately.
+
+Final validation: 919 Vitest tests and 141 Node tests passed, as did 13 browser
+tests, mobile smoke, build, security, shipped-JS, both audits (zero vulnerabilities),
+isolated server smoke and Windows packaging/ASAR checks. Desktop smoke was
+attempted: four launch failures due to missing X server/DISPLAY, as permitted.

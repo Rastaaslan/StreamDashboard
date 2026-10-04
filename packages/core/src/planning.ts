@@ -89,6 +89,7 @@ export class PlanningOrchestrator {
     return this.serial(async () => {
       const item = this.required(id);
       Object.assign(item, changes);
+      if (item.providers?.google) delete item.providers.google.nativeRetained;
       if (options.desiredPublication) {
         item.desiredPublication = {
           local: true,
@@ -138,7 +139,7 @@ export class PlanningOrchestrator {
         return structuredClone(item);
       }
       if (provider === 'google' && await reconcileGoogleProjection(item, this.providers.google, () => this.persist(this.items), { retry: true })) {
-        if (item.providers?.google?.status === 'error') throw new Error(item.providers.google.lastError);
+        if (['error', 'conflict'].includes(item.providers?.google?.status ?? '')) throw new Error(item.providers?.google?.lastError);
         return structuredClone(item);
       }
       if (!this.remoteId(item, provider)) assertProviderCreationCertain(item, provider);
@@ -210,6 +211,7 @@ export class PlanningOrchestrator {
             throw new Error('Événement supprimé à distance. Confirmez explicitement sa republication.');
           }
           if (!latest.remote) throw new Error('Version distante indisponible pour résoudre ce conflit.');
+          if (provider === 'google' && link.nativeWithdrawalRequested && !latest.revision) throw new Error('ETag Google courant indisponible.');
           conflict.remote = latest.remote;
           if (latest.revision !== undefined) link.remoteRevision = latest.revision;
           if (latest.fingerprint !== undefined) link.fingerprint = latest.fingerprint;
@@ -220,6 +222,24 @@ export class PlanningOrchestrator {
           await this.persist(this.items);
           throw error;
         }
+      }
+
+      if (provider === 'google' && link.nativeWithdrawalRequested) {
+        if (!remoteId || !remoteProvider?.read || !link.remoteRevision) throw new Error('Identité et ETag Google requis pour résoudre le retrait.');
+        if (strategy === 'remote') {
+          if (!conflict.remote) throw new Error('Version distante indisponible.');
+          Object.assign(item, conflict.remote);
+          item.desiredPublication = { local: true, twitch: false, ...item.desiredPublication, google: true };
+          delete link.nativeWithdrawalRequested;
+          link.nativeRetained = true; link.projectionMode = 'native';
+          link.status = 'synced';
+        } else {
+          // Checkpoint the decision; refresh/retry performs DELETE, never PATCH.
+          link.status = 'pending';
+        }
+        delete item.conflict; delete link.lastError; link.deletedRemotely = false;
+        await this.persist(this.items);
+        return structuredClone(item);
       }
 
       if (strategy === 'remote') {
@@ -426,6 +446,14 @@ export class PlanningOrchestrator {
 
   private async unpublishOne(item: CalendarItem, name: ProviderName) {
     const remoteId = this.remoteId(item, name);
+    if (name === 'google') {
+      const link = this.ensureLink(item, name, remoteId);
+      item.desiredPublication ??= { local: true, twitch: false, google: false };
+      item.desiredPublication.google = false;
+      link.nativeWithdrawalRequested = true;
+      delete link.nativeRetained;
+      await this.persist(this.items);
+    }
     if (name === 'twitch') {
       item.desiredPublication ??= { local: true, twitch: false, google: false };
       item.desiredPublication.twitch = false;
@@ -448,11 +476,13 @@ export class PlanningOrchestrator {
       return true;
     }
     const link = this.ensureLink(item, name, remoteId);
+    if (name === 'google' && link.status === 'conflict') return false;
     link.status = 'pending';
     await this.persist(this.items);
     const ok = await this.attempt(item, name, remoteProvider => remoteProvider.delete(remoteId, item, link.remoteRevision));
     if (ok) {
       delete link.deletionPeriod;
+      delete link.nativeWithdrawalRequested;
       if (name === 'twitch') item.twitchRecurring = false;
       this.clearRemoteIdentity(item, name);
       link.status = 'not-published';

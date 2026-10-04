@@ -110,6 +110,7 @@ export interface ProviderLink {
   projectionMode?: 'native' | 'materialized';
   projectionOwned?: boolean;
   nativeWithdrawalRequested?: boolean;
+  nativeRetained?: boolean;
   projectionWindow?: { from: string; to: string };
   projections?: Record<string, ProviderProjectionOccurrence>;
   /** Durable scope of a confirmed period deletion, including standard retries. */
