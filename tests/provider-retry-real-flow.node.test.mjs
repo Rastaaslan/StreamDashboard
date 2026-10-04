@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { chromium, expect } from '@playwright/test';
 import { startDashboardServer } from '../dist/apps/server/src/index.js';
 import { MemorySecretStore } from '../dist/apps/server/src/storage.js';
@@ -17,6 +17,11 @@ for (const provider of ['google', 'twitch']) for (const recurring of [false, tru
     let missingFailure = updateExisting;
     let exists = updateExisting;
     const writes = [];
+    // Hold the exact Windows failure scenario in flight: reaching provider HTTP
+    // must not leave the obsolete recurrence rejection as the current error.
+    let releaseMutation;
+    const mutationGate = provider === 'twitch' && recurring && identity === 'new'
+      ? new Promise(resolve => { releaseMutation = resolve; }) : Promise.resolve();
     const start = new Date(Date.now() + 86400000).toISOString(), end = new Date(Date.now() + 90000000).toISOString();
     const recurrence = recurring ? { frequency: 'weekly', interval: 1, timeZone: 'UTC' } : undefined;
     let remote = provider === 'google'
@@ -45,6 +50,7 @@ for (const provider of ['google', 'twitch']) for (const recurring of [false, tru
           if (['POST', 'PATCH'].includes(init.method)) {
             const body = JSON.parse(init.body);
             writes.push({ method: init.method, url, body, etag: new Headers(init.headers).get('If-Match') });
+            await mutationGate;
             if (denied) return Response.json({ message: 'Permission denied', error: { message: 'Permission denied' } }, { status: missingFailure ? 404 : 403 });
             remote = { ...remote, ...body, id: identity === 'cancelled' ? 'replacement' : 'remote', etag: 'etag-2' };
             exists = true;
@@ -77,7 +83,15 @@ for (const provider of ['google', 'twitch']) for (const recurring of [false, tru
       await retry.click();
       await expect(page.locator('#event-dialog')).toBeVisible();
       await expect.poll(() => writes.length).toBe(1);
-      assert.doesNotMatch(server.state().planning[0].providers[provider].lastError, /La récurrence locale ne peut pas encore/);
+      assert.doesNotMatch(server.state().planning[0].providers[provider].lastError ?? '', /La récurrence locale ne peut pas encore/);
+      if (releaseMutation) {
+        const pending = JSON.parse(await readFile(`${dataDir}/dashboard.json`, 'utf8')).planning[0].providers.twitch;
+        assert.equal(pending.status, 'pending');
+        assert.equal(pending.lastError, undefined);
+        const response = page.waitForResponse(value => value.url().endsWith('/retry/twitch') && value.request().method() === 'POST');
+        releaseMutation();
+        assert.equal((await response).ok(), false);
+      }
       await expect(page.locator('#toast')).not.toContainText('La récurrence locale ne peut pas encore');
       if (provider === 'twitch' && recurring && !updateExisting) assert.equal(writes[0].body.is_recurring, true);
       assert.equal(writes[0].method, updateExisting ? 'PATCH' : 'POST');
@@ -93,6 +107,14 @@ for (const provider of ['google', 'twitch']) for (const recurring of [false, tru
       assert.equal(item.providers[provider].status, 'synced');
       assert.equal(item.providers[provider].remoteId, identity === 'cancelled' ? 'replacement' : 'remote');
       assert.equal(item.desiredPublication[provider], true);
+      assert.equal(item.providers[provider].deletedRemotely, false);
+      assert.equal(item.providers[provider].lastError, undefined);
+      if (provider === 'twitch') {
+        assert.ok(item.providers.twitch.fingerprint);
+        const persisted = JSON.parse(await readFile(`${dataDir}/dashboard.json`, 'utf8')).planning[0];
+        assert.equal(persisted.providers.twitch.remoteId, item.providers.twitch.remoteId);
+        assert.equal(persisted.providers.twitch.fingerprint, item.providers.twitch.fingerprint);
+      }
       assert.equal(writes.filter(write => write.method === 'POST').length, updateExisting ? 0 : 2);
       assert.equal(writes[1].body[provider === 'google' ? 'summary' : 'title'], 'Desired title');
       if (provider === 'google') {
@@ -121,6 +143,7 @@ for (const provider of ['google', 'twitch']) for (const recurring of [false, tru
       await page.locator('[data-event-index]').first().click();
       await expect(page.locator(`[data-provider-conflict="${provider}"]`)).toHaveCount(2);
     } finally {
+      releaseMutation?.();
       await browser?.close(); await server?.stop(); globalThis.fetch = nativeFetch;
       await rm(dataDir, { recursive: true, force: true });
     }
