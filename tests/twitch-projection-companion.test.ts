@@ -15,7 +15,7 @@ async function setup() {
   };
   const orchestrator = new PlanningOrchestrator([], { twitch: provider }, async () => {});
   const item = await orchestrator.create({ id: 'series', title: 'Live', startAtUtc: '2026-10-01T12:00:00Z', endAtUtc: '2026-10-01T13:00:00Z', category: 'live', recurrence: { frequency: 'daily', interval: 1, timeZone: 'UTC' }, desiredPublication: { local: true, twitch: true, google: false } });
-  expect(remote.size).toBe(28);
+  expect(remote.size).toBe(7);
   const state = emptyCompanionState(); state.eventRevisions[item.id] = 1;
   return { item, state, remote, provider };
 }
@@ -42,7 +42,7 @@ it.each([false, true])('companion deletion cleans projections across restart/ret
   await drainCompanionProviders(runtime.planning, runtime.companion, { twitch: ctx.provider }, persist, 'series:twitch');
   expect(runtime.companion.providerWork).toEqual({});
   expect([...ctx.remote.keys()]).toEqual(['external']);
-  expect(ctx.provider.create).toHaveBeenCalledTimes(28);
+  expect(ctx.provider.create).toHaveBeenCalledTimes(7);
   const deletes = vi.mocked(ctx.provider.delete).mock.calls.length;
   runtime = structuredClone(saved);
   await drainCompanionProviders(runtime.planning, runtime.companion, { twitch: ctx.provider }, persist);
@@ -65,13 +65,13 @@ it.each([false, true])('companion conversion publishes one native series after c
   }
   expect(ctx.remote.size).toBe(1);
   expect([...ctx.remote.values()][0].recurrence).toMatchObject({ frequency: 'weekly', interval: 1 });
-  expect(runtime.planning[0].providers?.twitch).toMatchObject({ status: 'synced', projectionMode: 'native', remoteId: 'segment-29' });
+  expect(runtime.planning[0].providers?.twitch).toMatchObject({ status: 'synced', projectionMode: 'native', remoteId: 'segment-8' });
   expect(runtime.companion.providerWork).toEqual({});
   runtime = structuredClone(saved);
   await drainCompanionProviders(runtime.planning, runtime.companion, { twitch: ctx.provider }, persist);
   expect(ctx.remote.size).toBe(1);
-  expect(ctx.provider.delete).toHaveBeenCalledTimes(28);
-  expect(ctx.provider.create).toHaveBeenCalledTimes(retry ? 30 : 29);
+  expect(ctx.provider.delete).toHaveBeenCalledTimes(7);
+  expect(ctx.provider.create).toHaveBeenCalledTimes(retry ? 9 : 8);
 });
 
 it('retains cleanup work for an uncertain occurrence without a remote identity', async () => {

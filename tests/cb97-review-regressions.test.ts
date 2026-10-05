@@ -20,7 +20,7 @@ const scopes = { client_id: 'client', user_id: '42', scopes: ['channel:manage:sc
 it.each<RecurrenceRule>([
   { ...weekly, frequency: 'daily' }, { ...weekly, interval: 2 }, { ...weekly, frequency: 'monthly' },
   { ...weekly, exceptions: { 'local:2030-01-08T20:00:00': { cancelled: true } } },
-])('global Twitch HTTP sync keeps out-of-window materialized series local: $frequency/$interval/$exceptions', async recurrence => {
+])('global Twitch HTTP sync publishes seven distant occurrences while keeping the canonical series local: $frequency/$interval/$exceptions', async recurrence => {
   dataDir = await mkdtemp(join(tmpdir(), 'cb97-twitch-review-'));
   const secrets = new MemorySecretStore(); const logger = { info() {}, warn() {}, error() {} };
   server = await startDashboardServer({ port: 0, dataDir, secretStore: secrets, logger });
@@ -29,12 +29,21 @@ it.each<RecurrenceRule>([
   state.twitch = { broadcasterId: '42', userName: 'u', displayName: 'U' }; await writeFile(file, JSON.stringify(state));
   await secrets.setTwitchTokens({ accessToken: 'token', refreshToken: '' });
   const nativeFetch = globalThis.fetch; const mutations: string[] = [];
+  const segments: any[] = [];
   vi.stubGlobal('fetch', vi.fn(async (input, init) => {
     const url = String(input);
     if (!url.startsWith('https://')) return nativeFetch(input, init);
     if (init?.method && init.method !== 'GET') mutations.push(init.method);
     if (url.includes('/validate')) return Response.json(scopes);
-    if (url.includes('/schedule')) return Response.json({ data: { segments: [] } });
+    if (url.includes('/schedule')) {
+      if (init?.method === 'POST') {
+        const body = JSON.parse(String(init.body));
+        const segment = { ...body, id: `projected-${segments.length}`, end_time: new Date(Date.parse(body.start_time) + Number(body.duration) * 60000).toISOString() };
+        segments.push(segment); return Response.json({ data: { segments: [segment] } });
+      }
+      const id = new URL(url).searchParams.get('id');
+      return Response.json({ data: { segments: id ? segments.filter(segment => segment.id === id) : segments } });
+    }
     if (url.includes('/channels?')) return Response.json({ data: [{ title: 'Live', game_id: '1' }] });
     return Response.json({ data: [] });
   }));
@@ -47,7 +56,7 @@ it.each<RecurrenceRule>([
   expect(before[0].providers.twitch.projectionMode).toBe('materialized');
   const response = await post('twitch/sync', {});
   expect(response.ok).toBe(true);
-  expect(mutations).toEqual([]);
+  expect(mutations).toEqual(Array(7).fill('POST'));
   const after = (await snapshot()).planning;
   expect(after).toHaveLength(1); expect(after[0].recurrence).toEqual(before[0].recurrence);
   expect(after[0].providers.twitch.projectionMode).toBe('materialized');

@@ -38,7 +38,7 @@ Causes racines et invariants corrigés :
   précédente avant I/O. Seules les identités natives détenues par l'application
   sont retirées automatiquement ; la création suivante reprend après restart.
   weekly-1 sans fin/exception reste natif, les autres règles restent matérialisées
-  sur 28 jours. Le fuseau est envoyé au nouveau CREATE.
+  sur les 7 prochaines occurrences valides (CB-129). Le fuseau est envoyé au nouveau CREATE.
 - **Retrait Twitch en conflit** : comparaison de l'empreinte avant DELETE,
   conflit durable, retry refusé tant que le choix n'est pas résolu. Une erreur ou
   un conflit de retrait empêche la suppression du propriétaire local. Le choix

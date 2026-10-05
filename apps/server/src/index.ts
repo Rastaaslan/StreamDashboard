@@ -199,7 +199,10 @@ function sanitizeProviderLink(value: unknown): ProviderLink | undefined {
   if (object(value.nativeReplacementRequested)) link.nativeReplacementRequested = {
     recurrence: object(value.nativeReplacementRequested.recurrence) ? validateRecurrence(value.nativeReplacementRequested.recurrence) : undefined,
   };
-  if (object(value.projectionWindow)) link.projectionWindow = { from: String(value.projectionWindow.from), to: String(value.projectionWindow.to) };
+  if (object(value.projectionWindow)) link.projectionWindow = {
+    from: String(value.projectionWindow.from),
+    ...(value.projectionWindow.nextCount === 7 ? { nextCount: 7 } : { to: String(value.projectionWindow.to) }),
+  };
   if (object(value.projectionRetirements)) {
     link.projectionRetirements = {};
     for (const [key, retired] of Object.entries(value.projectionRetirements)) {

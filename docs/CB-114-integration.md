@@ -28,7 +28,7 @@ the editor and API do not yet authorize custom rules.
 
 `provider-projection.ts` owns one shared durable rolling journal. The Twitch and
 Google modules select exact native representation or supply canonical occurrences.
-The 28-day window refreshes at startup, every 60 seconds, on edits and retries.
+Since CB-129 the next-seven selection refreshes after startup, hourly, on edits and retries.
 Each successful write saves its identity before the next operation. Google keeps
 calendar/etag per occurrence; Twitch keeps fingerprint and durable CREATE intent.
 Remote import does not add owned projected events as independent planning items.

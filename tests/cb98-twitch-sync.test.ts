@@ -12,13 +12,13 @@ async function setup() {
   const fetcher = vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
     if (String(input).includes('/validate')) return Response.json({ client_id: 'client', user_id: '42', scopes: ['channel:manage:schedule'] });
     const body = init?.body ? JSON.parse(String(init.body)) : {};
-    if (init?.method === 'POST') segments.push({ ...body, id: 'remote', end_time: new Date(Date.parse(body.start_time) + Number(body.duration) * 60000).toISOString() });
+    if (init?.method === 'POST') segments.push({ ...body, id: segments.length ? `remote-${segments.length}` : 'remote', end_time: new Date(Date.parse(body.start_time) + Number(body.duration) * 60000).toISOString() });
     if (init?.method === 'PATCH') Object.assign(segments[0], body);
     if (init?.method === 'DELETE') {
       if (failDelete) { failDelete = false; return Response.json({ message: 'unavailable' }, { status: 503 }); }
       segments = []; return new Response(null, { status: 204 });
     }
-    return Response.json({ data: { segments } });
+    return Response.json({ data: { segments: init?.method === 'POST' ? segments.slice(-1) : segments } });
   });
   vi.stubGlobal('fetch', fetcher);
   const client = new TwitchClient({ clientId: 'client', accessToken: 'token', refreshToken: '', broadcasterId: '42', userName: 'user', displayName: 'User' });
@@ -60,7 +60,7 @@ it.each([{ frequency: 'daily', interval: 1 }, { frequency: 'weekly', interval: 2
   expect(created.providers?.twitch?.status).toBe('synced');
   await planning.retry(item.id, 'twitch');
   await planning.update(item.id, item);
-  expect(fetcher.mock.calls.filter(([, init]) => ['POST', 'PATCH', 'DELETE'].includes(init?.method ?? ''))).toHaveLength(0);
+  expect(fetcher.mock.calls.filter(([, init]) => ['POST', 'PATCH', 'DELETE'].includes(init?.method ?? ''))).toHaveLength(7);
 });
 it('refuses moving a recurring series before PATCH and keeps one identity on retry', async () => {
   const { client, provider, fetcher } = await setup();

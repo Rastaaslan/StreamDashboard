@@ -80,9 +80,13 @@ function schedule(anchor, rule) {
     };
 }
 /** Pure projection of a canonical recurring master. Effective ranges overlap [start,end).
+ * nextCount selects the earliest effective future slots instead of an end date.
  * until is inclusive on the ORIGINAL start, before exceptions; duration is elapsed UTC time. */
 export function projectRecurrence(source, window) {
-    const [from, to] = bounds(window);
+    const counted = window.nextCount !== undefined;
+    if (counted && (!Number.isSafeInteger(window.nextCount) || window.nextCount < 1 || window.nextCount > 10000))
+        throw new Error('Invalid nextCount (1–10000 required)');
+    const [from, to] = counted ? [instant(window.windowStart), Infinity] : bounds(window);
     if (!source.recurrence || source.occurrenceKey)
         throw new Error('Expected a canonical recurring master');
     const rule = migrateRecurrence(source.recurrence);
@@ -113,12 +117,6 @@ export function projectRecurrence(source, window) {
         return low;
     };
     const candidates = new Map();
-    for (let step = seek(from - duration - 2 * DAY);; step++) {
-        const wall = at(step), original = resolve(wall);
-        if (original >= to || original > until)
-            break;
-        candidates.set(key(wall), wall);
-    }
     // Moved exceptions can enter the window from either side of the nominal range.
     for (const exceptionKey of Object.keys(rule.exceptions ?? {})) {
         const prefix = `${seriesId}:`;
@@ -145,11 +143,11 @@ export function projectRecurrence(source, window) {
         if (key(wall) === exceptionKey && resolve(wall) <= until)
             candidates.set(exceptionKey, wall);
     }
-    const output = [];
-    for (const [occurrenceKey, wall] of candidates) {
+    const output = new Map();
+    const add = (occurrenceKey, wall) => {
         const exception = rule.exceptions?.[occurrenceKey];
         if (exception?.cancelled)
-            continue;
+            return;
         const original = resolve(wall);
         const item = {
             ...structuredClone(source), ...structuredClone(exception?.patch ?? {}),
@@ -160,15 +158,28 @@ export function projectRecurrence(source, window) {
         const effectiveStart = instant(item.startAtUtc), effectiveEnd = instant(item.endAtUtc);
         if (effectiveEnd <= effectiveStart)
             throw new Error('Invalid occurrence duration');
-        if (effectiveStart < to && effectiveEnd > from)
-            output.push(item);
+        if (effectiveStart < to && effectiveEnd > from && (!window.accept || window.accept(item)))
+            output.set(occurrenceKey, item);
+    };
+    for (const [occurrenceKey, wall] of candidates) add(occurrenceKey, wall);
+    const sorted = () => [...output.values()].sort((a, b) => instant(a.startAtUtc) - instant(b.startAtUtc) || (a.occurrenceKey < b.occurrenceKey ? -1 : a.occurrenceKey > b.occurrenceKey ? 1 : 0));
+    let scanned = 0;
+    for (let step = seek(from - duration - 2 * DAY);; step++) {
+        if (++scanned > 100000) throw new Error('Recurrence scan limit exceeded');
+        const wall = at(step), original = resolve(wall);
+        if (!Number.isFinite(original)) throw new Error('Invalid recurrence cadence range');
+        if (original >= to || original > until) break;
+        // All exceptions were considered first; later nominal slots cannot precede
+        // the last selected effective start, even when an exception moved far away.
+        if (counted && output.size >= window.nextCount && original > instant(sorted()[window.nextCount - 1].startAtUtc)) break;
+        add(key(wall), wall);
     }
-    return output.sort((a, b) => instant(a.startAtUtc) - instant(b.startAtUtc) || (a.occurrenceKey < b.occurrenceKey ? -1 : a.occurrenceKey > b.occurrenceKey ? 1 : 0));
+    return counted ? sorted().slice(0, window.nextCount) : sorted();
 }
-export function expandRecurringItems(items, { from, to }) {
-    const [start, end] = bounds({ windowStart: from, windowEnd: to });
+export function expandRecurringItems(items, { from, to, nextCount, accept }) {
+    const [start, end] = nextCount === undefined ? bounds({ windowStart: from, windowEnd: to }) : [instant(from), Infinity];
     return (items || []).flatMap(item => item.recurrence && !item.occurrenceKey
-        ? projectRecurrence(item, { windowStart: from, windowEnd: to })
+        ? projectRecurrence(item, { windowStart: from, windowEnd: to, nextCount, accept })
         : Date.parse(item.startAtUtc) < end && (Number.isFinite(Date.parse(item.endAtUtc)) ? Date.parse(item.endAtUtc) > start : Date.parse(item.startAtUtc) >= start) ? [structuredClone(item)] : [])
         .sort((a, b) => Date.parse(a.startAtUtc) - Date.parse(b.startAtUtc));
 }

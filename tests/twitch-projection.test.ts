@@ -24,7 +24,7 @@ function setup() {
 afterEach(() => vi.useRealTimers());
 
 describe('Twitch rolling materialization', () => {
-  it.each([['daily', 1, 28], ['weekly', 2, 2], ['monthly', 1, 1]] as const)('%s/%s uses the 28-day window and survives restart without duplicates', async (frequency, interval, count) => {
+  it.each([['daily', 1, 7], ['weekly', 2, 7], ['monthly', 1, 7]] as const)('%s/%s uses the next seven occurrences and survives restart without duplicates', async (frequency, interval, count) => {
     const ctx = setup();
     const result = await ctx.orchestrator.create(series(frequency, interval));
     expect(result.providers?.twitch?.projectionMode).toBe('materialized');
@@ -40,7 +40,7 @@ describe('Twitch rolling materialization', () => {
     expect(native.providers?.twitch?.projectionMode).toBe('native');
     expect(ctx.provider.create).toHaveBeenCalledTimes(1);
     const other = setup(); const item = series('weekly'); item.recurrence!.until = '2026-01-20T23:59:59Z';
-    const occurrences = expandRecurringItems([item], { from: now, to: now + 28 * 86400000 });
+    const occurrences = expandRecurringItems([item], { from: now, nextCount: 7 });
     item.recurrence!.exceptions![occurrences[1].occurrenceKey!] = { cancelled: true };
     await other.orchestrator.create(item);
     expect([...other.remote.values()].map(item => item.startAtUtc.slice(0, 10))).toEqual(['2026-01-01', '2026-01-15']);
@@ -50,10 +50,10 @@ describe('Twitch rolling materialization', () => {
     ctx.remote.set('external', series());
     await ctx.orchestrator.refreshTwitch(now + 7 * 86400000);
     expect(ctx.provider.delete).toHaveBeenCalledTimes(7);
-    expect(ctx.provider.create).toHaveBeenCalledTimes(35);
-    expect(ctx.remote.size).toBe(29); expect(ctx.remote.has('external')).toBe(true);
+    expect(ctx.provider.create).toHaveBeenCalledTimes(14);
+    expect(ctx.remote.size).toBe(8); expect(ctx.remote.has('external')).toBe(true);
     await ctx.orchestrator.refreshTwitch(now + 7 * 86400000);
-    expect(ctx.provider.create).toHaveBeenCalledTimes(35);
+    expect(ctx.provider.create).toHaveBeenCalledTimes(14);
   });
   it('keeps a moved occurrence through window shifts using its effective date and stable identity', async () => {
     const ctx = setup(); const item = series();
@@ -78,39 +78,39 @@ describe('Twitch rolling materialization', () => {
     await ctx.orchestrator.create(item);
     const initial = ctx.orchestrator.all()[0].providers!.twitch!.projections!;
     expect(initial[incoming].remoteId).toBeTruthy(); expect(initial[outgoing]).toBeUndefined();
-    expect(ctx.remote.size).toBe(28);
+    expect(ctx.remote.size).toBe(7);
     await ctx.orchestrator.refreshTwitch(Date.parse('2026-02-05T00:00:00Z'));
     const shifted = ctx.orchestrator.all()[0].providers!.twitch!.projections!;
     expect(shifted[incoming]).toBeUndefined(); expect(shifted[outgoing].remoteId).toBeTruthy();
-    expect(ctx.remote.size).toBe(28);
+    expect(ctx.remote.size).toBe(7);
   });
   it('isolates definitive failures and retries only failed occurrences', async () => {
     const ctx = setup(); vi.mocked(ctx.provider.create).mockRejectedValueOnce(Object.assign(new Error('rate limited'), { status: 429 }));
     const item = await ctx.orchestrator.create(series());
-    expect(ctx.remote.size).toBe(27); expect(item.providers?.twitch?.status).toBe('error');
+    expect(ctx.remote.size).toBe(6); expect(item.providers?.twitch?.status).toBe('error');
     expect(Object.values(item.providers!.twitch!.projections!).filter(entry => entry.lastError)).toHaveLength(1);
     await ctx.restart().retry('s', 'twitch');
-    expect(ctx.remote.size).toBe(28); expect(ctx.provider.create).toHaveBeenCalledTimes(29);
+    expect(ctx.remote.size).toBe(7); expect(ctx.provider.create).toHaveBeenCalledTimes(8);
   });
   it('persists ambiguous create intent across restart and never repeats it', async () => {
     const ctx = setup(); const create = ctx.provider.create;
     vi.mocked(create).mockImplementationOnce(async event => { ctx.remote.set('response-lost', event); throw new Error('timeout'); });
     await ctx.orchestrator.create(series());
     await expect(ctx.restart().retry('s', 'twitch')).rejects.toThrow('incertaine');
-    expect(ctx.remote.size).toBe(28); expect(create).toHaveBeenCalledTimes(28);
+    expect(ctx.remote.size).toBe(7); expect(create).toHaveBeenCalledTimes(7);
   });
   it('does not resurrect a remote deletion until explicit retry', async () => {
     const ctx = setup(); await ctx.orchestrator.create(series()); ctx.remote.delete('remote-1');
-    await ctx.restart().refreshTwitch(); expect(ctx.remote.size).toBe(27);
-    await ctx.restart().retry('s', 'twitch'); expect(ctx.remote.size).toBe(28);
-    expect(ctx.provider.create).toHaveBeenCalledTimes(29);
+    await ctx.restart().refreshTwitch(); expect(ctx.remote.size).toBe(6);
+    await ctx.restart().retry('s', 'twitch'); expect(ctx.remote.size).toBe(7);
+    expect(ctx.provider.create).toHaveBeenCalledTimes(8);
   });
   it('reconciles content updates, exception cancellations and withdrawal', async () => {
     const ctx = setup(); const created = await ctx.orchestrator.create(series());
     const key = Object.keys(created.providers!.twitch!.projections!)[0];
     const item = series(); item.recurrence!.exceptions![key] = { cancelled: true };
     await ctx.orchestrator.update('s', { ...item, title: 'Changed' });
-    expect(ctx.remote.size).toBe(27); expect(ctx.provider.update).toHaveBeenCalledTimes(27);
+    expect(ctx.remote.size).toBe(7); expect(ctx.provider.update).toHaveBeenCalledTimes(6);
     await ctx.orchestrator.remove('s', { twitch: true, local: true });
     expect(ctx.remote.size).toBe(0); expect(ctx.orchestrator.all()).toHaveLength(0);
   });
@@ -118,9 +118,9 @@ describe('Twitch rolling materialization', () => {
   it('converts owned native series and returns to native without leftover occurrences', async () => {
     const ctx = setup(); await ctx.orchestrator.create(series('weekly'));
     await ctx.orchestrator.update('s', series());
-    expect(ctx.remote.size).toBe(28); expect(ctx.provider.delete).toHaveBeenCalledTimes(1);
+    expect(ctx.remote.size).toBe(7); expect(ctx.provider.delete).toHaveBeenCalledTimes(1);
     await ctx.orchestrator.update('s', series('weekly'));
-    expect(ctx.remote.size).toBe(1); expect(ctx.provider.delete).toHaveBeenCalledTimes(29);
+    expect(ctx.remote.size).toBe(1); expect(ctx.provider.delete).toHaveBeenCalledTimes(8);
     expect(ctx.orchestrator.all()[0].providers?.twitch?.projectionMode).toBe('native');
     await ctx.restart().refreshTwitch(); expect(ctx.remote.size).toBe(1);
   });
@@ -135,8 +135,8 @@ describe('Twitch rolling materialization', () => {
     expect([...ctx.remote.values()][0].recurrence).toMatchObject({ frequency: 'weekly', interval: 1 });
     expect(ctx.restart().all()[0].providers?.twitch).toMatchObject({ status: 'synced', projectionMode: 'native' });
     await ctx.restart().refreshTwitch(); await ctx.restart().refreshTwitch();
-    expect(ctx.provider.create).toHaveBeenCalledTimes(29);
-    expect(ctx.provider.delete).toHaveBeenCalledTimes(29);
+    expect(ctx.provider.create).toHaveBeenCalledTimes(8);
+    expect(ctx.provider.delete).toHaveBeenCalledTimes(8);
   });
   it('refresh retries a definitive native create failure after transition cleanup', async () => {
     const ctx = setup(); await ctx.orchestrator.create(series());
@@ -144,7 +144,7 @@ describe('Twitch rolling materialization', () => {
     await ctx.orchestrator.update('s', series('weekly'));
     expect(ctx.remote.size).toBe(0);
     await ctx.restart().refreshTwitch(); await ctx.restart().refreshTwitch();
-    expect(ctx.remote.size).toBe(1); expect(ctx.provider.create).toHaveBeenCalledTimes(30);
+    expect(ctx.remote.size).toBe(1); expect(ctx.provider.create).toHaveBeenCalledTimes(9);
   });
   it('never automatically deletes an adopted native identity, but permits explicit withdrawal', async () => {
     const ctx = setup();

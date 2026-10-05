@@ -48,8 +48,8 @@ it.each([false, true])('companion Google native ownership converts and cleans up
   if (legacy) delete saved.providers!.google!.projectionOwned;
   runtime.companion.providerWork['series:google'] = { item: saved, provider: 'google', action: 'publish', status: 'queued' };
   await drain();
-  expect(remote.size).toBe(legacy ? 1 : 28);
-  expect(provider.create).toHaveBeenCalledTimes(legacy ? 1 : 29);
+  expect(remote.size).toBe(legacy ? 1 : 7);
+  expect(provider.create).toHaveBeenCalledTimes(legacy ? 1 : 8);
   runtime = structuredClone(disk);
   const deleted = runtime.planning.pop()!;
   runtime.companion.providerWork['series:google'] = { item: deleted, provider: 'google', action: 'delete', status: 'queued' };
@@ -60,7 +60,7 @@ it.each([false, true])('companion Google native ownership converts and cleans up
   runtime.companion.providerWork['series:google'].status = 'queued'; await drain();
   runtime = structuredClone(disk); await drain();
   expect(remote.size).toBe(0); expect(runtime.companion.providerWork).toEqual({});
-  expect(provider.create).toHaveBeenCalledTimes(legacy ? 1 : 29);
+  expect(provider.create).toHaveBeenCalledTimes(legacy ? 1 : 8);
 });
 
 it.each([false, true].flatMap(owned => (['local', 'remote'] as const).map(strategy => ({ owned, strategy }))))(

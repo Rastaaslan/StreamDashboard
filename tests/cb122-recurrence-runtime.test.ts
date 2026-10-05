@@ -137,7 +137,7 @@ for (const provider of ['twitch', 'google'] as const) {
     await f.request('planning', { ...f.input, recurrence });
     const id = f.item().id;
     if (variant === 'cancel' || variant === 'patch') {
-      const key = expandRecurringItems([f.item()], { from: Date.now(), to: Date.now() + 28 * 86400000 })[1].occurrenceKey!;
+      const key = expandRecurringItems([f.item()], { from: Date.now(), nextCount: 7 })[1].occurrenceKey!;
       await f.request(`planning/${id}/occurrence`, { occurrenceKey: key, ...(variant === 'patch' ? { patch: { title: 'Exception' } } : {}) }, variant === 'cancel' ? 'DELETE' : 'PUT');
     }
     const materialized = provider === 'twitch' ? frequency !== 'weekly' || interval !== 1 || variant !== 'simple' : ['cancel', 'patch'].includes(variant);
@@ -161,8 +161,8 @@ for (const provider of ['twitch', 'google'] as const) {
       expect(f.calls['GET /oauth2/validate']).toBe(2);
       expect(f.calls['GET /helix/schedule']).toBe(1 + 4 * ids.length);
       // Includes real durable storage, restart maintenance and explicit retry.
-      // Bound write amplification, independent of machine speed and timer resolution.
-      expect(f.phases.persistence.count).toBeLessThanOrEqual(4 * ids.length);
+      // Bound per-occurrence writes plus the fixed lifecycle summaries (create/restart/retry/edit/delete).
+      expect(f.phases.persistence.count).toBeLessThanOrEqual(4 * ids.length + 8);
     }
   });
 }
@@ -192,7 +192,7 @@ it.each(['local', 'remote'] as const)('Google native-to-materialized 412 resolve
   await f.request('planning', { ...f.input, recurrence: { frequency: 'weekly', interval: 1, timeZone: 'UTC' } });
   const id = f.item().id, master = f.active()[0];
   master.etag = 'external-edit'; master.summary = 'Remote edit';
-  const key = expandRecurringItems([f.item()], { from: Date.now(), to: Date.now() + 28 * 86400000 })[0].occurrenceKey!;
+  const key = expandRecurringItems([f.item()], { from: Date.now(), nextCount: 7 })[0].occurrenceKey!;
   await f.request(`planning/${id}/occurrence`, { occurrenceKey: key, patch: { title: 'Exception' } }, 'PUT');
   expect(f.item().providers!.google!.status).toBe('conflict');
   await f.restart();
@@ -221,10 +221,10 @@ it.each(['twitch', 'google'] as const)('%s conversion cycles, cancelled remote r
   f.remote.set('external', external);
   const managed = () => f.active().filter(event => event.id !== 'external');
   for (let cycle = 0; cycle < 2; cycle++) {
-    const key = expandRecurringItems([f.item()], { from: Date.now(), to: Date.now() + 28 * 86400000 })[0].occurrenceKey!;
+    const key = expandRecurringItems([f.item()], { from: Date.now(), nextCount: 7 })[0].occurrenceKey!;
     await f.request(`planning/${id}/occurrence`, { occurrenceKey: key, patch: { title: 'Exception' } }, 'PUT');
     expect(f.item().providers![provider]!.projectionMode).toBe('materialized');
-    expect(managed()).toHaveLength(4);
+    expect(managed()).toHaveLength(7);
     await f.restart();
     const first = managed()[0];
     if (provider === 'google') f.remote.set(first.id, { id: first.id, status: 'cancelled' }); else f.remote.delete(first.id);
@@ -232,7 +232,7 @@ it.each(['twitch', 'google'] as const)('%s conversion cycles, cancelled remote r
     expect(f.item().providers![provider]!.status).toBe('error');
     await f.request(`planning/${id}/retry/${provider}`);
     expect(f.item().providers![provider]!.status).toBe('synced');
-    expect(managed()).toHaveLength(4);
+    expect(managed()).toHaveLength(7);
     await f.request(`planning/${id}`, { recurrence }, 'PUT');
     expect(f.item().providers![provider]!.projectionMode).toBe('native');
     expect(managed()).toHaveLength(1);
@@ -240,14 +240,14 @@ it.each(['twitch', 'google'] as const)('%s conversion cycles, cancelled remote r
     expect(managed()).toHaveLength(1);
   }
   // Make both providers materialize, then move the rolling horizon by a week.
-  const key = expandRecurringItems([f.item()], { from: Date.now(), to: Date.now() + 28 * 86400000 })[0].occurrenceKey!;
+  const key = expandRecurringItems([f.item()], { from: Date.now(), nextCount: 7 })[0].occurrenceKey!;
   await f.request(`planning/${id}/occurrence`, { occurrenceKey: key, patch: { title: 'Exception' } }, 'PUT');
   const previous = new Set(managed().map(event => event.id));
   const future = Date.now() + 7 * 86400000;
   vi.spyOn(Date, 'now').mockReturnValue(future);
   await f.restart();
-  expect(managed()).toHaveLength(4);
-  expect(managed().filter(event => previous.has(event.id))).toHaveLength(3);
+  expect(managed()).toHaveLength(7);
+  expect(managed().filter(event => previous.has(event.id))).toHaveLength(6);
   const writes = f.writes.length;
   await f.restart(); expect(f.writes).toHaveLength(writes);
   await f.request(`planning/${id}`, { recurrence: null }, 'PUT');
@@ -274,7 +274,7 @@ it.each(['local', 'remote'] as const)('Twitch retirement detects remote conflict
   expect(saved.providers!.twitch!.status).toBe('synced');
   if (strategy === 'remote') {
     expect(saved.recurrence!.frequency).toBe('weekly'); expect(f.active()).toEqual([old]);
-  } else { expect(f.active().length).toBeGreaterThan(20); expect(f.active()).toHaveLength(Object.keys(saved.providers!.twitch!.projections!).length); expect(f.remote.has(old.id)).toBe(false); }
+  } else { expect(f.active().length).toBe(7); expect(f.active()).toHaveLength(Object.keys(saved.providers!.twitch!.projections!).length); expect(f.remote.has(old.id)).toBe(false); }
 });
 
 it.each(['twitch', 'google'] as const)('%s legacy pre-rolling identities require explicit withdrawal; bulk excludes the series', async provider => {
@@ -287,7 +287,7 @@ it.each(['twitch', 'google'] as const)('%s legacy pre-rolling identities require
   delete state.planning[0].providers[provider].projectionMode;
   await writeFile(file, JSON.stringify(state));
   await f.restart();
-  const key = expandRecurringItems([f.item()], { from: Date.now(), to: Date.now() + 28 * 86400000 })[0].occurrenceKey!;
+  const key = expandRecurringItems([f.item()], { from: Date.now(), nextCount: 7 })[0].occurrenceKey!;
   await f.request(`planning/${id}/occurrence`, { occurrenceKey: key, patch: { title: 'Exception' } }, 'PUT');
   expect(f.item().providers![provider]!.status).toBe('error');
   expect(f.item().providers![provider]!.lastError).toContain('explicitement');
@@ -374,7 +374,7 @@ it.each(['twitch', 'google'] as const)('%s offline occurrence move survives relo
   const f = await fixture(provider);
   await f.request('planning', { ...f.input, recurrence: { frequency: 'weekly', interval: 1, timeZone: 'UTC' } });
   const id = f.item().id;
-  const key = expandRecurringItems([f.item()], { from: Date.now(), to: Date.now() + 28 * 86400000 })[0].occurrenceKey!;
+  const key = expandRecurringItems([f.item()], { from: Date.now(), nextCount: 7 })[0].occurrenceKey!;
   await f.request(`planning/${id}/occurrence`, { occurrenceKey: key, patch: { title: 'Exception' } }, 'PUT');
   const original = f.item().providers![provider]!.projections![key].remoteId!;
   const ids = f.active().map(event => event.id).sort();

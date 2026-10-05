@@ -74,7 +74,7 @@ async function reconcileProjection(
   // inventory recovery must still be able to identify that native replacement.
   const entries = link.projections ??= {};
   const now = options.now ?? Date.now();
-  const bounds = { from: new Date(now).toISOString(), to: new Date(now + 28 * 86400000).toISOString() };
+  const bounds = { from: new Date(now).toISOString(), nextCount: 7 };
   link.projectionWindow = bounds;
   const recover = async (entry: NonNullable<ProviderLink['projections']>[string]) => {
     if (!provider || !entry.uncertainCreate || name !== 'google' || entry.event.projection?.mode !== 'materialized') return;
@@ -94,11 +94,14 @@ async function reconcileProjection(
   };
   const expected = new Map<string, CalendarItem>();
   if (desired && materialized) {
-    for (const occurrence of (options.expand ?? expandRecurringItems)([{ ...item, providers: undefined }], bounds)) {
+    for (const occurrence of (options.expand ?? expandRecurringItems)([{ ...item, providers: undefined }], { ...bounds,
+      accept: occurrence => occurrence.desiredPublication?.[name] !== false
+        && !(name === 'google' && link.projectionRetirements?.[occurrence.occurrenceKey!]?.retained),
+    })) {
       if (occurrence.occurrenceKey && expected.has(occurrence.occurrenceKey)) throw new Error('Duplicate projected occurrence identity');
       if (!occurrence.occurrenceKey) throw new Error('Le moteur doit fournir une occurrenceKey stable.');
       if (name === 'google' && link.projectionRetirements?.[occurrence.occurrenceKey]?.retained) continue;
-      if (occurrence.desiredPublication?.[name] !== false && Date.parse(occurrence.endAtUtc) > now && Date.parse(occurrence.startAtUtc) < Date.parse(bounds.to)) {
+      if (occurrence.desiredPublication?.[name] !== false && Date.parse(occurrence.endAtUtc) > now) {
         expected.set(occurrence.occurrenceKey, request(occurrence, { status: 'pending', projectionOwned: true, calendarId: link.calendarId }, name));
       }
     }

@@ -37,7 +37,7 @@ export async function resolveTwitchOccurrenceConflict(
     const latest = await provider.read(entry.remoteId, request(entry.event, entry));
     if (latest.deleted) throw Object.assign(new Error('Occurrence supprimée à distance — retry explicite requis.'), { code: 'DELETED_REMOTELY' });
     if (!latest.remote || !latest.fingerprint) throw new Error('Version ou empreinte distante indisponible.');
-    const occurrence = expandRecurringItems([{ ...item, providers: undefined }], link.projectionWindow).find(value => value.occurrenceKey === key);
+    const occurrence = expandRecurringItems([{ ...item, providers: undefined }], { ...link.projectionWindow, accept: occurrence => occurrence.desiredPublication?.twitch !== false }).find(value => value.occurrenceKey === key);
     if (!occurrence) throw new Error('Occurrence hors fenêtre : actualisez la projection Twitch.');
     entry.fingerprint = latest.fingerprint;
     entry.remoteRevision = latest.revision;

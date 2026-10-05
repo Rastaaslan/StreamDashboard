@@ -34,8 +34,8 @@ export function projectGoogleSeries(item: CalendarItem, window: RecurrenceWindow
   } catch (error) {
     if (!item.recurrence) throw error;
   }
-  const from = +new Date(window.from); const to = +new Date(window.to);
-  if (!Number.isFinite(from) || !Number.isFinite(to) || to <= from) throw new Error('Fenêtre de projection invalide.');
+  const from = +new Date(window.from); const to = window.nextCount === undefined ? +new Date(window.to!) : Infinity;
+  if (!Number.isFinite(from) || (window.nextCount === undefined && !Number.isFinite(to)) || to <= from) throw new Error('Fenêtre de projection invalide.');
   const keys = new Set<string>();
   const entries = source.expand([structuredClone(item)], window).map(occurrence => {
     const key = occurrence.occurrenceKey;
@@ -56,7 +56,7 @@ export function projectGoogleSeries(item: CalendarItem, window: RecurrenceWindow
     };
     return { identity, input };
   });
-  return { mode: 'materialized', window: structuredClone(window), entries };
+  return { mode: 'materialized', window: { from: window.from, to: window.to, nextCount: window.nextCount }, entries };
 }
 
 import type { PlanningProvider } from '../../../packages/core/src/planning.js';
@@ -120,7 +120,7 @@ export async function resolveGoogleOccurrenceConflict(item: CalendarItem, key: s
     const latest = await provider.read(entry.remoteId, { ...entry.event, providers: { google: entry } });
     if (latest.deleted) throw Object.assign(new Error('Occurrence supprimée à distance — retry explicite requis.'), { code: 'DELETED_REMOTELY' });
     if (!latest.remote || !latest.revision) throw new Error('Version Google distante indisponible.');
-    const projected = projectGoogleSeries(item, link.projectionWindow).entries.find(value => value.identity.mode === 'materialized' && value.identity.occurrenceKey === key);
+    const projected = projectGoogleSeries(item, { ...link.projectionWindow, accept: occurrence => occurrence.desiredPublication?.google !== false && !link.projectionRetirements?.[occurrence.occurrenceKey!]?.retained }).entries.find(value => value.identity.mode === 'materialized' && value.identity.occurrenceKey === key);
     if (!projected) throw new Error('Occurrence hors fenêtre : actualisez la projection.');
     let event: CalendarItem = { ...entry.event, ...projected.input };
     if (event.projection?.mode === 'materialized') event.projection = { ...event.projection, creationId: entry.creationId };

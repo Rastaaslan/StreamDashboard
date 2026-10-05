@@ -16,7 +16,7 @@ test('desktop projection conflict choices send the provider and stable occurrenc
   context.renderEventProviderStatus({ id: 'series', providers: { google: { status: 'error', projectionMode: 'materialized', projections: {
     [button.dataset.occurrenceKey]: { status: 'conflict', lastError: '<remote>' },
   } } } });
-  assert.match(host.innerHTML, /occurrences sur 28 jours/);
+  assert.match(host.innerHTML, /7 prochaines occurrences/);
   assert.match(host.innerHTML, /&lt;remote>/);
   await button.onclick();
   assert.equal(calls[0][0], '/api/v1/planning/series/conflict/google');

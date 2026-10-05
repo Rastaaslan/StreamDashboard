@@ -1,0 +1,26 @@
+name: CB129 Windows package only
+on:
+  push:
+    branches:
+      - ci/cb129-1a39a25
+  workflow_dispatch:
+
+jobs:
+  package:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - name: Install dependencies
+        run: npm ci
+      - name: Package Windows x64
+        run: npm run desktop:package
+      - name: Upload Windows package
+        uses: actions/upload-artifact@v4
+        with:
+          name: StreamDashboard-Windows-x64-CB129
+          path: out/StreamDashboard-win32-x64/**
+          if-no-files-found: error
