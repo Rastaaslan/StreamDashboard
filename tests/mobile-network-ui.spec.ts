@@ -447,3 +447,53 @@ test('CB-52 mobile series round trip preserves timezone and exceptions; occurren
   expect(patch.patch.desiredPublication).toMatchObject({ twitch: false, google: false });
   expect(errors).toEqual([]);
 });
+
+test('CB-127 planning refresh preserves expanded series actions and focus during click', async ({ page }) => {
+  const { backend, errors } = await setup(page);
+  await page.clock.setFixedTime(new Date('2030-06-01T12:00:00Z'));
+  const series = { id: 'race-series', title: 'Série concurrente', category: 'live', startAtUtc: '2030-06-02T22:30:00Z', endAtUtc: '2030-06-02T23:30:00Z', description: 'Original', recurrence: { frequency: 'monthly', interval: 2, timeZone: 'America/New_York', exceptions: { '2030-08-02': { cancelled: true } } } };
+  const other = { id: 'other', title: 'Autre événement', category: 'live', startAtUtc: '2030-06-03T12:00:00Z', endAtUtc: '2030-06-03T13:00:00Z' };
+  (backend.state as any).planning = [series, other];
+  const refresh = async () => {
+    backend.state.stateRevision++;
+    await page.evaluate(state => (window as any).sockets.at(-1).onmessage({ data: JSON.stringify({ type: 'state.updated', data: state }) }), backend.state);
+  };
+  await refresh();
+  await page.locator('[data-tab="planning"]').click();
+  const row = page.getByRole('button', { name: 'Ouvrir Série concurrente', exact: true }).first();
+  await row.locator('summary').click();
+  const action = row.getByRole('button', { name: 'Modifier toute la série', exact: true });
+  await action.focus();
+  const original = await action.elementHandle();
+  // A real HTTP heartbeat while the menu is open must preserve the actual nodes.
+  const reads = backend.stateCalls;
+  backend.state.controlHub.audience.viewerCount = 88;
+  backend.state.stateRevision++;
+  await page.clock.fastForward(10_000);
+  await expect.poll(() => backend.stateCalls).toBeGreaterThan(reads);
+  await expect(page.locator('#live-viewers')).toHaveText('88');
+  await expect(action).toBeFocused();
+  expect(await original!.evaluate(node => node.isConnected)).toBe(true);
+  // Hold the pointer across a WS snapshot that also changes a different row.
+  const box = await action.boundingBox();
+  await page.mouse.move(box!.x + box!.width / 2, box!.y + box!.height / 2);
+  await page.mouse.down();
+  other.title = 'Autre événement actualisé';
+  await refresh();
+  expect(await original!.evaluate(node => node.isConnected)).toBe(true);
+  await expect(row.locator('details')).toHaveAttribute('open', '');
+  await expect(action).toBeFocused();
+  await expect(page.getByRole('button', { name: 'Ouvrir Autre événement actualisé', exact: true })).toBeVisible();
+  await page.mouse.up();
+  await expect(page.locator('#slot-dialog')).toBeVisible();
+  await expect(page.locator('#slot-form [name="description"]')).toHaveValue('Original');
+  await page.locator('#slot-dialog').evaluate((node: HTMLDialogElement) => node.close());
+  series.description = 'Description fraîche';
+  series.title = 'Série actualisée';
+  await refresh();
+  const updated = page.getByRole('button', { name: 'Ouvrir Série actualisée', exact: true }).first();
+  await updated.locator('summary').click();
+  await updated.getByRole('button', { name: 'Modifier toute la série', exact: true }).click();
+  await expect(page.locator('#slot-form [name="description"]')).toHaveValue('Description fraîche');
+  expect(errors).toEqual([]);
+});

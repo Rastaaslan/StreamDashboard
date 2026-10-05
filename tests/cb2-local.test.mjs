@@ -85,8 +85,18 @@ function dom() {
   const nodes = new Map();
   function node(tag = 'div', textContent = '') {
     return { tag, textContent, value: '', dataset: {}, children: [], listeners: {}, disabled: false,
-      append(...children) { this.children.push(...children); },
-      replaceChildren(...children) { this.children = children; },
+      append(...children) { for (const child of children) this.insertBefore(child, null); },
+      insertBefore(child, reference) {
+        child.remove();
+        const index = reference === null ? this.children.length : this.children.indexOf(reference);
+        assert.ok(index >= 0);
+        this.children.splice(index, 0, child); child.parentNode = this;
+      },
+      remove() {
+        if (this.parentNode) this.parentNode.children.splice(this.parentNode.children.indexOf(this), 1);
+        this.parentNode = null;
+      },
+      replaceChildren(...children) { for (const child of [...this.children]) child.remove(); this.append(...children); },
       setAttribute() {}, addEventListener(type, handler) { this.listeners[type] = handler; },
       showModal() { this.open = true; }, close() { this.open = false; },
       querySelector() { return this.button ||= node('button'); },
@@ -205,7 +215,7 @@ test('Standalone Planning form uses real sync: second provider, failed creation 
   });
   context.render = state => { context.state = state; context.items = state.planning; vm.runInContext('renderPlanning(items)', context); };
   vm.runInContext(section(mobile, 'const planningProviderNames', 'function applyPlanningProviderCapabilities'), context);
-  vm.runInContext(section(mobile, 'function renderPlanning(items)', 'async function removeMobileOccurrence'), context);
+  vm.runInContext(section(mobile, 'let planningRows =', 'async function removeMobileOccurrence'), context);
   vm.runInContext(section(mobile, 'async function syncEventProviders(', 'function render(next)'), context);
   vm.runInContext(section(mobile, "$('add-slot').onclick", 'const recentKey'), context);
   ui.$('add-slot').onclick();
