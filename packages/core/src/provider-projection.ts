@@ -19,7 +19,16 @@ export function reconcileProviderProjection(...args: Parameters<typeof reconcile
     && !(options.name === 'google' && item.providers?.google?.nativeRetained)) return Promise.resolve(false);
   // Persistence stays serialized even while independent remote identities run concurrently.
   let saves = Promise.resolve();
-  const persist = () => { const next = saves.then(save); saves = next; return next; };
+  let queued: Promise<void> | undefined;
+  const persist = () => {
+    // Workers waiting before the next snapshot share its durable checkpoint.
+    // Clear BEFORE save captures state: arrivals during I/O require another save.
+    if (!queued) {
+      queued = saves.then(() => { queued = undefined; return save(); });
+      saves = queued;
+    }
+    return queued;
+  };
   const provider = original && {
     prepareCreate: original.prepareCreate && ((item: CalendarItem) => original.prepareCreate!(item)),
     read: original.read && ((...values: Parameters<NonNullable<PlanningProvider['read']>>) => measureSync(options.name, 'read', () => original.read!(...values))),
@@ -178,7 +187,8 @@ async function reconcileProjection(
       }
       if (!entry.remoteId || entry.appliedContent !== projectionContent(event) || entry.status !== 'synced') {
         entry.status = 'pending';
-        await persist();
+        // A new identity is checkpointed by createWithDurableIntent before I/O.
+        if (entry.remoteId) await persist();
         const body = request(event, entry, name);
         if (entry.remoteId) {
           const result = await provider.update(entry.remoteId, body, entry.remoteRevision);
@@ -193,6 +203,8 @@ async function reconcileProjection(
         // Tags belong to live preflight, not provider schedule content. Refresh
         // the local occurrence snapshot without issuing an unrelated remote write.
         entry.event = { ...entry.event, tags: event.tags, tagPreferences: event.tagPreferences };
+        // No remote mutation/identity transition: the final summary saves these.
+        return;
       }
     } catch (error) { fail(entry, error); }
     await persist();

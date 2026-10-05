@@ -3,15 +3,43 @@ import { mkdtemp, readFile, writeFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { startDashboardServer, type DashboardServerHandle } from '../apps/server/src/index.js';
-import { MemorySecretStore } from '../apps/server/src/storage.js';
+import { MemorySecretStore, AtomicJsonStore } from '../apps/server/src/storage.js';
 import { expandRecurringItems } from '../packages/core/src/recurrence.js';
+import { syncDiagnostics } from '../packages/core/src/sync-performance.js';
 import type { CalendarItem } from '../packages/contracts/src/index.js';
 
 let server: DashboardServerHandle | undefined;
 let folder = '';
-afterEach(async () => { await server?.stop(); vi.unstubAllGlobals(); vi.restoreAllMocks(); if (folder) await rm(folder, { recursive: true, force: true }); });
+let report: (() => void) | undefined;
+let stop: (() => Promise<void>) | undefined;
+afterEach(async () => { await (stop ? stop() : server?.stop()); stop = undefined; report?.(); report = undefined; vi.unstubAllGlobals(); vi.restoreAllMocks(); if (folder) await rm(folder, { recursive: true, force: true }); });
 
 async function fixture(provider: 'twitch' | 'google') {
+  const metricsBefore = syncDiagnostics();
+  const trace = process.env.CB126_TRACE === '1';
+  const phases: Record<string, { count: number; ms: number }> = {};
+  const calls: Record<string, number> = {};
+  const timed = async <T>(name: string, work: () => Promise<T>): Promise<T> => {
+    const start = performance.now();
+    try { return await work(); } finally {
+      const phase = phases[name] ??= { count: 0, ms: 0 };
+      phase.count++; phase.ms += performance.now() - start;
+    }
+  };
+  const write = AtomicJsonStore.prototype.write;
+  vi.spyOn(AtomicJsonStore.prototype, 'write').mockImplementation(function (this: AtomicJsonStore<object>, value) {
+    return timed('persistence', async () => {
+      if (process.env.CB126_DISK_MS) await new Promise(resolve => setTimeout(resolve, Number(process.env.CB126_DISK_MS)));
+      await write.call(this, value);
+    });
+  });
+  stop = () => timed('teardown', () => server!.stop());
+  if (trace) report = () => console.log('CB126', JSON.stringify({ phases, calls,
+    sync: Object.fromEntries(Object.entries(syncDiagnostics()).map(([key, value]) => [key, {
+      count: value.count - (metricsBefore[key]?.count ?? 0),
+      ms: value.milliseconds - (metricsBefore[key]?.milliseconds ?? 0),
+    }])),
+  }));
   folder = await mkdtemp(join(tmpdir(), 'cb122-'));
   const secrets = new MemorySecretStore();
   const remote = new Map<string, any>();
@@ -22,6 +50,8 @@ async function fixture(provider: 'twitch' | 'google') {
   const http: typeof fetch = async (input, init) => {
     const url = new URL(String(input));
     if (url.protocol !== 'https:') return nativeFetch(input, init);
+    const call = `${init?.method ?? 'GET'} ${url.pathname}`;
+    calls[call] = (calls[call] ?? 0) + 1;
     if (url.pathname.includes('/validate')) return Response.json({ client_id: 'client', user_id: '42', scopes: ['channel:manage:schedule'] });
     if (url.pathname.includes('/calendarList')) return Response.json({ items: [{ id: 'calendar', summary: 'Target', accessRole: 'owner' }] });
     const google = url.pathname.includes('/events');
@@ -66,7 +96,7 @@ async function fixture(provider: 'twitch' | 'google') {
     return Response.json(google ? current : { data: { segments: [current] } });
   };
   const options = { port: 0, dataDir: folder, secretStore: secrets, twitchClientId: 'client', googleClientId: 'client', googleFetch: http, logger: { info() {}, warn() {}, error() {} } };
-  server = await startDashboardServer(options); await server.stop();
+  server = await timed('bootstrap', () => startDashboardServer(options)); await timed('bootstrap stop', () => server!.stop());
   const file = join(folder, 'dashboard.json');
   const state = JSON.parse(await readFile(file, 'utf8'));
   state.twitch = { broadcasterId: '42', userName: 'u', displayName: 'U' };
@@ -74,10 +104,10 @@ async function fixture(provider: 'twitch' | 'google') {
   if (provider === 'twitch') await secrets.setTwitchTokens({ accessToken: 'token', refreshToken: '' });
   else await secrets.setGoogleTokens({ accessToken: 'token', refreshToken: 'refresh', expiresAt: String(Date.now() + 365 * 86400000) });
   vi.stubGlobal('fetch', http);
-  server = await startDashboardServer(options);
-  await server.providersReady;
+  server = await timed('startup', () => startDashboardServer(options));
+  await timed('providersReady', () => server!.providersReady);
   const request = async (route: string, body: unknown = {}, method = 'POST', ok = true) => {
-    const response = await nativeFetch(server!.url + '/api/v1/' + route, { method, headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) });
+    const response = await timed(`${method} ${route.replace(/planning\/[^/]+/, 'planning/:id')}`, () => nativeFetch(server!.url + '/api/v1/' + route, { method, headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) }));
     expect(response.ok, await response.clone().text()).toBe(ok);
     return response.json();
   };
@@ -85,12 +115,12 @@ async function fixture(provider: 'twitch' | 'google') {
   const start = new Date(); start.setUTCDate(start.getUTCDate() + 1); start.setUTCHours(12, 0, 0, 0);
   const input = { title: 'Matrix', category: 'live', startAtUtc: start.toISOString(), endAtUtc: new Date(+start + 3600000).toISOString(), desiredPublication: { local: true, twitch: provider === 'twitch', google: provider === 'google' } };
   const item = () => server!.state().planning.find(value => value.title === 'Matrix')!;
-  return { request, input, item, remote, writes, offline: (value: boolean) => { offline = value; },
+  return { request, input, item, remote, writes, calls, phases, offline: (value: boolean) => { offline = value; },
     raceGooglePatch: () => { raceGooglePatch = true; },
     loseCreateResponse: () => { loseCreateResponse = true; },
     rejectCreate: (value: boolean) => { rejectCreate = value; },
     active: () => [...remote.values()].filter(event => event.status !== 'cancelled'),
-    restart: async () => { await server!.stop(); server = await startDashboardServer(options); await server.providersReady; },
+    restart: async () => { await timed('restart stop', () => server!.stop()); server = await timed('startup', () => startDashboardServer(options)); await timed('providersReady', () => server!.providersReady); },
     disk: async () => JSON.parse(await readFile(file, 'utf8')).planning as CalendarItem[],
   };
 }
@@ -124,6 +154,16 @@ for (const provider of ['twitch', 'google'] as const) {
     if (provider === 'google') expect(f.writes.length).toBeGreaterThan(before);
     await f.request(`planning/${id}`, { confirmRecurring: true }, 'DELETE');
     expect(f.active()).toEqual([]);
+    if (provider === 'twitch' && frequency === 'daily') {
+      expect(f.writes.filter(write => write.method === 'POST')).toHaveLength(ids.length);
+      expect(f.writes.filter(write => write.method === 'DELETE')).toHaveLength(ids.length);
+      expect(f.writes.filter(write => write.method === 'PATCH')).toHaveLength(0);
+      expect(f.calls['GET /oauth2/validate']).toBe(2);
+      expect(f.calls['GET /helix/schedule']).toBe(1 + 4 * ids.length);
+      // Includes real durable storage, restart maintenance and explicit retry.
+      // Bound write amplification, independent of machine speed and timer resolution.
+      expect(f.phases.persistence.count).toBeLessThanOrEqual(4 * ids.length);
+    }
   });
 }
 

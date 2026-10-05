@@ -197,3 +197,44 @@ it.each(['disconnect', 'invalidate'] as const)('cancels Google mutation cooldown
   expect(requests.filter(method => method === 'DELETE')).toHaveLength(1);
   expect(client.connected).toBe(false);
 });
+
+it('coalesces rolling checkpoints without releasing CREATE before durable intent or worker identity', async () => {
+  vi.useFakeTimers(); vi.setSystemTime(now);
+  const item = fixture();
+  let disk = structuredClone(item), saves = 0, active = 0, peak = 0;
+  const created: string[] = [];
+  const persist = async () => {
+    const snapshot = structuredClone(item);
+    saves++; active++; peak = Math.max(peak, active);
+    await new Promise(resolve => setTimeout(resolve, 16));
+    disk = snapshot; active--;
+  };
+  const create = vi.fn(async (event: CalendarItem) => {
+    const entries = Object.values(disk.providers!.twitch!.projections!);
+    expect(entries.find(entry => entry.event.startAtUtc === event.startAtUtc)?.uncertainCreate).toBeDefined();
+    // Three workers: each worker's previous result must be durable before advancing.
+    if (created.length >= 3) expect(entries.some(entry => entry.remoteId === created[created.length - 3])).toBe(true);
+    const id = `remote-${created.length}`; created.push(id);
+    return { id };
+  });
+  const provider = { create, read: async () => ({}), update: vi.fn(), delete: vi.fn() };
+  const work = reconcileTwitchProjection(item, provider, persist, { now });
+  await vi.runAllTimersAsync(); await work;
+  expect(create).toHaveBeenCalledTimes(28);
+  expect(peak).toBe(1);
+  expect(saves).toBeLessThanOrEqual(40);
+  expect(Object.values(disk.providers!.twitch!.projections!).every(entry => entry.remoteId && !entry.uncertainCreate)).toBe(true);
+  saves = 0;
+  const retry = reconcileTwitchProjection(item, provider, persist, { now, retry: true });
+  await vi.runAllTimersAsync(); await retry;
+  expect(create).toHaveBeenCalledTimes(28);
+  expect(saves).toBe(1);
+});
+
+it('never releases queued rolling CREATEs when the durable checkpoint fails', async () => {
+  const item = fixture();
+  const create = vi.fn();
+  const persist = vi.fn(async () => { throw new Error('disk unavailable'); });
+  await expect(reconcileTwitchProjection(item, { create, update: vi.fn(), delete: vi.fn() }, persist, { now })).rejects.toThrow('disk unavailable');
+  expect(create).not.toHaveBeenCalled();
+});
