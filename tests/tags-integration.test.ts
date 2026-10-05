@@ -7,7 +7,7 @@ import { TwitchPreflight } from '../integrations/twitch/src/preflight.js';
 import { TwitchClient } from '../integrations/twitch/src/client.js';
 import { startDashboardServer } from '../apps/server/src/index.js';
 
-const tags = { values: ['Français', 'Gaming'], source: 'generated' as const, generatedAt: '2026-10-04T10:00:00Z' };
+const tags = { values: ['Français', 'Gaming'], source: 'generated' as const, validated: true, generatedAt: '2026-10-04T10:00:00Z' };
 const event = { title: 'Mon live', twitchCategoryId: '42', tags };
 afterEach(() => { vi.unstubAllGlobals(); vi.restoreAllMocks(); });
 describe('tags integration', () => {
@@ -22,7 +22,7 @@ describe('tags integration', () => {
   });
   it('keeps existing tags on absent, failing, invalid and hung engines', async () => {
     expect(await resolveTags(event, undefined, true)).toMatchObject({ tags, warning: expect.any(String) });
-    for (const generate of [async () => { throw Error('offline'); }, async () => [], () => new Promise<string[]>(() => {})]) {
+    for (const generate of [async () => { throw Error('offline'); }, () => new Promise<string[]>(() => {})]) {
       expect(await resolveTags(event, { generate }, true, 5)).toMatchObject({ tags, warning: expect.any(String) });
     }
     expect(await resolveTags({ title: 'Live' })).toMatchObject({ tags: undefined, warning: expect.any(String) });
@@ -66,12 +66,13 @@ describe('tags integration', () => {
       const created = await request('/api/v1/planning', 'POST', { ...event, startAtUtc: '2030-01-01T10:00:00Z', endAtUtc: '2030-01-01T11:00:00Z', tagPreferences: { automatic: false, language: 'fr' } });
       const item = created.planning.find((value: any) => value.title === event.title);
       expect(item.tags).toEqual(tags);
-      const edited = await request(`/api/v1/planning/${item.id}`, 'PUT', { title: 'Updated' });
-      expect(edited.planning.find((value: any) => value.id === item.id).tags).toEqual(tags);
+      const edited = await request(`/api/v1/planning/${item.id}`, 'PUT', { title: 'Updated', tags: { values: ['Français'], source: 'manual' } });
+      const corrected = { values: ['Français'], source: 'manual', rejectedValues: ['Gaming'] };
+      expect(edited.planning.find((value: any) => value.id === item.id).tags).toEqual(corrected);
       await server.stop();
       server = await startDashboardServer({ port: 0, dataDir, logger: { info() {}, warn() {}, error() {} } });
       const state = await fetch(server.url + '/api/v1/state').then(r => r.json());
-      expect(state.planning.find((value: any) => value.id === item.id)).toMatchObject({ tags, tagPreferences: { automatic: false, language: 'fr' } });
+      expect(state.planning.find((value: any) => value.id === item.id)).toMatchObject({ tags: corrected, tagPreferences: { automatic: false, language: 'fr' } });
     } finally { await server.stop(); await rm(dataDir, { recursive: true, force: true }); }
   });
   it('uses the production engine cache and learns persisted game/series choices without occurrence pollution', async () => {
@@ -86,6 +87,9 @@ describe('tags integration', () => {
       const base = { title: 'Weekly', twitchCategoryId: '42', twitchCategoryName: 'Dead Island 2' };
       const first = await request('/api/v1/planning/tags/regenerate', { ...base, refreshTwitch: true });
       expect(first.tags.values).toContain('Zombie');
+      expect(first.recommended).toEqual(first.tags.values);
+      expect(first.observedSuggestions.map((value: any) => value.tag)).toContain('Coop');
+      expect(first.tags.values).not.toContain('Coop');
       await request('/api/v1/planning/tags/regenerate', base);
       expect(observe).toHaveBeenCalledTimes(1);
       const state = await request('/api/v1/planning', { ...base, startAtUtc: '2030-01-01T10:00:00Z', endAtUtc: '2030-01-01T11:00:00Z', tags: { values: ['GameChoice'], source: 'manual' }, recurrence: { frequency: 'weekly', interval: 1, timeZone: 'Europe/Paris' } });
@@ -99,6 +103,13 @@ describe('tags integration', () => {
       const seriesLearned = await request('/api/v1/planning/tags/regenerate', { title: 'Another game', twitchCategoryId: '99', seriesId: series.id });
       expect(seriesLearned.tags.values).toContain('GameChoice');
       expect(seriesLearned.tags.values).not.toContain('Birthday');
+      await request(`/api/v1/planning/${series.id}`, { tags: { values: [], source: 'manual', rejectedValues: ['Zombie', 'Coop'] }, confirmRecurring: true }, 'PUT');
+      await server.stop();
+      server = await startDashboardServer({ port: 0, dataDir, logger: { info() {}, warn() {}, error() {} } });
+      const corrected = await request('/api/v1/planning/tags/regenerate', { ...base, refreshTwitch: true });
+      expect(corrected.tags.values).not.toContain('Zombie');
+      expect(corrected.tags.values).not.toContain('GameChoice');
+      expect(corrected.observedSuggestions.find((value: any) => value.tag === 'Coop').sources).toContain('rejected');
       await request('/api/v1/settings', { tagPreferences: { preferredTags: ['Community'], language: 'fr' } }, 'PUT');
       const channel = await request('/api/v1/planning/tags/regenerate', { title: 'Live' });
       expect(channel.tags.values).toEqual(expect.arrayContaining(['Community', 'French']));
@@ -118,6 +129,87 @@ describe('tags integration', () => {
       expect((await refreshed.json()).tags.values).toContain('Horror');
       expect(performance.now() - refreshStart).toBeLessThan(1300);
     } finally { await server.stop(); await rm(dataDir, { recursive: true, force: true }); }
+  });
+  it('regenerates legacy polluted tags through the UI/API without validating them, then preflights only recommendations', async () => {
+    const source = await readFile('apps/web/preview/preview.js', 'utf8');
+    const reader = source.slice(source.indexOf('function readEventTags('), source.indexOf('function readTagPreferences()'));
+    const handler = source.slice(source.indexOf("document.querySelector('#event-tags-regenerate').onclick="), source.indexOf('function renderObservedTags('));
+    const legacy = { values: ['minecraft', 'English', 'VTuber', 'DonutSMP', 'ADHD', 'chill', 'DropsEnabled', 'mcsr', 'Speedrun', 'Español'], source: 'generated' };
+    vi.spyOn(TwitchClient.prototype, 'getStreamsForGame').mockResolvedValue([{ tags: legacy.values, viewer_count: 100, language: 'en' }]);
+    const dataDir = await mkdtemp(resolve('.tags-test-'));
+    const server = await startDashboardServer({ port: 0, dataDir, logger: { info() {}, warn() {}, error() {} } });
+    const nodes: Record<string, { value: string; disabled?: boolean; textContent?: string; onclick?: () => Promise<void> }> = {
+      '#event-tags': { value: legacy.values.join(', ') }, '#event-tags-regenerate': { value: '' }, '#event-tags-status': { value: '' },
+      '#event-title': { value: 'Minecraft - AllTheMods 10 To the sky' }, '#event-description': { value: '' },
+      '#event-twitch-game-id': { value: '27471' }, '#event-twitch-category': { value: 'Minecraft' },
+    };
+    let payload: any, result: any;
+    const context = {
+      document: { querySelector: (selector: string) => nodes[selector] }, eventTagMetadata: legacy,
+      eventRejectedObservations: [], eventTagsGeneration: 0, requireRuntime: () => true,
+      state: { eventEdit: { occurrence: { id: 'legacy' } } }, readTagPreferences: () => ({ language: 'fr' }), renderObservedTags: vi.fn(),
+      request: async (route: string, options: RequestInit) => {
+        payload = JSON.parse(String(options.body));
+        const response = await fetch(server.url + route, { ...options, headers: { 'Content-Type': 'application/json' } });
+        expect(response.ok).toBe(true); result = await response.json(); return result;
+      },
+    };
+    try {
+      runInNewContext(reader + handler, context);
+      await nodes['#event-tags-regenerate'].onclick!();
+      expect(payload.tags).toMatchObject({ source: 'generated', values: legacy.values, acceptedValues: [] });
+      expect(payload.tags.validated).toBeUndefined();
+      expect(result.recommended).toEqual(['Minecraft', 'French', 'Modded']);
+      expect(nodes['#event-tags'].value).toBe('Minecraft, French, Modded');
+      const updateChannel = vi.fn(async () => {});
+      const preflight = new TwitchPreflight({ getChannel: async () => ({ title: '', gameId: '' }), searchGame: vi.fn(), updateChannel });
+      await preflight.prepare({ eventId: 'legacy', title: payload.title, categoryId: '27471', tags: result.tags.values });
+      expect(updateChannel).toHaveBeenCalledWith({ title: payload.title, gameId: '27471', tags: ['Minecraft', 'French', 'Modded'] });
+      // Adding one explicit choice must not validate untouched generated values.
+      context.eventTagMetadata = legacy;
+      nodes['#event-tags'].value = legacy.values.filter(tag => tag !== 'English').concat('Coop').join(', ');
+      await nodes['#event-tags-regenerate'].onclick!();
+      expect(payload.tags.acceptedValues).toEqual(['Coop']);
+      expect(result.recommended).toEqual(['Minecraft', 'Coop', 'French', 'Modded']);
+      await nodes['#event-tags-regenerate'].onclick!();
+      expect(payload.tags.acceptedValues).toEqual(['Coop']);
+      expect(result.recommended).toEqual(['Minecraft', 'Coop', 'French', 'Modded']);
+    } finally { await server.stop(); await rm(dataDir, { recursive: true, force: true }); }
+  });
+  it('lets an unsaved draft acceptance replace the same saved event rejection through regeneration', async () => {
+    const dataDir = await mkdtemp(resolve('.tags-test-'));
+    vi.spyOn(TwitchClient.prototype, 'getStreamsForGame').mockResolvedValue([]);
+    const server = await startDashboardServer({ port: 0, dataDir, logger: { info() {}, warn() {}, error() {} } });
+    const request = async (route: string, body: unknown) => {
+      const response = await fetch(server.url + route, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+      expect(response.ok).toBe(true); return response.json();
+    };
+    try {
+      const event = { title: 'Live', twitchCategoryId: '42', tags: { values: [], source: 'manual', rejectedValues: ['Coop'] } };
+      const created = await request('/api/v1/planning', { ...event, startAtUtc: '2030-01-01T10:00:00Z', endAtUtc: '2030-01-01T11:00:00Z' });
+      const saved = created.planning.find((item: any) => item.title === event.title);
+      expect((await request('/api/v1/planning/tags/regenerate', saved)).recommended).toEqual([]);
+      const draft = { ...saved, tags: { values: ['Coop'], source: 'manual', rejectedValues: [] } };
+      expect((await request('/api/v1/planning/tags/regenerate', draft)).recommended).toEqual(['Coop']);
+      expect((await request('/api/v1/planning/tags/regenerate', { ...draft, tags: { values: ['Coop'], source: 'generated', acceptedValues: ['Coop'], rejectedValues: [] } })).recommended).toEqual(['Coop']);
+      // Regeneration does not save the draft or erase other records' feedback.
+      const state = await fetch(server.url + '/api/v1/state').then(response => response.json());
+      expect(state.planning.find((item: any) => item.id === saved.id).tags.rejectedValues).toEqual(['Coop']);
+      expect((await request('/api/v1/planning/tags/regenerate', { ...draft, id: 'another' })).recommended).toEqual([]);
+    } finally { await server.stop(); await rm(dataDir, { recursive: true, force: true }); }
+  });
+  it('records retained, removed and dismissed tags from the editable UI, including clearing all tags', async () => {
+    const source = await readFile('apps/web/preview/preview.js', 'utf8');
+    const reader = source.slice(source.indexOf('function readEventTags('), source.indexOf('function readTagPreferences()'));
+    const input = { value: 'Minecraft' };
+    const context = { document: { querySelector: () => input }, eventTagMetadata: { values: ['Minecraft', 'Modded'], source: 'generated' }, eventRejectedObservations: ['VTuber'] };
+    const read = runInNewContext(`${reader}; readEventTags`, context);
+    expect(read(true)).toEqual({ values: ['Minecraft'], source: 'manual', validated: true, rejectedValues: ['VTuber', 'Modded'] });
+    input.value = '';
+    expect(read(true).rejectedValues).toEqual(['VTuber', 'Minecraft', 'Modded']);
+    input.value = 'Minecraft, Modded, VTuber';
+    expect(read(true).rejectedValues).toEqual([]);
+    expect(runInNewContext(`${reader}; readEventTags()`, { document: { querySelector: () => ({ value: '' }) }, eventTagMetadata: undefined, eventRejectedObservations: [] })).toBeUndefined();
   });
   it('Planning duplication preserves independent tag metadata and preferences', async () => {
     const source = await readFile('apps/web/preview/preview.js', 'utf8');

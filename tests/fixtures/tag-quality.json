@@ -1,0 +1,12 @@
+{
+  "deadIsland": {
+    "event": { "title": "Spooktober", "twitchCategoryId": "42", "twitchCategoryName": "Dead Island 2" },
+    "tags": ["DeadIsland2", "Horror", "English", "PC", "gaming", "chill", "fun", "Francais", "Rerun", "Fortnite", "Русский", "Español", "Fachoesfera", "Zombie", "Action", "Coop"],
+    "recommended": ["DeadIsland2", "Action", "Horror", "Zombie", "Halloween", "French"]
+  },
+  "minecraft": {
+    "event": { "title": "Minecraft - AllTheMods 10 To the sky", "twitchCategoryId": "27471", "twitchCategoryName": "Minecraft" },
+    "tags": ["minecraft", "English", "VTuber", "DonutSMP", "ADHD", "chill", "DropsEnabled", "mcsr", "Speedrun", "Español"],
+    "recommended": ["Minecraft", "French", "Modded"]
+  }
+}

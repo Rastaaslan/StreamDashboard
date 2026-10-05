@@ -82,7 +82,9 @@ it.each(['ordinary', 'Spooktober'])('uses the dynamic production engine through 
     const input = { title: scenario === 'Spooktober' ? 'Spooktober' : 'Live ordinaire', twitchCategoryName: 'Dead Island 2', twitchCategoryId: '1', tagPreferences: { automatic: true, language: 'fr' } };
     const generated = await request('planning/tags/regenerate', { ...input, refreshTwitch: true });
     const expected = generated.tags.values;
-    expect(expected).toEqual(expect.arrayContaining(['DeadIsland2', 'Zombie', 'Horror', 'Action', 'Coop']));
+    expect(expected).toEqual(expect.arrayContaining(['DeadIsland2', 'Zombie', 'Horror', 'Action', 'French']));
+    expect(expected).not.toContain('Coop');
+    expect(generated.observedSuggestions.map((value: { tag: string }) => value.tag)).toContain('Coop');
     expect(expected.includes('Halloween')).toBe(scenario === 'Spooktober');
     expect(generated.tags).toMatchObject({ values: expected, source: 'generated' });
     expect(generated.warning).toBeUndefined();

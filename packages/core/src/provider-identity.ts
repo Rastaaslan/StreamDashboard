@@ -26,9 +26,14 @@ export function isDefinitiveCreateFailure(error: unknown): boolean {
 export async function createWithDurableIntent<T extends { id: string }>(
   item: CalendarItem, provider: 'twitch' | 'google', persist: () => Promise<void>,
   create: (request: CalendarItem) => Promise<T>,
+  prepare?: (request: CalendarItem) => { calendarId?: string } | Promise<{ calendarId?: string }>,
 ): Promise<T> {
   assertProviderCreationCertain(item, provider);
   const link = (item.providers ??= {})[provider] ??= { status: 'pending' };
+  if (prepare) {
+    const destination = await prepare(item);
+    if (destination.calendarId) link.calendarId = destination.calendarId;
+  }
   const { providers: _providers, conflict: _conflict, ...original } = item;
   link.uncertainCreate = { event: structuredClone(original) as unknown as Record<string, unknown>,
     publishedContent: publicationContent(item, provider) };

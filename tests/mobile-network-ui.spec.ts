@@ -444,5 +444,6 @@ test('CB-52 mobile series round trip preserves timezone and exceptions; occurren
   await form.locator('button[type="submit"]').click();
   await expect(page.locator('#slot-dialog')).not.toBeVisible();
   expect(JSON.stringify(patch)).toContain('Nouvelle description occurrence');
+  expect(patch.patch.desiredPublication).toMatchObject({ twitch: false, google: false });
   expect(errors).toEqual([]);
 });

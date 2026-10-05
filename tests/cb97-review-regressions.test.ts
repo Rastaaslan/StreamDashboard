@@ -20,7 +20,7 @@ const scopes = { client_id: 'client', user_id: '42', scopes: ['channel:manage:sc
 it.each<RecurrenceRule>([
   { ...weekly, frequency: 'daily' }, { ...weekly, interval: 2 }, { ...weekly, frequency: 'monthly' },
   { ...weekly, exceptions: { 'local:2030-01-08T20:00:00': { cancelled: true } } },
-])('global Twitch HTTP sync cannot bypass a refused create: $frequency/$interval/$exceptions', async recurrence => {
+])('global Twitch HTTP sync keeps out-of-window materialized series local: $frequency/$interval/$exceptions', async recurrence => {
   dataDir = await mkdtemp(join(tmpdir(), 'cb97-twitch-review-'));
   const secrets = new MemorySecretStore(); const logger = { info() {}, warn() {}, error() {} };
   server = await startDashboardServer({ port: 0, dataDir, secretStore: secrets, logger });
@@ -43,10 +43,14 @@ it.each<RecurrenceRule>([
   expect((await post('planning', { ...local, recurrence })).ok).toBe(true);
   const snapshot = () => nativeFetch(server!.url + '/api/v1/companion/snapshot').then(r => r.json());
   const before = (await snapshot()).planning;
-  expect(before[0].providers.twitch.status).toBe('error');
+  expect(before[0].providers.twitch.status).toBe('synced');
+  expect(before[0].providers.twitch.projectionMode).toBe('materialized');
   const response = await post('twitch/sync', {});
-  expect(response.ok).toBe(false); expect(await response.text()).toMatch(/weekly|exceptions/);
-  expect(mutations).toEqual([]); expect((await snapshot()).planning).toEqual(before);
+  expect(response.ok).toBe(true);
+  expect(mutations).toEqual([]);
+  const after = (await snapshot()).planning;
+  expect(after).toHaveLength(1); expect(after[0].recurrence).toEqual(before[0].recurrence);
+  expect(after[0].providers.twitch.projectionMode).toBe('materialized');
 });
 
 it.each(['create', 'sync-create', 'recover', 'import'] as const)('Twitch %s → sync → remote edit → update/retry preserves conflict protection', async origin => {

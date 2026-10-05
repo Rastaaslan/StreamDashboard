@@ -1,3 +1,4 @@
+import { needsTwitchMaterialization } from './projection.js';
 import { assertTwitchRecurrence } from './recurrence.js';
 import { assertProviderCreationCertain } from '../../../packages/core/src/provider-identity.js';
 import { createHash } from 'node:crypto';
@@ -409,7 +410,8 @@ export class TwitchClient {
       this.validateScheduleItem(item);
       const exact = (await this.scheduleSegments()).filter(segment => this.sameIdentity(item, segment) && this.sameCategory(item, segment));
       if (exact.length > 1) throw new Error('Plusieurs segments Twitch identiques existent déjà. Synchronisez puis choisissez explicitement celui à conserver.');
-      if (exact.length === 1) return { id: exact[0]!.id, fingerprint: this.segmentFingerprint(exact[0]!) };
+      if (exact.length && item.providers?.twitch?.projectionOwned) throw new Error('Un segment Twitch identique existe hors de cette identité gérée. Création refusée.');
+      if (exact.length === 1) return { owned: false, id: exact[0]!.id, fingerprint: this.segmentFingerprint(exact[0]!) };
     } catch (error) {
       throw Object.assign(error instanceof Error ? error : new Error(String(error)), { mutationNotStarted: true });
     }
@@ -475,7 +477,7 @@ export class TwitchClient {
   private async performSync(items: CalendarItem[]) {
     if (!this.state.connected) throw new Error('Connectez Twitch avant de synchroniser le planning.');
     for (const item of items) {
-      if (item.desiredPublication?.twitch) this.validateTwitchRecurrence(item);
+      if (item.desiredPublication?.twitch && !needsTwitchMaterialization(item) && !item.providers?.twitch?.projections) this.validateTwitchRecurrence(item);
     }
     const generation = this.generation;
     this.syncing = true;
@@ -488,6 +490,7 @@ export class TwitchClient {
         const remoteId = item.providers?.twitch?.remoteId ?? item.twitchSegmentId;
         if (remoteId) linkedByRemoteId.set(remoteId, item);
       }
+      const projectionIds = new Set(items.flatMap(item => Object.values(item.providers?.twitch?.projections ?? {}).flatMap(entry => entry.remoteId ? [entry.remoteId] : [])));
       const remoteIds = new Set(segments.map(segment => segment.id));
       const merged = items.filter(item => {
         const remoteId = item.providers?.twitch?.remoteId ?? item.twitchSegmentId;
@@ -511,9 +514,12 @@ export class TwitchClient {
       }
 
       for (const segment of segments) {
+        if (projectionIds.has(segment.id)) continue;
         const existingById = linkedByRemoteId.get(segment.id);
+        if (existingById && (needsTwitchMaterialization(existingById) || existingById.providers?.twitch?.projections)) continue;
         const recoveredLocal = existingById ?? merged.find(item =>
           item.ownership !== 'EXTERNAL'
+          && !needsTwitchMaterialization(item) && !item.providers?.twitch?.projections
           && item.desiredPublication?.twitch === true
           && !item.providers?.twitch?.remoteId
           && !item.twitchSegmentId
@@ -580,6 +586,7 @@ export class TwitchClient {
       for (const item of merged.filter(item =>
         (item.category === 'live' || item.kind === 'LIVE')
         && item.desiredPublication?.twitch === true
+        && !needsTwitchMaterialization(item) && !item.providers?.twitch?.projections
         && !item.twitchSegmentId
         && !item.providers?.twitch?.remoteId
         && item.ownership !== 'EXTERNAL'

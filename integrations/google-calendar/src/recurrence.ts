@@ -1,5 +1,18 @@
 import type { CalendarItem } from '../../../packages/contracts/src/index.js';
 
+/** DATE events round-trip as UTC midnight, with an exclusive end date.
+ * Never truncate a materialized instant range: that would change window
+ * membership and make an unchanged remote event look like a conflict on retry.
+ */
+export function assertGoogleMaterializedAllDay(input: Pick<CalendarItem, 'allDay' | 'startAtUtc' | 'endAtUtc'>): void {
+  if (!input.allDay) return;
+  const midnight = (value: string) => Number.isFinite(Date.parse(value))
+    && new Date(value).toISOString() === `${value.slice(0, 10)}T00:00:00.000Z`;
+  if (!midnight(input.startAtUtc) || !midnight(input.endAtUtc) || Date.parse(input.endAtUtc) <= Date.parse(input.startAtUtc)) {
+    throw Object.assign(new Error('Occurrence all-day Google non représentable : les bornes doivent être à minuit UTC, avec une fin exclusive.'), { mutationNotStarted: true });
+  }
+}
+
 /** Recover only rules whose round trip through the local model is lossless.
  * Unknown RRULE clauses must never become an editable, non-recurring event.
  */
@@ -26,6 +39,7 @@ export function parseGoogleRecurrence(input: Pick<CalendarItem, 'startAtUtc' | '
     until = `${raw.slice(0, 4)}-${raw.slice(4, 6)}-${raw.slice(6, 8)}T${input.allDay ? '00:00:00' : `${raw.slice(9, 11)}:${raw.slice(11, 13)}:${raw.slice(13, 15)}`}Z`;
   }
   const rule = { frequency: parts.FREQ?.toLowerCase(), interval: Number(parts.INTERVAL), timeZone, ...(until ? { until } : {}) } as NonNullable<CalendarItem['recurrence']>;
+  if (!(rule.interval === 1 || rule.frequency === 'weekly' && rule.interval === 2)) rule.version = 2;
   const canonical = googleRecurrence({ ...input, recurrence: rule })[0].slice(6).split(';').sort();
   if (JSON.stringify(canonical) !== JSON.stringify(Object.entries(parts).map(([key, value]) => `${key}=${value}`).sort())) return refuse();
   return rule;
@@ -39,8 +53,11 @@ export function googleRecurrence(input: Pick<CalendarItem, 'recurrence' | 'start
   if (input.seriesId || input.occurrenceKey) refuse('publiez la série, pas une occurrence virtuelle.');
   const rule = input.recurrence;
   if (!rule) return [];
+  if (![undefined, 1, 2].includes(rule.version) || rule.custom) refuse('version ou moteur custom non représentable nativement.');
   if (Object.keys(rule.exceptions ?? {}).length) refuse('les exceptions doivent être conservées localement ; aucune mutation Google effectuée.');
-  if (!(['daily', 'weekly', 'monthly'].includes(rule.frequency)) || !(rule.interval === 1 || (rule.frequency === 'weekly' && rule.interval === 2))) refuse('cadence non prise en charge.');
+  if (!(['daily', 'weekly', 'monthly'].includes(rule.frequency))
+    || !(rule.version === 2 ? Number.isSafeInteger(rule.interval) && rule.interval > 0
+      : rule.interval === 1 || (rule.frequency === 'weekly' && rule.interval === 2))) refuse('cadence non prise en charge.');
   let formatter: Intl.DateTimeFormat;
   try { formatter = new Intl.DateTimeFormat('en-CA', { timeZone: rule.timeZone, day: 'numeric' }); }
   catch { return refuse('fuseau horaire invalide.'); }
