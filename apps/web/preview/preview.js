@@ -1183,7 +1183,8 @@ document.querySelector('#event-tags-regenerate').onclick=async()=>{
   button.disabled=true;
   try{
     const feedback=readEventTags(false);
-    const result=await request('/api/v1/planning/tags/regenerate',{method:'POST',body:JSON.stringify({refreshTwitch:true,id:state.eventEdit?.occurrence?.id,seriesId:state.eventEdit?.occurrence?.seriesId,title:document.querySelector('#event-title').value,description:document.querySelector('#event-description').value,twitchCategoryId:document.querySelector('#event-twitch-game-id').value,twitchCategoryName:document.querySelector('#event-twitch-category').value,tags:feedback,tagPreferences:readTagPreferences()})});
+    const source=state.eventEdit?.scope==='series'?state.eventEdit.series:state.eventEdit?.occurrence;
+    const result=await request('/api/v1/planning/tags/regenerate',{method:'POST',body:JSON.stringify({refreshTwitch:true,id:source?.id,seriesId:source?.seriesId,occurrenceKey:source?.occurrenceKey,title:document.querySelector('#event-title').value,description:document.querySelector('#event-description').value,twitchCategoryId:document.querySelector('#event-twitch-game-id').value,twitchCategoryName:document.querySelector('#event-twitch-category').value,tags:feedback,tagPreferences:readTagPreferences()})});
     if(generation!==eventTagsGeneration||input.value!==previous)return;
     if(result.tags){eventTagMetadata={...result.tags,acceptedValues:feedback?.source==='manual'||feedback?.validated?feedback.values:feedback?.acceptedValues||[],rejectedValues:feedback?.rejectedValues||[]};input.value=result.tags.values.join(', ');}
     renderObservedTags(result.observedSuggestions||[]);

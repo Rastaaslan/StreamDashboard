@@ -92,3 +92,27 @@ et fichiers temporaires dans les répertoires accessibles. Les premières tentat
 sans ces réglages ont échoué sur les accès temporaires ou les binaires manquants ;
 elles ont été relancées après préparation des dépendances. L'import JSON ajouté
 au test croisé a également été corrigé pour la compilation NodeNext.
+
+### Revue CB-118 — identité du brouillon de série
+
+La régénération depuis une occurrence projetée utilise maintenant l'identité de
+la portée sélectionnée : ID du maître en « Toute la série », ID et clé
+canonique de l'occurrence en portée occurrence. L'API transmet cette clé au
+moteur pour conserver l'isolation de l'apprentissage des occurrences.
+
+`tests/cb118-series-tags.test.ts` exécute les handlers réels de population,
+changement de portée, régénération et sauvegarde contre le serveur. Il vérifie
+qu'un rejet Coop du maître est remplacé par sa réacceptation dans le brouillon,
+que Coop atteint le preflight projeté après sauvegarde, que les choix/rejets
+d'un autre événement restent actifs, et qu'un brouillon d'occurrence ne devient
+pas un apprentissage de série.
+
+Gates relancés après correction avec les chemins de cache ci-dessus :
+`npm test` (935 Vitest + 141 Node), `npm run test:browser` (13),
+`npm run mobile:smoke`, `npm run smoke` sur serveur temporaire,
+`npm run build` (également exécuté par les suites et le packaging),
+`npm run security:check`, `npm run check:shipped-js`, `npm audit`,
+`npm audit --omit=dev` (0 vulnérabilité), `npm run desktop:package`
+(contrôle ASAR inclus) : réussis. Tests ciblés tags : 13 réussis.
+`npm run desktop:smoke` relancé : les 4 scénarios restent bloqués au lancement
+par l'absence de serveur X / DISPLAY, résiduel autorisé inchangé.

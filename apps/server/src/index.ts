@@ -1849,7 +1849,7 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
   });
 
   app.post('/api/v1/planning/tags/regenerate', async (req, res) => {
-    const event = { id: typeof req.body.id === 'string' ? req.body.id : undefined, seriesId: typeof req.body.seriesId === 'string' ? req.body.seriesId : local.planning.find(item => item.id === req.body.id && item.recurrence)?.id, title: String(req.body.title ?? '').slice(0, 140), description: String(req.body.description ?? '').slice(0, 4000), twitchCategoryId: String(req.body.twitchCategoryId ?? ''), twitchCategoryName: String(req.body.twitchCategoryName ?? ''), tags: tagMetadata(req.body.tags), tagPreferences: tagPreferences(req.body.tagPreferences) };
+    const event = { occurrenceKey: typeof req.body.occurrenceKey === 'string' ? req.body.occurrenceKey : undefined, id: typeof req.body.id === 'string' ? req.body.id : undefined, seriesId: typeof req.body.seriesId === 'string' ? req.body.seriesId : local.planning.find(item => item.id === req.body.id && item.recurrence)?.id, title: String(req.body.title ?? '').slice(0, 140), description: String(req.body.description ?? '').slice(0, 4000), twitchCategoryId: String(req.body.twitchCategoryId ?? ''), twitchCategoryName: String(req.body.twitchCategoryName ?? ''), tags: tagMetadata(req.body.tags), tagPreferences: tagPreferences(req.body.tagPreferences) };
     if (req.body.refreshTwitch === true && !options.tagEngine) await tagIntelligence.refresh(event.twitchCategoryId, true);
     res.json(await resolveTags(event, options.tagEngine ?? tagIntelligence, true));
   });
