@@ -668,8 +668,19 @@ function renderOnlinePlanningProviders(item, row, onlyProvider) {
     if (link.retryable) {
       const retry = text('button', `Réessayer ${planningProviderNames[provider]}`, 'secondary');
       retry.type = 'button';
-      retry.disabled = companionMode === CompanionMode.OFFLINE || (companionMode === CompanionMode.ONLINE_STANDALONE && !globalThis.StreamDashboardProviders);
-      retry.onclick = async () => { retry.disabled = true; await retryPlanningProvider(item, provider); if (state) renderPlanning(state.planning); };
+      const retryUnavailable = () => companionMode === CompanionMode.OFFLINE || (companionMode === CompanionMode.ONLINE_STANDALONE && !globalThis.StreamDashboardProviders);
+      retry.disabled = retryUnavailable();
+      retry.onclick = async () => {
+        if (retry.disabled) return;
+        retry.disabled = true;
+        try { await retryPlanningProvider(item, provider); }
+        finally {
+          // An unchanged row survives refresh, including after a failed request.
+          // Restore this control explicitly using availability at completion.
+          retry.disabled = retryUnavailable();
+          if (state) renderPlanning(state.planning);
+        }
+      };
       block.append(retry);
       if (item.deleted && link.status === 'conflict' && companionMode === CompanionMode.ONLINE_PC) {
         for (const [strategy, label] of [['local', 'Confirmer la suppression'], ['remote', 'Conserver la version distante']]) {
@@ -709,14 +720,26 @@ function updatePlanningProviderReadiness() {
   const issues = Object.values(permissions).filter(value => !value.available).map(value => value.reason);
   copy.textContent = issues.length ? issues.join(' · ') : 'Twitch et Google sont prêts.';
 }
+let planningRows = new Map();
 function renderPlanning(items) {
   const container = $('planning');
-  container.replaceChildren();
+  const nextRows = new Map();
+  const children = [];
   const filtered = filterPlanning(items, planningFilters);
   const temporal = filterPlanningTemporal(filtered, planningTemporal, new Date());
   const pagination = paginatePlanning(temporal, planningPage, planningPageSize);
   planningPage = pagination.page;
   for (const item of pagination.items) {
+    // HTTP heartbeats, WS snapshots and companion updates often leave planning
+    // unchanged. Keep those nodes attached so native details/focus/click survive.
+    const key = JSON.stringify([item.seriesId || item.id, item.occurrenceKey || '']);
+    const signature = JSON.stringify([item, companionMode, Boolean(globalThis.StreamDashboardProviders)]);
+    const previous = planningRows.get(key);
+    if (previous?.signature === signature) {
+      nextRows.set(key, previous);
+      children.push(previous.row);
+      continue;
+    }
     const row = document.createElement('div');
     row.className = 'planning-row';
     row.tabIndex = 0;
@@ -764,9 +787,10 @@ function renderPlanning(items) {
       row.append(edit, remove);
     }
     renderOnlinePlanningProviders(item, row);
-    container.append(row);
+    nextRows.set(key, { signature, row });
+    children.push(row);
   }
-  if (!pagination.total) container.append(text('p', 'Aucun événement.', 'muted'));
+  if (!pagination.total) children.push(text('p', 'Aucun événement.', 'muted'));
   if (pagination.totalPages > 1) {
     const nav = document.createElement('div');
     nav.className = 'companion-row planning-pagination';
@@ -776,8 +800,14 @@ function renderPlanning(items) {
     previous.onclick = () => { planningPage -= 1; renderPlanning(state?.planning); };
     next.onclick = () => { planningPage += 1; renderPlanning(state?.planning); };
     nav.append(previous, label, next);
-    container.append(nav);
+    children.push(nav);
   }
+  const retained = new Set(children);
+  for (const child of [...container.children]) if (!retained.has(child)) child.remove();
+  children.forEach((child, index) => {
+    if (container.children[index] !== child) container.insertBefore(child, container.children[index] || null);
+  });
+  planningRows = nextRows;
 }
 
 function openMobileEditor(item, scope) {
