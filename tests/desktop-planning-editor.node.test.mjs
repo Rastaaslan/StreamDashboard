@@ -32,7 +32,7 @@ test('Planning Desktop preserves the editable draft across telemetry, reconnect 
     await page.route('**/api/v1/state', route => route.fulfill({ json: dashboard }));
     await page.route('**/api/v1/soundboard', route => route.fulfill({ json: { sounds: [] } }));
     await page.route('**/api/v1/twitch/categories?*', route => route.fulfill({ json: [{ id: '509658', name: 'Just Chatting' }] }));
-    await page.route('**/api/v1/planning/tags/regenerate', route => route.fulfill({ json: { tags: { values: ['Français', 'Gaming'], source: 'generated', generatedAt: '2026-10-04T10:00:00Z' } } }));
+    await page.route('**/api/v1/planning/tags/regenerate', route => route.fulfill({ json: { tags: { values: ['Français', 'Gaming'], source: 'generated', generatedAt: '2026-10-04T10:00:00Z' }, observedSuggestions: [{tag:'Communauté',score:20,sources:['twitch']},{tag:'RareServer',score:1,sources:['twitch']}] } }));
     await page.route('**/api/v1/planning', async route => {
       assert.equal(route.request().method(), 'POST');
       submitted = route.request().postDataJSON();
@@ -145,6 +145,9 @@ test('Planning Desktop preserves the editable draft across telemetry, reconnect 
     await page.locator('#event-twitch-results').getByRole('button', { name: 'Just Chatting' }).click();
     await page.locator('#event-tags-regenerate').click();
     await expect(page.locator('#event-tags')).toHaveValue('Français, Gaming');
+    await page.locator('#event-tags-observed').getByRole('button', { name: '+ Communauté', exact: true }).click();
+    await expect(page.locator('#event-tags')).toHaveValue('Français, Gaming, Communauté');
+    await page.locator('#event-tags-observed').getByRole('button', { name: 'Écarter RareServer', exact: true }).click();
     await page.locator('#event-tags').fill('Français, Communauté');
     await title.click();
     await title.press('End');
@@ -178,7 +181,7 @@ test('Planning Desktop preserves the editable draft across telemetry, reconnect 
     await expect(dialog).not.toBeVisible();
     await expect(page.locator('#toast')).toHaveText('Événement enregistré');
     assert.deepEqual(submitted, {
-      tags: { values: ['Français', 'Communauté'], source: 'manual' }, tagPreferences: { automatic: true, language: '' },
+      tags: { values: ['Français', 'Communauté'], source: 'manual', validated: true, rejectedValues: ['RareServer', 'Gaming'] }, tagPreferences: { automatic: true, language: '' },
       title: 'Mon live saisi !', description: 'Description personnelle\nDeuxième ligne',
       startAtUtc: '2027-04-15T16:45:00.000Z', endAtUtc: '2027-04-15T19:15:00.000Z', category: 'production',
       twitchCategoryId: '509658', twitchCategoryName: 'Just Chatting', desiredPublication: { local: true, twitch: false, google: false },

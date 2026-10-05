@@ -1,6 +1,6 @@
 import { bulkDeleteSelection } from '../../../packages/core/src/planning-bulk-delete.js';
 import { TwitchTagIntelligence } from '../../../packages/core/src/tag-intelligence.js';
-import { resolveTags, tagMetadata, tagPreferences, type TagEngine } from '../../../packages/core/src/tags.js';
+import { resolveTags, editedTags, tagMetadata, tagPreferences, type TagEngine } from '../../../packages/core/src/tags.js';
 import { googleRecurrence, parseGoogleRecurrence } from '../../../integrations/google-calendar/src/recurrence.js';
 import express from 'express';
 import { createServer, type Server } from 'node:http';
@@ -1935,7 +1935,7 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
         kind,
         twitchCategoryId: typeof req.body.twitchCategoryId === 'string' ? req.body.twitchCategoryId : item.twitchCategoryId,
         twitchCategoryName: typeof req.body.twitchCategoryName === 'string' ? req.body.twitchCategoryName : item.twitchCategoryName,
-        tags: req.body.tags === undefined ? item.tags : tagMetadata(req.body.tags),
+        tags: req.body.tags === undefined ? item.tags : editedTags(req.body.tags, item.tags),
         tagPreferences: req.body.tagPreferences === undefined ? item.tagPreferences : tagPreferences(req.body.tagPreferences),
         recurrence: req.body.recurrence === null ? undefined : req.body.recurrence !== undefined ? validateRecurrence(req.body.recurrence) : item.recurrence,
       }, {

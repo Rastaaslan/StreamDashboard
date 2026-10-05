@@ -156,6 +156,10 @@ export async function reconcileProviderProjection(
         }
         entry.event = { ...event, projection: body.projection }; entry.appliedContent = projectionContent(event);
         entry.status = 'synced'; entry.lastSyncedAt = new Date(now).toISOString(); delete entry.lastError;
+      } else {
+        // Tags belong to live preflight, not provider schedule content. Refresh
+        // the local occurrence snapshot without issuing an unrelated remote write.
+        entry.event = { ...entry.event, tags: event.tags, tagPreferences: event.tagPreferences };
       }
     } catch (error) { fail(entry, error); }
     await persist();

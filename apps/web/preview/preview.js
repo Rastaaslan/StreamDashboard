@@ -1160,12 +1160,21 @@ function populateEventTemplates(selected=''){
   select.replaceChildren(new Option('Aucun',''),...templates.map(template=>new Option(template.title||'Template',template.id)));select.value=selected;
 }
 let eventTagMetadata;
+let eventRejectedObservations = [];
 let eventTagsGeneration = 0;
-function readEventTags() {
+function readEventTags(validate = false) {
   const values=document.querySelector('#event-tags').value.split(',').map(value=>value.trim()).filter(Boolean);
   if(values.length>10||values.some(value=>! /^[\p{L}\p{N}]{1,25}$/u.test(value)))throw new Error('Tags : 10 maximum, lettres et chiffres uniquement, 25 caractères maximum.');
-  if(eventTagMetadata && JSON.stringify(values)===JSON.stringify(eventTagMetadata.values))return structuredClone(eventTagMetadata);
-  return values.length ? {values,source:'manual'} : undefined;
+  if(!values.length&&!eventTagMetadata&&!eventRejectedObservations.length)return undefined;
+  const key=value=>value.normalize('NFKD').replace(/\p{M}/gu,'').toLowerCase();
+  const retained=new Set(values.map(key));
+  const rejectedValues=[...new Set([...(eventTagMetadata?.rejectedValues||[]),...eventRejectedObservations,...(eventTagMetadata?.values||[]).filter(value=>!retained.has(key(value)))])].filter(value=>!retained.has(key(value)));
+  if(!validate && eventTagMetadata?.source==='generated' && !eventTagMetadata.validated){
+    const baseline=new Set(eventTagMetadata.values.map(key));
+    const acceptedValues=[...new Set([...(eventTagMetadata.acceptedValues||[]),...values.filter(value=>!baseline.has(key(value)))])].filter(value=>retained.has(key(value)));
+    return {...eventTagMetadata,values,acceptedValues,rejectedValues};
+  }
+  return {values,source:'manual',validated:true,rejectedValues};
 }
 function readTagPreferences(){return {automatic:document.querySelector('#event-tags-auto').checked,language:document.querySelector('#event-tags-language').value.trim()};}
 document.querySelector('#event-tags-regenerate').onclick=async()=>{
@@ -1173,16 +1182,30 @@ document.querySelector('#event-tags-regenerate').onclick=async()=>{
   const generation=++eventTagsGeneration,button=document.querySelector('#event-tags-regenerate'),input=document.querySelector('#event-tags'),previous=input.value;
   button.disabled=true;
   try{
-    const result=await request('/api/v1/planning/tags/regenerate',{method:'POST',body:JSON.stringify({refreshTwitch:true,id:state.eventEdit?.occurrence?.id,seriesId:state.eventEdit?.occurrence?.seriesId,title:document.querySelector('#event-title').value,description:document.querySelector('#event-description').value,twitchCategoryId:document.querySelector('#event-twitch-game-id').value,twitchCategoryName:document.querySelector('#event-twitch-category').value,tags:readEventTags(),tagPreferences:readTagPreferences()})});
+    const feedback=readEventTags(false);
+    const result=await request('/api/v1/planning/tags/regenerate',{method:'POST',body:JSON.stringify({refreshTwitch:true,id:state.eventEdit?.occurrence?.id,seriesId:state.eventEdit?.occurrence?.seriesId,title:document.querySelector('#event-title').value,description:document.querySelector('#event-description').value,twitchCategoryId:document.querySelector('#event-twitch-game-id').value,twitchCategoryName:document.querySelector('#event-twitch-category').value,tags:feedback,tagPreferences:readTagPreferences()})});
     if(generation!==eventTagsGeneration||input.value!==previous)return;
-    if(result.tags){eventTagMetadata=result.tags;input.value=result.tags.values.join(', ');}
+    if(result.tags){eventTagMetadata={...result.tags,acceptedValues:feedback?.source==='manual'||feedback?.validated?feedback.values:feedback?.acceptedValues||[],rejectedValues:feedback?.rejectedValues||[]};input.value=result.tags.values.join(', ');}
+    renderObservedTags(result.observedSuggestions||[]);
     document.querySelector('#event-tags-status').textContent=result.warning||'Tags générés. Enregistrez pour les conserver.';
   }catch(error){if(generation===eventTagsGeneration)document.querySelector('#event-tags-status').textContent=error.message;}
   finally{button.disabled=false;}
 };
+function renderObservedTags(suggestions) {
+  const host=document.querySelector('#event-tags-observed');host.replaceChildren();
+  if(!suggestions.length)return;
+  const label=document.createElement('p');label.textContent='Observés sur Twitch — à ajouter uniquement si pertinents pour ce live.';host.append(label);
+  for(const {tag} of suggestions){
+    const row=document.createElement('span'),add=document.createElement('button'),reject=document.createElement('button');
+    add.type=reject.type='button';add.className=reject.className='secondary';add.textContent=`+ ${tag}`;reject.textContent='×';reject.setAttribute('aria-label',`Écarter ${tag}`);
+    add.onclick=()=>{try{const current=readEventTags()||{values:[]};if(current.values.length>=10)throw new Error('10 tags maximum.');if(!current.values.some(value=>value.toLowerCase()===tag.toLowerCase()))current.values.push(tag);document.querySelector('#event-tags').value=current.values.join(', ');row.remove();}catch(error){toast(error.message,true)}};
+    reject.onclick=()=>{eventRejectedObservations.push(tag);row.remove();};row.append(add,reject);host.append(row);
+  }
+}
 function populateEventForm(item,scope='item'){
   const form=document.querySelector('#event-form'),source=item||{};form.reset();
   ++eventTagsGeneration;eventTagMetadata=source.tags?structuredClone(source.tags):undefined;
+  eventRejectedObservations=[];renderObservedTags([]);
   document.querySelector('#event-tags').value=source.tags?.values?.join(', ')||'';
   document.querySelector('#event-tags-auto').checked=source.tagPreferences?.automatic!==false;
   document.querySelector('#event-tags-language').value=source.tagPreferences?.language||'';
@@ -1266,8 +1289,8 @@ document.querySelector('#event-form').onsubmit=async event=>{
   let times;try{times=eventTimes(date,start,end,document.querySelector('#event-end-date').value)}catch(error){return toast(error.message,true)}
   const category=document.querySelector('#event-category').value,publishTwitch=document.querySelector('#event-publish-twitch').checked,publishGoogle=document.querySelector('#event-publish-google').checked,gameId=document.querySelector('#event-twitch-game-id').value,gameName=document.querySelector('#event-twitch-category').value.trim();
   if(publishTwitch&&!gameId)return toast('Choisis une catégorie Twitch officielle.',true);
-  let tags;try{tags=readEventTags()}catch(error){return toast(error.message,true)}
-  const item={tags:tags||{values:[],source:'manual'},tagPreferences:readTagPreferences(),title:document.querySelector('#event-title').value.trim(),description:document.querySelector('#event-description').value.trim(),...times,category,twitchCategoryId:gameId||undefined,twitchCategoryName:gameName||undefined,desiredPublication:{local:true,twitch:publishTwitch,google:publishGoogle}};
+  let tags;try{tags=readEventTags(true)}catch(error){return toast(error.message,true)}
+  const item={tags,tagPreferences:readTagPreferences(),title:document.querySelector('#event-title').value.trim(),description:document.querySelector('#event-description').value.trim(),...times,category,twitchCategoryId:gameId||undefined,twitchCategoryName:gameName||undefined,desiredPublication:{local:true,twitch:publishTwitch,google:publishGoogle}};
   if(!state.runtime){state.planning.unshift({raw:{...item,id:`demo-${Date.now()}`},day:'Démo',time:start,title:item.title,kind:category==='live'?'Twitch':category});document.querySelector('#event-dialog').close();render();return}
   try{
     let saved;

@@ -1,6 +1,10 @@
 import { afterEach, expect, it, vi } from 'vitest';
 import type { CalendarItem } from '../packages/contracts/src/index.js';
 import { PlanningOrchestrator, type PlanningProvider } from '../packages/core/src/planning.js';
+import { resolveTags, editedTags } from '../packages/core/src/tags.js';
+import { analyzeTags } from '../packages/core/src/tag-intelligence.js';
+import { TwitchPreflight } from '../integrations/twitch/src/preflight.js';
+import quality from './fixtures/tag-quality.json' with { type: 'json' };
 import { bulkDeleteSelection } from '../packages/core/src/planning-bulk-delete.js';
 import { expandRecurringItems, migrateRecurrence } from '../packages/core/src/recurrence.js';
 
@@ -137,4 +141,49 @@ it('companion deletion retains and drains the Google occurrence journal', async 
   await drainCompanionProviders(batch.planning, batch.companion, { google: ctx.provider }, async () => {});
   expect(ctx.remote.size).toBe(0);
   expect(batch.companion.providerWork['series:google']).toBeUndefined();
+});
+
+
+it.each([quality.minecraft, quality.deadIsland])('rolling materialization preserves validated tags through edit, retry, restart and preflight: $event.title', async fixture => {
+  const ctx = setup();
+  const item = { ...master(), ...fixture.event, tagPreferences: { language: 'fr' },
+    tags: { values: fixture.tags, source: 'generated' as const } };
+  const engine = { generate: async () => [], analyze: async (input: Parameters<typeof analyzeTags>[0]) =>
+    analyzeTags(input, [{ tags: fixture.tags, viewer_count: 100, language: 'en' }]) };
+  const legacyOccurrence = expandRecurringItems([item], { from: now, to: now + 86400000 })[0];
+  expect((await resolveTags(legacyOccurrence, engine)).tags?.values).toEqual(fixture.recommended);
+  const regenerated = await resolveTags(item, engine, true);
+  expect(regenerated.tags?.values).toEqual(fixture.recommended);
+  item.tags = { ...regenerated.tags!, source: 'generated' };
+  const validated = { ...item, tags: { ...item.tags, validated: true } };
+  await ctx.planning.create(validated);
+  expect(ctx.remote.size).toBe(27);
+  for (const { item: occurrence } of ctx.remote.values()) {
+    expect(occurrence.projection?.mode).toBe('materialized');
+    expect(occurrence.tags).toEqual(validated.tags);
+  }
+  const saved = ctx.restart().all()[0];
+  const corrected = editedTags({ values: fixture.recommended.slice(0, -1), source: 'manual', validated: true }, saved.tags)!;
+  const writes = vi.mocked(ctx.provider.update).mock.calls.length;
+  await ctx.restart().update(saved.id, { title: saved.title, startAtUtc: saved.startAtUtc, endAtUtc: saved.endAtUtc, tags: corrected });
+  expect(ctx.provider.update).toHaveBeenCalledTimes(writes);
+  await ctx.restart().retry(saved.id, 'google');
+  await ctx.restart().refreshTwitch(now + 7 * 86400000);
+  const persisted = ctx.restart().all()[0];
+  expect(persisted.tags).toEqual(corrected);
+  const projected = expandRecurringItems([persisted], { from: now + 7 * 86400000, to: now + 8 * 86400000 })[0];
+  expect(projected.tags).toEqual(corrected);
+  const materialized = Object.values(persisted.providers!.google!.projections!).find(value => value.event.startAtUtc === projected.startAtUtc)!.event;
+  const newlyCreated = [...ctx.remote.values()].filter(value => Date.parse(value.item.startAtUtc) >= now + 28 * 86400000);
+  expect(newlyCreated.length).toBeGreaterThan(0);
+  for (const value of newlyCreated) expect(value.item.tags).toEqual(corrected);
+  expect(materialized.tags).toEqual(corrected);
+  const updateChannel = vi.fn(async () => {});
+  const preflight = new TwitchPreflight({ getChannel: async () => ({ title: '', gameId: '' }), searchGame: vi.fn(), updateChannel });
+  for (const occurrence of [projected, materialized]) {
+    const resolved = await resolveTags(occurrence, engine);
+    await preflight.prepare({ eventId: occurrence.id, title: occurrence.title, categoryId: occurrence.twitchCategoryId, tags: resolved.tags?.values });
+    expect(updateChannel).toHaveBeenLastCalledWith({ title: item.title, gameId: item.twitchCategoryId, tags: corrected.values });
+  }
+  expect(bulkDeleteSelection(ctx.restart().all(), '2026-04-01', '2026-04-10').eligible).toEqual([]);
 });

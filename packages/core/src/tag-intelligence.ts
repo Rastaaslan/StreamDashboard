@@ -9,53 +9,99 @@ const seasonal = /^(halloween|spooktober)$/i;
 const spooky = (event: Input['event']) => /\b(spooktober|halloween)\b/i.test(`${event.title} ${event.description ?? ''}`);
 const seriesKey = (event: Partial<CalendarItem>) => event.seriesId || (event.recurrence ? event.id : undefined);
 
-/** Observed frequency is additive; the strongest source determines the final score. */
-export function scoreTags(input: Input, streams: readonly ObservedStream[] = [], history: readonly CalendarItem[] = []): TagSuggestion[] {
+const canonical = (value: string) => normalizeTwitchLanguage(value) ?? normalizeTwitchTag(value);
+const keyOf = (value: string) => canonical(value)?.toLowerCase();
+const words = (value: string) => value.normalize('NFKD').replace(/\p{M}/gu, '').toLowerCase().replace(/[^\p{L}\p{N}]+/gu, ' ').trim();
+export interface TagAnalysis { recommended: TagSuggestion[]; observedSuggestions: TagSuggestion[] }
+
+/** Mining can rank confirmed concepts, but can never establish local relevance. */
+export function analyzeTags(input: Input, streams: readonly ObservedStream[] = [], history: readonly CalendarItem[] = []): TagAnalysis {
   const scores = new Map<string, TagSuggestion>();
   const add = (value: string, score: number, source: string) => {
-    const tag = normalizeTwitchTag(value);
+    const tag = canonical(value);
     if (!tag) return;
-    const key = tag.toLowerCase();
-    const existing = scores.get(key);
+    const key = tag.toLowerCase(), existing = scores.get(key);
     if (existing) { existing.score = Math.max(existing.score, score); if (!existing.sources.includes(source)) existing.sources.push(source); }
     else scores.set(key, { tag, score, sources: [source] });
   };
   const { event, preferences } = input;
-  for (const tag of preferences.preferredTags ?? []) add(tag, 10, 'channel');
-  const learnedGame = new Set<string>(), learnedSeries = new Set<string>();
-  for (const saved of history) {
-    // Only saved user choices, never preflight output or occurrence exceptions.
+  const language = normalizeTwitchLanguage(preferences.language ?? '');
+  const explicit = new Set((preferences.preferredTags ?? []).map(keyOf));
+  const languageAllowed = (tag: string) => !normalizeTwitchLanguage(tag) || normalizeTwitchLanguage(tag) === language || explicit.has(keyOf(tag));
+  const rejected = new Set<string>();
+  // A draft replaces only its own saved version; other events retain their feedback.
+  const effectiveHistory = event.tags && event.id
+    ? history.filter(saved => saved.id !== event.id || saved.occurrenceKey !== event.occurrenceKey) : history;
+  for (const saved of [...effectiveHistory, ...(event.tags ? [event] : [])]) {
     if (saved.occurrenceKey) continue;
-    for (const tag of saved.tags?.values ?? []) {
-      if (seasonal.test(tag) && !spooky(event)) continue;
-      if (saved.id !== event.id && event.twitchCategoryId && saved.twitchCategoryId === event.twitchCategoryId) learnedGame.add(tag);
-      if (seriesKey(event) && seriesKey(saved) === seriesKey(event)) learnedSeries.add(tag);
+    const sameGame = !!event.twitchCategoryId && saved.twitchCategoryId === event.twitchCategoryId;
+    const sameSeries = !!seriesKey(event) && seriesKey(saved) === seriesKey(event);
+    if (!sameGame && !sameSeries) continue;
+    for (const tag of saved.tags?.rejectedValues ?? []) { const key = keyOf(tag); if (key) rejected.add(key); }
+    const accepted = saved.tags?.source === 'manual' || saved.tags?.validated
+      ? saved.tags?.values ?? [] : (saved.tags?.acceptedValues ?? []).filter(tag => saved.tags?.values.some(value => keyOf(value) === keyOf(tag)));
+    for (const tag of accepted) {
+      if (((seasonal.test(tag) || (keyOf(tag) === 'horror' && spooky(saved))) && !spooky(event)) || !languageAllowed(tag)) continue;
+      add(tag, sameGame ? 85 : 80, sameGame ? 'game-history' : 'series');
     }
   }
-  for (const tag of learnedSeries) add(tag, 30, 'series');
-  for (const tag of learnedGame) add(tag, 65, 'game-history');
-  const observed = new Map<string, { tag: string; weight: number }>();
-  const language = normalizeTwitchLanguage(preferences.language ?? '');
-  streams.slice(0, 100).forEach((stream, rank) => {
-    // A million viewers adds at most 0.25; frequency always dominates one celebrity.
-    const audience = Math.min(0.25, Math.log10(1 + Math.max(0, stream.viewer_count || 0)) / 20);
-    const weight = 1 + audience + 0.15 / (rank + 1) + (language && normalizeTwitchLanguage(stream.language) === language ? 0.25 : 0);
+  for (const tag of preferences.preferredTags ?? []) add(tag, 88, 'channel');
+  for (const tag of generateTwitchTags({ title: event.title, description: event.description, language: preferences.language })) {
+    if (tag !== 'Live') add(tag, 70, 'local');
+  }
+  for (const tag of generateTwitchTags({ category: event.twitchCategoryName })) if (tag !== 'Live') add(tag, 100, 'game');
+  if (spooky(event)) { add('Horror', 80, 'local'); add('Halloween', 80, 'local'); }
+  const context = words(`${event.title} ${event.description ?? ''}`);
+  // Positive semantic rules: specific genres/formats need evidence in this live.
+  const concepts: [string, RegExp][] = [
+    ['Modded', /\b(all\s*the\s*mods|modded|modpack|mods)(?=\b|\d)/],
+    ['Survival', /\b(survival|survie)\b/], ['Adventure', /\b(adventure|aventure)\b/],
+    ['Zombie', /\bzombies?\b/], ['Action', /\baction\b/], ['Horror', /\b(horror|horreur)\b/],
+  ];
+  for (const [tag, pattern] of concepts) if (pattern.test(context)) add(tag, 70, 'local');
+  // Small positive category taxonomy; it never infers a player's mode (e.g. co-op).
+  if (/^dead island(?: 2)?$/.test(words(event.twitchCategoryName ?? ''))) {
+    add('Horror', 90, 'game'); add('Zombie', 90, 'game'); add('Action', 90, 'game');
+  }
+  const observed = new Map<string, { tag: string; count: number; weight: number }>();
+  const sample = streams.slice(0, 100);
+  for (const stream of sample) {
     const seen = new Set<string>();
     for (const raw of stream.tags) {
-      const tag = normalizeTwitchTag(raw), key = tag?.toLowerCase();
-      if (!tag || !key || seen.has(key) || (seasonal.test(tag) && !spooky(event))) continue;
+      const tag = canonical(raw), key = tag?.toLowerCase();
+      if (!tag || !key || seen.has(key)) continue;
       seen.add(key);
-      const value = observed.get(key) ?? { tag, weight: 0 };
-      value.weight += weight; observed.set(key, value);
+      const value = observed.get(key) ?? { tag, count: 0, weight: 0 };
+      value.count++; value.weight += 1 + Math.min(0.25, Math.log10(1 + Math.max(0, stream.viewer_count || 0)) / 20);
+      observed.set(key, value);
     }
-  });
-  for (const { tag, weight } of observed.values()) add(tag, 45 + 15 * weight / Math.max(1, streams.length), 'twitch');
-  for (const tag of generateTwitchTags({ title: event.title, description: event.description, language: preferences.language })) {
-    if (tag !== 'Live') add(tag, 20, 'local');
   }
-  for (const tag of generateTwitchTags({ category: event.twitchCategoryName })) if (tag !== 'Live') add(tag, 75, 'game');
-  if (spooky(event)) { add('Halloween', 35, 'local'); add('Horror', 62, 'local'); }
-  return [...scores.values()].sort((a, b) => b.score - a.score).slice(0, 10);
+  for (const [key, value] of observed) {
+    // Exact word/phrase confirmation avoids substring matches such as SMP in prose.
+    const phrase = words(value.tag);
+    if (phrase && ` ${context} `.includes(` ${phrase} `) && languageAllowed(value.tag) && (!seasonal.test(value.tag) || spooky(event))) add(value.tag, 70, 'local');
+    const local = scores.get(key);
+    if (local) { local.score += Math.min(4, value.count / Math.max(1, sample.length) * 4); local.sources.push('twitch'); }
+  }
+  for (const [key, value] of scores) {
+    if (!languageAllowed(value.tag)) scores.delete(key);
+    else if (rejected.has(key) && !explicit.has(key)) { value.score -= 60; value.sources.push('rejected'); }
+  }
+  const sort = (a: TagSuggestion, b: TagSuggestion) => b.score - a.score || a.tag.localeCompare(b.tag, 'en');
+  const recommended = [...scores.values()].filter(value => value.score >= 65).sort(sort).slice(0, 10);
+  const selected = new Set(recommended.map(value => keyOf(value.tag)));
+  const observedSuggestions = [...observed.entries()].filter(([key]) => !selected.has(key)).map(([key, value]) => ({
+    tag: value.tag,
+    // Singleton/persona/server tags remain low confidence even on a large channel.
+    score: Math.max(0, Math.min(40, 30 * value.count / Math.max(1, sample.length) + Math.min(4, value.weight - value.count)) - (value.count < 2 ? 10 : 0) - (rejected.has(key) ? 25 : 0)),
+    sources: ['twitch', ...(rejected.has(key) ? ['rejected'] : [])],
+  })).sort(sort).slice(0, 30);
+  return { recommended, observedSuggestions };
+}
+
+/** Compatibility helper: only high-confidence tags are eligible for auto-application. */
+export function scoreTags(input: Input, streams: readonly ObservedStream[] = [], history: readonly CalendarItem[] = []): TagSuggestion[] {
+  return analyzeTags(input, streams, history).recommended;
 }
 
 /** Bounded runtime stale-while-revalidate cache. No generation awaits network. */
@@ -92,12 +138,14 @@ export class TwitchTagIntelligence implements TagEngine {
     return work;
   }
 
-  async generate(input: Input): Promise<string[]> {
+  async analyze(input: Input): Promise<TagAnalysis> {
     const channel = this.channelPreferences();
     input = { ...input, preferences: { ...channel, ...input.preferences, language: input.preferences.language || channel.language, preferredTags: [...(channel.preferredTags ?? []), ...(input.preferences.preferredTags ?? [])] } };
     const gameId = input.event.twitchCategoryId ?? '';
     void this.refresh(gameId);
-    const result = scoreTags(input, this.cache.get(gameId)?.streams, this.history());
-    return result.length ? result.map(value => value.tag) : ['Live'];
+    return analyzeTags(input, this.cache.get(gameId)?.streams, this.history());
+  }
+  async generate(input: Input): Promise<string[]> {
+    return (await this.analyze(input)).recommended.map(value => value.tag);
   }
 }

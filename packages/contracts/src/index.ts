@@ -147,7 +147,7 @@ export type RecurrenceProjectionIdentity =
   | { mode: 'master'; seriesLocalId: string }
   | { mode: 'materialized'; seriesLocalId: string; occurrenceKey: string; creationId?: string };
 
-export interface TagMetadata { values: string[]; source: 'manual' | 'generated'; generatedAt?: string }
+export interface TagMetadata { values: string[]; source: 'manual' | 'generated'; generatedAt?: string; validated?: boolean; acceptedValues?: string[]; rejectedValues?: string[] }
 export interface TagPreferences { automatic?: boolean; language?: string; preferredTags?: string[] }
 
 export interface CalendarItem {
