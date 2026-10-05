@@ -38,6 +38,7 @@ it('keeps runtime and mobile coherent across chatter errors, offline, scope loss
   const nativeInterval = globalThis.setInterval;
   vi.spyOn(globalThis, 'setInterval').mockImplementation(((callback: () => void, delay: number) => { timers.set(delay, callback); return nativeInterval(callback, delay); }) as typeof setInterval);
   server = await startDashboardServer({ port: 0, dataDir: folder, secretStore: secrets, twitchClientId: 'client', logger });
+  await server.providersReady;
   const remote = () => toRemoteDashboardState(server!.state());
   expect(logger.error.mock.calls).toEqual([]);
   expect(remote().controlHub?.audience).toMatchObject({ viewerCount: 17, chatters: [{ id: '123' }] });
@@ -98,6 +99,7 @@ it.each([
   }));
   const options = { port: 0, dataDir: folder, secretStore: secrets, twitchClientId: 'client', logger };
   server = await startDashboardServer(options);
+  await server.providersReady;
   const oldCapabilities = server.state().twitch.capabilities;
   expect((await nativeFetch(server.url + '/api/v1/twitch/device', { method: 'POST' })).status).toBe(201);
   await vi.waitFor(() => expect(server!.state().twitch.error).toBeTruthy(), { timeout: 3000 });
@@ -111,6 +113,7 @@ it.each([
   expect(requests).toContainEqual({ path: endpoint === '/users' ? '/helix/users' : '/oauth2/validate', auth: endpoint === '/users' ? 'Bearer private-new' : 'OAuth private-new' });
   await server.stop();
   server = await startDashboardServer(options);
+  await server.providersReady;
   expect(server.state().twitch).toMatchObject({ connected: true, userName: 'old-account', channelTitle: 'Old title', capabilities: oldCapabilities });
   expect(toRemoteDashboardState(server.state()).twitch).toMatchObject({ connected: true, channelTitle: 'Old title', capabilities: oldCapabilities });
   expect(await secrets.getTwitchTokens()).toEqual(oldTokens);

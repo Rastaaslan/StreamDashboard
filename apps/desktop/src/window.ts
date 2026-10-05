@@ -10,7 +10,7 @@ export function createDashboardWindow(url: string, preload: string, title = 'Str
     height: 900,
     minWidth: 1050,
     minHeight: 700,
-    show: false,
+    show: true,
     backgroundColor: '#080a10',
     title,
     autoHideMenuBar: true,
@@ -31,7 +31,5 @@ export function createDashboardWindow(url: string, preload: string, title = 'Str
   window.webContents.on('will-navigate', (event, target) => {
     if (!isSameOrigin(target, url)) event.preventDefault();
   });
-  window.once('ready-to-show', () => window.show());
-  void window.loadURL(url);
   return window;
 }

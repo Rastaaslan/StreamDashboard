@@ -1,3 +1,4 @@
+import { batchRead, measureSync, SyncHttp } from '../../../packages/core/src/sync-performance.js';
 import { needsTwitchMaterialization } from './projection.js';
 import { assertTwitchRecurrence } from './recurrence.js';
 import { assertProviderCreationCertain } from '../../../packages/core/src/provider-identity.js';
@@ -50,6 +51,7 @@ export interface TwitchClip { id: string; title: string; url: string; embedUrl: 
 export interface TwitchChatter { id: string; login: string; displayName: string }
 
 export class TwitchClient {
+  private syncHttp = new SyncHttp('twitch');
   private pending?: PendingDeviceAuthorization;
   private pollTimer?: ReturnType<typeof setTimeout>;
   private pollWake?: () => void;
@@ -66,6 +68,7 @@ export class TwitchClient {
   constructor(
     private credentials: Credentials,
     private onTokensChanged: (tokens: Record<string, string> | null) => Promise<void> = async () => undefined,
+    private readonly fetchApi?: typeof fetch,
   ) {}
 
   get state(): TwitchState {
@@ -325,7 +328,9 @@ export class TwitchClient {
     return (value.data ?? []).map(reward => ({ id: reward.id, title: reward.title, prompt: reward.prompt, cost: reward.cost, enabled: reward.is_enabled, paused: reward.is_paused, inStock: reward.is_in_stock, userInputRequired: reward.is_user_input_required }));
   }
 
-  async validateSession() {
+  validateSession() { return measureSync('twitch', 'session', () => this.validateSessionNow()); }
+
+  private async validateSessionNow() {
     const generation = this.generation;
     if (!this.credentials.accessToken) return false;
 
@@ -386,7 +391,7 @@ export class TwitchClient {
     return value.data ?? [];
   }
 
-  async updateChannelMetadata(value: { title: string; gameId: string; tags?: string[] }) {
+  async updateChannelMetadata(value: { title?: string; gameId?: string; tags?: string[] }) {
     if (!this.state.connected) throw new Error('Connectez Twitch avant de préparer le live.');
     this.requireScope(BROADCAST_SCOPE);
     try {
@@ -403,6 +408,7 @@ export class TwitchClient {
   }
 
   async createSegment(item: CalendarItem) {
+    const generation = this.generation;
     try {
       this.validateTwitchRecurrence(item);
       this.requireScope(SCHEDULE_SCOPE);
@@ -415,6 +421,10 @@ export class TwitchClient {
     } catch (error) {
       throw Object.assign(error instanceof Error ? error : new Error(String(error)), { mutationNotStarted: true });
     }
+    const reservation = await batchRead(this, `create:${generation}:${JSON.stringify([item.title, Date.parse(item.startAtUtc), Date.parse(item.endAtUtc), Boolean(item.recurrence || item.twitchRecurring)])}`, async () => ({ used: false }));
+    if (generation !== this.generation) throw Object.assign(new Error('Création Twitch annulée.'), { mutationNotStarted: true });
+    if (reservation.used) throw Object.assign(new Error('Identité Twitch déjà en cours de création dans cette passe.'), { mutationNotStarted: true });
+    reservation.used = true;
     return this.createSegmentUnchecked(item);
   }
 
@@ -575,6 +585,17 @@ export class TwitchClient {
           },
         };
         if (recoveredLocal) {
+          const link = value.providers!.twitch!;
+          // A replacement POST may have committed before its response was lost.
+          // Settle both durable intents only against the original CREATE body;
+          // otherwise the next reconciliation would retire this recovered object.
+          if (link.nativeReplacementRequested && link.uncertainCreate
+            && this.sameContent(link.uncertainCreate.event as unknown as CalendarItem, segment)) {
+            delete link.uncertainCreate;
+            delete link.nativeReplacementRequested;
+            delete link.lastError;
+            link.projectionMode = 'native';
+          }
           delete recoveredLocal.syncError;
           delete recoveredLocal.conflict;
           Object.assign(recoveredLocal, value);
@@ -744,7 +765,12 @@ export class TwitchClient {
     return this.sameIdentity(item, segment) && this.sameCategory(item, segment);
   }
 
-  private async scheduleSegments(id?: string) {
+  private scheduleSegments(id?: string) {
+    // Keep per-segment mutation preflight fresh; share only the identity inventory.
+    return id ? this.loadScheduleSegments(id) : batchRead(this, `schedule:${this.generation}`, () => measureSync('twitch', 'identity', () => this.loadScheduleSegments()), 'twitch');
+  }
+
+  private async loadScheduleSegments(id?: string) {
     const segments: ScheduleSegment[] = [];
     let cursor = '';
     do {
@@ -797,13 +823,17 @@ export class TwitchClient {
   private async request(url: string, init: RequestInit = {}) {
     const signal = init.signal ?? AbortSignal.any([this.networkAbort.signal, AbortSignal.timeout(REQUEST_TIMEOUT_MS)]);
     try {
-      return await fetch(url, { ...init, signal });
+      return await (url.startsWith(`${API}/schedule`)
+        ? this.syncHttp.request(() => (this.fetchApi ?? fetch)(url, { ...init, signal }), init.method ?? 'GET', signal)
+        : measureSync('twitch', 'http', () => (this.fetchApi ?? fetch)(url, { ...init, signal })));
     } catch (error) {
+      const safeFailure = (message: string) => Object.assign(new Error(message),
+        (error as { mutationNotStarted?: boolean })?.mutationNotStarted ? { mutationNotStarted: true } : {});
       if (error instanceof Error && (error.name === 'TimeoutError' || /timed?\s*out/i.test(error.message))) {
-        throw new Error('Twitch ne répond pas dans le délai attendu. Réessayez.');
+        throw safeFailure('Twitch ne répond pas dans le délai attendu. Réessayez.');
       }
-      if (this.networkAbort.signal.aborted) throw new Error('Opération Twitch annulée.');
-      throw new Error('Connexion réseau Twitch indisponible. Réessayez.');
+      if (this.networkAbort.signal.aborted) throw safeFailure('Opération Twitch annulée.');
+      throw safeFailure('Connexion réseau Twitch indisponible. Réessayez.');
     }
   }
 

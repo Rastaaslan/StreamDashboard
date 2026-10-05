@@ -70,6 +70,8 @@ test('Desktop Preview navigue et émet une commande unique par contrôle', async
       await page.evaluate(connected => {
         const state = (window as any).__preview.state;
         state.dashboard.obs = { ...state.dashboard.obs, connected, streamingKnown: true, scene: 'Gameplay' };
+        // Match a real telemetry update: older HTTP snapshots must not replace it.
+        state.dashboardVersion = (state.dashboardVersion || 0) + 1;
       }, connected);
       await page.locator('[data-view="sounds"]').click();
     };
@@ -124,5 +126,5 @@ test('Desktop Preview navigue et émet une commande unique par contrôle', async
     await page.locator('#event-form').getByRole('button', { name: 'Ajouter' }).click();
     await expect(page.locator('#view')).toContainText('Planning smoke');
 
-  } finally {await app.close();await rm(profile,{recursive:true,force:true})}
+  } finally {await Promise.all(app.windows().map(page => page.unrouteAll({ behavior: 'wait' })));await app.close();await rm(profile,{recursive:true,force:true})}
 });

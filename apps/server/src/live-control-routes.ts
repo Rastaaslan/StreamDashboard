@@ -54,7 +54,7 @@ export function registerLiveControlRoutes(options: Options) {
       });
       const sounds = [...options.sounds(), sound];
       options.setSounds(sounds); soundboard.replace(sounds); await options.save();
-      res.status(201).json(await soundboard.snapshot());
+      res.status(201).json({ ...await soundboard.snapshot(), createdItemId: sound.id });
     } catch (error) { next(error); }
   });
   app.put('/api/v1/soundboard/sounds/:id', async (req, res, next) => {

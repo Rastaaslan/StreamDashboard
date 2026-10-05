@@ -1,3 +1,4 @@
+import { beginDialogDraft, dialogCreation, dialogCompletion, draftRevision, ownsKeyboard } from './dialog-drafts.js';
 import { normalizeCategoryQuery, rankCategories, rememberCategory } from '../mobile/twitch-category.js';
 import { expandRecurringItems, recurrenceSummary } from '../mobile/shared/recurrence.js';
 
@@ -328,6 +329,8 @@ function settings() {
 
 function render() {
   if (!state) return;
+  // Canonical state keeps updating; only explicit close/step changes release the draft DOM.
+  if (document.querySelector('dialog[open]')) { updateHeader(); return; }
   document.body.classList.toggle('desktop-focus', desktopFocus);
   document.documentElement.dataset.accent = state.settings.accent;
   $('#title').textContent = pages.find(item => item[0] === page)?.[1] ?? secondaryPages[page] ?? 'StreamDashboard';
@@ -477,8 +480,8 @@ function bindForms() {
   const profileForm = $('#profile-form');
   if (profileForm) { profileForm.oninput = () => { const form = new FormData(profileForm); productProfile.appearance = { theme: form.get('theme'), preset: form.get('preset'), accent: form.get('accentColor'), density: form.get('density'), radius: form.get('radius'), textScale: form.get('textScale') }; applyProductAppearance(); }; profileForm.onsubmit = async event => { event.preventDefault(); const form = new FormData(profileForm); productProfile.profile.displayName = String(form.get('displayName') || 'Streamer'); productProfile.profile.channelName = String(form.get('channelName') || ''); for (const module of moduleStates) productProfile.modules[module.id] = form.get(`module-${module.id}`) === 'on'; for (const module of moduleStates.filter(item => productProfile.modules[item.id])) for (const dependency of module.dependencies) productProfile.modules[dependency] = true; for (const id of Object.keys(productProfile.providers)) productProfile.providers[id].mode = form.get(`provider-${id}`); const result = await request('/api/v1/profile', 'PUT', productProfile); productProfile = result.profile; moduleStates = result.modules; ensureEnabledPage(); nav(); render(); toast('Profil enregistré'); }; }
   const profileImport = $('#profile-import'); if (profileImport) profileImport.onchange = async () => { const file = profileImport.files?.[0]; if (!file) return; if (!confirm('Valider puis importer ce profil ? Une sauvegarde sera créée.')) return; try { const result = await request('/api/v1/profile/import', 'POST', { content: await file.text() }); productProfile = result.profile; moduleStates = result.modules; nav(); render(); toast(`Profil importé${result.backup ? ' · sauvegarde créée' : ''}`); } catch (error) { toast(error.message, true); } };
-  const onboardingForm = $('#onboarding-form'); if (onboardingForm) onboardingForm.onsubmit = async event => { event.preventDefault(); const form = new FormData(onboardingForm); if (onboardingStep === 1) { productProfile.profile.displayName = String(form.get('displayName') || 'Streamer'); productProfile.profile.channelName = String(form.get('channelName') || ''); } if (onboardingStep === 2) for (const module of moduleStates.filter(item => !['googleCalendar','discord','streamlabs','wizebot'].includes(item.id))) productProfile.modules[module.id] = form.get(`module-${module.id}`) === 'on'; if (onboardingStep === 5) for (const id of ['googleCalendar','discord','streamlabs','wizebot']) productProfile.modules[id] = form.get(`module-${id}`) === 'on'; if (onboardingStep === 6) Object.assign(productProfile.appearance, { theme: form.get('theme'), accent: form.get('accentColor'), density: form.get('density') }); if (onboardingStep < 7) { onboardingStep += 1; applyProductAppearance(); render(); return; } for (const module of moduleStates.filter(item => productProfile.modules[item.id])) for (const dependency of module.dependencies) productProfile.modules[dependency] = true; productProfile.onboarding.completed = true; await request('/api/v1/profile', 'PUT', productProfile); $('#onboarding').close(); page = 'settings'; nav(); render(); };
-  document.querySelector('[data-onboarding="previous"]')?.addEventListener('click', () => { onboardingStep = Math.max(0, onboardingStep - 1); render(); }); document.querySelector('[data-onboarding="later"]')?.addEventListener('click', async () => { productProfile.onboarding.completed = true; await request('/api/v1/profile', 'PUT', productProfile); $('#onboarding').close(); toast('Assistant reporté · réglages disponibles à tout moment'); });
+  const onboardingForm = $('#onboarding-form'); if (onboardingForm) onboardingForm.onsubmit = async event => { event.preventDefault(); const form = new FormData(onboardingForm); if (onboardingStep === 1) { productProfile.profile.displayName = String(form.get('displayName') || 'Streamer'); productProfile.profile.channelName = String(form.get('channelName') || ''); } if (onboardingStep === 2) for (const module of moduleStates.filter(item => !['googleCalendar','discord','streamlabs','wizebot'].includes(item.id))) productProfile.modules[module.id] = form.get(`module-${module.id}`) === 'on'; if (onboardingStep === 5) for (const id of ['googleCalendar','discord','streamlabs','wizebot']) productProfile.modules[id] = form.get(`module-${id}`) === 'on'; if (onboardingStep === 6) Object.assign(productProfile.appearance, { theme: form.get('theme'), accent: form.get('accentColor'), density: form.get('density') }); if (onboardingStep < 7) { onboardingStep += 1; applyProductAppearance(); $('#onboarding').close(); render(); return; } for (const module of moduleStates.filter(item => productProfile.modules[item.id])) for (const dependency of module.dependencies) productProfile.modules[dependency] = true; productProfile.onboarding.completed = true; await request('/api/v1/profile', 'PUT', productProfile); $('#onboarding').close(); page = 'settings'; nav(); render(); };
+  document.querySelector('[data-onboarding="previous"]')?.addEventListener('click', () => { onboardingStep = Math.max(0, onboardingStep - 1); $('#onboarding').close(); render(); }); document.querySelector('[data-onboarding="later"]')?.addEventListener('click', async () => { productProfile.onboarding.completed = true; await request('/api/v1/profile', 'PUT', productProfile); $('#onboarding').close(); toast('Assistant reporté · réglages disponibles à tout moment'); });
   const streamlabsForm = $('#streamlabs-form');
   if (streamlabsForm) streamlabsForm.onsubmit = async event => {
     event.preventDefault();
@@ -504,11 +507,14 @@ function bindForms() {
     let categoryTimer; let categoryGeneration = 0;
     const showCategories = items => { results.replaceChildren(...items.map(item => { const button = document.createElement('button'); button.type = 'button'; button.className = 'ghost'; button.textContent = item.name; button.dataset.gameId = item.id; button.dataset.gameName = item.name; button.dataset.boxArtUrl = item.box_art_url || ''; return button; })); };
     categoryInput.onfocus = () => { if (!categoryInput.value.trim()) showCategories(recentCategories); };
-    categoryInput.oninput = () => { categoryId.value = ''; clearTimeout(categoryTimer); const query = normalizeCategoryQuery(categoryInput.value); const generation = ++categoryGeneration; if (query.length < 2) { showCategories(query ? [] : recentCategories); return; } results.textContent = 'Recherche…'; categoryTimer = setTimeout(async () => { try { const found = await request(`/api/v1/twitch/categories?q=${encodeURIComponent(query)}`); if (generation !== categoryGeneration) return; const ranked = rankCategories(found, recentCategories, query); showCategories(ranked); if (!ranked.length) results.textContent = 'Aucune catégorie trouvée.'; } catch (error) { if (generation === categoryGeneration) results.textContent = error.message; } }, 300); };
+    categoryInput.oninput = () => { categoryId.value = ''; clearTimeout(categoryTimer); const query = normalizeCategoryQuery(categoryInput.value); const generation = ++categoryGeneration, revision = draftRevision(eventDialog); if (query.length < 2) { showCategories(query ? [] : recentCategories); return; } results.textContent = 'Recherche…'; categoryTimer = setTimeout(async () => { try { const found = await request(`/api/v1/twitch/categories?q=${encodeURIComponent(query)}`); if (generation !== categoryGeneration || !eventDialog.open || revision !== draftRevision(eventDialog)) return; const ranked = rankCategories(found, recentCategories, query); showCategories(ranked); if (!ranked.length) results.textContent = 'Aucune catégorie trouvée.'; } catch (error) { if (generation === categoryGeneration) results.textContent = error.message; } }, 300); };
     results.onclick = event => { const button = event.target.closest('[data-game-id]'); if (!button) return; categoryId.value = button.dataset.gameId; categoryInput.value = button.dataset.gameName; recentCategories = rememberCategory(recentCategories, { id: button.dataset.gameId, name: button.dataset.gameName, box_art_url: button.dataset.boxArtUrl || undefined }); localStorage.setItem(recentCategoriesKey, JSON.stringify(recentCategories)); results.replaceChildren(); };
     eventForm.dataset.dirty ||= 'false';
     eventForm.onsubmit = async event => {
       event.preventDefault();
+      const complete = dialogCompletion(eventDialog);
+      const creation = !editingEventId && !editingOccurrence ? dialogCreation(eventDialog) : null;
+      if (!editingEventId && !editingOccurrence && !creation) return;
       const form = new FormData(eventForm);
       const allDay = form.get('allDay') === 'on';
       const startValue = String(form.get('start') || '');
@@ -544,15 +550,22 @@ function bindForms() {
           : editingEventId
           ? await request(`/api/v1/planning/${encodeURIComponent(editingEventId)}`, 'PUT', payload)
           : await request('/api/v1/planning', 'POST', payload);
-        eventForm.dataset.dirty = 'false';
-        editingEventId = null;
-        editingOccurrence = null;
-        eventDialog?.close();
+        const done = complete();
+        if (creation?.isCurrent() && result.createdItemId) {
+          editingEventId = result.createdItemId;
+          $('#event-dialog-title').textContent = 'Modifier le rendez-vous';
+        }
+        if (done) {
+          eventForm.dataset.dirty = 'false';
+          editingEventId = null;
+          editingOccurrence = null;
+          eventDialog.close();
+        }
         applyStateUpdate(result, true);
         toast('Planning enregistré');
       } catch (error) {
         toast(error.message, true);
-      }
+      } finally { creation?.finish(); }
     };
   }
 
@@ -609,8 +622,7 @@ function bindForms() {
 }
 
 document.addEventListener('keydown', event => {
-  const target = event.target;
-  if (target instanceof HTMLElement && (target.matches('input, textarea, select') || target.isContentEditable)) return;
+  if (ownsKeyboard(event)) return;
   if (!event.altKey || event.ctrlKey || event.metaKey || event.shiftKey) return;
   const routes = { '1': 'overview', '2': 'planning', '3': 'prepare', '4': 'settings', l: 'live', d: 'deck' };
   const route = routes[event.key.toLocaleLowerCase()];
@@ -627,10 +639,10 @@ window.go = id => {
   render();
 };
 window.openEvent = () => {
-  editingEventId = null;
   const dialog = $('#event-dialog');
   const form = $('#event-form');
-  if (!dialog || !form) return;
+  if (!dialog || !form || dialog.open) return;
+  editingEventId = null;
   form.reset();
   form.dataset.dirty = 'false';
   $('#event-dialog-title').textContent = 'Nouveau rendez-vous';
@@ -640,13 +652,13 @@ window.openEvent = () => {
   form.elements.twitchCategoryId.value = '';
   form.elements.twitchCategoryName.value = '';
   configureEventDateInputs(false, false);
-  dialog.showModal();
+  beginDialogDraft(dialog);dialog.showModal();
 };
 window.editEvent = id => {
   const item = state.planning.find(value => value.id === id);
   const dialog = $('#event-dialog');
   const form = $('#event-form');
-  if (!item || !dialog || !form) return;
+  if (!item || !dialog || !form || dialog.open) return;
   if (item.editable === false) { toast('Cet événement est en lecture seule.', true); return; }
   editingEventId = id;
   $('#event-dialog-title').textContent = 'Modifier le rendez-vous';
@@ -663,7 +675,7 @@ window.editEvent = id => {
   form.elements.publishGoogle.checked = item.desiredPublication?.google === true;
   form.elements.recurrence.value = item.recurrence ? `${item.recurrence.frequency}-${item.recurrence.interval}` : '';
   form.elements.recurrenceUntil.value = item.recurrence?.until ? item.recurrence.until.slice(0, 10) : '';
-  dialog.showModal();
+  beginDialogDraft(dialog);dialog.showModal();
 };
 window.editOccurrence = id => {
   const rows = expandRecurringItems(state.planning, { from: Date.now() - 366 * 86400000, to: Date.now() + 730 * 86400000 });
@@ -700,6 +712,7 @@ window.retryProvider = async (id, provider) => {
     && Boolean(item.twitchSegmentId || item.providers?.twitch?.remoteId);
   if (removingRecurringTwitch && !confirm('Ce retry retirera une série Twitch récurrente. Confirmer ?')) return;
   try {
+    toast('Synchronisation en attente…');
     applyStateUpdate(await request(`/api/v1/planning/${encodeURIComponent(id)}/retry/${encodeURIComponent(provider)}`, 'POST', {
       confirmRecurring: removingRecurringTwitch,
     }), true);

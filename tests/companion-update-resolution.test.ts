@@ -78,7 +78,7 @@ it.each(['local', 'remote'] as const)('resolves a live Google 412 after restart 
   readAvailable = true;
   const resolution = await request('planning/android-id/conflict/google', { strategy });
   expect(resolution.status, await resolution.clone().text()).toBe(200);
-  expect(reads).toBe(2);
+  expect(reads).toBe(4); // Initial GET plus two bounded 503 retries, then the successful conflict read.
   const resolved = await sync();
   expect(resolved.snapshot.providerWork).toEqual({});
   const item = resolved.snapshot.planning[0];

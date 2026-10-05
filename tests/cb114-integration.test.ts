@@ -113,7 +113,7 @@ it('a failed Google delete keeps the local series and its occurrence inventory f
   await ctx.restart().retry('series', 'google'); expect(ctx.remote.size).toBe(0);
 });
 
-it('removing a native Twitch rule requires withdrawal and clears remote recurring state before republish', async () => {
+it('removing an owned native Twitch rule retires it and republishes a one-off', async () => {
   vi.useFakeTimers(); vi.setSystemTime(now);
   const provider = { create: vi.fn(async (_item: CalendarItem) => ({ id: 'native' })), update: vi.fn(async () => ({})), delete: vi.fn(async () => {}) };
   const planning = new PlanningOrchestrator([], { twitch: provider }, async () => {});
@@ -121,11 +121,9 @@ it('removing a native Twitch rule requires withdrawal and clears remote recurrin
   item.desiredPublication = { local: true, twitch: true, google: false };
   await planning.create(item);
   const changed = await planning.update(item.id, { title: item.title, startAtUtc: item.startAtUtc, endAtUtc: item.endAtUtc, recurrence: undefined });
-  expect(changed.providers?.twitch?.status).toBe('error'); expect(provider.update).not.toHaveBeenCalled();
-  await expect(planning.remove(item.id, { twitch: true })).rejects.toThrow(/explicite/);
-  await planning.remove(item.id, { twitch: true, confirmRecurring: true });
-  expect(planning.all()[0].twitchRecurring).toBe(false);
-  await planning.update(item.id, { title: item.title, startAtUtc: item.startAtUtc, endAtUtc: item.endAtUtc }, { desiredPublication: { twitch: true } });
+  expect(changed.providers?.twitch?.status).toBe('synced'); expect(provider.update).not.toHaveBeenCalled();
+  expect(provider.delete).toHaveBeenCalledOnce();
+  expect(provider.delete.mock.invocationCallOrder[0]).toBeLessThan(provider.create.mock.invocationCallOrder[1]);
   expect(provider.create).toHaveBeenCalledTimes(2);
   expect(provider.create.mock.calls.at(-1)?.[0].twitchRecurring).toBe(false);
   expect(planning.all()[0].twitchRecurring).toBe(false);

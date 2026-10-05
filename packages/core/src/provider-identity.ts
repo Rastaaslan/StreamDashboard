@@ -23,7 +23,7 @@ export function isDefinitiveCreateFailure(error: unknown): boolean {
  * Only that invocation receives a copy without the marker. Edits/retries of the
  * durable item must wait for identity reconciliation if the response is lost.
  */
-export async function createWithDurableIntent<T extends { id: string }>(
+export async function createWithDurableIntent<T extends { id: string; revision?: string; fingerprint?: string; calendarId?: string }>(
   item: CalendarItem, provider: 'twitch' | 'google', persist: () => Promise<void>,
   create: (request: CalendarItem) => Promise<T>,
   prepare?: (request: CalendarItem) => { calendarId?: string } | Promise<{ calendarId?: string }>,
@@ -50,6 +50,13 @@ export async function createWithDurableIntent<T extends { id: string }>(
     throw error;
   }
   if (!result.id) throw new Error('Création distante acceptée sans identité. Réconciliation requise.');
+  // Another occurrence may persist the shared planning while this promise
+  // resolves. Publish the identity before clearing uncertainty, with no await
+  // between them, so no snapshot can observe neither protection.
+  link.remoteId = result.id;
+  link.remoteRevision = result.revision;
+  link.fingerprint = result.fingerprint;
+  link.calendarId = result.calendarId ?? link.calendarId;
   delete link.uncertainCreate;
   return result;
 }

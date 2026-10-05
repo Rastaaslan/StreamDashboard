@@ -17,16 +17,17 @@ function normalizeCandidate(value: string | undefined) {
   return path.normalize(candidate);
 }
 
-export async function launchObsIfRequested(enabled: boolean, configuredPath?: string) {
+export async function launchObsIfRequested(enabled: boolean, configuredPath?: string, signal?: AbortSignal) {
   if (!enabled || process.platform !== 'win32') {
     return { launched: false, detail: enabled ? 'Disponible uniquement sous Windows.' : 'Démarrage automatique désactivé.' };
   }
 
   try {
-    const { stdout } = await execute('tasklist.exe', ['/FI', 'IMAGENAME eq obs64.exe', '/NH']);
+    const { stdout } = await execute('tasklist.exe', ['/FI', 'IMAGENAME eq obs64.exe', '/NH'], { signal });
     if (/obs64\.exe/i.test(stdout)) return { launched: false, detail: 'OBS est déjà lancé.' };
   } catch { /* Process discovery failure must not make the dashboard unavailable. */ }
 
+  signal?.throwIfAborted();
   const candidates = [
     normalizeCandidate(configuredPath),
     normalizeCandidate(process.env.OBS_EXE_PATH),
@@ -36,6 +37,7 @@ export async function launchObsIfRequested(enabled: boolean, configuredPath?: st
   const executable = (await Promise.all(candidates.map(async file => access(file).then(() => file).catch(() => null)))).find(Boolean);
   if (!executable) return { launched: false, detail: 'Installation OBS introuvable ; le cockpit continue sans OBS.' };
 
+  signal?.throwIfAborted();
   try {
     const child = spawn(executable, [], {
       cwd: path.dirname(executable),

@@ -52,6 +52,9 @@ describe('tags integration', () => {
     await client.updateChannelMetadata({ title: event.title, gameId: '42', tags: tags.values });
     expect(fetchMock.mock.calls[1][0]).toContain('/channels?broadcaster_id=42');
     expect(fetchMock.mock.calls[1][1]).toMatchObject({ method: 'PATCH', body: JSON.stringify({ title: event.title, game_id: '42', tags: tags.values }) });
+    fetchMock.mockResolvedValueOnce(new Response(null, { status: 204 }));
+    await client.updateChannelMetadata({ tags: [] });
+    expect(fetchMock.mock.calls[2][1]).toMatchObject({ method: 'PATCH', body: JSON.stringify({ tags: [] }) });
   });
   it('regenerates via API and persists tags/preferences across create, edit and restart', async () => {
     const dataDir = await mkdtemp(resolve('.tags-test-'));
@@ -145,6 +148,7 @@ describe('tags integration', () => {
     };
     let payload: any, result: any;
     const context = {
+      draftRevision: () => 0, /* No user events here; browser tests cover revisions. */
       document: { querySelector: (selector: string) => nodes[selector] }, eventTagMetadata: legacy,
       eventRejectedObservations: [], eventTagsGeneration: 0, requireRuntime: () => true,
       state: { eventEdit: { occurrence: { id: 'legacy' } } }, readTagPreferences: () => ({ language: 'fr' }), renderObservedTags: vi.fn(),
@@ -218,7 +222,7 @@ describe('tags integration', () => {
     const document = { querySelector(selector: string) { if (!nodes.has(selector)) nodes.set(selector, {}); return nodes.get(selector); } };
     const populateEventForm = vi.fn();
     const item = { ...event, id: 'original', tagPreferences: { automatic: false, language: 'fr' } };
-    runInNewContext(handler, { document, state: { eventEdit: { occurrence: item } }, eventCanonical: (value: unknown) => value, populateEventForm, structuredClone, toast() {} });
+    runInNewContext(handler, { beginDialogDraft() {}, document, state: { eventEdit: { occurrence: item } }, eventCanonical: (value: unknown) => value, populateEventForm, structuredClone, toast() {} });
     document.querySelector('#event-duplicate').onclick();
     const copy = populateEventForm.mock.calls[0][0];
     expect(copy).toMatchObject({ tags, tagPreferences: item.tagPreferences, desiredPublication: { twitch: false, google: false } });

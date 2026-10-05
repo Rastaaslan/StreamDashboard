@@ -1,3 +1,4 @@
+import { boundedMap, measureSync, syncBatch } from './sync-performance.js';
 import type { CalendarItem, ProviderLink } from '../../contracts/src/index.js';
 import type { PlanningProvider } from './planning.js';
 import { expandRecurringItems } from './recurrence.js';
@@ -12,28 +13,41 @@ function request(event: CalendarItem, link: ProviderLink, name: 'twitch' | 'goog
   return { ...body, twitchRecurring: false, providers: { [name]: link } };
 }
 
+export function reconcileProviderProjection(...args: Parameters<typeof reconcileProjection>): Promise<boolean> {
+  const [item, original, save, options] = args;
+  if (!options.materialized && !item.providers?.[options.name]?.projections && !item.providers?.[options.name]?.nativeReplacementRequested
+    && !(options.name === 'google' && item.providers?.google?.nativeRetained)) return Promise.resolve(false);
+  // Persistence stays serialized even while independent remote identities run concurrently.
+  let saves = Promise.resolve();
+  const persist = () => { const next = saves.then(save); saves = next; return next; };
+  const provider = original && {
+    prepareCreate: original.prepareCreate && ((item: CalendarItem) => original.prepareCreate!(item)),
+    read: original.read && ((...values: Parameters<NonNullable<PlanningProvider['read']>>) => measureSync(options.name, 'read', () => original.read!(...values))),
+    create: (...values: Parameters<PlanningProvider['create']>) => measureSync(options.name, 'create', () => original.create(...values)),
+    update: (...values: Parameters<PlanningProvider['update']>) => measureSync(options.name, 'update', () => original.update(...values)),
+    delete: (...values: Parameters<PlanningProvider['delete']>) => measureSync(options.name, 'delete', () => original.delete(...values)),
+  };
+  return measureSync(options.name, 'total', () => syncBatch(() => measureSync(options.name, 'rolling', () => reconcileProjection(item, provider, persist, options))));
+}
+
 /** Returns true when provider publication is fully handled by the projection path.
- * Persist each intent before I/O and each identity before the next occurrence.
+ * Persist each intent before I/O and each identity before its worker advances.
  * An ambiguous CREATE remains blocked: Twitch has no idempotency key, so retrying
  * it blindly cannot guarantee both progress and absence of duplicates.
  */
-export async function reconcileProviderProjection(
+async function reconcileProjection(
   item: CalendarItem, provider: PlanningProvider | undefined, persist: () => Promise<void>,
   options: { now?: number; retry?: boolean; explicitWithdrawal?: boolean; expand: typeof expandRecurringItems; name: 'twitch' | 'google'; materialized: boolean },
 ): Promise<boolean> {
   const { name, materialized } = options;
   if (name === 'google' && item.providers?.google?.nativeRetained && item.providers.google.remoteId && item.desiredPublication?.google) return true;
-  if (!materialized && !item.providers?.[name]?.projections) return false;
+  if (!materialized && !item.providers?.[name]?.projections && !item.providers?.[name]?.nativeReplacementRequested) return false;
   if (item.ownership !== 'LOCAL') return true;
   const link = (item.providers ??= {})[name] ??= { status: 'pending' };
   if (name === 'google' && options.explicitWithdrawal && item.desiredPublication?.google === false) {
     link.nativeWithdrawalRequested = true;
     await persist();
   }
-  const entries = link.projections ??= {};
-  const now = options.now ?? Date.now();
-  const bounds = { from: new Date(now).toISOString(), to: new Date(now + 28 * 86400000).toISOString() };
-  link.projectionWindow = bounds;
   const desired = item.desiredPublication?.[name] === true;
   const fail = (target: ProviderLink, error: unknown) => {
     const failure = error as { code?: string; status?: number };
@@ -47,6 +61,12 @@ export async function reconcileProviderProjection(
       : 'Série supprimée à distance — retry explicite requis.'));
     await persist(); return true;
   }
+  // Do not turn an uncertain native CREATE into an occurrence journal: Twitch
+  // inventory recovery must still be able to identify that native replacement.
+  const entries = link.projections ??= {};
+  const now = options.now ?? Date.now();
+  const bounds = { from: new Date(now).toISOString(), to: new Date(now + 28 * 86400000).toISOString() };
+  link.projectionWindow = bounds;
   const recover = async (entry: NonNullable<ProviderLink['projections']>[string]) => {
     if (!provider || !entry.uncertainCreate || name !== 'google' || entry.event.projection?.mode !== 'materialized') return;
     const original = request(entry.uncertainCreate.event as unknown as CalendarItem, { ...entry, uncertainCreate: undefined }, name);
@@ -77,25 +97,37 @@ export async function reconcileProviderProjection(
   // Only a native identity created by this projection-aware publisher is eligible
   // for automatic replacement. Legacy/imported identities require manual removal.
   if (link.remoteId || (name === 'twitch' && item.twitchSegmentId)) {
-    if (name === 'google' && link.status === 'conflict') return true;
+    if (link.status === 'conflict' || item.conflict?.provider === name) return true;
     if ((!link.projectionOwned && !(name === 'google' && !desired && link.nativeWithdrawalRequested)) || !provider) {
       fail(link, new Error(`Retirez explicitement la publication ${name} existante avant de matérialiser cette série.`));
       await persist(); return true;
     }
     try {
+      if (name === 'google') {
+        // A conversion retires the old master. Resolution must read that master,
+        // not compare its recurrence with the new materialized rule.
+        link.nativeWithdrawalRequested = true;
+        await persist();
+      }
+      if (name === 'twitch' && provider.read) {
+        const remote = await provider.read(link.remoteId ?? item.twitchSegmentId!, item);
+        if (!remote.deleted && link.fingerprint && remote.fingerprint !== link.fingerprint) {
+          throw Object.assign(new Error('La série Twitch a changé à distance. Résolvez le conflit avant son remplacement.'), { code: 'CONFLICT' });
+        }
+      }
       await provider.delete(link.remoteId ?? item.twitchSegmentId!, item, link.remoteRevision);
       delete link.remoteId; delete link.remoteRevision; delete link.fingerprint; delete link.nativeWithdrawalRequested;
-      if (name === 'twitch') { delete item.twitchSegmentId; item.twitchRecurring = false; }
+      if (name === 'twitch') { delete item.twitchSegmentId; item.twitchRecurring = false; if (materialized || !desired) delete link.nativeReplacementRequested; }
       await persist();
     } catch (error) { fail(link, error); await persist(); return true; }
   }
-  for (const [key, entry] of Object.entries(entries)) {
-    if ((expected.has(key) && !entry.pendingDeletion) || entry.managedBy !== 'StreamDashboard') continue;
+  await boundedMap(Object.entries(entries), async ([key, entry]) => {
+    if ((expected.has(key) && !entry.pendingDeletion) || entry.managedBy !== 'StreamDashboard') return;
     try {
       if (name === 'google') {
         entry.pendingDeletion = true;
         await persist();
-        if (entry.status === 'conflict') continue;
+        if (entry.status === 'conflict') return;
       }
       await recover(entry);
       if (entry.uncertainCreate) throw new Error('Création distante incertaine : identité à réconcilier avant nettoyage.');
@@ -109,10 +141,10 @@ export async function reconcileProviderProjection(
       expected.delete(key); // A confirmed withdrawal never republishes in the same pass.
     } catch (error) { fail(entry, error); }
     await persist();
-  }
-  for (const [key, event] of expected) {
+  });
+  await boundedMap([...expected], async ([key, event]) => {
     let entry = entries[key];
-    if (entry && entry.managedBy !== 'StreamDashboard') continue;
+    if (entry && entry.managedBy !== 'StreamDashboard') return;
     if (!entry) {
       const retired = name === 'google' ? link.projectionRetirements?.[key] : undefined;
       entry = entries[key] = { occurrenceKey: key, managedBy: 'StreamDashboard', event, status: 'pending', projectionOwned: true,
@@ -120,13 +152,14 @@ export async function reconcileProviderProjection(
       if (retired) delete link.projectionRetirements![key];
     }
     try {
-      if (entry.pendingDeletion) continue;
-      if (entry.status === 'conflict') continue; // Only an explicit local/remote resolution releases this guard.
+      if (entry.pendingDeletion) return;
+      if (entry.status === 'conflict') return; // Only an explicit local/remote resolution releases this guard.
       if (!provider) throw new Error(`${name} non connecté.`);
       await recover(entry);
       if (entry.uncertainCreate) throw new Error('Création distante incertaine. Réconciliez son identité avant de republier.');
+      let observed: Awaited<ReturnType<NonNullable<PlanningProvider['read']>>> | undefined;
       if (entry.remoteId && provider.read) {
-        const remote = await provider.read(entry.remoteId, request(entry.event, entry, name));
+        const remote = observed = await provider.read(entry.remoteId, request(entry.event, entry, name));
         if (remote.deleted) entry.deletedRemotely = true;
         else if ((entry.fingerprint && remote.fingerprint && entry.fingerprint !== remote.fingerprint) || (name === 'google' && entry.remoteRevision && remote.revision && entry.remoteRevision !== remote.revision)) {
           throw Object.assign(new Error(`Occurrence modifiée à distance : conflit ${name}.`), { code: 'CONFLICT' });
@@ -136,7 +169,7 @@ export async function reconcileProviderProjection(
         if (!options.retry) throw new Error('Occurrence supprimée à distance — retry explicite requis.');
         // Verify the previous identity before authorizing a replacement.
         if (entry.remoteId && !provider.read) throw new Error('Lecture distante requise avant republication.');
-        const remote = entry.remoteId ? await provider.read!(entry.remoteId, request(entry.event, entry, name)) : undefined;
+        const remote = entry.remoteId ? observed ?? await provider.read!(entry.remoteId, request(entry.event, entry, name)) : undefined;
         if (!remote || remote.deleted) {
           delete entry.remoteId; delete entry.fingerprint; delete entry.remoteRevision;
           if (name === 'google') entry.creationId = crypto.randomUUID();
@@ -163,10 +196,10 @@ export async function reconcileProviderProjection(
       }
     } catch (error) { fail(entry, error); }
     await persist();
-  }
+  });
   summarizeProjection(item, name, now);
   await persist();
-  if (!materialized && !Object.keys(entries).length) { delete link.projections; delete link.projectionWindow; return false; }
+  if (!materialized && !Object.keys(entries).length) { delete link.projections; delete link.projectionWindow; await persist(); return false; }
   return true;
 }
 
@@ -178,4 +211,5 @@ export function summarizeProjection(item: CalendarItem, name: 'twitch' | 'google
   link.status = failures.length ? 'error' : Object.values(link.projections ?? {}).some(entry => entry.status === 'pending') ? 'pending' : desired ? 'synced' : 'not-published';
   if (failures.length) link.lastError = `${failures.length} occurrence(s) ${name} en erreur : ${failures[0].lastError}`;
   else { delete link.lastError; link.deletedRemotely = false; link.lastSyncedAt = new Date(now).toISOString(); }
+  if (name === 'twitch' && ['synced', 'not-published'].includes(link.status)) delete item.syncError;
 }

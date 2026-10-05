@@ -1,3 +1,4 @@
+import { batchRead, measureSync, SyncHttp } from '../../../packages/core/src/sync-performance.js';
 import type { CalendarItem, RecurrenceProjectionIdentity } from '../../../packages/contracts/src/index.js';
 import { googleProjectionLocalId } from './projection.js';
 import { assertGoogleMaterializedAllDay, googleRecurrence } from './recurrence.js';
@@ -97,7 +98,9 @@ export function createGoogleOAuthAttempt(clientId: string, redirectUri: string):
 }
 
 export class GoogleCalendarClient {
+  private syncHttp = new SyncHttp('google');
   private generation = 0;
+  private networkAbort = new AbortController();
   private refreshFlight?: Promise<void>;
 
   constructor(
@@ -144,11 +147,18 @@ export class GoogleCalendarClient {
     clearPendingOAuthAttempt(this.clientId, attempt.redirectUri, attempt.state);
   }
 
-  async disconnect() {
+  async disconnect() { await this.invalidateSession(); }
+
+  /** Cancel in-flight I/O without clearing persisted credentials on application shutdown. */
+  close() {
+    this.cancelRequests();
+    this.networkAbort.abort(new Error('Opération Google annulée.'));
+  }
+
+  private cancelRequests() {
     this.generation++;
-    this.tokens = null;
-    clearPendingOAuthAttempt(this.clientId);
-    await this.persist(null);
+    this.networkAbort.abort(new Error('Opération Google annulée.'));
+    this.networkAbort = new AbortController();
   }
 
   async calendars() {
@@ -170,7 +180,11 @@ export class GoogleCalendarClient {
    * cancelled exceptions that have only id/recurringEventId/originalStartTime.
    * Do not filter by dates or private properties: exceptions may omit both.
    */
-  private async recurrenceInventory(calendarId: string) {
+  private recurrenceInventory(calendarId: string) {
+    return batchRead(this, `inventory:${this.generation}:${calendarId}`, () => measureSync('google', 'identity', () => this.loadRecurrenceInventory(calendarId)), 'google');
+  }
+
+  private async loadRecurrenceInventory(calendarId: string) {
     const items: Array<Record<string, unknown>> = [];
     let pageToken = '';
     do {
@@ -483,22 +497,31 @@ export class GoogleCalendarClient {
   }
 
   private async invalidateSession() {
-    this.generation++;
+    this.cancelRequests();
     this.tokens = null;
     clearPendingOAuthAttempt(this.clientId);
     await this.persist(null);
   }
 
   private async fetchWithTimeout(url: string, init: RequestInit, requestSecret = this.clientSecret) {
+    const generation = this.generation;
     const timeout = AbortSignal.timeout(TIMEOUT_MS);
-    const signal = init.signal ? AbortSignal.any([init.signal, timeout]) : timeout;
+    const signal = AbortSignal.any([this.networkAbort.signal, timeout, ...(init.signal ? [init.signal] : [])]);
     try {
-      return await this.request(url, { ...init, signal });
+      return await this.syncHttp.request(() => {
+        // Retry closures retain their original Authorization header. Never send it
+        // after disconnect/invalidation, even when a transport ignores abort.
+        if (generation !== this.generation) throw Object.assign(new Error('Opération Google annulée.'), { mutationNotStarted: true });
+        signal.throwIfAborted();
+        return this.request(url, { ...init, signal });
+      }, init.method ?? 'GET', signal);
     } catch (error) {
+      const safeFailure = (message: string) => Object.assign(new Error(message),
+        (error as { mutationNotStarted?: boolean })?.mutationNotStarted ? { mutationNotStarted: true } : {});
       if (error instanceof Error && (error.name === 'TimeoutError' || /timed?\s*out/i.test(error.message))) {
-        throw new Error('Google Calendar ne répond pas dans le délai attendu. Réessayez.');
+        throw safeFailure('Google Calendar ne répond pas dans le délai attendu. Réessayez.');
       }
-      throw new Error(this.redactSecret(error instanceof Error ? error.message : String(error), requestSecret));
+      throw safeFailure(this.redactSecret(error instanceof Error ? error.message : String(error), requestSecret));
     }
   }
 
