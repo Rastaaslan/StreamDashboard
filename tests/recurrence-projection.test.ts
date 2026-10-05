@@ -9,8 +9,8 @@ function master(start = '2026-03-20T19:00:00.000Z', rule: Partial<RecurrenceRule
 const window = { windowStart: '2026-03-20T00:00:00Z', windowEnd: '2026-04-17T00:00:00Z' };
 const project = (item: CalendarItem, start: string, end: string) => projectRecurrence(item, { windowStart: start, windowEnd: end });
 
-describe('rolling recurrence projection', () => {
-  it('projects exactly 28 days across DST, deterministically after restart and overlapping rolls', () => {
+describe('window and counted recurrence projection', () => {
+  it('preserves explicit calendar windows across DST and overlapping queries', () => {
     const source = master(), before = structuredClone(source);
     const result = projectRecurrence(source, window);
     expect(result).toHaveLength(28);
@@ -119,11 +119,11 @@ describe('recurrence reconciliation', () => {
     expect(() => planRecurrenceReconciliation([expected('x'), expected('x')], [], scope)).toThrow('Duplicate');
     expect(() => planRecurrenceReconciliation([], [current, current], scope)).toThrow('Ambiguous');
   });
-  it('rolls a 28 day materialized window with only one create and one delete', () => {
-    const target = (start: string, end: string) => project(master(), start, end).map(v => ({ seriesId: master().localId!, occurrenceKey: v.occurrenceKey, provider: 'example', content: { title: v.title, startAtUtc: v.startAtUtc, endAtUtc: v.endAtUtc } }));
-    const prior = target('2026-03-20', '2026-04-17').map((v, index) => ({ ...v, remoteId: `${index}` }));
-    const plan = planRecurrenceReconciliation(target('2026-03-21', '2026-04-18'), prior, scope);
-    expect(plan.filter(v => v.type === 'noop')).toHaveLength(27);
+  it('rolls seven materialized occurrences with only one create and one delete', () => {
+    const target = (start: string) => projectRecurrence(master(), { windowStart: start, nextCount: 7 }).map(v => ({ seriesId: master().localId!, occurrenceKey: v.occurrenceKey, provider: 'example', content: { title: v.title, startAtUtc: v.startAtUtc, endAtUtc: v.endAtUtc } }));
+    const prior = target('2026-03-20').map((v, index) => ({ ...v, remoteId: `${index}` }));
+    const plan = planRecurrenceReconciliation(target('2026-03-21'), prior, scope);
+    expect(plan.filter(v => v.type === 'noop')).toHaveLength(6);
     expect(plan.filter(v => v.type === 'create')).toHaveLength(1);
     expect(plan.filter(v => v.type === 'delete')).toHaveLength(1);
   });

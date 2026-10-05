@@ -45,13 +45,13 @@ afterEach(() => vi.useRealTimers());
 
 it('Google fallback persists individual identities/etags through DST, restart, window shift and complete withdrawal', async () => {
   const ctx = setup(); await ctx.planning.create(master());
-  expect(ctx.remote.size).toBe(27);
-  expect([...ctx.remote.values()].some(v => v.item.startAtUtc === '2026-03-29T18:00:00.000Z')).toBe(true);
+  expect(ctx.remote.size).toBe(7);
+  expect([...ctx.remote.values()].some(v => v.item.startAtUtc === '2026-03-27T19:00:00.000Z')).toBe(true);
   ctx.remote.set('unowned', { item: master(), revision: 'foreign' });
   await ctx.restart().refreshTwitch(); await ctx.restart().retry('series', 'google');
-  expect(ctx.provider.create).toHaveBeenCalledTimes(27);
+  expect(ctx.provider.create).toHaveBeenCalledTimes(7);
   await ctx.restart().refreshTwitch(now + 7 * 86400000);
-  expect(ctx.remote.size).toBe(29);
+  expect(ctx.remote.size).toBe(8);
   await ctx.restart().remove('series', { google: true, local: true });
   expect([...ctx.remote.keys()]).toEqual(['unowned']);
   expect(ctx.restart().all()).toEqual([]);
@@ -68,7 +68,7 @@ it.each(['local', 'remote'] as const)('Google occurrence conflict %s resolution 
   const writes = vi.mocked(ctx.provider.update).mock.calls.length;
   await ctx.restart().refreshTwitch();
   expect(ctx.provider.update).toHaveBeenCalledTimes(writes);
-  expect(ctx.provider.create).toHaveBeenCalledTimes(27);
+  expect(ctx.provider.create).toHaveBeenCalledTimes(7);
 });
 
 it('Google recovers a lost CREATE response with the same deterministic occurrence identity', async () => {
@@ -76,9 +76,9 @@ it('Google recovers a lost CREATE response with the same deterministic occurrenc
   let lost = false;
   ctx.provider.create = async item => { const result = await create(item); if (!lost) { lost = true; throw new Error('response lost'); } return result; };
   await ctx.planning.create(master());
-  expect(ctx.remote.size).toBe(27);
+  expect(ctx.remote.size).toBe(7);
   await ctx.restart().retry('series', 'google');
-  expect(ctx.remote.size).toBe(27);
+  expect(ctx.remote.size).toBe(7);
   expect(ctx.restart().all()[0].providers!.google!.status).toBe('synced');
 });
 
@@ -86,7 +86,7 @@ it('period bulk delete protects projected series even when the anchor is outside
   const ctx = setup(); await ctx.planning.create(master());
   const selection = bulkDeleteSelection(ctx.planning.all(), '2026-04-01', '2026-04-10');
   expect(selection.eligible).toEqual([]); expect(selection.excluded).toHaveLength(1);
-  expect(ctx.provider.delete).not.toHaveBeenCalled(); expect(ctx.remote.size).toBe(27);
+  expect(ctx.provider.delete).not.toHaveBeenCalled(); expect(ctx.remote.size).toBe(7);
 });
 
 it('legacy rules migrate losslessly and keep canonical keys across application IDs and moved exceptions', () => {
@@ -108,7 +108,7 @@ it('a failed Google delete keeps the local series and its occurrence inventory f
   const remove = ctx.provider.delete; let fail = true;
   ctx.provider.delete = async (...args) => { if (fail) throw new Error('offline'); return remove(...args); };
   await expect(ctx.planning.remove('series', { google: true, local: true })).rejects.toThrow(/incomplète/);
-  expect(ctx.restart().all()).toHaveLength(1); expect(ctx.remote.size).toBe(27);
+  expect(ctx.restart().all()).toHaveLength(1); expect(ctx.remote.size).toBe(7);
   fail = false;
   await ctx.restart().retry('series', 'google'); expect(ctx.remote.size).toBe(0);
 });
@@ -155,7 +155,7 @@ it.each([quality.minecraft, quality.deadIsland])('rolling materialization preser
   item.tags = { ...regenerated.tags!, source: 'generated' };
   const validated = { ...item, tags: { ...item.tags, validated: true } };
   await ctx.planning.create(validated);
-  expect(ctx.remote.size).toBe(27);
+  expect(ctx.remote.size).toBe(7);
   for (const { item: occurrence } of ctx.remote.values()) {
     expect(occurrence.projection?.mode).toBe('materialized');
     expect(occurrence.tags).toEqual(validated.tags);
@@ -172,7 +172,7 @@ it.each([quality.minecraft, quality.deadIsland])('rolling materialization preser
   const projected = expandRecurringItems([persisted], { from: now + 7 * 86400000, to: now + 8 * 86400000 })[0];
   expect(projected.tags).toEqual(corrected);
   const materialized = Object.values(persisted.providers!.google!.projections!).find(value => value.event.startAtUtc === projected.startAtUtc)!.event;
-  const newlyCreated = [...ctx.remote.values()].filter(value => Date.parse(value.item.startAtUtc) >= now + 28 * 86400000);
+  const newlyCreated = [...ctx.remote.values()].filter(value => Date.parse(value.item.startAtUtc) >= now + 8 * 86400000);
   expect(newlyCreated.length).toBeGreaterThan(0);
   for (const value of newlyCreated) expect(value.item.tags).toEqual(corrected);
   expect(materialized.tags).toEqual(corrected);

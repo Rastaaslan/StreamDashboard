@@ -646,7 +646,7 @@ function renderOnlinePlanningProviders(item, row, onlyProvider) {
     block.className = `planning-provider-state provider-${link.status}`;
     block.append(text('b', planningProviderNames[provider]), text('span', link.label, 'muted'));
     const projection = item.providers?.[provider] || item.providerLinks?.[provider];
-    if (projection?.projectionMode) block.append(text('small', projection.projectionMode === 'materialized' ? `Occurrences ${provider} · fenêtre de 28 jours` : `Publication ${provider} native`, 'muted'));
+    if (projection?.projectionMode) block.append(text('small', projection.projectionMode === 'materialized' ? `Occurrences ${provider} · jusqu’à 7 prochaines occurrences` : `Publication ${provider} native`, 'muted'));
     for (const [key, occurrence] of Object.entries(projection?.occurrenceStatuses || projection?.projections || {})) {
       if (occurrence.lastError) block.append(text('small', `${key} : ${occurrence.lastError}`, 'danger'));
       if (occurrence.status === 'conflict' && companionMode === CompanionMode.ONLINE_PC && (!item.deleted || provider === 'google')) {

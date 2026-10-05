@@ -13,7 +13,7 @@ reject custom writes until a corresponding engine/editor is installed.
 
 `OccurrenceSource` and `RecurrenceProjection` form the generic rolling-core seam.
 `projectGoogleSeries` prefers native RRULE when the mapping is exact, including
-V2 interval N. Otherwise it requests expansion in a finite half-open window.
+V2 interval N. Otherwise rolling synchronization requests the next seven valid occurrences (CB-129); explicit calendar/export windows remain supported.
 The default core engine applies until and exceptions. A custom engine must do the
 same, returning canonical stable keys even when an exception moves an occurrence.
 Unknown custom engines fail; they are never approximated using the base frequency.

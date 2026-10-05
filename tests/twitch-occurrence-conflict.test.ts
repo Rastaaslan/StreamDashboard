@@ -53,7 +53,7 @@ it.each(['local', 'remote'] as const)('explicit %s resolution survives restart a
   const writes = vi.mocked(ctx.provider.update).mock.calls.length;
   await ctx.restart().refreshTwitch(); await ctx.restart().retry('series', 'twitch');
   expect(ctx.provider.update).toHaveBeenCalledTimes(writes);
-  expect(ctx.provider.create).toHaveBeenCalledTimes(28);
+  expect(ctx.provider.create).toHaveBeenCalledTimes(7);
   expect(ctx.restart().all()[0].providers!.twitch!.projections![ctx.key].remoteId).toBe(ctx.remoteId);
 });
 

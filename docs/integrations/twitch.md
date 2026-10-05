@@ -90,7 +90,7 @@ TMPDIR="$PWD/.tmp" npm test
 
 Une série weekly-1 sans fin ni exception reste native. Les autres règles utilisent
 le moteur générique `expandRecurringItems`, derrière l’interface `OccurrenceEngine`,
-pour publier des segments simples dans une fenêtre `[maintenant, maintenant + 28 jours)`.
+pour publier au plus les 7 prochaines occurrences valides à partir de maintenant (CB-129).
 La projection est rafraîchie au démarrage après validation Twitch, à la synchronisation,
 aux modifications du planning, au retry et toutes les 60 secondes dans la file de réconciliation.
 

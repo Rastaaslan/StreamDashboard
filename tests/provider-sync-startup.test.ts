@@ -45,7 +45,7 @@ it('returns before rolling I/O, serves the renderer during maintenance and coale
     expect(diagnostics.ok).toBe(true);
     expect(await diagnostics.text()).not.toMatch(/private-|Private event/);
     release(); await server.providersReady;
-    expect(creates).toBe(28);
+    expect(creates).toBe(7);
 
     reads = 0;
     gate = new Promise<void>(resolve => { release = resolve; });
@@ -55,7 +55,7 @@ it('returns before rolling I/O, serves the renderer during maintenance and coale
     release();
     expect((await first).ok).toBe(true); expect((await second).ok).toBe(true);
     expect(reads).toBe(2); // One master inventory + one expanded listing, shared by both callers.
-    expect(creates).toBe(28);
+    expect(creates).toBe(7);
   } finally { release(); await server?.stop(); await rm(folder, { recursive: true, force: true }); }
 });
 

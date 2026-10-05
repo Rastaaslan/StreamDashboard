@@ -16,7 +16,7 @@ afterEach(() => { vi.useRealTimers(); vi.unstubAllGlobals(); });
 
 // Actual client HTTP paths, with deterministic 100–300ms transport latency.
 // Baseline reproduces the old sequential per-occurrence read+write loop.
-it.each([['twitch', 1, 28], ['twitch', 2, 2], ['google', 1, 28], ['google', 2, 2]] as const)('%s interval %s shares inventory and bounds independent writes', async (name, interval, count) => {
+it.each([['twitch', 1, 7], ['twitch', 2, 7], ['google', 1, 7], ['google', 2, 7]] as const)('%s interval %s shares inventory and bounds independent writes', async (name, interval, count) => {
   vi.useFakeTimers(); vi.setSystemTime(now);
   async function run(optimized: boolean) {
     let reads = 0, writes = 0, active = 0, peak = 0;
@@ -57,8 +57,8 @@ it.each([['twitch', 1, 28], ['twitch', 2, 2], ['google', 1, 28], ['google', 2, 2
     };
     const start = Date.now();
     const operation = optimized ? (name === 'twitch' ? reconcileTwitchProjection : reconcileGoogleProjection)(item, adapter, async () => {}, { now }) : (async () => {
-      const events = name === 'twitch' ? expandRecurringItems([item], { from: now, to: now + 28 * 86400000 }).map(event => ({ ...event, recurrence: undefined, seriesId: undefined, occurrenceKey: undefined, twitchRecurring: false }))
-        : projectGoogleSeries(item, { from: now, to: now + 28 * 86400000 }).entries.map(entry => ({ ...item, ...entry.input, recurrence: undefined }));
+      const events = name === 'twitch' ? expandRecurringItems([item], { from: now, nextCount: 7 }).map(event => ({ ...event, recurrence: undefined, seriesId: undefined, occurrenceKey: undefined, twitchRecurring: false }))
+        : projectGoogleSeries(item, { from: now, nextCount: 7 }).entries.map(entry => ({ ...item, ...entry.input, recurrence: undefined }));
       for (const event of events) await adapter.create(event);
     })();
     await vi.runAllTimersAsync(); await operation;
@@ -118,10 +118,10 @@ it('keeps a partial failure durable while independent occurrences finish, then r
   const source = fixture(); source.desiredPublication!.google = false;
   const orchestrator = new PlanningOrchestrator([], { twitch: provider }, persist);
   const operation = orchestrator.create(source); await vi.runAllTimersAsync(); const result = await operation;
-  expect(remote.size).toBe(27); expect(result.providers?.twitch?.status).toBe('error');
+  expect(remote.size).toBe(6); expect(result.providers?.twitch?.status).toBe('error');
   const retry = new PlanningOrchestrator(saved, { twitch: provider }, persist).retry('series', 'twitch');
   await vi.runAllTimersAsync(); await retry;
-  expect(remote.size).toBe(28); expect(create).toHaveBeenCalledTimes(29);
+  expect(remote.size).toBe(7); expect(create).toHaveBeenCalledTimes(8);
   expect(provider.update).not.toHaveBeenCalled();
 });
 
@@ -220,14 +220,14 @@ it('coalesces rolling checkpoints without releasing CREATE before durable intent
   const provider = { create, read: async () => ({}), update: vi.fn(), delete: vi.fn() };
   const work = reconcileTwitchProjection(item, provider, persist, { now });
   await vi.runAllTimersAsync(); await work;
-  expect(create).toHaveBeenCalledTimes(28);
+  expect(create).toHaveBeenCalledTimes(7);
   expect(peak).toBe(1);
-  expect(saves).toBeLessThanOrEqual(40);
+  expect(saves).toBeLessThanOrEqual(12);
   expect(Object.values(disk.providers!.twitch!.projections!).every(entry => entry.remoteId && !entry.uncertainCreate)).toBe(true);
   saves = 0;
   const retry = reconcileTwitchProjection(item, provider, persist, { now, retry: true });
   await vi.runAllTimersAsync(); await retry;
-  expect(create).toHaveBeenCalledTimes(28);
+  expect(create).toHaveBeenCalledTimes(7);
   expect(saves).toBe(1);
 });
 

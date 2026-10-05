@@ -113,7 +113,7 @@ export interface ProviderLink {
   /** Twitch immutable schedule replacement; retain the previous rule for conflict resolution. */
   nativeReplacementRequested?: { recurrence?: RecurrenceRule };
   nativeRetained?: boolean;
-  projectionWindow?: { from: string; to: string };
+  projectionWindow?: { from: string; to?: string; nextCount?: number };
   projections?: Record<string, ProviderProjectionOccurrence>;
   /** Durable scope of a confirmed period deletion, including standard retries. */
   deletionPeriod?: { start: string; end: string };
