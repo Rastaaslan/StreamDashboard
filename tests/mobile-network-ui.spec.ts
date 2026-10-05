@@ -497,3 +497,49 @@ test('CB-127 planning refresh preserves expanded series actions and focus during
   await expect(page.locator('#slot-form [name="description"]')).toHaveValue('Description fraîche');
   expect(errors).toEqual([]);
 });
+
+test('CB-127 failed provider retry stays usable after unchanged refresh and succeeds on second attempt', async ({ page }) => {
+  const { backend, errors } = await setup(page);
+  await page.clock.setFixedTime(new Date('2030-06-01T12:00:00Z'));
+  const item = { id: 'retry-event', title: 'Publication à reprendre', category: 'live', startAtUtc: '2030-06-02T12:00:00Z', endAtUtc: '2030-06-02T13:00:00Z', providers: { google: { status: 'error', lastError: 'Publication échouée' } } };
+  (backend.state as any).planning = [item];
+  const refresh = async () => {
+    backend.state.stateRevision++;
+    await page.evaluate(state => (window as any).sockets.at(-1).onmessage({ data: JSON.stringify({ type: 'state.updated', data: state }) }), backend.state);
+  };
+  await refresh();
+  await page.locator('[data-tab="planning"]').click();
+  let attempts = 0;
+  let release!: () => void;
+  const gate = new Promise<void>(resolve => { release = resolve; });
+  await page.route('**/api/v1/planning/retry-event/retry/google', async route => {
+    attempts++;
+    if (attempts === 1) {
+      await gate;
+      await route.fulfill({ status: 503, json: { error: { message: 'Google temporairement indisponible' } } });
+    } else {
+      item.providers.google = { status: 'synced', lastError: '' };
+      backend.state.stateRevision++;
+      await route.fulfill({ json: backend.state });
+    }
+  });
+  const retry = page.getByRole('button', { name: 'Réessayer Google', exact: true });
+  const original = await retry.elementHandle();
+  await retry.click();
+  await expect.poll(() => attempts).toBe(1);
+  await expect(retry).toBeDisabled();
+  await refresh();
+  await expect(retry).toBeDisabled();
+  expect(attempts).toBe(1);
+  release();
+  await expect(page.locator('#message')).toContainText('Google temporairement indisponible');
+  await expect(retry).toBeEnabled();
+  await refresh();
+  expect(await original!.evaluate(node => node.isConnected)).toBe(true);
+  await expect(retry).toBeEnabled();
+  await retry.click();
+  await expect.poll(() => attempts).toBe(2);
+  await expect(page.locator('#planning .provider-synced')).toContainText('Google');
+  await expect(retry).toHaveCount(0);
+  expect(errors).toEqual([]);
+});

@@ -668,8 +668,19 @@ function renderOnlinePlanningProviders(item, row, onlyProvider) {
     if (link.retryable) {
       const retry = text('button', `Réessayer ${planningProviderNames[provider]}`, 'secondary');
       retry.type = 'button';
-      retry.disabled = companionMode === CompanionMode.OFFLINE || (companionMode === CompanionMode.ONLINE_STANDALONE && !globalThis.StreamDashboardProviders);
-      retry.onclick = async () => { retry.disabled = true; await retryPlanningProvider(item, provider); if (state) renderPlanning(state.planning); };
+      const retryUnavailable = () => companionMode === CompanionMode.OFFLINE || (companionMode === CompanionMode.ONLINE_STANDALONE && !globalThis.StreamDashboardProviders);
+      retry.disabled = retryUnavailable();
+      retry.onclick = async () => {
+        if (retry.disabled) return;
+        retry.disabled = true;
+        try { await retryPlanningProvider(item, provider); }
+        finally {
+          // An unchanged row survives refresh, including after a failed request.
+          // Restore this control explicitly using availability at completion.
+          retry.disabled = retryUnavailable();
+          if (state) renderPlanning(state.planning);
+        }
+      };
       block.append(retry);
       if (item.deleted && link.status === 'conflict' && companionMode === CompanionMode.ONLINE_PC) {
         for (const [strategy, label] of [['local', 'Confirmer la suppression'], ['remote', 'Conserver la version distante']]) {

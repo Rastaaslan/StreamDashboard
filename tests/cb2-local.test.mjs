@@ -288,3 +288,38 @@ test('Standalone Planning form uses real sync: second provider, failed creation 
   assert.equal(companion.snapshot().planning.length, 0);
   assert.deepEqual(publications.slice(-2).map(({provider, action}) => [provider, action]), [['twitch','delete'], ['google','delete']]);
 });
+
+for (const [mode, nativeAvailable, disabled] of [
+  [CompanionMode.ONLINE_PC, false, false],
+  [CompanionMode.OFFLINE, false, true],
+  [CompanionMode.ONLINE_STANDALONE, false, true],
+  [CompanionMode.ONLINE_STANDALONE, true, false],
+]) {
+  test(`provider retry completion respects current availability: ${mode}, native=${nativeAvailable}`, async () => {
+    const ui = dom();
+    const item = { id: 'retry', providers: { google: { status: 'error' } } };
+    let rejectRequest;
+    let attempts = 0;
+    const pending = new Promise((resolve, reject) => { rejectRequest = reject; });
+    const context = vm.createContext({ ...ui, CompanionMode, companionMode: CompanionMode.ONLINE_PC,
+      createProviderRetry, eventProviderState, state: { planning: [item] },
+      renderSyncCenter() {}, renderPlanning() {}, note() {},
+      transport: { retryPlanningProvider: () => { attempts++; return pending; } },
+    });
+    vm.runInContext(section(mobile, 'const planningProviderNames', 'function applyPlanningProviderCapabilities'), context);
+    context.item = item;
+    context.row = ui.document.createElement('div');
+    vm.runInContext("renderOnlinePlanningProviders(item, row, 'google')", context);
+    const retry = context.row.children[0].children.find(node => node.textContent === 'Réessayer Google');
+    const first = retry.onclick();
+    assert.equal(retry.disabled, true);
+    await retry.onclick(); // A second invocation must not start another request.
+    await Promise.resolve();
+    assert.equal(attempts, 1);
+    context.companionMode = mode;
+    context.StreamDashboardProviders = nativeAvailable ? {} : undefined;
+    rejectRequest(new Error('HTTP 503'));
+    await first;
+    assert.equal(retry.disabled, disabled);
+  });
+}
