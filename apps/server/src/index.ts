@@ -1,6 +1,7 @@
+import { measureSync, syncBatch, syncDiagnostics } from '../../../packages/core/src/sync-performance.js';
 import { bulkDeleteSelection } from '../../../packages/core/src/planning-bulk-delete.js';
 import { TwitchTagIntelligence } from '../../../packages/core/src/tag-intelligence.js';
-import { resolveTags, editedTags, tagMetadata, tagPreferences, type TagEngine } from '../../../packages/core/src/tags.js';
+import { normalizeTags, resolveTags, editedTags, tagMetadata, tagPreferences, type TagEngine } from '../../../packages/core/src/tags.js';
 import { googleRecurrence, parseGoogleRecurrence } from '../../../integrations/google-calendar/src/recurrence.js';
 import express from 'express';
 import { createServer, type Server } from 'node:http';
@@ -114,6 +115,8 @@ interface LocalData {
   streamerPings: StreamerPing[];
 }
 export interface DashboardServerOptions {
+  /** Cancels acquisition; startup settles only after partial resources are closed. */
+  startupSignal?: AbortSignal;
   tagEngine?: TagEngine;
   port?: number;
   host?: string;
@@ -143,6 +146,8 @@ export interface DashboardServerHandle {
   port: number;
   url: string;
   state(): DashboardState;
+  /** Settles after the deferred initial provider maintenance (not required to show the window). */
+  providersReady: Promise<void>;
   stop(): Promise<void>;
   server: Server;
 }
@@ -191,6 +196,9 @@ function sanitizeProviderLink(value: unknown): ProviderLink | undefined {
   if (typeof value.projectionOwned === 'boolean') link.projectionOwned = value.projectionOwned;
   if (value.nativeWithdrawalRequested === true) link.nativeWithdrawalRequested = true;
   if (value.nativeRetained === true) link.nativeRetained = true;
+  if (object(value.nativeReplacementRequested)) link.nativeReplacementRequested = {
+    recurrence: object(value.nativeReplacementRequested.recurrence) ? validateRecurrence(value.nativeReplacementRequested.recurrence) : undefined,
+  };
   if (object(value.projectionWindow)) link.projectionWindow = { from: String(value.projectionWindow.from), to: String(value.projectionWindow.to) };
   if (object(value.projectionRetirements)) {
     link.projectionRetirements = {};
@@ -375,6 +383,13 @@ function lanUrls(port: number) {
 }
 
 export async function startDashboardServer(options: DashboardServerOptions = {}): Promise<DashboardServerHandle> {
+  const startupSignal = options.startupSignal;
+  startupSignal?.throwIfAborted();
+  const runtimeAbort = new AbortController();
+  const runtimeFetch = (request: typeof fetch = fetch): typeof fetch => (input, init) => request(input, {
+    ...init,
+    signal: AbortSignal.any([runtimeAbort.signal, ...(init?.signal ? [init.signal] : [])]),
+  });
   const requestedPort = options.port ?? Number(process.env.PORT ?? 48132);
   const host = options.host ?? '127.0.0.1';
   const remoteRuntimeEnabled = options.remoteEnabled === true;
@@ -575,7 +590,7 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
   }, async tokens => {
     if (tokens) await secrets.setTwitchTokens(tokens);
     else await secrets.clearTwitchTokens();
-  });
+  }, runtimeFetch());
   const tagIntelligence = new TwitchTagIntelligence((gameId, signal) => twitch.getStreamsForGame(gameId, signal), () => local.planning, Date.now, undefined, undefined, () => local.settings.tagPreferences ?? {});
   const googleClientId = options.googleClientId ?? process.env.GOOGLE_CLIENT_ID ?? '';
   const google = new GoogleCalendarClient(
@@ -589,11 +604,11 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
         expiresAt: String(tokens.expiresAt),
       });
     },
-    options.googleFetch ?? fetch,
+    runtimeFetch(options.googleFetch),
     (await secrets.getGoogleClientSecret?.() || (options.googleClientSecret ?? process.env.GOOGLE_CLIENT_SECRET ?? '')).trim(),
   );
   let googleCalendars: Array<{ id: string; summary: string; writable: boolean }> = [];
-  let twitchChannel: { title: string; gameId: string; gameName: string } = { title: '', gameId: '', gameName: '' };
+  let twitchChannel: { title: string; gameId: string; gameName: string; tags?: string[]; tagsWarning?: string } = { title: '', gameId: '', gameName: '' };
   let twitchLive: Awaited<ReturnType<TwitchClient['getLiveState']>> = { isLive: false, title: null, category: null, categoryId: null, startedAt: null, viewerCount: null, thumbnailUrl: null };
   let twitchChatters: Awaited<ReturnType<TwitchClient['chatters']>> = { items: [], total: 0, cursor: null };
   let chatMessages: TwitchChatMessage[] = [];
@@ -682,7 +697,7 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
     throw new Error(`Action ${action.type} non supportée.`);
   }, async values => { local.automations = values; await save(); });
   const support = new SupportRuntime(local.supports, async values => { local.supports = values; await save(); }, value => { eventCore.publish({ type: 'support.received', source: value.provider, occurredAt: value.receivedAt, correlationId: `${value.provider}:${value.externalId}`, payload: value }); });
-  const streamlabsOAuth = new StreamlabsOAuthClient(options.streamlabsFetch ?? fetch);
+  const streamlabsOAuth = new StreamlabsOAuthClient(runtimeFetch(options.streamlabsFetch));
   const streamlabsRedirectUri = String(options.streamlabsRedirectUri ?? process.env.STREAMLABS_REDIRECT_URI ?? 'http://127.0.0.1:48132/api/v1/streamlabs/oauth/callback').trim();
   {
     let redirect: URL;
@@ -691,18 +706,10 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
   }
   let streamlabsSocketToken = await secrets.getStreamlabsToken?.() ?? process.env.STREAMLABS_SOCKET_TOKEN ?? '';
   const streamlabsOAuthSecrets = await secrets.getStreamlabsOAuth?.() ?? null;
-  if (!streamlabsSocketToken && streamlabsOAuthSecrets?.accessToken) {
-    try {
-      streamlabsSocketToken = await streamlabsOAuth.socketToken(streamlabsOAuthSecrets.accessToken);
-      await secrets.setStreamlabsToken?.(streamlabsSocketToken);
-    } catch (error) {
-      void Promise.resolve(logger.warn('Impossible de restaurer le Socket Token Streamlabs depuis OAuth.', error)).catch(() => undefined);
-    }
-  }
-  const streamlabs = new StreamlabsAdapter(streamlabsSocketToken, value => support.record(value).then(() => undefined), options.streamlabsTransport ?? new StreamlabsSocketTransport({ logger }), logger);
+  const streamlabs = new StreamlabsAdapter(streamlabsSocketToken, value => support.record(value).then(() => undefined), options.streamlabsTransport ?? new StreamlabsSocketTransport({ logger, signal: runtimeAbort.signal }), logger);
   const storedWizeBot = await secrets.getWizeBotConfiguration?.() ?? null;
   const environmentWizeBot = process.env.WIZEBOT_API_URL && process.env.WIZEBOT_TOKEN ? { apiBaseUrl: process.env.WIZEBOT_API_URL, token: process.env.WIZEBOT_TOKEN } : null;
-  const wizebot = new WizeBotAdapter(storedWizeBot ?? environmentWizeBot, options.wizebotTransport ?? new WizeBotHttpTransport(), logger);
+  const wizebot = new WizeBotAdapter(storedWizeBot ?? environmentWizeBot, options.wizebotTransport ?? new WizeBotHttpTransport(runtimeFetch()), logger);
 
   const isLocalAddress = (address: string | undefined | null) => LOCAL_ADDRESSES.has(address ?? '');
   const isLocalRequest = (req: express.Request) => isLocalAddress(req.socket.remoteAddress);
@@ -797,10 +804,22 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
   app.use(express.static(path.resolve(options.webDir ?? 'apps/web'), { index: 'index.html' }));
 
   let planningQueue: Promise<void> = Promise.resolve();
+  let planningVersion = 0;
   const plan = <T>(operation: () => Promise<T>): Promise<T> => {
+    planningVersion++;
     const result = planningQueue.then(operation);
     planningQueue = result.then(() => undefined, () => undefined);
     return result;
+  };
+  const syncFlights = new Map<'twitch' | 'google', { version: number; promise: Promise<DashboardState> }>();
+  const providerSync = (name: 'twitch' | 'google', operation: () => Promise<DashboardState>) => {
+    const existing = syncFlights.get(name);
+    if (existing?.version === planningVersion) return existing.promise;
+    const promise = measureSync(name, 'total', () => plan(() => syncBatch(operation)));
+    const flight = { version: planningVersion, promise };
+    syncFlights.set(name, flight);
+    void promise.finally(() => { if (syncFlights.get(name) === flight) syncFlights.delete(name); }).catch(() => undefined);
+    return promise;
   };
   let settingsQueue: Promise<void> = Promise.resolve();
   const configure = <T>(operation: () => Promise<T>): Promise<T> => {
@@ -890,7 +909,7 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
         port: runtimePort,
         logsPath: options.logsPath ?? null,
       },
-      twitch: { ...twitch.state, capabilities: twitch.controlCapabilities(), lastSyncedAt: local.twitchLastSyncedAt, channelTitle: twitchChannel.title || null, gameId: twitchChannel.gameId || null, gameName: twitchChannel.gameName || null },
+      twitch: { ...twitch.state, capabilities: twitch.controlCapabilities(), lastSyncedAt: local.twitchLastSyncedAt, channelTitle: twitchChannel.title || null, gameId: twitchChannel.gameId || null, gameName: twitchChannel.gameName || null, tags: twitchChannel.tags, tagsWarning: twitchChannel.tagsWarning },
       nextLive: nextLive(),
       google: {
         configured: Boolean(googleClientId),
@@ -1024,10 +1043,15 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
   });
   const commands = new DashboardCommandService(local, obs, changed, { settings: local.settings, logger, timerOverlayUrl: () => `http://127.0.0.1:${runtimePort}/overlay/timer/` });
 
-  const refreshGoogleCalendars = async () => {
+  let backgroundStopped = false;
+  let calendarRefreshFlight: Promise<void> | undefined;
+  const refreshGoogleCalendars = () => calendarRefreshFlight ??= loadGoogleCalendars().finally(() => { calendarRefreshFlight = undefined; });
+  const loadGoogleCalendars = async () => {
     if (!googleClientId || !google.connected) { googleCalendars = []; return; }
     try {
-      googleCalendars = await google.calendars();
+      const calendars = await google.calendars();
+      if (backgroundStopped) return;
+      googleCalendars = calendars;
       googleError = null;
     } catch (error) {
       googleError = error instanceof Error ? error.message : String(error);
@@ -1037,10 +1061,11 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
 
   const providerAdapters = (): Partial<Record<'twitch' | 'google', PlanningProvider>> => ({
     twitch: twitch.state.connected ? {
-      read: id => twitch.readSegment(id),
-      create: item => twitch.createSegment(item),
-      update: (id, item) => twitch.updateSegment(id, item),
+      read: async id => { await initializeTwitch(); return twitch.readSegment(id); },
+      create: async item => { await initializeTwitch(); return twitch.createSegment(item); },
+      update: async (id, item) => { await initializeTwitch(); return twitch.updateSegment(id, item); },
       delete: async (id, item) => {
+        await initializeTwitch();
         const period = item.providers?.twitch?.deletionPeriod;
         if (period) {
           const remote = await twitch.readSegment(id);
@@ -1057,7 +1082,7 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
         if (!calendarId) throw Object.assign(new Error('Choisissez un calendrier Google cible.'), { mutationNotStarted: true });
         return { calendarId };
       },
-      read: async (id, item) => {
+      read: async (id, item, options) => {
         const calendarId = item.providers?.google?.calendarId ?? (item.projection ? undefined : local.google.targetCalendarId);
         if (!calendarId) throw new Error('Calendrier Google lié introuvable.');
         const event = await (item.projection ? google.readProjected(calendarId, id, googleEventInput(item)) : google.event(calendarId, id)).catch(error => {
@@ -1066,18 +1091,21 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
         });
         if (!event || event.deleted) return { deleted: true };
         const withdrawingNative = !item.projection && item.providers?.google?.nativeWithdrawalRequested === true;
-        if (withdrawingNative) {
+        const resolvingNative = !item.projection && options?.resolveConflict === true;
+        if (withdrawingNative || resolvingNative) {
           const link = item.providers!.google!;
-          // Resolve the saved native object, not a new projection of the edited rule.
+          // Explicit resolution reads the linked master, whose representable rule
+          // may differ from the user's pending edit. Keep identity and ETag guards.
           if (link.calendarId !== calendarId || link.remoteId !== id || event.id !== id || !event.etag
             || (event.managed && event.localId !== (item.localId ?? item.id))
-            || (link.projectionOwned && !event.managed)) throw new Error('Identité ou ETag du retrait Google invalide.');
+            || (link.projectionOwned && !event.managed)) throw new Error('Identité ou ETag Google invalide pour résoudre le conflit ou le retrait.');
         }
-        if (!withdrawingNative && !sameGoogleRecurrence(item, event)) {
+        if (!withdrawingNative && !resolvingNative && !sameGoogleRecurrence(item, event)) {
           throw new Error('La récurrence Google distante diffère du modèle local. Résolution automatique refusée pour préserver la série.');
         }
         return { revision: event.etag, deleted: event.deleted, remote: {
           title: event.title, description: event.description, startAtUtc: event.startAtUtc, endAtUtc: event.endAtUtc, allDay: event.allDay,
+          ...(withdrawingNative || resolvingNative ? { recurrence: parseGoogleRecurrence(event) } : {}),
         } };
       },
       create: async item => {
@@ -1119,7 +1147,7 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
     await save();
   });
 
-  await drainCompanionProviders(local.planning, local.companion, providerAdapters(), save);
+  // Provider work is drained after the listener and window are ready.
 
   const invalidatePreflight = () => {
     twitchPreflight.invalidate();
@@ -1150,6 +1178,8 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
       return changed();
     }
     try {
+      // Commands and automations bypass the Twitch HTTP readiness middleware.
+      await initializeTwitch();
       const resolved = await resolveTags(event, options.tagEngine ?? tagIntelligence);
       const result = await twitchPreflight.prepare({
         tags: resolved.tags?.values,
@@ -1158,6 +1188,13 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
         category: category ?? undefined,
         categoryId: event.twitchCategoryId ?? undefined,
       });
+      if (result.status === 'ready') {
+        // The Live editor opens on the metadata just prepared for this session.
+        twitchChannel = { ...twitchChannel, title: result.title, gameId: result.gameId,
+          gameName: category ?? twitchChannel.gameName,
+          tags: result.tagsWarning ? twitchChannel.tags : result.tags ?? twitchChannel.tags,
+          tagsWarning: result.tagsWarning };
+      }
       preflightState = {
         eventId: event.id,
         status: result.status,
@@ -1262,7 +1299,9 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
     if (!twitch.state.connected) { resetTwitchRuntime(); broadcast(); return; }
     const previous = JSON.stringify(twitch.controlCapabilities());
     try {
-      if (!await twitch.validateSession()) {
+      const valid = await twitch.validateSession();
+      if (backgroundStopped) return;
+      if (!valid) {
         resetTwitchRuntime();
         local.twitch = { broadcasterId: '', userName: '', displayName: '' };
         await save();
@@ -1274,7 +1313,8 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
       if (!capabilities.chatters) twitchChatters = { items: [], total: 0, cursor: null };
       reconcileTwitchEventSub();
       const metadata = await twitch.getChannelMetadata();
-      twitchChannel = { title: metadata.title, gameId: metadata.gameId, gameName: metadata.gameName };
+      if (backgroundStopped) return;
+      twitchChannel = { title: metadata.title, gameId: metadata.gameId, gameName: metadata.gameName, tags: metadata.tags, tagsWarning: twitchChannel.tagsWarning };
       await refreshTwitchLive();
     } finally { broadcast(); }
   };
@@ -1282,9 +1322,11 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
   const refreshTwitchLive = () => {
     if (twitchLiveRefresh) return twitchLiveRefresh;
     twitchLiveRefresh = (async () => {
+      if (backgroundStopped) return;
       if (!twitch.state.connected) { resetTwitchRuntime(); broadcast(); return; }
       try {
         const live = await twitch.getLiveState();
+        if (backgroundStopped) return;
         const liveChanged = live.isLive !== twitchLive.isLive;
         twitchLive = live;
         eventCore.publish({ type: 'audience.viewer-count.updated', source: 'twitch', payload: { viewerCount: live.viewerCount } });
@@ -1294,15 +1336,22 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
         eventCore.publish({ type: 'integration.degraded', source: 'twitch', payload: { error: error instanceof Error ? error.message : String(error) } });
         logError(error);
       }
+      if (backgroundStopped) return;
       try {
         twitchChatters = twitch.controlCapabilities().chatters ? await twitch.chatters() : { items: [], total: 0, cursor: null };
       } catch (error) { twitchChatters = { items: [], total: 0, cursor: null }; logError(error); }
+      if (backgroundStopped) return;
       if (!twitch.state.connected) resetTwitchRuntime();
       else reconcileTwitchEventSub();
       broadcast();
     })().finally(() => { twitchLiveRefresh = undefined; });
     return twitchLiveRefresh;
   };
+
+  let twitchInitialization: Promise<void> | undefined;
+  let googleInitialization: Promise<void> | undefined;
+  const initializeTwitch = () => twitchInitialization ??= validateTwitch().catch(logError);
+  const initializeGoogle = () => googleInitialization ??= refreshGoogleCalendars().catch(logError).finally(broadcast);
 
   let trackedUnplannedLiveId = findUnplannedDraft(local.planning)?.id ?? null;
   let observedObsStreaming = false;
@@ -1628,6 +1677,13 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
     ] });
   });
   app.get('/api/v1/control-hub', (_req, res) => res.json(snapshot().controlHub));
+  // Only provider-dependent actions wait for readiness; state/static routes and
+  // disconnect remain responsive while startup I/O is outstanding.
+  app.use(['/api/twitch', '/api/v1/twitch'], (req, _res, next) => {
+    if (['/disconnect', '/device'].includes(req.path)) { next(); return; }
+    void initializeTwitch().then(() => next(), next);
+  });
+
   app.get('/api/v1/twitch/rewards', async (_req, res, next) => { try { res.json({ items: await twitch.customRewards(), available: twitch.state.redemptionsAvailable === true }); } catch (error) { next(error); } });
   app.post('/api/v1/streamer-pings/:id/ack', async (req, res, next) => {
     try {
@@ -1814,16 +1870,44 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
       res.json(await twitch.searchGames(query));
     } catch (error) { next(error); }
   });
+  app.post('/api/v1/twitch/tags/suggest', async (req, res, next) => {
+    try {
+      res.json(await resolveTags({
+        title: String(req.body.title ?? '').slice(0, 140),
+        twitchCategoryId: String(req.body.gameId ?? '').slice(0, 30),
+        twitchCategoryName: String(req.body.gameName ?? '').slice(0, 140),
+      }, options.tagEngine ?? tagIntelligence, true));
+    } catch (error) { next(error); }
+  });
   app.post('/api/v1/twitch/channel', async (req, res, next) => {
     try {
       if (!twitch.state.connected) throw new Error('Twitch non connecté.');
       const title = String(req.body.title ?? twitchChannel.title).trim();
       const gameId = String(req.body.gameId ?? twitchChannel.gameId).trim();
       const gameName = String(req.body.gameName ?? twitchChannel.gameName).trim();
-      if (!title || title.length > 140) throw new Error('Le titre Twitch doit contenir entre 1 et 140 caractères.');
-      if (!/^\d{1,30}$/.test(gameId) || !gameName || gameName.length > 140) throw new Error('Sélectionnez une catégorie Twitch valide.');
-      await twitch.updateChannelMetadata({ title, gameId });
-      twitchChannel = { title, gameId, gameName };
+      const titleChanged = title !== twitchChannel.title;
+      const categoryChanged = gameId !== twitchChannel.gameId || gameName !== twitchChannel.gameName;
+      if (titleChanged && (!title || title.length > 140)) throw new Error('Le titre Twitch doit contenir entre 1 et 140 caractères.');
+      if (categoryChanged && (!/^\d{1,30}$/.test(gameId) || !gameName || gameName.length > 140)) throw new Error('Sélectionnez une catégorie Twitch valide.');
+      const tags = req.body.tags === undefined ? undefined : normalizeTags(req.body.tags);
+      if (req.body.tags !== undefined && !Array.isArray(req.body.tags)) throw new Error('Tags invalides.');
+      const metadata = { ...(titleChanged ? { title } : {}), ...(categoryChanged ? { gameId } : {}) };
+      const metadataChanged = titleChanged || categoryChanged;
+      let tagsWarning: string | undefined;
+      if (metadataChanged || tags !== undefined) {
+        try {
+          await twitch.updateChannelMetadata({ ...metadata, ...(tags !== undefined ? { tags } : {}) });
+        } catch (error) {
+          if (tags === undefined) throw error;
+          // A tags-only rejection must not rewrite unrelated (possibly empty) metadata.
+          if (metadataChanged) await twitch.updateChannelMetadata(metadata);
+          tagsWarning = metadataChanged
+            ? 'Tags refusés par Twitch ; titre et catégorie appliqués. Corrige les tags puis réessaie.'
+            : 'Tags refusés par Twitch. Corrige les tags puis réessaie.';
+        }
+      }
+      twitchChannel = { title, gameId, gameName, tags: tagsWarning ? twitchChannel.tags : tags ?? twitchChannel.tags, tagsWarning };
+      twitchLive = { ...twitchLive, ...(titleChanged ? { title } : {}), ...(categoryChanged ? { category: gameName, categoryId: gameId } : {}) };
       broadcast();
       res.json(isRemoteRequest(req) ? toRemoteDashboardState(snapshot()) : snapshot());
     } catch (error) { next(error); }
@@ -1875,7 +1959,7 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
       } : { local: true, twitch: false, google: false };
       if (desired.twitch && (category !== 'live' || allDay)) throw new Error('La publication Twitch nécessite un événement Live avec des horaires précis.');
       const beforeIds = new Set(local.planning.map(item => item.id));
-      await plan(async () => planning().create({
+      const created = await plan(async () => planning().create({
         title,
         description: typeof input.description === 'string' ? input.description.slice(0, 4000) : '',
         startAtUtc,
@@ -1897,7 +1981,7 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
       }
       invalidatePreflight();
       const next = await changed();
-      res.status(201).json(isRemoteRequest(req) ? toRemoteDashboardState(next) : next);
+      res.status(201).json(isRemoteRequest(req) ? toRemoteDashboardState(next) : { ...next, createdItemId: created.id });
     } catch (error) { next(error); }
   };
 
@@ -2241,7 +2325,7 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
   });
   app.post(['/api/twitch/sync', '/api/v1/twitch/sync'], async (_req, res, next) => {
     try {
-      res.json(await plan(async () => {
+      res.json(await providerSync('twitch', async () => {
         local.planning = await twitch.sync(structuredClone(local.planning));
         await planning().refreshTwitch();
         local.twitchLastSyncedAt = new Date().toISOString();
@@ -2249,6 +2333,11 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
         return changed();
       }));
     } catch (error) { next(error); }
+  });
+
+  app.get('/api/v1/providers/diagnostics', (req, res) => {
+    if (!requireLocal(req, res)) return;
+    res.json(syncDiagnostics());
   });
 
   app.get('/api/v1/google/oauth/config', (req, res) => {
@@ -2355,7 +2444,7 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
   });
   app.post('/api/v1/google/sync', async (_req, res, next) => {
     try {
-      res.json(await plan(async () => {
+      res.json(await providerSync('google', async () => {
         if (!google.connected) throw new Error('Connectez Google Calendar avant de synchroniser.');
         const calendarId = local.google.targetCalendarId;
         if (!calendarId) throw new Error('Choisissez un calendrier Google cible.');
@@ -2570,6 +2659,7 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
     try { server.listen(port, host); } catch (error) { cleanup(); reject(error); }
   });
   // A changed port invalidates OBS URLs, OAuth callbacks and paired phones.
+  startupSignal?.throwIfAborted();
   await listen(requestedPort);
   const address = server.address();
   const actualPort = typeof address === 'object' && address ? address.port : requestedPort;
@@ -2594,17 +2684,51 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
     }
     broadcast();
   });
-  const recurrenceRefresher = setInterval(() => { void plan(() => planning().refreshTwitch()).catch(logError); }, 60_000);
+  let maintenanceFlight: Promise<void> | undefined;
+  const maintainProjections = () => maintenanceFlight ??= (async () => {
+    // Yield the global planning queue between series so an explicit edit/retry
+    // waits for at most the current series, not the complete rolling inventory.
+    for (const item of [...local.planning]) {
+      if (backgroundStopped) return;
+      await plan(() => planning().refreshTwitch(Date.now(), [item.id]));
+      await new Promise<void>(resolve => setImmediate(resolve));
+    }
+  })().finally(() => { maintenanceFlight = undefined; });
+  const recurrenceRefresher = setInterval(() => { void maintainProjections().catch(logError); }, 60 * 60_000);
   recurrenceRefresher.unref();
   const validator = setInterval(() => { void validateTwitch().catch(logError); }, 60 * 60_000);
   validator.unref();
   const twitchLivePoller = setInterval(() => { void refreshTwitchLive(); }, 30_000);
   twitchLivePoller.unref();
-  await validateTwitch().catch(logError);
-  await plan(() => planning().refreshTwitch()).catch(logError);
-  await streamlabs.connect();
-  await wizebot.refresh();
-  if (google.connected) await refreshGoogleCalendars().catch(logError);
+  const initializeStreamlabs = async () => {
+    if (!streamlabsSocketToken && streamlabsOAuthSecrets?.accessToken) {
+      try {
+        streamlabsSocketToken = await streamlabsOAuth.socketToken(streamlabsOAuthSecrets.accessToken);
+        if (backgroundStopped) return;
+        await secrets.setStreamlabsToken?.(streamlabsSocketToken);
+        streamlabs.configure(streamlabsSocketToken);
+      } catch (error) {
+        void Promise.resolve(logger.warn('Impossible de restaurer le Socket Token Streamlabs depuis OAuth.', error)).catch(() => undefined);
+      }
+    }
+    if (!backgroundStopped) await streamlabs.connect();
+  };
+  let finishProviderStartup!: () => void;
+  const providersReady = new Promise<void>(resolve => { finishProviderStartup = resolve; });
+  let providerStartupWork: Promise<void> | undefined;
+  const providerStartup = setTimeout(() => {
+    if (backgroundStopped) return;
+    providerStartupWork = (async () => {
+      await Promise.all([
+        initializeTwitch(), initializeGoogle(),
+        initializeStreamlabs().catch(logError), wizebot.refresh().catch(logError),
+      ]);
+      if (backgroundStopped) return;
+      await plan(() => drainCompanionProviders(local.planning, local.companion, providerAdapters(), save));
+      if (!backgroundStopped) await maintainProjections();
+    })().catch(logError).finally(finishProviderStartup);
+  }, 0);
+  providerStartup.unref();
   void obs.configure(local.settings.obsUrl, currentObsPassword).then(broadcast).catch(error => { logError(error); broadcast(); });
   void Promise.resolve(logger.info(`StreamDashboard ready on ${host}:${actualPort}`)).catch(() => undefined);
 
@@ -2614,12 +2738,18 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
     unsubscribeObs();
     clearTimeout(googleOAuthTimeout);
     clearInterval(validator);
+    backgroundStopped = true;
+    runtimeAbort.abort();
+    clearTimeout(providerStartup);
+    if (!providerStartupWork) finishProviderStartup();
+    twitch.close();
+    google.close();
     clearInterval(recurrenceRefresher);
     clearInterval(twitchLivePoller);
     if (timerExpiry) clearTimeout(timerExpiry);
     if (remoteActivitySaveTimer) clearTimeout(remoteActivitySaveTimer);
-    // Stop accepting HTTP work, drain accepted handlers while providers are still
-    // available, then persist their final state before releasing the runtime.
+    // Cancel provider I/O, then drain accepted handlers and persist their final
+    // state before releasing the runtime. Startup must not outlive shutdown.
     for (const ws of sockets.clients) ws.terminate();
     sockets.close();
     await new Promise<void>((resolve, reject) => server.close(error => error ? reject(error) : resolve()));
@@ -2634,8 +2764,15 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
     twitchEventSub.stop();
     await streamlabs.disconnect();
     await obs.close();
+    await providerStartupWork;
     await save();
   })();
+  try {
+    startupSignal?.throwIfAborted();
+  } catch (error) {
+    await stop();
+    throw startupSignal?.aborted ? startupSignal.reason : error;
+  }
   const urlHost = host === '0.0.0.0' ? '127.0.0.1' : host === '::1' ? '[::1]' : host;
-  return { port: actualPort, url: `http://${urlHost}:${actualPort}`, state: snapshot, server, stop };
+  return { port: actualPort, url: `http://${urlHost}:${actualPort}`, state: snapshot, providersReady, server, stop };
 }

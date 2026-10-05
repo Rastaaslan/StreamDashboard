@@ -12,6 +12,7 @@ test('le bootstrap mobile réel reste navigable lorsque REST est indisponible', 
       env: { ...process.env, NODE_ENV: 'test', APPDATA: profile, XDG_CONFIG_HOME: profile },
     });
     const page = await application.firstWindow();
+    await expect(page.locator('#runtime-status')).toHaveText('Runtime PC');
     const origin = await page.evaluate(() => location.origin);
     // Leave the Desktop renderer before simulating a total REST outage. Otherwise an
     // in-flight Desktop refresh can observe the intentional route abort and pollute

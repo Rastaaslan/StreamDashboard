@@ -6,68 +6,95 @@ import { createDashboardWindow, isAllowedExternalAuthUrl, isAllowedTwitchUrl } f
 import { startDesktopRuntime, type DesktopRuntime } from './lifecycle.js';
 import { handleSquirrelStartup } from './squirrel.js';
 import { startUpdater } from './updater.js';
+import { DesktopLogger } from './logger.js';
+import { presentWindow } from './presentation.js';
 
 const squirrelHandled = handleSquirrelStartup();
 app.setName('StreamDashboard');
 if (process.platform === 'win32') app.setAppUserModelId('com.squirrel.StreamDashboard.StreamDashboard');
+const logger = new DesktopLogger(path.join(app.getPath('userData'), 'logs'));
+const log = (event: string) => { void logger.info(event, { pid: process.pid }).catch(() => undefined); };
 const primary = !squirrelHandled && app.requestSingleInstanceLock();
 if (!primary) app.quit();
+else log('Primary instance acquired');
 
 let window: BrowserWindow | null = null;
 let runtime: DesktopRuntime | null = null;
 let stopUpdater: () => void = () => undefined;
 let quitting = false;
-let booting = false;
+let bootPromise: Promise<void> | undefined;
+let runtimePromise: Promise<DesktopRuntime> | undefined;
+let cleanupPromise: Promise<void> | undefined;
+const startup = new AbortController();
+let failing = false;
 
-app.on('second-instance', () => {
-  if (!window || window.isDestroyed()) return;
-  if (window.isMinimized()) window.restore();
-  window.show(); window.focus();
-});
+function present() {
+  if (!primary || quitting) return;
+  log('Window presentation requested');
+  if (window && !window.isDestroyed()) presentWindow(window);
+  else if (app.isReady()) void boot();
+  // Before readiness, boot will create and present the window unconditionally.
+}
+app.on('second-instance', present);
+app.on('activate', present);
 
-async function cleanupRuntime() {
-  stopUpdater(); stopUpdater = () => undefined;
-  const current = runtime; runtime = null;
-  if (current) await current.stop();
+function cleanupRuntime(): Promise<void> {
+  return cleanupPromise ??= (async () => {
+    stopUpdater(); stopUpdater = () => undefined;
+    // Acquisition and teardown have one owner, even when quit races startup.
+    // Startup cancellation interrupts provider I/O, but never abandons cleanup.
+    let current: DesktopRuntime | undefined;
+    try { current = await runtimePromise; }
+    catch (error) { if (error !== startup.signal.reason) throw error; }
+    if (current) await current.stop();
+    runtime = null;
+  })();
 }
 
-const showStartupError = async (error: unknown): Promise<void> => {
-  const choice = await dialog.showMessageBox({
-    type: 'error', title: 'StreamDashboard n’a pas pu démarrer', message: 'StreamDashboard n’a pas pu démarrer.',
-    detail: error instanceof Error ? error.message : String(error), buttons: ['Quitter', 'Ouvrir les logs', 'Réessayer'], defaultId: 2,
-  });
-  if (choice.response === 1) { await shell.openPath(path.join(app.getPath('userData'), 'logs')); return showStartupError(error); }
-  if (choice.response === 2) { await boot(); return; }
-  app.quit();
-};
-
-async function boot(): Promise<void> {
-  booting = true;
+async function fail(error: unknown): Promise<void> {
+  if (failing || quitting || !primary) return;
+  failing = true;
+  await logger.error('Desktop lifecycle failure', error).catch(() => undefined);
   try {
-    await cleanupRuntime();
-    if (window && !window.isDestroyed()) window.destroy();
-    window = null;
-    runtime = await startDesktopRuntime();
-    const preview = process.argv.includes('--ui-preview=desktop-v2');
-    const legacy = process.argv.includes('--ui-legacy=desktop-v1');
-    const useDesktopV2 = preview || !legacy;
-    const targetUrl = useDesktopV2
-      ? new URL(preview ? '/preview/' : '/preview/?runtime=1', runtime.dashboard.url).toString()
-      : runtime.dashboard.url;
-    window = createDashboardWindow(targetUrl, path.join(import.meta.dirname, 'preload.cjs'), preview ? 'StreamDashboard Desktop Preview' : 'StreamDashboard');
-    stopUpdater = startUpdater(window, runtime.dashboard, runtime.logger, async () => { await cleanupRuntime(); });
-    window.webContents.on('render-process-gone', (_event, details) => {
-      void Promise.resolve(runtime?.logger.error('Renderer crash', details.reason)).catch(() => undefined).then(() => showStartupError(new Error(`Le renderer StreamDashboard s’est arrêté : ${details.reason}`))).catch(() => app.quit());
-    });
-    window.webContents.on('did-fail-load', (_event, code, description) => {
-      if (code === -3) return;
-      void Promise.resolve(runtime?.logger.error('Renderer load failure', code, description)).catch(() => undefined).then(() => showStartupError(new Error(description))).catch(() => app.quit());
-    });
-  } catch (error) { await showStartupError(error); }
-  finally { booting = false; }
+    dialog.showErrorBox('StreamDashboard n’a pas pu démarrer',
+      `Le démarrage ou le chargement a échoué. Fermez puis relancez StreamDashboard.\nDiagnostics : ${logger.file}`);
+  } finally {
+    app.quit();
+  }
 }
 
-void app.whenReady().then(() => primary ? boot() : undefined).catch(() => app.quit());
+function boot(): Promise<void> {
+  if (quitting) return Promise.resolve();
+  return bootPromise ??= (async () => {
+    try {
+      log('Electron ready; creating visible startup window');
+      const preview = process.argv.includes('--ui-preview=desktop-v2');
+      const legacy = process.argv.includes('--ui-legacy=desktop-v1');
+      const route = preview || !legacy ? (preview ? '/preview/' : '/preview/?runtime=1') : '/';
+      const targetUrl = new URL(route, 'http://127.0.0.1:48132').toString();
+      window = createDashboardWindow(targetUrl, path.join(import.meta.dirname, 'preload.cjs'), 'StreamDashboard — Démarrage…');
+      window.on('closed', () => { window = null; });
+      window.webContents.on('render-process-gone', (_event, details) => { void fail(new Error(`Renderer stopped: ${details.reason}`)); });
+      window.webContents.on('did-fail-load', (_event, code, description, _url, isMainFrame) => {
+        if (isMainFrame && code !== -3) void fail(new Error(`Renderer load failed (${code}): ${description}`));
+      });
+      presentWindow(window);
+      await window.loadURL('data:text/html;charset=utf-8,' + encodeURIComponent(
+        '<!doctype html><meta charset="utf-8"><meta http-equiv="Content-Security-Policy" content="default-src \'none\'; style-src \'unsafe-inline\'"><title>StreamDashboard — Démarrage…</title><body style="background:#080a10;color:#fff;font:20px system-ui;padding:48px"><h1>StreamDashboard</h1><p>Démarrage en cours…</p><p>Vous pouvez fermer cette fenêtre pour annuler.</p></body>'));
+      if (quitting) return;
+      log('Startup window visible; starting local runtime');
+      runtimePromise = startDesktopRuntime(logger, startup.signal);
+      runtime = await runtimePromise;
+      if (quitting) return;
+      log('Local runtime ready; loading renderer');
+      stopUpdater = startUpdater(window!, runtime.dashboard, logger, cleanupRuntime);
+      await window!.loadURL(targetUrl);
+      log('Renderer loaded');
+    } catch (error) { await fail(error); }
+  })();
+}
+
+void app.whenReady().then(() => primary ? boot() : undefined).catch(fail);
 ipcMain.handle('app:get-version', () => app.getVersion());
 ipcMain.handle('app:open-twitch-activation', async (_event, url: unknown) => {
   if (typeof url !== 'string' || !isAllowedTwitchUrl(url)) return false;
@@ -98,16 +125,23 @@ ipcMain.handle('soundboard:import-file', async (_event, source: unknown) => {
 ipcMain.on('app:minimize', () => window?.minimize());
 ipcMain.on('app:close', () => window?.close());
 
-app.on('window-all-closed', () => { if (!booting) app.quit(); });
+app.on('window-all-closed', () => app.quit());
 app.on('before-quit', event => {
-  if (!runtime || quitting) return;
-  event.preventDefault(); quitting = true;
-  void cleanupRuntime().catch(error => runtime?.logger.error('Erreur pendant la fermeture', error)).finally(() => app.exit(0));
+  if (!primary) return;
+  event.preventDefault();
+  if (quitting) return;
+  quitting = true;
+  log('Shutdown requested');
+  startup.abort(new Error('Desktop startup cancelled'));
+  void cleanupRuntime().then(async () => {
+    await logger.info('Shutdown complete');
+    await logger.flush();
+    app.exit(failing ? 1 : 0);
+  }).catch(async error => {
+    await logger.error('Shutdown failed', error).catch(() => undefined);
+    app.exit(1);
+  });
 });
 
-process.on('uncaughtException', error => {
-  if (!app.isPackaged) { process.removeAllListeners('uncaughtException'); throw error; }
-  const fallback = setTimeout(() => app.exit(1), 1_000); fallback.unref();
-  void Promise.resolve(runtime?.logger.error('Uncaught exception', error)).catch(() => undefined).finally(() => { clearTimeout(fallback); app.exit(1); });
-});
-process.on('unhandledRejection', error => { void Promise.resolve(runtime?.logger.error('Unhandled rejection', error)).catch(() => undefined); });
+process.on('uncaughtException', error => { void fail(error); });
+process.on('unhandledRejection', error => { void fail(error); });

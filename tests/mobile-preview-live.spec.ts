@@ -17,7 +17,7 @@ const soundboard = { available:true,currentPlayback:null,sounds:[{id:'bonk',name
 
 test('les cinq parcours mobiles et leurs vues secondaires restent utilisables', async ({}, testInfo) => {
   const directory=await mkdtemp(path.join(os.tmpdir(),'streamdashboard-mobile-shell-')); let app:ElectronApplication|undefined;
-  try { app=await electron.launch({args:[path.resolve('.')],env:{...process.env,NODE_ENV:'test',APPDATA:directory,XDG_CONFIG_HOME:directory}}); const page=await app.firstWindow(); const origin=await page.evaluate(()=>location.origin); const commands:any[]=[];
+  try { app=await electron.launch({args:[path.resolve('.')],env:{...process.env,NODE_ENV:'test',APPDATA:directory,XDG_CONFIG_HOME:directory}}); const page=await app.firstWindow(); await expect(page.locator('#runtime-status')).toHaveText('Runtime PC'); const origin=await page.evaluate(()=>location.origin); const commands:any[]=[];
     await page.route('**/api/v1/state',route=>route.fulfill({status:200,contentType:'application/json',body:JSON.stringify(state)}));
     await page.route('**/api/v1/profile',route=>route.fulfill({status:200,contentType:'application/json',body:JSON.stringify({profile,modules})}));
     await page.route('**/api/v1/connections',route=>route.fulfill({status:200,contentType:'application/json',body:JSON.stringify(connections)}));

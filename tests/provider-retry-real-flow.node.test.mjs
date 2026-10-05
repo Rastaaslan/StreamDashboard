@@ -101,7 +101,12 @@ for (const provider of ['google', 'twitch']) for (const recurring of [false, tru
       assert.equal(item.providers[provider].uncertainCreate, undefined);
       if (provider === 'google') assert.equal(item.providers.google.remoteRevision, updateExisting ? 'etag-1' : undefined);
       denied = false;
+      await page.locator('#event-title').fill('Brouillon pendant retry');
       await retry.click();
+      await expect(page.locator('#toast')).toContainText('Synchronisation relancée');
+      await expect(page.locator('#event-dialog')).toBeVisible();
+      await expect(page.locator('#event-title')).toHaveValue('Brouillon pendant retry');
+      await page.keyboard.press('Escape');
       await expect(page.locator('#event-dialog')).not.toBeVisible();
       item = server.state().planning[0];
       assert.equal(item.providers[provider].status, 'synced');

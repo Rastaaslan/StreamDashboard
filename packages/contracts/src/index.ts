@@ -110,6 +110,8 @@ export interface ProviderLink {
   projectionMode?: 'native' | 'materialized';
   projectionOwned?: boolean;
   nativeWithdrawalRequested?: boolean;
+  /** Twitch immutable schedule replacement; retain the previous rule for conflict resolution. */
+  nativeReplacementRequested?: { recurrence?: RecurrenceRule };
   nativeRetained?: boolean;
   projectionWindow?: { from: string; to: string };
   projections?: Record<string, ProviderProjectionOccurrence>;
@@ -184,7 +186,7 @@ export interface CalendarItem {
   conflict?: {
     provider: 'twitch' | 'google';
     detectedAt: string;
-    remote?: Pick<CalendarItem, 'title' | 'description' | 'startAtUtc' | 'endAtUtc' | 'allDay' | 'twitchCategoryId' | 'twitchCategoryName'>;
+    remote?: Pick<CalendarItem, 'title' | 'description' | 'startAtUtc' | 'endAtUtc' | 'allDay' | 'twitchCategoryId' | 'twitchCategoryName' | 'recurrence'>;
   };
 }
 
@@ -296,6 +298,8 @@ export interface TwitchState {
   error: string | null;
   syncing: boolean;
   lastSyncedAt: string | null;
+  tags?: string[];
+  tagsWarning?: string;
   channelTitle?: string | null;
   gameId?: string | null;
   gameName?: string | null;
@@ -341,7 +345,7 @@ export interface RemoteDashboardState {
   nextLive: Pick<CalendarItem, 'id' | 'title' | 'startAtUtc' | 'endAtUtc' | 'allDay' | 'category' | 'kind' | 'source' | 'twitchCategoryId' | 'twitchCategoryName' | 'desiredPublication'> | null;
   obs: Pick<ObsState, 'connectionStatus' | 'connected' | 'streaming' | 'streamingKnown' | 'scene' | 'scenes' | 'inputs' | 'activeAudioInputs' | 'mediaInputs' | 'browserInputs'>;
   settings: Pick<DashboardSettings, 'confirmStop' | 'streamerName' | 'modeScenes' | 'chattingScene' | 'primaryMicInput' | 'requireTimerOverlayOnStart' | 'startMode' | 'timerBrowserSource'>;
-  twitch: Pick<TwitchState, 'connected' | 'channelTitle' | 'gameId' | 'gameName' | 'error' | 'capabilities'>;
+  twitch: Pick<TwitchState, 'connected' | 'channelTitle' | 'gameId' | 'gameName' | 'tags' | 'tagsWarning' | 'error' | 'capabilities'>;
   google?: { configured: boolean; connected: boolean; targetConfigured: boolean };
   discord?: DiscordState;
   preflight?: PreflightState;

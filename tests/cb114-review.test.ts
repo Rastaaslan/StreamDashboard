@@ -88,7 +88,7 @@ async function runtime(loseResponse = false) {
   const path = join(folder, 'dashboard.json'); const saved = JSON.parse(await readFile(path, 'utf8'));
   saved.twitch = { broadcasterId: '42', userName: 'u', displayName: 'U' }; await writeFile(path, JSON.stringify(saved));
   await secrets.setTwitchTokens({ accessToken: 'token', refreshToken: '' });
-  const restart = async () => { await server?.stop(); server = await startDashboardServer(options); };
+  const restart = async () => { await server?.stop(); server = await startDashboardServer(options); await server.providersReady; };
   await restart();
   const request = async (route: string, body: unknown = {}, method = 'POST', expectedSuccess = true) => { const res = await nativeFetch(server!.url + '/api/v1/' + route, { method, headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) }); expect(res.ok, await res.clone().text()).toBe(expectedSuccess); return res.json(); };
   await request('google/target', { calendarId: 'A' }, 'PUT');

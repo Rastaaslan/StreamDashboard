@@ -16,7 +16,7 @@ describe('efficient UI contract', () => {
   });
 
   it('provides safe desktop navigation shortcuts without firing while typing', () => {
-    expect(desktop).toContain("target.matches('input, textarea, select')");
+    expect(desktop).toContain("if (ownsKeyboard(event)) return;");
     expect(desktop).toContain("'1': 'overview'");
     expect(desktop).toContain("'2': 'planning'");
     expect(desktop).toContain("'3': 'prepare'");

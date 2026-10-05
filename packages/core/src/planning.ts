@@ -9,7 +9,7 @@ export type ProviderName = 'twitch' | 'google';
 export interface PlanningProvider {
   /** Resolve the immutable destination before persisting a CREATE intent. No remote mutation. */
   prepareCreate?(item: CalendarItem): { calendarId?: string } | Promise<{ calendarId?: string }>;
-  read?(id: string, item: CalendarItem): Promise<{ remote?: NonNullable<CalendarItem['conflict']>['remote']; revision?: string; fingerprint?: string; deleted?: boolean }>;
+  read?(id: string, item: CalendarItem, options?: { resolveConflict?: boolean }): Promise<{ remote?: NonNullable<CalendarItem['conflict']>['remote']; revision?: string; fingerprint?: string; deleted?: boolean }>;
   create(item: CalendarItem): Promise<{ id: string; revision?: string; calendarId?: string; fingerprint?: string; owned?: boolean }>;
   update(id: string, item: CalendarItem, revision?: string): Promise<{ revision?: string; fingerprint?: string }>;
   delete(id: string, item: CalendarItem, revision?: string): Promise<void>;
@@ -41,17 +41,17 @@ export class PlanningOrchestrator {
     private persist: (items: CalendarItem[]) => Promise<void>,
   ) {}
 
-  refreshTwitch(now = Date.now()) {
+  refreshTwitch(now = Date.now(), ids?: string[]) {
     return this.serial(async () => {
-      for (const item of this.items) {
-        const transitioning = item.providers?.twitch?.projectionMode === 'materialized' && !needsTwitchMaterialization(item);
+      for (const item of this.items.filter(item => !ids || ids.includes(item.id))) {
+        const transitioning = (item.providers?.twitch?.projectionMode === 'materialized' || Boolean(item.providers?.twitch?.nativeReplacementRequested)) && !needsTwitchMaterialization(item);
         const handled = await reconcileTwitchProjection(item, this.providers.twitch, () => this.persist(this.items), { now });
         if (!handled && transitioning && item.ownership === 'LOCAL' && item.desiredPublication?.twitch
           && !this.remoteId(item, 'twitch') && item.conflict?.provider !== 'twitch') {
           await this.publishOne(item, 'twitch');
         }
       }
-      for (const item of this.items) {
+      for (const item of this.items.filter(item => !ids || ids.includes(item.id))) {
         const transitioning = item.providers?.google?.projectionMode === 'materialized' && !needsGoogleMaterialization(item);
         const handled = await reconcileGoogleProjection(item, this.providers.google, () => this.persist(this.items), { now });
         if (!handled && transitioning && item.ownership === 'LOCAL' && item.desiredPublication?.google && !this.remoteId(item, 'google')) await this.publishOne(item, 'google');
@@ -88,6 +88,14 @@ export class PlanningOrchestrator {
   ) {
     return this.serial(async () => {
       const item = this.required(id);
+      const twitchLink = item.providers?.twitch;
+      const next = { ...item, ...changes };
+      if (twitchLink?.remoteId && twitchLink.projectionOwned && twitchLink.projectionMode === 'native'
+        && (Boolean(item.recurrence) !== Boolean(next.recurrence)
+          || (item.recurrence && (Date.parse(item.startAtUtc) !== Date.parse(next.startAtUtc) || item.recurrence.timeZone !== next.recurrence?.timeZone))
+          || needsTwitchMaterialization(next))) {
+        twitchLink.nativeReplacementRequested ??= { recurrence: structuredClone(item.recurrence) };
+      }
       Object.assign(item, changes);
       if (item.providers?.google) delete item.providers.google.nativeRetained;
       if (options.desiredPublication) {
@@ -135,7 +143,7 @@ export class PlanningOrchestrator {
     return this.serial(async () => {
       const item = this.required(id);
       if (provider === 'twitch' && await reconcileTwitchProjection(item, this.providers.twitch, () => this.persist(this.items), { retry: true })) {
-        if (item.providers?.twitch?.status === 'error') throw new Error(item.providers.twitch.lastError);
+        if (['error', 'conflict'].includes(item.providers?.twitch?.status ?? '')) throw new Error(item.providers?.twitch?.lastError);
         return structuredClone(item);
       }
       if (provider === 'google' && await reconcileGoogleProjection(item, this.providers.google, () => this.persist(this.items), { retry: true })) {
@@ -205,7 +213,7 @@ export class PlanningOrchestrator {
       // resolution time, including after restart, before adopting or overwriting.
       if (remoteId && remoteProvider?.read) {
         try {
-          const latest = await remoteProvider.read(remoteId, item);
+          const latest = await remoteProvider.read(remoteId, item, { resolveConflict: true });
           if (latest.deleted) {
             link.deletedRemotely = true;
             throw new Error('Événement supprimé à distance. Confirmez explicitement sa republication.');
@@ -224,6 +232,21 @@ export class PlanningOrchestrator {
         }
       }
 
+      if (provider === 'twitch' && link.nativeReplacementRequested) {
+        if (strategy === 'remote') {
+          if (!conflict.remote) throw new Error('Version distante indisponible.');
+          Object.assign(item, conflict.remote);
+          item.recurrence = link.nativeReplacementRequested.recurrence;
+          item.desiredPublication = { local: true, google: false, ...item.desiredPublication, twitch: true };
+          delete link.nativeReplacementRequested;
+          delete link.projections; delete link.projectionWindow;
+          link.status = 'synced';
+        } else link.status = 'pending';
+        delete item.conflict; delete link.lastError;
+        await this.persist(this.items);
+        return structuredClone(item);
+      }
+
       if (provider === 'google' && link.nativeWithdrawalRequested) {
         if (!remoteId || !remoteProvider?.read || !link.remoteRevision) throw new Error('Identité et ETag Google requis pour résoudre le retrait.');
         if (strategy === 'remote') {
@@ -232,6 +255,7 @@ export class PlanningOrchestrator {
           item.desiredPublication = { local: true, twitch: false, ...item.desiredPublication, google: true };
           delete link.nativeWithdrawalRequested;
           link.nativeRetained = true; link.projectionMode = 'native';
+          if (!Object.keys(link.projections ?? {}).length) { delete link.projections; delete link.projectionWindow; }
           link.status = 'synced';
         } else {
           // Checkpoint the decision; refresh/retry performs DELETE, never PATCH.
@@ -428,6 +452,7 @@ export class PlanningOrchestrator {
         if (name === 'twitch') link.fingerprint = result.fingerprint;
       } else {
         const result = await createWithDurableIntent(item, name, () => this.persist(this.items), request => remoteProvider.create(request), remoteProvider.prepareCreate);
+        delete link.nativeReplacementRequested;
         link.projectionOwned = result.owned !== false;
         link.projectionMode = 'native';
         link.remoteId = result.id;
@@ -462,7 +487,7 @@ export class PlanningOrchestrator {
     }
     if (name === 'twitch' && (!remoteId || item.providers?.twitch?.projectionOwned) && (needsTwitchMaterialization(item) || item.providers?.twitch?.projections)) {
       await reconcileTwitchProjection(item, this.providers.twitch, () => this.persist(this.items));
-      return item.providers?.twitch?.status !== 'error';
+      return !['error', 'conflict'].includes(item.providers?.twitch?.status ?? '');
     }
     if (name === 'google' && item.providers?.google?.projections) {
       item.desiredPublication ??= { local: true, twitch: false, google: false };
@@ -492,7 +517,7 @@ export class PlanningOrchestrator {
       await this.persist(this.items);
       if (name === 'twitch' && item.providers?.twitch?.projections) {
         await reconcileTwitchProjection(item, this.providers.twitch, () => this.persist(this.items));
-        return item.providers.twitch.status !== 'error';
+        return !['error', 'conflict'].includes(item.providers.twitch.status);
       }
     }
     return ok;

@@ -1,5 +1,5 @@
 import { test, expect, _electron as electron, type ElectronApplication } from '@playwright/test';
-import { access, mkdtemp, rm } from 'node:fs/promises';
+import { access, mkdtemp, readFile, rm } from 'node:fs/promises';
 import { spawn } from 'node:child_process';
 import os from 'node:os';
 import path from 'node:path';
@@ -22,6 +22,7 @@ async function expectEndpointClosed(origin: string) {
 }
 
 test('Electron réel démarre, persiste, impose une instance et arrête son backend', async () => {
+  test.setTimeout(180_000);
   const profile = await mkdtemp(path.join(os.tmpdir(), 'streamdashboard-electron-'));
   let application: ElectronApplication | undefined;
   try {
@@ -75,14 +76,20 @@ test('Electron réel démarre, persiste, impose une instance et arrête son back
     expect(saved.settings.streamerName).toBe(marker);
 
     if (packagedExecutable) {
-      const second = spawn(path.resolve(packagedExecutable), [], { env: { ...process.env, NODE_ENV: 'test', APPDATA: profile, XDG_CONFIG_HOME: profile }, stdio: 'ignore', windowsHide: true });
+      for (let attempt = 0; attempt < 20; attempt++) {
+      await application.evaluate(({ BrowserWindow }) => { BrowserWindow.getAllWindows()[0].minimize(); });
+      const second = spawn(path.resolve(packagedExecutable), process.platform === 'linux' ? ['--no-sandbox'] : [], { env: { ...process.env, NODE_ENV: 'test', APPDATA: profile, XDG_CONFIG_HOME: profile }, stdio: 'ignore', windowsHide: true });
       const code = await new Promise<number | null>((resolve, reject) => {
         const timeout = setTimeout(() => { second.kill(); reject(new Error('La seconde instance ne s’est pas arrêtée.')); }, 8_000);
         second.once('error', reject);
         second.once('exit', value => { clearTimeout(timeout); resolve(value); });
       });
       expect(code).toBe(0);
-      await expect(window.locator('#title')).toBeVisible();
+      await expect.poll(() => application!.evaluate(({ BrowserWindow }) => {
+        const main = BrowserWindow.getAllWindows()[0];
+        return { count: BrowserWindow.getAllWindows().length, visible: main.isVisible(), minimized: main.isMinimized(), focused: main.isFocused() };
+      })).toEqual({ count: 1, visible: true, minimized: false, focused: true });
+      }
     }
 
     const origin = await window.evaluate(() => location.origin);
@@ -92,11 +99,40 @@ test('Electron réel démarre, persiste, impose une instance et arrête son back
 
     application = await launch(profile);
     const reloaded = await application.firstWindow();
+    await expect(reloaded.locator('#runtime-status')).toHaveText('Runtime PC');
     const after = await reloaded.evaluate(() => fetch('/api/v1/state').then(response => response.json()));
     expect(after.settings.streamerName).toBe(marker);
     const secondOrigin = await reloaded.evaluate(() => location.origin);
     await application.close(); application = undefined;
     await expectEndpointClosed(secondOrigin);
+  } finally {
+    if (application) await application.close().catch(() => undefined);
+    await rm(profile, { recursive: true, force: true });
+  }
+});
+
+
+test('20 démarrages réels, fermeture précoce et libération du port', async () => {
+  test.setTimeout(180_000);
+  const profile = await mkdtemp(path.join(os.tmpdir(), 'streamdashboard-launch-stress-'));
+  let application: ElectronApplication | undefined;
+  try {
+    for (let attempt = 0; attempt < 20; attempt++) {
+      application = await launch(profile);
+      const page = await application.firstWindow();
+      const logs = await application.evaluate(({ app, BrowserWindow }) => {
+        const main = BrowserWindow.getAllWindows()[0];
+        if (!main.isVisible()) throw new Error('Startup window is hidden');
+        return app.getPath('userData');
+      });
+      // Alternate a fully loaded launch and a close as soon as a window exists.
+      // Deferred unit tests cover the precise startup/stop interleaving.
+      if (attempt % 2 === 0) await expect(page.locator('#runtime-status')).toHaveText('Runtime PC');
+      await application.close(); application = undefined;
+      await expectEndpointClosed('http://127.0.0.1:48132');
+      const lines = (await readFile(path.join(logs, 'logs', 'streamdashboard.log'), 'utf8')).trim().split('\n');
+      expect(lines.at(-1)).toContain('Shutdown complete');
+    }
   } finally {
     if (application) await application.close().catch(() => undefined);
     await rm(profile, { recursive: true, force: true });

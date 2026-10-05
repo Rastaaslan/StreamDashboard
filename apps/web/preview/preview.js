@@ -1,3 +1,4 @@
+import { beginDialogDraft, changeDialogDraft, dialogCreation, dialogCompletion, draftRevision, ownsKeyboard } from '/dialog-drafts.js';
 import { openBulkDelete } from '/planning-bulk-delete.js';
 import { eventTimes, editedRecurrence } from '/mobile/shared/planning-editor.js';
 import { diagnosePrelive, diagnosticLabels } from '/mobile/prelive-diagnostic.js';
@@ -93,7 +94,7 @@ async function request(path,options={}){
 }
 function record(type,payload={}){commandLog.push({type,payload})}
 let runtimeSocket=null,socketRetry=null;
-const editableFocus=()=>document.activeElement?.matches?.('input,select,textarea')||Boolean(document.querySelector('dialog[open]'));
+const editableFocus=()=>(document.activeElement?.matches?.('input,select,textarea')||document.activeElement?.isContentEditable)||Boolean(document.querySelector('dialog[open]'));
 let deferredRuntimeRender=false;
 const liveDraftInputs=()=>[...view.querySelectorAll('#desktop-chat-form input,#live-twitch-settings input')];
 function captureLiveDrafts(){
@@ -118,10 +119,10 @@ function restoreLiveDrafts(draft){
     if(field.focused){input.focus({preventScroll:true});if(field.start!==null)input.setSelectionRange(field.start,field.end)}
   }
 }
-function acknowledgeLiveSettings(submitted){
+function acknowledgeLiveSettings(submitted,tagsApplied=true){
   const form=document.querySelector('#live-twitch-settings');if(!form)return;
   // A response owns only the submitted values, never text entered while it waited.
-  for(const names of [['title'],['gameName','gameId']]){
+  for(const names of [['title'],['gameName','gameId'],...(tagsApplied?[['tags']]:[])]){
     if(names.every(name=>form.elements.namedItem(name).value===submitted.get(name))){
       for(const name of names){const input=form.elements.namedItem(name);input.dataset.draftBaseline=input.value;input.dataset.draftDirty='false'}
     }
@@ -634,7 +635,7 @@ function diagnosticsContent(){
 function twitchLiveSettingsContent(){
   if(!moduleEnabled('twitch'))return'';
   const twitch=state.dashboard?.twitch||{};
-  return `<details class="section live-twitch-settings"><summary><span><b>Informations Twitch</b><small>${twitch.connected?'Connecté':'Déconnecté'} · titre et catégorie</small></span><i>›</i></summary><form id="live-twitch-settings"><label class="label">Titre<input name="title" maxlength="140" value="${esc(twitch.channelTitle||'')}" ${twitchCan('updateChannel')?'':'disabled'}></label><div class="toolbar"><input id="live-twitch-category" name="gameName" maxlength="80" value="${esc(twitch.gameName||'')}" placeholder="Catégorie Twitch" ${twitchCan('updateChannel')?'':'disabled'}><input id="live-twitch-game-id" name="gameId" type="hidden" value="${esc(twitch.gameId||'')}"><button type="button" class="secondary" data-live-twitch-category-search ${twitchCan('updateChannel')?'':'disabled'}>Rechercher</button></div><select id="live-twitch-category-results" hidden></select><button class="action" ${twitchCan('updateChannel')?'':'disabled'}>Mettre à jour Twitch</button></form></details>`;
+  return `<details class="section live-twitch-settings"><summary><span><b>Informations Twitch</b><small>${twitch.connected?'Connecté':'Déconnecté'} · titre, catégorie et tags</small></span><i>›</i></summary><form id="live-twitch-settings"><label class="label">Titre<input name="title" maxlength="140" value="${esc(twitch.channelTitle||'')}" ${twitchCan('updateChannel')?'':'disabled'}></label><div class="toolbar"><input id="live-twitch-category" name="gameName" maxlength="80" value="${esc(twitch.gameName||'')}" placeholder="Catégorie Twitch" ${twitchCan('updateChannel')?'':'disabled'}><input id="live-twitch-game-id" name="gameId" type="hidden" value="${esc(twitch.gameId||'')}"><button type="button" class="secondary" data-live-twitch-category-search ${twitchCan('updateChannel')?'':'disabled'}>Rechercher</button></div><select id="live-twitch-category-results" hidden></select><label class="label">Tags · 10 maximum, séparés par des virgules<input name="tags" value="${esc((twitch.tags||[]).join(', '))}" ${twitchCan('updateChannel')?'':'disabled'}></label><small>Ajoute ou supprime les tags dans ce champ. Les suggestions ne remplacent pas tes modifications.</small><p data-live-tags-suggestions></p><button type="button" class="secondary" data-live-tags-regenerate>Régénérer les suggestions</button><button type="button" class="secondary" data-live-tags-adopt hidden>Utiliser ces suggestions</button><p role="status">${esc(twitch.tagsWarning||'')}</p><button class="action" ${twitchCan('updateChannel')?'':'disabled'}>Mettre à jour Twitch</button></form></details>`;
 }
 function generalSettingsContent(){
   const settings=state.dashboard?.settings||{},obs=state.dashboard?.obs||{};
@@ -829,7 +830,7 @@ function render(){
   // This also covers runtime refresh/reconnect paths which bypass updateRuntimeView.
   if(document.querySelector('#event-dialog').open){deferredRuntimeRender=true;return}
   const draft=captureLiveDrafts();
-  deferredRuntimeRender=false;projectProductShell();if(state.view==='camp')ensureCampItem();const names={home:['Accueil','COCKPIT'],live:['Live','EN DIRECT'],sounds:['Sons','BIBLIOTHÈQUE'],planning:['Planning','PLANNING'],camp:['Application','CONFIGURATION']};[title.textContent,eyebrow.textContent]=names[state.view];view.innerHTML=({home,live,sounds:soundboard,planning,camp}[state.view])();document.querySelectorAll('[data-view]').forEach(b=>b.setAttribute('aria-current',b.dataset.view===state.view?'page':'false'));bind();restoreLiveDrafts(draft);applyActionGuards();mountThumbnails()}
+  deferredRuntimeRender=false;projectProductShell();if(state.view==='camp')ensureCampItem();const names={home:['Accueil','COCKPIT'],live:['Live','EN DIRECT'],sounds:['Sons','BIBLIOTHÈQUE'],planning:['Planning','PLANNING'],camp:['Application','CONFIGURATION']};[title.textContent,eyebrow.textContent]=names[state.view];view.innerHTML=({home,live,sounds:soundboard,planning,camp}[state.view])();document.querySelectorAll('[data-view]').forEach(b=>b.setAttribute('aria-current',b.dataset.view===state.view?'page':'false'));bind();restoreLiveDrafts(draft);restoreLiveTagSuggestions();applyActionGuards();mountThumbnails()}
 function mountThumbnails(){
   document.querySelectorAll('[data-planning-thumbnail]').forEach(host=>{
     const item=state.visiblePlanning?.[Number(host.dataset.planningThumbnail)]?.raw||{};
@@ -1000,10 +1001,52 @@ function bindPlanning(){
   document.querySelector('[data-planning-discord]')?.addEventListener('click',()=>void exportPlanning(true));
   document.querySelectorAll('[data-event-index]').forEach(button=>button.onclick=()=>openEventDialog(state.visiblePlanning?.[Number(button.dataset.eventIndex)]?.raw));
 }
+// Suggestions belong to an editing context, not to a transient rendered form.
+const liveTagSuggestions={context:null,revision:0,timer:null,pending:false,values:[],message:''};
+function liveTagsContext(editor){
+  return JSON.stringify({title:editor.elements.title.value,gameId:editor.elements.gameId.value,gameName:editor.elements.gameName.value});
+}
+function paintLiveTagSuggestions(){
+  const editor=document.querySelector('#live-twitch-settings');
+  if(!editor||liveTagsContext(editor)!==liveTagSuggestions.context)return;
+  editor.querySelector('[data-live-tags-suggestions]').textContent=liveTagSuggestions.pending?'Suggestions en cours…':liveTagSuggestions.message;
+  editor.querySelector('[data-live-tags-adopt]').hidden=liveTagSuggestions.pending||!liveTagSuggestions.values.length;
+}
+function scheduleLiveTagSuggestions(delay=300){
+  const editor=document.querySelector('#live-twitch-settings');if(!editor)return;
+  const context=liveTagsContext(editor),version=++liveTagSuggestions.revision;
+  clearTimeout(liveTagSuggestions.timer);
+  Object.assign(liveTagSuggestions,{context,pending:true,values:[],message:''});
+  paintLiveTagSuggestions();
+  liveTagSuggestions.timer=setTimeout(async()=>{
+    try{
+      const result=await request('/api/v1/twitch/tags/suggest',{method:'POST',body:context});
+      if(version!==liveTagSuggestions.revision)return;
+      liveTagSuggestions.values=result.tags?.values||[];
+      liveTagSuggestions.message=result.warning||('Suggestions : '+liveTagSuggestions.values.join(', '));
+    }catch(error){if(version!==liveTagSuggestions.revision)return;liveTagSuggestions.message=error.message}
+    if(version===liveTagSuggestions.revision){liveTagSuggestions.pending=false;paintLiveTagSuggestions()}
+  },typeof delay==='number'?delay:300);
+}
+function restoreLiveTagSuggestions(){
+  const editor=document.querySelector('#live-twitch-settings');
+  if(!editor||liveTagSuggestions.context===null)return;
+  if(liveTagsContext(editor)!==liveTagSuggestions.context)scheduleLiveTagSuggestions();
+  else paintLiveTagSuggestions();
+}
 function bindLiveTwitchSettings(){
   if(state.view!=='live'||!moduleEnabled('twitch'))return;
+  const editor=document.querySelector('#live-twitch-settings');
+  editor.elements.title.addEventListener('input',scheduleLiveTagSuggestions);
+  editor.elements.gameName.addEventListener('input',()=>{editor.elements.gameId.value='';scheduleLiveTagSuggestions()});
+  editor.querySelector('#live-twitch-category-results').addEventListener('change',()=>queueMicrotask(scheduleLiveTagSuggestions));
+  editor.querySelector('[data-live-tags-regenerate]').onclick=()=>scheduleLiveTagSuggestions(0);
+  editor.querySelector('[data-live-tags-adopt]').onclick=()=>{
+    if(liveTagsContext(editor)!==liveTagSuggestions.context||liveTagSuggestions.pending)return;
+    editor.elements.tags.value=liveTagSuggestions.values.join(', ');editor.elements.tags.dataset.draftDirty='true';
+  };
   document.querySelector('[data-live-twitch-category-search]')?.addEventListener('click',()=>void searchCategory('#live-twitch-category','#live-twitch-game-id','#live-twitch-category-results').catch(error=>toast(error.message,true)));
-  document.querySelector('#live-twitch-settings')?.addEventListener('submit',async event=>{event.preventDefault();if(!twitchCan('updateChannel'))return toast('Autorisation titre/catégorie requise.',true);const form=new FormData(event.currentTarget);try{const next=await request('/api/v1/twitch/channel',{method:'POST',body:JSON.stringify({title:String(form.get('title')||'').trim(),gameId:String(form.get('gameId')||''),gameName:String(form.get('gameName')||'').trim()})});acknowledgeLiveSettings(form);applyDashboard(next);render();toast('Informations Twitch mises à jour')}catch(error){toast(error.message,true)}});
+  document.querySelector('#live-twitch-settings')?.addEventListener('submit',async event=>{event.preventDefault();if(!twitchCan('updateChannel'))return toast('Autorisation titre/catégorie requise.',true);const form=new FormData(event.currentTarget);try{const next=await request('/api/v1/twitch/channel',{method:'POST',body:JSON.stringify({title:String(form.get('title')||'').trim(),gameId:String(form.get('gameId')||''),gameName:String(form.get('gameName')||'').trim(),tags:String(form.get('tags')||'').split(',')})});acknowledgeLiveSettings(form,!next.twitch?.tagsWarning);applyDashboard(next);render();toast(next.twitch?.tagsWarning||'Informations Twitch mises à jour',Boolean(next.twitch?.tagsWarning))}catch(error){toast(error.message,true)}});
 }
 function bind(){
   for(const input of liveDraftInputs())input.dataset.draftBaseline=input.value;
@@ -1122,11 +1165,11 @@ function bindConnections(){
       if(action==='obs-test'){const form=document.querySelector('#preview-obs-form');const data=new FormData(form);const password=String(data.get('obsPassword')||'');const result=await request('/api/v1/obs/test',{method:'POST',body:JSON.stringify({obsUrl:String(data.get('obsUrl')||'').trim(),...(password?{obsPassword:password}:{})})});toast(`OBS connecté · v${result.obsVersion||'?'}`);return}
       if(action==='twitch-connect'){const result=await request('/api/v1/twitch/device',{method:'POST',body:'{}'});if(window.streamDashboardDesktop?.openTwitchActivation)await window.streamDashboardDesktop.openTwitchActivation(result.verificationUri);else window.open(result.verificationUri,'_blank','noopener,noreferrer');toast(`Code Twitch : ${result.userCode}`);await refreshRuntime();return}
       if(action==='twitch-disconnect'){const next=await request('/api/v1/twitch/disconnect',{method:'POST',body:'{}'});applyDashboard(next);toast('Twitch déconnecté');render();return}
-      if(action==='twitch-sync'){const next=await request('/api/v1/twitch/sync',{method:'POST',body:'{}'});applyDashboard(next);toast('Planning Twitch synchronisé');render();return}
+      if(action==='twitch-sync'){toast('Synchronisation Twitch en cours…');const next=await request('/api/v1/twitch/sync',{method:'POST',body:'{}'});applyDashboard(next);toast('Planning Twitch synchronisé');render();return}
       if(action==='google-secret-clear'){document.querySelector('#preview-google-secret-form')?.reset();await request('/api/v1/google/oauth/config',{method:'DELETE'});await refreshRuntime();toast('Secret Google enregistré effacé. Un secret fourni par l’environnement reste actif.');return}
       if(action==='google-connect'){const result=await request('/api/v1/google/oauth/start',{method:'POST',body:'{}'});if(window.streamDashboardDesktop?.openExternalAuth)await window.streamDashboardDesktop.openExternalAuth(result.authorizationUrl);else window.open(result.authorizationUrl,'_blank','noopener,noreferrer');toast('Connexion Google ouverte dans le navigateur');return}
       if(action==='google-disconnect'){const next=await request('/api/v1/google/disconnect',{method:'POST',body:'{}'});applyDashboard(next);toast('Google Calendar déconnecté');updateRuntimeView();return}
-      if(action==='google-sync'){if(!state.dashboard?.google?.connected||!state.dashboard?.google?.targetCalendarId)return toast('Choisis un calendrier Google cible.',true);const next=await request('/api/v1/google/sync',{method:'POST',body:'{}'});applyDashboard(next);toast('Google Calendar synchronisé');updateRuntimeView();return}
+      if(action==='google-sync'){if(!state.dashboard?.google?.connected||!state.dashboard?.google?.targetCalendarId)return toast('Choisis un calendrier Google cible.',true);toast('Synchronisation Google en cours…');const next=await request('/api/v1/google/sync',{method:'POST',body:'{}'});applyDashboard(next);toast('Google Calendar synchronisé');updateRuntimeView();return}
       if(action==='discord-token-save'){const input=document.querySelector('#preview-discord-token');const token=input?.value.trim();if(!token)throw new Error('Saisis le token Discord.');await request('/api/v1/discord/token',{method:'PUT',body:JSON.stringify({token})});input.value='';await refreshAfterConnection('Token Discord configuré',true);await loadDiscord();return}
       if(action==='discord-token-delete'){await request('/api/v1/discord/token',{method:'DELETE'});await refreshAfterConnection('Discord déconnecté',true);return}
       if(action==='discord-load'){await loadDiscord();return}
@@ -1144,10 +1187,10 @@ function bindConnections(){
   const calendar=document.querySelector('#preview-google-calendar');if(calendar)calendar.onchange=async()=>{if(!calendar.value){calendar.value=state.dashboard?.google?.targetCalendarId||'';toast('Choisis un calendrier accessible en écriture.',true);return}if(!requireRuntime())return;try{const next=await request('/api/v1/google/target',{method:'PUT',body:JSON.stringify({calendarId:calendar.value})});applyDashboard(next);toast('Calendrier Google sélectionné');updateRuntimeView()}catch(error){calendar.value=state.dashboard?.google?.targetCalendarId||'';toast(error.message,true)}};
 }
 let selectedSoundFile='';
-function openSoundDialog(id=''){const sound=(state.sounds||[]).find(s=>s.id===id);selectedSoundFile='';document.querySelector('#sound-id').value=id;document.querySelector('#sound-dialog-title').textContent=sound?'Modifier le son':'Ajouter un son';document.querySelector('#sound-name').value=sound?.name||'';document.querySelector('#sound-category').value=sound?.category||'';document.querySelector('#sound-volume').value=String(Math.round((sound?.volume??1)*100));document.querySelector('#sound-cooldown').value=String(Math.round((sound?.cooldownMs??0)/1000));document.querySelector('#sound-monitoring').value=sound?.monitoringMode||'stream';document.querySelector('#sound-favorite').checked=sound?.favorite===true;document.querySelector('#sound-enabled').checked=sound?.enabled!==false;document.querySelector('#sound-file-copy').textContent=sound?'Conserver le fichier actuel':'Aucun fichier choisi';document.querySelector('#sound-delete').hidden=!sound;document.querySelector('#sound-dialog').showModal()}
-document.querySelector('#sound-file-button').onclick=async()=>{if(!window.streamDashboardDesktop?.selectSoundFile)return toast('Sélecteur de fichier indisponible.',true);const file=await window.streamDashboardDesktop.selectSoundFile();if(file){selectedSoundFile=file;document.querySelector('#sound-file-copy').textContent=file.split(/[\\/]/).pop()}};
-document.querySelector('#sound-form').onsubmit=async event=>{event.preventDefault();const id=document.querySelector('#sound-id').value;const metadata={name:document.querySelector('#sound-name').value.trim(),category:document.querySelector('#sound-category').value.trim(),volume:Number(document.querySelector('#sound-volume').value)/100,cooldownMs:Math.round(Number(document.querySelector('#sound-cooldown').value)*1000),monitoringMode:document.querySelector('#sound-monitoring').value,favorite:document.querySelector('#sound-favorite').checked,enabled:document.querySelector('#sound-enabled').checked};if(!state.runtime){const existing=state.sounds.find(s=>s.id===id);if(existing)Object.assign(existing,metadata);else state.sounds.push({id:`demo-${Date.now()}`,...metadata,sourceAvailable:true});document.querySelector('#sound-dialog').close();render();return}try{let libraryId;if(selectedSoundFile){const imported=await window.streamDashboardDesktop.importSoundFile(selectedSoundFile);libraryId=imported.libraryId}if(!id&&!libraryId)throw new Error('Choisissez un fichier audio.');const body={...metadata,...(libraryId?{libraryId}:{})};state.soundboard=await request(id?`/api/v1/soundboard/sounds/${encodeURIComponent(id)}`:'/api/v1/soundboard/sounds',{method:id?'PUT':'POST',body:JSON.stringify(body)});state.sounds=state.soundboard.sounds||[];document.querySelector('#sound-dialog').close();toast('Soundboard enregistrée');render()}catch(error){toast(error.message,true)}};
-document.querySelector('#sound-delete').onclick=async()=>{const id=document.querySelector('#sound-id').value;if(!id)return;if(!confirm('Supprimer ce son de la Soundboard ?'))return;if(!state.runtime){state.sounds=state.sounds.filter(s=>s.id!==id);document.querySelector('#sound-dialog').close();render();return}try{await request(`/api/v1/soundboard/sounds/${encodeURIComponent(id)}`,{method:'DELETE'});document.querySelector('#sound-dialog').close();await refreshRuntime();toast('Son supprimé')}catch(error){toast(error.message,true)}};
+function openSoundDialog(id=''){if(document.querySelector('#sound-dialog').open)return;const sound=(state.sounds||[]).find(s=>s.id===id);selectedSoundFile='';document.querySelector('#sound-id').value=id;document.querySelector('#sound-dialog-title').textContent=sound?'Modifier le son':'Ajouter un son';document.querySelector('#sound-name').value=sound?.name||'';document.querySelector('#sound-category').value=sound?.category||'';document.querySelector('#sound-volume').value=String(Math.round((sound?.volume??1)*100));document.querySelector('#sound-cooldown').value=String(Math.round((sound?.cooldownMs??0)/1000));document.querySelector('#sound-monitoring').value=sound?.monitoringMode||'stream';document.querySelector('#sound-favorite').checked=sound?.favorite===true;document.querySelector('#sound-enabled').checked=sound?.enabled!==false;document.querySelector('#sound-file-copy').textContent=sound?'Conserver le fichier actuel':'Aucun fichier choisi';document.querySelector('#sound-delete').hidden=!sound;beginDialogDraft(document.querySelector('#sound-dialog'));document.querySelector('#sound-dialog').showModal()}
+document.querySelector('#sound-file-button').onclick=async()=>{if(!window.streamDashboardDesktop?.selectSoundFile)return toast('Sélecteur de fichier indisponible.',true);const dialog=document.querySelector('#sound-dialog'),revision=draftRevision(dialog);const file=await window.streamDashboardDesktop.selectSoundFile();if(file&&dialog.open&&revision===draftRevision(dialog)){changeDialogDraft(dialog);selectedSoundFile=file;document.querySelector('#sound-file-copy').textContent=file.split(/[\\/]/).pop()}};
+document.querySelector('#sound-form').onsubmit=async event=>{event.preventDefault();const complete=dialogCompletion(document.querySelector('#sound-dialog'));const id=document.querySelector('#sound-id').value;const metadata={name:document.querySelector('#sound-name').value.trim(),category:document.querySelector('#sound-category').value.trim(),volume:Number(document.querySelector('#sound-volume').value)/100,cooldownMs:Math.round(Number(document.querySelector('#sound-cooldown').value)*1000),monitoringMode:document.querySelector('#sound-monitoring').value,favorite:document.querySelector('#sound-favorite').checked,enabled:document.querySelector('#sound-enabled').checked};if(!state.runtime){const existing=state.sounds.find(s=>s.id===id);if(existing)Object.assign(existing,metadata);else state.sounds.push({id:`demo-${Date.now()}`,...metadata,sourceAvailable:true});document.querySelector('#sound-dialog').close();render();return}const creation=!id?dialogCreation(document.querySelector('#sound-dialog')):null;if(!id&&!creation)return;try{let libraryId;if(selectedSoundFile){const imported=await window.streamDashboardDesktop.importSoundFile(selectedSoundFile);libraryId=imported.libraryId}if(!id&&!libraryId)throw new Error('Choisissez un fichier audio.');const body={...metadata,...(libraryId?{libraryId}:{})};state.soundboard=await request(id?`/api/v1/soundboard/sounds/${encodeURIComponent(id)}`:'/api/v1/soundboard/sounds',{method:id?'PUT':'POST',body:JSON.stringify(body)});state.sounds=state.soundboard.sounds||[];const done=complete();if(creation?.isCurrent()&&state.soundboard.createdItemId){document.querySelector('#sound-id').value=state.soundboard.createdItemId;document.querySelector('#sound-dialog-title').textContent='Modifier le son';document.querySelector('#sound-delete').hidden=false;}if(done)document.querySelector('#sound-dialog').close();toast('Soundboard enregistrée');render()}catch(error){toast(error.message,true)}finally{creation?.finish()}};
+document.querySelector('#sound-delete').onclick=async()=>{const complete=dialogCompletion(document.querySelector('#sound-dialog'));const id=document.querySelector('#sound-id').value;if(!id)return;if(!confirm('Supprimer ce son de la Soundboard ?'))return;if(!state.runtime){state.sounds=state.sounds.filter(s=>s.id!==id);document.querySelector('#sound-dialog').close();render();return}try{await request(`/api/v1/soundboard/sounds/${encodeURIComponent(id)}`,{method:'DELETE'});if(complete())document.querySelector('#sound-dialog').close();await refreshRuntime();toast('Son supprimé')}catch(error){toast(error.message,true)}};
 async function openObsSetup(){document.querySelector('#obs-setup-dialog').showModal();const host=document.querySelector('#obs-setup-status');if(!state.runtime){host.innerHTML='<p><b>Démo</b></p><p>Créera ou réparera la Media Source « StreamDashboard • Soundboard » dans Intro, Gameplay, Chatting, Pause et Fin.</p>';return}host.textContent='Vérification OBS…';try{state.obsSetup=await request('/api/v1/soundboard/obs/status');renderObsSetupStatus()}catch(error){host.textContent=error.message}}
 function renderObsSetupStatus(){const s=state.obsSetup,host=document.querySelector('#obs-setup-status');if(!s){host.textContent='État indisponible.';return}host.innerHTML=`<p><b>${s.ready?'Prêt':'Configuration requise'}</b></p><p>Source : ${esc(s.inputExists?s.inputName:'à créer')}</p><p>Scènes cibles : ${esc(s.targetScenes.join(', ')||'aucune')}</p><p>Déjà raccordées : ${esc(s.attachedScenes.join(', ')||'aucune')}</p>${s.missingScenes.length?`<p class="warning">Scènes configurées absentes d’OBS : ${esc(s.missingScenes.join(', '))}</p>`:''}${s.wrongInputKind?'<p class="warning">Une source du même nom existe avec un type incompatible.</p>':''}`}
 document.querySelector('#obs-setup-form').onsubmit=async event=>{event.preventDefault();if(!state.runtime)return toast('Passe en mode Runtime pour modifier OBS.');try{state.obsSetup=await request('/api/v1/soundboard/obs/setup',{method:'POST',body:'{}'});renderObsSetupStatus();toast(state.obsSetup.ready?'Soundboard OBS prête':'Réparation partielle terminée')}catch(error){toast(error.message,true);await openObsSetup()}};
@@ -1179,18 +1222,18 @@ function readEventTags(validate = false) {
 function readTagPreferences(){return {automatic:document.querySelector('#event-tags-auto').checked,language:document.querySelector('#event-tags-language').value.trim()};}
 document.querySelector('#event-tags-regenerate').onclick=async()=>{
   if(!requireRuntime())return;
-  const generation=++eventTagsGeneration,button=document.querySelector('#event-tags-regenerate'),input=document.querySelector('#event-tags'),previous=input.value;
+  const generation=++eventTagsGeneration,button=document.querySelector('#event-tags-regenerate'),input=document.querySelector('#event-tags'),previous=input.value,revision=draftRevision(document.querySelector('#event-dialog'));
   button.disabled=true;
   try{
     const feedback=readEventTags(false);
     const source=state.eventEdit?.scope==='series'?state.eventEdit.series:state.eventEdit?.occurrence;
     const result=await request('/api/v1/planning/tags/regenerate',{method:'POST',body:JSON.stringify({refreshTwitch:true,id:source?.id,seriesId:source?.seriesId,occurrenceKey:source?.occurrenceKey,title:document.querySelector('#event-title').value,description:document.querySelector('#event-description').value,twitchCategoryId:document.querySelector('#event-twitch-game-id').value,twitchCategoryName:document.querySelector('#event-twitch-category').value,tags:feedback,tagPreferences:readTagPreferences()})});
-    if(generation!==eventTagsGeneration||input.value!==previous)return;
+    if(generation!==eventTagsGeneration||input.value!==previous||revision!==draftRevision(document.querySelector('#event-dialog')))return;
     if(result.tags){eventTagMetadata={...result.tags,acceptedValues:feedback?.source==='manual'||feedback?.validated?feedback.values:feedback?.acceptedValues||[],rejectedValues:feedback?.rejectedValues||[]};input.value=result.tags.values.join(', ');}
     renderObservedTags(result.observedSuggestions||[]);
     document.querySelector('#event-tags-status').textContent=result.warning||'Tags générés. Enregistrez pour les conserver.';
   }catch(error){if(generation===eventTagsGeneration)document.querySelector('#event-tags-status').textContent=error.message;}
-  finally{button.disabled=false;}
+  finally{if(generation===eventTagsGeneration)button.disabled=false;}
 };
 function renderObservedTags(suggestions) {
   const host=document.querySelector('#event-tags-observed');host.replaceChildren();
@@ -1200,12 +1243,12 @@ function renderObservedTags(suggestions) {
     const row=document.createElement('span'),add=document.createElement('button'),reject=document.createElement('button');
     add.type=reject.type='button';add.className=reject.className='secondary';add.textContent=`+ ${tag}`;reject.textContent='×';reject.setAttribute('aria-label',`Écarter ${tag}`);
     add.onclick=()=>{try{const current=readEventTags()||{values:[]};if(current.values.length>=10)throw new Error('10 tags maximum.');if(!current.values.some(value=>value.toLowerCase()===tag.toLowerCase()))current.values.push(tag);document.querySelector('#event-tags').value=current.values.join(', ');row.remove();}catch(error){toast(error.message,true)}};
-    reject.onclick=()=>{eventRejectedObservations.push(tag);row.remove();};row.append(add,reject);host.append(row);
+    reject.onclick=()=>{eventRejectedObservations.push(tag);document.querySelector('#event-tags').dispatchEvent(new Event('input',{bubbles:true}));row.remove();};row.append(add,reject);host.append(row);
   }
 }
 function populateEventForm(item,scope='item'){
   const form=document.querySelector('#event-form'),source=item||{};form.reset();
-  ++eventTagsGeneration;eventTagMetadata=source.tags?structuredClone(source.tags):undefined;
+  ++eventTagsGeneration;document.querySelector('#event-tags-regenerate').disabled=false;eventTagMetadata=source.tags?structuredClone(source.tags):undefined;
   eventRejectedObservations=[];renderObservedTags([]);
   document.querySelector('#event-tags').value=source.tags?.values?.join(', ')||'';
   document.querySelector('#event-tags-auto').checked=source.tagPreferences?.automatic!==false;
@@ -1251,13 +1294,13 @@ function renderEventProviderStatus(item){
     if(link.projectionMode==='materialized')host.innerHTML+=`<small>${provider==='twitch'?'Twitch':'Google'} · occurrences sur 28 jours</small>`;
     for(const [key,entry] of Object.entries(link.projections||{}))if(entry.status==='conflict')host.innerHTML+=`<div class="provider-line warning"><span>${esc(key)} · ${esc(entry.lastError||'Conflit distant')}</span>${['local','remote'].map(strategy=>`<button type="button" class="secondary" data-provider-conflict="${provider}" data-occurrence-key="${esc(key)}" data-strategy="${strategy}">${entry.pendingDeletion?(strategy==='local'?'Confirmer le retrait':'Conserver l’événement distant'):(strategy==='local'?'Garder StreamDashboard':'Garder distant')}</button>`).join('')}</div>`;
   }
-  host.querySelectorAll('[data-provider-retry]').forEach(button=>button.onclick=async()=>{try{if(item.twitchRecurring&&!confirm('Republier toute la série Twitch et ses occurrences futures ?'))return;const id=eventCanonical(state.eventEdit?.scope==='series'?state.eventEdit?.series:state.eventEdit?.occurrence)?.id||item.id;const next=await request(`/api/v1/planning/${encodeURIComponent(id)}/retry/${encodeURIComponent(button.dataset.providerRetry)}`,{method:'POST',body:JSON.stringify({confirmRecurring:item.twitchRecurring===true})});applyDashboard(next);toast('Synchronisation relancée');document.querySelector('#event-dialog').close();render()}catch(error){toast(error.message,true)}});
-  host.querySelectorAll('[data-provider-conflict]').forEach(button=>button.onclick=async()=>{try{const id=item.id;const next=await request(`/api/v1/planning/${encodeURIComponent(id)}/conflict/${encodeURIComponent(button.dataset.providerConflict)}`,{method:'POST',body:JSON.stringify({strategy:button.dataset.strategy,...(button.dataset.occurrenceKey?{occurrenceKey:button.dataset.occurrenceKey}:{})})});applyDashboard(next);toast('Conflit résolu');document.querySelector('#event-dialog').close();render()}catch(error){toast(error.message,true)}});
+  host.querySelectorAll('[data-provider-retry]').forEach(button=>button.onclick=async()=>{const session=eventTagsGeneration;try{if(item.twitchRecurring&&!confirm('Republier toute la série Twitch et ses occurrences futures ?'))return;const id=eventCanonical(state.eventEdit?.scope==='series'?state.eventEdit?.series:state.eventEdit?.occurrence)?.id||item.id;const next=await request(`/api/v1/planning/${encodeURIComponent(id)}/retry/${encodeURIComponent(button.dataset.providerRetry)}`,{method:'POST',body:JSON.stringify({confirmRecurring:item.twitchRecurring===true})});applyDashboard(next);toast('Synchronisation relancée');if(session===eventTagsGeneration)renderEventProviderStatus(eventCanonical(item));render()}catch(error){toast(error.message,true)}});
+  host.querySelectorAll('[data-provider-conflict]').forEach(button=>button.onclick=async()=>{const session=eventTagsGeneration;try{const id=item.id;const next=await request(`/api/v1/planning/${encodeURIComponent(id)}/conflict/${encodeURIComponent(button.dataset.providerConflict)}`,{method:'POST',body:JSON.stringify({strategy:button.dataset.strategy,...(button.dataset.occurrenceKey?{occurrenceKey:button.dataset.occurrenceKey}:{})})});applyDashboard(next);toast('Conflit résolu');if(session===eventTagsGeneration)renderEventProviderStatus(eventCanonical(item));render()}catch(error){toast(error.message,true)}});
 }
 async function searchEventCategory(){
-  const input=document.querySelector('#event-twitch-category'),hidden=document.querySelector('#event-twitch-game-id'),host=document.querySelector('#event-twitch-results');const query=input.value.trim();
+  const input=document.querySelector('#event-twitch-category'),hidden=document.querySelector('#event-twitch-game-id'),host=document.querySelector('#event-twitch-results');const query=input.value.trim(),revision=draftRevision(document.querySelector('#event-dialog'));
   hidden.value='';if(query.length<2){host.replaceChildren();return}
-  try{const values=await request(`/api/v1/twitch/categories?q=${encodeURIComponent(query)}`);host.replaceChildren(...values.slice(0,8).map(value=>{const button=document.createElement('button');button.type='button';button.className='secondary';button.textContent=value.name;button.onclick=()=>{input.value=value.name;hidden.value=value.id;host.replaceChildren()};return button}))}catch(error){toast(error.message,true)}
+  try{const values=await request(`/api/v1/twitch/categories?q=${encodeURIComponent(query)}`);if(!document.querySelector('#event-dialog').open||revision!==draftRevision(document.querySelector('#event-dialog')))return;host.replaceChildren(...values.slice(0,8).map(value=>{const button=document.createElement('button');button.type='button';button.className='secondary';button.textContent=value.name;button.onclick=()=>{input.value=value.name;hidden.value=value.id;host.replaceChildren()};return button}))}catch(error){toast(error.message,true)}
 }
 let eventDialogOpening=false;
 async function openEventDialog(item=null,template=null){
@@ -1272,12 +1315,12 @@ async function openEventDialog(item=null,template=null){
     const seed=item||template||{category:'live',desiredPublication:{local:true,twitch:false,google:false}};
     populateEventForm(seed,state.eventEdit?.scope||'item');
     if(template){document.querySelector('#event-title').value=template.title||'';document.querySelector('#event-description').value=template.description||'';document.querySelector('#event-twitch-category').value=template.twitchCategoryName||'';document.querySelector('#event-twitch-game-id').value=template.twitchCategoryId||'';document.querySelector('#event-publish-twitch').checked=template.desiredPublication?.twitch===true;document.querySelector('#event-publish-google').checked=template.desiredPublication?.google===true}
-    dialog.showModal();
+    beginDialogDraft(dialog);dialog.showModal();
     document.querySelector('#event-title').focus();
   }finally{eventDialogOpening=false}
 }
 let eventCategoryTimer;
-document.querySelector('#event-twitch-category').oninput=()=>{clearTimeout(eventCategoryTimer);eventCategoryTimer=setTimeout(()=>void searchEventCategory(),300)};
+document.querySelector('#event-twitch-category').oninput=()=>{document.querySelector('#event-twitch-game-id').value='';document.querySelector('#event-twitch-results').replaceChildren();clearTimeout(eventCategoryTimer);eventCategoryTimer=setTimeout(()=>void searchEventCategory(),300)};
 document.querySelector('#event-template').onchange=()=>{const template=(state.companion?.templates||[]).find(value=>value.id===document.querySelector('#event-template').value);if(!template)return;document.querySelector('#event-title').value=template.title||'';document.querySelector('#event-description').value=template.description||'';document.querySelector('#event-twitch-category').value=template.twitchCategoryName||'';document.querySelector('#event-twitch-game-id').value=template.twitchCategoryId||'';document.querySelector('#event-publish-twitch').checked=template.desiredPublication?.twitch===true;document.querySelector('#event-publish-google').checked=template.desiredPublication?.google===true};
 document.querySelector('#event-scope').onchange=()=>{if(!state.eventEdit)return;const scope=document.querySelector('#event-scope').value;state.eventEdit.scope=scope;populateEventForm(scope==='series'?state.eventEdit.series:state.eventEdit.occurrence,scope);document.querySelector('#event-scope').value=scope};
 function recurrenceFromEventForm(){
@@ -1286,13 +1329,15 @@ function recurrenceFromEventForm(){
   return editedRecurrence(source?.recurrence,value,document.querySelector('#event-recurrence-until').value);
 }
 document.querySelector('#event-form').onsubmit=async event=>{
-  event.preventDefault();const form=event.currentTarget;const date=document.querySelector('#event-date').value,start=document.querySelector('#event-start').value,end=document.querySelector('#event-end').value;
+  event.preventDefault();const form=event.currentTarget,complete=dialogCompletion(document.querySelector('#event-dialog')),edit=state.eventEdit;const date=document.querySelector('#event-date').value,start=document.querySelector('#event-start').value,end=document.querySelector('#event-end').value;
   let times;try{times=eventTimes(date,start,end,document.querySelector('#event-end-date').value)}catch(error){return toast(error.message,true)}
   const category=document.querySelector('#event-category').value,publishTwitch=document.querySelector('#event-publish-twitch').checked,publishGoogle=document.querySelector('#event-publish-google').checked,gameId=document.querySelector('#event-twitch-game-id').value,gameName=document.querySelector('#event-twitch-category').value.trim();
   if(publishTwitch&&!gameId)return toast('Choisis une catégorie Twitch officielle.',true);
   let tags;try{tags=readEventTags(true)}catch(error){return toast(error.message,true)}
   const item={tags,tagPreferences:readTagPreferences(),title:document.querySelector('#event-title').value.trim(),description:document.querySelector('#event-description').value.trim(),...times,category,twitchCategoryId:gameId||undefined,twitchCategoryName:gameName||undefined,desiredPublication:{local:true,twitch:publishTwitch,google:publishGoogle}};
   if(!state.runtime){state.planning.unshift({raw:{...item,id:`demo-${Date.now()}`},day:'Démo',time:start,title:item.title,kind:category==='live'?'Twitch':category});document.querySelector('#event-dialog').close();render();return}
+  const creation=!edit?dialogCreation(document.querySelector('#event-dialog')):null;
+  if(!edit&&!creation)return;
   try{
     let saved;
     if(!state.eventEdit){
@@ -1302,10 +1347,12 @@ document.querySelector('#event-form').onsubmit=async event=>{
     }else{
       const source=state.eventEdit.scope==='series'?state.eventEdit.series:state.eventEdit.occurrence;item.recurrence=recurrenceFromEventForm()||null;if(source.twitchRecurring&&!confirm('Modifier toute la série Twitch et ses occurrences futures ?'))return;saved=await request(`/api/v1/planning/${encodeURIComponent(source.id)}`,{method:'PUT',body:JSON.stringify({...item,confirmRecurring:source.twitchRecurring===true})});
     }
-    const matches=(saved?.planning||[]).filter(value=>value.id===(state.eventEdit?.series?.id||state.eventEdit?.occurrence?.id)||value.title===item.title&&value.startAtUtc===item.startAtUtc);
+    const matches=(saved?.planning||[]).filter(value=>value.id===(edit?.series?.id||edit?.occurrence?.id)||value.title===item.title&&value.startAtUtc===item.startAtUtc);
     const partial=matches.some(value=>value.syncError||value.conflict||Object.values(value.providerLinks||value.providers||{}).some(link=>['error','conflict','pending'].includes(link.status)));
-    document.querySelector('#event-dialog').close();state.eventEdit=null;form.reset();const refreshed=await refreshRuntime();toast(partial?'Événement enregistré localement · publication fournisseur à vérifier dans le Planning.':refreshed?'Événement enregistré':'Événement enregistré · rafraîchissement impossible, réessaie.',partial||!refreshed);
-  }catch(error){toast(error.message,true)}
+    const done=complete();
+    if(creation?.isCurrent()&&saved?.createdItemId){const created=saved.planning.find(value=>value.id===saved.createdItemId);if(created){state.eventEdit={occurrence:created,series:created,scope:'item'};document.querySelector('#event-id').value=created.id;document.querySelector('#event-dialog-title').textContent='Modifier l’événement';document.querySelector('#event-submit').textContent='Enregistrer';document.querySelector('#event-delete').hidden=false;document.querySelector('#event-duplicate').hidden=false;}}
+    if(done){document.querySelector('#event-dialog').close();state.eventEdit=null;form.reset();}const refreshed=await refreshRuntime();toast(partial?'Événement enregistré localement · publication fournisseur à vérifier dans le Planning.':refreshed?'Événement enregistré':'Événement enregistré · rafraîchissement impossible, réessaie.',partial||!refreshed);
+  }catch(error){toast(error.message,true)}finally{creation?.finish()}
 };
 document.querySelector('#event-duplicate').onclick=()=>{
   if(!state.eventEdit)return;
@@ -1319,6 +1366,7 @@ document.querySelector('#event-duplicate').onclick=()=>{
     ...(source.recurrence?{recurrence:structuredClone(source.recurrence)}:{})
   };
   state.eventEdit=null;
+  beginDialogDraft(document.querySelector('#event-dialog'));
   populateEventForm(duplicate,'item');
   document.querySelector('#event-dialog-title').textContent='Dupliquer l’événement';
   document.querySelector('#event-delete').hidden=true;
@@ -1328,23 +1376,25 @@ document.querySelector('#event-duplicate').onclick=()=>{
 };
 document.querySelector('#event-delete').onclick=async()=>{
   if(!state.eventEdit)return;
+  const complete=dialogCompletion(document.querySelector('#event-dialog'));
   const target=state.eventEdit.scope==='series'?state.eventEdit.series:state.eventEdit.occurrence;
   if(!confirm(target?.twitchRecurring?'Supprimer toute la série Twitch ? Cette action affecte ses occurrences futures.':state.eventEdit.scope==='series'?'Supprimer toute la série ?':'Supprimer cet événement ?'))return;
   try{
     if(state.eventEdit.scope==='occurrence'&&state.eventEdit.occurrence?.seriesId)await request(`/api/v1/planning/${encodeURIComponent(state.eventEdit.occurrence.seriesId)}/occurrence`,{method:'DELETE',body:JSON.stringify({occurrenceKey:state.eventEdit.occurrence.occurrenceKey})});
     else{const source=state.eventEdit.scope==='series'?state.eventEdit.series:state.eventEdit.occurrence;await request(`/api/v1/planning/${encodeURIComponent(source.id)}`,{method:'DELETE',body:JSON.stringify({confirmRecurring:source.twitchRecurring===true})})}
-    document.querySelector('#event-dialog').close();state.eventEdit=null;await refreshRuntime();toast('Événement supprimé');
+    if(complete()){document.querySelector('#event-dialog').close();state.eventEdit=null;}await refreshRuntime();toast('Événement supprimé');
   }catch(error){toast(error.message,true)}
 };
 document.querySelector('#event-dialog').addEventListener('close',()=>{
   ++eventTagsGeneration;
+  clearTimeout(eventCategoryTimer);
   state.eventEdit=null;
   if(deferredRuntimeRender)render();
 });
 document.querySelectorAll('[data-close-dialog]').forEach(button=>button.onclick=()=>document.querySelector(`#${button.dataset.closeDialog}`).close());
 document.querySelectorAll('[data-view]').forEach(b=>b.onclick=()=>{state.view=b.dataset.view;render()});
 document.querySelector('#mode').onclick=async e=>{state.runtime=!state.runtime;e.currentTarget.textContent=state.runtime?'Runtime':'Démo';document.querySelector('.preview-mode span').textContent=state.runtime?'APERÇU · RUNTIME PC':'APERÇU · AUCUNE COMMANDE RÉELLE';runtimeUi(state.runtime,state.runtime?'Connexion au Runtime…':'Aucune commande réelle');if(state.runtime){await refreshRuntime();if(state.campItem==='Alertes viewers')await loadStreamerPingRewards()}else{closeRuntimeSocket();state.scene=fixture.live.scene;state.sounds=structuredClone(fixture.sounds);state.audio=structuredClone(fixture.audio);state.live=structuredClone(fixture.live);state.planning=structuredClone(fixture.planning);state.dashboard=null;state.remotePairing=null;state.twitchRewards=null;applyProduct({profile:structuredClone(demoProductProfile),modules:structuredClone(demoModuleStates)},[]);syncStreamerPing();render()}toast(state.runtime?'Mode Runtime activé':'Mode Démo activé')};
-window.addEventListener('keydown',e=>{if(document.querySelector('#event-dialog').open)return;if(e.altKey&&['1','2','3','4'].includes(e.key)){e.preventDefault();state.view=['home','live','sounds','planning'][+e.key-1];render()}});
+window.addEventListener('keydown',e=>{if(ownsKeyboard(e))return;if(e.altKey&&['1','2','3','4'].includes(e.key)){e.preventDefault();state.view=['home','live','sounds','planning'][+e.key-1];render()}});
 setInterval(()=>{if(state.runtime&&state.timerRunning){state.seconds=Math.max(0,state.seconds-1);if(state.view==='live'){const timer=document.querySelector('.timer-value');if(timer)timer.textContent=formatDuration(state.seconds)}}},1000);
 window.addEventListener('beforeunload',closeRuntimeSocket);
 document.documentElement.dataset.appReady='true';

@@ -9,7 +9,7 @@ test('desktop projection conflict choices send the provider and stable occurrenc
   const calls = [];
   const button = { dataset: { providerConflict: 'google', strategy: 'remote', occurrenceKey: 'series:2026-10-04T20:00:00' } };
   const host = { innerHTML: '', querySelectorAll: selector => selector === '[data-provider-conflict]' ? [button] : [] };
-  const context = { document: { querySelector: selector => selector === '#event-provider-status' ? host : { close() {} } },
+  const context = { eventTagsGeneration: 0, eventCanonical: item => item, document: { querySelector: selector => selector === '#event-provider-status' ? host : { close() {} } },
     esc: value => String(value).replaceAll('<', '&lt;').replaceAll('"', '&quot;'),
     request: async (...args) => { calls.push(args); return {}; }, applyDashboard() {}, toast() {}, render() {} };
   vm.createContext(context); vm.runInContext(body, context);

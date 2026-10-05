@@ -120,6 +120,8 @@ export function toRemoteDashboardState(state: DashboardState): ExtendedRemoteDas
       channelTitle: state.twitch.channelTitle,
       gameId: state.twitch.gameId,
       gameName: state.twitch.gameName,
+      tags: state.twitch.tags,
+      tagsWarning: state.twitch.tagsWarning,
       error: state.twitch.error,
       ...(state.twitch.capabilities ? { capabilities: structuredClone(state.twitch.capabilities) } : {}),
     },

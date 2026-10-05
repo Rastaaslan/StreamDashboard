@@ -160,3 +160,17 @@ describe('Desktop provider recovery', () => {
     await adapter.disconnect(); expect(vi.getTimerCount()).toBe(0);
   });
 });
+
+it('cancels a pending Streamlabs handshake immediately and removes its timers', async () => {
+  vi.useFakeTimers();
+  const socket = new Socket();
+  const controller = new AbortController();
+  const transport = new StreamlabsSocketTransport({ signal: controller.signal, createSocket: () => socket as never });
+  const connecting = transport.connect('test', vi.fn(), vi.fn());
+  const reason = new Error('Startup cancelled');
+  const rejected = expect(connecting).rejects.toBe(reason);
+  controller.abort(reason);
+  await rejected;
+  expect(socket.close).toHaveBeenCalledOnce();
+  expect(vi.getTimerCount()).toBe(0);
+});

@@ -117,3 +117,99 @@ test('delayed chat acknowledgement does not erase the next message', async t => 
   await expect(page.locator('#toast')).toContainText('Message envoyé');
   await expect(chat).toHaveValue('Next message');
 });
+
+test('live tags keep manual edits across suggestions, broadcasts and rejection, then retry', async t => {
+  const { page, state, title, category, categoryId, submit, blur, broadcast } = await fixture(t);
+  state.twitch.tags = ['Current']; await blur(); await broadcast();
+  const tags = page.locator('#live-twitch-settings [name="tags"]');
+  await expect(tags).toHaveValue('Current');
+  const contexts = [];
+  await page.route('**/api/v1/twitch/tags/suggest', route => {
+    const body = route.request().postDataJSON(); contexts.push(body);
+    return route.fulfill({ json: { tags: { values: body.title.includes('Spooktober') ? ['Halloween'] : ['Gaming'] } } });
+  });
+  await tags.fill('Manual, Custom');
+  await title.fill('Spooktober');
+  await expect(page.locator('[data-live-tags-suggestions]')).toContainText('Halloween');
+  await expect(tags).toHaveValue('Manual, Custom');
+  await category.fill('Chosen');
+  await expect(categoryId).toHaveValue('');
+  await page.locator('[data-live-twitch-category-search]').click();
+  await page.locator('#live-twitch-category-results').selectOption('42');
+  await expect.poll(() => contexts.at(-1)?.gameId).toBe('42');
+  await expect(tags).toHaveValue('Manual, Custom');
+  await blur(); await broadcast();
+  await expect(tags).toHaveValue('Manual, Custom');
+  let body;
+  await page.route('**/api/v1/twitch/channel', route => {
+    body = route.request().postDataJSON();
+    Object.assign(state.twitch, { channelTitle: body.title, gameId: body.gameId, gameName: body.gameName });
+    state.twitch.tagsWarning = 'Tags refusés : corrige puis réessaie';
+    return route.fulfill({ json: state });
+  });
+  await submit.click();
+  await expect(page.locator('#live-twitch-settings [role="status"]')).toContainText('Tags refusés');
+  await expect(tags).toHaveValue('Manual, Custom');
+  assert.deepEqual(body.tags, ['Manual', ' Custom']);
+  await page.locator('[data-live-tags-regenerate]').click();
+  await page.locator('[data-live-tags-adopt]').click();
+  await expect(tags).toHaveValue('Halloween');
+  await tags.fill('Corrected');
+  await page.route('**/api/v1/twitch/channel', route => {
+    state.twitch.tags = ['Corrected']; delete state.twitch.tagsWarning;
+    return route.fulfill({ json: state });
+  });
+  await submit.click();
+  await expect(tags).toHaveValue('Corrected');
+  await expect(page.locator('#live-twitch-settings [role="status"]')).toBeEmpty();
+});
+
+for (const phase of ['completed', 'pending']) test(`suggestions survive broadcast with ${phase} generation and retain manual tags`, async t => {
+  const { page, title, blur, broadcast } = await fixture(t);
+  const started = gate(), response = gate();
+  let calls = 0;
+  await page.route('**/api/v1/twitch/tags/suggest', async route => {
+    calls++; started.release();
+    if (phase === 'pending') await response.promise;
+    assert.equal(route.request().postDataJSON().title, 'Spooktober');
+    await route.fulfill({ json: { tags: { values: ['Halloween', 'Horror'] } } });
+  });
+  const tags = page.locator('#live-twitch-settings [name="tags"]');
+  const suggestions = page.locator('[data-live-tags-suggestions]');
+  const adopt = page.locator('[data-live-tags-adopt]');
+  await tags.fill('Manual'); await title.fill('Spooktober');
+  await started.promise;
+  if (phase === 'completed') await expect(suggestions).toContainText('Halloween');
+  await blur(); await broadcast();
+  if (phase === 'pending') {
+    await expect(suggestions).toContainText('en cours');
+    await expect(adopt).toBeHidden();
+    response.release();
+  }
+  await expect(suggestions).toContainText('Halloween');
+  await expect(adopt).toBeVisible();
+  await expect(title).toHaveValue('Spooktober');
+  await expect(tags).toHaveValue('Manual');
+  assert.equal(calls, 1);
+  await adopt.click();
+  await expect(tags).toHaveValue('Halloween, Horror');
+});
+
+test('a pending suggestion from an older context cannot replace newer suggestions after a broadcast', async t => {
+  const { page, title, blur, broadcast } = await fixture(t);
+  const started = gate(), response = gate();
+  await page.route('**/api/v1/twitch/tags/suggest', async route => {
+    const old = route.request().postDataJSON().title === 'Old title';
+    if (old) { started.release(); await response.promise; }
+    await route.fulfill({ json: { tags: { values: [old ? 'Old' : 'Halloween'] } } });
+  });
+  await title.fill('Old title'); await started.promise;
+  await blur(); await broadcast();
+  await title.fill('Spooktober');
+  await expect(page.locator('[data-live-tags-suggestions]')).toContainText('Halloween');
+  response.release();
+  await blur(); await broadcast();
+  await expect(page.locator('[data-live-tags-suggestions]')).toContainText('Halloween');
+  await page.locator('[data-live-tags-adopt]').click();
+  await expect(page.locator('#live-twitch-settings [name="tags"]')).toHaveValue('Halloween');
+});

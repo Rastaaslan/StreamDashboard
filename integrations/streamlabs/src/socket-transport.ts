@@ -7,6 +7,7 @@ type Socket = Pick<WebSocket, 'on' | 'send' | 'close' | 'readyState'> & Partial<
 
 export interface StreamlabsSocketOptions {
   endpoint?: string;
+  signal?: AbortSignal;
   createSocket?: (url: string) => Socket;
   connectTimeoutMs?: number;
   logger?: Pick<Console, 'info' | 'warn'>;
@@ -17,6 +18,7 @@ export class StreamlabsSocketTransport implements StreamlabsTransport {
   constructor(private readonly options: StreamlabsSocketOptions = {}) {}
 
   connect(token: string, onTip: (value: unknown) => void, onDisconnect: (error?: Error) => void): Promise<() => Promise<void>> {
+    this.options.signal?.throwIfAborted();
     const endpoint = new URL(this.options.endpoint ?? SOCKET_ENDPOINT);
     endpoint.searchParams.set('token', token);
     endpoint.searchParams.set('EIO', '3');
@@ -35,6 +37,7 @@ export class StreamlabsSocketTransport implements StreamlabsTransport {
       const shutdown = (error?: Error, closeSocket = true) => {
         if (closed) return;
         closed = true;
+        this.options.signal?.removeEventListener('abort', abort);
         clearTimeout(timeout);
         clearTimeout(pingTimer);
         clearTimeout(pongTimer);
@@ -46,6 +49,8 @@ export class StreamlabsSocketTransport implements StreamlabsTransport {
         if (!settled) { settled = true; reject(error ?? new Error('Connexion Streamlabs fermée avant authentification.')); }
         else if (error) onDisconnect(error);
       };
+      const abort = () => shutdown(this.options.signal?.reason ?? new Error('Streamlabs startup cancelled'));
+      this.options.signal?.addEventListener('abort', abort, { once: true });
       const send = (frame: string) => {
         try { socket.send(frame); }
         catch { shutdown(new Error('Connexion Streamlabs impossible.')); }
@@ -88,6 +93,7 @@ export class StreamlabsSocketTransport implements StreamlabsTransport {
           if (!opened) { shutdown(new Error('Handshake Engine.IO Streamlabs manquant.')); return; }
           if (settled) return;
           settled = true;
+          this.options.signal?.removeEventListener('abort', abort);
           clearTimeout(timeout);
           this.options.logger?.info('Streamlabs connected');
           resolve(async () => shutdown());

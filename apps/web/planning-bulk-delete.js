@@ -1,6 +1,9 @@
 /** Shared desktop period deletion dialog. The server owns selection and confirmation. */
 export function openBulkDelete({ onComplete = () => {}, request = api } = {}) {
+  const existing = document.querySelector('dialog[data-bulk-delete][open]');
+  if (existing) return existing;
   const dialog = document.createElement('dialog');
+  dialog.dataset.bulkDelete = '';
   dialog.setAttribute('aria-label', 'Supprimer une période');
   dialog.innerHTML = `<form>
     <h2>Supprimer une période</h2>
