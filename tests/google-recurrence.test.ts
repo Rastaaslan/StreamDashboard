@@ -109,14 +109,16 @@ describe('Google RRULE', () => {
     expect(provider.delete).toHaveBeenCalledWith('master', expect.anything(), 'v2');
     expect(planning.all()).toEqual([]);
   });
-  it('retains local exceptions and refuses both initial publish and retry', async () => {
-    const provider = { create: vi.fn(), update: vi.fn(), delete: vi.fn() };
+  it('retains local exceptions and materializes initial publication and retry idempotently', async () => {
+    const provider = { create: vi.fn(async () => ({ id: crypto.randomUUID() })), update: vi.fn(), delete: vi.fn() };
     const planning = new PlanningOrchestrator([], { google: provider }, async () => {});
     const value = item({ exceptions: { occurrence: { cancelled: true } } });
     const created = await planning.create(value);
-    expect(created.providers?.google?.status).toBe('error');
-    await expect(planning.retry('local', 'google')).rejects.toThrow(/récurrence/);
+    expect(created.providers?.google?.status).toBe('synced');
+    const count = provider.create.mock.calls.length;
+    await planning.retry('local', 'google');
+    expect(provider.create).toHaveBeenCalledTimes(count);
     expect(planning.all()[0].recurrence).toEqual(value.recurrence);
-    expect(provider.create).not.toHaveBeenCalled();
+    expect(provider.create).toHaveBeenCalled();
   });
 });

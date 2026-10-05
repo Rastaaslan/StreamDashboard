@@ -645,6 +645,25 @@ function renderOnlinePlanningProviders(item, row, onlyProvider) {
     const block = document.createElement('div');
     block.className = `planning-provider-state provider-${link.status}`;
     block.append(text('b', planningProviderNames[provider]), text('span', link.label, 'muted'));
+    const projection = item.providers?.[provider] || item.providerLinks?.[provider];
+    if (projection?.projectionMode) block.append(text('small', projection.projectionMode === 'materialized' ? `Occurrences ${provider} · fenêtre de 28 jours` : `Publication ${provider} native`, 'muted'));
+    for (const [key, occurrence] of Object.entries(projection?.occurrenceStatuses || projection?.projections || {})) {
+      if (occurrence.lastError) block.append(text('small', `${key} : ${occurrence.lastError}`, 'danger'));
+      if (occurrence.status === 'conflict' && companionMode === CompanionMode.ONLINE_PC && (!item.deleted || provider === 'google')) {
+        for (const [strategy, label] of [['local', 'Conserver la version locale'], ['remote', 'Conserver la version distante']]) {
+          const choice = (occurrence.pendingDeletion || item.deleted) ? (strategy === 'local' ? 'Confirmer le retrait' : 'Conserver l’événement distant') : label;
+          const resolve = text('button', `${key} · ${choice}`, 'secondary');
+          resolve.type = 'button';
+          resolve.onclick = async () => {
+            resolve.disabled = true;
+            try { render(await transport.resolvePlanningProvider(item.seriesId || item.id, provider, strategy, key)); }
+            catch (error) { note(error.message); }
+            finally { resolve.disabled = false; }
+          };
+          block.append(resolve);
+        }
+      }
+    }
     if (link.lastError) block.append(text('small', link.lastError, 'danger'));
     if (link.retryable) {
       const retry = text('button', `Réessayer ${planningProviderNames[provider]}`, 'secondary');

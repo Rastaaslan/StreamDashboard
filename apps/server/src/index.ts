@@ -187,7 +187,30 @@ function modeScenes(value: unknown): DashboardSettings['modeScenes'] {
 function sanitizeProviderLink(value: unknown): ProviderLink | undefined {
   if (!object(value) || !PROVIDER_STATUSES.has(String(value.status))) return undefined;
   const link: ProviderLink = { status: value.status as ProviderLink['status'] };
-  for (const key of ['remoteId', 'calendarId', 'remoteRevision', 'fingerprint', 'lastError'] as const) {
+  if (value.projectionMode === 'native' || value.projectionMode === 'materialized') link.projectionMode = value.projectionMode;
+  if (typeof value.projectionOwned === 'boolean') link.projectionOwned = value.projectionOwned;
+  if (value.nativeWithdrawalRequested === true) link.nativeWithdrawalRequested = true;
+  if (value.nativeRetained === true) link.nativeRetained = true;
+  if (object(value.projectionWindow)) link.projectionWindow = { from: String(value.projectionWindow.from), to: String(value.projectionWindow.to) };
+  if (object(value.projectionRetirements)) {
+    link.projectionRetirements = {};
+    for (const [key, retired] of Object.entries(value.projectionRetirements)) {
+      if (object(retired) && typeof retired.creationId === 'string' && /^[a-zA-Z0-9-]{1,80}$/.test(retired.creationId))
+        link.projectionRetirements[key] = { creationId: retired.creationId, ...(retired.retained === true ? { retained: true } : {}), ...(typeof retired.calendarId === 'string' ? { calendarId: retired.calendarId } : {}) };
+    }
+  }
+  if (object(value.projections)) {
+    link.projections = {};
+    for (const [key, raw] of Object.entries(value.projections)) {
+      if (!object(raw) || raw.managedBy !== 'StreamDashboard' || raw.occurrenceKey !== key || !object(raw.event)) continue;
+      const event = sanitizeCalendarItem({ ...raw.event, providers: undefined });
+      const status = sanitizeProviderLink({ ...raw, projections: undefined });
+      if (!event || !status) continue;
+      link.projections[key] = { ...status, ...(raw.pendingDeletion === true ? { pendingDeletion: true } : {}), ...(raw.deletionDecision === 'delete' ? { deletionDecision: 'delete' as const } : {}), occurrenceKey: key, managedBy: 'StreamDashboard', event,
+        ...(typeof raw.appliedContent === 'string' ? { appliedContent: raw.appliedContent } : {}) };
+    }
+  }
+  for (const key of ['remoteId', 'calendarId', 'remoteRevision', 'fingerprint', 'lastError', 'creationId'] as const) {
     if (typeof value[key] === 'string') link[key] = String(value[key]).slice(0, 500);
   }
   if (object(value.deletionPeriod)) link.deletionPeriod = { start: String(value.deletionPeriod.start ?? ''), end: String(value.deletionPeriod.end ?? '') };
@@ -235,6 +258,7 @@ function sanitizeCalendarItem(value: unknown): CalendarItem | null {
     tags: tagMetadata(value.tags),
     tagPreferences: tagPreferences(value.tagPreferences),
   };
+  if (object(value.projection) && value.projection.mode === 'materialized' && typeof value.projection.seriesLocalId === 'string' && typeof value.projection.occurrenceKey === 'string') item.projection = { mode: 'materialized', seriesLocalId: value.projection.seriesLocalId, occurrenceKey: value.projection.occurrenceKey, ...(typeof value.projection.creationId === 'string' ? { creationId: value.projection.creationId } : {}) };
   if (typeof value.description === 'string') item.description = value.description.slice(0, 4000);
   if (typeof value.allDay === 'boolean') item.allDay = value.allDay;
   if (['live', 'production', 'personal'].includes(String(value.category))) item.category = value.category as CalendarItem['category'];
@@ -274,8 +298,7 @@ function sanitizeCalendarItem(value: unknown): CalendarItem | null {
 }
 
 function validateRecurrence(value: unknown): CalendarItem['recurrence'] {
-  if (!object(value) || !['daily', 'weekly', 'monthly'].includes(String(value.frequency)) || ![1, 2].includes(Number(value.interval))) throw new Error('Récurrence invalide.');
-  if (['daily', 'monthly'].includes(String(value.frequency)) && Number(value.interval) !== 1) throw new Error('Intervalle de récurrence invalide.');
+  if (!object(value) || ![undefined, 1, 2].includes(value.version as number | undefined) || value.custom !== undefined || !['daily', 'weekly', 'monthly'].includes(String(value.frequency)) || !(value.version === 2 ? Number.isSafeInteger(value.interval) && Number(value.interval) > 0 : [1, 2].includes(Number(value.interval)))) throw new Error('Récurrence invalide.');
   const timeZone = typeof value.timeZone === 'string' ? value.timeZone : '';
   try { new Intl.DateTimeFormat('fr-FR', { timeZone }).format(); } catch { throw new Error('Fuseau horaire invalide.'); }
   const until = value.until == null ? null : String(value.until);
@@ -286,13 +309,13 @@ function validateRecurrence(value: unknown): CalendarItem['recurrence'] {
     for (const [key, exception] of Object.entries(value.exceptions)) {
       if (!/^[A-Za-z0-9._:-]{1,128}:\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}$/.test(key) || !object(exception) || Object.keys(exception).some(field => !['cancelled', 'patch'].includes(field))) throw new Error('Exception de récurrence invalide.');
       const patch = exception.patch;
-      if (patch !== undefined && (!object(patch) || Object.keys(patch).length > 11 || Object.keys(patch).some(field => !['title', 'description', 'startAtUtc', 'endAtUtc', 'category', 'kind', 'twitchCategoryId', 'twitchCategoryName', 'tags', 'tagPreferences', 'desiredPublication'].includes(field)))) throw new Error('Patch de récurrence invalide.');
+      if (patch !== undefined && (!object(patch) || Object.keys(patch).length > 12 || Object.keys(patch).some(field => !['title', 'description', 'startAtUtc', 'endAtUtc', 'allDay', 'category', 'kind', 'twitchCategoryId', 'twitchCategoryName', 'tags', 'tagPreferences', 'desiredPublication'].includes(field)))) throw new Error('Patch de récurrence invalide.');
       if (patch && patch.tags !== undefined) patch.tags = tagMetadata(patch.tags);
       if (patch && patch.tagPreferences !== undefined) patch.tagPreferences = tagPreferences(patch.tagPreferences);
       exceptions[key] = { ...(exception.cancelled === true ? { cancelled: true } : {}), ...(patch ? { patch: structuredClone(patch) } : {}) };
     }
   }
-  return { frequency: value.frequency as 'daily' | 'weekly' | 'monthly', interval: Number(value.interval) as 1 | 2, timeZone, until, exceptions };
+  return { ...(value.version !== undefined ? { version: value.version as 1 | 2 } : {}), frequency: value.frequency as 'daily' | 'weekly' | 'monthly', interval: Number(value.interval), timeZone, until, exceptions };
 }
 
 function parseGoogleTokens(value: Record<string, string> | null): GoogleTokens | null {
@@ -323,6 +346,7 @@ function sameCalendarData(local: CalendarItem, remote: GoogleEvent) {
 
 function googleEventInput(item: CalendarItem): GoogleEventInput {
   return {
+    projection: item.projection,
     localId: item.localId ?? item.id,
     title: item.title,
     description: item.description,
@@ -1028,15 +1052,28 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
       },
     } : undefined,
     google: google.connected ? {
-      read: async (id, item) => {
+      prepareCreate: item => {
         const calendarId = item.providers?.google?.calendarId ?? local.google.targetCalendarId;
+        if (!calendarId) throw Object.assign(new Error('Choisissez un calendrier Google cible.'), { mutationNotStarted: true });
+        return { calendarId };
+      },
+      read: async (id, item) => {
+        const calendarId = item.providers?.google?.calendarId ?? (item.projection ? undefined : local.google.targetCalendarId);
         if (!calendarId) throw new Error('Calendrier Google lié introuvable.');
-        const event = await google.event(calendarId, id).catch(error => {
+        const event = await (item.projection ? google.readProjected(calendarId, id, googleEventInput(item)) : google.event(calendarId, id)).catch(error => {
           if (error?.code === 'DELETED_REMOTELY') return undefined;
           throw error;
         });
         if (!event || event.deleted) return { deleted: true };
-        if (!sameGoogleRecurrence(item, event)) {
+        const withdrawingNative = !item.projection && item.providers?.google?.nativeWithdrawalRequested === true;
+        if (withdrawingNative) {
+          const link = item.providers!.google!;
+          // Resolve the saved native object, not a new projection of the edited rule.
+          if (link.calendarId !== calendarId || link.remoteId !== id || event.id !== id || !event.etag
+            || (event.managed && event.localId !== (item.localId ?? item.id))
+            || (link.projectionOwned && !event.managed)) throw new Error('Identité ou ETag du retrait Google invalide.');
+        }
+        if (!withdrawingNative && !sameGoogleRecurrence(item, event)) {
           throw new Error('La récurrence Google distante diffère du modèle local. Résolution automatique refusée pour préserver la série.');
         }
         return { revision: event.etag, deleted: event.deleted, remote: {
@@ -1044,20 +1081,21 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
         } };
       },
       create: async item => {
-        const calendarId = item.providers?.google?.calendarId ?? local.google.targetCalendarId;
+        // A projection recovery must never inherit a newly selected calendar.
+        const calendarId = item.providers?.google?.calendarId ?? (item.projection ? undefined : local.google.targetCalendarId);
         if (!calendarId) throw Object.assign(new Error('Choisissez un calendrier Google cible.'), { mutationNotStarted: true });
         assertProviderCreationCertain(item, 'google');
         const event = await google.create(calendarId, googleEventInput(item));
         return { id: event.id, revision: event.etag, calendarId };
       },
       update: async (id, item, revision) => {
-        const calendarId = item.providers?.google?.calendarId ?? local.google.targetCalendarId;
+        const calendarId = item.providers?.google?.calendarId ?? (item.projection ? undefined : local.google.targetCalendarId);
         if (!calendarId) throw new Error('Calendrier Google lié introuvable.');
         const event = await google.update(calendarId, id, googleEventInput(item), revision);
         return { revision: event.etag };
       },
       delete: async (id, item, revision) => {
-        const calendarId = item.providers?.google?.calendarId ?? local.google.targetCalendarId;
+        const calendarId = item.providers?.google?.calendarId ?? (item.projection ? undefined : local.google.targetCalendarId);
         if (!calendarId) throw new Error('Calendrier Google lié introuvable.');
         const period = item.providers?.google?.deletionPeriod;
         if (period) {
@@ -1071,7 +1109,8 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
           if (!remote.etag) throw new Error('Version Google distante inconnue : suppression refusée.');
           revision = remote.etag;
         }
-        await google.delete(calendarId, id, revision);
+        if (item.projection) await google.deleteProjected(calendarId, id, googleEventInput(item), revision ?? '');
+        else await google.delete(calendarId, id, revision);
       },
     } : undefined,
   });
@@ -1945,19 +1984,21 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
       const id = String(req.params.id);
       const strategy = String(req.body?.strategy ?? '');
       if (!['twitch', 'google'].includes(provider) || !['local', 'remote'].includes(strategy)) throw new Error('Résolution de conflit invalide.');
+      const occurrenceKey = req.body?.occurrenceKey;
+      if (occurrenceKey !== undefined && (typeof occurrenceKey !== 'string' || !occurrenceKey || occurrenceKey.length > 180)) throw new Error('Occurrence invalide.');
       await plan(async () => {
         if (!local.planning.some(item => item.id === id) && local.companion.tombstones[id]) {
           const nextPlanning = structuredClone(local.planning);
           const nextCompanion = structuredClone(local.companion);
           await resolveCompanionDeletion(nextPlanning, nextCompanion, id, provider as 'twitch' | 'google',
-            strategy as 'local' | 'remote', providerAdapters());
+            strategy as 'local' | 'remote', providerAdapters(), occurrenceKey);
           // Commit the resolution before exposing it or allowing a retry.
           await store.write({ ...local, planning: nextPlanning, companion: nextCompanion });
           local.planning = nextPlanning; local.companion = nextCompanion;
           return;
         }
-        await planning().resolveConflict(id, provider as 'twitch' | 'google', strategy as 'local' | 'remote');
-        delete local.companion.providerWork[id + ':' + provider];
+        await planning().resolveConflict(id, provider as 'twitch' | 'google', strategy as 'local' | 'remote', occurrenceKey);
+        if (!occurrenceKey || local.planning.find(item => item.id === id)?.providers?.twitch?.status === 'synced') delete local.companion.providerWork[id + ':' + provider];
         local.companion.eventRevisions[id] = (local.companion.eventRevisions[id] ?? 1) + 1;
         local.companion.serverRevision++;
         await save();
@@ -2053,8 +2094,8 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
         confirmRecurring: req.body.confirmRecurring === true || req.query.confirmRecurring === 'true',
       } : {
         local: true,
-        twitch: Boolean(item.twitchSegmentId || item.providers?.twitch?.remoteId),
-        google: Boolean(item.providers?.google?.remoteId),
+        twitch: Boolean(item.twitchSegmentId || item.providers?.twitch?.remoteId || item.providers?.twitch?.projections),
+        google: Boolean(item.providers?.google?.remoteId || item.providers?.google?.projections),
         confirmRecurring: req.body?.confirmRecurring === true || req.query.confirmRecurring === 'true',
       };
       const oldRevision = local.companion.eventRevisions[id] ?? 1;
@@ -2202,6 +2243,7 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
     try {
       res.json(await plan(async () => {
         local.planning = await twitch.sync(structuredClone(local.planning));
+        await planning().refreshTwitch();
         local.twitchLastSyncedAt = new Date().toISOString();
         invalidatePreflight();
         return changed();
@@ -2377,6 +2419,7 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
 
         for (const event of remote) {
           if (event.deleted) continue;
+          if (event.projection?.mode === 'materialized' && local.planning.some(item => (item.localId ?? item.id) === event.projection?.seriesLocalId)) continue;
           if (Object.values(local.companion.tombstones).some(tombstone => {
             const links = tombstone.providerLinks as CalendarItem['providers'];
             return links?.google?.remoteId === event.id && links.google.calendarId === calendarId;
@@ -2551,11 +2594,14 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
     }
     broadcast();
   });
+  const recurrenceRefresher = setInterval(() => { void plan(() => planning().refreshTwitch()).catch(logError); }, 60_000);
+  recurrenceRefresher.unref();
   const validator = setInterval(() => { void validateTwitch().catch(logError); }, 60 * 60_000);
   validator.unref();
   const twitchLivePoller = setInterval(() => { void refreshTwitchLive(); }, 30_000);
   twitchLivePoller.unref();
   await validateTwitch().catch(logError);
+  await plan(() => planning().refreshTwitch()).catch(logError);
   await streamlabs.connect();
   await wizebot.refresh();
   if (google.connected) await refreshGoogleCalendars().catch(logError);
@@ -2568,6 +2614,7 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
     unsubscribeObs();
     clearTimeout(googleOAuthTimeout);
     clearInterval(validator);
+    clearInterval(recurrenceRefresher);
     clearInterval(twitchLivePoller);
     if (timerExpiry) clearTimeout(timerExpiry);
     if (remoteActivitySaveTimer) clearTimeout(remoteActivitySaveTimer);

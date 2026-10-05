@@ -48,16 +48,17 @@ it.each([false, true])('syncs create/update/reconcile/delete/retry, weekly=%s', 
   expect(await client.sync(planning.all())).toHaveLength(1);
   expect(fetcher.mock.calls.filter(([, init]) => init?.method === 'POST')).toHaveLength(1);
 });
-it.each([{ frequency: 'daily', interval: 1 }, { frequency: 'weekly', interval: 2 }, { frequency: 'monthly', interval: 1 }] as const)('rejects $frequency/$interval before Twitch mutations on every entry point', async recurrence => {
+it.each([{ frequency: 'daily', interval: 1 }, { frequency: 'weekly', interval: 2 }, { frequency: 'monthly', interval: 1 }] as const)('routes $frequency/$interval to materialization while direct native writes remain guarded', async recurrence => {
   const { client, provider, fetcher } = await setup();
   const item = event({ ...recurrence, timeZone: 'UTC' });
   await expect(client.createSegment(item)).rejects.toThrow(/récurrence/);
   await expect(client.updateSegment('remote', item)).rejects.toThrow(/récurrence/);
-  await expect(client.sync([event(), item])).rejects.toThrow(/récurrence/);
+  expect(await client.sync([item])).toEqual([item]);
   const planning = new PlanningOrchestrator([], { twitch: provider }, async () => {});
   const created = await planning.create(item);
-  expect(created.providers?.twitch?.status).toBe('error');
-  await expect(planning.retry(item.id, 'twitch')).rejects.toThrow(/récurrence/);
+  expect(created.providers?.twitch?.projectionMode).toBe('materialized');
+  expect(created.providers?.twitch?.status).toBe('synced');
+  await planning.retry(item.id, 'twitch');
   await planning.update(item.id, item);
   expect(fetcher.mock.calls.filter(([, init]) => ['POST', 'PATCH', 'DELETE'].includes(init?.method ?? ''))).toHaveLength(0);
 });

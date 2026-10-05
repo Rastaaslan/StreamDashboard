@@ -1,3 +1,5 @@
+import { needsGoogleMaterialization, reconcileGoogleProjection, resolveGoogleOccurrenceConflict } from '../../../integrations/google-calendar/src/projection.js';
+import { needsTwitchMaterialization, reconcileTwitchProjection } from '../../../integrations/twitch/src/projection.js';
 import { assertTwitchRecurrence } from '../../../integrations/twitch/src/recurrence.js';
 import { googleRecurrence } from '../../../integrations/google-calendar/src/recurrence.js';
 import { createWithDurableIntent, isDefinitiveCreateFailure } from '../../../packages/core/src/provider-identity.js';
@@ -19,6 +21,7 @@ export async function drainCompanionProviders(
     const item = planning.find(item => item.id === work.item.id) ?? work.item;
     item.providers ??= {};
     const link = item.providers[work.provider] ??= { status: 'pending' };
+    if (work.provider === 'google' && work.action === 'publish') delete link.nativeRetained;
     const updateTombstone = () => {
       const tombstone = state.tombstones[item.id];
       if (!tombstone) return;
@@ -33,6 +36,19 @@ export async function drainCompanionProviders(
       updateTombstone();
       await persist();
     };
+    if ((work.provider === 'twitch' ? needsTwitchMaterialization(item) : needsGoogleMaterialization(item)) || link.projections) {
+      item.desiredPublication ??= { local: true, twitch: false, google: false };
+      item.desiredPublication[work.provider] = work.action === 'publish';
+      const handled = await (work.provider === 'twitch' ? reconcileTwitchProjection : reconcileGoogleProjection)(item, providers[work.provider], persist, { explicitWithdrawal: work.provider === 'google' && work.action === 'delete' });
+      updateTombstone();
+      if (handled) {
+        if (link.status === 'error' || link.status === 'conflict') await fail(link.lastError ?? 'Projection Twitch incomplète.');
+        else { delete state.providerWork[key]; await persist(); }
+        continue;
+      }
+      // Cleanup completed a materialized-to-native transition. The native write
+      // below still needs its durable intent and identity before work can be ACKed.
+    }
     // A create may have succeeded just before the process died. Providers without
     // idempotency keys cannot safely be retried until the remote object is reconciled.
     if (work.status === 'running' && work.action === 'publish' && !link.remoteId) {
@@ -63,7 +79,7 @@ export async function drainCompanionProviders(
       if (work.action === 'delete') {
         if (link.remoteId) await provider.delete(link.remoteId, item, link.remoteRevision);
         delete link.remoteId; delete link.remoteRevision;
-        if (work.provider === 'twitch') delete item.twitchSegmentId;
+        if (work.provider === 'twitch') { delete item.twitchSegmentId; item.twitchRecurring = false; }
         link.status = 'not-published';
       } else if (link.remoteId) {
         const result = await provider.update(link.remoteId, item, link.remoteRevision);
@@ -72,10 +88,11 @@ export async function drainCompanionProviders(
         if (work.provider === 'twitch') link.fingerprint = result.fingerprint;
         link.status = 'synced';
       } else {
-        const result = await createWithDurableIntent(item, work.provider, persist, request => provider.create(request));
+        const result = await createWithDurableIntent(item, work.provider, persist, request => provider.create(request), provider.prepareCreate);
         link.remoteId = result.id; link.remoteRevision = result.revision;
         link.calendarId = result.calendarId ?? link.calendarId;
-        if (work.provider === 'twitch') { item.twitchSegmentId = result.id; link.fingerprint = result.fingerprint; item.twitchRecurring = Boolean(item.recurrence) || item.twitchRecurring === true; }
+        link.projectionMode = 'native'; link.projectionOwned = result.owned !== false;
+        if (work.provider === 'twitch') { link.projectionMode = 'native'; link.projectionOwned = result.owned !== false; item.twitchSegmentId = result.id; link.fingerprint = result.fingerprint; item.twitchRecurring = Boolean(item.recurrence) || item.twitchRecurring === true; }
         link.status = 'synced';
       }
       work.uncertain = false;
@@ -106,7 +123,7 @@ export async function drainCompanionProviders(
  */
 export async function resolveCompanionDeletion(
   planning: CalendarItem[], state: CompanionState, id: string, provider: 'twitch' | 'google',
-  strategy: 'local' | 'remote', adapters: Partial<Record<'twitch' | 'google', PlanningProvider>>,
+  strategy: 'local' | 'remote', adapters: Partial<Record<'twitch' | 'google', PlanningProvider>>, occurrenceKey?: string,
 ) {
   const key = id + ':' + provider;
   const work = state.providerWork[key];
@@ -115,6 +132,15 @@ export async function resolveCompanionDeletion(
   const item = structuredClone(work.item);
   item.providers = { ...item.providers, ...(tombstone.providerLinks as CalendarItem['providers']) };
   const link = item.providers[provider];
+  if (provider === 'google' && occurrenceKey && link?.projections?.[occurrenceKey]) {
+    // Older tombstones predate the per-occurrence marker; the delete work is authoritative.
+    link.projections[occurrenceKey].pendingDeletion = true;
+    await resolveGoogleOccurrenceConflict(item, occurrenceKey, strategy, adapters.google, async () => {}, restored => planning.push(restored));
+    state.providerWork[key] = { item, provider, action: 'delete', status: 'queued' };
+    tombstone.item = structuredClone(item); tombstone.providerLinks = structuredClone(item.providers);
+    state.serverRevision++;
+    return;
+  }
   if (!link?.remoteId) throw new Error('Identité distante introuvable.');
   const adapter = adapters[provider];
   if (!adapter?.read) throw new Error(provider + ' non connecté. Reconnectez-le pour résoudre la suppression.');
@@ -136,6 +162,7 @@ export async function resolveCompanionDeletion(
   } else {
     if (!latest.remote) throw new Error('Version distante indisponible.');
     Object.assign(item, latest.remote);
+    if (provider === 'google') { delete link.nativeWithdrawalRequested; link.nativeRetained = true; link.projectionMode = 'native'; }
     link.status = 'synced';
     link.lastSyncedAt = new Date().toISOString();
     item.desiredPublication = { twitch: false, google: false, ...item.desiredPublication, local: true, [provider]: true,

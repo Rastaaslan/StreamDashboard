@@ -59,8 +59,8 @@ function validatePatch(patch: unknown, allowed: Set<string>) {
 
 function validateRecurrence(value: unknown) {
   if (value === null) return null;
-  if (!plain(value) || Object.keys(value).some(key => !['frequency', 'interval', 'timeZone', 'until', 'exceptions'].includes(key))) throw Object.assign(new Error('Récurrence compagnon invalide.'), { code: 'COMPANION_PAYLOAD_INVALID' });
-  if (!['daily', 'weekly', 'monthly'].includes(String(value.frequency)) || ![1, 2].includes(Number(value.interval)) || (value.frequency !== 'weekly' && value.interval !== 1)) throw Object.assign(new Error('Règle compagnon invalide.'), { code: 'COMPANION_PAYLOAD_INVALID' });
+  if (!plain(value) || Object.keys(value).some(key => !['version', 'frequency', 'interval', 'timeZone', 'until', 'exceptions'].includes(key))) throw Object.assign(new Error('Récurrence compagnon invalide.'), { code: 'COMPANION_PAYLOAD_INVALID' });
+  if (![undefined, 1, 2].includes(value.version as number | undefined) || !['daily', 'weekly', 'monthly'].includes(String(value.frequency)) || !(value.version === 2 ? Number.isSafeInteger(value.interval) && Number(value.interval) > 0 : [1, 2].includes(Number(value.interval)))) throw Object.assign(new Error('Règle compagnon invalide.'), { code: 'COMPANION_PAYLOAD_INVALID' });
   const timeZone = String(value.timeZone ?? ''); try { new Intl.DateTimeFormat('fr-FR', { timeZone }).format(); } catch { throw Object.assign(new Error('Fuseau compagnon invalide.'), { code: 'COMPANION_PAYLOAD_INVALID' }); }
   if (value.until != null && !Number.isFinite(Date.parse(String(value.until)))) throw Object.assign(new Error('Fin de série invalide.'), { code: 'COMPANION_PAYLOAD_INVALID' });
   if (value.exceptions !== undefined && (!plain(value.exceptions) || Object.keys(value.exceptions).length > 500)) throw Object.assign(new Error('Exceptions compagnon invalides.'), { code: 'COMPANION_PAYLOAD_INVALID' });
@@ -182,7 +182,7 @@ export function reconcileCompanionBatch(planning: CalendarItem[], desktopCheckli
         const conflict = { operationId, entityType: 'planning', entityId, fields: ['identity'], pc: clone(current ?? nextState.tombstones[entityId]), android: patch, baseRevision: baseRevision };
         nextState.conflicts[operationId] = conflict; conflicts.push(conflict); continue;
       }
-      const item = { ...patch, id: entityId, localId: entityId } as unknown as CalendarItem; validateEvent(item as unknown as Record<string, unknown>);
+      const item = { ...patch, id: entityId, localId: entityId, ownership: 'LOCAL', editable: true } as unknown as CalendarItem; validateEvent(item as unknown as Record<string, unknown>);
       nextPlanning.push(item); nextState.eventRevisions[entityId] = 1; nextState.eventHistory[entityId] = clone(item as unknown as Record<string, unknown>);
     } else if (type === 'delete') {
       if (!current) { nextState.eventRevisions[entityId] = Math.max(currentRevision, baseRevision) + 1; }
@@ -255,7 +255,7 @@ export function reconcileCompanionBatch(planning: CalendarItem[], desktopCheckli
         }
         if (type === 'create' && link?.status === 'synced') continue;
         const action = !resultItem || !providerItem.desiredPublication?.[provider] ? 'delete' : 'publish';
-        if (action === 'delete' && !link?.remoteId) { delete nextState.providerWork[key]; continue; }
+        if (action === 'delete' && !hasPublicationToDelete(providerItem, provider)) { delete nextState.providerWork[key]; continue; }
         const previousWork = nextState.providerWork[key];
         nextState.providerWork[key] = previousWork?.uncertain && !link?.remoteId
           ? { ...previousWork, item: clone(providerItem) }
@@ -283,6 +283,13 @@ export function reconcileCompanionBatch(planning: CalendarItem[], desktopCheckli
     delete nextState.eventHistory[imported.id]; nextState.serverRevision++;
   }
   return { planning: nextPlanning, checklist: nextState.checklist.map(item => ({ id: item.id, label: String(item.label ?? ''), done: item.done === true })), companion: nextState, acknowledged, conflicts };
+}
+
+/** A materialized series owns remote segments through its occurrence journal. */
+function hasPublicationToDelete(item: CalendarItem, provider: 'twitch' | 'google') {
+  const link = item.providers?.[provider];
+  return Boolean(link?.remoteId || (Object.values(link?.projections ?? {}).some(entry => entry.managedBy === 'StreamDashboard'
+      && (entry.remoteId || entry.uncertainCreate))));
 }
 
 function companionProviderLinks(links: CalendarItem['providers']) {
@@ -336,7 +343,7 @@ export function resolveCompanionConflict(planning: CalendarItem[], state: Compan
       const item = planning.find(item => item.id === conflict.entityId) ?? current as CalendarItem;
       if (item) for (const provider of ['twitch', 'google'] as const) {
         const action = conflict.android == null || !item.desiredPublication?.[provider] ? 'delete' : 'publish';
-        if (action === 'publish' || item.providers?.[provider]?.remoteId)
+        if (action === 'publish' || hasPublicationToDelete(item, provider))
           state.providerWork[item.id + ':' + provider] = { item: clone(item), provider, action, status: 'queued' };
       }
     }

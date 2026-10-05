@@ -34,18 +34,34 @@ describe('moteur canonique de récurrence', () => {
     expect(item.title).toBe('Minecraft'); expect(item.id).toBe('minecraft');
   });
 
+  it('sélectionne les exceptions déplacées selon leurs dates effectives sans contourner until ni annulation', () => {
+    const item = series('2026-01-01T12:00:00.000Z', { frequency: 'daily', interval: 1, timeZone: 'UTC', until: '2026-02-05T12:00:00Z', exceptions: {
+      'minecraft:2026-01-01T12:00:00': { patch: { startAtUtc: '2026-01-03T10:00:00Z', endAtUtc: '2026-01-03T11:00:00Z' } },
+      'minecraft:2026-01-02T12:00:00': { patch: { startAtUtc: '2026-02-03T10:00:00Z', endAtUtc: '2026-02-03T11:00:00Z' } },
+      'minecraft:2026-02-04T12:00:00': { cancelled: true, patch: { startAtUtc: '2026-01-03T16:00:00Z', endAtUtc: '2026-01-03T17:00:00Z' } },
+      'minecraft:2026-02-05T12:00:00': { patch: { startAtUtc: '2026-01-03T18:00:00Z', endAtUtc: '2026-01-03T19:00:00Z' } },
+      'minecraft:2026-02-06T12:00:00': { patch: { startAtUtc: '2026-01-03T20:00:00Z', endAtUtc: '2026-01-03T21:00:00Z' } },
+    } });
+    const values = expandRecurringItems([item], { from: '2026-01-02', to: '2026-01-04' });
+    expect(values.map(value => value.occurrenceKey)).toEqual(['minecraft:2026-01-01T12:00:00', 'minecraft:2026-01-03T12:00:00', 'minecraft:2026-02-05T12:00:00']);
+    expect(values.every(value => Date.parse(value.startAtUtc) >= Date.parse('2026-01-02') && Date.parse(value.startAtUtc) < Date.parse('2026-01-04'))).toBe(true);
+  });
+
   it('rend une occurrence virtuelle visible à nextLive', () => {
     const item = series('2026-01-06T19:00:00.000Z', { frequency: 'weekly', interval: 1, timeZone: 'Europe/Paris', until: null, exceptions: {} });
     const now = Date.parse('2026-01-13T18:50:00.000Z'); const expanded = expandRecurringItems([item], { from: now - 3600000, to: now + 3600000 });
     expect(findScheduledLiveForStart(expanded, now)?.seriesId).toBe('minecraft');
   });
 
-  it('refuse une représentation provider inexacte sans perdre la série ni créer de doublon', async () => {
+  it('matérialise Twitch sans envoyer une récurrence inexacte au provider', async () => {
     const item = series('2026-01-06T19:00:00.000Z', { frequency: 'weekly', interval: 1, timeZone: 'Europe/Paris', until: null, exceptions: { skipped: { cancelled: true } } });
     item.desiredPublication = { local: true, twitch: true, google: true };
-    const create = vi.fn(); const values: CalendarItem[] = []; const orchestrator = new PlanningOrchestrator(values, { twitch: { create, update: vi.fn(), delete: vi.fn() }, google: { create, update: vi.fn(), delete: vi.fn() } }, async () => undefined);
+    const create = vi.fn(async () => ({ id: crypto.randomUUID() })); const values: CalendarItem[] = []; const orchestrator = new PlanningOrchestrator(values, { twitch: { create, update: vi.fn(), delete: vi.fn() }, google: { create, update: vi.fn(), delete: vi.fn() } }, async () => undefined);
     const created = await orchestrator.create(item);
-    expect(create).not.toHaveBeenCalled(); expect(orchestrator.all()).toHaveLength(1); expect(created.providers?.twitch?.status).toBe('error');
-    await orchestrator.retry(created.id, 'twitch').catch(() => undefined); expect(create).not.toHaveBeenCalled(); expect(orchestrator.all()).toHaveLength(1);
+    expect(create).toHaveBeenCalled(); expect(orchestrator.all()).toHaveLength(1); expect(created.providers?.twitch?.projectionMode).toBe('materialized');
+    expect(created.providers?.google?.status).toBe('synced');
+    expect(created.providers?.google?.projectionMode).toBe('materialized');
+    const count = create.mock.calls.length;
+    await orchestrator.retry(created.id, 'twitch'); expect(create).toHaveBeenCalledTimes(count); expect(orchestrator.all()).toHaveLength(1);
   });
 });
