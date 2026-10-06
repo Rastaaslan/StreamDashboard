@@ -277,7 +277,7 @@ it.each(['local', 'remote'] as const)('Twitch retirement detects remote conflict
   } else { expect(f.active().length).toBe(7); expect(f.active()).toHaveLength(Object.keys(saved.providers!.twitch!.projections!).length); expect(f.remote.has(old.id)).toBe(false); }
 });
 
-it.each(['twitch', 'google'] as const)('%s legacy pre-rolling identities require explicit withdrawal; bulk excludes the series', async provider => {
+it.each(['twitch', 'google'] as const)('%s whole-series deletion preserves legacy identities without proven ownership; bulk excludes the series', async provider => {
   const f = await fixture(provider);
   await f.request('planning', { ...f.input, recurrence: { frequency: 'weekly', interval: 1, timeZone: 'UTC' } });
   const id = f.item().id;
@@ -299,7 +299,8 @@ it.each(['twitch', 'google'] as const)('%s legacy pre-rolling identities require
   await f.request('planning/bulk-delete/confirm', { token: preview.token, confirm: true });
   expect(f.active()).toHaveLength(1);
   await f.request(`planning/${id}`, { confirmRecurring: true }, 'DELETE');
-  expect(f.active()).toEqual([]);
+  expect(f.active()).toHaveLength(1);
+  expect((await f.disk()).some(item => item.id === id)).toBe(false);
 });
 
 it('Twitch replacement resumes after confirmed deletion followed by a rejected CREATE and restart', async () => {
@@ -346,10 +347,10 @@ it('a conflicting Twitch retirement cannot remove the local owner and orphan the
   await f.request(`planning/${id}`, { confirmRecurring: true }, 'DELETE', false);
   expect((await f.disk()).some(item => item.id === id)).toBe(true);
   expect(f.active()).toHaveLength(1);
-  await f.request(`planning/${id}/conflict/twitch`, { strategy: 'remote' });
-  await f.restart(); await f.request(`planning/${id}/retry/twitch`);
-  expect((await f.disk()).find(item => item.id === id)!.desiredPublication!.twitch).toBe(true);
-  expect(f.active()).toHaveLength(1);
+  await f.restart();
+  await f.request(`planning/${id}/retry/twitch`);
+  expect((await f.disk()).some(item => item.id === id)).toBe(false);
+  expect(f.active()).toHaveLength(0);
 });
 
 it.each(['twitch', 'google'] as const)('%s native remote deletion becomes an error and explicit retry recreates once', async provider => {
@@ -524,4 +525,76 @@ it('Google native conflict remote choice also restores a remotely removed recurr
   expect(master.recurrence).toEqual([]);
   expect((await f.disk())[0].providers!.google).toMatchObject({ status: 'synced', remoteId: master.id });
   expect((await f.disk())[0].conflict).toBeUndefined();
+});
+
+it.each((['twitch', 'google'] as const).flatMap(provider => [false, true].map(native => ({ provider, native }))))('CB-131 $provider native=$native HTTP deletion failure survives real storage reload, sync and retry without publication', async ({ provider, native }) => {
+  const f = await fixture(provider);
+  await f.request('planning', { ...f.input, recurrence: { frequency: native ? 'weekly' : 'daily', interval: 1, timeZone: 'UTC', ...(native ? {} : { exceptions: { 'unused:2030-01-01T12:00:00': { cancelled: true } } }) } });
+  const id = f.item().id;
+  expect(f.active()).toHaveLength(native ? 1 : 7);
+  f.offline(true);
+  await f.request(`planning/${id}`, { confirmRecurring: true, scope: 'series' }, 'DELETE', false);
+  expect((await f.disk())[0].deletionPending).toBe(true);
+  const creates = f.writes.filter(write => write.method === 'POST').length;
+  await f.restart();
+  expect(f.item().deletionPending).toBe(true);
+  if (native) expect(f.item().providers![provider]!.remoteId).toBeTruthy();
+  else expect(Object.values(f.item().providers![provider]!.projections!).every(entry => entry.remoteId)).toBe(true);
+  f.offline(false);
+  await f.request(`${provider}/sync`);
+  expect(f.item().desiredPublication![provider]).toBe(false);
+  await f.request(`planning/${id}/retry/${provider}`);
+  expect(f.active()).toHaveLength(0);
+  expect(await f.disk()).toEqual([]);
+  await f.restart();
+  expect(await f.disk()).toEqual([]);
+  await f.request(`planning/${id}/retry/${provider}`);
+  expect(f.writes.filter(write => write.method === 'POST')).toHaveLength(creates);
+  const stored = JSON.parse(await readFile(join(folder, 'dashboard.json'), 'utf8'));
+  expect(stored.companion.tombstones[id]).toBeDefined();
+  expect(stored.companion.tombstones[id].providerLinks).toBeUndefined();
+});
+
+it.each((['twitch', 'google'] as const).flatMap(provider => [false, true].map(native => ({ provider, native }))))('CB-131 lost $provider CREATE native=$native preserves uncertainty unless ownership can be proven', async ({ provider, native }) => {
+  const f = await fixture(provider);
+  f.loseCreateResponse();
+  await f.request('planning', { ...f.input, recurrence: { frequency: native ? 'weekly' : 'daily', interval: 1, timeZone: 'UTC', ...(native ? {} : { exceptions: { 'unused:2030-01-01T12:00:00': { cancelled: true } } }) } });
+  const id = f.item().id;
+  const link = f.item().providers![provider]!;
+  expect(native ? link.uncertainCreate : Object.values(link.projections!).some(entry => entry.uncertainCreate)).toBeTruthy();
+  const unowned = structuredClone(f.active()[0]);
+  const lostId = unowned.id;
+  unowned.id = 'foreign';
+  if (provider === 'google') delete unowned.extendedProperties;
+  else unowned.title = 'Unowned';
+  f.remote.set('foreign', unowned);
+  const creates = f.writes.filter(write => write.method === 'POST').length;
+  f.offline(true);
+  await f.request(`planning/${id}`, { confirmRecurring: true }, 'DELETE', false);
+  await f.restart();
+  expect(f.item().deletionPending).toBe(true);
+  f.offline(false);
+  await f.request(`${provider}/sync`);
+  await f.restart();
+  expect(f.item().deletionPending).toBe(true);
+  const recovered = f.item().providers![provider]!;
+  if (provider === 'twitch') {
+    expect(native ? recovered.uncertainCreate : Object.values(recovered.projections!).some(entry => entry.uncertainCreate)).toBeTruthy();
+    await f.request(`planning/${id}/retry/${provider}`, {}, 'POST', false);
+    expect(f.active().map(event => event.id).sort()).toEqual(['foreign', lostId].sort());
+    expect(f.writes.some(write => write.method === 'DELETE' && write.id === lostId)).toBe(false);
+    expect((await f.disk()).find(item => item.id === id)?.deletionPending).toBe(true);
+    expect(f.writes.filter(write => write.method === 'POST')).toHaveLength(creates);
+    expect(f.writes.some(write => write.method === 'DELETE' && write.id === 'foreign')).toBe(false);
+    return;
+  }
+  expect(native ? recovered.uncertainCreate : Object.values(recovered.projections!).some(entry => entry.uncertainCreate)).toBeFalsy();
+  expect(native ? recovered.remoteId : Object.values(recovered.projections!).every(entry => entry.remoteId)).toBeTruthy();
+  await f.request(`planning/${id}/retry/${provider}`);
+  expect(f.active().map(event => event.id)).toEqual(['foreign']);
+  expect((await f.disk()).some(item => item.id === id)).toBe(false);
+  expect((await f.disk()).every(item => (item.providers?.[provider]?.remoteId ?? item.twitchSegmentId) === 'foreign')).toBe(true);
+  await f.restart();
+  expect(f.writes.filter(write => write.method === 'POST')).toHaveLength(creates);
+  expect(f.writes.filter(write => write.method === 'DELETE').some(write => write.id === 'foreign')).toBe(false);
 });

@@ -254,3 +254,29 @@ describe('intégration Twitch générique', () => {
     expect(fetch).toHaveBeenCalledTimes(3); expect(client.state.connected).toBe(false); expect(persisted.at(-1)).toBeNull();
   });
 });
+
+it.each(['new-external-match', 'preexisting', 'ambiguous', 'missing-proof', 'wrong-account', 'absent'] as const)('deletion recovery refuses %s Twitch identity without attributing ownership', async scenario => {
+  const event = { id: 'local', title: 'Live', startAtUtc: '2030-01-01T10:00:00Z', endAtUtc: '2030-01-01T11:00:00Z' };
+  const segment = { id: 'foreign', title: event.title, start_time: event.startAtUtc, end_time: event.endAtUtc, is_recurring: false };
+  const request = vi.fn(async () => Response.json({ data: { segments: scenario === 'absent' ? [] : scenario === 'ambiguous' ? [segment, { ...segment, id: 'other' }] : [segment] } }));
+  vi.stubGlobal('fetch', request);
+  const client = new TwitchClient({ ...empty, clientId: 'id', accessToken: 'token', broadcasterId: '42' });
+  await authorize(client);
+  const recovery = scenario === 'missing-proof' ? undefined : { accountId: scenario === 'wrong-account' ? 'other' : '42', remoteIds: scenario === 'preexisting' ? ['foreign'] : [] };
+  await expect(client.recoverSegmentCreation({ ...event, providers: { twitch: { status: 'error', uncertainCreate: { event, publishedContent: '', recovery } } } })).rejects.toThrow(/identité|Identité|Preuve/);
+  for (const call of vi.mocked(fetch).mock.calls) expect(call[1]?.method ?? 'GET').toBe('GET');
+});
+
+it('sync does not import a still-uncertain deleting request as a new local row', async () => {
+  const event = { id: 'local', title: 'Live', startAtUtc: '2030-01-01T10:00:00Z', endAtUtc: '2030-01-01T11:00:00Z' };
+  const segment = { id: 'lost', title: event.title, start_time: event.startAtUtc, end_time: event.endAtUtc, is_recurring: false };
+  const request = vi.fn(async () => Response.json({ data: { segments: [segment, { ...segment, id: 'foreign', title: 'Foreign' }] } }));
+  vi.stubGlobal('fetch', request);
+  const client = new TwitchClient({ ...empty, clientId: 'id', accessToken: 'token', broadcasterId: '42' });
+  await authorize(client);
+  const rows = await client.sync([{ ...event, deletionPending: true, ownership: 'LOCAL', desiredPublication: { local: true, twitch: false, google: false }, providers: { twitch: { status: 'error', uncertainCreate: { event, publishedContent: '' } } } }]);
+  expect(rows.map(row => row.id)).toEqual(['local', 'twitch:foreign']);
+  expect(rows[0].deletionPending).toBe(true);
+  expect(rows[0].providers!.twitch!.uncertainCreate).toBeTruthy();
+  for (const call of vi.mocked(fetch).mock.calls) expect(call[1]?.method ?? 'GET').toBe('GET');
+});

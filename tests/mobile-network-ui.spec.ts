@@ -543,3 +543,229 @@ test('CB-127 failed provider retry stays usable after unchanged refresh and succ
   await expect(retry).toHaveCount(0);
   expect(errors).toEqual([]);
 });
+
+test('CB-131 mobile deletes the canonical whole series with native confirmation and removes rows', async ({ page }) => {
+  const { backend, errors } = await setup(page);
+  await page.clock.setFixedTime(new Date('2030-06-01T12:00:00Z'));
+  const series = { id: 'delete-series', localId: 'durable-series', title: 'Série à supprimer', category: 'live', startAtUtc: '2030-06-02T19:00:00Z', endAtUtc: '2030-06-02T20:00:00Z', twitchRecurring: true, recurrence: { frequency: 'weekly', interval: 1, timeZone: 'UTC' } };
+  (backend.state as any).planning = [series]; backend.state.stateRevision++;
+  await page.evaluate(state => (window as any).sockets.at(-1).onmessage({ data: JSON.stringify({ type: 'state.updated', data: state }) }), backend.state);
+  let deletion: any;
+  await page.route('**/api/v1/planning/delete-series', async route => {
+    expect(route.request().method()).toBe('DELETE'); deletion = route.request().postDataJSON();
+    (backend.state as any).planning = []; backend.state.stateRevision++;
+    await route.fulfill({ json: backend.state });
+  });
+  page.on('dialog', dialog => dialog.accept());
+  await page.locator('[data-tab="planning"]').click();
+  const row = page.getByRole('button', { name: 'Ouvrir Série à supprimer', exact: true }).first();
+  await row.locator('summary').click();
+  await row.getByRole('button', { name: 'Supprimer toute la série', exact: true }).click();
+  await expect.poll(() => deletion).toEqual({ confirmRecurring: true, scope: 'series' });
+  await expect(page.getByRole('button', { name: 'Ouvrir Série à supprimer', exact: true })).toHaveCount(0);
+  expect(errors).toEqual([]);
+});
+
+test('CB-131 mobile pending series shows deletion status and retry clears its row', async ({ page }) => {
+  const { backend, errors } = await setup(page);
+  const item = { id: 'pending-series', title: 'Suppression partielle', category: 'live', startAtUtc: '2030-06-02T19:00:00Z', endAtUtc: '2030-06-02T20:00:00Z', deletionPending: true, recurrence: { frequency: 'daily', interval: 1, timeZone: 'UTC' }, desiredPublication: { local: true, twitch: false, google: false }, providers: { google: { status: 'error', remoteId: 'remaining', lastError: 'Suppression de série en attente.' } } };
+  (backend.state as any).planning = [item]; backend.state.stateRevision++;
+  await page.evaluate(state => (window as any).sockets.at(-1).onmessage({ data: JSON.stringify({ type: 'state.updated', data: state }) }), backend.state);
+  await page.locator('[data-tab="planning"]').click();
+  const row = page.getByRole('button', { name: 'Ouvrir Suppression partielle', exact: true });
+  await expect(row).toContainText('Suppression de série en attente');
+  await page.route('**/api/v1/planning/pending-series/retry/google', async route => {
+    (backend.state as any).planning = []; backend.state.stateRevision++;
+    await route.fulfill({ json: backend.state });
+  });
+  page.on('dialog', dialog => dialog.accept());
+  await row.getByRole('button', { name: 'Réessayer Google', exact: true }).click();
+  await expect(row).toHaveCount(0);
+  expect(errors).toEqual([]);
+});
+
+
+test.describe('CB-138 mobile recurrence editor', () => {
+  test.use({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true, timezoneId: 'Europe/Paris' });
+
+  for (const [value, label, frequency, interval, until] of [
+    ['daily-1', 'Chaque jour', 'daily', 1, '2030-06-30'],
+    ['daily-1', 'Chaque jour', 'daily', 1, ''],
+    ['weekly-1', 'Chaque semaine', 'weekly', 1, '2030-06-30'],
+    ['weekly-2', 'Toutes les 2 semaines', 'weekly', 2, '2030-06-30'],
+    ['monthly-1', 'Chaque mois', 'monthly', 1, '2030-06-30'],
+  ] as const) {
+    test(`creates ${value} with until=${until || 'unbounded'} through the mobile API`, async ({ page }) => {
+      const { backend, errors } = await setup(page);
+      await page.locator('[data-tab="planning"]').click();
+      await page.locator('#add-slot').click();
+      const form = page.locator('#slot-form');
+      await form.locator('[name="title"]').fill('Nouvelle série');
+      await form.locator('[name="date"]').fill('2030-06-02');
+      await form.locator('[name="start"]').fill('19:00');
+      await form.locator('[name="end"]').fill('20:00');
+      await form.locator('[data-open-planning-page="advanced"]').click();
+      const recurrence = form.locator('[name="recurrence"]');
+      await expect(recurrence).toBeVisible();
+      await expect(recurrence).toBeEnabled();
+      await expect(recurrence.locator('option')).toHaveText(['Aucune', 'Chaque jour', 'Chaque semaine', 'Toutes les 2 semaines', 'Chaque mois']);
+      await recurrence.selectOption({ label });
+      await expect(recurrence).toHaveValue(value);
+      await form.locator('[name="recurrenceUntil"]').fill(until);
+      // A live state refresh must preserve the selected cadence and end date.
+      backend.state.stateRevision++;
+      await page.evaluate(state => (window as any).sockets.at(-1).onmessage({ data: JSON.stringify({ type: 'state.updated', data: state }) }), backend.state);
+      await expect(recurrence).toHaveValue(value);
+      await expect(form.locator('[name="recurrenceUntil"]')).toHaveValue(until);
+      let saved: any;
+      await page.route('**/api/v1/planning', async route => {
+        expect(route.request().method()).toBe('POST');
+        saved = route.request().postDataJSON();
+        await route.fulfill({ json: backend.state });
+      });
+      await form.locator('button[type="submit"]').click();
+      await expect(page.locator('#slot-dialog')).toBeHidden();
+      expect(saved.recurrence).toEqual({ frequency, interval, timeZone: 'Europe/Paris', until: until ? '2030-06-30T21:59:59.000Z' : null });
+      expect(errors).toEqual([]);
+    });
+  }
+
+  test('existing daily series retains its canonical rule and can change until', async ({ page }) => {
+    const { backend, errors } = await setup(page);
+    await page.clock.setFixedTime(new Date('2030-06-01T12:00:00Z'));
+    const recurrence = { frequency: 'daily', interval: 1, timeZone: 'America/New_York', until: '2030-06-30T20:00:00Z', exceptions: { '2030-06-04': { cancelled: true } } };
+    const series = { id: 'daily-series', title: 'Série quotidienne', category: 'live', startAtUtc: '2030-06-02T19:00:00Z', endAtUtc: '2030-06-02T20:00:00Z', recurrence };
+    (backend.state as any).planning = [series]; backend.state.stateRevision++;
+    await page.evaluate(state => (window as any).sockets.at(-1).onmessage({ data: JSON.stringify({ type: 'state.updated', data: state }) }), backend.state);
+    await page.locator('[data-tab="planning"]').click();
+    const form = page.locator('#slot-form');
+    const saved: any[] = [];
+    await page.route('**/api/v1/planning/daily-series', async route => {
+      expect(route.request().method()).toBe('PUT');
+      saved.push(route.request().postDataJSON());
+      Object.assign(series, saved.at(-1)); backend.state.stateRevision++;
+      await route.fulfill({ json: backend.state });
+    });
+    for (const until of ['2030-06-30', '2030-07-10', '']) {
+      const row = page.getByRole('button', { name: 'Ouvrir Série quotidienne', exact: true }).first();
+      if (!(await row.locator('summary').evaluate(node => node.parentElement!.hasAttribute('open')))) await row.locator('summary').click();
+      await row.getByRole('button', { name: 'Modifier toute la série', exact: true }).click();
+      await form.locator('[data-open-planning-page="advanced"]').click();
+      await expect(form.locator('[name="recurrence"]')).toHaveValue('daily-1');
+      await expect(form.locator('[name="recurrence"] option:checked')).toHaveText('Chaque jour');
+      await form.locator('[name="recurrenceUntil"]').fill(until);
+      await form.locator('button[type="submit"]').click();
+      await expect(page.locator('#slot-dialog')).toBeHidden();
+      expect(saved.at(-1).recurrence).toEqual({ ...recurrence, until: until === '2030-06-30' ? recurrence.until : until ? '2030-07-10T21:59:59.000Z' : null });
+    }
+    expect(errors).toEqual([]);
+  });
+});
+
+for (const width of [320, 390]) test(`Live tags edit, refresh and retry on touch at ${width}px`, async ({ browser }) => {
+  const context = await browser.newContext({ viewport: { width, height: 740 }, isMobile: true, hasTouch: true });
+  const page = await context.newPage();
+  try {
+    const { backend, errors } = await setup(page);
+    Object.assign(backend.state.twitch, { channelTitle: '', gameId: '', gameName: '', tags: ['Current'] });
+    const refresh = async () => {
+      backend.state.stateRevision++;
+      await page.evaluate(state => (window as any).sockets.at(-1).onmessage({ data: JSON.stringify({ type: 'state.updated', data: state }) }), backend.state);
+    };
+    await refresh();
+    await page.locator('[data-tab="live"]').tap();
+    await page.locator('[data-open-live-tool="twitch"]').tap();
+    await expect(page.locator('#twitch-tags')).toHaveValue('Current');
+    await page.route('**/api/v1/twitch/tags/suggest', route => route.fulfill({ json: { tags: { values: ['Recommended'] }, observedSuggestions: [{ tag: 'Polluted' }] } }));
+    await page.locator('#twitch-tags-regenerate').tap();
+    await page.clock.runFor(1);
+    await expect(page.locator('#twitch-tags-suggestions')).toContainText('Recommended');
+    await expect(page.locator('#twitch-tags')).toHaveValue('Current');
+    await page.locator('#twitch-tags').fill('Manual');
+    await refresh();
+    await expect(page.locator('#twitch-tags')).toHaveValue('Manual');
+    await expect(page.locator('#twitch-tags-suggestions')).toContainText('Recommended');
+    await expect(page.locator('#twitch-tags-suggestions')).not.toContainText('Polluted');
+    await page.locator('#twitch-tags-adopt').tap();
+    await expect(page.locator('#twitch-tags')).toHaveValue('Recommended');
+    await page.locator('#twitch-tags').fill('Manual');
+    const submissions: any[] = [];
+    let release!: () => void;
+    let pending = false;
+    const gate = new Promise<void>(resolve => { release = resolve; });
+    await page.route('**/api/v1/twitch/channel', async route => {
+      submissions.push(route.request().postDataJSON());
+      if (submissions.length === 1) { await route.fulfill({ status: 503, json: { error: { message: 'Réessaie' } } }); return; }
+      if (submissions.length === 2) { await route.fulfill({ json: { ...backend.state, twitch: { ...backend.state.twitch, tagsWarning: 'Tags refusés. Corrige puis réessaie.' } } }); return; }
+      if (submissions.length === 3) { pending = true; await gate; }
+      Object.assign(backend.state.twitch, { tags: submissions.at(-1).tags, tagsWarning: undefined });
+      backend.state.stateRevision++;
+      await route.fulfill({ json: backend.state });
+    });
+    await page.locator('#save-twitch').tap();
+    await expect(page.locator('#twitch-tags-status')).toContainText('Réessaie');
+    await refresh();
+    await expect(page.locator('#twitch-tags')).toHaveValue('Manual');
+    expect(submissions[0]).toEqual({ title: '', gameId: '', gameName: '', tags: ['Manual'] });
+    await page.locator('#save-twitch').tap();
+    await expect(page.locator('#twitch-tags-status')).toContainText('Tags refusés');
+    await refresh();
+    await expect(page.locator('#twitch-tags')).toHaveValue('Manual');
+    await page.locator('#save-twitch').tap();
+    await expect.poll(() => pending).toBe(true);
+    await page.locator('#twitch-tags').fill('Newer');
+    await refresh();
+    release();
+    await expect(page.locator('#save-twitch')).toBeEnabled();
+    await refresh();
+    await expect(page.locator('#twitch-tags')).toHaveValue('Newer');
+    await page.locator('#save-twitch').tap();
+    await expect(page.locator('#twitch-tags-status')).toContainText('enregistrées');
+    await expect(page.locator('#save-twitch')).toBeEnabled();
+    expect(submissions.at(-1).tags).toEqual(['Newer']);
+    await page.locator('#twitch-tags').fill('');
+    await page.locator('#save-twitch').tap();
+    await expect(page.locator('#save-twitch')).toBeEnabled();
+    expect(submissions.at(-1).tags).toEqual(['']);
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+    for (const id of ['twitch-tags', 'twitch-tags-regenerate', 'save-twitch']) {
+      const box = await page.locator(`#${id}`).boundingBox();
+      expect(box!.height).toBeGreaterThanOrEqual(40);
+      expect(box!.x + box!.width).toBeLessThanOrEqual(width);
+    }
+    expect(errors).toEqual([]);
+  } finally { await context.close(); }
+});
+
+test('Live suggestions ignore late contexts and survive telemetry while pending', async ({ page }) => {
+  const { backend, errors } = await setup(page);
+  await page.locator('[data-tab="live"]').click();
+  await page.locator('[data-open-live-tool="twitch"]').click();
+  let release!: () => void;
+  const gate = new Promise<void>(resolve => { release = resolve; });
+  const requests: any[] = [];
+  await page.route('**/api/v1/twitch/tags/suggest', async route => {
+    const body = route.request().postDataJSON();
+    requests.push(body);
+    if (body.title === 'Old context') await gate;
+    await route.fulfill({ json: { tags: { values: [body.title === 'Old context' ? 'Stale' : 'Fresh'] } } });
+  });
+  await page.locator('#twitch-title').fill('Old context');
+  await page.clock.runFor(301);
+  await expect.poll(() => requests.length).toBe(1);
+  await page.locator('#twitch-tags').fill('KeepMe');
+  backend.state.stateRevision++;
+  await page.evaluate(state => (window as any).sockets.at(-1).onmessage({ data: JSON.stringify({ type: 'state.updated', data: state }) }), backend.state);
+  await expect(page.locator('#twitch-tags-suggestions')).toContainText('en cours');
+  await expect(page.locator('#twitch-title')).toHaveValue('Old context');
+  await page.locator('#twitch-title').fill('New context');
+  await page.clock.runFor(301);
+  await expect(page.locator('#twitch-tags-suggestions')).toContainText('Fresh');
+  const response = page.waitForResponse(async response => response.url().endsWith('/tags/suggest') && response.request().postDataJSON().title === 'Old context');
+  release();
+  await response;
+  await expect(page.locator('#twitch-tags-suggestions')).toContainText('Fresh');
+  await expect(page.locator('#twitch-tags')).toHaveValue('KeepMe');
+  expect(requests[1]).toMatchObject({ title: 'New context', gameId: '27471', gameName: 'Minecraft' });
+  expect(errors).toEqual([]);
+});

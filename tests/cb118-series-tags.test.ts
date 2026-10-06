@@ -34,6 +34,8 @@ it('reaccepts a rejected tag from projected occurrence → series editor → reg
     const slice = (start: string, end: string) => source.slice(source.indexOf(start), source.indexOf(end));
     const context = {
       dialogCompletion: () => () => true,
+      dialogCreation: () => ({ isCurrent: () => true, finish() {} }),
+      closeDialog: (dialog: any) => dialog.close(),
       draftRevision: () => 0, /* No user events here; browser tests cover revisions. */
       document: { querySelector: node }, structuredClone,
       state: { runtime: true, eventEdit: { occurrence, series, scope: 'occurrence' } },

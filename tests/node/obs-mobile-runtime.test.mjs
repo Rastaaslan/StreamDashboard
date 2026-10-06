@@ -42,6 +42,7 @@ function harness(shell) {
     context.setProvider = (id, status) => { $(id).textContent = status; };
   } else {
     code = source(shell).slice(source(shell).indexOf('function remoteButtons(disabled) {'), source(shell).indexOf('function offlineState()'));
+    code += source(shell).slice(source(shell).indexOf('let twitchEditorDirty = false;'), source(shell).indexOf('const companion ='));
     code += 'function renderControlHub(hub) {' + source(shell).split('function renderControlHub(hub) {')[1].split('\nconst formatClock')[0];
     code += '\nfunction render(next) {' + source(shell).split('function render(next) {')[1].split('\nfunction tickTimer')[0];
     code += '\nglobalThis.renderState = render;';

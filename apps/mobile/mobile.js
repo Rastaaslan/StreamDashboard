@@ -94,6 +94,9 @@ let healthCheckInFlight = false;
 let companionMode = CompanionMode.OFFLINE;
 const phoneProviderSnapshots = {};
 let twitchEditorDirty = false;
+let twitchEditorRevision = 0;
+let twitchSavePending = false;
+const liveTagSuggestions = { revision: 0, timer: null, context: null, values: [] };
 const companion = createCompanionStore();
 let syncError = '';
 const providerAccounts = {};
@@ -635,6 +638,7 @@ const targetedRetry = createProviderRetry({
   },
 });
 async function retryPlanningProvider(item, provider) {
+  if (item.deletionPending && !confirm('Réessayer la suppression de toute la série, y compris la version distante courante ?')) return;
   try { syncError = ''; await targetedRetry(item, provider); }
   catch (error) { syncError = error.message; note(error.message); }
   finally { renderSyncCenter(); }
@@ -762,6 +766,7 @@ function renderPlanning(items) {
     const whenBlock = document.createElement('div'); whenBlock.className = 'planning-when'; whenBlock.append(text('strong', when.date), text('small', when.time));
     whenBlock.append(createThumbnail(item));
     row.append(whenBlock, text('b', item.title));
+    if (item.deletionPending) row.append(text('small', 'Suppression de série en attente · réessayez la suppression', 'warning'));
     if (item.recurrence) row.append(text('small', recurrenceSummary(item), 'muted planning-recurrence'));
     if (item.occurrenceKey) {
       const actions = document.createElement('details'); actions.className = 'planning-actions';
@@ -840,7 +845,17 @@ async function removeMobileOccurrence(item) {
   if (!confirm(`Supprimer uniquement cette occurrence de « ${item.title} » ?`)) return;
   try { if (companionMode === CompanionMode.ONLINE_PC) render(await transport.deleteOccurrence(item.seriesId, item.occurrenceKey)); else { const canonical = companion.snapshot().planning.find(value => value.id === item.seriesId); const recurrence = structuredClone(canonical.recurrence); recurrence.exceptions ||= {}; recurrence.exceptions[item.occurrenceKey] = { cancelled: true }; companion.updateEvent(canonical.id, { recurrence }, canonical.revision); render(offlineState()); } note('Occurrence supprimée.'); } catch (error) { note(error.message); }
 }
-async function removeMobileSeries(item) { if (!confirm(`Supprimer toute la série « ${item.title} » ?`)) return; try { if (companionMode === CompanionMode.ONLINE_PC) render(await transport.deletePlanning(item.seriesId)); else { const canonical = companion.snapshot().planning.find(value => value.id === item.seriesId); companion.deleteEvent(canonical.id, canonical.revision); render(offlineState()); } note('Série supprimée.'); } catch (error) { note(error.message); } }
+async function removeMobileSeries(item) {
+  const seriesId = item.seriesId || item.id;
+  const items = companionMode === CompanionMode.ONLINE_PC ? state?.planning : companion.snapshot().planning;
+  const canonical = items?.find(value => value.id === seriesId || value.localId === seriesId) || item;
+  if (!confirm(`Supprimer toute la série « ${canonical.title} » ?`)) return;
+  try {
+    if (companionMode === CompanionMode.ONLINE_PC) render(await transport.deletePlanning(canonical.id, { confirmRecurring: true, scope: 'series' }));
+    else { companion.deleteEvent(canonical.id, canonical.revision); render(offlineState()); }
+    note('Série supprimée.');
+  } catch (error) { note(error.message); }
+}
 
 async function syncEventProviders(event, action, onlyProvider) {
   if (companionMode !== CompanionMode.ONLINE_STANDALONE || !globalThis.StreamDashboardProviders) return;
@@ -874,6 +889,9 @@ function render(next) {
     $('twitch-title').value = next.twitch?.channelTitle || '';
     $('twitch-category').value = next.twitch?.gameName || '';
     $('twitch-game-id').value = next.twitch?.gameId || '';
+    $('twitch-tags').value = (next.twitch?.tags || []).join(', ');
+    $('twitch-tags-status').textContent = next.twitch?.tagsWarning || '';
+    if (liveTagSuggestions.context !== null && liveTagSuggestions.context !== JSON.stringify(twitchTagContext())) scheduleTwitchTagSuggestions();
   }
   $('twitch-editor').hidden = !next.twitch?.connected;
   renderDeck(next.obs.mediaInputs);
@@ -1512,22 +1530,78 @@ function attachCategoryPicker(inputId, gameIdId, resultsId) {
   const show = items => { results.replaceChildren(...items.map(item => { const button = text('button', item.name); button.type='button'; button.dataset.gameId=item.id; button.dataset.gameName=item.name; button.dataset.boxArtUrl=item.box_art_url || ''; return button; })); };
   input.onfocus = () => { if (!input.value.trim()) show(recentCategories); };
   input.oninput = () => { gameId.value=''; clearTimeout(timer); const query=normalizeCategoryQuery(input.value); const request=++generation; if(query.length<2){show(query?[]:recentCategories);return;} results.replaceChildren(text('p','Recherche…','muted')); timer=setTimeout(async()=>{try{const response=await providerSync.searchCategories(companionMode,query,recentCategories,value=>transport.searchTwitch(value));const found=response.items||response;if(request!==generation)return;const ranked=rankCategories(found,recentCategories,query);show(ranked);if(!ranked.length)results.append(text('p','Aucune catégorie trouvée.','muted'));}catch(error){if(request===generation)results.replaceChildren(text('p',error.message,'danger'));}},300); };
-  results.onclick = event => { const button=event.target.closest('[data-game-id]');if(!button)return;gameId.value=button.dataset.gameId;input.value=button.dataset.gameName;recentCategories=rememberCategory(recentCategories,{id:button.dataset.gameId,name:button.dataset.gameName,box_art_url:button.dataset.boxArtUrl || undefined});localStorage.setItem(recentKey,JSON.stringify(recentCategories));results.replaceChildren(); };
+  results.onclick = event => { const button=event.target.closest('[data-game-id]');if(!button)return;gameId.value=button.dataset.gameId;input.value=button.dataset.gameName;recentCategories=rememberCategory(recentCategories,{id:button.dataset.gameId,name:button.dataset.gameName,box_art_url:button.dataset.boxArtUrl || undefined});localStorage.setItem(recentKey,JSON.stringify(recentCategories));results.replaceChildren(); if (inputId === 'twitch-category') input.dispatchEvent(new Event('change', { bubbles: true })); };
 }
 attachCategoryPicker('twitch-category','twitch-game-id','twitch-results');
 attachCategoryPicker('slot-twitch-category','slot-twitch-game-id','slot-twitch-results');
-$('twitch-editor').oninput = () => { twitchEditorDirty = true; };
+// Use Desktop's metadata and suggestion endpoints; tag quality stays server-owned.
+function twitchTagContext() {
+  return { title: $('twitch-title').value, gameId: $('twitch-game-id').value, gameName: $('twitch-category').value };
+}
+function scheduleTwitchTagSuggestions(delay = 300) {
+  clearTimeout(liveTagSuggestions.timer);
+  const context = twitchTagContext();
+  liveTagSuggestions.context = JSON.stringify(context);
+  const revision = ++liveTagSuggestions.revision;
+  liveTagSuggestions.values = [];
+  $('twitch-tags-adopt').hidden = true;
+  $('twitch-tags-suggestions').textContent = 'Suggestions en cours…';
+  liveTagSuggestions.timer = setTimeout(async () => {
+    try {
+      const result = await transport.suggestTwitchTags(context);
+      if (revision !== liveTagSuggestions.revision) return;
+      // Only the resolved high-confidence values, never observedSuggestions.
+      liveTagSuggestions.values = result.tags?.values || [];
+      $('twitch-tags-suggestions').textContent = result.warning || (liveTagSuggestions.values.length ? `Suggestions : ${liveTagSuggestions.values.join(', ')}` : 'Aucune suggestion.');
+      $('twitch-tags-adopt').hidden = !liveTagSuggestions.values.length;
+    } catch (error) {
+      if (revision === liveTagSuggestions.revision) $('twitch-tags-suggestions').textContent = error.message;
+    }
+  }, delay);
+}
+function markTwitchDraft(event) {
+  twitchEditorDirty = true;
+  twitchEditorRevision++;
+  if (event.target.id !== 'twitch-tags') scheduleTwitchTagSuggestions();
+}
+$('twitch-editor').oninput = markTwitchDraft;
+$('twitch-category').addEventListener('change', markTwitchDraft);
+$('twitch-tags-regenerate').onclick = () => scheduleTwitchTagSuggestions(0);
+$('twitch-tags-adopt').onclick = () => {
+  if (liveTagSuggestions.context !== JSON.stringify(twitchTagContext())) return;
+  $('twitch-tags').value = liveTagSuggestions.values.join(', ');
+  $('twitch-tags').dispatchEvent(new Event('input', { bubbles: true }));
+};
 $('twitch-editor').onsubmit = event => { event.preventDefault(); void $('save-twitch').onclick(); };
 $('save-twitch').onclick = async event => {
   event?.preventDefault();
+  if (twitchSavePending) return;
   if (companionMode !== CompanionMode.ONLINE_PC) { note('PC requis pour modifier la chaîne Twitch.'); return; }
-  await ensureTwitchCapabilities();
-  if (moderationCapabilities?.updateChannel === false) { note(`Reconnecte Twitch pour accorder ${moderationCapabilities.requiredScopes?.updateChannel || 'channel:manage:broadcast'}.`); return; }
+  twitchSavePending = true;
+  $('save-twitch').disabled = true;
+  const revision = twitchEditorRevision;
+  const submitted = { ...twitchTagContext(), tags: $('twitch-tags').value.split(',') };
+  // Protect even an unchanged draft while a save is in flight.
+  twitchEditorDirty = true;
   try {
-    const next = await transport.updateTwitch({ title: $('twitch-title').value, gameId: $('twitch-game-id').value, gameName: $('twitch-category').value });
-    twitchEditorDirty = false;
-    render(next); note('Informations Twitch enregistrées.');
-  } catch (error) { note(error.message); }
+    await ensureTwitchCapabilities();
+    if (moderationCapabilities?.updateChannel === false) throw new Error(`Reconnecte Twitch pour accorder ${moderationCapabilities.requiredScopes?.updateChannel || 'channel:manage:broadcast'}.`);
+    const next = await transport.updateTwitch(submitted);
+    const warning = next.twitch?.tagsWarning;
+    if (revision === twitchEditorRevision && !warning) {
+      twitchEditorDirty = false;
+      $('twitch-tags').value = (next.twitch?.tags || []).join(', ');
+    }
+    render(next);
+    $('twitch-tags-status').textContent = warning || 'Informations Twitch enregistrées.';
+    note(warning || 'Informations Twitch enregistrées.');
+  } catch (error) {
+    $('twitch-tags-status').textContent = error.message;
+    note(error.message);
+  } finally {
+    twitchSavePending = false;
+    $('save-twitch').disabled = false;
+  }
 };
 
 $('forget-device').onclick = () => {

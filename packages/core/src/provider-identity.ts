@@ -1,3 +1,4 @@
+import type { CreatePreparation } from './planning.js';
 import { publicationContent } from '../../../apps/mobile/shared/publication-content.js';
 import type { CalendarItem } from '../../contracts/src/index.js';
 
@@ -26,7 +27,7 @@ export function isDefinitiveCreateFailure(error: unknown): boolean {
 export async function createWithDurableIntent<T extends { id: string; revision?: string; fingerprint?: string; calendarId?: string }>(
   item: CalendarItem, provider: 'twitch' | 'google', persist: () => Promise<void>,
   create: (request: CalendarItem) => Promise<T>,
-  prepare?: (request: CalendarItem) => { calendarId?: string } | Promise<{ calendarId?: string }>,
+  prepare?: (request: CalendarItem) => CreatePreparation | Promise<CreatePreparation>,
 ): Promise<T> {
   assertProviderCreationCertain(item, provider);
   const link = (item.providers ??= {})[provider] ??= { status: 'pending' };

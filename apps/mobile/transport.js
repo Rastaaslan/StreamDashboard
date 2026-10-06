@@ -98,6 +98,7 @@ export function createTransport(getServer, getCredential, getGeneration = () => 
     ticket: () => request('/api/v1/remote/ws-ticket', { method: 'POST', headers: authHeaders(), body: '{}' }),
     command: (value, { timeoutMs = REQUEST_TIMEOUT_MS } = {}) => request('/api/v1/commands', { method: 'POST', headers: authHeaders(), body: JSON.stringify(value) }, timeoutMs),
     searchTwitch: query => request(`/api/v1/twitch/categories?q=${encodeURIComponent(query)}`, { headers: { authorization: `Device ${getCredential()}` } }),
+    suggestTwitchTags: value => request('/api/v1/twitch/tags/suggest', { method: 'POST', headers: authHeaders(), body: JSON.stringify(value) }),
     updateTwitch: value => request('/api/v1/twitch/channel', { method: 'POST', headers: authHeaders(), body: JSON.stringify(value) }),
     createPlanning: value => request('/api/v1/planning', { method: 'POST', headers: authHeaders(), body: JSON.stringify(value) }),
     resolvePlanningProvider: (id, provider, strategy, occurrenceKey) => request(`/api/v1/planning/${encodeURIComponent(id)}/conflict/${encodeURIComponent(provider)}`, { method: 'POST', headers: authHeaders(), body: JSON.stringify({ strategy, ...(occurrenceKey !== undefined ? { occurrenceKey } : {}) }) }),

@@ -122,3 +122,20 @@ describe('Google RRULE', () => {
     expect(provider.create).toHaveBeenCalled();
   });
 });
+
+it.each(['unowned', 'ambiguous', 'absent'] as const)('deletion recovery refuses %s Google inventory without mutations', async scenario => {
+  const candidate = remote(scenario === 'unowned' ? { extendedProperties: {} } : {});
+  const request = vi.fn<typeof fetch>(async () => Response.json({ items: scenario === 'absent' ? [] : scenario === 'ambiguous' ? [candidate, { ...candidate, id: 'duplicate' }] : [candidate] }));
+  await expect(client(request).recoverCreation('calendar', input())).rejects.toThrow(/Identité Google non établie/);
+  for (const [, init] of request.mock.calls) expect(init?.method ?? 'GET').toBe('GET');
+});
+
+it('read-only Google recovery selects the exact materialized incarnation among retired identities', async () => {
+  const { googleProjectionLocalId } = await import('../integrations/google-calendar/src/projection.js');
+  const projection = { mode: 'materialized' as const, seriesLocalId: 'series', occurrenceKey: 'series:2030-01-01T12:00:00', creationId: 'current' };
+  const localId = googleProjectionLocalId(projection);
+  const event = (creationId: string) => remote({ id: creationId, extendedProperties: { private: { streamDashboardManaged: 'true', streamDashboardId: localId, streamDashboardProjection: 'materialized', streamDashboardSeriesId: projection.seriesLocalId, streamDashboardOccurrenceKey: projection.occurrenceKey, streamDashboardCreationId: creationId } } });
+  const request = vi.fn<typeof fetch>(async () => Response.json({ items: [event('old'), event('current')] }));
+  expect((await client(request).recoverCreation('calendar', { ...input(), recurrence: undefined, localId, projection })).id).toBe('current');
+  for (const [, init] of request.mock.calls) expect(init?.method ?? 'GET').toBe('GET');
+});

@@ -265,7 +265,8 @@ function sanitizeCalendarItem(value: unknown): CalendarItem | null {
     title,
     startAtUtc,
     endAtUtc,
-    desiredPublication: inferDesiredPublication(value),
+    desiredPublication: value.deletionPending === true ? { local: true, twitch: false, google: false } : inferDesiredPublication(value),
+    ...(value.deletionPending === true ? { deletionPending: true } : {}),
     tags: tagMetadata(value.tags),
     tagPreferences: tagPreferences(value.tagPreferences),
   };
@@ -867,7 +868,7 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
   let stateRevision = 0;
   const temporalPlanning = (from = Date.now() - DAY_MS, to = Date.now() + 730 * DAY_MS) => expandRecurringItems(local.planning, { from, to });
   const nextLive = () => temporalPlanning()
-    .filter(item => !item.allDay && (item.category === 'live' || item.kind === 'LIVE') && Date.parse(item.endAtUtc) > Date.now())
+    .filter(item => !item.deletionPending && !item.allDay && (item.category === 'live' || item.kind === 'LIVE') && Date.parse(item.endAtUtc) > Date.now())
     .sort((left, right) => Date.parse(left.startAtUtc) - Date.parse(right.startAtUtc))[0] ?? null;
   const snapshot = (): DashboardState => {
     const currentRemaining = remaining();
@@ -1064,6 +1065,7 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
 
   const providerAdapters = (): Partial<Record<'twitch' | 'google', PlanningProvider>> => ({
     twitch: twitch.state.connected ? {
+      recoverCreation: async item => { await initializeTwitch(); return twitch.recoverSegmentCreation(item); },
       read: async id => { await initializeTwitch(); return twitch.readSegment(id); },
       create: async item => { await initializeTwitch(); return twitch.createSegment(item); },
       update: async (id, item) => { await initializeTwitch(); return twitch.updateSegment(id, item); },
@@ -1080,6 +1082,12 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
       },
     } : undefined,
     google: google.connected ? {
+      recoverCreation: async item => {
+        const calendarId = item.providers?.google?.calendarId;
+        if (!calendarId) throw new Error('Calendrier Google d’origine introuvable : identité à vérifier avant suppression.');
+        const event = await google.recoverCreation(calendarId, googleEventInput(item));
+        return { id: event.id, revision: event.etag, calendarId, owned: true };
+      },
       prepareCreate: item => {
         const calendarId = item.providers?.google?.calendarId ?? local.google.targetCalendarId;
         if (!calendarId) throw Object.assign(new Error('Choisissez un calendrier Google cible.'), { mutationNotStarted: true });
@@ -1146,6 +1154,14 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
     } : undefined,
   });
   const planning = () => new PlanningOrchestrator(local.planning, providerAdapters(), async items => {
+    for (const removed of local.planning.filter(value => value.deletionPending && !items.some(item => item.id === value.id))) {
+      const revision = (local.companion.eventRevisions[removed.id] ?? 1) + 1;
+      local.companion.eventRevisions[removed.id] = revision;
+      local.companion.tombstones[removed.id] = { id: removed.id, revision, updatedAt: new Date().toISOString() };
+      delete local.companion.eventHistory[removed.id];
+      for (const name of ['twitch', 'google']) delete local.companion.providerWork[`${removed.id}:${name}`];
+      local.companion.serverRevision++;
+    }
     local.planning = items;
     await save();
   });
@@ -2041,6 +2057,7 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
       const provider = String(req.params.provider);
       const id = String(req.params.id);
       if (!['twitch', 'google'].includes(provider)) throw new Error('Provider invalide.');
+      if (!local.planning.some(item => item.id === id) && local.companion.tombstones[id] && !local.companion.providerWork[id + ':' + provider]) { res.json(responseState(req, await changed())); return; }
       await plan(async () => {
         const key = id + ':' + provider;
         const work = local.companion.providerWork[key];
@@ -2172,6 +2189,7 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
     try {
       const id = String(req.params.id);
       const item = local.planning.find(value => value.id === id);
+      if (!item && local.companion.tombstones[id]) { res.json(responseState(req, await changed())); return; }
       if (!item) { const error = new Error('Événement introuvable.'); error.name = 'NOT_FOUND'; throw error; }
       const explicit = object(req.body?.destinations);
       const destinations = explicit ? {
@@ -2188,7 +2206,7 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
       const oldRevision = local.companion.eventRevisions[id] ?? 1;
       await plan(async () => planning().remove(id, destinations));
       local.companion.eventRevisions[id] = oldRevision + 1;
-      local.companion.tombstones[id] = { id, revision: oldRevision + 1, updatedAt: new Date().toISOString() };
+      if (!local.planning.some(value => value.id === id)) local.companion.tombstones[id] = { id, revision: oldRevision + 1, updatedAt: new Date().toISOString() };
       delete local.companion.eventHistory[id]; local.companion.serverRevision++;
       invalidatePreflight();
       res.json(responseState(req, await changed()));
@@ -2329,6 +2347,8 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
   app.post(['/api/twitch/sync', '/api/v1/twitch/sync'], async (_req, res, next) => {
     try {
       res.json(await providerSync('twitch', async () => {
+        const deleting = local.planning.filter(item => item.deletionPending).map(item => item.id);
+        if (deleting.length) await planning().refreshTwitch(Date.now(), deleting);
         local.planning = await twitch.sync(structuredClone(local.planning));
         await planning().refreshTwitch();
         local.twitchLastSyncedAt = new Date().toISOString();
@@ -2455,6 +2475,7 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
         const timeMax = new Date(Date.now() + 730 * DAY_MS).toISOString();
         const remote = await google.events(calendarId, { timeMin, timeMax });
         for (const item of local.planning) {
+          if (item.deletionPending) continue;
           const link = item.providers?.google;
           if (!item.recurrence || !link?.remoteId || (link.calendarId && link.calendarId !== calendarId) || remote.some(event => event.id === link.remoteId)) continue;
           try { remote.push(await google.event(calendarId, link.remoteId)); }
@@ -2475,6 +2496,7 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
         });
 
         for (const item of local.planning) {
+          if (item.deletionPending) continue;
           const link = item.providers?.google;
           if (!link?.remoteId || (link.calendarId && link.calendarId !== calendarId) || (!item.recurrence && !overlapsWindow(item, timeMin, timeMax))) continue;
           const event = remoteById.get(link.remoteId);
@@ -2518,6 +2540,7 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
           })) continue;
           const managedLocal = event.managed ? localById.get(event.localId) : undefined;
           if (managedLocal) {
+            if (managedLocal.deletionPending) continue;
             managedLocal.providers ??= {};
             const existingLink = managedLocal.providers.google;
             if (managedLocal.conflict?.provider === 'google') continue;

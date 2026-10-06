@@ -407,6 +407,15 @@ export class TwitchClient {
     }
   }
 
+  async recoverSegmentCreation(_item: CalendarItem): Promise<never> {
+    // Twitch has no application-owned identity marker or idempotency key on
+    // schedule segments. Neither content nor an inventory delta attributes a
+    // segment to our POST: another client can create the same content after a
+    // request that never reached Twitch. Only a recorded CREATE response can
+    // establish the remote ID; those acknowledged identities use normal DELETE.
+    throw new Error('Identité Twitch non prouvée : réponse CREATE sans identifiant confirmé. Vérifiez le planning dans Twitch ; la suppression reste en attente sans toucher aux segments candidats.');
+  }
+
   async createSegment(item: CalendarItem) {
     const generation = this.generation;
     try {
@@ -510,7 +519,7 @@ export class TwitchClient {
 
       for (const item of merged) {
         const remoteId = item.providers?.twitch?.remoteId ?? item.twitchSegmentId;
-        if (item.ownership !== 'LOCAL' || !remoteId || remoteIds.has(remoteId)) continue;
+        if (item.deletionPending || item.ownership !== 'LOCAL' || !remoteId || remoteIds.has(remoteId)) continue;
         missingLocalIds.add(item.id);
         item.syncError = 'Segment absent du planning Twitch. Utilisez le retry explicite pour le republier.';
         item.providers ??= {};
@@ -523,13 +532,22 @@ export class TwitchClient {
         delete item.twitchSegmentId;
       }
 
+      const deletingRequests = items.filter(item => item.deletionPending).flatMap(item => {
+        const link = item.providers?.twitch;
+        return [link, ...Object.values(link?.projections ?? {})].flatMap(identity => identity?.uncertainCreate
+          ? [identity.uncertainCreate.event as unknown as CalendarItem] : []);
+      });
       for (const segment of segments) {
+        // An unresolved deletion journal must not return as an imported local row.
+        if (deletingRequests.some(request => this.sameContent(request, segment))) continue;
         if (projectionIds.has(segment.id)) continue;
         const existingById = linkedByRemoteId.get(segment.id);
+        if (existingById?.deletionPending) continue;
         if (existingById && (needsTwitchMaterialization(existingById) || existingById.providers?.twitch?.projections)) continue;
         const recoveredLocal = existingById ?? merged.find(item =>
           item.ownership !== 'EXTERNAL'
           && !needsTwitchMaterialization(item) && !item.providers?.twitch?.projections
+          && !item.deletionPending
           && item.desiredPublication?.twitch === true
           && !item.providers?.twitch?.remoteId
           && !item.twitchSegmentId
@@ -606,6 +624,7 @@ export class TwitchClient {
 
       for (const item of merged.filter(item =>
         (item.category === 'live' || item.kind === 'LIVE')
+        && !item.deletionPending
         && item.desiredPublication?.twitch === true
         && !needsTwitchMaterialization(item) && !item.providers?.twitch?.projections
         && !item.twitchSegmentId

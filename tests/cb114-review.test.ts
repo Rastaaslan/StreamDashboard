@@ -200,7 +200,7 @@ it('409 followed by an unavailable GET retains the same uncertain CREATE instead
 it.each(['withdraw', 'cancel', 'window', 'companion'] as const)('Google DELETE 412 for %s supports durable local resolution from retained inventory', async mode => {
   const ctx = await runtime(); const { id, key } = await projected(ctx);
   const remoteId = [...ctx.google.keys()][0]; ctx.google.get(remoteId).etag = 'remote-edited'; ctx.google.get(remoteId).summary = 'Remote edit';
-  if (mode === 'withdraw') await ctx.request(`planning/${id}`, { local: true, google: true }, 'DELETE', false);
+  if (mode === 'withdraw') await ctx.request(`planning/${id}`, { destinations: { local: false, google: true } }, 'DELETE');
   else if (mode === 'cancel') await ctx.request(`planning/${id}/occurrence`, { occurrenceKey: key }, 'DELETE');
   else if (mode === 'window') vi.spyOn(Date, 'now').mockReturnValue(Date.now() + 2 * 86400000);
   else {
@@ -286,7 +286,7 @@ it.each([false, true].flatMap(owned => (['local', 'remote'] as const).map(strate
     remote.etag = 'v2'; remote.summary = 'Remote retained';
     const key = `${item.localId}:${ctx.event.startAtUtc.slice(0, 19)}`;
     await ctx.request(`planning/${id}/occurrence`, { occurrenceKey: key, patch: { title: 'Local exception' } }, 'PUT');
-    await ctx.request(`planning/${id}`, { local: true, google: true }, 'DELETE', false);
+    await ctx.request(`planning/${id}`, { destinations: { local: false, google: true } }, 'DELETE');
     expect(server!.state().planning[0].providers!.google!.status).toBe('conflict');
     expect(ctx.mutations.some(value => value.method === 'DELETE')).toBe(true);
     await ctx.request('google/target', { calendarId: 'B' }, 'PUT');
@@ -308,7 +308,7 @@ it.each([false, true].flatMap(owned => (['local', 'remote'] as const).map(strate
     if (strategy === 'remote') {
       expect(ctx.google.get(remoteKey)).toBe(remote);
       expect(server!.state().planning[0].providers!.google).toMatchObject({ nativeRetained: true, status: 'synced' });
-      await ctx.request(`planning/${id}`, { local: true, google: true }, 'DELETE');
+      await ctx.request(`planning/${id}`, { destinations: { local: false, google: true } }, 'DELETE');
     }
     expect(ctx.google.size).toBe(0);
   });

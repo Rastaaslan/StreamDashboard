@@ -15,6 +15,7 @@ function request(event: CalendarItem, link: ProviderLink, name: 'twitch' | 'goog
 
 export function reconcileProviderProjection(...args: Parameters<typeof reconcileProjection>): Promise<boolean> {
   const [item, original, save, options] = args;
+  if (item.deletionPending) return Promise.resolve(true);
   if (!options.materialized && !item.providers?.[options.name]?.projections && !item.providers?.[options.name]?.nativeReplacementRequested
     && !(options.name === 'google' && item.providers?.google?.nativeRetained)) return Promise.resolve(false);
   // Persistence stays serialized even while independent remote identities run concurrently.

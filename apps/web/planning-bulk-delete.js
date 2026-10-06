@@ -1,3 +1,4 @@
+import { openDialog, closeDialog, dialogCompletion } from './dialog-drafts.js';
 /** Shared desktop period deletion dialog. The server owns selection and confirmation. */
 export function openBulkDelete({ onComplete = () => {}, request = api } = {}) {
   const existing = document.querySelector('dialog[data-bulk-delete][open]');
@@ -28,19 +29,19 @@ export function openBulkDelete({ onComplete = () => {}, request = api } = {}) {
   for (const name of ['start', 'end', 'twitch', 'google']) fields[name].addEventListener('input', invalidate);
   fields.confirm.onchange = () => { remove.disabled = busy || !preview?.count || !fields.confirm.checked; };
   const setBusy = value => { busy = value; for (const name of ['start', 'end', 'twitch', 'google']) fields[name].disabled = value; form.querySelector('[type=submit]').disabled = value; fields.confirm.disabled = value || !preview?.count; remove.disabled = value || !preview?.count || !fields.confirm.checked; };
-  dialog.querySelector('[data-close]').onclick = () => { if (!busy) dialog.close(); };
+  dialog.querySelector('[data-close]').onclick = () => { if (!busy) closeDialog(dialog); };
   dialog.addEventListener('cancel', event => { if (busy) event.preventDefault(); });
   dialog.addEventListener('close', () => dialog.remove());
   form.onsubmit = async event => {
     event.preventDefault();
     if (busy || !form.reportValidity()) return;
-    invalidate(); result.textContent = ''; const current = generation;
+    invalidate(); result.textContent = ''; const current = generation, complete = dialogCompletion(dialog);
     try {
       const start = new Date(fields.start.value).toISOString(), end = new Date(fields.end.value).toISOString();
       if (start >= end) throw new Error('Le début doit précéder la fin.');
       setBusy(true);
       const response = await request('/api/v1/planning/bulk-delete/preview', { start, end, destinations: { twitch: fields.twitch.checked, google: fields.google.checked } });
-      if (current !== generation || !dialog.isConnected) return;
+      if (current !== generation || !complete()) return;
       preview = response;
       const heading = document.createElement('p');
       heading.textContent = `${preview.count} événement(s) à supprimer — destinations : local${preview.destinations.twitch ? ', Twitch' : ''}${preview.destinations.google ? ', Google Calendar' : ''}.`;
@@ -49,22 +50,24 @@ export function openBulkDelete({ onComplete = () => {}, request = api } = {}) {
       for (const item of preview.items) { const row = document.createElement('li'); row.textContent = `${item.title} — ${new Date(item.startAtUtc).toLocaleString()} → ${new Date(item.endAtUtc).toLocaleString()}`; list.append(row); }
       previewHost.append(list);
       for (const item of preview.excluded) { const row = document.createElement('p'); row.textContent = `Exclu : ${item.title} — ${item.reason}`; previewHost.append(row); }
-    } catch (error) { result.textContent = error.message; }
-    finally { setBusy(false); }
+    } catch (error) { if (complete()) result.textContent = error.message; }
+    finally { if (complete()) setBusy(false); }
   };
   remove.onclick = async () => {
     if (busy || !preview?.count || !fields.confirm.checked) return;
     setBusy(true);
+    const complete = dialogCompletion(dialog);
     try {
       const response = await request('/api/v1/planning/bulk-delete/confirm', { token: preview.token, confirm: true });
+      if (!complete()) return;
       invalidate();
       result.textContent = `${response.deleted.length} événement(s) supprimé(s). ${response.failed.length} échec(s).`;
       for (const failure of response.failed) { const row = document.createElement('p'); row.textContent = `${failure.title} : ${failure.error} Refaire l’aperçu pour réessayer.`; result.append(row); }
       await onComplete();
-    } catch (error) { invalidate(); result.textContent = error.message; }
-    finally { setBusy(false); }
+    } catch (error) { if (complete()) { invalidate(); result.textContent = error.message; } }
+    finally { if (dialog.open && dialog.isConnected) setBusy(false); }
   };
-  dialog.showModal();
+  openDialog(dialog);
   return dialog;
 }
 async function api(path, body) {
