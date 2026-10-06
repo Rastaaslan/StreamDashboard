@@ -116,12 +116,12 @@ describe('LAN HTTP and WebSocket integration', () => {
     });
     expect(pairResponse.status).toBe(201);
     const device = await pairResponse.json();
-    const headers = { ...json, authorization: "[REDACTED]" ${device.credential}` };
+    const headers = { ...json, authorization: `Device ${device.credential}` };
     const body = JSON.stringify({ title: 'Spooktober', gameId: '', gameName: '' });
     const suggest = (base: string, requestHeaders: Record<string, string>) => fetch(`${base}/api/v1/twitch/tags/suggest`, {
       method: 'POST', headers: requestHeaders, body,
     });
-    for (const requestHeaders of [json, { ...json, authorization: "[REDACTED]" }]) {
+    for (const requestHeaders of [json, { ...json, authorization: 'Device invalid' }]) {
       const denied = await suggest(urls.remote, requestHeaders);
       expect(denied.status).toBe(401);
       expect(await denied.json()).toMatchObject({ error: { code: 'DEVICE_AUTH_REQUIRED' } });
