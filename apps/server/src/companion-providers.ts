@@ -19,6 +19,7 @@ export async function drainCompanionProviders(
     if (onlyKey && onlyKey !== key) continue;
     if (work.status === 'error') continue;
     const item = planning.find(item => item.id === work.item.id) ?? work.item;
+    if (item.deletionPending) continue; // Whole-series deletion owns this journal until completion.
     item.providers ??= {};
     const link = item.providers[work.provider] ??= { status: 'pending' };
     if (work.provider === 'google' && work.action === 'publish') delete link.nativeRetained;

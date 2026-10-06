@@ -124,7 +124,8 @@ export interface ProviderLink {
   fingerprint?: string;
   publishedContent?: string;
   createNotStarted?: boolean;
-  uncertainCreate?: { event: Record<string, unknown>; publishedContent: string } | null;
+  /** Legacy recovery inventories may be retained for diagnostics; they are NOT ownership evidence. */
+  uncertainCreate?: { event: Record<string, unknown>; publishedContent: string; recovery?: { accountId: string; remoteIds: string[] } } | null;
   lastSyncedAt?: string;
   lastError?: string;
   deletedRemotely?: boolean;
@@ -153,6 +154,8 @@ export interface TagMetadata { values: string[]; source: 'manual' | 'generated';
 export interface TagPreferences { automatic?: boolean; language?: string; preferredTags?: string[] }
 
 export interface CalendarItem {
+  /** Durable whole-series deletion intent; publication must remain disabled. */
+  deletionPending?: boolean;
   projection?: RecurrenceProjectionIdentity;
   tags?: TagMetadata;
   tagPreferences?: TagPreferences;

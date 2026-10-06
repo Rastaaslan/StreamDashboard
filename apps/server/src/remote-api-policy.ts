@@ -14,7 +14,7 @@ const POST_EXACT = new Set([
   '/v1/soundboard/play','/v1/soundboard/volume','/v1/soundboard/stop',
   '/v1/twitch/device','/v1/twitch/disconnect','/v1/google/disconnect',
   '/v1/automations','/v1/automations/test',
-  '/v1/twitch/channel','/v1/twitch/chat/messages','/v1/twitch/clips','/v1/twitch/moderation/bans',
+  '/v1/twitch/channel','/v1/twitch/tags/suggest','/v1/twitch/chat/messages','/v1/twitch/clips','/v1/twitch/moderation/bans',
   '/v1/planning','/v1/companion/sync','/v1/discord/planning','/v1/streamer-pings/ack-all',
 ]);
 

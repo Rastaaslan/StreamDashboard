@@ -142,12 +142,19 @@ test('Server capabilities survive remote projection and reauthorization updates 
   const { stripTypeScriptTypes } = await import('node:module');
   const ui = dom();
   const calls = [];
+  const submissions = [];
   const context = vm.createContext({ ...ui, structuredClone, CompanionMode, companionMode: CompanionMode.ONLINE_PC, state: null,
     next: null, updatePlanningProviderReadiness() {}, loadModerationCapabilities() {}, ensureTwitchCapabilities: async () => {}, note() {},
-    transport: { sendTwitchChat: async () => calls.push('chat'), updateTwitch: async () => calls.push('channel') }, render() {} });
+    transport: { sendTwitchChat: async () => calls.push('chat'), updateTwitch: async payload => {
+      calls.push('channel');
+      submissions.push(JSON.parse(JSON.stringify(payload)));
+      return { twitch: { tags: [] } };
+    } }, render() {} });
   const remote = section(read('apps/server/src/remote-policy.ts'), 'export function toRemoteDashboardState', 'function denied');
   vm.runInContext(stripTypeScriptTypes(remote.replace('export function', 'function')), context);
   vm.runInContext(section(mobile, 'let moderationCapabilities = null;', 'async function loadModerationCapabilities'), context);
+  vm.runInContext(section(mobile, 'let twitchEditorDirty = false;', 'const companion ='), context);
+  vm.runInContext(section(mobile, 'function twitchTagContext()', 'function scheduleTwitchTagSuggestions'), context);
   vm.runInContext(section(mobile, "$('save-twitch').onclick =", "$('forget-device').onclick"), context);
   vm.runInContext(section(mobile, "$('chat-form').onsubmit", "$('unban-user').onclick"), context);
   const capabilities = { chatWrite: false, createClip: false, updateChannel: false, chatters: false, schedule: true, requiredScopes: {} };
@@ -172,6 +179,7 @@ test('Server capabilities survive remote projection and reauthorization updates 
   await ui.$('chat-form').onsubmit({ preventDefault() {} });
   await ui.$('save-twitch').onclick();
   assert.deepEqual(calls, ['chat','channel']);
+  assert.deepEqual(submissions, [{ title: '', gameId: '', gameName: '', tags: [''] }]);
   context.companionMode = CompanionMode.ONLINE_STANDALONE;
   vm.runInContext('applyTwitchActionCapabilities()', context);
   for (const id of ['chat-message','live-clip','create-clip','save-twitch','more-chatters']) assert.equal(ui.$(id).disabled, true, id);

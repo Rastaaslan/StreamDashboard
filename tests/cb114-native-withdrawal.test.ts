@@ -29,11 +29,11 @@ it('legacy Google conversion refuses automatic deletion but explicit withdrawal 
   expect(provider.delete).not.toHaveBeenCalled(); expect(provider.create).not.toHaveBeenCalled();
   expect(disk[0].providers!.google!.projections).toEqual({});
   vi.mocked(provider.delete).mockRejectedValueOnce(new Error('offline'));
-  await expect(restart().remove('series', { local: true, google: true })).rejects.toThrow('incomplète');
+  await restart().remove('series', { local: false, google: true });
   expect(disk[0].providers!.google).toMatchObject({ remoteId: 'legacy', calendarId: 'A', remoteRevision: 'etag', nativeWithdrawalRequested: true, projections: {} });
   await restart().retry('series', 'google');
   expect(remote.size).toBe(0); expect(provider.create).not.toHaveBeenCalled();
-  await restart().remove('series', { local: true, google: true }); expect(disk).toEqual([]);
+  await restart().remove('series', { local: true }); expect(disk).toEqual([]);
 });
 
 it.each([false, true])('companion Google native ownership converts and cleans up after restart; legacy=%s', async legacy => {
@@ -81,7 +81,7 @@ it.each([false, true].flatMap(owned => (['local', 'remote'] as const).map(strate
     provider.read = vi.fn(async () => ({ revision, remote: { title: 'Remote chosen', startAtUtc: item.startAtUtc, endAtUtc: item.endAtUtc } }));
     // Legacy conversion creates the journal but must not delete the native link.
     if (!owned) await restart().refreshTwitch();
-    await expect(restart().remove('series', { local: true, google: true })).rejects.toThrow('incomplète');
+    await restart().remove('series', { local: false, google: true });
     const calls = vi.mocked(provider.delete).mock.calls.length;
     await restart().refreshTwitch(); await expect(restart().retry('series', 'google')).rejects.toThrow();
     expect(provider.delete).toHaveBeenCalledTimes(calls);
@@ -93,7 +93,7 @@ it.each([false, true].flatMap(owned => (['local', 'remote'] as const).map(strate
       expect(disk[0].desiredPublication!.google).toBe(true);
       expect(disk[0].providers!.google).toMatchObject({ status: 'synced', remoteId: 'native', remoteRevision: 'v2', nativeRetained: true });
       expect(disk[0].providers!.google!.nativeWithdrawalRequested).toBeUndefined();
-      await restart().remove('series', { local: true, google: true });
+      await restart().remove('series', { local: false, google: true });
     }
     expect(remote.size).toBe(0); expect(provider.update).not.toHaveBeenCalled(); expect(provider.create).not.toHaveBeenCalled();
   });

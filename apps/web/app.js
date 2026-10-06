@@ -1,4 +1,4 @@
-import { beginDialogDraft, dialogCreation, dialogCompletion, draftRevision, ownsKeyboard } from './dialog-drafts.js';
+import { openDialog, closeDialog, dialogCreation, dialogCompletion, draftRevision, ownsKeyboard } from './dialog-drafts.js';
 import { normalizeCategoryQuery, rankCategories, rememberCategory } from '../mobile/twitch-category.js';
 import { expandRecurringItems, recurrenceSummary } from '../mobile/shared/recurrence.js';
 
@@ -339,7 +339,7 @@ function render() {
   const view = views[page] || overview;
   $('#view').innerHTML = view() + onboarding();
   bindForms();
-  const onboardingDialog = $('#onboarding'); if (onboardingDialog && !onboardingDialog.open) onboardingDialog.showModal();
+  const onboardingDialog = $('#onboarding'); if (onboardingDialog && !onboardingDialog.open) openDialog(onboardingDialog);
   document.querySelectorAll('[data-preparation-view]').forEach(button => { button.onclick = () => { preparationView = button.dataset.preparationView; localStorage.setItem('streamdashboard.desktopPreparationView', preparationView); render(); }; });
 }
 
@@ -480,8 +480,8 @@ function bindForms() {
   const profileForm = $('#profile-form');
   if (profileForm) { profileForm.oninput = () => { const form = new FormData(profileForm); productProfile.appearance = { theme: form.get('theme'), preset: form.get('preset'), accent: form.get('accentColor'), density: form.get('density'), radius: form.get('radius'), textScale: form.get('textScale') }; applyProductAppearance(); }; profileForm.onsubmit = async event => { event.preventDefault(); const form = new FormData(profileForm); productProfile.profile.displayName = String(form.get('displayName') || 'Streamer'); productProfile.profile.channelName = String(form.get('channelName') || ''); for (const module of moduleStates) productProfile.modules[module.id] = form.get(`module-${module.id}`) === 'on'; for (const module of moduleStates.filter(item => productProfile.modules[item.id])) for (const dependency of module.dependencies) productProfile.modules[dependency] = true; for (const id of Object.keys(productProfile.providers)) productProfile.providers[id].mode = form.get(`provider-${id}`); const result = await request('/api/v1/profile', 'PUT', productProfile); productProfile = result.profile; moduleStates = result.modules; ensureEnabledPage(); nav(); render(); toast('Profil enregistré'); }; }
   const profileImport = $('#profile-import'); if (profileImport) profileImport.onchange = async () => { const file = profileImport.files?.[0]; if (!file) return; if (!confirm('Valider puis importer ce profil ? Une sauvegarde sera créée.')) return; try { const result = await request('/api/v1/profile/import', 'POST', { content: await file.text() }); productProfile = result.profile; moduleStates = result.modules; nav(); render(); toast(`Profil importé${result.backup ? ' · sauvegarde créée' : ''}`); } catch (error) { toast(error.message, true); } };
-  const onboardingForm = $('#onboarding-form'); if (onboardingForm) onboardingForm.onsubmit = async event => { event.preventDefault(); const form = new FormData(onboardingForm); if (onboardingStep === 1) { productProfile.profile.displayName = String(form.get('displayName') || 'Streamer'); productProfile.profile.channelName = String(form.get('channelName') || ''); } if (onboardingStep === 2) for (const module of moduleStates.filter(item => !['googleCalendar','discord','streamlabs','wizebot'].includes(item.id))) productProfile.modules[module.id] = form.get(`module-${module.id}`) === 'on'; if (onboardingStep === 5) for (const id of ['googleCalendar','discord','streamlabs','wizebot']) productProfile.modules[id] = form.get(`module-${id}`) === 'on'; if (onboardingStep === 6) Object.assign(productProfile.appearance, { theme: form.get('theme'), accent: form.get('accentColor'), density: form.get('density') }); if (onboardingStep < 7) { onboardingStep += 1; applyProductAppearance(); $('#onboarding').close(); render(); return; } for (const module of moduleStates.filter(item => productProfile.modules[item.id])) for (const dependency of module.dependencies) productProfile.modules[dependency] = true; productProfile.onboarding.completed = true; await request('/api/v1/profile', 'PUT', productProfile); $('#onboarding').close(); page = 'settings'; nav(); render(); };
-  document.querySelector('[data-onboarding="previous"]')?.addEventListener('click', () => { onboardingStep = Math.max(0, onboardingStep - 1); $('#onboarding').close(); render(); }); document.querySelector('[data-onboarding="later"]')?.addEventListener('click', async () => { productProfile.onboarding.completed = true; await request('/api/v1/profile', 'PUT', productProfile); $('#onboarding').close(); toast('Assistant reporté · réglages disponibles à tout moment'); });
+  const onboardingForm = $('#onboarding-form'); if (onboardingForm) onboardingForm.onsubmit = async event => { event.preventDefault(); const form = new FormData(onboardingForm); if (onboardingStep === 1) { productProfile.profile.displayName = String(form.get('displayName') || 'Streamer'); productProfile.profile.channelName = String(form.get('channelName') || ''); } if (onboardingStep === 2) for (const module of moduleStates.filter(item => !['googleCalendar','discord','streamlabs','wizebot'].includes(item.id))) productProfile.modules[module.id] = form.get(`module-${module.id}`) === 'on'; if (onboardingStep === 5) for (const id of ['googleCalendar','discord','streamlabs','wizebot']) productProfile.modules[id] = form.get(`module-${id}`) === 'on'; if (onboardingStep === 6) Object.assign(productProfile.appearance, { theme: form.get('theme'), accent: form.get('accentColor'), density: form.get('density') }); if (onboardingStep < 7) { onboardingStep += 1; applyProductAppearance(); closeDialog($('#onboarding')); render(); return; } for (const module of moduleStates.filter(item => productProfile.modules[item.id])) for (const dependency of module.dependencies) productProfile.modules[dependency] = true; productProfile.onboarding.completed = true; await request('/api/v1/profile', 'PUT', productProfile); closeDialog($('#onboarding')); page = 'settings'; nav(); render(); };
+  document.querySelector('[data-onboarding="previous"]')?.addEventListener('click', () => { onboardingStep = Math.max(0, onboardingStep - 1); closeDialog($('#onboarding')); render(); }); document.querySelector('[data-onboarding="later"]')?.addEventListener('click', async () => { productProfile.onboarding.completed = true; await request('/api/v1/profile', 'PUT', productProfile); closeDialog($('#onboarding')); toast('Assistant reporté · réglages disponibles à tout moment'); });
   const streamlabsForm = $('#streamlabs-form');
   if (streamlabsForm) streamlabsForm.onsubmit = async event => {
     event.preventDefault();
@@ -513,8 +513,8 @@ function bindForms() {
     eventForm.onsubmit = async event => {
       event.preventDefault();
       const complete = dialogCompletion(eventDialog);
-      const creation = !editingEventId && !editingOccurrence ? dialogCreation(eventDialog) : null;
-      if (!editingEventId && !editingOccurrence && !creation) return;
+      const creation = dialogCreation(eventDialog);
+      if (!creation) return;
       const form = new FormData(eventForm);
       const allDay = form.get('allDay') === 'on';
       const startValue = String(form.get('start') || '');
@@ -559,7 +559,7 @@ function bindForms() {
           eventForm.dataset.dirty = 'false';
           editingEventId = null;
           editingOccurrence = null;
-          eventDialog.close();
+          closeDialog(eventDialog);
         }
         applyStateUpdate(result, true);
         toast('Planning enregistré');
@@ -652,7 +652,7 @@ window.openEvent = () => {
   form.elements.twitchCategoryId.value = '';
   form.elements.twitchCategoryName.value = '';
   configureEventDateInputs(false, false);
-  beginDialogDraft(dialog);dialog.showModal();
+  openDialog(dialog);
 };
 window.editEvent = id => {
   const item = state.planning.find(value => value.id === id);
@@ -675,7 +675,7 @@ window.editEvent = id => {
   form.elements.publishGoogle.checked = item.desiredPublication?.google === true;
   form.elements.recurrence.value = item.recurrence ? `${item.recurrence.frequency}-${item.recurrence.interval}` : '';
   form.elements.recurrenceUntil.value = item.recurrence?.until ? item.recurrence.until.slice(0, 10) : '';
-  beginDialogDraft(dialog);dialog.showModal();
+  openDialog(dialog);
 };
 window.editOccurrence = id => {
   const rows = expandRecurringItems(state.planning, { from: Date.now() - 366 * 86400000, to: Date.now() + 730 * 86400000 });
@@ -885,7 +885,7 @@ document.addEventListener('click', event => {
     'resolve-conflict': () => window.resolveConflict(value, element.dataset.provider, element.dataset.strategy, element.dataset.occurrenceKey),
     'remove-event': () => window.removeEvent(value),
     'remove-occurrence': () => window.removeOccurrence(value),
-    'close-dialog': () => { resetEventDialogState(); element.closest('dialog')?.close(); },
+    'close-dialog': () => { resetEventDialogState(); closeDialog(element.closest('dialog')); },
     'open-logs': () => window.streamDashboardDesktop?.openLogs(),
     'test-obs': window.testObs,
     'save-discord-token': window.saveDiscordToken,

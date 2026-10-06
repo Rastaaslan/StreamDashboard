@@ -106,6 +106,45 @@ describe('LAN HTTP and WebSocket integration', () => {
     expect((await fetch(`${urls.remote}/api/v1/remote/ws-ticket`, { method: 'POST', headers })).status).toBe(401);
   });
 
+  it('allows Live tag suggestions over LAN only for an authenticated paired device', async () => {
+    dataDir = await mkdtemp(path.resolve('.remote-lan-test-'));
+    const urls = await boot();
+    const pairingResponse = await fetch(`${urls.local}/api/v1/remote/pairing`, { method: 'POST' });
+    expect(pairingResponse.status).toBe(201);
+    const pairResponse = await fetch(`${urls.remote}/api/v1/remote/pair`, {
+      method: 'POST', headers: json, body: JSON.stringify(await pairingResponse.json()),
+    });
+    expect(pairResponse.status).toBe(201);
+    const device = await pairResponse.json();
+    const headers = { ...json, authorization: "[REDACTED]" ${device.credential}` };
+    const body = JSON.stringify({ title: 'Spooktober', gameId: '', gameName: '' });
+    const suggest = (base: string, requestHeaders: Record<string, string>) => fetch(`${base}/api/v1/twitch/tags/suggest`, {
+      method: 'POST', headers: requestHeaders, body,
+    });
+    for (const requestHeaders of [json, { ...json, authorization: "[REDACTED]" }]) {
+      const denied = await suggest(urls.remote, requestHeaders);
+      expect(denied.status).toBe(401);
+      expect(await denied.json()).toMatchObject({ error: { code: 'DEVICE_AUTH_REQUIRED' } });
+    }
+    const response = await suggest(urls.remote, headers);
+    expect(response.status).toBe(200);
+    const result = await response.json();
+    expect(result.tags.values).toContain('Halloween');
+    const desktop = await suggest(urls.local, json);
+    expect(desktop.status).toBe(200);
+    expect(result.tags.values).toEqual((await desktop.json()).tags.values);
+    // The allowlist addition must not grant other methods or adjacent endpoints.
+    for (const [method, route] of [['GET', 'twitch/tags/suggest'], ['POST', 'twitch/sync']]) {
+      const denied = await fetch(`${urls.remote}/api/v1/${route}`, { method, headers });
+      expect(denied.status).toBe(403);
+      expect(await denied.json()).toMatchObject({ error: { code: 'REMOTE_SCOPE_DENIED' } });
+    }
+    expect((await fetch(`${urls.local}/api/v1/remote/devices/${device.deviceId}`, { method: 'DELETE' })).status).toBe(204);
+    const revoked = await suggest(urls.remote, headers);
+    expect(revoked.status).toBe(401);
+    expect(await revoked.json()).toMatchObject({ error: { code: 'DEVICE_AUTH_REQUIRED' } });
+  });
+
   it('refreshes LAN diagnostics and accepted hosts when Wi-Fi is replaced by Ethernet', async () => {
     dataDir = await mkdtemp(path.resolve('.remote-lan-test-'));
     const urls = await boot();

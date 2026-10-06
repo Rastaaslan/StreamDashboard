@@ -1,3 +1,4 @@
+import { deleteSeriesProjections, recoverSeriesDeletionIdentities } from './series-deletion.js';
 import { reconcileGoogleProjection, needsGoogleMaterialization, resolveGoogleOccurrenceConflict } from '../../../integrations/google-calendar/src/projection.js';
 import { reconcileTwitchProjection, needsTwitchMaterialization, resolveTwitchOccurrenceConflict } from '../../../integrations/twitch/src/projection.js';
 import { assertTwitchRecurrence } from '../../../integrations/twitch/src/recurrence.js';
@@ -6,9 +7,12 @@ import { assertProviderCreationCertain, createWithDurableIntent } from './provid
 import type { CalendarItem, ProviderLink } from '../../contracts/src/index.js';
 
 export type ProviderName = 'twitch' | 'google';
+export interface CreatePreparation { calendarId?: string }
 export interface PlanningProvider {
   /** Resolve the immutable destination before persisting a CREATE intent. No remote mutation. */
-  prepareCreate?(item: CalendarItem): { calendarId?: string } | Promise<{ calendarId?: string }>;
+  prepareCreate?(item: CalendarItem): CreatePreparation | Promise<CreatePreparation>;
+  /** Read-only lookup of a durable lost CREATE; never creates or adopts unowned objects. */
+  recoverCreation?(item: CalendarItem): Promise<{ id: string; owned: true; revision?: string; fingerprint?: string; calendarId?: string }>;
   read?(id: string, item: CalendarItem, options?: { resolveConflict?: boolean }): Promise<{ remote?: NonNullable<CalendarItem['conflict']>['remote']; revision?: string; fingerprint?: string; deleted?: boolean }>;
   create(item: CalendarItem): Promise<{ id: string; revision?: string; calendarId?: string; fingerprint?: string; owned?: boolean }>;
   update(id: string, item: CalendarItem, revision?: string): Promise<{ revision?: string; fingerprint?: string }>;
@@ -43,7 +47,11 @@ export class PlanningOrchestrator {
 
   refreshTwitch(now = Date.now(), ids?: string[]) {
     return this.serial(async () => {
+      for (const item of this.items.filter(item => item.deletionPending && (!ids || ids.includes(item.id)))) {
+        await recoverSeriesDeletionIdentities(item, this.providers, () => this.persist(this.items));
+      }
       for (const item of this.items.filter(item => !ids || ids.includes(item.id))) {
+        if (item.deletionPending) continue;
         const transitioning = (item.providers?.twitch?.projectionMode === 'materialized' || Boolean(item.providers?.twitch?.nativeReplacementRequested)) && !needsTwitchMaterialization(item);
         const handled = await reconcileTwitchProjection(item, this.providers.twitch, () => this.persist(this.items), { now });
         if (!handled && transitioning && item.ownership === 'LOCAL' && item.desiredPublication?.twitch
@@ -52,6 +60,7 @@ export class PlanningOrchestrator {
         }
       }
       for (const item of this.items.filter(item => !ids || ids.includes(item.id))) {
+        if (item.deletionPending) continue;
         const transitioning = item.providers?.google?.projectionMode === 'materialized' && !needsGoogleMaterialization(item);
         const handled = await reconcileGoogleProjection(item, this.providers.google, () => this.persist(this.items), { now });
         if (!handled && transitioning && item.ownership === 'LOCAL' && item.desiredPublication?.google && !this.remoteId(item, 'google')) await this.publishOne(item, 'google');
@@ -88,6 +97,7 @@ export class PlanningOrchestrator {
   ) {
     return this.serial(async () => {
       const item = this.required(id);
+      if (item.deletionPending) throw new Error('Suppression de série en attente. Réessayez la suppression.');
       const twitchLink = item.providers?.twitch;
       const next = { ...item, ...changes };
       if (twitchLink?.remoteId && twitchLink.projectionOwned && twitchLink.projectionMode === 'native'
@@ -113,7 +123,17 @@ export class PlanningOrchestrator {
 
   remove(id: string, destinations: { local?: boolean; twitch?: boolean; google?: boolean; confirmRecurring?: boolean }) {
     return this.serial(async () => {
-      const item = this.required(id);
+      const item = this.items.find(value => value.id === id);
+      if (!item) return this.all();
+      if (destinations.local && (item.recurrence || item.deletionPending)) {
+        if (item.twitchRecurring && !destinations.confirmRecurring && !item.deletionPending) throw new Error('Suppression explicite de la série Twitch récurrente requise.');
+        const retry = item.deletionPending === true;
+        item.deletionPending = true;
+        item.desiredPublication = { local: true, twitch: false, google: false };
+        await this.persist(this.items);
+        await this.finishSeriesDeletion(item, retry);
+        return this.all();
+      }
       const failed: ProviderName[] = [];
 
       for (const name of ['twitch', 'google'] as const) {
@@ -142,6 +162,7 @@ export class PlanningOrchestrator {
   retry(id: string, provider: ProviderName, options: { confirmRecurring?: boolean } = {}) {
     return this.serial(async () => {
       const item = this.required(id);
+      if (item.deletionPending) { await this.finishSeriesDeletion(item, true); return structuredClone(item); }
       if (provider === 'twitch' && await reconcileTwitchProjection(item, this.providers.twitch, () => this.persist(this.items), { retry: true })) {
         if (['error', 'conflict'].includes(item.providers?.twitch?.status ?? '')) throw new Error(item.providers?.twitch?.lastError);
         return structuredClone(item);
@@ -193,6 +214,7 @@ export class PlanningOrchestrator {
   resolveConflict(id: string, provider: ProviderName, strategy: 'local' | 'remote', occurrenceKey?: string) {
     return this.serial(async () => {
       const item = this.required(id);
+      if (item.deletionPending) throw new Error('Suppression de série en attente : réessayez la suppression pour confirmer le retrait de la version distante courante.');
       if (occurrenceKey !== undefined) {
         if (provider === 'google') await resolveGoogleOccurrenceConflict(item, occurrenceKey, strategy, this.providers.google, () => this.persist(this.items), restored => this.items.push(restored));
         else await resolveTwitchOccurrenceConflict(item, occurrenceKey, strategy, this.providers.twitch, () => this.persist(this.items));
@@ -338,6 +360,12 @@ export class PlanningOrchestrator {
       await this.persist(this.items);
       return structuredClone(item);
     });
+  }
+
+  private async finishSeriesDeletion(item: CalendarItem, retry = false) {
+    await deleteSeriesProjections(item, this.providers, () => this.persist(this.items), retry);
+    this.items = this.items.filter(value => value.id !== item.id);
+    await this.persist(this.items);
   }
 
   private async reconcileDesiredPublication(item: CalendarItem, confirmRecurring = false, updateLinked = false) {

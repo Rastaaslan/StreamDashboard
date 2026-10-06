@@ -270,6 +270,25 @@ export class GoogleCalendarClient {
     return event;
   }
 
+  async recoverCreation(calendarId: string, input: GoogleEventInput) {
+    this.validateProjection(input);
+    const matches = (await this.events(calendarId, { managedLocalId: input.localId }))
+      .filter(event => {
+        if (!event.managed || event.localId !== input.localId) return false;
+        // A previous retired incarnation shares the logical local ID but must
+        // never be substituted for the exact lost materialized CREATE.
+        if (input.projection?.mode === 'materialized') {
+          const identity = event.projection;
+          return identity?.mode === 'materialized' && identity.seriesLocalId === input.projection.seriesLocalId
+            && identity.occurrenceKey === input.projection.occurrenceKey && identity.creationId === input.projection.creationId;
+        }
+        return true;
+      });
+    if (matches.length !== 1) throw new Error('Identité Google non établie : aucune correspondance unique. Vérifiez le calendrier lié puis réessayez la suppression.');
+    this.assertProjection(input, matches[0], false);
+    return matches[0];
+  }
+
   async create(calendarId: string, input: GoogleEventInput) {
     this.validateProjection(input);
     if (input.allDay && input.recurrence) assertGoogleMaterializedAllDay(input);

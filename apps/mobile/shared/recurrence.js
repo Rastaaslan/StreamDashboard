@@ -83,6 +83,7 @@ function schedule(anchor, rule) {
  * nextCount selects the earliest effective future slots instead of an end date.
  * until is inclusive on the ORIGINAL start, before exceptions; duration is elapsed UTC time. */
 export function projectRecurrence(source, window) {
+    if (source.deletionPending) return [];
     const counted = window.nextCount !== undefined;
     if (counted && (!Number.isSafeInteger(window.nextCount) || window.nextCount < 1 || window.nextCount > 10000))
         throw new Error('Invalid nextCount (1–10000 required)');
@@ -178,7 +179,7 @@ export function projectRecurrence(source, window) {
 }
 export function expandRecurringItems(items, { from, to, nextCount, accept }) {
     const [start, end] = nextCount === undefined ? bounds({ windowStart: from, windowEnd: to }) : [instant(from), Infinity];
-    return (items || []).flatMap(item => item.recurrence && !item.occurrenceKey
+    return (items || []).flatMap(item => item.deletionPending ? [structuredClone(item)] : item.recurrence && !item.occurrenceKey
         ? projectRecurrence(item, { windowStart: from, windowEnd: to, nextCount, accept })
         : Date.parse(item.startAtUtc) < end && (Number.isFinite(Date.parse(item.endAtUtc)) ? Date.parse(item.endAtUtc) > start : Date.parse(item.startAtUtc) >= start) ? [structuredClone(item)] : [])
         .sort((a, b) => Date.parse(a.startAtUtc) - Date.parse(b.startAtUtc));
