@@ -1,4 +1,5 @@
 import OBSWebSocket from 'obs-websocket-js';
+import { AitumSuiteOutputs } from './aitum-suite.js';
 import type { ObsState } from '../../../packages/contracts/src/index.js';
 
 function friendlyError(error: unknown) {
@@ -23,6 +24,12 @@ export async function collectActiveSceneSources(sceneName: string, sceneItems: (
 }
 
 export class ObsClient {
+  private suite = new AitumSuiteOutputs(async (requestType, requestData) => {
+    const result = await this.call('CallVendorRequest', { vendorName: 'aitum-stream-suite', requestType, requestData });
+    return result.responseData;
+  });
+  async streamSuiteOutputs() { return this.suite.inspect(); }
+  async setStreamSuiteOutput(name: string, active: boolean) { await this.suite.set(name, active); }
   async outputs() { return (await this.call('GetOutputList')).outputs; }
   async setOutput(name: string, active: boolean) {
     if (!name.trim()) throw new Error('Sortie OBS non sélectionnée.');

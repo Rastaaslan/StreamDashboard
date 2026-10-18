@@ -1084,7 +1084,8 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
         await obs.refresh();
         if (!obs.state.connected || !obs.state.streamingKnown) throw new Error('État de diffusion OBS indisponible.');
         if (obs.state.streaming !== start) await commands.execute({ type: start ? 'session.start' : 'session.stop' });
-      } else await obs.setOutput(target.name, start);
+      } else if (target.kind === 'aitum-suite') await obs.setStreamSuiteOutput(target.name, start);
+      else await obs.setOutput(target.name, start);
     },
     settle: async (platform, start) => { if (platform === 'youtube') await youtube.transition(start); },
     metadata: async (platform, value) => {

@@ -2,7 +2,7 @@ export type Platform = 'twitch' | 'youtube';
 export type Outcome = 'running' | 'succeeded' | 'partial' | 'failed' | 'uncertain';
 export interface PlatformResult { status: Outcome; message: string; observedAt: string; live?: boolean }
 export interface LiveMetadata { title: string; description: string; twitchGameId: string; youtubeCategoryId: string; tags: string[] }
-export interface OutputTarget { kind: 'unconfigured' | 'main' | 'output'; name: string }
+export interface OutputTarget { kind: 'unconfigured' | 'main' | 'output' | 'aitum-suite'; name: string }
 export interface DeckAction { id: string; label: string; type: 'mic.toggle' | 'scene.set' | 'mode.set' | 'timer.add' | 'sound.play' | 'alert.play' | 'chat.send' | 'live.start' | 'live.stop'; value: string; color: string; shortcut: string }
 export interface ControlConfiguration {
   version: 1; revision: number; actions: DeckAction[];

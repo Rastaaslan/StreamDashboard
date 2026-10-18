@@ -19,7 +19,13 @@ export function registerControlRoutes(options: {
       res.json(await control.execute({...req.body,action}));
     } catch(e){next(e);}
   });
-  app.get('/api/v2/outputs',async(_req,res,next)=>{try{res.json({outputs:await obs.outputs()});}catch(e){next(e);}});
+  app.get('/api/v2/outputs',async(_req,res,next)=>{
+    try {
+      const [native,suite]=await Promise.allSettled([obs.outputs(),obs.streamSuiteOutputs()]);
+      if (native.status==='rejected' && suite.status==='rejected') throw new Error('Impossible de détecter les sorties. Vérifiez la connexion OBS et le chargement de Stream Suite.');
+      res.json({outputs:native.status==='fulfilled'?native.value:[],streamSuite:suite.status==='fulfilled'?suite.value:{error:'Stream Suite non détecté sur cette connexion OBS.'}});
+    } catch(e){next(e);}
+  });
   app.get('/api/v2/youtube',async(_req,res,next)=>{try{res.json(await youtube.status());}catch(e){next(e);}});
   app.get('/api/v2/youtube/broadcasts',async(_req,res,next)=>{try{res.json({items:await youtube.broadcasts()});}catch(e){next(e);}});
   app.post('/api/v2/youtube/connect',(_req,res,next)=>{try{res.json(youtube.authorize(`http://127.0.0.1:${options.port()}/api/v2/youtube/callback`));}catch(e){next(e);}});

@@ -26,6 +26,8 @@ obs.on('connection', socket => {
     if (requestType === 'SetCurrentProgramScene') { scene = requestData.sceneName; sceneCalls++; socket.send(encode({op:5,d:{eventType:'CurrentProgramSceneChanged',eventIntent:4,eventData:{sceneName:scene}}})); }
     const responses = {
       GetVersion: { obsVersion: '31', obsWebSocketVersion: '5' },
+      GetOutputList: { outputs: [] },
+      CallVendorRequest: { responseData: requestData.requestType === 'version' ? { success:true, version:'1.2.4' } : { success:true, outputs:[{name:'YouTube horizontal',type:'stream',active:false}] } },
       GetCurrentProgramScene: { currentProgramSceneName: scene },
       GetSceneList: { scenes: ['Jeu','Pause','Introduction','Discussion'].map(sceneName => ({ sceneName })) },
       GetStreamStatus: { outputActive: false }, GetRecordStatus: { outputActive: false },
@@ -86,6 +88,15 @@ try {
   await phone.locator('#event-form button:not([type="button"])').click();
   await expect(desktop.locator('.event-content')).toContainText('Modifié sur téléphone', { timeout: 12000 });
   await phone.locator('nav [data-page="settings"]').click();
+  await phone.locator('[data-tab="devices"]').click();
+  await expect(phone.locator('tr').filter({hasText:'Hôte'})).toContainText('FIXE');
+  await expect(phone.locator('tr').filter({hasText:'Pilotage'})).toContainText('laptop-damien');
+  await phone.locator('[data-tab="platforms"]').click();
+  await phone.locator('[data-task="outputs"]').click();
+  await expect(phone.locator('#output-list')).toContainText('Aitum Stream Suite 1.2.4');
+  await phone.locator('[data-suite-output="YouTube horizontal"][data-platform="youtube"]').click();
+  await phone.locator('#platform-form button:not([type="button"])').click();
+  await expect.poll(async () => (await api('/api/v2/state')).configuration.outputs.youtube).toEqual({kind:'aitum-suite',name:'YouTube horizontal'});
   await phone.locator('[data-tab="profile"]').click();
   await phone.locator('[name="streamerName"]').fill('Configuration partagée');
   await phone.locator('#profile-settings button').click();
@@ -95,6 +106,7 @@ try {
   state = await api('/api/v2/state');
   assert.equal(state.host.planning[0].title, 'Modifié sur téléphone');
   assert.equal(state.host.settings.streamerName, 'Configuration partagée');
+  assert.deepEqual(state.configuration.outputs.youtube,{kind:'aitum-suite',name:'YouTube horizontal'});
   assert.equal(state.host.state.timer.remaining, 600);
   const response = await fetch(`http://${address}:${host.port}/api/v2/state`, { headers: { Authorization: `Device ${paired.credential}` } });
   assert.equal(response.status, 200, 'Pairing must survive host restart');

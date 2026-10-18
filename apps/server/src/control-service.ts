@@ -31,7 +31,7 @@ export function validateConfiguration(value: ControlConfiguration): ControlConfi
   }
   for (const p of platforms) {
     const out = value.outputs?.[p];
-    if (!out || !['unconfigured','main','output'].includes(out.kind) || typeof out.name !== 'string' || out.name.length > 200 || (out.kind === 'output' && !out.name.trim())) fail('Sortie OBS invalide.');
+    if (!out || !['unconfigured','main','output','aitum-suite'].includes(out.kind) || typeof out.name !== 'string' || out.name.length > 200 || (['output','aitum-suite'].includes(out.kind) && !out.name.trim())) fail('Sortie OBS invalide.');
   }
   if (!value.youtube || typeof value.youtube.clientId !== 'string' || value.youtube.clientId.length > 250 || !/^[A-Za-z0-9_-]{0,120}$/.test(value.youtube.broadcastId) || !/^[A-Za-z0-9_-]{0,120}$/.test(value.youtube.channelId)) fail('Cible YouTube invalide.');
   const metadata = value.metadata.title ? validateMetadata(value.metadata) : defaultControlData().configuration.metadata;
