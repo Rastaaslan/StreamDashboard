@@ -76,3 +76,11 @@ Fermer Next sur les trois appareils. Relancer l’ancien StreamDashboard et sél
 Les tests du nouveau journal vérifient l’intent avant effet externe, les doublons simultanés, la reprise après redémarrage, la péremption, les conflits de révision et la reprise YouTube sans redémarrer Twitch. Les tests HTTP traversent le serveur réel avec sauvegarde, redémarrage et modifications croisées. Les tests des plateformes utilisent des adaptateurs simulés ; ils ne constituent pas un live réel.
 
 À valider sur les appareils : comparaison de l’installation actuelle, compatibilité exacte Stream Suite, autorisations YouTube, démarrage/arrêt public conjoint, audibilité des sons, alertes, messages de bot, raccourcis Synapse et installation de l’APK sur le S24 Ultra. Le paquet Windows est portable et non signé ; l’APK de développement est signé avec une clé de test. Cette candidate n’est pas annoncée comme validée pour un live public avant ces essais.
+
+### Résultat de la vérification candidate
+
+- 184 tests TypeScript distincts passent : pilotage commun, récurrences et reprises de publication Twitch, audio OBS, autorisations LAN et transport OBS WebSocket.
+- 18 tests Android passent ; APK debug construit avec un identifiant d’application distinct et le nom StreamDashboard Next.
+- Parcours navigateur reproductible : `npm run build && node scripts/check-control-browser.mjs` (Chromium Playwright requis). Il utilise deux interfaces desktop/mobile, le vrai serveur HTTP et le transport OBS v5 simulé : mute au clavier, scène et minuteur depuis le téléphone, création/modification/suppression d’événement, changement de configuration, redémarrage et conservation du pairing.
+- Paquet Windows x64 reconstruit et contrôlé par `node scripts/check-desktop-package.mjs`. Les écrans 1440 px et 412 px ont été inspectés.
+- Ces vérifications ne remplacent pas l’installation Windows/S24, Synapse, les sorties de multidiffusion réelles et les autorisations Twitch/YouTube. La suite complète historique n’a pas été exécutée.

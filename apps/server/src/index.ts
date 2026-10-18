@@ -554,6 +554,7 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
         lastSeenAt: String(device.lastSeenAt ?? ''),
         ...(typeof device.revokedAt === 'string' ? { revokedAt: device.revokedAt } : {}),
         credentialHash: String(device.credentialHash),
+        management: device.management === true,
       }))
     : [];
 

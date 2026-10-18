@@ -23,7 +23,7 @@ obs.on('connection', socket => {
     if (message.op !== 6) return;
     const { requestId, requestType, requestData = {} } = message.d;
     if (requestType === 'SetInputMute') { muted = requestData.inputMuted; muteCalls++; }
-    if (requestType === 'SetCurrentProgramScene') { scene = requestData.sceneName; sceneCalls++; }
+    if (requestType === 'SetCurrentProgramScene') { scene = requestData.sceneName; sceneCalls++; socket.send(encode({op:5,d:{eventType:'CurrentProgramSceneChanged',eventIntent:4,eventData:{sceneName:scene}}})); }
     const responses = {
       GetVersion: { obsVersion: '31', obsWebSocketVersion: '5' },
       GetCurrentProgramScene: { currentProgramSceneName: scene },

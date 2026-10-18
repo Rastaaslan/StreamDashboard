@@ -28,7 +28,13 @@ function shell() {
   $('#role').textContent=native?'STREAM DECK · TÉLÉPHONE':data?.host.local?'PC DE STREAM · HÔTE':'PC DE JEU · PILOTAGE';
   $('#connection').textContent=online?`${data.host.hostname} connecté · état partagé`:'Hôte indisponible · commandes suspendues';
 }
-function actionButton(action) {return `<button data-action="${esc(action.id)}" class="${esc(action.color)}" ${!online||busy?'disabled':''}><span>${icons[action.type]||'◇'}</span>${esc(action.label)}<small>${action.shortcut?esc(action.shortcut.replace('Control+Alt+Shift+','M / ')):'PC de stream'}</small></button>`;}
+function actionState(action) {
+ const obs=data.host.state.obs;
+ if(action.type==='mic.toggle'){const mic=action.value||data.host.settings.primaryMicInput;return obs.connected&&obs.inputs[mic]?(obs.inputs[mic].muted?'Micro coupé':'Micro ouvert'):'Micro non confirmé';}
+ if(action.type==='scene.set'||action.type==='mode.set'){const target=action.type==='scene.set'?action.value:action.value==='chatting'?data.host.settings.chattingScene:data.host.settings.modeScenes[action.value];return obs.connected&&obs.scene===target?'À l’écran':target||'Scène à configurer';}
+ return 'PC de stream';
+}
+function actionButton(action) {return `<button data-action="${esc(action.id)}" class="${esc(action.color)}" ${!online||busy?'disabled':''}><span>${icons[action.type]||'◇'}</span>${esc(action.label)}<small>${esc(actionState(action))}${action.shortcut?' · '+esc(action.shortcut.replace('Control+Alt+Shift+','M / ')):''}</small></button>`;}
 function resultRows() {const receipts=(data?.receipts||[]).slice(-5).reverse();return receipts.length?receipts.map(r=>`<div class="receipt"><div><b>${esc(data.configuration.actions.find(a=>a.id===r.action)?.label || ({'live.start':'Lancer le live','live.stop':'Arrêter le live','metadata.apply':'Informations du live','metadata.retry':'Reprise des informations'}[r.action]??r.action))}</b><p>${esc(r.message)}</p>${Object.entries(r.platforms||{}).map(([p,v])=>`<p><b>${esc(p)}</b> · ${esc(v.message)} ${v.status!=='succeeded'?`<button class="secondary" data-retry="${esc(r.action)}" data-platform="${p}">Reprendre ${p}</button>`:''}</p>`).join('')}</div><span class="result ${r.status}">${labels[r.status]}<p>${new Date(r.createdAt).toLocaleTimeString('fr-FR',{hour:'2-digit',minute:'2-digit'})}</p></span></div>`).join(''):'<p class="empty">Les résultats de vos actions apparaîtront ici.</p>';}
 function platformCard(name,label,icon) {const p=data.host.platforms[name], s=data.host.state;const text=name==='obs'?(s.obs.connected?'Connecté à OBS':'OBS indisponible'):p?.live===true?'En direct confirmé':p?.live===false?'Hors ligne confirmé':p?.error || 'État non vérifié';return `<div class="panel status-card"><span class="platform-icon ${name==='youtube'?'yt':name}">${icon}</span><div><b>${label}</b><small class="${p?.live?'succeeded':''}">${esc(text)}</small></div></div>`;}
 function livePage() {
