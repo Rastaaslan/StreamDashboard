@@ -771,7 +771,7 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
     if (!acceptedHost(req.headers.host)) { res.status(403).json({ ok: false, error: { code: 'HOST_REJECTED', message: 'Adresse du PC non autorisée. Utilisez une adresse LAN affichée sur le PC.' } }); return; }
     res.set('Cache-Control', 'no-store');
     res.set({
-      'Content-Security-Policy': "default-src 'self'; connect-src 'self' https://static-cdn.jtvnw.net ws://127.0.0.1:* ws://localhost:* ws://[::1]:* ws: wss:; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https://static-cdn.jtvnw.net https://clips-media-assets2.twitch.tv https://clips-media-assets.twitch.tv; object-src 'none'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'",
+      'Content-Security-Policy': "default-src 'self'; connect-src 'self' https://static-cdn.jtvnw.net ws://127.0.0.1:* ws://localhost:* ws://[::1]:* ws: wss:; script-src 'self'; style-src 'self' 'unsafe-inline'; frame-src https://player.twitch.tv https://www.twitch.tv https://www.youtube.com; img-src 'self' data: blob: https://static-cdn.jtvnw.net https://clips-media-assets2.twitch.tv https://clips-media-assets.twitch.tv; object-src 'none'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'",
       'X-Content-Type-Options': 'nosniff',
       'X-Frame-Options': 'DENY',
       'Referrer-Policy': 'no-referrer',
@@ -2376,7 +2376,7 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
     if (req.path.startsWith('/api/v2/') && req.body.expectedRevision !== planningFingerprint(id)) throw Object.assign(new Error('Événement modifié sur un autre appareil. Rechargez avant d’enregistrer.'), { name: 'REVISION_CONFLICT' });
   };
   registerControlRoutes({ app, control, youtube, obs, settings: settingsUpdate, planningCreate, planningUpdate, planningDelete, recurrence: recurrenceException, isLocal: isLocalRequest, port: () => runtimePort, observe: observePlatforms,
-    state: () => ({ hostname: hostname(), state: toRemoteDashboardState(snapshot()), settings: publicSettings(), settingsRevision: settingsFingerprint(), planning: structuredClone(local.planning), occurrences: expandEditableRecurringItems(local.planning, { from: Date.now() - DAY_MS, to: Date.now() + 90 * DAY_MS }), planningRevisions: Object.fromEntries(local.planning.map(item => [item.id, planningFingerprint(item.id)])), platforms: structuredClone(platformLive), local: true }),
+    state: () => ({ hostname: hostname(), monitor: { twitchLogin: twitch.publicIdentity().userName || '' }, state: toRemoteDashboardState(snapshot()), settings: publicSettings(), settingsRevision: settingsFingerprint(), planning: structuredClone(local.planning), occurrences: expandEditableRecurringItems(local.planning, { from: Date.now() - DAY_MS, to: Date.now() + 90 * DAY_MS }), planningRevisions: Object.fromEntries(local.planning.map(item => [item.id, planningFingerprint(item.id)])), platforms: structuredClone(platformLive), local: true }),
   });
   app.post('/api/v2/sounds/upload', express.raw({ type: 'application/octet-stream', limit: '100mb' }), async (req, res, next) => {
     let destination: string | undefined;

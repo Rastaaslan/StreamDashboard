@@ -76,6 +76,50 @@ try {
   assert.equal(sceneCalls, 1);
   await phone.locator('[data-action="timer-plus"]').click();
   await expect.poll(async () => (await api('/api/v2/state')).host.state.timer.remaining).toBe(600);
+  // Embed documents are simulated; exercise real DOM lifecycle, CSP and URL routing.
+  // Never request a public stream or put a fixture broadcast into persisted settings.
+  assert.equal((await api('/api/v2/state')).host.monitor.twitchLogin, '');
+  await expect(desktop.locator('[data-monitor-slot="youtube"]')).toContainText('Choisissez la diffusion');
+  let monitorPolls = 0, fixtureVideo = 'abcdefghijk';
+  const embedLoads = [];
+  await desktop.route(/https:\/\/(player\.twitch\.tv|www\.twitch\.tv|www\.youtube\.com)\//, async route => {
+    embedLoads.push(route.request().url());
+    assert.equal(route.request().headers().authorization, undefined);
+    assert.ok(route.request().headers().referer, 'Embeds need a Referer');
+    await route.fulfill({contentType:'text/html', body:'<!doctype html><title>Embed fixture</title><label>Draft <input id="draft"></label>'});
+  });
+  await desktop.route('**/api/v2/state', async route => {
+    const response = await route.fetch();
+    const value = await response.json();
+    value.host.monitor = {twitchLogin:'twitchdev'};
+    value.configuration.youtube.broadcastId = fixtureVideo;
+    monitorPolls++;
+    await route.fulfill({response, json:value});
+  });
+  const twitchChat = desktop.frameLocator('[data-monitor-slot="twitch"] iframe');
+  const youtubeChat = desktop.frameLocator('[data-monitor-slot="youtube"] iframe');
+  await expect(twitchChat.locator('#draft')).toBeVisible();
+  await twitchChat.locator('#draft').fill('Brouillon Twitch conservé');
+  await youtubeChat.locator('#draft').fill('Brouillon YouTube conservé');
+  await desktop.locator('[data-action="scene-pause"]').click(); // Forces a busy + result redraw.
+  await expect.poll(() => monitorPolls, {timeout:15000}).toBeGreaterThan(3);
+  assert.equal(embedLoads.length, 3, 'Polling and actions must not reload the player or chats');
+  await expect(twitchChat.locator('#draft')).toHaveValue('Brouillon Twitch conservé');
+  await expect(youtubeChat.locator('#draft')).toHaveValue('Brouillon YouTube conservé');
+  await desktop.locator('[data-monitor-source="youtube"]').click();
+  await expect.poll(() => embedLoads.length).toBe(4);
+  await expect(youtubeChat.locator('#draft')).toHaveValue('Brouillon YouTube conservé');
+  fixtureVideo = 'lmnopqrstuv';
+  await expect(desktop.locator('[data-monitor-slot="youtube"] iframe')).toHaveAttribute('src', /v=lmnopqrstuv/);
+  await expect(desktop.locator('[data-monitor-slot="video"] iframe')).toHaveAttribute('src', /embed\/lmnopqrstuv/);
+  await expect(twitchChat.locator('#draft')).toHaveValue('Brouillon Twitch conservé');
+  await desktop.locator('[data-monitor-toggle]').click();
+  await expect(desktop.locator('#live-monitor iframe')).toHaveCount(0);
+  await desktop.locator('[data-monitor-toggle]').click();
+  await expect(desktop.locator('#live-monitor iframe')).toHaveCount(3);
+  const playerUrl = new URL(embedLoads.find(url => url.startsWith('https://player.twitch.tv')));
+  assert.equal(playerUrl.searchParams.get('muted'), 'true');
+  assert.equal(playerUrl.searchParams.get('parent'), new URL(host.url).hostname);
   await desktop.screenshot({ path: path.join(outputDir, 'desktop.png'), fullPage: true });
   await phone.screenshot({ path: path.join(outputDir, 'phone.png'), fullPage: true });
   for (const page of [desktop, phone]) await page.locator('nav [data-page="planning"]').click();
@@ -114,7 +158,7 @@ try {
   await api('/api/v2/planning/' + item.id, { expectedRevision: state.host.planningRevisions[item.id] }, 'DELETE');
   assert.equal((await api('/api/v2/state')).host.planning.length, 0);
   assert.deepEqual(errors, []);
-  console.log('PASS: paired LAN mobile + desktop, keyboard mic, scene, timer, shared planning CRUD, settings, host restart and pairing persistence. OBS is simulated.');
+  console.log('PASS: paired LAN mobile + desktop, keyboard mic, scene, timer, shared planning CRUD, settings, host restart, pairing persistence, stable video + both chats, source switch and broadcast change. OBS and embed documents are simulated.');
 } finally {
   await browser?.close(); await host?.stop();
   for (const socket of obs.clients) socket.terminate();

@@ -9,7 +9,7 @@ import { ElectronSecretStore } from './secrets.js';
 /** Client-only runtime: static UI and global keys. No OBS connection or local business state. */
 export async function startControllerAssets(directory: string): Promise<Server> {
   const app = express();
-  app.use((_req,res,next)=>{res.set({'Content-Security-Policy':"default-src 'self'; connect-src 'self' http:; style-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'",'X-Content-Type-Options':'nosniff','Cache-Control':'no-store'});next();});
+  app.use((_req,res,next)=>{res.set({'Content-Security-Policy':"default-src 'self'; connect-src 'self' http:; style-src 'self'; frame-src https://player.twitch.tv https://www.twitch.tv https://www.youtube.com; object-src 'none'; base-uri 'none'; frame-ancestors 'none'",'X-Content-Type-Options':'nosniff','Cache-Control':'no-store'});next();});
   app.use('/mobile',express.static(directory));
   return new Promise((resolve,reject)=>{const server=app.listen(48134,'127.0.0.1',()=>resolve(server));server.once('error',reject);});
 }

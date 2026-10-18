@@ -120,3 +120,13 @@ Restent à terminer : affectation physique des touches dans Synapse, installatio
 - Depuis cette interface, création, modification et suppression d’un événement de production temporaire, sans publication Twitch ni Google. Après suppression : 93 éléments conservés. État OBS rétabli à `FIN`, micro coupé.
 - Ces essais valident les raccourcis Windows et le parcours applicatif. Ils ne remplacent pas l’affectation puis la pression physique des touches M1–M6 dans Synapse.
 - L’autorisation Google YouTube a été ouverte dans le navigateur de FIXE ; sa validation par l’utilisateur reste attendue.
+
+### Retour vidéo et deux chats sur PC (Windows RC3)
+
+Dans **Le live**, « Retour du live & chats » affiche le lecteur Twitch ou YouTube et les deux chats séparés. Le compte Twitch vient de la régie ; le lecteur et le chat YouTube suivent exactement la diffusion choisie dans **Configuration → Diffusion → Choisir une diffusion préparée**, puis **Enregistrer la diffusion**. Sans diffusion choisie, une indication de configuration remplace les écrans YouTube.
+
+Le lecteur démarre muet pour éviter l'écho et montre le retour public avec le délai de la plateforme. Les boutons Twitch/YouTube changent uniquement le lecteur vidéo. Les actualisations, les actions et leurs reçus ne recréent pas les lecteurs : les chats et leurs brouillons restent ouverts. « Masquer les écrans » arrête leur chargement ; quitter Le live ferme les écrans. Le choix du lecteur est conservé sur chaque PC.
+
+Si un service refuse l'intégration, la lecture ou une connexion au compte, **Ouvrir le live/chat** ouvre la page officielle dans le navigateur. La disponibilité du chat dépend également de la diffusion et de ses paramètres sur YouTube. Aucun jeton de la régie n'est transmis aux iframes. Les vues natives Android n'intègrent pas ces sites tiers ; l'APK RC2 reste compatible avec l'hôte RC3 pour le pilotage et la gestion.
+
+Références d'intégration : [lecteur Twitch](https://dev.twitch.tv/docs/embed/video-and-clips/), [chat Twitch](https://dev.twitch.tv/docs/embed/chat/), [chat YouTube](https://support.google.com/youtube/answer/2524549?hl=fr). Le domaine parent est calculé depuis l'adresse de l'interface ; la politique de sécurité autorise uniquement les domaines des lecteurs officiels.

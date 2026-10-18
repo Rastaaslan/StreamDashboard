@@ -1,12 +1,17 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
-import { isAllowedExternalAuthUrl, isAllowedStreamlabsOAuthUrl, isAllowedTwitchUrl, isSameOrigin } from '../apps/desktop/src/security.js';
+import { isAllowedExternalAuthUrl, isAllowedLiveViewUrl, isAllowedStreamlabsOAuthUrl, isAllowedTwitchUrl, isSameOrigin } from '../apps/desktop/src/security.js';
 const windowSource = readFileSync(new URL('../apps/desktop/src/window.ts', import.meta.url), 'utf8');
 const mainSource = readFileSync(new URL('../apps/desktop/src/main.ts', import.meta.url), 'utf8');
 const html = readFileSync(new URL('../apps/web/index.html', import.meta.url), 'utf8');
 const renderer = readFileSync(new URL('../apps/web/app.js', import.meta.url), 'utf8');
 const promotedHtml = readFileSync(new URL('../apps/web/preview/index.html', import.meta.url), 'utf8');
 describe('sécurité hôte Electron', () => {
+  it('limite les liens YouTube au lecteur et au chat HTTPS', () => {
+    expect(isAllowedLiveViewUrl('https://www.youtube.com/watch?v=abcdefghijk')).toBe(true);
+    expect(isAllowedLiveViewUrl('https://www.youtube.com/live_chat?v=abcdefghijk&is_popout=1')).toBe(true);
+    for (const url of ['http://www.youtube.com/watch?v=abcdefghijk', 'https://www.youtube.com.evil.test/watch?v=abcdefghijk', 'https://user:pass@www.youtube.com/watch?v=abcdefghijk', 'https://www.youtube.com/redirect?v=abcdefghijk', 'https://www.youtube.com:444/watch?v=abcdefghijk', 'file:///C:/Windows/System32', 'javascript:alert(1)']) expect(isAllowedLiveViewUrl(url)).toBe(false);
+  });
   it('active toutes les protections BrowserWindow', () => {
     expect(windowSource).toContain('nodeIntegration: false'); expect(windowSource).toContain('contextIsolation: true');
     expect(windowSource).toContain('sandbox: true'); expect(windowSource).toContain('webSecurity: true'); expect(html).toContain('Content-Security-Policy');
