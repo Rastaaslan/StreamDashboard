@@ -102,7 +102,7 @@ Les tests du nouveau journal vérifient l’intent avant effet externe, les doub
 - L'adaptateur détecte Stream Suite 1.2.4 dans OBS réel ; Twitch principal et `YouTube Output` sont enregistrés dans Next. Mute/unmute et scène Pause ont donné un résultat réussi avec lecture de l'état OBS. État initial rétabli : scène `FIN`, micro coupé, aucune diffusion active.
 - **laptop-damien** : client construit, association de gestion complète préparée et credential enregistré dans le stockage chiffré Windows. Raccourci de bureau `StreamDashboard Next - Jeu`. Les six raccourcis globaux ont été enregistrés sans conflit lors du contrôle.
 - Adresse locale vérifiée de FIXE : `http://192.168.1.158:48133`. Le client est préconfiguré avec cette adresse. La résolution du nom `FIXE` renvoyait une ancienne adresse depuis dam-server ; privilégier l'adresse affichée par la régie. Une réservation DHCP évitera son changement.
-- Le pare-feu de FIXE bloque encore la connexion depuis les autres appareils. Windows a refusé l'ajout de la règle faute de droits administrateur. Sur **FIXE**, ouvrir PowerShell en administrateur et exécuter cette commande, limitée au programme Next, au port 48133 et au sous-réseau local sur Ethernet :
+- L’autorisation Windows validée sur FIXE a débloqué la connexion depuis laptop-damien. Le parcours réel entre les deux PC est maintenant vérifié. Pour une réinstallation nécessitant une règle explicite, la commande suivante s’exécute sur **FIXE** dans PowerShell administrateur ; elle est limitée au programme Next, au port 48133 et au sous-réseau local sur Ethernet :
 
 ```powershell
 New-NetFirewallRule -Name 'StreamDashboard-Next-LAN-48133' -DisplayName 'StreamDashboard Next - LAN' -Direction Inbound -Action Allow -Protocol TCP -LocalPort 48133 -RemoteAddress LocalSubnet -InterfaceAlias 'Ethernet' -Program "$env:USERPROFILE\StreamDashboard-Next-work\out\StreamDashboard-win32-x64\StreamDashboard.exe" -Profile Any
@@ -110,4 +110,13 @@ New-NetFirewallRule -Name 'StreamDashboard-Next-LAN-48133' -DisplayName 'StreamD
 
 La règle peut être retirée avec `Remove-NetFirewallRule -Name 'StreamDashboard-Next-LAN-48133'` dans un PowerShell administrateur. Aucun port de routeur n'est ouvert.
 
-Restent à terminer : connexion entre les appareils après cette autorisation Windows, affectation physique des touches dans Synapse, installation sur S24 Ultra, autorisation YouTube et choix de sa diffusion, puis essai conjoint de démarrage et de mise à jour Twitch/YouTube. Aucun live public ni message de bot de test n'a été envoyé.
+Restent à terminer : affectation physique des touches dans Synapse, installation et appairage sur S24 Ultra, autorisation YouTube et choix de sa diffusion, puis essai conjoint de démarrage et de mise à jour Twitch/YouTube. Aucun live public ni message de bot de test n'a été envoyé.
+
+### Parcours réel entre les deux PC après autorisation Windows
+
+- Le client de laptop-damien retrouve automatiquement son association chiffrée et se connecte à FIXE sur `192.168.1.158:48133`.
+- Les combinaisons Windows `Ctrl + Alt + Maj + F1` et `F3`, émises sur laptop-damien, passent par les raccourcis globaux du client. Le serveur de FIXE confirme l’ouverture/fermeture du micro et la scène `PAUSE` dans OBS réel. Les reçus sont enregistrés avec le résultat `succeeded`.
+- Le bouton de scène du tableau de bord Windows a aussi été vérifié via l’interface du client appairé. Le rôle affiché est bien PC de jeu et l’hôte affiché est FIXE.
+- Depuis cette interface, création, modification et suppression d’un événement de production temporaire, sans publication Twitch ni Google. Après suppression : 93 éléments conservés. État OBS rétabli à `FIN`, micro coupé.
+- Ces essais valident les raccourcis Windows et le parcours applicatif. Ils ne remplacent pas l’affectation puis la pression physique des touches M1–M6 dans Synapse.
+- L’autorisation Google YouTube a été ouverte dans le navigateur de FIXE ; sa validation par l’utilisateur reste attendue.
