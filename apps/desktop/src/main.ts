@@ -47,7 +47,12 @@ function cleanupRuntime(): Promise<void> {
   return cleanupPromise ??= (async () => {
     stopUpdater(); stopUpdater = () => undefined;
     stopControllerKeys();
-    if (controllerServer) await new Promise<void>((resolve,reject) => controllerServer!.close(error => error ? reject(error) : resolve()));
+    if (controllerServer) await new Promise<void>((resolve,reject) => {
+      controllerServer!.close(error => error ? reject(error) : resolve());
+      // Chromium can keep speculative HTTP connections open after embedded views
+      // close. This server only serves static client assets; no business writes.
+      controllerServer!.closeAllConnections();
+    });
     // Acquisition and teardown have one owner, even when quit races startup.
     // Startup cancellation interrupts provider I/O, but never abandons cleanup.
     let current: DesktopRuntime | undefined;
