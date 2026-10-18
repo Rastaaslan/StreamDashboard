@@ -27,7 +27,7 @@ obs.on('connection', socket => {
     const responses = {
       GetVersion: { obsVersion: '31', obsWebSocketVersion: '5' },
       GetOutputList: { outputs: [] },
-      CallVendorRequest: { responseData: requestData.requestType === 'version' ? { success:true, version:'1.2.4' } : { success:true, outputs:[{name:'YouTube horizontal',type:'stream',active:false}] } },
+      CallVendorRequest: { responseData: requestData?.requestType === 'version' ? { success:true, version:'1.2.4' } : { success:true, outputs:[{name:'YouTube horizontal',type:'stream',active:false}] } },
       GetCurrentProgramScene: { currentProgramSceneName: scene },
       GetSceneList: { scenes: ['Jeu','Pause','Introduction','Discussion'].map(sceneName => ({ sceneName })) },
       GetStreamStatus: { outputActive: false }, GetRecordStatus: { outputActive: false },
