@@ -63,7 +63,7 @@ describe('Android remote runtime', () => {
   });
   it('autorise le volume Soundboard en direct depuis une télécommande appairée', () => {
     expect(mobileTransport).toContain("'/api/v1/soundboard/volume'");
-    expect(serverSource).toContain("import { isRemoteApiAllowed } from './remote-api-policy.js'");
+    expect(serverSource).toMatch(/import \{[^}]*\bisRemoteApiAllowed\b[^}]*\} from '\.\/remote-api-policy\.js'/);
   });
 
   it('répare le démarrage live Android avec préparation et confirmation de bypass checklist', () => {
