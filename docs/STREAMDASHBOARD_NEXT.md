@@ -59,7 +59,7 @@ Le clavier dispose de six touches macro dédiées configurables dans Synapse : [
 
 Dans Synapse, affecter chaque touche à la combinaison correspondante, une pression simple, sans boucle ni répétition. Le client Next doit rester ouvert sur laptop-damien, avec le clavier et Synapse. Configuration → Appareils → **Vérifier les raccourcis** montre ceux qui sont enregistrés et ceux déjà occupés par une autre application. Les associations action/raccourci se modifient depuis Mon Deck sur tous les appareils. Une macro de lancement utilise la même commande Twitch + YouTube ; un arrêt au clavier demande de passer par le bouton de confirmation de l’interface.
 
-Les associations matérielles Synapse ne sont pas prétendues installées : laptop-damien ne figure pas encore parmi les machines accessibles à distance. Aucun profil propriétaire Synapse fictif n’est fourni.
+Sur laptop-damien, le contrôle matériel confirme le BlackWidow V4 X (VID 1532, PID 0293) et Synapse 4.0.827. Les six combinaisons ont été enregistrées sans conflit par le client Windows. Les associations physiques M1–M6 restent à appliquer dans Synapse : son interface n’a pas fourni de contrôles accessibles pour cette opération distante. Aucun profil propriétaire fictif n’est fourni.
 
 ## Architecture et données
 
@@ -95,3 +95,19 @@ Les tests du nouveau journal vérifient l’intent avant effet externe, les doub
 - Parcours navigateur reproductible : `npm run build && node scripts/check-control-browser.mjs` (Chromium Playwright requis). Il utilise deux interfaces desktop/mobile, le vrai serveur HTTP et le transport OBS v5 simulé : mute au clavier, scène et minuteur depuis le téléphone, création/modification/suppression d’événement, changement de configuration, redémarrage et conservation du pairing.
 - Paquet Windows x64 reconstruit et contrôlé par `node scripts/check-desktop-package.mjs`. Les écrans 1440 px et 412 px ont été inspectés.
 - Ces vérifications ne remplacent pas l’installation Windows/S24, Synapse, les sorties de multidiffusion réelles et les autorisations Twitch/YouTube. La suite complète historique n’a pas été exécutée.
+
+### Contrôle RC2 sur les appareils, 18 octobre 2026
+
+- **FIXE** : candidate construite et démarrée depuis `C:\Users\damie\StreamDashboard-Next-work\out\StreamDashboard-win32-x64`. Raccourci de bureau `StreamDashboard Next - Stream`. Ancienne application fermée proprement ; ancien dossier et anciennes données conservés. Migration vérifiée de 93 éléments de planning et 8 sons, avec copie de `Local State` indispensable au déchiffrement des credentials Windows. Le hash des données d'origine reste identique après les essais.
+- L'adaptateur détecte Stream Suite 1.2.4 dans OBS réel ; Twitch principal et `YouTube Output` sont enregistrés dans Next. Mute/unmute et scène Pause ont donné un résultat réussi avec lecture de l'état OBS. État initial rétabli : scène `FIN`, micro coupé, aucune diffusion active.
+- **laptop-damien** : client construit, association de gestion complète préparée et credential enregistré dans le stockage chiffré Windows. Raccourci de bureau `StreamDashboard Next - Jeu`. Les six raccourcis globaux ont été enregistrés sans conflit lors du contrôle.
+- Adresse locale vérifiée de FIXE : `http://192.168.1.158:48133`. Le client est préconfiguré avec cette adresse. La résolution du nom `FIXE` renvoyait une ancienne adresse depuis dam-server ; privilégier l'adresse affichée par la régie. Une réservation DHCP évitera son changement.
+- Le pare-feu de FIXE bloque encore la connexion depuis les autres appareils. Windows a refusé l'ajout de la règle faute de droits administrateur. Sur **FIXE**, ouvrir PowerShell en administrateur et exécuter cette commande, limitée au programme Next, au port 48133 et au sous-réseau local sur Ethernet :
+
+```powershell
+New-NetFirewallRule -Name 'StreamDashboard-Next-LAN-48133' -DisplayName 'StreamDashboard Next - LAN' -Direction Inbound -Action Allow -Protocol TCP -LocalPort 48133 -RemoteAddress LocalSubnet -InterfaceAlias 'Ethernet' -Program "$env:USERPROFILE\StreamDashboard-Next-work\out\StreamDashboard-win32-x64\StreamDashboard.exe" -Profile Any
+```
+
+La règle peut être retirée avec `Remove-NetFirewallRule -Name 'StreamDashboard-Next-LAN-48133'` dans un PowerShell administrateur. Aucun port de routeur n'est ouvert.
+
+Restent à terminer : connexion entre les appareils après cette autorisation Windows, affectation physique des touches dans Synapse, installation sur S24 Ultra, autorisation YouTube et choix de sa diffusion, puis essai conjoint de démarrage et de mise à jour Twitch/YouTube. Aucun live public ni message de bot de test n'a été envoyé.
