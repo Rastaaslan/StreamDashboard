@@ -1,6 +1,11 @@
 const { contextBridge, ipcRenderer } = require('electron') as typeof import('electron');
 
 contextBridge.exposeInMainWorld('streamDashboardDesktop', {
+  configureController: (value: unknown) => ipcRenderer.invoke('controller:configure', value),
+  controllerStatus: () => ipcRenderer.invoke('controller:status'),
+  getControllerCredential: () => ipcRenderer.invoke('controller:credential:get'),
+  setControllerCredential: (value: string) => ipcRenderer.invoke('controller:credential:set', value),
+  onControllerReceipt: (callback: (receipt: unknown) => void) => { ipcRenderer.on('controller:receipt', (_event, receipt) => callback(receipt)); },
   getVersion: (): Promise<string> => ipcRenderer.invoke('app:get-version'),
   openTwitchActivation: (url: string): Promise<boolean> => ipcRenderer.invoke('app:open-twitch-activation', url),
   openExternalAuth: (url: string): Promise<boolean> => ipcRenderer.invoke('app:open-external-auth', url),

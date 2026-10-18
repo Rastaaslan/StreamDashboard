@@ -6,6 +6,9 @@ export const DASHBOARD_SCHEMA_VERSION = 6;
 
 export interface SecretStore {
   readonly persistent: boolean;
+  getYouTubeTokens?(): Promise<Record<string, string> | null>;
+  setYouTubeTokens?(tokens: Record<string, string>): Promise<void>;
+  clearYouTubeTokens?(): Promise<void>;
   getTwitchTokens(): Promise<Record<string, string> | null>;
   setTwitchTokens(tokens: Record<string, string>): Promise<void>;
   clearTwitchTokens(): Promise<void>;
@@ -33,6 +36,10 @@ export interface SecretStore {
 
 export class MemorySecretStore implements SecretStore {
   readonly persistent: boolean = false;
+  private youtube: Record<string, string> | null = null;
+  async getYouTubeTokens() { return this.youtube ? { ...this.youtube } : null; }
+  async setYouTubeTokens(tokens: Record<string, string>) { this.youtube = { ...tokens }; }
+  async clearYouTubeTokens() { this.youtube = null; }
   private tokens: Record<string, string> | null = null;
   private obsPassword = '';
   private google: Record<string, string> | null = null;

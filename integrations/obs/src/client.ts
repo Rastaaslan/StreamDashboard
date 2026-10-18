@@ -23,6 +23,16 @@ export async function collectActiveSceneSources(sceneName: string, sceneItems: (
 }
 
 export class ObsClient {
+  async outputs() { return (await this.call('GetOutputList')).outputs; }
+  async setOutput(name: string, active: boolean) {
+    if (!name.trim()) throw new Error('Sortie OBS non sélectionnée.');
+    const list = await this.outputs();
+    if (!list.some(output => output.outputName === name)) throw new Error('Sortie absente de GetOutputList OBS. Vérifiez le plugin de multidiffusion.');
+    const state = await this.call('GetOutputStatus', { outputName: name });
+    if (state.outputActive !== active) await this.call(active ? 'StartOutput' : 'StopOutput', { outputName: name });
+    const confirmed = await this.call('GetOutputStatus', { outputName: name });
+    if (confirmed.outputActive !== active) throw new Error('OBS n’a pas confirmé la sortie demandée.');
+  }
   private client = new OBSWebSocket();
   private reconnects = 0;
   // Every loss/configuration change invalidates pending replies and queued commands.

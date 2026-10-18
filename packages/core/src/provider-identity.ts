@@ -1,3 +1,4 @@
+import { twitchCreateRequest } from '../../../integrations/twitch/src/create-request.js';
 import type { CreatePreparation } from './planning.js';
 import { publicationContent } from '../../../apps/mobile/shared/publication-content.js';
 import type { CalendarItem } from '../../contracts/src/index.js';
@@ -30,16 +31,17 @@ export async function createWithDurableIntent<T extends { id: string; revision?:
   prepare?: (request: CalendarItem) => CreatePreparation | Promise<CreatePreparation>,
 ): Promise<T> {
   assertProviderCreationCertain(item, provider);
+  if (item.deletionPending) throw Object.assign(new Error('Suppression en attente : création interdite.'), { mutationNotStarted: true });
   const link = (item.providers ??= {})[provider] ??= { status: 'pending' };
   if (prepare) {
     const destination = await prepare(item);
     if (destination.calendarId) link.calendarId = destination.calendarId;
   }
-  const { providers: _providers, conflict: _conflict, ...original } = item;
+  const request = provider === 'twitch' ? twitchCreateRequest(item) : structuredClone(item);
+  const { providers: _providers, conflict: _conflict, ...original } = request;
   link.uncertainCreate = { event: structuredClone(original) as unknown as Record<string, unknown>,
     publishedContent: publicationContent(item, provider) };
   await persist();
-  const request = structuredClone(item);
   delete request.providers![provider]!.uncertainCreate;
   let result: T;
   try { result = await create(request); }

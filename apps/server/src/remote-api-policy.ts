@@ -5,6 +5,18 @@ const GET_EXACT = new Set([
   '/v1/discord/status','/v1/discord/guilds',
 ]);
 
+/** Full configuration is granted only by a new, explicit host pairing; legacy credentials stay limited. */
+export function isManagementApiAllowed(method: string, path: string) {
+  if (path.startsWith('/v2/')) return isRemoteApiAllowed(method, path);
+  const routes: Record<string, string[]> = {
+    GET: ['/v1/profile','/v1/google/calendars','/v1/google/oauth/config','/v1/soundboard/obs/status','/v1/supports/streamlabs/oauth/status','/v1/wizebot'],
+    PUT: ['/v1/supports/streamlabs/oauth/config','/v1/profile','/v1/google/target','/v1/discord/token','/v1/supports/streamlabs/config','/v1/wizebot/config','/v1/soundboard/catalog'],
+    POST: ['/v1/google/oauth/config','/v1/google/oauth/start','/v1/google/sync','/v1/profile/import','/v1/soundboard/obs/setup','/v1/soundboard/sounds','/v1/supports/streamlabs/oauth/start','/v1/supports/streamlabs/oauth/config'],
+    DELETE: ['/v1/google/oauth/config','/v1/discord/token','/v1/supports/streamlabs/config','/v1/wizebot/config'],
+  };
+  return (routes[method]?.includes(path) ?? false) || (method === 'DELETE' && /^\/v1\/soundboard\/sounds\/[A-Za-z0-9_-]+$/.test(path));
+}
+
 const PUT_EXACT = new Set([
   '/v1/profile/presentation','/v1/settings/live-control','/v1/discord/settings',
 ]);
@@ -20,6 +32,11 @@ const POST_EXACT = new Set([
 
 export function isRemoteApiAllowed(method: string, pathName: string) {
   const verb = method.toUpperCase();
+  // Paired clients own the shared control surface. OAuth secrets remain on the host.
+  if (verb === 'GET' && ['/v2/state','/v2/outputs','/v2/youtube','/v2/youtube/broadcasts'].includes(pathName)) return true;
+  if (verb === 'PUT' && ['/v2/configuration','/v2/settings'].includes(pathName)) return true;
+  if (verb === 'POST' && ['/v2/actions','/v2/planning','/v2/sounds/upload','/v2/youtube/connect','/v2/youtube/disconnect'].includes(pathName)) return true;
+  if (['PUT','DELETE'].includes(verb) && /^\/v2\/planning\/[^/]+(?:\/occurrence)?$/.test(pathName)) return true;
   if (verb === 'GET') {
     return GET_EXACT.has(pathName)
       || /^\/v1\/discord\/guilds\/\d+\/channels$/.test(pathName);

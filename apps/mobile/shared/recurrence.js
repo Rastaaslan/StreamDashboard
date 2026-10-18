@@ -201,3 +201,39 @@ export function recurrenceSummary(item, locale = 'fr-FR') {
         return rule.interval === 1 ? `↻ Chaque mois · le ${local.day} à ${time}` : `↻ Tous les ${rule.interval} mois · le ${local.day} à ${time}`;
     return rule.interval > 1 ? `↻ Toutes les ${rule.interval} semaines · ${weekday} ${time}` : `↻ Chaque ${weekday} à ${time}`;
 }
+
+// Sparse occurrence edits: omission/undefined preserves; null removes an override.
+// Persist only overrides, never a materialized copy of the master.
+export function mergeOccurrencePatch(previous, changes) {
+    const allowed = new Set(['title', 'description', 'startAtUtc', 'endAtUtc', 'allDay', 'category', 'kind', 'twitchCategoryId', 'twitchCategoryName', 'tags', 'tagPreferences', 'desiredPublication']);
+    if (!changes || typeof changes !== 'object' || Array.isArray(changes)) throw new Error('Patch de récurrence invalide.');
+    const patch = Object.fromEntries(Object.entries(previous?.patch ?? {}).filter(([, value]) => value !== undefined));
+    for (const [field, value] of Object.entries(changes)) {
+        if (!allowed.has(field)) throw new Error('Patch de récurrence invalide.');
+        if (value === undefined) continue;
+        if (value === null) delete patch[field];
+        else patch[field] = field === 'tagPreferences' ? { ...patch[field], ...structuredClone(value) } : structuredClone(value);
+    }
+    // Editing a cancelled occurrence restores it, as the occurrence API always has.
+    return { patch };
+}
+
+/** New series retain civil exception keys, with their own series namespace. */
+export function recurrenceForNewSeries(rule, id) {
+    if (!rule) return rule;
+    const copy = structuredClone(rule);
+    if (copy.exceptions) copy.exceptions = Object.fromEntries(Object.entries(copy.exceptions).map(([key, value]) => {
+        const match = key.match(/:(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2})$/);
+        // Legacy date-only exception keys remain opaque and lossless.
+        return [match ? `${id}:${match[1]}` : key, value];
+    }));
+    return copy;
+}
+
+// Editors must keep unsupported masters reachable; projection consumers still fail closed.
+export function expandEditableRecurringItems(items, window) {
+    return (items || []).flatMap(item => {
+        try { return expandRecurringItems([item], window); }
+        catch { return [structuredClone(item)]; }
+    }).sort((a, b) => Date.parse(a.startAtUtc) - Date.parse(b.startAtUtc));
+}

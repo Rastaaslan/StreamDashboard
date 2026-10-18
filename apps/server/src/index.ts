@@ -1,12 +1,18 @@
 import { measureSync, syncBatch, syncDiagnostics } from '../../../packages/core/src/sync-performance.js';
 import { bulkDeleteSelection } from '../../../packages/core/src/planning-bulk-delete.js';
 import { TwitchTagIntelligence } from '../../../packages/core/src/tag-intelligence.js';
-import { normalizeTags, resolveTags, editedTags, tagMetadata, tagPreferences, type TagEngine } from '../../../packages/core/src/tags.js';
+import { resolveTags, editedTags, tagMetadata, tagPreferences, type TagEngine } from '../../../packages/core/src/tags.js';
 import { googleRecurrence, parseGoogleRecurrence } from '../../../integrations/google-calendar/src/recurrence.js';
 import express from 'express';
+import { ControlService } from './control-service.js';
+import { registerControlRoutes } from './control-routes.js';
+import { YouTubeClient } from '../../../integrations/youtube/src/client.js';
 import { createServer, type Server } from 'node:http';
-import { mkdir, stat, unlink } from 'node:fs/promises';
+import { mkdir, stat, unlink, writeFile } from 'node:fs/promises';
 import { hostname, networkInterfaces } from 'node:os';
+// Restricted development containers may not expose network interface enumeration.
+// Keep loopback usable; never broaden the Host allowlist when discovery fails.
+const visibleNetworkInterfaces: typeof networkInterfaces = () => { try { return networkInterfaces(); } catch { return {}; } };
 import path from 'node:path';
 import { createHash, randomUUID } from 'node:crypto';
 import { WebSocketServer, type WebSocket } from 'ws';
@@ -15,7 +21,7 @@ import { TwitchClient, TwitchHttpError } from '../../../integrations/twitch/src/
 import { TwitchPreflight } from '../../../integrations/twitch/src/preflight.js';
 import { TwitchEventSub, type TwitchChatMessage, type TwitchRewardRedemption } from '../../../integrations/twitch/src/eventsub.js';
 import { DiscordClient } from '../../../integrations/discord/src/client.js';
-import { expandRecurringItems } from '../../../packages/core/src/recurrence.js';
+import { expandRecurringItems, expandEditableRecurringItems, mergeOccurrencePatch } from '../../../packages/core/src/recurrence.js';
 import { EventCore } from '../../../packages/core/src/events.js';
 import { integrationState, transitionIntegration } from '../../../packages/core/src/integrations.js';
 import {
@@ -57,7 +63,7 @@ import { drainCompanionProviders, resolveCompanionDeletion } from './companion-p
 import { companionSnapshot, emptyCompanionState, reconcileCompanionBatch, resolveCompanionConflict, type CompanionState, type SyncOperation } from './companion-sync.js';
 import { RemoteAuth, type PersistedRemoteDevice, type PersistedPairing } from './remote-auth.js';
 import { parseRemoteCommand, toRemoteDashboardState } from './remote-policy.js';
-import { isRemoteApiAllowed } from './remote-api-policy.js';
+import { isRemoteApiAllowed, isManagementApiAllowed } from './remote-api-policy.js';
 import { SoundboardRuntime, validateSound } from './soundboard-runtime.js';
 import { ObsSoundboardPlayback, ObsSoundboardSetup } from './obs-soundboard.js';
 import { AutomationRuntime } from './automation-runtime.js';
@@ -159,7 +165,7 @@ const LOCAL_ADDRESSES = new Set(['127.0.0.1', '::1', '::ffff:127.0.0.1']);
 const PROVIDER_STATUSES = new Set(['synced', 'pending', 'error', 'not-published', 'conflict']);
 const DAY_MS = 86_400_000;
 const REMOTE_ACTIVITY_PERSIST_MS = 30_000;
-const ANDROID_NATIVE_ORIGINS = new Set(['http://localhost', 'http://appassets.androidplatform.net']);
+const ANDROID_NATIVE_ORIGINS = new Set(['http://localhost', 'http://appassets.androidplatform.net', 'http://127.0.0.1:48134']);
 
 function object(value: unknown): value is Record<string, unknown> {
   return Boolean(value && typeof value === 'object' && !Array.isArray(value));
@@ -378,7 +384,7 @@ function overlapsWindow(item: CalendarItem, timeMin: string, timeMax: string) {
 function lanUrls(port: number) {
   if (!port) return [];
   const result = new Set<string>();
-  for (const addresses of Object.values(networkInterfaces())) {
+  for (const addresses of Object.values(visibleNetworkInterfaces())) {
     for (const address of addresses ?? []) {
       if (address.family === 'IPv4' && !address.internal) result.add(`http://${address.address}:${port}/mobile/`);
     }
@@ -719,7 +725,7 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
   const isLocalRequest = (req: express.Request) => isLocalAddress(req.socket.remoteAddress);
   const isRemoteRequest = (req: express.Request) => !isLocalRequest(req);
   const requireLocal = (req: express.Request, res: express.Response) => {
-    if (isLocalRequest(req)) return true;
+    if (isLocalRequest(req) || res.locals.management === true) return true;
     res.status(403).json({ ok: false, error: { code: 'LOCAL_ONLY', message: 'Cette action est disponible uniquement depuis le PC.' } });
     return false;
   };
@@ -730,7 +736,7 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
     if (!authority) return false;
     try {
       const url = new URL(`http://${authority}`);
-      const addresses = Object.values(networkInterfaces()).flatMap(values => (values ?? []).map(value => value.address));
+      const addresses = Object.values(visibleNetworkInterfaces()).flatMap(values => (values ?? []).map(value => value.address));
       return !url.username && !url.password && url.host === authority.toLowerCase()
         && Number(url.port || 80) === runtimePort
         && ['localhost', '127.0.0.1', '[::1]', hostname().toLowerCase(), `${hostname().toLowerCase()}.local`, ...addresses].includes(url.hostname);
@@ -1046,6 +1052,73 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
     return companionSnapshot(local.planning, local.companion);
   });
   const commands = new DashboardCommandService(local, obs, changed, { settings: local.settings, logger, timerOverlayUrl: () => `http://127.0.0.1:${runtimePort}/overlay/timer/` });
+  let control: ControlService;
+  const youtube = new YouTubeClient(secrets, () => {
+    const value = control.snapshot().configuration.youtube;
+    return { ...value, clientId: value.clientId || options.googleClientId || '' };
+  });
+  const platformLive: Record<string, { live: boolean | null; observedAt: string; error?: string }> = {};
+  let platformObservation: Promise<void> | undefined;
+  let platformObservedAt = 0;
+  const observePlatforms = () => {
+    if (platformObservation) return platformObservation;
+    if (Date.now() - platformObservedAt < 15_000) return Promise.resolve();
+    platformObservation = Promise.allSettled((['twitch', 'youtube'] as const).map(async platform => {
+      try { platformLive[platform] = { live: platform === 'twitch' ? (await twitch.getLiveState()).isLive : await youtube.live(), observedAt: new Date().toISOString() }; }
+      catch (error) { platformLive[platform] = { live: null, observedAt: new Date().toISOString(), error: error instanceof Error ? error.message : 'État indisponible' }; }
+    })).then(() => { platformObservedAt = Date.now(); }).finally(() => { platformObservation = undefined; });
+    return platformObservation;
+  };
+  control = await ControlService.open(path.join(dataDir, 'control-v2.json'), {
+    live: async platform => {
+      try {
+        const live = platform === 'twitch' ? (await twitch.getLiveState()).isLive : await youtube.live();
+        platformLive[platform] = { live, observedAt: new Date().toISOString() }; return live;
+      } catch (error) { platformLive[platform] = { live: null, observedAt: new Date().toISOString(), error: error instanceof Error ? error.message : 'État indisponible' }; throw error; }
+    },
+    output: async (platform, start) => {
+      const target = control.snapshot().configuration.outputs[platform];
+      if (target.kind === 'unconfigured') throw new Error(`Sélectionnez la sortie OBS ${platform} dans Configuration.`);
+      if (target.kind === 'main') {
+        await obs.refresh();
+        if (!obs.state.connected || !obs.state.streamingKnown) throw new Error('État de diffusion OBS indisponible.');
+        if (obs.state.streaming !== start) await commands.execute({ type: start ? 'session.start' : 'session.stop' });
+      } else await obs.setOutput(target.name, start);
+    },
+    settle: async (platform, start) => { if (platform === 'youtube') await youtube.transition(start); },
+    metadata: async (platform, value) => {
+      if (platform === 'youtube') { await youtube.update(value); return; }
+      await twitch.updateChannelMetadata({ title: value.title, ...(value.twitchGameId ? { gameId: value.twitchGameId } : {}), tags: value.tags });
+      const channel = await twitch.getChannelMetadata();
+      if (channel.title !== value.title || (value.twitchGameId && channel.gameId !== value.twitchGameId) || JSON.stringify(channel.tags ?? []) !== JSON.stringify(value.tags)) throw new Error('Twitch n’a pas confirmé toutes les informations demandées.');
+      twitchChannel = { ...twitchChannel, ...channel }; broadcast();
+    },
+    action: async (action, id) => {
+      if (action.type === 'sound.play') {
+        const result = await soundboard.play({ commandId: id, type: 'soundboard.play', origin: 'desktop', issuedAt: new Date().toISOString(), payload: { soundId: action.value } });
+        if (result.status !== 'succeeded') throw new Error(result.message || 'Son non confirmé par OBS.'); return;
+      }
+      if (action.type === 'chat.send') {
+        const split = action.value.indexOf(':'); const destination = action.value.slice(0, split); const message = action.value.slice(split + 1).trim();
+        if (!message || split < 0) throw new Error('Message attendu sous la forme twitch:message ou youtube:message.');
+        if (destination === 'youtube') await youtube.chat(message);
+        else if (destination === 'twitch') await twitch.sendChatMessage(message);
+        else throw new Error('Destination du message invalide.'); return;
+      }
+      if (action.type === 'mic.toggle') {
+        await obs.refresh(); const input = action.value || local.settings.primaryMicInput || '';
+        if (!obs.state.connected || !Object.hasOwn(obs.state.inputs, input)) throw new Error('Sélectionnez un micro OBS disponible dans Configuration.');
+        const muted = !obs.state.inputs[input].muted;
+        await commands.execute({ type: 'obs.mute', input, muted });
+        if (obs.state.inputs[input]?.muted !== muted) throw new Error('Le micro OBS n’a pas confirmé son nouvel état.'); return;
+      }
+      if (action.type === 'scene.set') await commands.execute({ type: 'obs.scene', scene: action.value });
+      else if (action.type === 'mode.set') await commands.execute(action.value === 'chatting' ? { type: 'scene.chatting' } : parseCommand({ type: 'mode.set', mode: action.value }));
+      else if (action.type === 'timer.add') await commands.execute({ type: 'timer.add', seconds: Number(action.value) });
+      else if (action.type === 'alert.play') await commands.execute({ type: 'obs.media.restart', input: action.value });
+      else throw new Error('Action non prise en charge.');
+    },
+  }, broadcast);
 
   let backgroundStopped = false;
   let calendarRefreshFlight: Promise<void> | undefined;
@@ -1259,6 +1332,12 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
     }
     const commandBody = Object.fromEntries(Object.entries(envelope).filter(([key]) => key !== 'commandId' && key !== 'correlationId'));
     const command = remote ? parseRemoteCommand(commandBody, snapshot()) : parseCommand(commandBody);
+    if (command.type === 'session.start' || command.type === 'session.stop' || command.type === 'obs.stream') {
+      const start = command.type === 'session.start' || (command.type === 'obs.stream' && command.start);
+      const receipt = await control.execute({ id: typeof commandId === 'string' ? commandId : randomUUID(), issuedAt: new Date().toISOString(), action: start ? 'live.start' : 'live.stop' });
+      if (receipt.status !== 'succeeded') throw Object.assign(new Error(receipt.message), { name: 'MULTISTREAM_INCOMPLETE' });
+      return { command, state: snapshot() };
+    }
     const fingerprint = JSON.stringify(command);
     if (typeof commandId === 'string') {
       const existing = commandJournal.get(commandId);
@@ -1547,7 +1626,7 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
         res.status(409).json({ ok: false, error: { code: 'REMOTE_RESTART_REQUIRED', message: 'Activez la télécommande LAN puis redémarrez StreamDashboard avant le pairing.' } });
         return;
       }
-      const pairing = remoteAuth.createPairing();
+      const pairing = remoteAuth.createPairing(undefined, req.body?.management === true);
       await save();
       const urls = lanUrls(runtimePort);
       res.status(201).json({
@@ -1607,6 +1686,8 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
       return;
     }
     scheduleRemoteActivitySave();
+    if (remoteAuth.canManage(deviceId) && isManagementApiAllowed(req.method, pathName)) { res.locals.management = true; next(); return; }
+    if (pathName.startsWith('/v2/')) { res.status(403).json({ error: { message: 'Associez cet appareil avec un code de gestion complète depuis le PC de stream.' } }); return; }
     if (!isRemoteApiAllowed(req.method, pathName)) {
       res.status(403).json({ ok: false, error: { code: 'REMOTE_SCOPE_DENIED', message: 'Cette action n’est pas autorisée depuis la télécommande.' } });
       return;
@@ -1900,35 +1981,17 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
   });
   app.post('/api/v1/twitch/channel', async (req, res, next) => {
     try {
-      if (!twitch.state.connected) throw new Error('Twitch non connecté.');
-      const title = String(req.body.title ?? twitchChannel.title).trim();
-      const gameId = String(req.body.gameId ?? twitchChannel.gameId).trim();
-      const gameName = String(req.body.gameName ?? twitchChannel.gameName).trim();
-      const titleChanged = title !== twitchChannel.title;
-      const categoryChanged = gameId !== twitchChannel.gameId || gameName !== twitchChannel.gameName;
-      if (titleChanged && (!title || title.length > 140)) throw new Error('Le titre Twitch doit contenir entre 1 et 140 caractères.');
-      if (categoryChanged && (!/^\d{1,30}$/.test(gameId) || !gameName || gameName.length > 140)) throw new Error('Sélectionnez une catégorie Twitch valide.');
-      const tags = req.body.tags === undefined ? undefined : normalizeTags(req.body.tags);
-      if (req.body.tags !== undefined && !Array.isArray(req.body.tags)) throw new Error('Tags invalides.');
-      const metadata = { ...(titleChanged ? { title } : {}), ...(categoryChanged ? { gameId } : {}) };
-      const metadataChanged = titleChanged || categoryChanged;
-      let tagsWarning: string | undefined;
-      if (metadataChanged || tags !== undefined) {
-        try {
-          await twitch.updateChannelMetadata({ ...metadata, ...(tags !== undefined ? { tags } : {}) });
-        } catch (error) {
-          if (tags === undefined) throw error;
-          // A tags-only rejection must not rewrite unrelated (possibly empty) metadata.
-          if (metadataChanged) await twitch.updateChannelMetadata(metadata);
-          tagsWarning = metadataChanged
-            ? 'Tags refusés par Twitch ; titre et catégorie appliqués. Corrige les tags puis réessaie.'
-            : 'Tags refusés par Twitch. Corrige les tags puis réessaie.';
-        }
-      }
-      twitchChannel = { title, gameId, gameName, tags: tagsWarning ? twitchChannel.tags : tags ?? twitchChannel.tags, tagsWarning };
-      twitchLive = { ...twitchLive, ...(titleChanged ? { title } : {}), ...(categoryChanged ? { category: gameName, categoryId: gameId } : {}) };
-      broadcast();
-      res.json(isRemoteRequest(req) ? toRemoteDashboardState(snapshot()) : snapshot());
+      const configuration = control.snapshot().configuration;
+      const metadata = { ...configuration.metadata,
+        title: typeof req.body?.title === 'string' ? req.body.title : configuration.metadata.title || twitchChannel.title,
+        twitchGameId: typeof req.body?.gameId === 'string' ? req.body.gameId : configuration.metadata.twitchGameId,
+        tags: req.body?.tags === undefined ? configuration.metadata.tags : req.body.tags,
+      };
+      const receipt = await control.execute({ id: randomUUID(), issuedAt: new Date().toISOString(), action: 'metadata.apply', expectedRevision: configuration.revision, metadata });
+      res.status(receipt.status === 'succeeded' ? 200 : 409).json({ ...(isRemoteRequest(req) ? toRemoteDashboardState(snapshot()) : snapshot()), receipt,
+        ...(receipt.status !== 'succeeded' ? { error: { code: 'MULTISTREAM_INCOMPLETE', message: receipt.message } } : {}),
+      });
+      return;
     } catch (error) { next(error); }
   });
   app.post('/api/v1/commands', async (req, res, next) => {
@@ -2028,7 +2091,7 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
       if (effectiveTwitch && (category !== 'live' || allDay)) throw new Error('La publication Twitch nécessite un événement Live avec des horaires précis.');
       const kind = category === 'live' ? 'LIVE' : category === 'personal' ? 'PERSONAL' : undefined;
       local.companion.eventHistory[id] = structuredClone(item) as unknown as Record<string, unknown>;
-      await plan(async () => planning().update(id, {
+      await plan(async () => { checkPlanningRevision(req, id); return planning().update(id, {
         title,
         description: typeof req.body.description === 'string' ? req.body.description.slice(0, 4000) : item.description,
         startAtUtc,
@@ -2044,7 +2107,7 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
       }, {
         desiredPublication,
         confirmRecurring: req.body.confirmRecurring === true,
-      }));
+      }); });
       local.companion.eventRevisions[id] = (local.companion.eventRevisions[id] ?? 1) + 1;
       local.companion.serverRevision++;
       invalidatePreflight();
@@ -2204,7 +2267,7 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
         confirmRecurring: req.body?.confirmRecurring === true || req.query.confirmRecurring === 'true',
       };
       const oldRevision = local.companion.eventRevisions[id] ?? 1;
-      await plan(async () => planning().remove(id, destinations));
+      await plan(async () => { checkPlanningRevision(req, id); return planning().remove(id, destinations); });
       local.companion.eventRevisions[id] = oldRevision + 1;
       if (!local.planning.some(value => value.id === id)) local.companion.tombstones[id] = { id, revision: oldRevision + 1, updatedAt: new Date().toISOString() };
       delete local.companion.eventHistory[id]; local.companion.serverRevision++;
@@ -2222,12 +2285,12 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
       const recurrence = structuredClone(series.recurrence); recurrence.exceptions ??= {};
       if (req.method === 'DELETE') recurrence.exceptions[occurrenceKey] = { cancelled: true };
       else {
-        const patch = object(req.body?.patch) ? req.body.patch : {};
+        const patch = mergeOccurrencePatch(recurrence.exceptions[occurrenceKey], object(req.body?.patch) ? req.body.patch : {}).patch;
         const validated = validateRecurrence({ ...recurrence, exceptions: { [occurrenceKey]: { patch } } });
         if (!validated?.exceptions?.[occurrenceKey]) throw new Error('Patch d’occurrence invalide.');
         recurrence.exceptions[occurrenceKey] = validated.exceptions[occurrenceKey];
       }
-      await plan(async () => planning().update(series.id, { title: series.title, description: series.description, startAtUtc: series.startAtUtc, endAtUtc: series.endAtUtc, allDay: series.allDay, category: series.category, kind: series.kind, twitchCategoryId: series.twitchCategoryId, twitchCategoryName: series.twitchCategoryName, recurrence }));
+      await plan(async () => { checkPlanningRevision(req, series.id); return planning().update(series.id, { title: series.title, description: series.description, startAtUtc: series.startAtUtc, endAtUtc: series.endAtUtc, allDay: series.allDay, category: series.category, kind: series.kind, twitchCategoryId: series.twitchCategoryId, twitchCategoryName: series.twitchCategoryName, recurrence }); });
       local.companion.eventRevisions[series.id] = (local.companion.eventRevisions[series.id] ?? 1) + 1; local.companion.serverRevision++;
       res.json(responseState(req, await changed()));
     } catch (error) { next(error); }
@@ -2237,6 +2300,7 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
     try {
       const input = req.body as Partial<DashboardSettings> & { obsPassword?: string; clearObsPassword?: boolean };
       const state = await configure(async () => {
+        if (req.path.startsWith('/api/v2/') && req.body.expectedRevision !== settingsFingerprint()) throw Object.assign(new Error('Réglages modifiés sur un autre appareil. Rechargez avant d’enregistrer.'), { name: 'REVISION_CONFLICT' });
         const newUrl = input.obsUrl !== undefined ? normalizeObsUrl(String(input.obsUrl).trim()) : local.settings.obsUrl;
         const clearPassword = input.clearObsPassword === true;
         const suppliedPassword = typeof input.obsPassword === 'string' && input.obsPassword.length ? input.obsPassword : undefined;
@@ -2300,9 +2364,31 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
         broadcast();
         return snapshot();
       });
-      res.json(state);
+      res.json(req.path.startsWith('/api/v2/') ? { settings: publicSettings(), revision: settingsFingerprint() } : state);
     } catch (error) { next(error); }
   };
+
+  const settingsFingerprint = () => createHash('sha256').update(JSON.stringify(publicSettings())).digest('hex');
+  const planningFingerprint = (id: string) => createHash('sha256').update(JSON.stringify(local.planning.find(item => item.id === id) ?? null)).digest('hex');
+  const checkPlanningRevision = (req: express.Request, id: string) => {
+    if (req.path.startsWith('/api/v2/') && req.body.expectedRevision !== planningFingerprint(id)) throw Object.assign(new Error('Événement modifié sur un autre appareil. Rechargez avant d’enregistrer.'), { name: 'REVISION_CONFLICT' });
+  };
+  registerControlRoutes({ app, control, youtube, obs, settings: settingsUpdate, planningCreate, planningUpdate, planningDelete, recurrence: recurrenceException, isLocal: isLocalRequest, port: () => runtimePort, observe: observePlatforms,
+    state: () => ({ hostname: hostname(), state: toRemoteDashboardState(snapshot()), settings: publicSettings(), settingsRevision: settingsFingerprint(), planning: structuredClone(local.planning), occurrences: expandEditableRecurringItems(local.planning, { from: Date.now() - DAY_MS, to: Date.now() + 90 * DAY_MS }), planningRevisions: Object.fromEntries(local.planning.map(item => [item.id, planningFingerprint(item.id)])), platforms: structuredClone(platformLive), local: true }),
+  });
+  app.post('/api/v2/sounds/upload', express.raw({ type: 'application/octet-stream', limit: '100mb' }), async (req, res, next) => {
+    let destination: string | undefined;
+    try {
+      const extension = String(req.query.extension ?? '').toLowerCase();
+      if (!['wav','mp3','ogg','aac','m4a','flac'].includes(extension) || !Buffer.isBuffer(req.body) || !req.body.length) throw new Error('Fichier audio invalide.');
+      const sound = validateSound({ id: randomUUID(), name: String(req.query.name ?? '').trim(), source: path.join(soundLibraryDir, `${randomUUID()}.${extension}`), outputId: 'obs', volume: 1, enabled: true, favorite: false, cooldownMs: 0, category: '', monitoringMode: 'stream' });
+      await mkdir(soundLibraryDir, { recursive: true }); destination = sound.source;
+      await writeFile(destination, req.body, { flag: 'wx', mode: 0o600 });
+      const sounds = [...local.sounds, sound];
+      await store.write({ ...local, sounds }); local.sounds = sounds; soundboard.replace(sounds); broadcast();
+      res.status(201).json({ id: sound.id, name: sound.name });
+    } catch (error) { if (destination) await unlink(destination).catch(() => {}); next(error); }
+  });
 
   for (const prefix of ['/api', '/api/v1']) {
     app.post(`${prefix}/planning/bulk-delete/preview`, planningBulkPreview);
@@ -2655,9 +2741,9 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
     const name = error instanceof Error ? error.name : '';
     const status = name === 'NOT_FOUND' ? 404
       : ['REMOTE_SCOPE_DENIED', 'TWITCH_NOT_AUTHORIZED'].includes(name) ? 403
-        : ['COMMAND_ALREADY_RECEIVED', 'CHECKLIST_INCOMPLETE', 'CONFIRM_REQUIRED', 'TWITCH_DISCONNECTED', 'NOT_EDITABLE'].includes(name) ? 409
+        : ['REVISION_CONFLICT', 'COMMAND_ALREADY_RECEIVED', 'CHECKLIST_INCOMPLETE', 'CONFIRM_REQUIRED', 'TWITCH_DISCONNECTED', 'NOT_EDITABLE'].includes(name) ? 409
           : 400;
-    const code = name === 'COMMAND_ALREADY_RECEIVED' ? name : name === 'CHECKLIST_INCOMPLETE' ? 'CHECKLIST_INCOMPLETE'
+    const code = ['REVISION_CONFLICT', 'COMMAND_ALREADY_RECEIVED'].includes(name) ? name : name === 'CHECKLIST_INCOMPLETE' ? 'CHECKLIST_INCOMPLETE'
       : name === 'CONFIRM_REQUIRED' ? 'CONFIRM_REQUIRED'
         : name === 'TWITCH_DISCONNECTED' ? 'TWITCH_DISCONNECTED'
           : name === 'NOT_FOUND' ? 'NOT_FOUND'
@@ -2779,6 +2865,7 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
     for (const ws of sockets.clients) ws.terminate();
     sockets.close();
     await new Promise<void>((resolve, reject) => server.close(error => error ? reject(error) : resolve()));
+    await control.stop();
     await commands.stop();
     await planningQueue;
     if (timerExpiry) clearTimeout(timerExpiry);

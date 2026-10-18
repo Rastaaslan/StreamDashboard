@@ -90,7 +90,7 @@ public class MainActivity extends Activity {
     setContentView(webView);
     ensurePingNotifications();
     captureDeepLink(getIntent());
-    webView.loadUrl(ORIGIN + "/mobile/index.html");
+    webView.loadUrl(ORIGIN + "/mobile/control/index.html");
   }
 
   @Override protected void onNewIntent(Intent intent) {

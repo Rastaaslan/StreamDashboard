@@ -5,6 +5,8 @@ import path from 'node:path';
 import type { SecretStore } from '../../server/src/storage.js';
 
 interface SecurePayload {
+  controller?: { credential: string };
+  youtube?: Record<string, string>;
   twitch?: Record<string, string>;
   google?: Record<string, string>;
   googleClientSecret?: string;
@@ -74,6 +76,11 @@ export class ElectronSecretStore implements SecretStore {
   }
 
   async getTwitchTokens() { return (await this.read()).twitch ?? null; }
+  async getController() { return (await this.read()).controller ?? null; }
+  async setController(controller: { credential: string }) { await this.update(value => { value.controller = { ...controller }; }); }
+  async getYouTubeTokens() { return (await this.read()).youtube ?? null; }
+  async setYouTubeTokens(youtube: Record<string, string>) { await this.update(value => { value.youtube = { ...youtube }; }); }
+  async clearYouTubeTokens() { await this.update(value => { delete value.youtube; }); }
   async setTwitchTokens(twitch: Record<string, string>) { await this.update(value => { value.twitch = { ...twitch }; }); }
   async clearTwitchTokens() { await this.update(value => { delete value.twitch; }); }
   async getObsPassword() { return (await this.read()).obsPassword ?? ''; }

@@ -8,10 +8,13 @@ import { handleSquirrelStartup } from './squirrel.js';
 import { startUpdater } from './updater.js';
 import { DesktopLogger } from './logger.js';
 import { presentWindow } from './presentation.js';
+import { installControllerKeys, startControllerAssets } from './controller.js';
+import type { Server } from 'node:http';
 
 const squirrelHandled = handleSquirrelStartup();
-app.setName('StreamDashboard');
-if (process.platform === 'win32') app.setAppUserModelId('com.squirrel.StreamDashboard.StreamDashboard');
+app.setName('StreamDashboard Next');
+app.setPath('userData', path.join(app.getPath('appData'), 'StreamDashboard-Next'));
+if (process.platform === 'win32') app.setAppUserModelId('com.rastaaslan.StreamDashboard.Next');
 const logger = new DesktopLogger(path.join(app.getPath('userData'), 'logs'));
 const log = (event: string) => { void logger.info(event, { pid: process.pid }).catch(() => undefined); };
 const primary = !squirrelHandled && app.requestSingleInstanceLock();
@@ -20,6 +23,8 @@ else log('Primary instance acquired');
 
 let window: BrowserWindow | null = null;
 let runtime: DesktopRuntime | null = null;
+let controllerServer: Server | undefined;
+let stopControllerKeys: () => void = () => {};
 let stopUpdater: () => void = () => undefined;
 let quitting = false;
 let bootPromise: Promise<void> | undefined;
@@ -41,6 +46,8 @@ app.on('activate', present);
 function cleanupRuntime(): Promise<void> {
   return cleanupPromise ??= (async () => {
     stopUpdater(); stopUpdater = () => undefined;
+    stopControllerKeys();
+    if (controllerServer) await new Promise<void>((resolve,reject) => controllerServer!.close(error => error ? reject(error) : resolve()));
     // Acquisition and teardown have one owner, even when quit races startup.
     // Startup cancellation interrupts provider I/O, but never abandons cleanup.
     let current: DesktopRuntime | undefined;
@@ -70,8 +77,10 @@ function boot(): Promise<void> {
       log('Electron ready; creating visible startup window');
       const preview = process.argv.includes('--ui-preview=desktop-v2');
       const legacy = process.argv.includes('--ui-legacy=desktop-v1');
-      const route = preview || !legacy ? (preview ? '/preview/' : '/preview/?runtime=1') : '/';
-      const targetUrl = new URL(route, 'http://127.0.0.1:48132').toString();
+      const client = process.argv.includes('--role=client');
+      const route = legacy ? '/' : preview ? '/preview/' : '/mobile/control/';
+      const uiOrigin = `http://127.0.0.1:${client ? 48134 : 48133}`;
+      const targetUrl = new URL(route, uiOrigin).toString();
       window = createDashboardWindow(targetUrl, path.join(import.meta.dirname, 'preload.cjs'), 'StreamDashboard — Démarrage…');
       window.on('closed', () => { window = null; });
       window.webContents.on('render-process-gone', (_event, details) => { void fail(new Error(`Renderer stopped: ${details.reason}`)); });
@@ -82,12 +91,19 @@ function boot(): Promise<void> {
       await window.loadURL('data:text/html;charset=utf-8,' + encodeURIComponent(
         '<!doctype html><meta charset="utf-8"><meta http-equiv="Content-Security-Policy" content="default-src \'none\'; style-src \'unsafe-inline\'"><title>StreamDashboard — Démarrage…</title><body style="background:#080a10;color:#fff;font:20px system-ui;padding:48px"><h1>StreamDashboard</h1><p>Démarrage en cours…</p><p>Vous pouvez fermer cette fenêtre pour annuler.</p></body>'));
       if (quitting) return;
+      stopControllerKeys = installControllerKeys(() => window, app.getPath('userData'), uiOrigin);
+      if (client) {
+        controllerServer = await startControllerAssets(path.join(app.getAppPath(), 'apps', 'mobile'));
+        if (!quitting) await window!.loadURL(targetUrl + '?role=client');
+        return;
+      }
       log('Startup window visible; starting local runtime');
       runtimePromise = startDesktopRuntime(logger, startup.signal);
       runtime = await runtimePromise;
       if (quitting) return;
       log('Local runtime ready; loading renderer');
-      stopUpdater = startUpdater(window!, runtime.dashboard, logger, cleanupRuntime);
+      // Candidate stays isolated: production updater must not replace it or the stable installation.
+      if (process.argv.includes('--enable-candidate-updater')) stopUpdater = startUpdater(window!, runtime.dashboard, logger, cleanupRuntime);
       await window!.loadURL(targetUrl);
       log('Renderer loaded');
     } catch (error) { await fail(error); }

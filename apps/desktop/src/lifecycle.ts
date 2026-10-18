@@ -27,7 +27,7 @@ export async function startDesktopRuntime(logger = new DesktopLogger(path.join(a
   const dashboard = await startDashboardServer({
     startupSignal: signal,
     // Fixed endpoint for OBS, OAuth and phones; binding failures must be explicit.
-    port: 48132,
+    port: 48133,
     host: remoteEnabled ? '0.0.0.0' : '127.0.0.1',
     remoteEnabled,
     dataDir: path.join(userData, 'config'),

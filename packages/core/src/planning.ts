@@ -1,3 +1,4 @@
+import { recurrenceForNewSeries } from './recurrence.js';
 import { deleteSeriesProjections, recoverSeriesDeletionIdentities } from './series-deletion.js';
 import { reconcileGoogleProjection, needsGoogleMaterialization, resolveGoogleOccurrenceConflict } from '../../../integrations/google-calendar/src/projection.js';
 import { reconcileTwitchProjection, needsTwitchMaterialization, resolveTwitchOccurrenceConflict } from '../../../integrations/twitch/src/projection.js';
@@ -76,6 +77,7 @@ export class PlanningOrchestrator {
       const id = input.id ?? crypto.randomUUID();
       const item: CalendarItem = {
         ...input,
+        recurrence: recurrenceForNewSeries(input.recurrence, input.localId ?? id),
         id,
         localId: input.localId ?? id,
         ownership: 'LOCAL',
