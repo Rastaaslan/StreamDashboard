@@ -1,10 +1,11 @@
+import type { WizeBotService } from './wizebot-service.js';
 import type express from 'express';
 import type { ControlService } from './control-service.js';
 import type { YouTubeClient } from '../../../integrations/youtube/src/client.js';
 import type { ObsClient } from '../../../integrations/obs/src/client.js';
 
 export function registerControlRoutes(options: {
-  app: express.Application; control: ControlService; youtube: YouTubeClient; obs: ObsClient;
+  app: express.Application; control: ControlService; wizebotCommands: WizeBotService; youtube: YouTubeClient; obs: ObsClient;
   timerSource(): string | undefined; state(): unknown; settings: express.RequestHandler; planningCreate: express.RequestHandler; planningUpdate: express.RequestHandler; planningDelete: express.RequestHandler; recurrence: express.RequestHandler;
   observe(): Promise<void>;
   isLocal(req: express.Request): boolean; port(): number;
@@ -19,6 +20,10 @@ export function registerControlRoutes(options: {
       res.json(await control.execute({...req.body,action}));
     } catch(e){next(e);}
   });
+  app.get('/api/v2/wizebot/catalog',(_req,res)=>res.json(options.wizebotCommands.snapshot()));
+  app.post('/api/v2/wizebot/refresh',async(_req,res,next)=>{try{res.json(await options.wizebotCommands.refresh());}catch(e){next(e);}});
+  app.post('/api/v2/wizebot/import',async(req,res,next)=>{try{res.json(await options.wizebotCommands.import(control,req.body.ids,req.body.expectedRevision,req.body.channel));}catch(e){next(e);}});
+  app.post('/api/v2/wizebot/edit',async(req,res,next)=>{try{res.json(await options.wizebotCommands.edit(req.body));}catch(e){next(e);}});
   app.get('/api/v2/replay', async(_req,res) => {
     try { res.json({ ...await obs.replayStatus(), error: '' }); }
     catch(e) { res.json({ active: null, enabled: null, seconds: null, directory: '', error: e instanceof Error ? e.message : 'Replay indisponible.' }); }

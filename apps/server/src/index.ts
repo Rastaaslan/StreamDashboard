@@ -1,3 +1,4 @@
+import { WizeBotService } from './wizebot-service.js';
 import { measureSync, syncBatch, syncDiagnostics } from '../../../packages/core/src/sync-performance.js';
 import { bulkDeleteSelection } from '../../../packages/core/src/planning-bulk-delete.js';
 import { TwitchTagIntelligence } from '../../../packages/core/src/tag-intelligence.js';
@@ -1106,6 +1107,7 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
         return { message: action.type === 'replay.start' ? 'Tampon prêt : les prochains moments pourront être sauvegardés.' : 'Tampon de replay arrêté.' };
       }
       if (action.type === 'wizebot.command') {
+        if (action.wizebot && action.wizebot.channel !== twitch.publicIdentity().userName?.toLowerCase()) throw new Error('Ce bouton WizeBot appartient à une autre chaîne Twitch.');
         const result = await twitch.sendChatMessage(action.value);
         return { message: `${action.value} envoyé dans le chat Twitch. La réponse de WizeBot reste à vérifier dans le chat.`, messageId: result.messageId };
       }
@@ -1135,6 +1137,8 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
       else throw new Error('Action non prise en charge.');
     },
   }, broadcast);
+
+  const wizebotCommands = await WizeBotService.open(path.join(dataDir, 'wizebot-commands.json'), () => twitch.publicIdentity().userName || '', text => twitch.sendChatMessage(text));
 
   let backgroundStopped = false;
   let calendarRefreshFlight: Promise<void> | undefined;
@@ -2389,7 +2393,7 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
   const checkPlanningRevision = (req: express.Request, id: string) => {
     if (req.path.startsWith('/api/v2/') && req.body.expectedRevision !== planningFingerprint(id)) throw Object.assign(new Error('Événement modifié sur un autre appareil. Rechargez avant d’enregistrer.'), { name: 'REVISION_CONFLICT' });
   };
-  registerControlRoutes({ app, control, youtube, obs, timerSource: () => local.settings.timerBrowserSource, settings: settingsUpdate, planningCreate, planningUpdate, planningDelete, recurrence: recurrenceException, isLocal: isLocalRequest, port: () => runtimePort, observe: observePlatforms,
+  registerControlRoutes({ app, control, youtube, obs, wizebotCommands, timerSource: () => local.settings.timerBrowserSource, settings: settingsUpdate, planningCreate, planningUpdate, planningDelete, recurrence: recurrenceException, isLocal: isLocalRequest, port: () => runtimePort, observe: observePlatforms,
     state: () => ({ hostname: hostname(), chat: { connected: twitch.state.connected, canSend: twitch.controlCapabilities().chatWrite, channel: twitch.publicIdentity().userName || '' }, replayAutoStartError, monitor: { twitchLogin: twitch.publicIdentity().userName || '' }, state: toRemoteDashboardState(snapshot()), settings: publicSettings(), settingsRevision: settingsFingerprint(), planning: structuredClone(local.planning), occurrences: expandEditableRecurringItems(local.planning, { from: Date.now() - DAY_MS, to: Date.now() + 90 * DAY_MS }), planningRevisions: Object.fromEntries(local.planning.map(item => [item.id, planningFingerprint(item.id)])), platforms: structuredClone(platformLive), local: true }),
   });
   app.post('/api/v2/sounds/upload', express.raw({ type: 'application/octet-stream', limit: '100mb' }), async (req, res, next) => {
@@ -2889,6 +2893,7 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
     for (const ws of sockets.clients) ws.terminate();
     sockets.close();
     await new Promise<void>((resolve, reject) => server.close(error => error ? reject(error) : resolve()));
+    await wizebotCommands.stop();
     await control.stop();
     await commands.stop();
     await planningQueue;

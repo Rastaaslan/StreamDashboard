@@ -1,0 +1,34 @@
+import { describe,it,expect } from 'vitest';
+import { mkdtemp,rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import path from 'node:path';
+import { WizeBotCatalogClient,parseWizeBotCatalog } from '../integrations/wizebot/src/catalog.js';
+import { WizeBotService } from '../apps/server/src/wizebot-service.js';
+import { ControlService } from '../apps/server/src/control-service.js';
+import { isRemoteApiAllowed } from '../apps/server/src/remote-api-policy.js';
+const rows=(text='R&eacute;ponse 🔥',alias='!bonjour')=>({data:[[alias,'123',text,'-','','SAY',0,'category']]});
+const edit=(revision:string,response='Nouveau texte',id='request_0001')=>({id,issuedAt:new Date().toISOString(),channel:'test_channel',commandId:'123',expectedRevision:revision,response});
+async function fixture(fn:(x:any)=>Promise<void>){const dir=await mkdtemp(path.join(tmpdir(),'wiz-tests-'));let raw=rows(),sent:string[]=[];const source={list:async()=>parseWizeBotCatalog(raw)};let send=async(text:string)=>{sent.push(text);return {messageId:'message_1'};};let channel='test_channel';const file=path.join(dir,'wizebot.json');const open=()=>WizeBotService.open(file,()=>channel,text=>send(text),source,async()=>{});const service=await open();try{await service.refresh();await fn({service,open,dir,sent,setRaw:(v:any)=>raw=v,setSend:(v:any)=>send=v,setChannel:(v:string)=>channel=v});}finally{await rm(dir,{recursive:true,force:true});}}
+describe('WizeBot public catalog',()=>{
+ it('decodes French/entities once and treats remote markup as data',()=>{const c=parseWizeBotCatalog(rows('Été &amp; &lt;img src=x onerror=alert(1)&gt;'))[0];expect(c.publishedText).toBe('Été & <img src=x onerror=alert(1)>');expect(c.aliases).toEqual(['!bonjour']);});
+ it('rejects malformed/duplicate records instead of replacing the previous list',()=>{expect(()=>parseWizeBotCatalog({data:[...rows().data,...rows().data]})).toThrow();expect(()=>parseWizeBotCatalog({data:'not-a-list'})).toThrow();});
+ it('uses the actual anonymous session and only the observed same-origin list path',async()=>{
+  const calls:any[]=[];const client=new WizeBotCatalogClient((async(url:any,init:any)=>{calls.push({url,init});return calls.length===1?new Response('home',{headers:{'set-cookie':'PHPSESSID=public-session; Path=/'}}):calls.length===2?new Response("ajax: 'ajax/list/commands_list.php?t="+'a'.repeat(64)+"'"):Response.json(rows());}) as typeof fetch);
+  expect(await client.list('test_channel')).toHaveLength(1);expect(calls[1].init.headers.cookie).toBe('PHPSESSID=public-session');expect(calls[1].init.body.get('p')).toBe('commands');expect(calls[2].url).toBe('https://test_channel.streaming.lv/ajax/list/commands_list.php?t='+'a'.repeat(64));expect(calls.every(c=>c.init.redirect==='error')).toBe(true);await expect(client.list('test/evil')).rejects.toThrow();
+ });
+});
+describe('WizeBot management',()=>{
+ it('imports idempotently, keeps customization and persists across host restarts',()=>fixture(async({service,dir,open,setRaw}:any)=>{
+  const c=await ControlService.open(path.join(dir,'control.json'),{live:async()=>false,output:async()=>{},metadata:async()=>{},action:async()=>{}});
+  expect((await service.import(c,['123'],0,'test_channel')).added).toBe(1);let config=c.snapshot().configuration;const a=config.actions.find(a=>a.wizebot?.id==='123')!;a.label='Mon bouton';a.color='amber';a.shortcut='Control+Alt+Shift+F10';await c.configure(config,config.revision);
+  setRaw(rows('Nouveau','!salut'));expect((await service.import(c,['123'],c.snapshot().configuration.revision,'test_channel')).updated).toBe(1);const kept=c.snapshot().configuration.actions.find(a=>a.wizebot?.id==='123')!;expect(kept).toMatchObject({label:'Mon bouton',color:'amber',shortcut:'Control+Alt+Shift+F10',value:'!salut'});expect(c.snapshot().configuration.actions.filter(a=>a.wizebot)).toHaveLength(1);expect((await open()).snapshot().items[0].aliases).toEqual(['!salut']);await c.stop();
+ }));
+ it('refuses stale revisions and changed accounts before sending',()=>fixture(async({service,setRaw,setChannel,sent}:any)=>{const request=edit(service.snapshot().items[0].revision);setRaw(rows('Changed elsewhere'));await expect(service.edit(request)).rejects.toThrow('modifiée');setChannel('other');await expect(service.edit(request)).rejects.toThrow('chaîne');expect(sent).toHaveLength(0);}));
+ it('confirms only an exact changed readback; duplicate request sends once',()=>fixture(async({service,setSend,setRaw,sent,open}:any)=>{setSend(async(text:string)=>{sent.push(text);setRaw(rows('Nouveau texte'));return {messageId:'m1'};});const request=edit(service.snapshot().items[0].revision);const [a,b]=await Promise.all([service.edit(request),service.edit(request)]);expect(a.status).toBe('succeeded');expect(b).toEqual(a);expect(sent).toEqual(['!cmd edit 123 Nouveau texte']);expect((await open()).snapshot().edits[0].status).toBe('succeeded');}));
+ it('keeps unconfirmed sends uncertain, deduplicates, and permits explicit retry',()=>fixture(async({service,sent,open}:any)=>{const request=edit(service.snapshot().items[0].revision);expect((await service.edit(request)).status).toBe('uncertain');expect((await service.edit({...request,id:'request_0002'})).id).toBe(request.id);expect(sent).toHaveLength(1);expect((await open()).snapshot().edits[0].status).toBe('uncertain');await service.edit({...request,id:'request_0003',retryOf:request.id});expect(sent).toHaveLength(2);}));
+ it('refresh can confirm a delayed edit without sending another message',()=>fixture(async({service,sent,setRaw}:any)=>{await service.edit(edit(service.snapshot().items[0].revision));setRaw(rows('Nouveau texte'));expect((await service.refresh()).edits[0].status).toBe('succeeded');expect(sent).toHaveLength(1);}));
+ it('does not resend an already matching published response',()=>fixture(async({service,sent}:any)=>{const c=service.snapshot().items[0];expect((await service.edit(edit(c.revision,c.publishedText))).status).toBe('succeeded');expect(sent).toHaveLength(0);}));
+ it('blocks masked variables, settings directives, multiline and long payloads',()=>fixture(async({service,sent}:any)=>{for(const response of ['Hello ###','$cmd(permission,all) hello','A\n!cmd del 123','x'.repeat(500)])await expect(service.edit(edit(service.snapshot().items[0].revision,response))).rejects.toThrow();expect(sent).toHaveLength(0);}));
+ it('retains cached data after a failed refresh',()=>fixture(async({service,setRaw}:any)=>{setRaw({error:'unavailable'});await expect(service.refresh()).rejects.toThrow();expect(service.snapshot().items).toHaveLength(1);}));
+ it('allows paired management paths and no arbitrary endpoint',()=>{for(const route of ['refresh','edit','import'])expect(isRemoteApiAllowed('POST','/v2/wizebot/'+route)).toBe(true);expect(isRemoteApiAllowed('GET','/v2/wizebot/catalog')).toBe(true);expect(isRemoteApiAllowed('DELETE','/v2/wizebot/all')).toBe(false);});
+});

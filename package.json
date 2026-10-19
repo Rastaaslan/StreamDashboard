@@ -1,8 +1,8 @@
 {
   "name": "stream-dashboard",
   "productName": "StreamDashboard Next",
-  "version": "2.0.0-rc.5",
-  "description": "Cockpit desktop Windows pour OBS, Twitch, Google Calendar et t\u00e9l\u00e9commande LAN",
+  "version": "2.0.0-rc.6",
+  "description": "Cockpit desktop Windows pour OBS, Twitch, Google Calendar et télécommande LAN",
   "author": "Rastaaslan",
   "repository": "https://github.com/Rastaaslan/StreamDashboard",
   "private": true,
@@ -36,6 +36,7 @@
     "desktop:client": "npm run build && electron-forge start -- --role=client"
   },
   "dependencies": {
+    "entities": "6.0.1",
     "express": "^5.1.0",
     "obs-websocket-js": "^5.0.6",
     "ws": "^8.18.3"

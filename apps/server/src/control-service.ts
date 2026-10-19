@@ -29,6 +29,7 @@ export function validateConfiguration(value: ControlConfiguration): ControlConfi
     if (typeof a.shortcut !== 'string' || (a.shortcut && (!/^Control\+Alt\+Shift\+F(?:[1-9]|1\d|2[0-4])$/.test(a.shortcut) || shortcuts.has(a.shortcut)))) fail('Raccourci invalide ou déjà utilisé.');
     if (a.type === 'timer.add' && (!Number.isFinite(Number(a.value)) || Math.abs(Number(a.value)) > 86400)) fail('Durée invalide.');
     if (a.type === 'wizebot.command' && (!/^![\p{L}\p{N}_-]+(?: [^\r\n]*)?$/u.test(a.value) || /[\x00-\x1f\x7f]/.test(a.value))) fail('Une commande WizeBot commence par ! et tient sur une seule ligne.');
+    if (a.wizebot && (a.type !== 'wizebot.command' || !/^[a-z0-9_]{1,25}$/.test(a.wizebot.channel) || !/^\d{1,30}$/.test(a.wizebot.id))) fail('Lien WizeBot invalide.');
     ids.add(a.id); if (a.shortcut) shortcuts.add(a.shortcut);
   }
   for (const p of platforms) {
@@ -38,7 +39,7 @@ export function validateConfiguration(value: ControlConfiguration): ControlConfi
   if (!value.youtube || typeof value.youtube.clientId !== 'string' || value.youtube.clientId.length > 250 || !/^[A-Za-z0-9_-]{0,120}$/.test(value.youtube.broadcastId) || !/^[A-Za-z0-9_-]{0,120}$/.test(value.youtube.channelId)) fail('Cible YouTube invalide.');
   const metadata = value.metadata.title ? validateMetadata(value.metadata) : defaultControlData().configuration.metadata;
   if (value.replayAutoStart !== undefined && typeof value.replayAutoStart !== 'boolean') fail('Réglage de replay invalide.');
-  return { version: 1, revision: value.revision, actions: value.actions.map(({id,label,type,value,color,shortcut}) => ({id,label,type,value,color,shortcut})), outputs: structuredClone(value.outputs), youtube: structuredClone(value.youtube), metadata, replayAutoStart: value.replayAutoStart !== false };
+  return { version: 1, revision: value.revision, actions: value.actions.map(({id,label,type,value,color,shortcut,wizebot}) => ({id,label,type,value,color,shortcut,...(wizebot?{wizebot:{channel:wizebot.channel,id:wizebot.id}}:{})})), outputs: structuredClone(value.outputs), youtube: structuredClone(value.youtube), metadata, replayAutoStart: value.replayAutoStart !== false };
 }
 
 /** One durable action journal for keyboard, desktop and phone. Never replays an uncertain side effect. */

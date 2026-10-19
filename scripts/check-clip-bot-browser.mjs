@@ -14,6 +14,7 @@ import { startDashboardServer } from '../dist/apps/server/src/index.js';
 const dataDir = await mkdtemp(path.join(tmpdir(), 'streamdashboard-browser-'));
 const outputDir = path.resolve(process.env.CONTROL_SCREENSHOTS || 'test-results/control-next');
 await mkdir(outputDir, { recursive: true });
+let wizeText="Viens près du feu", wizeApply=true;
 let fakeStreaming=false, replayActive=false, replayPath='', saves=0, posts=[], dropNext=false;
 let timerUrl='http://127.0.0.1:48132/overlay/timer/', mediaCalls=[], muted = false, scene = 'Jeu', muteCalls = 0, sceneCalls = 0;
 const obs = new WebSocketServer({ host: '127.0.0.1', port: 0 });
@@ -53,7 +54,7 @@ obs.on('connection', socket => {
 await once(obs, 'listening');
 process.env.OBS_URL = `ws://127.0.0.1:${obs.address().port}`;
 const realFetch=globalThis.fetch;
-globalThis.fetch=async(input,init)=>{const url=String(input);if(url.startsWith('https://id.twitch.tv/'))return new Response(JSON.stringify({client_id:'fixture',user_id:'42',login:'fixture_channel',scopes:['user:write:chat']}));if(url.startsWith('https://api.twitch.tv/')){if(url.includes('/chat/messages')){const body=JSON.parse(init.body);posts.push(body);const sent=!dropNext;dropNext=false;return new Response(JSON.stringify({data:[{is_sent:sent,message_id:sent?'message_'+posts.length:'',drop_reason:sent?undefined:{code:'automod_held',message:'held'}}]}));}return new Response(JSON.stringify({data:[]}));}return realFetch(input,init);};
+globalThis.fetch=async(input,init)=>{const url=String(input);if(url.startsWith('https://fixture_channel.streaming.lv/')){if(url.includes('commands_list.php'))return Response.json({data:[['!discord','123',wizeText,'-','','SAY',0,'category']]});if(url.endsWith('ajax.php'))return new Response("ajax: 'ajax/list/commands_list.php?t="+'a'.repeat(64)+"'");return new Response('home',{headers:{'set-cookie':'PHPSESSID=anonymous; Path=/'}});}if(url.startsWith('https://id.twitch.tv/'))return new Response(JSON.stringify({client_id:'fixture',user_id:'42',login:'fixture_channel',scopes:['user:write:chat']}));if(url.startsWith('https://api.twitch.tv/')){if(url.includes('/chat/messages')){const body=JSON.parse(init.body);posts.push(body);if(wizeApply&&body.message.startsWith('!cmd edit 123 '))wizeText=body.message.slice('!cmd edit 123 '.length);const sent=!dropNext;dropNext=false;return new Response(JSON.stringify({data:[{is_sent:sent,message_id:sent?'message_'+posts.length:'',drop_reason:sent?undefined:{code:'automod_held',message:'held'}}]}));}return new Response(JSON.stringify({data:[]}));}return realFetch(input,init);};
 await writeFile(path.join(dataDir,'dashboard.json'),JSON.stringify({schemaVersion:6,twitch:{broadcasterId:'42',userName:'fixture_channel',displayName:'Fixture'}}));
 const secretStore=new MemorySecretStore();await secretStore.setTwitchTokens({accessToken:'fixture-only'});
 const options = { secretStore,twitchClientId:'fixture', port: 0, host: '0.0.0.0', remoteEnabled: true, dataDir, logger: { info(){}, warn(){}, error(){} } };
@@ -117,8 +118,21 @@ try {
   state=(await api('/api/v2/state'));const added=state.configuration.actions.find(a=>a.label==='Mon Discord');assert.equal(added.type,'wizebot.command');assert.equal(added.value,'!discord');
   await phone.locator('[data-page="actions"]').click();await phone.locator('[data-edit-action="'+added.id+'"]').click();await phone.locator('#wizebot-form [name="label"]').fill('Discord du camp');await phone.locator('#wizebot-form button:not([type])').click();
   await phone.locator('nav [data-page="deck"]').click();await phone.locator('[data-deck-category="wizebot"]').click();await expect(phone.locator('[data-action="'+added.id+'"]').filter({hasText:'Discord du camp'})).toBeVisible();
-  await phone.screenshot({path:path.join(outputDir,'rc5-wizebot-mobile.png'),fullPage:true});
+  await phone.locator('[data-task="wizebot-catalog"]').click();
+  await expect(phone.locator('[data-wiz-edit="123"]')).toBeVisible();
+  await phone.locator('#wizebot-import-form button:not([type])').click();
+  await expect(phone.locator('.wiz-command')).toContainText('Déjà dans le Deck');
+  state=await api('/api/v2/state');assert.equal(state.configuration.actions.filter(a=>a.wizebot?.id==='123').length,1);assert.equal(state.configuration.actions.find(a=>a.wizebot?.id==='123').label,'Discord du camp');
+  await phone.locator('[data-wiz-edit="123"]').click();await phone.locator('#wizebot-response-form textarea').fill('Bienvenue au camp 🔥');await phone.locator('#wizebot-response-form button:not([type])').click();
+  await expect(phone.locator('#wiz-edit-result')).toContainText('Confirmé',{timeout:15000});assert.equal(posts.at(-1).message,'!cmd edit 123 Bienvenue au camp 🔥');
+  await phone.locator('[data-wiz-back]').click();await expect(phone.locator('.wiz-preview')).toContainText('Bienvenue au camp');
+  await phone.screenshot({path:path.join(outputDir,'rc6-wizebot-mobile.png'),fullPage:true});
+  await phone.locator('[data-task="close-dialog"]').click();
+  await desktop.locator('nav [data-page="deck"]').click();await desktop.locator('[data-deck-category="wizebot"]').click();await desktop.locator('[data-task="wizebot-catalog"]').click();await expect(desktop.locator('.wiz-preview')).toContainText('Bienvenue au camp');
+  wizeApply=false;await desktop.locator('[data-wiz-edit="123"]').click();await desktop.locator('#wizebot-response-form textarea').fill('Pas confirmé');await desktop.locator('#wizebot-response-form button:not([type])').click();await expect(desktop.locator('#wiz-edit-result')).toContainText('À vérifier',{timeout:15000});assert.equal(posts.at(-1).message,'!cmd edit 123 Pas confirmé');
+
   await browser.close();browser=undefined;await host.stop();host=await startDashboardServer(options);state=await api('/api/v2/state');assert.ok(state.configuration.actions.some(a=>a.id===added.id&&a.label==='Discord du camp'));assert.equal(state.receipts.find(r=>r.id===receipt.id).result.replayPath,'/clips/replay-1.mkv');
+  const storedWize=await api('/api/v2/wizebot/catalog');assert.equal(storedWize.items[0].publishedText,'Bienvenue au camp 🔥');assert.equal(storedWize.edits.at(-1).status,'uncertain');
   const remoteReplay=await fetch('http://'+address+':'+host.port+'/api/v2/replay',{headers:{Authorization:'Device '+paired.credential}});assert.equal(remoteReplay.status,200);
-  console.log(JSON.stringify({result:'PASS',journeys:['paired LAN mobile replay preparation','M5 confirmed clip path','replay deduplication','WizeBot delivery and rejected message','mobile custom command CRUD and restart persistence'],saves,chatPosts:posts.length,pageErrors:errors}));assert.deepEqual(errors,[]);
+  console.log(JSON.stringify({result:'PASS',journeys:['paired LAN mobile replay preparation','M5 confirmed clip path','replay deduplication','WizeBot delivery and rejected message','mobile custom command CRUD and restart persistence','public catalog import and no duplicates','remote response editing with exact readback','unconfirmed bot changes remain uncertain'],saves,chatPosts:posts.length,pageErrors:errors}));assert.deepEqual(errors,[]);
 }finally{await browser?.close();await host?.stop();await new Promise(resolve=>obs.close(resolve));await rm(dataDir,{recursive:true,force:true});globalThis.fetch=realFetch;}

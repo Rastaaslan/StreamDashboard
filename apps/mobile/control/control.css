@@ -12,3 +12,5 @@
 @media(max-height:600px) and (orientation:landscape){.performance-deck{grid-template-columns:repeat(4,minmax(0,1fr))}.performance-deck button{min-height:110px}}
 
 .replay-panel{margin-bottom:18px}.replay-panel .section-heading{gap:12px;flex-wrap:wrap}.replay-panel p{overflow-wrap:anywhere}.receipt p{overflow-wrap:anywhere}
+
+.wiz-list{display:grid;gap:12px;margin-top:18px}.wiz-command{padding:16px;border:1px solid #3c344d;border-radius:12px;background:#17131f}.wiz-preview{white-space:pre-wrap;overflow-wrap:anywhere;font-size:.92rem;line-height:1.5;margin:12px 0}.wiz-command button{margin-top:8px}#wiz-edit-result{white-space:pre-wrap;line-height:1.5}

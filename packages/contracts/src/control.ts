@@ -3,7 +3,7 @@ export type Outcome = 'running' | 'succeeded' | 'partial' | 'failed' | 'uncertai
 export interface PlatformResult { status: Outcome; message: string; observedAt: string; live?: boolean }
 export interface LiveMetadata { title: string; description: string; twitchGameId: string; youtubeCategoryId: string; tags: string[] }
 export interface OutputTarget { kind: 'unconfigured' | 'main' | 'output' | 'aitum-suite'; name: string }
-export interface DeckAction { id: string; label: string; type: 'mic.toggle' | 'scene.set' | 'mode.set' | 'timer.add' | 'sound.play' | 'sound.stop' | 'alert.play' | 'chat.send' | 'wizebot.command' | 'replay.save' | 'replay.start' | 'replay.stop' | 'live.start' | 'live.stop'; value: string; color: string; shortcut: string }
+export interface DeckAction { id: string; label: string; type: 'mic.toggle' | 'scene.set' | 'mode.set' | 'timer.add' | 'sound.play' | 'sound.stop' | 'alert.play' | 'chat.send' | 'wizebot.command' | 'replay.save' | 'replay.start' | 'replay.stop' | 'live.start' | 'live.stop'; value: string; color: string; shortcut: string; wizebot?: { channel: string; id: string } }
 export interface ControlConfiguration {
   version: 1; revision: number; actions: DeckAction[];
   outputs: Record<Platform, OutputTarget>;
