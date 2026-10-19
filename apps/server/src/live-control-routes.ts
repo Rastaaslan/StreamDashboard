@@ -76,7 +76,7 @@ export function registerLiveControlRoutes(options: Options) {
       if (!options.requireLocal(req, res)) return;
       const sounds = options.sounds(); const sound = sounds.find(value => value.id === req.params.id);
       if (!sound) { res.status(404).json({ ok: false, error: { code: 'SOUND_NOT_FOUND', message: 'Son introuvable.' } }); return; }
-      await soundboard.stop();
+      if ((await soundboard.snapshot()).currentPlayback?.soundId === sound.id) await soundboard.stop();
       const nextSounds = sounds.filter(value => value.id !== sound.id);
       options.setSounds(nextSounds); soundboard.replace(nextSounds); await options.save(); await options.removeSoundLibraryFile(sound.source);
       res.status(204).end();

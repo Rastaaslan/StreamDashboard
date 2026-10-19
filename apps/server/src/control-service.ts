@@ -1,3 +1,4 @@
+import { copyFile, constants } from 'node:fs/promises';
 import { createHash } from 'node:crypto';
 import { AtomicJsonStore } from './storage.js';
 import { defaultControlData, type ControlData, type ControlConfiguration, type ControlRequest, type ControlReceipt, type Platform, type PlatformResult, type LiveMetadata, type DeckAction } from '../../../packages/contracts/src/control.js';
@@ -52,6 +53,8 @@ export class ControlService {
     // Upgrade only the untouched optional timer macro; personal assignments remain intact.
     const oldMacro = data.configuration.actions.find(a => a.id === 'timer-plus' && a.type === 'timer.add' && a.value === '300' && a.label === '+ 5 minutes' && a.color === 'green' && a.shortcut === 'Control+Alt+Shift+F5');
     if (oldMacro && !data.configuration.actions.some(a => a.id === 'sound-stop')) {
+      // Retain the exact pre-migration file for rollback; never overwrite an earlier backup.
+      await copyFile(file, file + '.pre-rc4', constants.COPYFILE_EXCL).catch(error => { if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error; });
       Object.assign(oldMacro, defaultControlData().configuration.actions.find(a => a.id === 'sound-stop'));
       data.configuration.revision++;
     }

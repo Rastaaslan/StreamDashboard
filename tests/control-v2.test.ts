@@ -26,7 +26,7 @@ describe('Shared durable controller',()=>{
   const file=path.join(await temporary(),'control.json'),old=defaultControlData();
   old.configuration.actions[4]={id:'timer-plus',label:'+ 5 minutes',type:'timer.add',value:'300',color:'green',shortcut:'Control+Alt+Shift+F5'};
   await writeFile(file,JSON.stringify(old));let control=await ControlService.open(file,adapter());
-  expect(control.snapshot().configuration.actions[4].type).toBe('sound.stop');expect(control.snapshot().configuration.revision).toBe(1);
+  expect(control.snapshot().configuration.actions[4].type).toBe('sound.stop');expect(control.snapshot().configuration.revision).toBe(1);expect(JSON.parse(await readFile(file+'.pre-rc4','utf8'))).toEqual(old);
   old.configuration.actions[4].label='Mon chrono';await writeFile(file,JSON.stringify(old));control=await ControlService.open(file,adapter());
   expect(control.snapshot().configuration.actions[4].type).toBe('timer.add');expect(control.snapshot().configuration.revision).toBe(0);
  });

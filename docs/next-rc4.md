@@ -13,7 +13,7 @@ Cette candidate poursuit la branche `work/streamdashboard-three-roles` issue de 
 
 ## Installer et connecter
 
-1. Fermer **StreamDashboard Next** sur FIXE et laptop-damien, hors diffusion. Conserver le dossier actuel pour retour arrière.
+1. Fermer **StreamDashboard Next** sur FIXE et laptop-damien, hors diffusion. Conserver le dossier actuel et faire une copie de `%APPDATA%\StreamDashboard-Next` pour retour arrière.
 2. Extraire le ZIP Windows dans un nouveau dossier. Sur **FIXE (stream)** lancer `Start-Next-Host.cmd`. Sur **laptop-damien (jeu)** lancer `Start-Next-Client.cmd`. Ne pas exécuter à nouveau la migration initiale si Next est déjà utilisé.
 3. Next réutilise `%APPDATA%\StreamDashboard-Next`. Les plannings, sons, comptes, boutons et associations existants sont conservés. La version historique utilise un autre dossier de données.
 4. Installer l’APK RC4 par-dessus **StreamDashboard Next** sur le S24 Ultra. Il utilise le même identifiant d’application que RC2 ; ne pas désinstaller pour conserver l’association.
@@ -40,3 +40,7 @@ Affecter une pression simple aux combinaisons suivantes. Garder le client Next o
 Tests ciblés du journal de commandes, migration de M5, minuteur, soundboard, récurrences, conflits, pagination, export et suppression par période. Parcours navigateur sur serveur isolé : clients desktop/téléphone associés via LAN, micro/scène, minuteur, sons et arrêt par F5, favoris, CRUD partagé, duplication, modification d’une occurrence, PNG, redémarrage et conservation de l’association. OBS est simulé dans ce banc ; aucune diffusion ni publication Discord publique n’a été déclenchée.
 
 À valider sur les appareils réels après installation : minuteur/overlay OBS signalé en panne, retour audio audible dans le mix, touches physiques M1–M6 dans Synapse, mise à jour et association du S24 Ultra. FIXE et laptop-damien étaient hors ligne dans Desktop Commander pendant cette correction. Les autorisations YouTube et les publications réelles restent dépendantes des comptes connectés.
+
+## Retour arrière
+
+Fermer Next avant toute restauration. La migration automatique de M5 sauvegarde l’ancien `control-v2.json` dans `control-v2.json.pre-rc4` sur FIXE. Pour rouvrir RC3 sans les nouvelles actions audio, conserver une copie du fichier actuel puis restaurer cette sauvegarde sous `control-v2.json`. Une copie complète du dossier de données avant mise à jour permet également de revenir exactement à l’état précédent ; cette restauration abandonne les modifications faites depuis la copie. L’application historique CB173 conserve toujours son propre dossier `%APPDATA%\StreamDashboard`.
