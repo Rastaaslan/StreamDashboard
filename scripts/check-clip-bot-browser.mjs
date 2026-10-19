@@ -79,7 +79,7 @@ try {
   const desktop = await browser.newPage({ viewport: { width: 1440, height: 1080 } });
   const phone = await browser.newPage({ viewport: { width: 412, height: 915 }, isMobile: true, hasTouch: true });
   const errors = [];
-  for (const page of [desktop, phone]) { page.on('pageerror', e => errors.push(e.message)); page.on('dialog', dialog => dialog.accept()); }
+  for (const page of [desktop, phone]) { await page.addInitScript(() => { localStorage.setItem('sd2.monitor-enabled','false'); localStorage.setItem('sd2.page','deck'); }); await page.route('https://**', route => route.fulfill({status:200,contentType:'text/html',body:'<p>Isolated external player/chat fixture</p>'})); page.on('pageerror', e => errors.push(e.message)); page.on('dialog', dialog => dialog.accept()); }
   await phone.addInitScript(value => localStorage.setItem('streamdashboard.device', value), paired.credential);
   await desktop.goto(host.url + '/mobile/control/');
   await phone.goto(remote + '/mobile/control/');
