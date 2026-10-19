@@ -236,6 +236,7 @@ export class TwitchClient {
     const value = await this.api<{ data: Array<{ message_id: string; is_sent: boolean; drop_reason?: { code: string; message: string } }> }>('/chat/messages', { method: 'POST', body: JSON.stringify({ broadcaster_id: this.credentials.broadcasterId, sender_id: this.credentials.broadcasterId, message: normalized, ...(replyParentMessageId ? { reply_parent_message_id: replyParentMessageId } : {}) }) });
     const result = value.data[0];
     if (!result?.is_sent) throw new Error('Twitch a refusé le message.');
+    if (!result.message_id) throw Object.assign(new Error('Twitch n’a pas fourni d’identifiant du message. Vérifiez le chat avant de réessayer.'), { name: 'ACTION_UNCERTAIN' });
     return { messageId: result.message_id };
   }
 

@@ -19,6 +19,10 @@ export function registerControlRoutes(options: {
       res.json(await control.execute({...req.body,action}));
     } catch(e){next(e);}
   });
+  app.get('/api/v2/replay', async(_req,res) => {
+    try { res.json({ ...await obs.replayStatus(), error: '' }); }
+    catch(e) { res.json({ active: null, enabled: null, seconds: null, directory: '', error: e instanceof Error ? e.message : 'Replay indisponible.' }); }
+  });
   const timerOverlay = async () => {
     const source = options.timerSource() || '', expectedUrl = `http://127.0.0.1:${options.port()}/overlay/timer/`;
     try { if (!source) throw new Error('Sélectionnez la source navigateur du minuteur dans Configuration → OBS.'); await obs.verifyTimerBrowserSource(source,expectedUrl); return {source,expectedUrl,ready:true,error:''}; }

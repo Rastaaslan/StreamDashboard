@@ -102,7 +102,7 @@ try {
   await phone.locator('[data-play-sound="bonk"]').click();
   await expect.poll(async()=>(await api('/api/v1/soundboard')).currentPlayback?.soundId).toBe('bonk');
   await expect(phone.locator('[data-play-sound="bonk"]')).toContainText('Lecture en cours');
-  await desktop.keyboard.press('Control+Alt+Shift+F5');
+  await phone.locator('[data-action="sound.stop"]').click();
   await expect.poll(async()=>(await api('/api/v1/soundboard')).currentPlayback).toBeNull();
   assert.ok(mediaCalls.includes('OBS_WEBSOCKET_MEDIA_INPUT_ACTION_RESTART'));assert.ok(mediaCalls.includes('OBS_WEBSOCKET_MEDIA_INPUT_ACTION_STOP'));
   await phone.locator('[data-favorite-sound="bonk"]').click();

@@ -1054,6 +1054,7 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
   });
   const commands = new DashboardCommandService(local, obs, changed, { settings: local.settings, logger, timerOverlayUrl: () => `http://127.0.0.1:${runtimePort}/overlay/timer/` });
   let control: ControlService;
+  let replayAutoStartAttempted = false, replayAutoStartError = '';
   const youtube = new YouTubeClient(secrets, () => {
     const value = control.snapshot().configuration.youtube;
     return { ...value, clientId: value.clientId || options.googleClientId || '' };
@@ -1096,6 +1097,18 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
       twitchChannel = { ...twitchChannel, ...channel }; broadcast();
     },
     action: async (action, id) => {
+      if (action.type === 'replay.save') {
+        const replayPath = await obs.saveReplay();
+        return { message: `Clip sauvegardé sur ${hostname()} : ${replayPath}`, replayPath };
+      }
+      if (action.type === 'replay.start' || action.type === 'replay.stop') {
+        await obs.setReplayBuffer(action.type === 'replay.start');
+        return { message: action.type === 'replay.start' ? 'Tampon prêt : les prochains moments pourront être sauvegardés.' : 'Tampon de replay arrêté.' };
+      }
+      if (action.type === 'wizebot.command') {
+        const result = await twitch.sendChatMessage(action.value);
+        return { message: `${action.value} envoyé dans le chat Twitch. La réponse de WizeBot reste à vérifier dans le chat.`, messageId: result.messageId };
+      }
       if (action.type === 'sound.stop') { await soundboard.stop(); return; }
       if (action.type === 'sound.play') {
         const result = await soundboard.play({ commandId: id, type: 'soundboard.play', origin: 'desktop', issuedAt: new Date().toISOString(), payload: { soundId: action.value } });
@@ -1106,7 +1119,7 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
         if (!message || split < 0) throw new Error('Message attendu sous la forme twitch:message ou youtube:message.');
         if (destination === 'youtube') await youtube.chat(message);
         else if (destination === 'twitch') await twitch.sendChatMessage(message);
-        else throw new Error('Destination du message invalide.'); return;
+        else throw new Error('Destination du message invalide.'); return { message: `Message envoyé sur ${destination}.` };
       }
       if (action.type === 'mic.toggle') {
         await obs.refresh(); const input = action.value || local.settings.primaryMicInput || '';
@@ -2377,7 +2390,7 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
     if (req.path.startsWith('/api/v2/') && req.body.expectedRevision !== planningFingerprint(id)) throw Object.assign(new Error('Événement modifié sur un autre appareil. Rechargez avant d’enregistrer.'), { name: 'REVISION_CONFLICT' });
   };
   registerControlRoutes({ app, control, youtube, obs, timerSource: () => local.settings.timerBrowserSource, settings: settingsUpdate, planningCreate, planningUpdate, planningDelete, recurrence: recurrenceException, isLocal: isLocalRequest, port: () => runtimePort, observe: observePlatforms,
-    state: () => ({ hostname: hostname(), monitor: { twitchLogin: twitch.publicIdentity().userName || '' }, state: toRemoteDashboardState(snapshot()), settings: publicSettings(), settingsRevision: settingsFingerprint(), planning: structuredClone(local.planning), occurrences: expandEditableRecurringItems(local.planning, { from: Date.now() - DAY_MS, to: Date.now() + 90 * DAY_MS }), planningRevisions: Object.fromEntries(local.planning.map(item => [item.id, planningFingerprint(item.id)])), platforms: structuredClone(platformLive), local: true }),
+    state: () => ({ hostname: hostname(), chat: { connected: twitch.state.connected, canSend: twitch.controlCapabilities().chatWrite, channel: twitch.publicIdentity().userName || '' }, replayAutoStartError, monitor: { twitchLogin: twitch.publicIdentity().userName || '' }, state: toRemoteDashboardState(snapshot()), settings: publicSettings(), settingsRevision: settingsFingerprint(), planning: structuredClone(local.planning), occurrences: expandEditableRecurringItems(local.planning, { from: Date.now() - DAY_MS, to: Date.now() + 90 * DAY_MS }), planningRevisions: Object.fromEntries(local.planning.map(item => [item.id, planningFingerprint(item.id)])), platforms: structuredClone(platformLive), local: true }),
   });
   app.post('/api/v2/sounds/upload', express.raw({ type: 'application/octet-stream', limit: '100mb' }), async (req, res, next) => {
     let destination: string | undefined;
@@ -2779,7 +2792,14 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
   const address = server.address();
   const actualPort = typeof address === 'object' && address ? address.port : requestedPort;
   runtimePort = actualPort;
+  const autoStartReplay = () => {
+    if (!obs.state.connected || !obs.state.streaming) { replayAutoStartAttempted = false; return; }
+    if (replayAutoStartAttempted || !control.snapshot().configuration.replayAutoStart) return;
+    replayAutoStartAttempted = true;
+    void obs.setReplayBuffer(true).then(() => { replayAutoStartError = ''; }, error => { replayAutoStartError = error instanceof Error ? error.message : 'Tampon indisponible.'; }).finally(broadcast);
+  };
   const unsubscribeObs = obs.onStateChanged(() => {
+    autoStartReplay();
     const obsPayload = { connected: obs.state.connected, streaming: obs.state.streaming, streamingKnown: obs.state.streamingKnown !== false, scene: obs.state.scene };
     eventCore.publish({ type: 'obs.state.changed', source: 'obs', payload: obsPayload });
     if (!obs.state.connected) eventCore.publish({ type: 'obs.disconnected', source: 'obs', payload: obsPayload });
@@ -2799,6 +2819,7 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
     }
     broadcast();
   });
+  autoStartReplay();
   let maintenanceFlight: Promise<void> | undefined;
   const maintainProjections = () => maintenanceFlight ??= (async () => {
     // Yield the global planning queue between series so an explicit edit/retry

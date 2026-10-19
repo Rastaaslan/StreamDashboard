@@ -22,13 +22,30 @@ describe('Shared durable controller',()=>{
   const reopened=await ControlService.open(file,a);expect((await reopened.execute(request('micro'))).status).toBe('succeeded');expect(a.action).toHaveBeenCalledTimes(1);
   await expect(reopened.execute(request('scene-live'))).rejects.toThrow('Identifiant');
  });
- it('migrates only the untouched M5 timer assignment and keeps custom timer actions valid',async()=>{
-  const file=path.join(await temporary(),'control.json'),old=defaultControlData();
-  old.configuration.actions[4]={id:'timer-plus',label:'+ 5 minutes',type:'timer.add',value:'300',color:'green',shortcut:'Control+Alt+Shift+F5'};
+ it('migrates stock M5 once, backs up RC4 and preserves custom associations and removed presets',async()=>{
+  const file=path.join(await temporary(),'control.json'),old=defaultControlData();delete old.featureVersion;
+  old.configuration.actions=old.configuration.actions.slice(0,6);
+  old.configuration.actions[4]={id:'sound-stop',label:'Arrêter le son',type:'sound.stop',value:'',color:'red',shortcut:'Control+Alt+Shift+F5'};
+  old.configuration.actions[0].shortcut='Control+Alt+Shift+F12';
   await writeFile(file,JSON.stringify(old));let control=await ControlService.open(file,adapter());
-  expect(control.snapshot().configuration.actions[4].type).toBe('sound.stop');expect(control.snapshot().configuration.revision).toBe(1);expect(JSON.parse(await readFile(file+'.pre-rc4','utf8'))).toEqual(old);
-  old.configuration.actions[4].label='Mon chrono';await writeFile(file,JSON.stringify(old));control=await ControlService.open(file,adapter());
-  expect(control.snapshot().configuration.actions[4].type).toBe('timer.add');expect(control.snapshot().configuration.revision).toBe(0);
+  expect(control.snapshot().configuration.actions[4].type).toBe('replay.save');expect(control.snapshot().configuration.revision).toBe(1);expect(JSON.parse(await readFile(file+'.pre-rc5','utf8'))).toEqual(old);
+  expect(control.snapshot().configuration.actions[0].shortcut).toBe('Control+Alt+Shift+F12');
+  const c=control.snapshot().configuration;c.actions=c.actions.filter(a=>a.type!=='wizebot.command');await control.configure(c,c.revision);await control.stop();
+  control=await ControlService.open(file,adapter());expect(control.snapshot().configuration.actions.some(a=>a.type==='wizebot.command')).toBe(false);await control.stop();
+  old.configuration.actions[4].label='Mon bouton';await writeFile(file,JSON.stringify(old));control=await ControlService.open(file,adapter());expect(control.snapshot().configuration.actions[4].type).toBe('sound.stop');
+ });
+ it('persists a confirmed clip path and uncertain saves without repeating them after restart',async()=>{
+  const file=path.join(await temporary(),'control.json'),a=adapter();a.action=vi.fn(async()=>({message:'Clip sauvegardé',replayPath:'C:/Videos/replay.mkv'}));
+  let control=await ControlService.open(file,a);const r=await control.execute(request('clip-save'));
+  expect(r).toMatchObject({status:'succeeded',result:{replayPath:'C:/Videos/replay.mkv'}});await control.stop();control=await ControlService.open(file,a);await control.execute(request('clip-save'));expect(a.action).toHaveBeenCalledTimes(1);
+  a.action=vi.fn(async()=>{throw Object.assign(new Error('Vérifiez les clips'),{name:'ACTION_UNCERTAIN'});});expect(await control.execute(request('clip-save','uncertain_clip'))).toMatchObject({status:'uncertain'});await control.execute(request('clip-save','uncertain_clip'));expect(a.action).toHaveBeenCalledTimes(1);
+ });
+ it('validates single-line WizeBot commands and journals their delivery result once',async()=>{
+  const a=adapter(),control=await ControlService.open(path.join(await temporary(),'control.json'),a);let c=control.snapshot().configuration;
+  const w=c.actions.find(a=>a.id==='wizebot-uptime')!;w.value='!uptime\n!ban someone';await expect(control.configure(c,0)).rejects.toThrow('une seule ligne');
+  c=control.snapshot().configuration;c.actions.find(a=>a.id==='wizebot-uptime')!.value='!discord';await control.configure(c,0);
+  a.action=vi.fn(async()=>({message:'Envoyé dans Twitch, réponse non confirmée',messageId:'message_1'}));
+  expect(await control.execute(request('wizebot-uptime'))).toMatchObject({status:'succeeded',result:{messageId:'message_1'}});await control.execute(request('wizebot-uptime'));expect(a.action).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({value:'!discord',type:'wizebot.command'}),'command_123456');
  });
  it('journals catalogue playback by sound identity and reports a failed stop honestly',async()=>{
   const a=adapter(),control=await ControlService.open(path.join(await temporary(),'control.json'),a);

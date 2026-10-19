@@ -1,14 +1,14 @@
-import { copyFile, constants } from 'node:fs/promises';
+import { copyFile, constants, stat } from 'node:fs/promises';
 import { createHash } from 'node:crypto';
 import { AtomicJsonStore } from './storage.js';
-import { defaultControlData, type ControlData, type ControlConfiguration, type ControlRequest, type ControlReceipt, type Platform, type PlatformResult, type LiveMetadata, type DeckAction } from '../../../packages/contracts/src/control.js';
+import { defaultControlData, wizebotPresets, type ActionResult, type ControlData, type ControlConfiguration, type ControlRequest, type ControlReceipt, type Platform, type PlatformResult, type LiveMetadata, type DeckAction } from '../../../packages/contracts/src/control.js';
 
 export interface ControlAdapter {
   live(platform: Platform): Promise<boolean>;
   output(platform: Platform, start: boolean): Promise<void>;
   settle?(platform: Platform, start: boolean): Promise<void>;
   metadata(platform: Platform, value: LiveMetadata): Promise<void>;
-  action(action: DeckAction, id: string): Promise<void>;
+  action(action: DeckAction, id: string): Promise<void | ActionResult>;
 }
 const platforms: Platform[] = ['twitch', 'youtube'];
 function fail(message: string, name = 'INVALID_REQUEST'): never { throw Object.assign(new Error(message), { name }); }
@@ -23,11 +23,12 @@ export function validateConfiguration(value: ControlConfiguration): ControlConfi
   if (!value || value.version !== 1 || !Array.isArray(value.actions) || value.actions.length > 100) fail('Configuration du Deck invalide.');
   const ids = new Set<string>(), shortcuts = new Set<string>();
   const types = new Set(defaultControlData().configuration.actions.map(a => a.type));
-  ['timer.add','scene.set','sound.play','sound.stop','alert.play','chat.send','live.start','live.stop'].forEach(t => types.add(t as DeckAction['type']));
+  ['timer.add','scene.set','sound.play','sound.stop','alert.play','chat.send','wizebot.command','replay.save','replay.start','replay.stop','live.start','live.stop'].forEach(t => types.add(t as DeckAction['type']));
   for (const a of value.actions) {
     if (!a || !/^[a-zA-Z0-9_-]{1,64}$/.test(a.id) || ids.has(a.id) || typeof a.label !== 'string' || !a.label.trim() || a.label.length > 80 || !types.has(a.type) || typeof a.value !== 'string' || a.value.length > 500 || !['purple','green','amber','red'].includes(a.color)) fail('Bouton invalide ou identifiant dupliqué.');
     if (typeof a.shortcut !== 'string' || (a.shortcut && (!/^Control\+Alt\+Shift\+F(?:[1-9]|1\d|2[0-4])$/.test(a.shortcut) || shortcuts.has(a.shortcut)))) fail('Raccourci invalide ou déjà utilisé.');
     if (a.type === 'timer.add' && (!Number.isFinite(Number(a.value)) || Math.abs(Number(a.value)) > 86400)) fail('Durée invalide.');
+    if (a.type === 'wizebot.command' && (!/^![\p{L}\p{N}_-]+(?: [^\r\n]*)?$/u.test(a.value) || /[\x00-\x1f\x7f]/.test(a.value))) fail('Une commande WizeBot commence par ! et tient sur une seule ligne.');
     ids.add(a.id); if (a.shortcut) shortcuts.add(a.shortcut);
   }
   for (const p of platforms) {
@@ -36,7 +37,8 @@ export function validateConfiguration(value: ControlConfiguration): ControlConfi
   }
   if (!value.youtube || typeof value.youtube.clientId !== 'string' || value.youtube.clientId.length > 250 || !/^[A-Za-z0-9_-]{0,120}$/.test(value.youtube.broadcastId) || !/^[A-Za-z0-9_-]{0,120}$/.test(value.youtube.channelId)) fail('Cible YouTube invalide.');
   const metadata = value.metadata.title ? validateMetadata(value.metadata) : defaultControlData().configuration.metadata;
-  return { version: 1, revision: value.revision, actions: value.actions.map(({id,label,type,value,color,shortcut}) => ({id,label,type,value,color,shortcut})), outputs: structuredClone(value.outputs), youtube: structuredClone(value.youtube), metadata };
+  if (value.replayAutoStart !== undefined && typeof value.replayAutoStart !== 'boolean') fail('Réglage de replay invalide.');
+  return { version: 1, revision: value.revision, actions: value.actions.map(({id,label,type,value,color,shortcut}) => ({id,label,type,value,color,shortcut})), outputs: structuredClone(value.outputs), youtube: structuredClone(value.youtube), metadata, replayAutoStart: value.replayAutoStart !== false };
 }
 
 /** One durable action journal for keyboard, desktop and phone. Never replays an uncertain side effect. */
@@ -48,15 +50,20 @@ export class ControlService {
   private constructor(private store: AtomicJsonStore<ControlData>, private data: ControlData, private adapter: ControlAdapter, private notify: () => void, private wait: (ms: number) => Promise<void>) {}
   static async open(file: string, adapter: ControlAdapter, notify = () => {}, wait = (ms: number) => new Promise<void>(r => setTimeout(r, ms))) {
     const store = new AtomicJsonStore<ControlData>(file);
-    const data = await store.read(defaultControlData());
+    const existed = await stat(file).then(() => true, error => { if (error.code === 'ENOENT') return false; throw error; });
+    const fallback = defaultControlData(); delete fallback.featureVersion;
+    const data = await store.read(fallback);
     data.configuration = validateConfiguration(data.configuration);
-    // Upgrade only the untouched optional timer macro; personal assignments remain intact.
-    const oldMacro = data.configuration.actions.find(a => a.id === 'timer-plus' && a.type === 'timer.add' && a.value === '300' && a.label === '+ 5 minutes' && a.color === 'green' && a.shortcut === 'Control+Alt+Shift+F5');
-    if (oldMacro && !data.configuration.actions.some(a => a.id === 'sound-stop')) {
-      // Retain the exact pre-migration file for rollback; never overwrite an earlier backup.
-      await copyFile(file, file + '.pre-rc4', constants.COPYFILE_EXCL).catch(error => { if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error; });
-      Object.assign(oldMacro, defaultControlData().configuration.actions.find(a => a.id === 'sound-stop'));
-      data.configuration.revision++;
+    if ((data.featureVersion ?? 0) < 5) {
+      await copyFile(file, file + '.pre-rc5', constants.COPYFILE_EXCL).catch(error => { if (!['EEXIST','ENOENT'].includes((error as NodeJS.ErrnoException).code ?? '')) throw error; });
+      const oldMacro = data.configuration.actions.find(a => a.shortcut === 'Control+Alt+Shift+F5' && (
+        (a.id === 'timer-plus' && a.type === 'timer.add' && a.value === '300' && a.label === '+ 5 minutes' && a.color === 'green') ||
+        (a.id === 'sound-stop' && a.type === 'sound.stop' && a.value === '' && a.label === 'Arrêter le son' && a.color === 'red')));
+      if (oldMacro && !data.configuration.actions.some(a => a.id === 'clip-save')) Object.assign(oldMacro, defaultControlData().configuration.actions.find(a => a.id === 'clip-save'));
+      for (const preset of wizebotPresets()) if (data.configuration.actions.length < 100 && !data.configuration.actions.some(a => a.id === preset.id || (a.type === preset.type && a.value === preset.value))) data.configuration.actions.push(preset);
+      data.featureVersion = 5;
+      // A brand-new store already contains the defaults and starts at revision 0.
+      if (existed) data.configuration.revision++;
     }
     for (const receipt of data.receipts) if (receipt.status === 'running') { receipt.status = 'uncertain'; receipt.message = 'Hôte redémarré : vérifier le résultat avant de réessayer.'; }
     await store.write(data);
@@ -130,14 +137,14 @@ export class ControlService {
           receipt.status = values.every(v => v.status === 'succeeded') ? 'succeeded' : values.some(v => v.status === 'succeeded') ? 'partial' : values.some(v => v.status === 'uncertain') ? 'uncertain' : 'failed';
           receipt.message = receipt.status === 'succeeded' ? 'Commande confirmée' : receipt.status === 'partial' ? 'Résultat partiel : une plateforme nécessite votre attention' : 'Commande non confirmée';
         } else {
-          const action: DeckAction | undefined = request.action === 'sound.stop' || (request.action === 'sound.play' && request.soundId)
-            ? { id: request.action, label: request.action === 'sound.stop' ? 'Arrêter le son' : 'Lecture audio', type: request.action, value: request.soundId ?? '', color: 'green', shortcut: '' }
+          const action: DeckAction | undefined = ['sound.stop','replay.save','replay.start','replay.stop'].includes(request.action) || (request.action === 'sound.play' && request.soundId)
+            ? { id: request.action, label: request.action, type: request.action as DeckAction['type'], value: request.soundId ?? '', color: 'green', shortcut: '' }
             : this.data.configuration.actions.find(a => a.id === request.action);
           if (!action) fail('Action inconnue.');
           if (action.type === 'live.start' || action.type === 'live.stop') fail('Utilisez la commande commune de diffusion.');
-          await this.adapter.action(action, request.id); receipt.status = 'succeeded'; receipt.message = 'Exécution confirmée par le PC de stream';
+          const result = await this.adapter.action(action, request.id); receipt.status = 'succeeded'; receipt.message = result?.message || 'Exécution confirmée par le PC de stream'; if (result) receipt.result = result;
         }
-      } catch (error) { receipt.status = 'failed'; receipt.message = error instanceof Error ? error.message : 'Échec de la commande'; }
+      } catch (error) { receipt.status = error instanceof Error && error.name === 'ACTION_UNCERTAIN' ? 'uncertain' : 'failed'; receipt.message = error instanceof Error ? error.message : 'Échec de la commande'; }
       receipt.finishedAt = new Date().toISOString(); await this.save(); return structuredClone(receipt);
     });
     this.inFlight.set(request.id, operation); this.pendingActions.set(actionKey, operation);
