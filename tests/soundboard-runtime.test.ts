@@ -102,6 +102,13 @@ describe('SoundboardRuntime', () => {
     await expect(new SoundboardRuntime([], backend({ supportsVolume: false })).setVolume(.5)).rejects.toMatchObject({ name: 'AUDIO_VOLUME_UNSUPPORTED' });
   });
 
+  it('preserves the current playback when the backend refuses Stop', async () => {
+    const file=await fixture(),audio=backend({play:async()=>({finished:new Promise<void>(()=>{})}),stop:async()=>{throw new Error('OBS unavailable');}});
+    const runtime=new SoundboardRuntime([sound(file)],audio);
+    await runtime.play(command());await expect(runtime.stop()).rejects.toThrow('OBS unavailable');
+    expect((await runtime.snapshot()).currentPlayback?.soundId).toBe('bonk');
+  });
+
   it('Stop publie playback.stopped et empêche un finished tardif', async () => {
     const file = await fixture();
     let finish!: () => void;

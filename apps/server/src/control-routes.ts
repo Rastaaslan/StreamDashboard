@@ -5,7 +5,7 @@ import type { ObsClient } from '../../../integrations/obs/src/client.js';
 
 export function registerControlRoutes(options: {
   app: express.Application; control: ControlService; youtube: YouTubeClient; obs: ObsClient;
-  state(): unknown; settings: express.RequestHandler; planningCreate: express.RequestHandler; planningUpdate: express.RequestHandler; planningDelete: express.RequestHandler; recurrence: express.RequestHandler;
+  timerSource(): string | undefined; state(): unknown; settings: express.RequestHandler; planningCreate: express.RequestHandler; planningUpdate: express.RequestHandler; planningDelete: express.RequestHandler; recurrence: express.RequestHandler;
   observe(): Promise<void>;
   isLocal(req: express.Request): boolean; port(): number;
 }) {
@@ -19,6 +19,16 @@ export function registerControlRoutes(options: {
       res.json(await control.execute({...req.body,action}));
     } catch(e){next(e);}
   });
+  const timerOverlay = async () => {
+    const source = options.timerSource() || '', expectedUrl = `http://127.0.0.1:${options.port()}/overlay/timer/`;
+    try { if (!source) throw new Error('Sélectionnez la source navigateur du minuteur dans Configuration → OBS.'); await obs.verifyTimerBrowserSource(source,expectedUrl); return {source,expectedUrl,ready:true,error:''}; }
+    catch(e){return {source,expectedUrl,ready:false,error:e instanceof Error?e.message:'Vérification indisponible.'};}
+  };
+  app.get('/api/v2/timer/overlay',async(_req,res)=>{res.json(await timerOverlay());});
+  app.post('/api/v2/timer/overlay',async(_req,res,next)=>{try{
+    const source=options.timerSource();if(!source)throw new Error('Sélectionnez la source navigateur du minuteur dans Configuration → OBS.');
+    await obs.reconnectTimerBrowserSource(source,`http://127.0.0.1:${options.port()}/overlay/timer/`);res.json(await timerOverlay());
+  }catch(e){next(e);}});
   app.get('/api/v2/outputs',async(_req,res,next)=>{
     try {
       const [native,suite]=await Promise.allSettled([obs.outputs(),obs.streamSuiteOutputs()]);

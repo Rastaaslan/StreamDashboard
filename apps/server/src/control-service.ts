@@ -22,7 +22,7 @@ export function validateConfiguration(value: ControlConfiguration): ControlConfi
   if (!value || value.version !== 1 || !Array.isArray(value.actions) || value.actions.length > 100) fail('Configuration du Deck invalide.');
   const ids = new Set<string>(), shortcuts = new Set<string>();
   const types = new Set(defaultControlData().configuration.actions.map(a => a.type));
-  ['scene.set','sound.play','alert.play','chat.send','live.start','live.stop'].forEach(t => types.add(t as DeckAction['type']));
+  ['timer.add','scene.set','sound.play','sound.stop','alert.play','chat.send','live.start','live.stop'].forEach(t => types.add(t as DeckAction['type']));
   for (const a of value.actions) {
     if (!a || !/^[a-zA-Z0-9_-]{1,64}$/.test(a.id) || ids.has(a.id) || typeof a.label !== 'string' || !a.label.trim() || a.label.length > 80 || !types.has(a.type) || typeof a.value !== 'string' || a.value.length > 500 || !['purple','green','amber','red'].includes(a.color)) fail('Bouton invalide ou identifiant dupliqué.');
     if (typeof a.shortcut !== 'string' || (a.shortcut && (!/^Control\+Alt\+Shift\+F(?:[1-9]|1\d|2[0-4])$/.test(a.shortcut) || shortcuts.has(a.shortcut)))) fail('Raccourci invalide ou déjà utilisé.');
@@ -49,6 +49,12 @@ export class ControlService {
     const store = new AtomicJsonStore<ControlData>(file);
     const data = await store.read(defaultControlData());
     data.configuration = validateConfiguration(data.configuration);
+    // Upgrade only the untouched optional timer macro; personal assignments remain intact.
+    const oldMacro = data.configuration.actions.find(a => a.id === 'timer-plus' && a.type === 'timer.add' && a.value === '300' && a.label === '+ 5 minutes' && a.color === 'green' && a.shortcut === 'Control+Alt+Shift+F5');
+    if (oldMacro && !data.configuration.actions.some(a => a.id === 'sound-stop')) {
+      Object.assign(oldMacro, defaultControlData().configuration.actions.find(a => a.id === 'sound-stop'));
+      data.configuration.revision++;
+    }
     for (const receipt of data.receipts) if (receipt.status === 'running') { receipt.status = 'uncertain'; receipt.message = 'Hôte redémarré : vérifier le résultat avant de réessayer.'; }
     await store.write(data);
     return new ControlService(store, data, adapter, notify, wait);
@@ -69,7 +75,8 @@ export class ControlService {
   execute(request: ControlRequest): Promise<ControlReceipt> {
     if (this.stopped) return Promise.reject(new Error('Hôte en cours d’arrêt.'));
     if (!request || !/^[A-Za-z0-9_-]{8,100}$/.test(request.id) || typeof request.action !== 'string' || request.action.length > 100 || (request.platform !== undefined && !platforms.includes(request.platform))) return Promise.reject(new Error('Commande invalide.'));
-    const fingerprint = createHash('sha256').update(JSON.stringify({action:request.action, platform:request.platform, metadata:request.metadata, expectedRevision:request.expectedRevision})).digest('hex');
+    if (request.soundId !== undefined && (request.action !== 'sound.play' || !/^[A-Za-z0-9._:-]{1,100}$/.test(request.soundId))) return Promise.reject(new Error('Son invalide.'));
+    const fingerprint = createHash('sha256').update(JSON.stringify({action:request.action, platform:request.platform, metadata:request.metadata, soundId:request.soundId, expectedRevision:request.expectedRevision})).digest('hex');
     const previous = this.data.receipts.find(r => r.id === request.id);
     if (previous && previous.fingerprint !== fingerprint) return Promise.reject(new Error('Identifiant déjà utilisé pour une autre commande.'));
     const active = this.inFlight.get(request.id); if (active) return active;
@@ -77,7 +84,7 @@ export class ControlService {
     const timestamp = Date.parse(request.issuedAt);
     if (!Number.isFinite(timestamp) || Date.now() - timestamp > 30_000 || timestamp - Date.now() > 5_000) return Promise.reject(new Error('Commande expirée. Vérifiez l’horloge et recommencez.'));
     // A second press with a different ID while the same action is pending joins its result.
-    const actionKey = `${request.action}:${request.platform ?? 'both'}`;
+    const actionKey = `${request.action}:${request.soundId ?? ''}:${request.platform ?? 'both'}`;
     const pending = this.pendingActions.get(actionKey);
     if (pending && request.action !== 'metadata.apply') return pending;
     const operation = this.serialize(async () => {
@@ -120,7 +127,9 @@ export class ControlService {
           receipt.status = values.every(v => v.status === 'succeeded') ? 'succeeded' : values.some(v => v.status === 'succeeded') ? 'partial' : values.some(v => v.status === 'uncertain') ? 'uncertain' : 'failed';
           receipt.message = receipt.status === 'succeeded' ? 'Commande confirmée' : receipt.status === 'partial' ? 'Résultat partiel : une plateforme nécessite votre attention' : 'Commande non confirmée';
         } else {
-          const action = this.data.configuration.actions.find(a => a.id === request.action);
+          const action: DeckAction | undefined = request.action === 'sound.stop' || (request.action === 'sound.play' && request.soundId)
+            ? { id: request.action, label: request.action === 'sound.stop' ? 'Arrêter le son' : 'Lecture audio', type: request.action, value: request.soundId ?? '', color: 'green', shortcut: '' }
+            : this.data.configuration.actions.find(a => a.id === request.action);
           if (!action) fail('Action inconnue.');
           if (action.type === 'live.start' || action.type === 'live.stop') fail('Utilisez la commande commune de diffusion.');
           await this.adapter.action(action, request.id); receipt.status = 'succeeded'; receipt.message = 'Exécution confirmée par le PC de stream';

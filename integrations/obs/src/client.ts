@@ -432,6 +432,20 @@ export class ObsClient {
     this.scheduleRefresh();
   }
   onMediaEnded(listener: (inputName: string) => void) { this.mediaEndedListeners.add(listener); return () => this.mediaEndedListeners.delete(listener); }
+  /** Reconnect only an existing StreamDashboard timer, without replacing another overlay. */
+  async reconnectTimerBrowserSource(inputName: string, endpoint: string) {
+    this.requireConnected();
+    if (await this.inputKind(inputName) !== 'browser_source') throw new Error('Source navigateur minuteur introuvable.');
+    const { inputSettings } = await this.call('GetInputSettings', { inputName });
+    let current: URL;
+    try { current = new URL(String(inputSettings.url || '')); } catch { throw new Error('Renseignez manuellement l’URL du minuteur dans OBS.'); }
+    if (inputSettings.is_local_file || current.protocol !== 'http:' || !['127.0.0.1','localhost'].includes(current.hostname)
+      || !['48132','48133'].includes(current.port) || current.pathname.replace(/\/$/,'') !== '/overlay/timer')
+      throw new Error('Cette source utilise un autre overlay. Son URL doit être modifiée manuellement dans OBS.');
+    await this.setInputSettings(inputName, { url: endpoint });
+    await this.refreshBrowserSource(inputName);
+  }
+
   async verifyTimerBrowserSource(inputName: string, endpoint: string) {
     this.requireConnected();
     const generation = this.generation;

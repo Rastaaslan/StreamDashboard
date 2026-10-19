@@ -1096,6 +1096,7 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
       twitchChannel = { ...twitchChannel, ...channel }; broadcast();
     },
     action: async (action, id) => {
+      if (action.type === 'sound.stop') { await soundboard.stop(); return; }
       if (action.type === 'sound.play') {
         const result = await soundboard.play({ commandId: id, type: 'soundboard.play', origin: 'desktop', issuedAt: new Date().toISOString(), payload: { soundId: action.value } });
         if (result.status !== 'succeeded') throw new Error(result.message || 'Son non confirmé par OBS.'); return;
@@ -2065,7 +2066,7 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
       }
       invalidatePreflight();
       const next = await changed();
-      res.status(201).json(isRemoteRequest(req) ? toRemoteDashboardState(next) : { ...next, createdItemId: created.id });
+      res.status(201).json({ ...(isRemoteRequest(req) ? toRemoteDashboardState(next) : next), createdItemId: created.id });
     } catch (error) { next(error); }
   };
 
@@ -2375,7 +2376,7 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
   const checkPlanningRevision = (req: express.Request, id: string) => {
     if (req.path.startsWith('/api/v2/') && req.body.expectedRevision !== planningFingerprint(id)) throw Object.assign(new Error('Événement modifié sur un autre appareil. Rechargez avant d’enregistrer.'), { name: 'REVISION_CONFLICT' });
   };
-  registerControlRoutes({ app, control, youtube, obs, settings: settingsUpdate, planningCreate, planningUpdate, planningDelete, recurrence: recurrenceException, isLocal: isLocalRequest, port: () => runtimePort, observe: observePlatforms,
+  registerControlRoutes({ app, control, youtube, obs, timerSource: () => local.settings.timerBrowserSource, settings: settingsUpdate, planningCreate, planningUpdate, planningDelete, recurrence: recurrenceException, isLocal: isLocalRequest, port: () => runtimePort, observe: observePlatforms,
     state: () => ({ hostname: hostname(), monitor: { twitchLogin: twitch.publicIdentity().userName || '' }, state: toRemoteDashboardState(snapshot()), settings: publicSettings(), settingsRevision: settingsFingerprint(), planning: structuredClone(local.planning), occurrences: expandEditableRecurringItems(local.planning, { from: Date.now() - DAY_MS, to: Date.now() + 90 * DAY_MS }), planningRevisions: Object.fromEntries(local.planning.map(item => [item.id, planningFingerprint(item.id)])), platforms: structuredClone(platformLive), local: true }),
   });
   app.post('/api/v2/sounds/upload', express.raw({ type: 'application/octet-stream', limit: '100mb' }), async (req, res, next) => {

@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { mkdtemp, readFile, rm } from 'node:fs/promises';
+import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { ControlService, type ControlAdapter } from '../apps/server/src/control-service.js';
@@ -21,6 +21,24 @@ describe('Shared durable controller',()=>{
   expect(first.status).toBe('succeeded');expect(duplicate.id).toBe(first.id);expect(a.action).toHaveBeenCalledTimes(1);
   const reopened=await ControlService.open(file,a);expect((await reopened.execute(request('micro'))).status).toBe('succeeded');expect(a.action).toHaveBeenCalledTimes(1);
   await expect(reopened.execute(request('scene-live'))).rejects.toThrow('Identifiant');
+ });
+ it('migrates only the untouched M5 timer assignment and keeps custom timer actions valid',async()=>{
+  const file=path.join(await temporary(),'control.json'),old=defaultControlData();
+  old.configuration.actions[4]={id:'timer-plus',label:'+ 5 minutes',type:'timer.add',value:'300',color:'green',shortcut:'Control+Alt+Shift+F5'};
+  await writeFile(file,JSON.stringify(old));let control=await ControlService.open(file,adapter());
+  expect(control.snapshot().configuration.actions[4].type).toBe('sound.stop');expect(control.snapshot().configuration.revision).toBe(1);
+  old.configuration.actions[4].label='Mon chrono';await writeFile(file,JSON.stringify(old));control=await ControlService.open(file,adapter());
+  expect(control.snapshot().configuration.actions[4].type).toBe('timer.add');expect(control.snapshot().configuration.revision).toBe(0);
+ });
+ it('journals catalogue playback by sound identity and reports a failed stop honestly',async()=>{
+  const a=adapter(),control=await ControlService.open(path.join(await temporary(),'control.json'),a);
+  const play={...request('sound.play'),soundId:'bonk'};
+  expect((await control.execute(play)).status).toBe('succeeded');await control.execute(play);
+  await expect(control.execute({...play,soundId:'airhorn'})).rejects.toThrow('Identifiant');
+  await control.execute({...request('sound.play','another_sound'),soundId:'airhorn'});
+  expect(vi.mocked(a.action).mock.calls.map(([action])=>action.value)).toEqual(['bonk','airhorn']);
+  a.action=vi.fn(async()=>{throw new Error('OBS déconnecté');});
+  expect(await control.execute(request('sound.stop','stop_failed_1'))).toMatchObject({status:'failed',message:'OBS déconnecté'});
  });
  it('returns partial results and retries only the failed platform without restarting Twitch',async()=>{
   const active={twitch:false,youtube:false};let youtubeFails=true;const a=adapter();

@@ -154,8 +154,8 @@ export class SoundboardRuntime {
 
   async stop() {
     const playback = this.currentPlayback;
-    this.currentPlayback = null;
     await this.audio.stop();
+    if (this.currentPlayback === playback) this.currentPlayback = null;
     if (playback) this.publish({ type: 'playback.stopped', payload: { ...playback, stoppedAt: new Date(this.now()).toISOString() } });
   }
 
