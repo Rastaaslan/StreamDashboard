@@ -233,7 +233,10 @@ export class TwitchClient {
     this.requireScope(CHAT_WRITE_SCOPE);
     const normalized = message.trim();
     if (!normalized || normalized.length > 500) throw new Error('Le message Twitch doit contenir entre 1 et 500 caractères.');
-    const value = await this.api<{ data: Array<{ message_id: string; is_sent: boolean; drop_reason?: { code: string; message: string } }> }>('/chat/messages', { method: 'POST', body: JSON.stringify({ broadcaster_id: this.credentials.broadcasterId, sender_id: this.credentials.broadcasterId, message: normalized, ...(replyParentMessageId ? { reply_parent_message_id: replyParentMessageId } : {}) }) });
+    const value = await this.api<{ data: Array<{ message_id: string; is_sent: boolean; drop_reason?: { code: string; message: string } }> }>('/chat/messages', { method: 'POST', body: JSON.stringify({ broadcaster_id: this.credentials.broadcasterId, sender_id: this.credentials.broadcasterId, message: normalized, ...(replyParentMessageId ? { reply_parent_message_id: replyParentMessageId } : {}) }) }).catch(error => {
+      if ((error instanceof TwitchHttpError && error.status >= 500) || (error instanceof Error && /réseau|délai|annulée/i.test(error.message))) throw Object.assign(new Error('Envoi Twitch non confirmé. Vérifiez le chat avant de réessayer.'), { name: 'ACTION_UNCERTAIN' });
+      throw error;
+    });
     const result = value.data[0];
     if (!result?.is_sent) throw new Error('Twitch a refusé le message.');
     if (!result.message_id) throw Object.assign(new Error('Twitch n’a pas fourni d’identifiant du message. Vérifiez le chat avant de réessayer.'), { name: 'ACTION_UNCERTAIN' });

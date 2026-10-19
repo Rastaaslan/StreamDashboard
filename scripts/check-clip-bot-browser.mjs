@@ -14,7 +14,7 @@ import { startDashboardServer } from '../dist/apps/server/src/index.js';
 const dataDir = await mkdtemp(path.join(tmpdir(), 'streamdashboard-browser-'));
 const outputDir = path.resolve(process.env.CONTROL_SCREENSHOTS || 'test-results/control-next');
 await mkdir(outputDir, { recursive: true });
-let replayActive=false, replayPath='', saves=0, posts=[], dropNext=false;
+let fakeStreaming=false, replayActive=false, replayPath='', saves=0, posts=[], dropNext=false;
 let timerUrl='http://127.0.0.1:48132/overlay/timer/', mediaCalls=[], muted = false, scene = 'Jeu', muteCalls = 0, sceneCalls = 0;
 const obs = new WebSocketServer({ host: '127.0.0.1', port: 0 });
 obs.on('connection', socket => {
@@ -33,13 +33,13 @@ obs.on('connection', socket => {
     if(requestType==='SaveReplayBuffer'){replayPath='/clips/replay-'+(++saves)+'.mkv';socket.send(encode({op:5,d:{eventType:'ReplayBufferSaved',eventIntent:64,eventData:{savedReplayPath:replayPath}}}));}
     const responses = {
       GetReplayBufferStatus:{outputActive:replayActive},GetLastReplayBufferReplay:{savedReplayPath:replayPath},GetRecordDirectory:{recordDirectory:'/clips'},
-      GetProfileParameter:{parameterValue:requestData.parameterName==='Mode'?'Advanced':requestData.parameterName==='RecRB'?'true':'20',defaultParameterValue:''},
+      GetProfileParameter:{parameterValue:requestData?.parameterName==='Mode'?'Advanced':requestData?.parameterName==='RecRB'?'true':'20',defaultParameterValue:''},
       GetVersion: { obsVersion: '31', obsWebSocketVersion: '5' },
       GetOutputList: { outputs: [] },
       CallVendorRequest: { responseData: requestData?.requestType === 'version' ? { success:true, version:'1.2.4' } : { success:true, outputs:[{name:'YouTube horizontal',type:'stream',active:false}] } },
       GetCurrentProgramScene: { currentProgramSceneName: scene },
       GetSceneList: { scenes: ['Jeu','Pause','Introduction','Discussion'].map(sceneName => ({ sceneName })) },
-      GetStreamStatus: { outputActive: false }, GetRecordStatus: { outputActive: false },
+      GetStreamStatus: { outputActive: fakeStreaming }, GetRecordStatus: { outputActive: false },
       GetInputList: { inputs: [{ inputName: 'Micro', inputKind: 'wasapi_input_capture' },{inputName:'StreamDashboard • Soundboard',inputKind:'ffmpeg_source'},{inputName:'Timer',inputKind:'browser_source'}] },
       GetInputMute: { inputMuted: requestData?.inputName==='Micro'?muted:false }, GetInputVolume: { inputVolumeMul: 1, inputVolumeDb: 0 },
       GetInputSettings:{inputSettings:{url:timerUrl}},
@@ -54,6 +54,7 @@ await once(obs, 'listening');
 process.env.OBS_URL = `ws://127.0.0.1:${obs.address().port}`;
 const realFetch=globalThis.fetch;
 globalThis.fetch=async(input,init)=>{const url=String(input);if(url.startsWith('https://id.twitch.tv/'))return new Response(JSON.stringify({client_id:'fixture',user_id:'42',login:'fixture_channel',scopes:['user:write:chat']}));if(url.startsWith('https://api.twitch.tv/')){if(url.includes('/chat/messages')){const body=JSON.parse(init.body);posts.push(body);const sent=!dropNext;dropNext=false;return new Response(JSON.stringify({data:[{is_sent:sent,message_id:sent?'message_'+posts.length:'',drop_reason:sent?undefined:{code:'automod_held',message:'held'}}]}));}return new Response(JSON.stringify({data:[]}));}return realFetch(input,init);};
+await writeFile(path.join(dataDir,'dashboard.json'),JSON.stringify({schemaVersion:6,twitch:{broadcasterId:'42',userName:'fixture_channel',displayName:'Fixture'}}));
 const secretStore=new MemorySecretStore();await secretStore.setTwitchTokens({accessToken:'fixture-only'});
 const options = { secretStore,twitchClientId:'fixture', port: 0, host: '0.0.0.0', remoteEnabled: true, dataDir, logger: { info(){}, warn(){}, error(){} } };
 let host, browser;
@@ -101,6 +102,10 @@ try {
   await expect(phone.locator('.receipt').first()).toContainText('/clips/replay-1.mkv');
   const receipt=(await api('/api/v2/state')).receipts.at(-1);assert.equal(receipt.result.replayPath,replayPath);
   await api('/api/v2/actions',{id:receipt.id,issuedAt:new Date().toISOString(),action:receipt.action});assert.equal(saves,1);
+  await phone.locator('[data-action="replay.stop"]').click();await expect.poll(()=>replayActive).toBe(false);
+  fakeStreaming=true;for(const socket of obs.clients)socket.send(encode({op:5,d:{eventType:'StreamStateChanged',eventIntent:64,eventData:{outputActive:true}}}));await expect.poll(()=>replayActive).toBe(true);
+  await phone.locator('[data-action="replay.stop"]').click();await expect.poll(()=>replayActive).toBe(false);await phone.waitForTimeout(500);assert.equal(replayActive,false);
+  fakeStreaming=false;for(const socket of obs.clients)socket.send(encode({op:5,d:{eventType:'StreamStateChanged',eventIntent:64,eventData:{outputActive:false}}}));
   await phone.locator('[data-deck-category="wizebot"]').click();
   await expect(phone.locator('[data-action="wizebot-uptime"]')).toBeEnabled();
   await phone.locator('[data-action="wizebot-uptime"]').click();

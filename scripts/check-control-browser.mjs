@@ -216,7 +216,7 @@ try {
   await api('/api/v2/planning/' + item.id, { expectedRevision: state.host.planningRevisions[item.id] }, 'DELETE');
   assert.equal((await api('/api/v2/state')).host.planning.length, 0);
   assert.deepEqual(errors, []);
-  console.log('PASS: paired LAN mobile + desktop, keyboard mic, scene, timer start/pause/reset and overlay reconnection, sound pads and M5 stop, recurring occurrence edits, duplication, PNG export, shared planning CRUD, settings, host restart, pairing persistence, stable video + both chats, source switch and broadcast change. OBS and embed documents are simulated.');
+  console.log('PASS: paired LAN mobile + desktop, keyboard mic, scene, timer start/pause/reset and overlay reconnection, sound pads and mobile stop, recurring occurrence edits, duplication, PNG export, shared planning CRUD, settings, host restart, pairing persistence, stable video + both chats, source switch and broadcast change. OBS and embed documents are simulated.');
 } finally {
   await browser?.close(); await host?.stop();
   for (const socket of obs.clients) socket.terminate();
