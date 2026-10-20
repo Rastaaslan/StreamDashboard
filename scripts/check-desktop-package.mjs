@@ -7,6 +7,7 @@ const archive = path.resolve(process.argv[2] || 'out/StreamDashboard-win32-x64/r
 // target packaged on another OS. Keep policy matching platform-independent.
 const files = listPackage(archive).map(file => file.replaceAll('\\', '/'));
 const readArchive = file => extractFile(archive, path.normalize(file));
+assert.equal(JSON.parse(readArchive('package.json').toString()).version, JSON.parse(readFileSync('package.json','utf8')).version, 'Packaged runtime version must retain the complete release identifier');
 const publicConfig = JSON.parse(readArchive('resources/distribution.json').toString());
 assert.deepEqual(Object.keys(publicConfig).sort(), ['googleClientId', 'twitchClientId']);
 assert.match(publicConfig.googleClientId, /^[\w.-]+\.apps\.googleusercontent\.com$/);

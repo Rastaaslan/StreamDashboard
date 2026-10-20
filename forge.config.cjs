@@ -1,13 +1,21 @@
 const certificateFile = process.env.WINDOWS_CERTIFICATE_FILE || undefined;
 const certificatePassword = process.env.WINDOWS_CERTIFICATE_PASSWORD || undefined;
 const electronVersion = require('./package.json').devDependencies.electron;
+const applicationVersion = require('./package.json').version;
 
 module.exports = {
   packagerConfig: {
     name: 'StreamDashboard',
     electronVersion,
-    // Windows resources require numeric components; Electron keeps package.json's full version.
-    appVersion: require('./package.json').version.split('-')[0],
+    // Windows resources require numeric components. Restore the runtime SemVer before ASAR.
+    appVersion: applicationVersion.split('-')[0],
+    beforeAsar: [async buildPath => {
+      const fs = require('node:fs/promises');
+      const manifestPath = require('node:path').join(buildPath, 'package.json');
+      const manifest = JSON.parse(await fs.readFile(manifestPath, 'utf8'));
+      manifest.version = applicationVersion;
+      await fs.writeFile(manifestPath, JSON.stringify(manifest, null, 2) + '\n');
+    }],
     executableName: 'StreamDashboard',
     appBundleId: 'com.rastaaslan.streamdashboard',
     icon: './resources/streamdashboard',
