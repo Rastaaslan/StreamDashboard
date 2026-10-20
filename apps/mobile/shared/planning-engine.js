@@ -89,39 +89,39 @@ var require_core = __commonJS({
       }
     })(exports, function() {
       var CryptoJS = CryptoJS || (function(Math2, undefined2) {
-        var crypto2;
+        var crypto;
         if (typeof window !== "undefined" && window.crypto) {
-          crypto2 = window.crypto;
+          crypto = window.crypto;
         }
         if (typeof self !== "undefined" && self.crypto) {
-          crypto2 = self.crypto;
+          crypto = self.crypto;
         }
         if (typeof globalThis !== "undefined" && globalThis.crypto) {
-          crypto2 = globalThis.crypto;
+          crypto = globalThis.crypto;
         }
-        if (!crypto2 && typeof window !== "undefined" && window.msCrypto) {
-          crypto2 = window.msCrypto;
+        if (!crypto && typeof window !== "undefined" && window.msCrypto) {
+          crypto = window.msCrypto;
         }
-        if (!crypto2 && typeof global !== "undefined" && global.crypto) {
-          crypto2 = global.crypto;
+        if (!crypto && typeof global !== "undefined" && global.crypto) {
+          crypto = global.crypto;
         }
-        if (!crypto2 && typeof __require === "function") {
+        if (!crypto && typeof __require === "function") {
           try {
-            crypto2 = __require("crypto");
+            crypto = __require("crypto");
           } catch (err) {
           }
         }
         var cryptoSecureRandomInt = function() {
-          if (crypto2) {
-            if (typeof crypto2.getRandomValues === "function") {
+          if (crypto) {
+            if (typeof crypto.getRandomValues === "function") {
               try {
-                return crypto2.getRandomValues(new Uint32Array(1))[0];
+                return crypto.getRandomValues(new Uint32Array(1))[0];
               } catch (err) {
               }
             }
-            if (typeof crypto2.randomBytes === "function") {
+            if (typeof crypto.randomBytes === "function") {
               try {
-                return crypto2.randomBytes(4).readInt32LE();
+                return crypto.randomBytes(4).readInt32LE();
               } catch (err) {
               }
             }
@@ -805,6 +805,20 @@ var require_sha256 = __commonJS({
   }
 });
 
+// packages/core/src/uuid.ts
+function randomUuid() {
+  const source = globalThis.crypto;
+  if (typeof source?.randomUUID === "function") return source.randomUUID();
+  if (typeof source?.getRandomValues !== "function") {
+    throw new Error("G\xE9n\xE9ration s\xE9curis\xE9e des identifiants indisponible. Mettez \xE0 jour le navigateur ou Android System WebView.");
+  }
+  const bytes = source.getRandomValues(new Uint8Array(16));
+  bytes[6] = bytes[6] & 15 | 64;
+  bytes[8] = bytes[8] & 63 | 128;
+  const hex = Array.from(bytes, (value) => value.toString(16).padStart(2, "0")).join("");
+  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
+}
+
 // apps/mobile/shared/recurrence.js
 function migrateRecurrence(rule) {
   if (!rule || ![void 0, 1, 2].includes(rule.version) || !["daily", "weekly", "monthly"].includes(rule.frequency) || !Number.isSafeInteger(rule.interval) || rule.interval < 1 || rule.version !== 2 && !(rule.interval === 1 || rule.interval === 2) || rule.custom && (rule.version !== 2 || typeof rule.custom.engine !== "string" || !rule.custom.engine || !Number.isSafeInteger(rule.custom.version) || rule.custom.version < 1 || !rule.custom.parameters || typeof rule.custom.parameters !== "object" || Array.isArray(rule.custom.parameters))) {
@@ -1435,7 +1449,7 @@ async function reconcileProjection(item, provider, persist, options) {
           if (![404, 410].includes(error.status ?? 0) && error.code !== "DELETED_REMOTELY") throw error;
         }
       }
-      if (name === "google") (link.projectionRetirements ??= {})[key] = { calendarId: entry.calendarId, creationId: crypto.randomUUID() };
+      if (name === "google") (link.projectionRetirements ??= {})[key] = { calendarId: entry.calendarId, creationId: randomUuid() };
       delete entries[key];
       expected.delete(key);
     } catch (error) {
@@ -1482,7 +1496,7 @@ async function reconcileProjection(item, provider, persist, options) {
           delete entry.remoteId;
           delete entry.fingerprint;
           delete entry.remoteRevision;
-          if (name === "google") entry.creationId = crypto.randomUUID();
+          if (name === "google") entry.creationId = randomUuid();
         }
         entry.deletedRemotely = false;
       }
@@ -1649,7 +1663,7 @@ async function resolveGoogleOccurrenceConflict(item, key, strategy, provider, pe
           providers: { google: { status: "synced", remoteId: entry.remoteId, calendarId: entry.calendarId, remoteRevision: latest2.revision } }
         };
         restore(restored);
-        (link.projectionRetirements ??= {})[key] = { calendarId: entry.calendarId, creationId: entry.creationId ?? crypto.randomUUID(), retained: true };
+        (link.projectionRetirements ??= {})[key] = { calendarId: entry.calendarId, creationId: entry.creationId ?? randomUuid(), retained: true };
         delete link.projections[key];
       } else {
         entry.remoteRevision = latest2.revision ?? entry.remoteRevision;
@@ -1837,7 +1851,7 @@ var PlanningOrchestrator = class {
   }
   create(input) {
     return this.serial(async () => {
-      const id = input.id ?? crypto.randomUUID();
+      const id = input.id ?? randomUuid();
       const item = {
         ...input,
         recurrence: recurrenceForNewSeries(input.recurrence, input.localId ?? id),
@@ -2944,5 +2958,6 @@ export {
   googleRecurrence,
   parseGoogleRecurrence,
   parseWizeBotCatalog,
+  randomUuid,
   validateProductProfile
 };

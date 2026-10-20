@@ -1,5 +1,6 @@
+import { randomUuid as newId } from '../shared/planning-engine.js';
 import { clone, equal, merge, overlay, resources, fields, pick } from '../shared/autonomy.js';
-export const newId=()=>globalThis.crypto?.randomUUID?.()||'edit_'+Date.now()+'_'+Math.random().toString(36).slice(2);
+export { randomUuid as newId } from '../shared/planning-engine.js';
 const containsSecret=value=>Boolean(value&&typeof value==='object'&&Object.entries(value).some(([key,v])=>/(?:token|secret|password|credential|authorization)/i.test(key)||containsSecret(v)));
 const empty = () => ({version:1,workspace:null,bundle:null,pending:[],lastSync:null,drafts:{}});
 /** Each transaction reads the newest record: multiple windows cannot overwrite each other's outbox. */

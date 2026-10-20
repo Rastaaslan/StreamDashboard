@@ -1,3 +1,4 @@
+import { randomUuid } from './uuid.js';
 import { recurrenceForNewSeries } from './recurrence.js';
 import { deleteSeriesProjections, recoverSeriesDeletionIdentities } from './series-deletion.js';
 import { reconcileGoogleProjection, needsGoogleMaterialization, resolveGoogleOccurrenceConflict } from '../../../integrations/google-calendar/src/projection.js';
@@ -74,7 +75,7 @@ export class PlanningOrchestrator {
 
   create(input: Omit<CalendarItem, 'id'> & { id?: string }) {
     return this.serial(async () => {
-      const id = input.id ?? crypto.randomUUID();
+      const id = input.id ?? randomUuid();
       const item: CalendarItem = {
         ...input,
         recurrence: recurrenceForNewSeries(input.recurrence, input.localId ?? id),

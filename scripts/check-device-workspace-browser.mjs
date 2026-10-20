@@ -11,6 +11,8 @@ const assets=express();assets.use(express.static(path.resolve('apps/mobile')));
 const assetServer=assets.listen(48134,'127.0.0.1');await new Promise(r=>assetServer.once('listening',r));
 let context,host;const errors=[];
 const mocks=()=>{
+  // LAN HTTP and some WebViews expose getRandomValues but not randomUUID.
+  Object.defineProperty(Crypto.prototype,'randomUUID',{configurable:true,value:undefined});
   let credential='';const status=p=>JSON.stringify({ok:true,configured:true,connected:localStorage.getItem('mock.'+p)==='yes',calendarAuthorized:true,youtubeAuthorized:localStorage.getItem('mock.youtube')==='yes'});
   globalThis.StreamDashboardNative={isAndroid:()=>true,getCredential:()=>credential,setCredential:v=>{credential=v;},clearCredential:()=>{credential='';},setKeepAwake(){}};
   globalThis.StreamDashboardProviders={

@@ -1,3 +1,4 @@
+import { randomUuid } from './uuid.js';
 import { boundedMap, measureSync, syncBatch } from './sync-performance.js';
 import type { CalendarItem, ProviderLink } from '../../contracts/src/index.js';
 import type { PlanningProvider } from './planning.js';
@@ -149,7 +150,7 @@ async function reconcileProjection(
         try { await provider.delete(entry.remoteId, request(entry.event, entry, name), entry.remoteRevision); }
         catch (error) { if (![404, 410].includes((error as { status?: number }).status ?? 0) && (error as { code?: string }).code !== 'DELETED_REMOTELY') throw error; }
       }
-      if (name === 'google') (link.projectionRetirements ??= {})[key] = { calendarId: entry.calendarId, creationId: crypto.randomUUID() };
+      if (name === 'google') (link.projectionRetirements ??= {})[key] = { calendarId: entry.calendarId, creationId: randomUuid() };
       delete entries[key];
       expected.delete(key); // A confirmed withdrawal never republishes in the same pass.
     } catch (error) { fail(entry, error); }
@@ -185,7 +186,7 @@ async function reconcileProjection(
         const remote = entry.remoteId ? observed ?? await provider.read!(entry.remoteId, request(entry.event, entry, name)) : undefined;
         if (!remote || remote.deleted) {
           delete entry.remoteId; delete entry.fingerprint; delete entry.remoteRevision;
-          if (name === 'google') entry.creationId = crypto.randomUUID();
+          if (name === 'google') entry.creationId = randomUuid();
         }
         entry.deletedRemotely = false;
       }

@@ -1,9 +1,15 @@
-import test from 'node:test';
+import test, {after} from 'node:test';
 import assert from 'node:assert/strict';
 import {createLocalPlanning} from '../../apps/mobile/control/local-planning.js';
 import {createDeviceProviders} from '../../apps/mobile/control/device-providers.js';
 import {newWorkspace} from '../../apps/mobile/control/device-workspace.js';
 import {googleProjectionLocalId} from '../../dist/integrations/google-calendar/src/projection.js';
+
+// Exercise every autonomous planning flow without the secure-context-only UUID API.
+const cryptoDescriptor=Object.getOwnPropertyDescriptor(globalThis,'crypto');
+const nativeCrypto=globalThis.crypto;
+Object.defineProperty(globalThis,'crypto',{configurable:true,value:{getRandomValues:nativeCrypto.getRandomValues.bind(nativeCrypto)}});
+after(()=>Object.defineProperty(globalThis,'crypto',cryptoDescriptor));
 
 const event={title:'Essai autonome',description:'Texte',category:'live',startAtUtc:'2030-11-01T18:00:00.000Z',endAtUtc:'2030-11-01T19:00:00.000Z',desiredPublication:{local:true,twitch:true,google:true}};
 function setup(){
