@@ -45,6 +45,7 @@ for (const file of [
   'apps/mobile/shared/planning-editor.js', 'apps/web/preview/preview.js',
   'dist/apps/server/src/twitch-chat-routes.js', 'dist/apps/server/src/control-routes.js',
   'dist/apps/server/src/control-service.js', 'dist/integrations/youtube/src/client.js',
+  'dist/apps/server/src/streamlabs-feed.js', 'dist/integrations/streamlabs/src/events.js',
   'dist/integrations/obs/src/client.js',
 ]) {
   assert.deepEqual(readArchive(file), readFileSync(file), 'Packaged asset diverges from source/build: ' + file);

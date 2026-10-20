@@ -1,6 +1,10 @@
 const esc=value=>String(value??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const providers={twitch:'Twitch',youtube:'YouTube',streamlabs:'Streamlabs'};
 const statuses={CONNECTED:'Connecté · réception active',CONNECTING:'Connexion en cours',DISCONNECTED:'Déconnecté',NOT_CONFIGURED:'À connecter',NOT_SUPPORTED:'Indisponible',DEGRADED:'Connexion dégradée',ERROR:'Erreur de connexion'};
+// Older sources and offline caches can still contain widget control packets.
+// Keep unknown activity types; only these identified controls are excluded.
+const streamlabsControlTypes=new Set(['rollendcredits','sessionreset','userstatesessionreset']);
+const activityItems=items=>Array.isArray(items)?items.filter(event=>event&&typeof event.type==='string'&&/^[a-z][a-z0-9_-]{0,39}$/i.test(event.type)&&!streamlabsControlTypes.has(event.type.toLowerCase().replace(/[-_]/g,''))):[];
 export function streamlabsEventLabel(event){
  if(event.type==='follow')return event.platform==='youtube'?'Abonné YouTube':'Follow';
  if(event.type==='subscription')return event.recipient||/gift/i.test(event.subType||'')?'Abonnement offert':event.platform==='youtube'?'Membre YouTube':event.subType==='resub'?'Réabonnement':'Abonnement';
@@ -15,7 +19,7 @@ export function streamlabsEventDetail(event){
  if(event.recipient)values.push('pour '+event.recipient);
  return values.join(' · ');
 }
-export function streamlabsRows(items){return items.map(e=>'<article class="streamlabs-event"><div class="streamlabs-event-head"><strong>'+esc(e.displayName)+'</strong><span class="pill">'+esc(providers[e.platform]||e.platform)+'</span><span>'+esc(streamlabsEventLabel(e))+'</span>'+(e.test?'<span class="pill">TEST</span>':'')+'<time datetime="'+esc(e.receivedAt)+'" title="Reçu par la source sélectionnée">'+esc(new Date(e.receivedAt).toLocaleString('fr-FR',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'}))+'</time></div>'+(streamlabsEventDetail(e)?'<p class="streamlabs-detail">'+esc(streamlabsEventDetail(e))+'</p>':'')+(e.message?'<p class="streamlabs-message">'+esc(e.message)+'</p>':'')+'</article>').join('');}
+export function streamlabsRows(items){return activityItems(items).map(e=>'<article class="streamlabs-event"><div class="streamlabs-event-head"><strong>'+esc(e.displayName)+'</strong><span class="pill">'+esc(providers[e.platform]||e.platform)+'</span><span>'+esc(streamlabsEventLabel(e))+'</span>'+(e.test?'<span class="pill">TEST</span>':'')+'<time datetime="'+esc(e.receivedAt)+'" title="Reçu par la source sélectionnée">'+esc(new Date(e.receivedAt).toLocaleString('fr-FR',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'}))+'</time></div>'+(streamlabsEventDetail(e)?'<p class="streamlabs-detail">'+esc(streamlabsEventDetail(e))+'</p>':'')+(e.message?'<p class="streamlabs-message">'+esc(e.message)+'</p>':'')+'</article>').join('');}
 
 // Each source owns its credentials and history. Polling survives focus in another
 // control; changing workspace never carries an unrelated source selection across.
@@ -26,7 +30,7 @@ export function createStreamlabsFeed(root,{request,configure,storage=localStorag
  const preferenceKey=()=>'sd2.streamlabs.source:'+workspaceKey;
  function readCache(){
   items=[];provider={};lastRead='';stale=true;error='';
-  try{const cached=JSON.parse(storage.getItem(cacheKey())||'null');if(cached){items=Array.isArray(cached.items)?cached.items.slice(0,100):[];provider=cached.provider||{};lastRead=cached.at||'';}}catch{}
+  try{const cached=JSON.parse(storage.getItem(cacheKey())||'null');if(cached){items=activityItems(cached.items).slice(0,100);provider=cached.provider||{};lastRead=cached.at||'';if(Array.isArray(cached.items)&&items.length!==cached.items.length)storage.setItem(cacheKey(),JSON.stringify({items,provider,at:lastRead}));}}catch{}
  }
  root.innerHTML='<section class="panel spacer streamlabs-feed"><div class="section-heading"><div><span class="eyebrow">ACTIVITÉ DU LIVE</span><h2>Événements Streamlabs</h2></div><button type="button" class="secondary" data-feed-refresh>Actualiser</button></div><div class="streamlabs-filters"><label>Source<select data-feed-source aria-label="Source Streamlabs"></select></label><label>Plateforme<select data-feed-platform aria-label="Plateforme Streamlabs"><option value="all">Toutes</option><option value="twitch">Twitch</option><option value="youtube">YouTube</option><option value="streamlabs">Streamlabs</option></select></label><label>Événements<select data-feed-type aria-label="Type d’événement Streamlabs"><option value="all">Tous</option><option value="follow">Follows / abonnés YouTube</option><option value="subscription">Abonnements / membres</option><option value="donation">Dons</option><option value="bits">Bits</option><option value="raid">Raids</option><option value="superchat">Super Chats</option></select></label><button type="button" class="secondary" data-feed-config>Configurer Streamlabs</button></div><p class="small muted" data-feed-source-info></p><p data-feed-status role="status"></p><div class="streamlabs-events" data-feed-events></div><p class="small muted">Historique des événements reçus pendant la connexion de la source choisie. Les périodes sans connexion ne sont pas reconstituées.</p></section>';
  function draw(){
@@ -52,7 +56,7 @@ export function createStreamlabsFeed(root,{request,configure,storage=localStorag
     const value=await request(target);
     if(disposed||attempt!==generation||target!==source||!root.isConnected)return;
     if(!value||!Array.isArray(value.items)||!value.provider)throw new Error('Format de suivi indisponible : mettez à jour cette source.');
-    items=value.items;provider=value.provider;lastRead=new Date().toISOString();stale=false;error='';
+    items=activityItems(value.items);provider=value.provider;lastRead=new Date().toISOString();stale=false;error='';
     try{storage.setItem(cacheKey(),JSON.stringify({items:items.slice(0,100),provider,at:lastRead}));}catch{}
    }catch(e){if(disposed||attempt!==generation||target!==source)return;stale=true;error=e instanceof Error?e.message:'Source inaccessible.';}
    draw();

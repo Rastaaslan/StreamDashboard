@@ -9,6 +9,45 @@ test.beforeAll(async()=>{
  server=await new Promise<Server>(resolve=>{const s=app.listen(0,'127.0.0.1',()=>resolve(s));});origin=`http://127.0.0.1:${(server.address() as {port:number}).port}`;
 });
 test.afterAll(async()=>{await new Promise<void>((resolve,reject)=>server.close(e=>e?reject(e):resolve()));});
+test('old offline cache hides widget controls before its limit and preserves viewer activity',async({page})=>{
+ await page.goto(origin);
+ await page.evaluate(async()=>{
+  localStorage.clear();
+  const at=new Date().toISOString();
+  const controls=Array.from({length:105},(_,i)=>({id:'control-'+i,type:['rollendcredits','SESSION_RESET','User-State-Session-Reset'][i%3],platform:'streamlabs',displayName:'Commande interne',receivedAt:at}));
+  const activity=[{id:'follow',type:'follow',platform:'twitch',displayName:'Viewer conservé',receivedAt:at},{id:'future',type:'merch',platform:'streamlabs',displayName:'Achat conservé',receivedAt:at}];
+  localStorage.setItem('sd2.streamlabs.history:host',JSON.stringify({items:[...controls,...activity],provider:{status:'CONNECTED'},at}));
+  const modulePath='/mobile/control/streamlabs-feed.js';const module=await import(modulePath);
+  const feed=module.createStreamlabsFeed(document.querySelector('#feed'),{request:async()=>{throw Error('Source hors ligne');},configure:()=>{}});
+  feed.update([{id:'host',label:'Régie · FIXE'}]);
+ });
+ await expect(page.locator('.streamlabs-event')).toHaveCount(2);
+ await expect(page.locator('[data-feed-events]')).toContainText('Viewer conservé');
+ await expect(page.locator('[data-feed-events]')).toContainText('Achat conservé');
+ await expect(page.locator('[data-feed-events]')).not.toContainText('Commande interne');
+ await expect(page.locator('[data-feed-status]')).toContainText('réception non confirmée');
+ expect(await page.evaluate(()=>JSON.parse(localStorage.getItem('sd2.streamlabs.history:host')!).items.map((e:any)=>e.id))).toEqual(['follow','future']);
+});
+test('old server controls stay out of visible and cached history while gifts remain available',async({page})=>{
+ await page.goto(origin);
+ await page.evaluate(async()=>{
+  localStorage.clear();
+  const modulePath='/mobile/control/streamlabs-feed.js';const module=await import(modulePath);const at=new Date().toISOString();
+  const feed=module.createStreamlabsFeed(document.querySelector('#feed'),{request:async()=>({provider:{status:'CONNECTED'},items:[
+   ...['rollendcredits','sessionreset','USER_STATE_SESSION_RESET'].map((type,i)=>({id:'control-'+i,type,platform:'streamlabs',displayName:'Commande interne',receivedAt:at})),
+   {id:'follow',type:'follow',platform:'twitch',displayName:'rollendcredits',message:'Viewer réel portant ce nom',receivedAt:at},
+   {id:'gift',type:'subscription',platform:'twitch',displayName:'Ada',subType:'gift',recipient:'Dam',receivedAt:at},
+  ]}),configure:()=>{}});
+  feed.update([{id:'host',label:'Régie · FIXE'}]);
+ });
+ await expect(page.locator('.streamlabs-event')).toHaveCount(2);
+ await expect(page.locator('[data-feed-events]')).not.toContainText('Commande interne');
+ await expect(page.locator('[data-feed-events]')).toContainText('Viewer réel portant ce nom');
+ await expect(page.locator('[data-feed-events]')).toContainText('Abonnement offert');
+ await page.getByLabel('Type d’événement Streamlabs').selectOption('subscription');
+ await expect(page.locator('.streamlabs-event')).toHaveCount(1);
+ expect(await page.evaluate(()=>JSON.parse(localStorage.getItem('sd2.streamlabs.history:host')!).items.map((e:any)=>e.id))).toEqual(['follow','gift']);
+});
 test('desktop feed filters real-shaped events, isolates sources and keeps offline history without claiming connected',async({page})=>{
  await page.setViewportSize({width:1366,height:900});await page.goto(origin);
  await page.evaluate(async()=>{

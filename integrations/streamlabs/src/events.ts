@@ -9,12 +9,21 @@ export interface StreamlabsEvent {
 const text = (value: unknown, max: number) => typeof value === 'string' || typeof value === 'number' ? String(value).slice(0, max) : '';
 const count = (value: unknown) => value !== undefined && value !== null && value !== '' && Number.isSafeInteger(Number(value)) && Number(value) >= 0 ? Number(value) : undefined;
 
+const STREAMLABS_CONTROL_TYPES = new Set(['rollendcredits', 'sessionreset', 'userstatesessionreset']);
+
+/** Socket control commands are not viewer activity. Keep unknown activity types
+ * so new provider events are not silently discarded. */
+export function isStreamlabsActivityType(value: unknown): value is string {
+  return typeof value === 'string' && /^[a-z][a-z0-9_-]{0,39}$/i.test(value)
+    && !STREAMLABS_CONTROL_TYPES.has(value.toLowerCase().replace(/[-_]/g, ''));
+}
+
 /** Whitelist public display fields; never persist a raw provider packet. */
 export function normalizeStreamlabsEvents(value: unknown, now = new Date()): StreamlabsEvent[] {
   if (!value || typeof value !== 'object') return [];
   const packet = value as Record<string, unknown>;
   const type = text(packet.type, 40).toLowerCase().replace(/^raids$/, 'raid');
-  if (!/^[a-z][a-z0-9_-]{0,39}$/.test(type)) return [];
+  if (!isStreamlabsActivityType(type)) return [];
   const platform = packet.for === 'twitch_account' ? 'twitch' : packet.for === 'youtube_account' ? 'youtube' : !packet.for || packet.for === 'streamlabs' ? 'streamlabs' : null;
   if (!platform) return [];
   const rows = Array.isArray(packet.message) ? packet.message : [packet.message];

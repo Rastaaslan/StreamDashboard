@@ -1,8 +1,8 @@
 import { describe, expect, it, vi } from 'vitest';
-import { mkdtemp, rm, readFile } from 'node:fs/promises';
+import { mkdtemp, rm, readFile, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import { normalizeStreamlabsEvents } from '../integrations/streamlabs/src/events.js';
+import { isStreamlabsActivityType, normalizeStreamlabsEvents } from '../integrations/streamlabs/src/events.js';
 import { StreamlabsFeed } from '../apps/server/src/streamlabs-feed.js';
 import { startDashboardServer, type DashboardServerHandle } from '../apps/server/src/index.js';
 import { MemorySecretStore } from '../apps/server/src/storage.js';
@@ -10,6 +10,42 @@ import { isRemoteApiAllowed } from '../apps/server/src/remote-api-policy.js';
 
 const packet=(type='follow',id='first')=>({for:'twitch_account',type,message:[{_id:id,name:'Ada',message:'GG'}]});
 describe('Streamlabs event feed',()=>{
+ it('ignores socket control commands while preserving viewer activity and future event types',()=>{
+  for(const type of ['rollendcredits','ROLLENDCREDITS','roll-end-credits','roll_end_credits','sessionreset','Session_Reset','userstatesessionreset','user-state-session-reset']){
+   expect(isStreamlabsActivityType(type),type).toBe(false);
+   expect(normalizeStreamlabsEvents(packet(type)),type).toEqual([]);
+  }
+  for(const type of ['donation','follow','subscription','bits','raid','host','superchat','communitygift','membership','supersticker','new-viewer-event']){
+   expect(isStreamlabsActivityType(type),type).toBe(true);
+   expect(normalizeStreamlabsEvents(packet(type))[0],type).toMatchObject({type,displayName:'Ada'});
+  }
+  expect(normalizeStreamlabsEvents(packet('raids'))[0].type).toBe('raid');
+  expect(isStreamlabsActivityType(null)).toBe(false);
+  expect(isStreamlabsActivityType('invalid event')).toBe(false);
+ });
+ it('repairs persisted control traffic before retention and never lets it evict earlier donations',async()=>{
+  const dir=await mkdtemp(path.join(tmpdir(),'sl-cleanup-'));
+  try{
+   const file=path.join(dir,'feed.json');
+   const donations=Array.from({length:13},(_,i)=>normalizeStreamlabsEvents({type:'donation',message:[{_id:'donation-'+i,name:'Ada',amount:'5.25',currency:'EUR',message:'Merci',created_at:'2026-09-20T12:00:00Z'}]},new Date('2026-09-20T12:00:00Z'))[0]);
+   // These are already-normalized records produced by the old implementation.
+   const controls=Array.from({length:1100},(_,i)=>({...donations[0],id:'control-'+i,type:['rollendcredits','sessionreset','userstatesessionreset'][i%3]}));
+   await writeFile(file,JSON.stringify({items:[...donations,...controls]}));
+   const feed=await StreamlabsFeed.open(file);
+   expect(feed.list()).toEqual([...donations].reverse());
+   expect(JSON.parse(await readFile(file,'utf8')).items).toEqual(donations);
+   const write=vi.spyOn((feed as unknown as {store:{write():Promise<void>}}).store,'write');
+   await feed.record(controls);
+   expect(write).not.toHaveBeenCalled();
+   expect(feed.list()).toEqual([...donations].reverse());
+   const gift=normalizeStreamlabsEvents({...packet('subscription','gift'),message:[{_id:'gift',name:'Ada',sub_type:'gift',recipient:'Dam',months:1}]})[0];
+   const future=normalizeStreamlabsEvents(packet('communitygift','future'))[0];
+   await feed.record([...controls,gift,future,...controls]);
+   expect(feed.list()).toEqual([future,gift,...[...donations].reverse()]);
+   const restored=await StreamlabsFeed.open(file);
+   expect(restored.list()).toEqual(feed.list());
+  }finally{await rm(dir,{recursive:true,force:true});}
+ });
  it('keeps provider identities, YouTube micro amounts, gifts and test markers without raw credentials',()=>{
   const original=packet();const events=normalizeStreamlabsEvents(original);
   expect(events[0]).toMatchObject({platform:'twitch',type:'follow',displayName:'Ada'});
@@ -44,6 +80,7 @@ describe('Streamlabs event feed',()=>{
    const host=await startDashboardServer({port:0,dataDir:path.join(dir,'host'),obsEnabled:false,secretStore:secrets,streamlabsTransport:{connect:async(_token,_tip,_disconnect,event)=>{receive=event;return async()=>{};}},logger:{info(){},warn(){},error(){}}});active.push(host);
    await vi.waitFor(()=>expect(receive).toBeTypeOf('function'));
    receive!(packet('raid'));receive!(packet('raid'));
+   receive!(packet('rollendcredits'));receive!(packet('sessionreset'));receive!(packet('userstatesessionreset'));
    const read=()=>fetch(host.url+'/api/v1/streamlabs/events').then(r=>r.json());
    await vi.waitFor(async()=>expect((await read()).items).toHaveLength(1));
    const [streamPC,gamePC]=await Promise.all([read(),read()]);expect(streamPC).toEqual(gamePC);expect(streamPC.provider.status).toBe('CONNECTED');expect(JSON.stringify(streamPC)).not.toContain('private-token');
