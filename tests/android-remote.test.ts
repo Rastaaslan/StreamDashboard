@@ -99,9 +99,11 @@ describe('Android remote runtime', () => {
   });
 
   it('retourne le bon provider dans les statuts autonomes Android', () => {
-    for (const provider of ['twitch', 'google']) {
-      expect(androidProviderBridge).toContain(`return status("${provider}", BuildConfig.${provider.toUpperCase()}_ANDROID_CLIENT_ID)`);
+    expect(androidProviderBridge).toContain('return status("twitch", BuildConfig.TWITCH_ANDROID_CLIENT_ID)');
+    for (const provider of ['google', 'youtube']) {
+      expect(androidProviderBridge).toContain(`return googleProviderStatus("${provider}")`);
     }
+    expect(androidProviderBridge).toContain('return status(provider, BuildConfig.GOOGLE_ANDROID_CLIENT_ID)');
     expect(androidProviderBridge).toContain('urn:ietf:params:oauth:grant-type:device_code');
     expect(androidProviderBridge).not.toContain('code_verifier');
     const diagnostic = providerDiagnostic({ configured: false });
@@ -114,9 +116,12 @@ describe('Android remote runtime', () => {
     ['192.168.1.10', 'http://192.168.1.10:48132'],
     ['192.168.1.10:48132', 'http://192.168.1.10:48132'],
     ['http://192.168.1.10:48132/', 'http://192.168.1.10:48132'],
+    ['http://100.126.186.44:48133', 'http://100.126.186.44:48133'],
+    ['100.64.0.0:48133', 'http://100.64.0.0:48133'],
+    ['100.127.255.255:48133', 'http://100.127.255.255:48133'],
   ])('normalizes %s', (input, expected) => expect(normalizeServer(input)).toBe(expected));
 
-  it.each(['https://example.com', 'http://8.8.8.8', 'ftp://192.168.1.2', 'http://user:pass@192.168.1.2'])('rejects unsafe server %s', input => {
+  it.each(['https://example.com', 'http://8.8.8.8', 'http://100.63.255.255:48133', 'http://100.128.0.0:48133', 'ftp://192.168.1.2', 'http://user:pass@192.168.1.2', 'http://user:pass@100.126.186.44:48133', 'http://100.126.186.44.evil.example:48133'])('rejects unsafe server %s', input => {
     expect(() => normalizeServer(input)).toThrow();
   });
 
@@ -124,6 +129,12 @@ describe('Android remote runtime', () => {
     expect(parsePairing('streamdashboard://pair?v=1&server=http%3A%2F%2F192.168.1.2%3A48132&id=abc&code=123456')).toEqual({
       server: 'http://192.168.1.2:48132', id: 'abc', code: '123456',
     });
+  });
+
+  it('keeps a Tailscale pairing destination usable by desktop global macros', () => {
+    const pairing = parsePairing('streamdashboard://pair?v=1&server=http%3A%2F%2F100.126.186.44%3A48133&id=paired-device&code=123456');
+    expect(pairing.server).toBe('http://100.126.186.44:48133');
+    expect(normalizeServer(pairing.server)).toBe(pairing.server);
   });
 
   it.each([

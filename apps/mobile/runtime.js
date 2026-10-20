@@ -5,12 +5,15 @@ export function isAndroidRuntime() {
   return Boolean(globalThis.StreamDashboardNative?.isAndroid?.());
 }
 
-function isPrivateIpv4(hostname) {
+function isLocalOrTailnetIpv4(hostname) {
   const parts = hostname.split('.').map(Number);
   if (parts.length !== 4 || parts.some(part => !Number.isInteger(part) || part < 0 || part > 255)) return false;
   return parts[0] === 10
     || (parts[0] === 172 && parts[1] >= 16 && parts[1] <= 31)
-    || (parts[0] === 192 && parts[1] === 168);
+    || (parts[0] === 192 && parts[1] === 168)
+    // Tailscale peers use the shared-address range 100.64.0.0/10.
+    // Keep the bounds exact: the rest of 100.0.0.0/8 is not a LAN destination.
+    || (parts[0] === 100 && parts[1] >= 64 && parts[1] <= 127);
 }
 
 export function normalizeServer(value) {
@@ -25,7 +28,7 @@ export function normalizeServer(value) {
   const host = url.hostname.toLowerCase();
   const loopback = host === '127.0.0.1';
   const localHostname = host === 'localhost' || host.endsWith('.local') || (!host.includes('.') && /^[a-z0-9-]+$/i.test(host));
-  if (!isPrivateIpv4(host) && !loopback && !localHostname) throw new Error('Seule une adresse privée du réseau local est autorisée.');
+  if (!isLocalOrTailnetIpv4(host) && !loopback && !localHostname) throw new Error('Seule une adresse du réseau local ou Tailscale est autorisée.');
   if (url.protocol === 'https:' && host !== 'localhost') throw new Error('Le serveur StreamDashboard LAN utilise HTTP.');
   const port = url.port || String(DEFAULT_PORT);
   return `${url.protocol}//${host}:${port}`;

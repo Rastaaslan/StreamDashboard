@@ -17,6 +17,12 @@ export function registerControlRoutes(options: {
     try {
       const selected=control.snapshot().configuration.actions.find(a=>a.id===req.body.action);
       const action=selected && ['live.start','live.stop'].includes(selected.type)?selected.type:req.body.action;
+      // A retained native binding may predate a remote change of this action's type.
+      // Resolve against the current server configuration before allowing a shortcut.
+      if (req.body.trigger === 'keyboard' && action === 'live.stop') {
+        res.status(409).json({ok:false,error:{code:'CONFIRM_REQUIRED',message:'Confirmez l’arrêt depuis le bouton du tableau de bord.',retryable:false}});
+        return;
+      }
       res.json(await control.execute({...req.body,action}));
     } catch(e){next(e);}
   });

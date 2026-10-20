@@ -22,6 +22,9 @@ export function createDashboardWindow(url: string, preload: string, title = 'Str
       sandbox: true,
       webSecurity: true,
       allowRunningInsecureContent: false,
+      // Keep configuration and connection status current while this control
+      // surface is minimized. Global macro dispatch lives in the main process.
+      backgroundThrottling: false,
     },
   });
   window.removeMenu();

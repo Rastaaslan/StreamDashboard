@@ -33,6 +33,8 @@ assert.match(lifecycle, /port: controller \? 48135 : 48133/);
 for (const file of [
   'dist/apps/desktop/src/main.js', 'dist/apps/desktop/src/lifecycle.js', 'dist/apps/desktop/src/preload.cjs',
   'dist/apps/desktop/src/security.js', 'dist/apps/desktop/src/controller.js',
+  'dist/apps/desktop/src/window.js', 'dist/apps/mobile/runtime.js',
+  'apps/mobile/runtime.js', 'apps/mobile/control/controller-bindings.js',
   'dist/apps/desktop/src/twitch-viewer.js', 'apps/mobile/control/twitch-category-picker.js',
   'dist/integrations/twitch/src/metadata.js', 'dist/integrations/obs/src/output-result.js',
   'dist/apps/server/src/replay-auto-start.js',
