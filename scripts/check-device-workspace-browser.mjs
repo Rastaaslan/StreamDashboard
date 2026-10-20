@@ -28,6 +28,7 @@ try{
  await expect(page.locator('#device-setup-form')).toBeVisible();
  await page.locator('#device-setup-form [name=name]').fill('Téléphone de test');await page.locator('#device-setup-form button').click();
  await expect(page.locator('#connection')).toContainText('Espace de cet appareil');
+ assert.ok(await page.evaluate(()=>{const h=document.querySelector('header');return h.scrollHeight<=h.clientHeight&&document.documentElement.scrollWidth<=innerWidth;}),'Mobile header fits device name and account controls');
  await page.locator('[data-page=manage]').first().click();await page.locator('[data-page=planning]').last().click();
  await page.locator('[data-planning=new]').click();await page.locator('#planning-event-form [name=title]').fill('Créé avant le premier PC');
  await page.locator('#planning-event-form button:not([type])').click();await expect(page.locator('#dialog')).not.toBeVisible();
