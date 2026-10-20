@@ -1,0 +1,26 @@
+.twitch-native-chat{display:flex;flex-direction:column;gap:10px;min-width:0;min-height:440px;height:440px}
+.twitch-chat-account{display:flex;align-items:center;justify-content:space-between;gap:10px}
+.twitch-chat-account p{font-size:12px;font-weight:650;margin:0;overflow-wrap:anywhere}
+.twitch-chat-account button{font-size:11px;padding:8px 10px;min-height:34px}
+.twitch-native-chat>[data-twitch-status]{margin:0;line-height:1.5;font-size:11px}
+.twitch-chat-log{background:#0e0c14;border:1px solid var(--line,#292531);border-radius:9px;flex:1;min-height:90px;overflow:auto;padding:10px;overscroll-behavior:contain;scrollbar-gutter:stable}
+.twitch-chat-message{padding:8px 0;border-bottom:1px solid var(--line,#292531);font-size:12px}
+.twitch-chat-message:last-child{border-bottom:0}
+.twitch-chat-message-head{display:flex;align-items:baseline;gap:6px;flex-wrap:wrap;line-height:1.5}
+.twitch-chat-message-head strong{overflow-wrap:anywhere}
+.twitch-chat-message-head span,.twitch-chat-message-head time{color:var(--muted,#a19baa);font-size:10px}
+.twitch-chat-message-head time{margin-left:auto}
+.twitch-chat-message p{margin:4px 0 0;white-space:pre-wrap;overflow-wrap:anywhere;line-height:1.5}
+.twitch-chat-compose{display:flex;flex-direction:column;gap:7px;margin:0}
+.twitch-chat-compose label{font-size:11px}
+.twitch-chat-compose textarea{font-size:12px;min-height:64px;max-height:160px;resize:vertical;width:100%;box-sizing:border-box}
+.twitch-chat-compose-footer{display:flex;align-items:center;justify-content:space-between;gap:10px}
+.twitch-chat-compose-footer button{font-size:12px;min-height:36px;padding:8px 16px}
+.twitch-chat-compose>[data-twitch-result]{margin:0;font-size:11px;line-height:1.5}
+.twitch-chat-compose>[data-twitch-result]:empty{display:none}
+.twitch-chat-connect{font-size:11px;min-height:34px;padding:8px 10px}
+.live-monitor .monitor-creator-links{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+.live-monitor .monitor-footer{flex-wrap:wrap}
+.live-monitor .monitor-heading h3{white-space:normal}
+.monitor-native-twitch{overflow:visible}
+@media(min-width:1380px){.twitch-native-chat{height:440px}}

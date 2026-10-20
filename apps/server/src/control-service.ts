@@ -6,7 +6,7 @@ import { defaultControlData, wizebotPresets, type ActionResult, type ControlData
 export interface ControlAdapter {
   live(platform: Platform): Promise<boolean>;
   output(platform: Platform, start: boolean): Promise<void>;
-  settle?(platform: Platform, start: boolean): Promise<void>;
+  settle?(platform: Platform, start: boolean, requestId?: string): Promise<void>;
   metadata(platform: Platform, value: LiveMetadata): Promise<void>;
   action(action: DeckAction, id: string): Promise<void | ActionResult>;
 }
@@ -119,17 +119,37 @@ export class ControlService {
                 result = {status:'succeeded', message:'Informations confirmées', observedAt:new Date().toISOString()};
               } else {
                 const wanted = request.action === 'live.start';
-                let live = await this.adapter.live(p);
+                let live: boolean | undefined = await this.adapter.live(p);
+                let confirmationError: string | undefined;
                 if (live !== wanted || !wanted) {
-                  await this.adapter.output(p, wanted);
+                  // An unknown dispatch result permits observation, never an automatic second command.
+                  let observeOnly = false;
+                  live = undefined;
+                  try { await this.adapter.output(p, wanted); }
+                  catch (error) {
+                    if (!(error instanceof Error) || error.name !== 'ACTION_UNCERTAIN') throw error;
+                    confirmationError = error.message; observeOnly = true;
+                  }
                   for (let n = 0; n < 12; n++) {
-                    await this.adapter.settle?.(p, wanted);
-                    live = await this.adapter.live(p); if (live === wanted || this.stopped) break; await this.wait(1500);
+                    if (!observeOnly) {
+                      try { await this.adapter.settle?.(p, wanted, request.id); }
+                      catch (error) {
+                        if (!(error instanceof Error) || error.name !== 'ACTION_UNCERTAIN') throw error;
+                        confirmationError = error.message; observeOnly = true;
+                      }
+                    }
+                    try { live = await this.adapter.live(p); }
+                    catch (error) {
+                      live = undefined; observeOnly = true;
+                      confirmationError = 'Commande envoyée ; état de la plateforme indisponible. ' + (error instanceof Error ? error.message : 'Vérifiez le résultat avant reprise.');
+                    }
+                    if (live === wanted || this.stopped) break;
+                    if (n < 11) await this.wait(1500);
                   }
                 }
-                result = {status:live === wanted ? 'succeeded' : 'uncertain', message:live === wanted ? (live ? 'En direct confirmé par la plateforme' : 'Arrêt confirmé par la plateforme') : 'Commande envoyée ; état attendu non confirmé. Vérifier avant reprise.', live, observedAt:new Date().toISOString()};
+                result = {status:live === wanted ? 'succeeded' : 'uncertain', message:live === wanted ? (live ? 'En direct confirmé par la plateforme' : 'Arrêt confirmé par la plateforme') : confirmationError || 'Commande envoyée ; état attendu non confirmé. Vérifier avant reprise.', ...(live === undefined ? {} : {live}), observedAt:new Date().toISOString()};
               }
-            } catch (error) { result = {status:'failed', message:error instanceof Error ? error.message : 'Service indisponible', observedAt:new Date().toISOString()}; }
+            } catch (error) { result = {status:error instanceof Error && error.name === 'ACTION_UNCERTAIN' ? 'uncertain' : 'failed', message:error instanceof Error ? error.message : 'Service indisponible', observedAt:new Date().toISOString()}; }
             receipt.platforms[p] = result;
             if (request.action.startsWith('metadata.')) this.data.metadataResults[p] = result;
             await this.save();

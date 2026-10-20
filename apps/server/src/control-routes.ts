@@ -25,8 +25,8 @@ export function registerControlRoutes(options: {
   app.post('/api/v2/wizebot/import',async(req,res,next)=>{try{res.json(await options.wizebotCommands.import(control,req.body.ids,req.body.expectedRevision,req.body.channel));}catch(e){next(e);}});
   app.post('/api/v2/wizebot/edit',async(req,res,next)=>{try{res.json(await options.wizebotCommands.edit(req.body));}catch(e){next(e);}});
   app.get('/api/v2/replay', async(_req,res) => {
-    try { res.json({ ...await obs.replayStatus(), error: '' }); }
-    catch(e) { res.json({ active: null, enabled: null, seconds: null, directory: '', error: e instanceof Error ? e.message : 'Replay indisponible.' }); }
+    try { res.json(await obs.replayStatus()); }
+    catch(e) { res.json({ active: null, enabled: null, available: null, mode: null, seconds: null, directory: '', error: e instanceof Error ? e.message : 'Replay indisponible.' }); }
   });
   const timerOverlay = async () => {
     const source = options.timerSource() || '', expectedUrl = `http://127.0.0.1:${options.port()}/overlay/timer/`;
@@ -47,6 +47,7 @@ export function registerControlRoutes(options: {
   });
   app.get('/api/v2/youtube',async(_req,res,next)=>{try{res.json(await youtube.status());}catch(e){next(e);}});
   app.get('/api/v2/youtube/broadcasts',async(_req,res,next)=>{try{res.json({items:await youtube.broadcasts()});}catch(e){next(e);}});
+  app.get('/api/v2/youtube/channels',async(_req,res,next)=>{try{res.json({items:await youtube.authorizedChannels()});}catch(e){next(e);}});
   app.post('/api/v2/youtube/connect',(_req,res,next)=>{try{res.json(youtube.authorize(`http://127.0.0.1:${options.port()}/api/v2/youtube/callback`));}catch(e){next(e);}});
   app.get('/api/v2/youtube/callback',async(req,res,next)=>{
     try{if(!options.isLocal(req))throw new Error('La connexion YouTube se termine sur le PC de stream.'); await youtube.exchange(String(req.query.code??''),String(req.query.state??''));res.type('text/plain').send('YouTube connecté. Vous pouvez fermer cette fenêtre et revenir à StreamDashboard.');}catch(e){next(e);}

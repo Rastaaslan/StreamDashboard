@@ -27,17 +27,46 @@ export class ObsClient {
   private replaySaving = false;
   async replayStatus() {
     this.requireConnected();
-    const [state, mode, directory] = await Promise.all([this.call('GetReplayBufferStatus'), this.call('GetProfileParameter', { parameterCategory: 'Output', parameterName: 'Mode' }), this.call('GetRecordDirectory')]);
-    const parameterCategory = (mode.parameterValue || mode.defaultParameterValue) === 'Advanced' ? 'AdvOut' : 'SimpleOutput';
-    const [duration, enabled] = await Promise.all(['RecRBTime','RecRB'].map(parameterName => this.call('GetProfileParameter', { parameterCategory, parameterName })));
-    return { active: state.outputActive, seconds: Number(duration.parameterValue || duration.defaultParameterValue) || 20, enabled: ['true','1'].includes(enabled.parameterValue || enabled.defaultParameterValue), directory: directory.recordDirectory };
+    const generation = this.generation;
+    const parameter = async (parameterCategory: string, parameterName: string) => {
+      const result = await this.call('GetProfileParameter', { parameterCategory, parameterName });
+      return result.parameterValue || result.defaultParameterValue;
+    };
+    // OBS rejects GetReplayBufferStatus with 604 when no replay output exists.
+    // Read the profile first so its useful configuration is not discarded.
+    const modeValue = await parameter('Output', 'Mode');
+    if (!['Advanced', 'Simple'].includes(modeValue)) throw new Error('Mode de sortie OBS indisponible.');
+    const mode: 'Advanced' | 'Simple' = modeValue === 'Advanced' ? 'Advanced' : 'Simple';
+    const parameterCategory = mode === 'Advanced' ? 'AdvOut' : 'SimpleOutput';
+    const [duration, enabledValue, directory, recordingType] = await Promise.all([
+      parameter(parameterCategory, 'RecRBTime'), parameter(parameterCategory, 'RecRB'),
+      this.call('GetRecordDirectory'), mode === 'Advanced' ? parameter('AdvOut', 'RecType') : Promise.resolve(''),
+    ]);
+    this.requireConnected();
+    if (generation !== this.generation) throw new Error('Connexion OBS remplacée.');
+    if (!['true', 'false', '1', '0'].includes(enabledValue)) throw new Error('Réglage du tampon de replay OBS indisponible.');
+    const enabled = ['true', '1'].includes(enabledValue);
+    const seconds = Number(duration);
+    if (!Number.isFinite(seconds) || seconds <= 0) throw new Error('Durée du tampon de replay OBS indisponible.');
+    const configuration = { mode, enabled, seconds, directory: directory.recordDirectory };
+    if (!enabled) return { ...configuration, active: false, available: false, error: 'Activez le tampon de replay dans OBS → Paramètres → Sortie → Tampon de relecture, puis cliquez sur Appliquer.' };
+    if (mode === 'Advanced' && recordingType.toLowerCase() === 'ffmpeg') return { ...configuration, active: false, available: false, error: 'Le tampon de replay est indisponible avec la sortie personnalisée FFmpeg. Dans OBS → Paramètres → Sortie → Enregistrement, choisissez le type Standard.' };
+    try {
+      const state = await this.call('GetReplayBufferStatus');
+      this.requireConnected();
+      if (generation !== this.generation) throw new Error('Connexion OBS remplacée.');
+      return { ...configuration, active: state.outputActive, available: true, error: '' };
+    } catch (error) {
+      if (generation !== this.generation || (error as { code?: number }).code !== 604) throw error;
+      return { ...configuration, active: false, available: false, error: 'Le tampon est activé dans le profil mais reste indisponible dans OBS. Vérifiez Paramètres → Sortie → Tampon de relecture et appliquez les réglages lorsque les sorties sont arrêtées.' };
+    }
   }
   async setReplayBuffer(active: boolean) {
     this.requireConnected();
     if (this.replaySaving) throw new Error('Sauvegarde du clip en cours.');
     const state = await this.replayStatus();
     if (state.active === active) return;
-    if (active && !state.enabled) throw new Error('Activez le tampon de replay dans OBS → Paramètres → Sortie.');
+    if (active && (!state.enabled || !state.available)) throw new Error(state.error || 'Tampon de replay OBS indisponible.');
     await this.call(active ? 'StartReplayBuffer' : 'StopReplayBuffer');
     for (let n = 0; n < 15; n++) {
       if ((await this.call('GetReplayBufferStatus')).outputActive === active) return;
@@ -78,17 +107,35 @@ export class ObsClient {
   private suite = new AitumSuiteOutputs(async (requestType, requestData) => {
     const result = await this.call('CallVendorRequest', { vendorName: 'aitum-stream-suite', requestType, requestData });
     return result.responseData;
-  });
-  async streamSuiteOutputs() { return this.suite.inspect(); }
-  async setStreamSuiteOutput(name: string, active: boolean) { await this.suite.set(name, active); }
-  async outputs() { return (await this.call('GetOutputList')).outputs; }
+  }, async () => (await this.call('GetHotkeyList')).hotkeys);
+  async streamSuiteOutputs() { this.requireConnected(); return this.suite.inspect(); }
+  private outputConnectionGuard() {
+    this.requireConnected();
+    const generation = this.generation;
+    return () => {
+      this.requireConnected();
+      if (generation !== this.generation) throw new Error('Connexion OBS remplacée. Relancez la détection des sorties.');
+    };
+  }
+  async setStreamSuiteOutput(name: string, active: boolean) { await this.suite.set(name, active, this.outputConnectionGuard()); }
+  async outputs() { this.requireConnected(); return (await this.call('GetOutputList')).outputs; }
   async setOutput(name: string, active: boolean) {
-    if (!name.trim()) throw new Error('Sortie OBS non sélectionnée.');
-    const list = await this.outputs();
-    if (!list.some(output => output.outputName === name)) throw new Error('Sortie absente de GetOutputList OBS. Vérifiez le plugin de multidiffusion.');
+    const assertCurrent = this.outputConnectionGuard();
+    if (!name.trim() || name.length > 200 || /[\u0000-\u001f\u007f]/.test(name)) throw new Error('Nom de sortie OBS invalide ou non sélectionné.');
+    const matches = (await this.outputs()).filter(output => output.outputName === name);
+    assertCurrent();
+    if (matches.length !== 1) throw new Error('Sortie OBS absente ou ambiguë. Relancez la détection des sorties.');
+    // Keep existing named-output associations, but let Aitum initialize its own
+    // output and encoders instead of starting a possibly stale native instance.
+    const suitePrefix = 'Aitum Stream Suite Output ';
+    if (name.startsWith(suitePrefix)) return this.suite.set(name.slice(suitePrefix.length), active, assertCurrent);
+    const flags = matches[0].outputFlags as Record<string, unknown> | undefined;
+    if (flags?.OBS_OUTPUT_SERVICE !== true) throw new Error('Choisissez une sortie de diffusion OBS, pas un enregistrement, un tampon ou une caméra virtuelle.');
     const state = await this.call('GetOutputStatus', { outputName: name });
+    assertCurrent();
     if (state.outputActive !== active) await this.call(active ? 'StartOutput' : 'StopOutput', { outputName: name });
     const confirmed = await this.call('GetOutputStatus', { outputName: name });
+    assertCurrent();
     if (confirmed.outputActive !== active) throw new Error('OBS n’a pas confirmé la sortie demandée.');
   }
   private client = new OBSWebSocket();
@@ -122,7 +169,8 @@ export class ObsClient {
         this.invalidate('OBS ne répond plus (timeout).');
         this.schedule();
       }
-      throw new Error(friendlyError(error));
+      const code = (error as { code?: unknown } | null)?.code;
+      throw Object.assign(new Error(friendlyError(error)), typeof code === 'number' ? { code } : {});
     }
   };
 

@@ -104,7 +104,7 @@ function sourceBetween(start, end) {
   return source.slice(begin, finish);
 }
 vm.runInContext(sourceBetween('function ensureDeckPreferences(){', 'function resetPerformanceView(){'), scope);
-vm.runInContext(source.split('\n').find(line => line.startsWith('async function runAction(')), scope);
+vm.runInContext(sourceBetween('async function runAction(', 'async function openAuthorization('), scope);
 vm.runInContext(sourceBetween("document.addEventListener('click',", "document.addEventListener('change',"), scope);
 vm.runInContext(source.split('\n').find(line => line.startsWith('globalThis.StreamDashboardHandleBack=')), scope);
 const click = dataset => listeners.get('click')({ target: { closest: () => ({ dataset, disabled: false }) } });

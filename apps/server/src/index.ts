@@ -7,7 +7,8 @@ import { googleRecurrence, parseGoogleRecurrence } from '../../../integrations/g
 import express from 'express';
 import { ControlService } from './control-service.js';
 import { registerControlRoutes } from './control-routes.js';
-import { YouTubeClient } from '../../../integrations/youtube/src/client.js';
+import { registerTwitchChatRoutes } from './twitch-chat-routes.js';
+import { YouTubeClient, YouTubeApiError } from '../../../integrations/youtube/src/client.js';
 import { createServer, type Server } from 'node:http';
 import { mkdir, readFile, stat, unlink, writeFile } from 'node:fs/promises';
 import { hostname, networkInterfaces } from 'node:os';
@@ -1070,14 +1071,51 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
     const value = control.snapshot().configuration.youtube;
     return { ...value, clientId: value.clientId || options.googleClientId || '' };
   });
-  const platformLive: Record<string, { live: boolean | null; observedAt: string; error?: string }> = {};
+  const platformLive: Record<string, { live: boolean | null; observedAt: string; error?: string; id?: string; broadcastState?: string; ingestionStatus?: string | null; bound?: boolean }> = {};
+  const outputStatus: Record<string, { kind: string; name: string; active: boolean | null; observedAt: string; error?: string }> = {};
+  let outputObservation: Promise<void> | undefined, outputsObservedAt = 0;
+  const observeOutputs = () => {
+    if (outputObservation) return outputObservation;
+    if (Date.now() - outputsObservedAt < 2_000) return Promise.resolve();
+    const selected = control.snapshot().configuration.outputs, generation = obs.connectionGeneration;
+    outputObservation = (async () => {
+      const [native, suite] = await Promise.allSettled([
+        Object.values(selected).some(output => output.kind === 'output') ? obs.outputs() : Promise.resolve([]),
+        Object.values(selected).some(output => output.kind === 'aitum-suite') ? obs.streamSuiteOutputs() : Promise.resolve({ outputs: [] }),
+      ]);
+      for (const platform of ['twitch', 'youtube'] as const) {
+        const target = selected[platform];
+        try {
+          if (!obs.state.connected || generation !== obs.connectionGeneration) throw new Error('Connexion OBS indisponible ou remplacée.');
+          let active: boolean;
+          if (target.kind === 'main') {
+            if (obs.state.streamingKnown === false) throw new Error('État de la sortie principale inconnu.');
+            active = obs.state.streaming;
+          } else if (target.kind === 'output') {
+            if (native.status === 'rejected') throw native.reason;
+            const matches = native.value.filter(output => output.outputName === target.name);
+            if (matches.length !== 1 || typeof matches[0].outputActive !== 'boolean') throw new Error('Sortie OBS absente ou ambiguë.');
+            active = matches[0].outputActive;
+          } else if (target.kind === 'aitum-suite') {
+            if (suite.status === 'rejected') throw suite.reason;
+            const matches = suite.value.outputs.filter(output => output.name === target.name && output.type === 'stream');
+            if (matches.length !== 1 || typeof matches[0].active !== 'boolean') throw new Error('Sortie Aitum absente ou ambiguë.');
+            active = matches[0].active;
+          } else throw new Error('Sortie à configurer.');
+          outputStatus[platform] = { ...target, active, observedAt: new Date().toISOString() };
+        } catch (error) { outputStatus[platform] = { ...target, active: null, observedAt: new Date().toISOString(), error: error instanceof Error ? error.message : 'État de sortie inconnu.' }; }
+      }
+    })().finally(() => { outputsObservedAt = Date.now();outputObservation = undefined; });
+    return outputObservation;
+  };
   let platformObservation: Promise<void> | undefined;
   let platformObservedAt = 0;
   const observePlatforms = () => {
+    void observeOutputs().catch(logError);
     if (platformObservation) return platformObservation;
     if (Date.now() - platformObservedAt < 15_000) return Promise.resolve();
     platformObservation = Promise.allSettled((['twitch', 'youtube'] as const).map(async platform => {
-      try { platformLive[platform] = { live: platform === 'twitch' ? (await twitch.getLiveState()).isLive : await youtube.live(), observedAt: new Date().toISOString() }; }
+      try { platformLive[platform] = platform === 'youtube' ? await youtube.broadcastState() : { live: (await twitch.getLiveState()).isLive, observedAt: new Date().toISOString() }; }
       catch (error) { platformLive[platform] = { live: null, observedAt: new Date().toISOString(), error: error instanceof Error ? error.message : 'État indisponible' }; }
     })).then(() => { platformObservedAt = Date.now(); }).finally(() => { platformObservation = undefined; });
     return platformObservation;
@@ -1085,7 +1123,10 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
   control = await ControlService.open(path.join(dataDir, 'control-v2.json'), {
     live: async platform => {
       try {
-        const live = platform === 'twitch' ? (await twitch.getLiveState()).isLive : await youtube.live();
+        if (platform === 'youtube') {
+          const observed = await youtube.broadcastState();platformLive.youtube = observed;return observed.live;
+        }
+        const live = (await twitch.getLiveState()).isLive;
         platformLive[platform] = { live, observedAt: new Date().toISOString() }; return live;
       } catch (error) { platformLive[platform] = { live: null, observedAt: new Date().toISOString(), error: error instanceof Error ? error.message : 'État indisponible' }; throw error; }
     },
@@ -1099,7 +1140,7 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
       } else if (target.kind === 'aitum-suite') await obs.setStreamSuiteOutput(target.name, start);
       else await obs.setOutput(target.name, start);
     },
-    settle: async (platform, start) => { if (platform === 'youtube') await youtube.transition(start); },
+    settle: async (platform, start, requestId) => { if (platform === 'youtube') await youtube.transition(start, requestId); },
     metadata: async (platform, value) => {
       if (platform === 'youtube') { await youtube.update(value); return; }
       await twitch.updateChannelMetadata({ title: value.title, ...(value.twitchGameId ? { gameId: value.twitchGameId } : {}), tags: value.tags });
@@ -1114,6 +1155,7 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
       }
       if (action.type === 'replay.start' || action.type === 'replay.stop') {
         await obs.setReplayBuffer(action.type === 'replay.start');
+        replayAutoStartError = '';
         return { message: action.type === 'replay.start' ? 'Tampon prêt : les prochains moments pourront être sauvegardés.' : 'Tampon de replay arrêté.' };
       }
       if (action.type === 'wizebot.command') {
@@ -1893,7 +1935,19 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
   app.get('/api/v1/twitch/clips', async (req, res, next) => { try { res.json(await twitch.clips(String(req.query.after ?? ''), Number(req.query.first) || 20)); } catch (error) { next(error); } });
   app.post('/api/v1/twitch/clips', async (_req, res, next) => { try { res.status(202).json(await twitch.createClip()); } catch (error) { next(error); } });
   app.get('/api/v1/twitch/chatters', async (req, res, next) => { try { res.json(await twitch.chatters(String(req.query.after ?? ''), Number(req.query.first) || 100)); } catch (error) { next(error); } });
-  app.post('/api/v1/twitch/chat/messages', async (req, res, next) => { try { res.status(201).json(await twitch.sendChatMessage(String(req.body?.message ?? ''), typeof req.body?.replyParentMessageId === 'string' ? req.body.replyParentMessageId : undefined)); } catch (error) { next(error); } });
+  registerTwitchChatRoutes({
+    app,
+    state: () => {
+      const state = twitch.state, capabilities = twitch.controlCapabilities();
+      return {
+        identity: { broadcasterId: local.twitch.broadcasterId || '', userName: state.userName, displayName: state.displayName },
+        accountConnected: state.connected,
+        chat: { connected: chatStatus === 'CONNECTED', messages: chatMessages },
+        capabilities: { chatRead: capabilities.chatRead, chatWrite: capabilities.chatWrite },
+      };
+    },
+    send: (message, replyParentMessageId) => twitch.sendChatMessage(message, replyParentMessageId),
+  });
   app.get('/api/v1/twitch/moderation/capabilities', (_req, res) => res.json(twitch.controlCapabilities()));
   app.delete('/api/v1/twitch/moderation/messages/:id', async (req, res, next) => { try { await twitch.deleteChatMessage(String(req.params.id)); res.status(204).end(); } catch (error) { next(error); } });
   app.post('/api/v1/twitch/moderation/bans', async (req, res, next) => { try { await twitch.banUser(String(req.body?.userId ?? ''), { ...(req.body?.duration !== undefined ? { duration: Number(req.body.duration) } : {}), ...(typeof req.body?.reason === 'string' ? { reason: req.body.reason } : {}) }); res.status(204).end(); } catch (error) { next(error); } });
@@ -2418,7 +2472,7 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
   const checkPlanningRevision = (req: express.Request, id: string) => {
     if (req.path.startsWith('/api/v2/') && req.body.expectedRevision !== planningFingerprint(id)) throw Object.assign(new Error('Événement modifié sur un autre appareil. Rechargez avant d’enregistrer.'), { name: 'REVISION_CONFLICT' });
   };
-  const controlHostState = () => ({ hostname: hostname(), chat: { connected: twitch.state.connected, canSend: twitch.controlCapabilities().chatWrite, channel: twitch.publicIdentity().userName || '' }, replayAutoStartError, monitor: { twitchLogin: twitch.publicIdentity().userName || '' }, state: toRemoteDashboardState(snapshot()), settings: publicSettings(), settingsRevision: settingsFingerprint(), planning: structuredClone(local.planning), occurrences: expandEditableRecurringItems(local.planning, { from: Date.now() - DAY_MS, to: Date.now() + 90 * DAY_MS }), planningRevisions: Object.fromEntries(local.planning.map(item => [item.id, planningFingerprint(item.id)])), platforms: structuredClone(platformLive), local: true });
+  const controlHostState = () => ({ hostname: hostname(), chat: { connected: twitch.state.connected, canSend: twitch.controlCapabilities().chatWrite, channel: twitch.publicIdentity().userName || '' }, replayAutoStartError, monitor: { twitchLogin: twitch.publicIdentity().userName || '' }, state: toRemoteDashboardState(snapshot()), settings: publicSettings(), settingsRevision: settingsFingerprint(), planning: structuredClone(local.planning), occurrences: expandEditableRecurringItems(local.planning, { from: Date.now() - DAY_MS, to: Date.now() + 90 * DAY_MS }), planningRevisions: Object.fromEntries(local.planning.map(item => [item.id, planningFingerprint(item.id)])), platforms: structuredClone(platformLive), outputStatus: structuredClone(outputStatus), local: true });
   registerControlRoutes({ app, control, youtube, obs, wizebotCommands, timerSource: () => local.settings.timerBrowserSource, settings: settingsUpdate, planningCreate, planningUpdate, planningDelete, recurrence: recurrenceException, isLocal: isLocalRequest, port: () => runtimePort, observe: observePlatforms, state: controlHostState });
   // Device-owned clients call their loopback runtime, never a paired PC. The
   // narrow adapter reuses provider credentials and all existing remote guards.
@@ -2901,7 +2955,15 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
       res.status(error.status).json({ ok: false, error: { code: 'TWITCH_HTTP_ERROR', message: error.message, retryable: error.status === 429 || error.status >= 500 } });
       return;
     }
+    if (error instanceof YouTubeApiError) {
+      res.status(error.httpStatus >= 400 && error.httpStatus <= 599 ? error.httpStatus : 502).json({ ok: false, error: { code: 'YOUTUBE_API_ERROR', message: error.message, reason: error.reason, retryable: false } });
+      return;
+    }
     const name = error instanceof Error ? error.name : '';
+    if (name === 'ACTION_UNCERTAIN') {
+      res.status(409).json({ ok: false, error: { code: 'ACTION_UNCERTAIN', message: (error as Error).message, retryable: false } });
+      return;
+    }
     const status = name === 'NOT_FOUND' ? 404
       : ['REMOTE_SCOPE_DENIED', 'TWITCH_NOT_AUTHORIZED'].includes(name) ? 403
         : ['REVISION_CONFLICT', 'COMMAND_ALREADY_RECEIVED', 'CHECKLIST_INCOMPLETE', 'CONFIRM_REQUIRED', 'TWITCH_DISCONNECTED', 'NOT_EDITABLE'].includes(name) ? 409

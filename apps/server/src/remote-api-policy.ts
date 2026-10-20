@@ -1,7 +1,7 @@
 const GET_EXACT = new Set([
   '/v1/state','/v1/profile','/v1/connections','/v1/control-hub','/v1/events','/v1/soundboard',
   '/v1/automations','/v1/automations/capabilities','/v1/streamlabs/events','/v1/supports','/v1/twitch/categories',
-  '/v1/twitch/videos','/v1/twitch/clips','/v1/twitch/chatters','/v1/twitch/moderation/capabilities',
+  '/v1/twitch/videos','/v1/twitch/clips','/v1/twitch/chatters','/v1/twitch/chat/state','/v1/twitch/moderation/capabilities',
   '/v1/discord/status','/v1/discord/guilds',
 ]);
 
@@ -34,7 +34,7 @@ const POST_EXACT = new Set([
 export function isRemoteApiAllowed(method: string, pathName: string) {
   const verb = method.toUpperCase();
   // Paired clients own the shared control surface. OAuth secrets remain on the host.
-  if (verb === 'GET' && ['/v2/wizebot/catalog','/v2/state','/v2/replay','/v2/outputs','/v2/youtube','/v2/youtube/broadcasts'].includes(pathName)) return true;
+  if (verb === 'GET' && ['/v2/wizebot/catalog','/v2/state','/v2/replay','/v2/outputs','/v2/youtube','/v2/youtube/broadcasts','/v2/youtube/channels'].includes(pathName)) return true;
   if (verb === 'PUT' && ['/v2/configuration','/v2/settings'].includes(pathName)) return true;
   if (verb === 'POST' && ['/v2/wizebot/refresh','/v2/wizebot/import','/v2/wizebot/edit','/v2/actions','/v2/planning','/v2/sounds/upload','/v2/youtube/connect','/v2/youtube/disconnect'].includes(pathName)) return true;
   if (['PUT','DELETE'].includes(verb) && /^\/v2\/planning\/[^/]+(?:\/occurrence)?$/.test(pathName)) return true;
