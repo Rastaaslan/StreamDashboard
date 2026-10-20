@@ -77,7 +77,10 @@ import { StreamlabsOAuthClient } from '../../../integrations/streamlabs/src/oaut
 import { WizeBotAdapter } from '../../../integrations/wizebot/src/adapter.js';
 import type { WizeBotTransport } from '../../../integrations/wizebot/src/adapter.js';
 import { WizeBotHttpTransport } from '../../../integrations/wizebot/src/http-transport.js';
-import { registerLiveControlRoutes } from './live-control-routes.js';
+import { AutonomyService } from './autonomy-service.js';
+import { registerAutonomyRoutes, invokeManagement } from './autonomy-routes.js';
+import { pick, fields } from '../../mobile/shared/autonomy.js';
+import { registerLiveControlRoutes, automationInput } from './live-control-routes.js';
 import { ProductProfileStore } from './profile-store.js';
 import { validateProductProfile, type ProductProfile } from '../../../packages/core/src/product-profile.js';
 import { resolveModules } from '../../../packages/core/src/module-registry.js';
@@ -416,6 +419,7 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
   const profileExisted = await stat(profileFile).then(() => true).catch(() => false);
   const profileStore = new ProductProfileStore(profileFile);
   const store = new AtomicJsonStore<LocalData>(dataFile);
+  const autonomy = await AutonomyService.open(path.join(dataDir, 'autonomy-v1.json'));
   const secrets = options.secretStore ?? new MemorySecretStore();
   const logger = options.logger ?? console;
   const defaultObsUrl = safeObsUrl(process.env.OBS_URL, 'ws://127.0.0.1:4455');
@@ -1714,6 +1718,18 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
     }
     next();
   });
+  // Serialize management mutations with offline reconciliation. Execution commands are separate.
+  app.use('/api', (req, res, next) => {
+    const managed = /^\/v2\/(?:autonomy|configuration|settings|planning|sounds)(?:\/|$)/.test(req.path)
+      || /^\/v1\/(?:profile|planning|companion|automations|soundboard\/(?:sounds|catalog)|discord\/settings|google\/target)(?:\/|$)/.test(req.path);
+    if (!managed || (req.method === 'GET' && req.path !== '/v2/autonomy')) { next(); return; }
+    void autonomy.serial(() => new Promise<void>(resolve => {
+      res.once('finish', resolve);
+      const end = res.end.bind(res);
+      res.end = ((...args: Parameters<typeof end>) => { try { return end(...args); } finally { resolve(); } }) as typeof res.end;
+      next();
+    })).catch(next);
+  });
   app.post('/api/v1/remote/ws-ticket', (req, res, next) => {
     try {
       const credential = req.headers.authorization?.match(/^Device (\S+)$/)?.[1] ?? '';
@@ -2062,6 +2078,7 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
       if (desired.twitch && (category !== 'live' || allDay)) throw new Error('La publication Twitch nécessite un événement Live avec des horaires précis.');
       const beforeIds = new Set(local.planning.map(item => item.id));
       const created = await plan(async () => planning().create({
+        ...(res.locals.autonomyId ? { id: String(res.locals.autonomyId) } : {}),
         title,
         description: typeof input.description === 'string' ? input.description.slice(0, 4000) : '',
         startAtUtc,
@@ -2393,9 +2410,59 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
   const checkPlanningRevision = (req: express.Request, id: string) => {
     if (req.path.startsWith('/api/v2/') && req.body.expectedRevision !== planningFingerprint(id)) throw Object.assign(new Error('Événement modifié sur un autre appareil. Rechargez avant d’enregistrer.'), { name: 'REVISION_CONFLICT' });
   };
-  registerControlRoutes({ app, control, youtube, obs, wizebotCommands, timerSource: () => local.settings.timerBrowserSource, settings: settingsUpdate, planningCreate, planningUpdate, planningDelete, recurrence: recurrenceException, isLocal: isLocalRequest, port: () => runtimePort, observe: observePlatforms,
-    state: () => ({ hostname: hostname(), chat: { connected: twitch.state.connected, canSend: twitch.controlCapabilities().chatWrite, channel: twitch.publicIdentity().userName || '' }, replayAutoStartError, monitor: { twitchLogin: twitch.publicIdentity().userName || '' }, state: toRemoteDashboardState(snapshot()), settings: publicSettings(), settingsRevision: settingsFingerprint(), planning: structuredClone(local.planning), occurrences: expandEditableRecurringItems(local.planning, { from: Date.now() - DAY_MS, to: Date.now() + 90 * DAY_MS }), planningRevisions: Object.fromEntries(local.planning.map(item => [item.id, planningFingerprint(item.id)])), platforms: structuredClone(platformLive), local: true }),
+  const controlHostState = () => ({ hostname: hostname(), chat: { connected: twitch.state.connected, canSend: twitch.controlCapabilities().chatWrite, channel: twitch.publicIdentity().userName || '' }, replayAutoStartError, monitor: { twitchLogin: twitch.publicIdentity().userName || '' }, state: toRemoteDashboardState(snapshot()), settings: publicSettings(), settingsRevision: settingsFingerprint(), planning: structuredClone(local.planning), occurrences: expandEditableRecurringItems(local.planning, { from: Date.now() - DAY_MS, to: Date.now() + 90 * DAY_MS }), planningRevisions: Object.fromEntries(local.planning.map(item => [item.id, planningFingerprint(item.id)])), platforms: structuredClone(platformLive), local: true });
+  registerControlRoutes({ app, control, youtube, obs, wizebotCommands, timerSource: () => local.settings.timerBrowserSource, settings: settingsUpdate, planningCreate, planningUpdate, planningDelete, recurrence: recurrenceException, isLocal: isLocalRequest, port: () => runtimePort, observe: observePlatforms, state: controlHostState });
+  let autonomySnapshotTime = 0;
+  const autonomyBundle = (req: express.Request) => ({
+    savedAt: autonomySnapshotTime = Math.max(Date.now(), autonomySnapshotTime + 1),
+    data: { ...control.snapshot(), host: { ...controlHostState(), local: isLocalRequest(req) } },
+    sounds: { sounds: local.sounds.map(({ source: _source, ...sound }) => sound), available: obs.state.connected, currentPlayback: null },
+    extras: { templates: structuredClone(local.companion.templates), automations: automation.list(), profile: structuredClone(productProfile), discord: structuredClone(local.discord), google: { calendarId: local.google.targetCalendarId }, wizebot: wizebotCommands.snapshot() },
   });
+  registerAutonomyRoutes(app, autonomy, { observe: observePlatforms, bundle: autonomyBundle, apply: async (key, value, req) => {
+    const [kind,id] = key.split('/');
+    if (kind === 'planning') {
+      const current = local.planning.find(item => item.id === id);
+      const handler = value === null ? planningDelete : current ? planningUpdate : planningCreate;
+      await invokeManagement(handler, req, '/api/v2/planning/' + id, { ...value, recurrence: value?.recurrence ?? null, expectedRevision: planningFingerprint(id), confirmRecurring: true }, value === null ? 'DELETE' : current ? 'PUT' : 'POST', id);
+    } else if (kind === 'settings') {
+      await invokeManagement(settingsUpdate, req, '/api/v2/settings', { ...value, expectedRevision: settingsFingerprint() }, 'PUT');
+    } else if (['action','output','youtube','preferences'].includes(kind)) {
+      const configuration = control.snapshot().configuration;
+      if (kind === 'action') {
+        const index = configuration.actions.findIndex(action => action.id === id);
+        if (value === null) configuration.actions = configuration.actions.filter(action => action.id !== id);
+        else { if (value.id !== id) throw new Error('Identifiant de bouton invalide.'); if (index >= 0) configuration.actions[index] = value; else configuration.actions.push(value); }
+      } else if (kind === 'output') configuration.outputs[id as 'twitch' | 'youtube'] = value;
+      else if (kind === 'youtube') configuration.youtube = value;
+      else { if (typeof value.replayAutoStart !== 'boolean' || Object.keys(value).length !== 1) throw new Error('Préférences invalides.'); configuration.replayAutoStart = value.replayAutoStart; }
+      await control.configure(configuration, configuration.revision);
+    } else if (kind === 'template') {
+      await mutateCompanionCollection('templates', value === null ? 'delete' : 'upsert', id, value ?? {});
+    } else if (kind === 'profile') {
+      const next = validateProductProfile(value); await profileStore.save(next); productProfile = next;
+    } else if (kind === 'automation') {
+      if (value === null) await automation.remove(id);
+      else if (automation.list().some(item => item.id === id)) await automation.update(id, automationInput(value));
+      else await automation.create({ ...automationInput(value), id });
+    } else if (kind === 'sound') {
+      const current = local.sounds.find(sound => sound.id === id);
+      if (!current) throw new Error('Importez le fichier audio sur la régie avant de le configurer.');
+      // Removing a catalogue entry must never stop a sound on reconnection.
+      const next = value === null ? local.sounds.filter(sound => sound.id !== id) : local.sounds.map(sound => sound.id === id ? validateSound({ ...sound, ...pick(value, fields.sound) }) : sound);
+      await store.write({ ...local, sounds: next }); local.sounds = next; soundboard.replace(next);
+      // Keep the original audio file for recovery; explicit library cleanup is separate.
+    } else if (kind === 'discord') {
+      const { guildId, channelId, defaultMessage } = value;
+      if ((guildId && !/^\d{1,24}$/.test(guildId)) || (channelId && !/^\d{1,24}$/.test(channelId)) || typeof defaultMessage !== 'string' || defaultMessage.length > 2000) throw new Error('Configuration Discord invalide.');
+      const next = { guildId: guildId || null, channelId: channelId || null, defaultMessage };
+      await store.write({ ...local, discord: next }); local.discord = next;
+    } else if (kind === 'google') {
+      if (value.calendarId !== null && (typeof value.calendarId !== 'string' || value.calendarId.length > 500)) throw new Error('Calendrier invalide.');
+      const next = { ...local.google, targetCalendarId: value.calendarId }; await store.write({ ...local, google: next }); local.google = next;
+    } else throw new Error('Ressource non synchronisable.');
+    broadcast();
+  } });
   app.post('/api/v2/sounds/upload', express.raw({ type: 'application/octet-stream', limit: '100mb' }), async (req, res, next) => {
     let destination: string | undefined;
     try {

@@ -7,6 +7,7 @@ const GET_EXACT = new Set([
 
 /** Full configuration is granted only by a new, explicit host pairing; legacy credentials stay limited. */
 export function isManagementApiAllowed(method: string, path: string) {
+  if ((method === 'GET' && path === '/v2/autonomy') || (method === 'POST' && path === '/v2/autonomy/sync')) return true;
   if (path.startsWith('/v2/')) return isRemoteApiAllowed(method, path);
   const routes: Record<string, string[]> = {
     GET: ['/v1/profile','/v1/google/calendars','/v1/google/oauth/config','/v1/soundboard/obs/status','/v1/supports/streamlabs/oauth/status','/v1/wizebot'],

@@ -197,7 +197,7 @@ export function registerLiveControlRoutes(options: Options) {
   app.delete('/api/v1/wizebot/config', async (req, res, next) => { try { if (!options.requireLocal(req, res)) return; await options.secrets.clearWizeBotConfiguration?.(); wizebot.configure(null); res.json(wizebot.state()); } catch (error) { next(error); } });
 }
 
-function automationInput(value: unknown) {
+export function automationInput(value: unknown) {
   if (!object(value)) throw new Error('Automation invalide.');
   const conditions = Array.isArray(value.conditions) ? value.conditions : [];
   const actions = Array.isArray(value.actions) ? value.actions : [];

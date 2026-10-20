@@ -3,6 +3,7 @@ import path from 'node:path';
 
 const runtimeFiles = [
   'apps/mobile/runtime.js',
+  'apps/mobile/shared/autonomy.js',
   'packages/core/src/recurrence.js',
   'apps/mobile/shared/recurrence.js',
   'apps/mobile/shared/publication-content.js',
