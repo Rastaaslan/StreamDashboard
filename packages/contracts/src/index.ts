@@ -103,6 +103,8 @@ export interface ProviderProjectionOccurrence extends ProviderLink {
 export type TwitchProjectionOccurrence = ProviderProjectionOccurrence;
 
 export interface ProviderLink {
+  /** Public Twitch account identity; never a credential. */
+  accountId?: string;
   /** Google CREATE incarnation, distinct from the stable logical occurrence key. */
   creationId?: string;
   /** Confirmed removals retain calendar scope and the next CREATE incarnation. */

@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
+import { applyDashboardCommand } from '../packages/core/src/dashboard.js';
 import { DashboardCommandService, END_SCENE_VISIBILITY_MS, type ObsCommands } from '../apps/server/src/command-service.js';
 
 function setup() {
@@ -12,6 +13,15 @@ function setup() {
 }
 
 describe('service de commandes', () => {
+  it('starts from zero, resumes a paused timer and never resets a running deadline on a second start', () => {
+    const {domain}=setup();domain.timer.remaining=0;
+    applyDashboardCommand(domain,{type:'timer.start'},1000);expect(domain.timer).toMatchObject({running:true,remaining:300,deadline:301000});
+    applyDashboardCommand(domain,{type:'timer.start'},11000);expect(domain.timer.deadline).toBe(301000);
+    applyDashboardCommand(domain,{type:'timer.pause'},11000);expect(domain.timer.remaining).toBe(290);
+    applyDashboardCommand(domain,{type:'timer.start'},21000);expect(domain.timer.deadline).toBe(311000);
+    applyDashboardCommand(domain,{type:'timer.start',seconds:60},22000);expect(domain.timer.deadline).toBe(82000);
+  });
+
   it('attend les commandes acceptées avant shutdown et refuse les suivantes', async () => {
     const { service, obs, commit } = setup();
     let finish!: () => void;

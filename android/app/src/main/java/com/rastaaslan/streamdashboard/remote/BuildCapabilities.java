@@ -6,7 +6,9 @@ final class BuildCapabilities {
     return preview ? "PREVIEW" : clientId == null || clientId.trim().isEmpty() ? "NOT_CONFIGURED" : "";
   }
   static String json(boolean preview, String google, String twitch) {
-    return "{\"preview\":" + preview + ",\"providers\":{\"google\":{\"code\":\"" + code(preview, google)
+    // AuthorizationClient identifies Android builds by package + signing certificate.
+    // An embedded OAuth client ID is not used for this native flow.
+    return "{\"preview\":" + preview + ",\"providers\":{\"google\":{\"code\":\"" + (preview ? "PREVIEW" : "")
       + "\",\"auth\":\"google-authorization-client\"},\"twitch\":{\"code\":\"" + code(preview, twitch) + "\"}}}";
   }
 }

@@ -17,7 +17,7 @@ export interface StreamlabsSocketOptions {
 export class StreamlabsSocketTransport implements StreamlabsTransport {
   constructor(private readonly options: StreamlabsSocketOptions = {}) {}
 
-  connect(token: string, onTip: (value: unknown) => void, onDisconnect: (error?: Error) => void): Promise<() => Promise<void>> {
+  connect(token: string, onTip: (value: unknown) => void, onDisconnect: (error?: Error) => void, onEvent?: (value: unknown) => void): Promise<() => Promise<void>> {
     this.options.signal?.throwIfAborted();
     const endpoint = new URL(this.options.endpoint ?? SOCKET_ENDPOINT);
     endpoint.searchParams.set('token', token);
@@ -103,6 +103,7 @@ export class StreamlabsSocketTransport implements StreamlabsTransport {
         try {
           const packet = JSON.parse(frame.slice(2));
           if (!Array.isArray(packet) || packet[0] !== 'event') return;
+          onEvent?.(packet[1]);
           for (const tip of extractDonations(packet[1])) onTip(tip);
         } catch {
           this.options.logger?.warn('Streamlabs event rejected');

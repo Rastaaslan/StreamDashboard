@@ -162,7 +162,7 @@ export class GoogleCalendarClient {
   }
 
   async calendars() {
-    const items: Array<{ id: string; summary: string; accessRole: string; deleted?: boolean }> = [];
+    const items: Array<{ id: string; summary: string; accessRole: string; primary?: boolean; deleted?: boolean }> = [];
     let pageToken = '';
     do {
       const query = new URLSearchParams({ maxResults: '250' });
@@ -173,7 +173,7 @@ export class GoogleCalendarClient {
     } while (pageToken);
     return items
       .filter(item => !item.deleted)
-      .map(item => ({ id: item.id, summary: item.summary, writable: ['owner', 'writer'].includes(item.accessRole) }));
+      .map(item => ({ id: item.id, summary: item.summary, primary: item.primary === true, writable: ['owner', 'writer'].includes(item.accessRole) }));
   }
 
   /** Without expansion Google returns series masters and detached exceptions, including

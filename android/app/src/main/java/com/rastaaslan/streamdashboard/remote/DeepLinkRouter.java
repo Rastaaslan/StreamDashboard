@@ -11,7 +11,7 @@ final class DeepLinkRouter {
     if (raw == null || raw.isBlank()) return Route.INVALID;
     try {
       URI uri = URI.create(raw);
-      if (!"streamdashboard".equals(uri.getScheme())) return Route.INVALID;
+      if (!"streamdashboard-next".equals(uri.getScheme())) return Route.INVALID;
       if (uri.getRawUserInfo() != null || uri.getPort() != -1 || uri.getRawFragment() != null) return Route.INVALID;
       String host = uri.getHost();
       String path = uri.getPath();

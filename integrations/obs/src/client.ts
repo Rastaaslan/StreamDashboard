@@ -1,4 +1,5 @@
 import OBSWebSocket from 'obs-websocket-js';
+import { AitumSuiteOutputs } from './aitum-suite.js';
 import type { ObsState } from '../../../packages/contracts/src/index.js';
 
 function friendlyError(error: unknown) {
@@ -23,6 +24,73 @@ export async function collectActiveSceneSources(sceneName: string, sceneItems: (
 }
 
 export class ObsClient {
+  private replaySaving = false;
+  async replayStatus() {
+    this.requireConnected();
+    const [state, mode, directory] = await Promise.all([this.call('GetReplayBufferStatus'), this.call('GetProfileParameter', { parameterCategory: 'Output', parameterName: 'Mode' }), this.call('GetRecordDirectory')]);
+    const parameterCategory = (mode.parameterValue || mode.defaultParameterValue) === 'Advanced' ? 'AdvOut' : 'SimpleOutput';
+    const [duration, enabled] = await Promise.all(['RecRBTime','RecRB'].map(parameterName => this.call('GetProfileParameter', { parameterCategory, parameterName })));
+    return { active: state.outputActive, seconds: Number(duration.parameterValue || duration.defaultParameterValue) || 20, enabled: ['true','1'].includes(enabled.parameterValue || enabled.defaultParameterValue), directory: directory.recordDirectory };
+  }
+  async setReplayBuffer(active: boolean) {
+    this.requireConnected();
+    if (this.replaySaving) throw new Error('Sauvegarde du clip en cours.');
+    const state = await this.replayStatus();
+    if (state.active === active) return;
+    if (active && !state.enabled) throw new Error('Activez le tampon de replay dans OBS → Paramètres → Sortie.');
+    await this.call(active ? 'StartReplayBuffer' : 'StopReplayBuffer');
+    for (let n = 0; n < 15; n++) {
+      if ((await this.call('GetReplayBufferStatus')).outputActive === active) return;
+      await new Promise(resolve => setTimeout(resolve, 100));
+    }
+    throw new Error('OBS n’a pas confirmé l’état du tampon de replay.');
+  }
+  async saveReplay() {
+    this.requireConnected();
+    if (this.replaySaving) throw new Error('Sauvegarde du clip déjà en cours.');
+    this.replaySaving = true;
+    const client = this.client, generation = this.generation;
+    let savedPath = '', dispatched = false;
+    const saved = ({ savedReplayPath }: { savedReplayPath: string }) => { if (generation === this.generation) savedPath = savedReplayPath; };
+    try {
+      if (!(await this.call('GetReplayBufferStatus')).outputActive) throw new Error('Tampon arrêté : activez « Préparer les clips » avant le moment à conserver.');
+      const previous = await this.call('GetLastReplayBufferReplay').then(value => value.savedReplayPath, () => '');
+      this.requireConnected();
+      if (generation !== this.generation) throw new Error('Connexion OBS remplacée.');
+      client.on('ReplayBufferSaved', saved);
+      dispatched = true;
+      await this.call('SaveReplayBuffer');
+      // The request acknowledgement alone is not a saved clip. Wait for the event
+      // or a new path; a stale previous replay must never count as success.
+      for (let n = 0; n < 40; n++) {
+        if (generation !== this.generation) throw new Error('Connexion OBS interrompue pendant la sauvegarde.');
+        if (savedPath) return savedPath;
+        const current = await this.call('GetLastReplayBufferReplay').then(value => value.savedReplayPath, () => '');
+        if (current && current !== previous) return current;
+        await new Promise(resolve => setTimeout(resolve, 250));
+      }
+      throw new Error('OBS n’a pas confirmé de nouveau fichier. Vérifiez le dossier de clips avant de réessayer.');
+    } catch (error) {
+      if (dispatched) throw Object.assign(new Error(error instanceof Error ? error.message : 'Sauvegarde non confirmée.'), { name: 'ACTION_UNCERTAIN' });
+      throw error;
+    } finally { client.off('ReplayBufferSaved', saved); this.replaySaving = false; }
+  }
+  private suite = new AitumSuiteOutputs(async (requestType, requestData) => {
+    const result = await this.call('CallVendorRequest', { vendorName: 'aitum-stream-suite', requestType, requestData });
+    return result.responseData;
+  });
+  async streamSuiteOutputs() { return this.suite.inspect(); }
+  async setStreamSuiteOutput(name: string, active: boolean) { await this.suite.set(name, active); }
+  async outputs() { return (await this.call('GetOutputList')).outputs; }
+  async setOutput(name: string, active: boolean) {
+    if (!name.trim()) throw new Error('Sortie OBS non sélectionnée.');
+    const list = await this.outputs();
+    if (!list.some(output => output.outputName === name)) throw new Error('Sortie absente de GetOutputList OBS. Vérifiez le plugin de multidiffusion.');
+    const state = await this.call('GetOutputStatus', { outputName: name });
+    if (state.outputActive !== active) await this.call(active ? 'StartOutput' : 'StopOutput', { outputName: name });
+    const confirmed = await this.call('GetOutputStatus', { outputName: name });
+    if (confirmed.outputActive !== active) throw new Error('OBS n’a pas confirmé la sortie demandée.');
+  }
   private client = new OBSWebSocket();
   private reconnects = 0;
   // Every loss/configuration change invalidates pending replies and queued commands.
@@ -415,6 +483,20 @@ export class ObsClient {
     this.scheduleRefresh();
   }
   onMediaEnded(listener: (inputName: string) => void) { this.mediaEndedListeners.add(listener); return () => this.mediaEndedListeners.delete(listener); }
+  /** Reconnect only an existing StreamDashboard timer, without replacing another overlay. */
+  async reconnectTimerBrowserSource(inputName: string, endpoint: string) {
+    this.requireConnected();
+    if (await this.inputKind(inputName) !== 'browser_source') throw new Error('Source navigateur minuteur introuvable.');
+    const { inputSettings } = await this.call('GetInputSettings', { inputName });
+    let current: URL;
+    try { current = new URL(String(inputSettings.url || '')); } catch { throw new Error('Renseignez manuellement l’URL du minuteur dans OBS.'); }
+    if (inputSettings.is_local_file || current.protocol !== 'http:' || !['127.0.0.1','localhost'].includes(current.hostname)
+      || !['48132','48133'].includes(current.port) || current.pathname.replace(/\/$/,'') !== '/overlay/timer')
+      throw new Error('Cette source utilise un autre overlay. Son URL doit être modifiée manuellement dans OBS.');
+    await this.setInputSettings(inputName, { url: endpoint });
+    await this.refreshBrowserSource(inputName);
+  }
+
   async verifyTimerBrowserSource(inputName: string, endpoint: string) {
     this.requireConnected();
     const generation = this.generation;

@@ -63,7 +63,7 @@ describe('Android remote runtime', () => {
   });
   it('autorise le volume Soundboard en direct depuis une télécommande appairée', () => {
     expect(mobileTransport).toContain("'/api/v1/soundboard/volume'");
-    expect(serverSource).toContain("import { isRemoteApiAllowed } from './remote-api-policy.js'");
+    expect(serverSource).toMatch(/import \{[^}]*\bisRemoteApiAllowed\b[^}]*\} from '\.\/remote-api-policy\.js'/);
   });
 
   it('répare le démarrage live Android avec préparation et confirmation de bypass checklist', () => {
@@ -102,7 +102,8 @@ describe('Android remote runtime', () => {
     for (const provider of ['twitch', 'google']) {
       expect(androidProviderBridge).toContain(`return status("${provider}", BuildConfig.${provider.toUpperCase()}_ANDROID_CLIENT_ID)`);
     }
-    expect(androidProviderBridge).toContain('provider.equals("google") ? "Google autonome non configuré" : "Twitch autonome non configuré"');
+    expect(androidProviderBridge).toContain('urn:ietf:params:oauth:grant-type:device_code');
+    expect(androidProviderBridge).not.toContain('code_verifier');
     const diagnostic = providerDiagnostic({ configured: false });
     expect(wizardState(diagnostic).step).toBe('configuration');
     expect(diagnostic.code).toBe('NOT_CONFIGURED');

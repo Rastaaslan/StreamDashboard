@@ -163,3 +163,28 @@ it('includes global OBS audio devices even outside scene items', async () => {
   await obs.refresh();
   expect(obs.state.activeAudioInputs).toContain('Mic');
 });
+
+
+describe('confirmed replay saves',()=>{
+ it('refuses an inactive buffer without saving or silently starting it',async()=>{
+  await obs.connect();const original=socket().call.getMockImplementation()!;
+  socket().call.mockImplementation(async(type,args)=>type==='GetReplayBufferStatus'?{outputActive:false}:original(type,args));
+  await expect(obs.saveReplay()).rejects.toThrow('Tampon arrêté');expect(socket().call.mock.calls.some(([type])=>['SaveReplayBuffer','StartReplayBuffer'].includes(type))).toBe(false);
+ });
+ it('subscribes before saving, accepts the completion event and removes its listener',async()=>{
+  await obs.connect();const original=socket().call.getMockImplementation()!;
+  socket().call.mockImplementation(async(type,args)=>{if(type==='GetReplayBufferStatus')return {outputActive:true};if(type==='GetLastReplayBufferReplay')return {savedReplayPath:'old.mkv'};if(type==='SaveReplayBuffer'){socket().emit('ReplayBufferSaved',{savedReplayPath:'new.mkv'});return {};}return original(type,args);});
+  expect(await obs.saveReplay()).toBe('new.mkv');expect(socket().listenerCount('ReplayBufferSaved')).toBe(0);
+ });
+ it('never mistakes an old file or an acknowledgement for a new clip',async()=>{
+  await obs.connect();const original=socket().call.getMockImplementation()!;
+  socket().call.mockImplementation(async(type,args)=>type==='GetReplayBufferStatus'?{outputActive:true}:type==='GetLastReplayBufferReplay'?{savedReplayPath:'old.mkv'}:original(type,args));
+  const promise=obs.saveReplay();const check=expect(promise).rejects.toMatchObject({name:'ACTION_UNCERTAIN'});await vi.advanceTimersByTimeAsync(11000);await check;
+  expect(socket().call.mock.calls.filter(([type])=>type==='SaveReplayBuffer')).toHaveLength(1);expect(socket().listenerCount('ReplayBufferSaved')).toBe(0);
+ });
+ it('rejects a concurrent save and rejects a connection change after dispatch as uncertain',async()=>{
+  await obs.connect();const original=socket().call.getMockImplementation()!;let dispatched=false;
+  socket().call.mockImplementation(async(type,args)=>{if(type==='GetReplayBufferStatus')return {outputActive:true};if(type==='GetLastReplayBufferReplay')return {savedReplayPath:'old.mkv'};if(type==='SaveReplayBuffer'){dispatched=true;socket().emit('ConnectionClosed');return {};}return original(type,args);});
+  const first=obs.saveReplay();await expect(obs.saveReplay()).rejects.toThrow('déjà en cours');await expect(first).rejects.toMatchObject({name:'ACTION_UNCERTAIN'});expect(dispatched).toBe(true);
+ });
+});

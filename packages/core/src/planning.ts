@@ -1,3 +1,5 @@
+import { randomUuid } from './uuid.js';
+import { recurrenceForNewSeries } from './recurrence.js';
 import { deleteSeriesProjections, recoverSeriesDeletionIdentities } from './series-deletion.js';
 import { reconcileGoogleProjection, needsGoogleMaterialization, resolveGoogleOccurrenceConflict } from '../../../integrations/google-calendar/src/projection.js';
 import { reconcileTwitchProjection, needsTwitchMaterialization, resolveTwitchOccurrenceConflict } from '../../../integrations/twitch/src/projection.js';
@@ -7,7 +9,7 @@ import { assertProviderCreationCertain, createWithDurableIntent } from './provid
 import type { CalendarItem, ProviderLink } from '../../contracts/src/index.js';
 
 export type ProviderName = 'twitch' | 'google';
-export interface CreatePreparation { calendarId?: string }
+export interface CreatePreparation { calendarId?: string; accountId?: string }
 export interface PlanningProvider {
   /** Resolve the immutable destination before persisting a CREATE intent. No remote mutation. */
   prepareCreate?(item: CalendarItem): CreatePreparation | Promise<CreatePreparation>;
@@ -73,9 +75,10 @@ export class PlanningOrchestrator {
 
   create(input: Omit<CalendarItem, 'id'> & { id?: string }) {
     return this.serial(async () => {
-      const id = input.id ?? crypto.randomUUID();
+      const id = input.id ?? randomUuid();
       const item: CalendarItem = {
         ...input,
+        recurrence: recurrenceForNewSeries(input.recurrence, input.localId ?? id),
         id,
         localId: input.localId ?? id,
         ownership: 'LOCAL',

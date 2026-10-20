@@ -2,7 +2,7 @@ import { BrowserWindow, shell } from 'electron';
 import path from 'node:path';
 
 export { isAllowedExternalAuthUrl, isAllowedGoogleOAuthUrl, isAllowedTwitchUrl } from './security.js';
-import { isAllowedExternalAuthUrl, isSameOrigin } from './security.js';
+import { isAllowedExternalAuthUrl, isAllowedLiveViewUrl, isSameOrigin } from './security.js';
 
 export function createDashboardWindow(url: string, preload: string, title = 'StreamDashboard') {
   const window = new BrowserWindow({
@@ -25,7 +25,7 @@ export function createDashboardWindow(url: string, preload: string, title = 'Str
   });
   window.removeMenu();
   window.webContents.setWindowOpenHandler(({ url: target }) => {
-    if (isAllowedExternalAuthUrl(target)) void shell.openExternal(target).catch(() => undefined);
+    if (isAllowedExternalAuthUrl(target) || isAllowedLiveViewUrl(target)) void shell.openExternal(target).catch(() => undefined);
     return { action: 'deny' };
   });
   window.webContents.on('will-navigate', (event, target) => {

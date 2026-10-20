@@ -41,6 +41,12 @@ describe('Twitch Live Control', () => {
     expect(JSON.parse(String(fetch.mock.calls[1]?.[1]?.body))).toMatchObject({ broadcaster_id: '42', sender_id: '42', message: 'Bonjour' });
   });
 
+  it('refuses a dropped WizeBot command and requires a message identifier on success', async () => {
+    const responses = [{client_id:'client',user_id:'42',login:'streamer',scopes:['user:write:chat']},{data:[{is_sent:false,drop_reason:{code:'automod_held',message:'Held'}}]},{data:[{is_sent:true}]}];
+    vi.stubGlobal('fetch',vi.fn(async()=>new Response(JSON.stringify(responses.shift()))));const client=new TwitchClient(credentials);await client.validateSession();
+    await expect(client.sendChatMessage('!uptime')).rejects.toThrow('refusé');await expect(client.sendChatMessage('!game')).rejects.toThrow('identifiant');
+  });
+
   it('parse badges, fragments, emotes, reply et bits EventSub', () => {
     const parsed = parseChatNotification({ metadata: { message_type: 'notification', subscription_type: 'channel.chat.message' }, payload: { event: { broadcaster_user_id: '42', chatter_user_id: '2', chatter_user_login: 'user', chatter_user_name: 'User', message_id: 'm1', color: '#FF0000', badges: [{ set_id: 'moderator', id: '1', info: '' }], message: { text: 'GG Kappa', fragments: [{ type: 'text', text: 'GG ' }, { type: 'emote', text: 'Kappa', emote: { id: '25', emote_set_id: '0', owner_id: '0', format: ['static'] } }] }, reply: { parent_message_id: 'p1', parent_message_body: 'Salut', parent_user_id: '3', parent_user_name: 'Other' }, cheer: { bits: 100 } } } }, '2026-09-17T10:00:00Z');
     expect(parsed).toMatchObject({ id: 'm1', chatter: { displayName: 'User', badges: [{ setId: 'moderator' }] }, reply: { parentMessageId: 'p1' }, bits: 100, fragments: [{ type: 'text' }, { emote: { id: '25' } }] });

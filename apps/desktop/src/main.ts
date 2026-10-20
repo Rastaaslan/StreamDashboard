@@ -1,6 +1,6 @@
 import { app, BrowserWindow, dialog, ipcMain, shell, type OpenDialogOptions } from 'electron';
 import path from 'node:path';
-import { copyFile, mkdir, rename, stat, unlink } from 'node:fs/promises';
+import { copyFile, mkdir, readFile, writeFile, rename, stat, unlink } from 'node:fs/promises';
 import { randomUUID } from 'node:crypto';
 import { createDashboardWindow, isAllowedExternalAuthUrl, isAllowedTwitchUrl } from './window.js';
 import { startDesktopRuntime, type DesktopRuntime } from './lifecycle.js';
@@ -8,10 +8,13 @@ import { handleSquirrelStartup } from './squirrel.js';
 import { startUpdater } from './updater.js';
 import { DesktopLogger } from './logger.js';
 import { presentWindow } from './presentation.js';
+import { installControllerKeys, startControllerAssets } from './controller.js';
+import type { Server } from 'node:http';
 
 const squirrelHandled = handleSquirrelStartup();
-app.setName('StreamDashboard');
-if (process.platform === 'win32') app.setAppUserModelId('com.squirrel.StreamDashboard.StreamDashboard');
+app.setName('StreamDashboard Next');
+app.setPath('userData', path.join(app.getPath('appData'), 'StreamDashboard-Next'));
+if (process.platform === 'win32') app.setAppUserModelId('com.rastaaslan.StreamDashboard.Next');
 const logger = new DesktopLogger(path.join(app.getPath('userData'), 'logs'));
 const log = (event: string) => { void logger.info(event, { pid: process.pid }).catch(() => undefined); };
 const primary = !squirrelHandled && app.requestSingleInstanceLock();
@@ -20,6 +23,8 @@ else log('Primary instance acquired');
 
 let window: BrowserWindow | null = null;
 let runtime: DesktopRuntime | null = null;
+let controllerServer: Server | undefined;
+let stopControllerKeys: () => void = () => {};
 let stopUpdater: () => void = () => undefined;
 let quitting = false;
 let bootPromise: Promise<void> | undefined;
@@ -27,6 +32,8 @@ let runtimePromise: Promise<DesktopRuntime> | undefined;
 let cleanupPromise: Promise<void> | undefined;
 const startup = new AbortController();
 let failing = false;
+let controllerRole = false;
+const roleFile = path.join(app.getPath('userData'), 'device-role.json');
 
 function present() {
   if (!primary || quitting) return;
@@ -41,6 +48,13 @@ app.on('activate', present);
 function cleanupRuntime(): Promise<void> {
   return cleanupPromise ??= (async () => {
     stopUpdater(); stopUpdater = () => undefined;
+    stopControllerKeys();
+    if (controllerServer) await new Promise<void>((resolve,reject) => {
+      controllerServer!.close(error => error ? reject(error) : resolve());
+      // Chromium can keep speculative HTTP connections open after embedded views
+      // close. This server only serves static client assets; no business writes.
+      controllerServer!.closeAllConnections();
+    });
     // Acquisition and teardown have one owner, even when quit races startup.
     // Startup cancellation interrupts provider I/O, but never abandons cleanup.
     let current: DesktopRuntime | undefined;
@@ -70,8 +84,14 @@ function boot(): Promise<void> {
       log('Electron ready; creating visible startup window');
       const preview = process.argv.includes('--ui-preview=desktop-v2');
       const legacy = process.argv.includes('--ui-legacy=desktop-v1');
-      const route = preview || !legacy ? (preview ? '/preview/' : '/preview/?runtime=1') : '/';
-      const targetUrl = new URL(route, 'http://127.0.0.1:48132').toString();
+      let savedRole = 'stream';
+      try { savedRole = JSON.parse(await readFile(roleFile, 'utf8')).role; }
+      catch (error) { if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw new Error('Choix de rôle illisible. Consultez device-role.json.'); }
+      const client = process.argv.includes('--role=client') || (!process.argv.includes('--role=host') && savedRole === 'control');
+      controllerRole = client;
+      const route = legacy ? '/' : preview ? '/preview/' : '/mobile/control/';
+      const uiOrigin = `http://127.0.0.1:${client ? 48134 : 48133}`;
+      const targetUrl = new URL(route, uiOrigin).toString();
       window = createDashboardWindow(targetUrl, path.join(import.meta.dirname, 'preload.cjs'), 'StreamDashboard — Démarrage…');
       window.on('closed', () => { window = null; });
       window.webContents.on('render-process-gone', (_event, details) => { void fail(new Error(`Renderer stopped: ${details.reason}`)); });
@@ -82,12 +102,21 @@ function boot(): Promise<void> {
       await window.loadURL('data:text/html;charset=utf-8,' + encodeURIComponent(
         '<!doctype html><meta charset="utf-8"><meta http-equiv="Content-Security-Policy" content="default-src \'none\'; style-src \'unsafe-inline\'"><title>StreamDashboard — Démarrage…</title><body style="background:#080a10;color:#fff;font:20px system-ui;padding:48px"><h1>StreamDashboard</h1><p>Démarrage en cours…</p><p>Vous pouvez fermer cette fenêtre pour annuler.</p></body>'));
       if (quitting) return;
+      stopControllerKeys = installControllerKeys(() => window, app.getPath('userData'), uiOrigin);
+      if (client) {
+        controllerServer = await startControllerAssets(path.join(app.getAppPath(), 'apps', 'mobile'));
+        runtimePromise = startDesktopRuntime(logger, startup.signal, true);
+        runtime = await runtimePromise;
+        if (!quitting) await window!.loadURL(targetUrl + '?role=client');
+        return;
+      }
       log('Startup window visible; starting local runtime');
       runtimePromise = startDesktopRuntime(logger, startup.signal);
       runtime = await runtimePromise;
       if (quitting) return;
       log('Local runtime ready; loading renderer');
-      stopUpdater = startUpdater(window!, runtime.dashboard, logger, cleanupRuntime);
+      // Candidate stays isolated: production updater must not replace it or the stable installation.
+      if (process.argv.includes('--enable-candidate-updater')) stopUpdater = startUpdater(window!, runtime.dashboard, logger, cleanupRuntime);
       await window!.loadURL(targetUrl);
       log('Renderer loaded');
     } catch (error) { await fail(error); }
@@ -96,6 +125,23 @@ function boot(): Promise<void> {
 
 void app.whenReady().then(() => primary ? boot() : undefined).catch(fail);
 ipcMain.handle('app:get-version', () => app.getVersion());
+ipcMain.handle('app:device-profile', async () => {
+  let profile: {name?:string;role?:string} | undefined;
+  try { profile = JSON.parse(await readFile(roleFile, 'utf8')); }
+  catch (error) { if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error; }
+  return {name:profile?.name,role:controllerRole?'control':'stream',configured:Boolean(profile)};
+});
+ipcMain.handle('app:set-device-role', async (event, role: unknown, name: unknown) => {
+  const origin = `http://127.0.0.1:${controllerRole ? 48134 : 48133}`;
+  if (event.sender !== window?.webContents || new URL(event.senderFrame?.url || 'about:blank').origin !== origin || !['stream','control'].includes(String(role)) || typeof name !== 'string' || !name.trim() || name.length > 80) throw new Error('Choix de rôle refusé.');
+  const changed = (role === 'control') !== controllerRole;
+  const obs = runtime?.dashboard.state().obs;
+  if (changed && (obs?.streaming || obs?.recording)) throw new Error('Terminez le live et l’enregistrement avant de changer le rôle de ce PC.');
+  await mkdir(path.dirname(roleFile), {recursive:true});
+  await writeFile(roleFile + '.tmp', JSON.stringify({version:1,role,name:name.trim()})); await rename(roleFile + '.tmp', roleFile);
+  if (changed) { app.relaunch({args:[...process.argv.slice(1).filter(value => !value.startsWith('--role=')), role === 'control' ? '--role=client' : '--role=host']}); app.quit(); }
+  return {restart:changed};
+});
 ipcMain.handle('app:open-twitch-activation', async (_event, url: unknown) => {
   if (typeof url !== 'string' || !isAllowedTwitchUrl(url)) return false;
   await shell.openExternal(url); return true;

@@ -76,7 +76,7 @@ export function registerLiveControlRoutes(options: Options) {
       if (!options.requireLocal(req, res)) return;
       const sounds = options.sounds(); const sound = sounds.find(value => value.id === req.params.id);
       if (!sound) { res.status(404).json({ ok: false, error: { code: 'SOUND_NOT_FOUND', message: 'Son introuvable.' } }); return; }
-      await soundboard.stop();
+      if ((await soundboard.snapshot()).currentPlayback?.soundId === sound.id) await soundboard.stop();
       const nextSounds = sounds.filter(value => value.id !== sound.id);
       options.setSounds(nextSounds); soundboard.replace(nextSounds); await options.save(); await options.removeSoundLibraryFile(sound.source);
       res.status(204).end();
@@ -197,7 +197,7 @@ export function registerLiveControlRoutes(options: Options) {
   app.delete('/api/v1/wizebot/config', async (req, res, next) => { try { if (!options.requireLocal(req, res)) return; await options.secrets.clearWizeBotConfiguration?.(); wizebot.configure(null); res.json(wizebot.state()); } catch (error) { next(error); } });
 }
 
-function automationInput(value: unknown) {
+export function automationInput(value: unknown) {
   if (!object(value)) throw new Error('Automation invalide.');
   const conditions = Array.isArray(value.conditions) ? value.conditions : [];
   const actions = Array.isArray(value.actions) ? value.actions : [];

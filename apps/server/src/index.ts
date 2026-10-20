@@ -1,12 +1,19 @@
+import { WizeBotService } from './wizebot-service.js';
 import { measureSync, syncBatch, syncDiagnostics } from '../../../packages/core/src/sync-performance.js';
 import { bulkDeleteSelection } from '../../../packages/core/src/planning-bulk-delete.js';
 import { TwitchTagIntelligence } from '../../../packages/core/src/tag-intelligence.js';
-import { normalizeTags, resolveTags, editedTags, tagMetadata, tagPreferences, type TagEngine } from '../../../packages/core/src/tags.js';
+import { resolveTags, editedTags, tagMetadata, tagPreferences, type TagEngine } from '../../../packages/core/src/tags.js';
 import { googleRecurrence, parseGoogleRecurrence } from '../../../integrations/google-calendar/src/recurrence.js';
 import express from 'express';
+import { ControlService } from './control-service.js';
+import { registerControlRoutes } from './control-routes.js';
+import { YouTubeClient } from '../../../integrations/youtube/src/client.js';
 import { createServer, type Server } from 'node:http';
-import { mkdir, stat, unlink } from 'node:fs/promises';
+import { mkdir, readFile, stat, unlink, writeFile } from 'node:fs/promises';
 import { hostname, networkInterfaces } from 'node:os';
+// Restricted development containers may not expose network interface enumeration.
+// Keep loopback usable; never broaden the Host allowlist when discovery fails.
+const visibleNetworkInterfaces: typeof networkInterfaces = () => { try { return networkInterfaces(); } catch { return {}; } };
 import path from 'node:path';
 import { createHash, randomUUID } from 'node:crypto';
 import { WebSocketServer, type WebSocket } from 'ws';
@@ -15,7 +22,7 @@ import { TwitchClient, TwitchHttpError } from '../../../integrations/twitch/src/
 import { TwitchPreflight } from '../../../integrations/twitch/src/preflight.js';
 import { TwitchEventSub, type TwitchChatMessage, type TwitchRewardRedemption } from '../../../integrations/twitch/src/eventsub.js';
 import { DiscordClient } from '../../../integrations/discord/src/client.js';
-import { expandRecurringItems } from '../../../packages/core/src/recurrence.js';
+import { expandRecurringItems, expandEditableRecurringItems, mergeOccurrencePatch } from '../../../packages/core/src/recurrence.js';
 import { EventCore } from '../../../packages/core/src/events.js';
 import { integrationState, transitionIntegration } from '../../../packages/core/src/integrations.js';
 import {
@@ -57,12 +64,13 @@ import { drainCompanionProviders, resolveCompanionDeletion } from './companion-p
 import { companionSnapshot, emptyCompanionState, reconcileCompanionBatch, resolveCompanionConflict, type CompanionState, type SyncOperation } from './companion-sync.js';
 import { RemoteAuth, type PersistedRemoteDevice, type PersistedPairing } from './remote-auth.js';
 import { parseRemoteCommand, toRemoteDashboardState } from './remote-policy.js';
-import { isRemoteApiAllowed } from './remote-api-policy.js';
+import { isRemoteApiAllowed, isManagementApiAllowed } from './remote-api-policy.js';
 import { SoundboardRuntime, validateSound } from './soundboard-runtime.js';
 import { ObsSoundboardPlayback, ObsSoundboardSetup } from './obs-soundboard.js';
 import { AutomationRuntime } from './automation-runtime.js';
 import type { Automation, Support } from '../../../packages/core/src/live-control-domains.js';
 import { SupportRuntime } from './support-runtime.js';
+import { StreamlabsFeed, STREAMLABS_HISTORY_LIMIT } from './streamlabs-feed.js';
 import { StreamlabsAdapter } from '../../../integrations/streamlabs/src/adapter.js';
 import type { StreamlabsTransport } from '../../../integrations/streamlabs/src/adapter.js';
 import { StreamlabsSocketTransport } from '../../../integrations/streamlabs/src/socket-transport.js';
@@ -70,7 +78,10 @@ import { StreamlabsOAuthClient } from '../../../integrations/streamlabs/src/oaut
 import { WizeBotAdapter } from '../../../integrations/wizebot/src/adapter.js';
 import type { WizeBotTransport } from '../../../integrations/wizebot/src/adapter.js';
 import { WizeBotHttpTransport } from '../../../integrations/wizebot/src/http-transport.js';
-import { registerLiveControlRoutes } from './live-control-routes.js';
+import { AutonomyService } from './autonomy-service.js';
+import { registerAutonomyRoutes, invokeManagement } from './autonomy-routes.js';
+import { pick, fields } from '../../mobile/shared/autonomy.js';
+import { registerLiveControlRoutes, automationInput } from './live-control-routes.js';
 import { ProductProfileStore } from './profile-store.js';
 import { validateProductProfile, type ProductProfile } from '../../../packages/core/src/product-profile.js';
 import { resolveModules } from '../../../packages/core/src/module-registry.js';
@@ -115,6 +126,8 @@ interface LocalData {
   streamerPings: StreamerPing[];
 }
 export interface DashboardServerOptions {
+  /** A control-only desktop owns its accounts but must never connect to OBS. */
+  obsEnabled?: boolean;
   /** Cancels acquisition; startup settles only after partial resources are closed. */
   startupSignal?: AbortSignal;
   tagEngine?: TagEngine;
@@ -159,7 +172,7 @@ const LOCAL_ADDRESSES = new Set(['127.0.0.1', '::1', '::ffff:127.0.0.1']);
 const PROVIDER_STATUSES = new Set(['synced', 'pending', 'error', 'not-published', 'conflict']);
 const DAY_MS = 86_400_000;
 const REMOTE_ACTIVITY_PERSIST_MS = 30_000;
-const ANDROID_NATIVE_ORIGINS = new Set(['http://localhost', 'http://appassets.androidplatform.net']);
+const ANDROID_NATIVE_ORIGINS = new Set(['http://localhost', 'http://appassets.androidplatform.net', 'http://127.0.0.1:48134']);
 
 function object(value: unknown): value is Record<string, unknown> {
   return Boolean(value && typeof value === 'object' && !Array.isArray(value));
@@ -221,7 +234,7 @@ function sanitizeProviderLink(value: unknown): ProviderLink | undefined {
         ...(typeof raw.appliedContent === 'string' ? { appliedContent: raw.appliedContent } : {}) };
     }
   }
-  for (const key of ['remoteId', 'calendarId', 'remoteRevision', 'fingerprint', 'lastError', 'creationId'] as const) {
+  for (const key of ['remoteId', 'calendarId', 'remoteRevision', 'fingerprint', 'lastError', 'creationId', 'accountId'] as const) {
     if (typeof value[key] === 'string') link[key] = String(value[key]).slice(0, 500);
   }
   if (object(value.deletionPeriod)) link.deletionPeriod = { start: String(value.deletionPeriod.start ?? ''), end: String(value.deletionPeriod.end ?? '') };
@@ -378,7 +391,7 @@ function overlapsWindow(item: CalendarItem, timeMin: string, timeMax: string) {
 function lanUrls(port: number) {
   if (!port) return [];
   const result = new Set<string>();
-  for (const addresses of Object.values(networkInterfaces())) {
+  for (const addresses of Object.values(visibleNetworkInterfaces())) {
     for (const address of addresses ?? []) {
       if (address.family === 'IPv4' && !address.internal) result.add(`http://${address.address}:${port}/mobile/`);
     }
@@ -409,6 +422,7 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
   const profileExisted = await stat(profileFile).then(() => true).catch(() => false);
   const profileStore = new ProductProfileStore(profileFile);
   const store = new AtomicJsonStore<LocalData>(dataFile);
+  const autonomy = await AutonomyService.open(path.join(dataDir, 'autonomy-v1.json'));
   const secrets = options.secretStore ?? new MemorySecretStore();
   const logger = options.logger ?? console;
   const defaultObsUrl = safeObsUrl(process.env.OBS_URL, 'ws://127.0.0.1:4455');
@@ -548,6 +562,7 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
         lastSeenAt: String(device.lastSeenAt ?? ''),
         ...(typeof device.revokedAt === 'string' ? { revokedAt: device.revokedAt } : {}),
         credentialHash: String(device.credentialHash),
+        management: device.management === true,
       }))
     : [];
 
@@ -701,6 +716,7 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
     throw new Error(`Action ${action.type} non supportée.`);
   }, async values => { local.automations = values; await save(); });
   const support = new SupportRuntime(local.supports, async values => { local.supports = values; await save(); }, value => { eventCore.publish({ type: 'support.received', source: value.provider, occurredAt: value.receivedAt, correlationId: `${value.provider}:${value.externalId}`, payload: value }); });
+  const streamlabsFeed = await StreamlabsFeed.open(path.join(dataDir, 'streamlabs-events.json'), local.supports);
   const streamlabsOAuth = new StreamlabsOAuthClient(runtimeFetch(options.streamlabsFetch));
   const streamlabsRedirectUri = String(options.streamlabsRedirectUri ?? process.env.STREAMLABS_REDIRECT_URI ?? 'http://127.0.0.1:48132/api/v1/streamlabs/oauth/callback').trim();
   {
@@ -710,7 +726,7 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
   }
   let streamlabsSocketToken = await secrets.getStreamlabsToken?.() ?? process.env.STREAMLABS_SOCKET_TOKEN ?? '';
   const streamlabsOAuthSecrets = await secrets.getStreamlabsOAuth?.() ?? null;
-  const streamlabs = new StreamlabsAdapter(streamlabsSocketToken, value => support.record(value).then(() => undefined), options.streamlabsTransport ?? new StreamlabsSocketTransport({ logger, signal: runtimeAbort.signal }), logger);
+  const streamlabs = new StreamlabsAdapter(streamlabsSocketToken, value => support.record(value).then(() => undefined), options.streamlabsTransport ?? new StreamlabsSocketTransport({ logger, signal: runtimeAbort.signal }), logger, events => streamlabsFeed.record(events));
   const storedWizeBot = await secrets.getWizeBotConfiguration?.() ?? null;
   const environmentWizeBot = process.env.WIZEBOT_API_URL && process.env.WIZEBOT_TOKEN ? { apiBaseUrl: process.env.WIZEBOT_API_URL, token: process.env.WIZEBOT_TOKEN } : null;
   const wizebot = new WizeBotAdapter(storedWizeBot ?? environmentWizeBot, options.wizebotTransport ?? new WizeBotHttpTransport(runtimeFetch()), logger);
@@ -719,7 +735,7 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
   const isLocalRequest = (req: express.Request) => isLocalAddress(req.socket.remoteAddress);
   const isRemoteRequest = (req: express.Request) => !isLocalRequest(req);
   const requireLocal = (req: express.Request, res: express.Response) => {
-    if (isLocalRequest(req)) return true;
+    if (isLocalRequest(req) || res.locals.management === true) return true;
     res.status(403).json({ ok: false, error: { code: 'LOCAL_ONLY', message: 'Cette action est disponible uniquement depuis le PC.' } });
     return false;
   };
@@ -730,7 +746,7 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
     if (!authority) return false;
     try {
       const url = new URL(`http://${authority}`);
-      const addresses = Object.values(networkInterfaces()).flatMap(values => (values ?? []).map(value => value.address));
+      const addresses = Object.values(visibleNetworkInterfaces()).flatMap(values => (values ?? []).map(value => value.address));
       return !url.username && !url.password && url.host === authority.toLowerCase()
         && Number(url.port || 80) === runtimePort
         && ['localhost', '127.0.0.1', '[::1]', hostname().toLowerCase(), `${hostname().toLowerCase()}.local`, ...addresses].includes(url.hostname);
@@ -764,7 +780,7 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
     if (!acceptedHost(req.headers.host)) { res.status(403).json({ ok: false, error: { code: 'HOST_REJECTED', message: 'Adresse du PC non autorisée. Utilisez une adresse LAN affichée sur le PC.' } }); return; }
     res.set('Cache-Control', 'no-store');
     res.set({
-      'Content-Security-Policy': "default-src 'self'; connect-src 'self' https://static-cdn.jtvnw.net ws://127.0.0.1:* ws://localhost:* ws://[::1]:* ws: wss:; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https://static-cdn.jtvnw.net https://clips-media-assets2.twitch.tv https://clips-media-assets.twitch.tv; object-src 'none'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'",
+      'Content-Security-Policy': "default-src 'self'; connect-src 'self' https://static-cdn.jtvnw.net ws://127.0.0.1:* ws://localhost:* ws://[::1]:* ws: wss:; script-src 'self'; style-src 'self' 'unsafe-inline'; frame-src https://player.twitch.tv https://www.twitch.tv https://www.youtube.com; img-src 'self' data: blob: https://static-cdn.jtvnw.net https://clips-media-assets2.twitch.tv https://clips-media-assets.twitch.tv; object-src 'none'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'",
       'X-Content-Type-Options': 'nosniff',
       'X-Frame-Options': 'DENY',
       'Referrer-Policy': 'no-referrer',
@@ -773,6 +789,8 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
     next();
   });
   app.use('/api/v1/discord/planning', express.json({ limit: '14mb' }));
+  app.use('/api/v2/device/providers', express.json({ limit: '256kb' }));
+  app.use('/api/v2/autonomy/sync', express.json({ limit: '512kb' }));
   app.use(express.json({ limit: '32kb' }));
   app.use((req, res, next) => {
     const origin = req.headers.origin;
@@ -1046,6 +1064,91 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
     return companionSnapshot(local.planning, local.companion);
   });
   const commands = new DashboardCommandService(local, obs, changed, { settings: local.settings, logger, timerOverlayUrl: () => `http://127.0.0.1:${runtimePort}/overlay/timer/` });
+  let control: ControlService;
+  let replayAutoStartAttempted = false, replayAutoStartError = '';
+  const youtube = new YouTubeClient(secrets, () => {
+    const value = control.snapshot().configuration.youtube;
+    return { ...value, clientId: value.clientId || options.googleClientId || '' };
+  });
+  const platformLive: Record<string, { live: boolean | null; observedAt: string; error?: string }> = {};
+  let platformObservation: Promise<void> | undefined;
+  let platformObservedAt = 0;
+  const observePlatforms = () => {
+    if (platformObservation) return platformObservation;
+    if (Date.now() - platformObservedAt < 15_000) return Promise.resolve();
+    platformObservation = Promise.allSettled((['twitch', 'youtube'] as const).map(async platform => {
+      try { platformLive[platform] = { live: platform === 'twitch' ? (await twitch.getLiveState()).isLive : await youtube.live(), observedAt: new Date().toISOString() }; }
+      catch (error) { platformLive[platform] = { live: null, observedAt: new Date().toISOString(), error: error instanceof Error ? error.message : 'État indisponible' }; }
+    })).then(() => { platformObservedAt = Date.now(); }).finally(() => { platformObservation = undefined; });
+    return platformObservation;
+  };
+  control = await ControlService.open(path.join(dataDir, 'control-v2.json'), {
+    live: async platform => {
+      try {
+        const live = platform === 'twitch' ? (await twitch.getLiveState()).isLive : await youtube.live();
+        platformLive[platform] = { live, observedAt: new Date().toISOString() }; return live;
+      } catch (error) { platformLive[platform] = { live: null, observedAt: new Date().toISOString(), error: error instanceof Error ? error.message : 'État indisponible' }; throw error; }
+    },
+    output: async (platform, start) => {
+      const target = control.snapshot().configuration.outputs[platform];
+      if (target.kind === 'unconfigured') throw new Error(`Sélectionnez la sortie OBS ${platform} dans Configuration.`);
+      if (target.kind === 'main') {
+        await obs.refresh();
+        if (!obs.state.connected || !obs.state.streamingKnown) throw new Error('État de diffusion OBS indisponible.');
+        if (obs.state.streaming !== start) await commands.execute({ type: start ? 'session.start' : 'session.stop' });
+      } else if (target.kind === 'aitum-suite') await obs.setStreamSuiteOutput(target.name, start);
+      else await obs.setOutput(target.name, start);
+    },
+    settle: async (platform, start) => { if (platform === 'youtube') await youtube.transition(start); },
+    metadata: async (platform, value) => {
+      if (platform === 'youtube') { await youtube.update(value); return; }
+      await twitch.updateChannelMetadata({ title: value.title, ...(value.twitchGameId ? { gameId: value.twitchGameId } : {}), tags: value.tags });
+      const channel = await twitch.getChannelMetadata();
+      if (channel.title !== value.title || (value.twitchGameId && channel.gameId !== value.twitchGameId) || JSON.stringify(channel.tags ?? []) !== JSON.stringify(value.tags)) throw new Error('Twitch n’a pas confirmé toutes les informations demandées.');
+      twitchChannel = { ...twitchChannel, ...channel }; broadcast();
+    },
+    action: async (action, id) => {
+      if (action.type === 'replay.save') {
+        const replayPath = await obs.saveReplay();
+        return { message: `Clip sauvegardé sur ${hostname()} : ${replayPath}`, replayPath };
+      }
+      if (action.type === 'replay.start' || action.type === 'replay.stop') {
+        await obs.setReplayBuffer(action.type === 'replay.start');
+        return { message: action.type === 'replay.start' ? 'Tampon prêt : les prochains moments pourront être sauvegardés.' : 'Tampon de replay arrêté.' };
+      }
+      if (action.type === 'wizebot.command') {
+        if (action.wizebot && action.wizebot.channel !== twitch.publicIdentity().userName?.toLowerCase()) throw new Error('Ce bouton WizeBot appartient à une autre chaîne Twitch.');
+        const result = await twitch.sendChatMessage(action.value);
+        return { message: `${action.value} envoyé dans le chat Twitch. La réponse de WizeBot reste à vérifier dans le chat.`, messageId: result.messageId };
+      }
+      if (action.type === 'sound.stop') { await soundboard.stop(); return; }
+      if (action.type === 'sound.play') {
+        const result = await soundboard.play({ commandId: id, type: 'soundboard.play', origin: 'desktop', issuedAt: new Date().toISOString(), payload: { soundId: action.value } });
+        if (result.status !== 'succeeded') throw new Error(result.message || 'Son non confirmé par OBS.'); return;
+      }
+      if (action.type === 'chat.send') {
+        const split = action.value.indexOf(':'); const destination = action.value.slice(0, split); const message = action.value.slice(split + 1).trim();
+        if (!message || split < 0) throw new Error('Message attendu sous la forme twitch:message ou youtube:message.');
+        if (destination === 'youtube') await youtube.chat(message);
+        else if (destination === 'twitch') await twitch.sendChatMessage(message);
+        else throw new Error('Destination du message invalide.'); return { message: `Message envoyé sur ${destination}.` };
+      }
+      if (action.type === 'mic.toggle') {
+        await obs.refresh(); const input = action.value || local.settings.primaryMicInput || '';
+        if (!obs.state.connected || !Object.hasOwn(obs.state.inputs, input)) throw new Error('Sélectionnez un micro OBS disponible dans Configuration.');
+        const muted = !obs.state.inputs[input].muted;
+        await commands.execute({ type: 'obs.mute', input, muted });
+        if (obs.state.inputs[input]?.muted !== muted) throw new Error('Le micro OBS n’a pas confirmé son nouvel état.'); return;
+      }
+      if (action.type === 'scene.set') await commands.execute({ type: 'obs.scene', scene: action.value });
+      else if (action.type === 'mode.set') await commands.execute(action.value === 'chatting' ? { type: 'scene.chatting' } : parseCommand({ type: 'mode.set', mode: action.value }));
+      else if (action.type === 'timer.add') await commands.execute({ type: 'timer.add', seconds: Number(action.value) });
+      else if (action.type === 'alert.play') await commands.execute({ type: 'obs.media.restart', input: action.value });
+      else throw new Error('Action non prise en charge.');
+    },
+  }, broadcast);
+
+  const wizebotCommands = await WizeBotService.open(path.join(dataDir, 'wizebot-commands.json'), () => twitch.publicIdentity().userName || '', text => twitch.sendChatMessage(text));
 
   let backgroundStopped = false;
   let calendarRefreshFlight: Promise<void> | undefined;
@@ -1065,6 +1168,7 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
 
   const providerAdapters = (): Partial<Record<'twitch' | 'google', PlanningProvider>> => ({
     twitch: twitch.state.connected ? {
+      prepareCreate: async () => { await initializeTwitch(); return {accountId:twitch.publicIdentity().broadcasterId}; },
       recoverCreation: async item => { await initializeTwitch(); return twitch.recoverSegmentCreation(item); },
       read: async id => { await initializeTwitch(); return twitch.readSegment(id); },
       create: async item => { await initializeTwitch(); return twitch.createSegment(item); },
@@ -1259,6 +1363,12 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
     }
     const commandBody = Object.fromEntries(Object.entries(envelope).filter(([key]) => key !== 'commandId' && key !== 'correlationId'));
     const command = remote ? parseRemoteCommand(commandBody, snapshot()) : parseCommand(commandBody);
+    if (command.type === 'session.start' || command.type === 'session.stop' || command.type === 'obs.stream') {
+      const start = command.type === 'session.start' || (command.type === 'obs.stream' && command.start);
+      const receipt = await control.execute({ id: typeof commandId === 'string' ? commandId : randomUUID(), issuedAt: new Date().toISOString(), action: start ? 'live.start' : 'live.stop' });
+      if (receipt.status !== 'succeeded') throw Object.assign(new Error(receipt.message), { name: 'MULTISTREAM_INCOMPLETE' });
+      return { command, state: snapshot() };
+    }
     const fingerprint = JSON.stringify(command);
     if (typeof commandId === 'string') {
       const existing = commandJournal.get(commandId);
@@ -1547,7 +1657,7 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
         res.status(409).json({ ok: false, error: { code: 'REMOTE_RESTART_REQUIRED', message: 'Activez la télécommande LAN puis redémarrez StreamDashboard avant le pairing.' } });
         return;
       }
-      const pairing = remoteAuth.createPairing();
+      const pairing = remoteAuth.createPairing(undefined, req.body?.management === true);
       await save();
       const urls = lanUrls(runtimePort);
       res.status(201).json({
@@ -1607,11 +1717,25 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
       return;
     }
     scheduleRemoteActivitySave();
+    if (remoteAuth.canManage(deviceId) && isManagementApiAllowed(req.method, pathName)) { res.locals.management = true; next(); return; }
+    if (pathName.startsWith('/v2/')) { res.status(403).json({ error: { message: 'Associez cet appareil avec un code de gestion complète depuis le PC de stream.' } }); return; }
     if (!isRemoteApiAllowed(req.method, pathName)) {
       res.status(403).json({ ok: false, error: { code: 'REMOTE_SCOPE_DENIED', message: 'Cette action n’est pas autorisée depuis la télécommande.' } });
       return;
     }
     next();
+  });
+  // Serialize management mutations with offline reconciliation. Execution commands are separate.
+  app.use('/api', (req, res, next) => {
+    const managed = /^\/v2\/(?:autonomy|configuration|settings|planning|sounds)(?:\/|$)/.test(req.path)
+      || /^\/v1\/(?:profile|planning|companion|automations|soundboard\/(?:sounds|catalog)|discord\/settings|google\/target)(?:\/|$)/.test(req.path);
+    if (!managed || (req.method === 'GET' && req.path !== '/v2/autonomy')) { next(); return; }
+    void autonomy.serial(() => new Promise<void>(resolve => {
+      res.once('finish', resolve);
+      const end = res.end.bind(res);
+      res.end = ((...args: Parameters<typeof end>) => { try { return end(...args); } finally { resolve(); } }) as typeof res.end;
+      next();
+    })).catch(next);
   });
   app.post('/api/v1/remote/ws-ticket', (req, res, next) => {
     try {
@@ -1756,6 +1880,7 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
     if (local.sounds.some(sound => path.resolve(sound.source) === resolved)) return;
     await unlink(resolved).catch(() => undefined);
   };
+  app.get('/api/v1/streamlabs/events', (_req, res) => res.json({ items: streamlabsFeed.list(), provider: streamlabs.state(), retentionLimit: STREAMLABS_HISTORY_LIMIT }));
   registerLiveControlRoutes({
     app, soundboard, automation, support, streamlabs, streamlabsOAuth, streamlabsRedirectUri, wizebot, eventCore, secrets, requireLocal, isRemote: isRemoteRequest, save, broadcast,
     sounds: () => local.sounds, setSounds: value => { local.sounds = value; }, sessionStartedAt: () => twitchLive.startedAt,
@@ -1900,35 +2025,17 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
   });
   app.post('/api/v1/twitch/channel', async (req, res, next) => {
     try {
-      if (!twitch.state.connected) throw new Error('Twitch non connecté.');
-      const title = String(req.body.title ?? twitchChannel.title).trim();
-      const gameId = String(req.body.gameId ?? twitchChannel.gameId).trim();
-      const gameName = String(req.body.gameName ?? twitchChannel.gameName).trim();
-      const titleChanged = title !== twitchChannel.title;
-      const categoryChanged = gameId !== twitchChannel.gameId || gameName !== twitchChannel.gameName;
-      if (titleChanged && (!title || title.length > 140)) throw new Error('Le titre Twitch doit contenir entre 1 et 140 caractères.');
-      if (categoryChanged && (!/^\d{1,30}$/.test(gameId) || !gameName || gameName.length > 140)) throw new Error('Sélectionnez une catégorie Twitch valide.');
-      const tags = req.body.tags === undefined ? undefined : normalizeTags(req.body.tags);
-      if (req.body.tags !== undefined && !Array.isArray(req.body.tags)) throw new Error('Tags invalides.');
-      const metadata = { ...(titleChanged ? { title } : {}), ...(categoryChanged ? { gameId } : {}) };
-      const metadataChanged = titleChanged || categoryChanged;
-      let tagsWarning: string | undefined;
-      if (metadataChanged || tags !== undefined) {
-        try {
-          await twitch.updateChannelMetadata({ ...metadata, ...(tags !== undefined ? { tags } : {}) });
-        } catch (error) {
-          if (tags === undefined) throw error;
-          // A tags-only rejection must not rewrite unrelated (possibly empty) metadata.
-          if (metadataChanged) await twitch.updateChannelMetadata(metadata);
-          tagsWarning = metadataChanged
-            ? 'Tags refusés par Twitch ; titre et catégorie appliqués. Corrige les tags puis réessaie.'
-            : 'Tags refusés par Twitch. Corrige les tags puis réessaie.';
-        }
-      }
-      twitchChannel = { title, gameId, gameName, tags: tagsWarning ? twitchChannel.tags : tags ?? twitchChannel.tags, tagsWarning };
-      twitchLive = { ...twitchLive, ...(titleChanged ? { title } : {}), ...(categoryChanged ? { category: gameName, categoryId: gameId } : {}) };
-      broadcast();
-      res.json(isRemoteRequest(req) ? toRemoteDashboardState(snapshot()) : snapshot());
+      const configuration = control.snapshot().configuration;
+      const metadata = { ...configuration.metadata,
+        title: typeof req.body?.title === 'string' ? req.body.title : configuration.metadata.title || twitchChannel.title,
+        twitchGameId: typeof req.body?.gameId === 'string' ? req.body.gameId : configuration.metadata.twitchGameId,
+        tags: req.body?.tags === undefined ? configuration.metadata.tags : req.body.tags,
+      };
+      const receipt = await control.execute({ id: randomUUID(), issuedAt: new Date().toISOString(), action: 'metadata.apply', expectedRevision: configuration.revision, metadata });
+      res.status(receipt.status === 'succeeded' ? 200 : 409).json({ ...(isRemoteRequest(req) ? toRemoteDashboardState(snapshot()) : snapshot()), receipt,
+        ...(receipt.status !== 'succeeded' ? { error: { code: 'MULTISTREAM_INCOMPLETE', message: receipt.message } } : {}),
+      });
+      return;
     } catch (error) { next(error); }
   });
   app.post('/api/v1/commands', async (req, res, next) => {
@@ -1979,6 +2086,7 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
       if (desired.twitch && (category !== 'live' || allDay)) throw new Error('La publication Twitch nécessite un événement Live avec des horaires précis.');
       const beforeIds = new Set(local.planning.map(item => item.id));
       const created = await plan(async () => planning().create({
+        ...(res.locals.autonomyId ? { id: String(res.locals.autonomyId) } : {}),
         title,
         description: typeof input.description === 'string' ? input.description.slice(0, 4000) : '',
         startAtUtc,
@@ -2000,7 +2108,7 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
       }
       invalidatePreflight();
       const next = await changed();
-      res.status(201).json(isRemoteRequest(req) ? toRemoteDashboardState(next) : { ...next, createdItemId: created.id });
+      res.status(201).json({ ...(isRemoteRequest(req) ? toRemoteDashboardState(next) : next), createdItemId: created.id });
     } catch (error) { next(error); }
   };
 
@@ -2028,7 +2136,7 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
       if (effectiveTwitch && (category !== 'live' || allDay)) throw new Error('La publication Twitch nécessite un événement Live avec des horaires précis.');
       const kind = category === 'live' ? 'LIVE' : category === 'personal' ? 'PERSONAL' : undefined;
       local.companion.eventHistory[id] = structuredClone(item) as unknown as Record<string, unknown>;
-      await plan(async () => planning().update(id, {
+      await plan(async () => { checkPlanningRevision(req, id); return planning().update(id, {
         title,
         description: typeof req.body.description === 'string' ? req.body.description.slice(0, 4000) : item.description,
         startAtUtc,
@@ -2044,7 +2152,7 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
       }, {
         desiredPublication,
         confirmRecurring: req.body.confirmRecurring === true,
-      }));
+      }); });
       local.companion.eventRevisions[id] = (local.companion.eventRevisions[id] ?? 1) + 1;
       local.companion.serverRevision++;
       invalidatePreflight();
@@ -2204,7 +2312,7 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
         confirmRecurring: req.body?.confirmRecurring === true || req.query.confirmRecurring === 'true',
       };
       const oldRevision = local.companion.eventRevisions[id] ?? 1;
-      await plan(async () => planning().remove(id, destinations));
+      await plan(async () => { checkPlanningRevision(req, id); return planning().remove(id, destinations); });
       local.companion.eventRevisions[id] = oldRevision + 1;
       if (!local.planning.some(value => value.id === id)) local.companion.tombstones[id] = { id, revision: oldRevision + 1, updatedAt: new Date().toISOString() };
       delete local.companion.eventHistory[id]; local.companion.serverRevision++;
@@ -2222,12 +2330,12 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
       const recurrence = structuredClone(series.recurrence); recurrence.exceptions ??= {};
       if (req.method === 'DELETE') recurrence.exceptions[occurrenceKey] = { cancelled: true };
       else {
-        const patch = object(req.body?.patch) ? req.body.patch : {};
+        const patch = mergeOccurrencePatch(recurrence.exceptions[occurrenceKey], object(req.body?.patch) ? req.body.patch : {}).patch;
         const validated = validateRecurrence({ ...recurrence, exceptions: { [occurrenceKey]: { patch } } });
         if (!validated?.exceptions?.[occurrenceKey]) throw new Error('Patch d’occurrence invalide.');
         recurrence.exceptions[occurrenceKey] = validated.exceptions[occurrenceKey];
       }
-      await plan(async () => planning().update(series.id, { title: series.title, description: series.description, startAtUtc: series.startAtUtc, endAtUtc: series.endAtUtc, allDay: series.allDay, category: series.category, kind: series.kind, twitchCategoryId: series.twitchCategoryId, twitchCategoryName: series.twitchCategoryName, recurrence }));
+      await plan(async () => { checkPlanningRevision(req, series.id); return planning().update(series.id, { title: series.title, description: series.description, startAtUtc: series.startAtUtc, endAtUtc: series.endAtUtc, allDay: series.allDay, category: series.category, kind: series.kind, twitchCategoryId: series.twitchCategoryId, twitchCategoryName: series.twitchCategoryName, recurrence }); });
       local.companion.eventRevisions[series.id] = (local.companion.eventRevisions[series.id] ?? 1) + 1; local.companion.serverRevision++;
       res.json(responseState(req, await changed()));
     } catch (error) { next(error); }
@@ -2237,6 +2345,7 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
     try {
       const input = req.body as Partial<DashboardSettings> & { obsPassword?: string; clearObsPassword?: boolean };
       const state = await configure(async () => {
+        if (req.path.startsWith('/api/v2/') && req.body.expectedRevision !== settingsFingerprint()) throw Object.assign(new Error('Réglages modifiés sur un autre appareil. Rechargez avant d’enregistrer.'), { name: 'REVISION_CONFLICT' });
         const newUrl = input.obsUrl !== undefined ? normalizeObsUrl(String(input.obsUrl).trim()) : local.settings.obsUrl;
         const clearPassword = input.clearObsPassword === true;
         const suppliedPassword = typeof input.obsPassword === 'string' && input.obsPassword.length ? input.obsPassword : undefined;
@@ -2296,13 +2405,152 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
           currentObsPassword = newPassword;
         }
         await save();
-        if (obsChanged) await obs.configure(newUrl, newPassword);
+        if (obsChanged && options.obsEnabled !== false) await obs.configure(newUrl, newPassword);
         broadcast();
         return snapshot();
       });
-      res.json(state);
+      res.json(req.path.startsWith('/api/v2/') ? { settings: publicSettings(), revision: settingsFingerprint() } : state);
     } catch (error) { next(error); }
   };
+
+  const settingsFingerprint = () => createHash('sha256').update(JSON.stringify(publicSettings())).digest('hex');
+  const planningFingerprint = (id: string) => createHash('sha256').update(JSON.stringify(local.planning.find(item => item.id === id) ?? null)).digest('hex');
+  const checkPlanningRevision = (req: express.Request, id: string) => {
+    if (req.path.startsWith('/api/v2/') && req.body.expectedRevision !== planningFingerprint(id)) throw Object.assign(new Error('Événement modifié sur un autre appareil. Rechargez avant d’enregistrer.'), { name: 'REVISION_CONFLICT' });
+  };
+  const controlHostState = () => ({ hostname: hostname(), chat: { connected: twitch.state.connected, canSend: twitch.controlCapabilities().chatWrite, channel: twitch.publicIdentity().userName || '' }, replayAutoStartError, monitor: { twitchLogin: twitch.publicIdentity().userName || '' }, state: toRemoteDashboardState(snapshot()), settings: publicSettings(), settingsRevision: settingsFingerprint(), planning: structuredClone(local.planning), occurrences: expandEditableRecurringItems(local.planning, { from: Date.now() - DAY_MS, to: Date.now() + 90 * DAY_MS }), planningRevisions: Object.fromEntries(local.planning.map(item => [item.id, planningFingerprint(item.id)])), platforms: structuredClone(platformLive), local: true });
+  registerControlRoutes({ app, control, youtube, obs, wizebotCommands, timerSource: () => local.settings.timerBrowserSource, settings: settingsUpdate, planningCreate, planningUpdate, planningDelete, recurrence: recurrenceException, isLocal: isLocalRequest, port: () => runtimePort, observe: observePlatforms, state: controlHostState });
+  // Device-owned clients call their loopback runtime, never a paired PC. The
+  // narrow adapter reuses provider credentials and all existing remote guards.
+  app.post('/api/v2/device/providers', async (req, res) => {
+    if (!isLocalRequest(req)) { res.status(403).json({ error: 'Accès local requis.' }); return; }
+    try {
+      const { provider, operation } = req.body;
+      if (!['google', 'twitch'].includes(provider)) throw new Error('Service inconnu.');
+      if (operation === 'test') {
+        if (provider === 'twitch') await initializeTwitch();
+        const connected = provider === 'google' ? google.connected : twitch.state.connected;
+        res.json({ connected, tested: connected, ...(provider === 'twitch' ? {channelId:twitch.publicIdentity().broadcasterId} : {}), capabilities: connected && (provider === 'google' || twitch.controlCapabilities().schedule) ? [provider === 'google' ? 'calendar' : 'schedule'] : [] }); return;
+      }
+      if (provider === 'twitch' && operation === 'categories') { await initializeTwitch(); res.json({ items: await twitch.searchGames(String(req.body.query || '')) }); return; }
+      if (provider === 'google' && operation === 'calendars') { res.json({ items: (await google.calendars()).map(c => ({ ...c, accessRole: c.writable ? 'writer' : 'reader' })) }); return; }
+      if (provider === 'google' && operation === 'events') {
+        const calendars = await google.calendars(), selected = String(req.body.calendarId || 'primary');
+        const calendar = calendars.find(c => c.id === selected || selected === 'primary' && c.primary);
+        if (!calendar) throw new Error('Calendrier introuvable sur cet appareil.');
+        res.json({ calendarId: calendar.id, items: (await google.events(calendar.id)).filter(e => !e.deleted).map(e => ({ ...e, remoteId: e.id, revision: e.etag, category: 'personal' })) }); return;
+      }
+      if (!['read','create','update','delete','recoverCreation'].includes(operation)) throw new Error('Opération inconnue.');
+      const item = sanitizeCalendarItem(req.body.event);
+      if (!item) throw new Error('Événement invalide.');
+      item.providers ??= {};
+      const name = provider as 'twitch' | 'google';
+      item.providers[name] = sanitizeProviderLink({ ...req.body.link, remoteRevision: req.body.link?.revision ?? req.body.link?.remoteRevision });
+      if(name === 'twitch' && item.providers.twitch?.accountId && item.providers.twitch.accountId !== twitch.publicIdentity().broadcasterId) throw Object.assign(new Error('Reconnectez la chaîne Twitch propriétaire de cet événement.'),{mutationNotStarted:true});
+      const adapter = providerAdapters()[name];
+      if (!adapter) throw new Error('Connectez ce compte sur cet appareil.');
+      const id = item.providers[name]?.remoteId;
+      let result: unknown;
+      if (operation === 'create') result = await adapter.create(item);
+      else if (operation === 'recoverCreation') result = await adapter.recoverCreation?.(item);
+      else {
+        if (!id) throw new Error('Identité distante requise.');
+        if (operation === 'read') result = await adapter.read?.(id,item,req.body.options);
+        if (operation === 'update') result = await adapter.update(id,item,item.providers[name]?.remoteRevision);
+        if (operation === 'delete') { await adapter.delete(id,item,item.providers[name]?.remoteRevision); result = {}; }
+      }
+      res.json(result || {});
+    } catch (error) {
+      const failure = error as Error & { code?:string; status?:number; mutationNotStarted?:boolean; remote?:unknown };
+      res.json({ ok:false, code:failure.code || (failure.status ? 'HTTP_'+failure.status : 'PROVIDER'), message:failure.message, mutationNotStarted:failure.mutationNotStarted === true, current:failure.remote });
+    }
+  });
+
+  let autonomySnapshotTime = 0;
+  const autonomyBundle = (req: express.Request) => ({
+    savedAt: autonomySnapshotTime = Math.max(Date.now(), autonomySnapshotTime + 1),
+    data: { ...control.snapshot(), host: { ...controlHostState(), local: isLocalRequest(req) } },
+    sounds: { sounds: local.sounds.map(({ source: _source, ...sound }) => sound), available: obs.state.connected, currentPlayback: null },
+    extras: { templates: structuredClone(local.companion.templates), automations: automation.list(), profile: structuredClone(productProfile), discord: structuredClone(local.discord), google: { calendarId: local.google.targetCalendarId }, wizebot: wizebotCommands.snapshot() },
+  });
+  registerAutonomyRoutes(app, autonomy, { observe: observePlatforms, bundle: autonomyBundle, apply: async (key, value, req) => {
+    const [kind,id] = key.split('/');
+    if (kind === 'planningTransfer') {
+      if (local.planning.some(item => item.id === id)) throw new Error('Un événement de même identité existe déjà. Comparez les versions.');
+      const item = sanitizeCalendarItem(value);
+      if (!item || item.id !== id) throw new Error('Événement à transférer invalide.');
+      // Adopt the complete provider journal without creating/updating anything
+      // remotely. The source atomically relinquishes this item before transfer.
+      await plan(async () => {
+        local.planning.push(item);
+        local.companion.eventRevisions[id] = 1;
+        local.companion.eventHistory[id] = structuredClone(item) as unknown as Record<string,unknown>;
+        local.companion.serverRevision++;
+        await save();
+      });
+    } else if (kind === 'planning') {
+      const current = local.planning.find(item => item.id === id);
+      const handler = value === null ? planningDelete : current ? planningUpdate : planningCreate;
+      await invokeManagement(handler, req, '/api/v2/planning/' + id, { ...value, recurrence: value?.recurrence ?? null, expectedRevision: planningFingerprint(id), confirmRecurring: true }, value === null ? 'DELETE' : current ? 'PUT' : 'POST', id);
+    } else if (kind === 'settings') {
+      await invokeManagement(settingsUpdate, req, '/api/v2/settings', { ...value, expectedRevision: settingsFingerprint() }, 'PUT');
+    } else if (['action','output','youtube','preferences'].includes(kind)) {
+      const configuration = control.snapshot().configuration;
+      if (kind === 'action') {
+        const index = configuration.actions.findIndex(action => action.id === id);
+        if (value === null) configuration.actions = configuration.actions.filter(action => action.id !== id);
+        else { if (value.id !== id) throw new Error('Identifiant de bouton invalide.'); if (index >= 0) configuration.actions[index] = value; else configuration.actions.push(value); }
+      } else if (kind === 'output') configuration.outputs[id as 'twitch' | 'youtube'] = value;
+      else if (kind === 'youtube') configuration.youtube = value;
+      else { if (typeof value.replayAutoStart !== 'boolean' || Object.keys(value).length !== 1) throw new Error('Préférences invalides.'); configuration.replayAutoStart = value.replayAutoStart; }
+      await control.configure(configuration, configuration.revision);
+    } else if (kind === 'template') {
+      await mutateCompanionCollection('templates', value === null ? 'delete' : 'upsert', id, value ?? {});
+    } else if (kind === 'profile') {
+      const next = validateProductProfile(value); await profileStore.save(next); productProfile = next;
+    } else if (kind === 'automation') {
+      if (value === null) await automation.remove(id);
+      else if (automation.list().some(item => item.id === id)) await automation.update(id, automationInput(value));
+      else await automation.create({ ...automationInput(value), id });
+    } else if (kind === 'sound') {
+      const current = local.sounds.find(sound => sound.id === id);
+      if (!current) throw new Error('Importez le fichier audio sur la régie avant de le configurer.');
+      // Removing a catalogue entry must never stop a sound on reconnection.
+      const next = value === null ? local.sounds.filter(sound => sound.id !== id) : local.sounds.map(sound => sound.id === id ? validateSound({ ...sound, ...pick(value, fields.sound) }) : sound);
+      await store.write({ ...local, sounds: next }); local.sounds = next; soundboard.replace(next);
+      // Keep the original audio file for recovery; explicit library cleanup is separate.
+    } else if (kind === 'discord') {
+      const { guildId, channelId, defaultMessage } = value;
+      if ((guildId && !/^\d{1,24}$/.test(guildId)) || (channelId && !/^\d{1,24}$/.test(channelId)) || typeof defaultMessage !== 'string' || defaultMessage.length > 2000) throw new Error('Configuration Discord invalide.');
+      const next = { guildId: guildId || null, channelId: channelId || null, defaultMessage };
+      await store.write({ ...local, discord: next }); local.discord = next;
+    } else if (kind === 'google') {
+      if (value.calendarId !== null && (typeof value.calendarId !== 'string' || value.calendarId.length > 500)) throw new Error('Calendrier invalide.');
+      const next = { ...local.google, targetCalendarId: value.calendarId }; await store.write({ ...local, google: next }); local.google = next;
+    } else throw new Error('Ressource non synchronisable.');
+    broadcast();
+  } });
+  app.post('/api/v2/sounds/upload', express.raw({ type: 'application/octet-stream', limit: '100mb' }), async (req, res, next) => {
+    let destination: string | undefined;
+    try {
+      const extension = String(req.query.extension ?? '').toLowerCase();
+      if (!['wav','mp3','ogg','aac','m4a','flac'].includes(extension) || !Buffer.isBuffer(req.body) || !req.body.length) throw new Error('Fichier audio invalide.');
+      const suppliedId = req.query.id === undefined ? undefined : String(req.query.id);
+      if (suppliedId && !/^[a-zA-Z0-9_-]{8,100}$/.test(suppliedId)) throw new Error('Identité audio invalide.');
+      const existing = suppliedId ? local.sounds.find(sound => sound.id === suppliedId) : undefined;
+      if (existing) {
+        const previous = await readFile(existing.source);
+        if (createHash('sha256').update(previous).digest('hex') !== createHash('sha256').update(req.body).digest('hex')) throw new Error('Un fichier différent porte déjà cette identité.');
+        res.json({ id: existing.id, name: existing.name }); return;
+      }
+      const sound = validateSound({ id: suppliedId || randomUUID(), name: String(req.query.name ?? '').trim(), source: path.join(soundLibraryDir, `${randomUUID()}.${extension}`), outputId: 'obs', volume: 1, enabled: true, favorite: false, cooldownMs: 0, category: 'Général', monitoringMode: 'stream' });
+      await mkdir(soundLibraryDir, { recursive: true }); destination = sound.source;
+      await writeFile(destination, req.body, { flag: 'wx', mode: 0o600 });
+      const sounds = [...local.sounds, sound];
+      await store.write({ ...local, sounds }); local.sounds = sounds; soundboard.replace(sounds); broadcast();
+      res.status(201).json({ id: sound.id, name: sound.name });
+    } catch (error) { if (destination) await unlink(destination).catch(() => {}); next(error); }
+  });
 
   for (const prefix of ['/api', '/api/v1']) {
     app.post(`${prefix}/planning/bulk-delete/preview`, planningBulkPreview);
@@ -2621,6 +2869,7 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
 
   const obsTest: express.RequestHandler = async (req, res, next) => {
     try {
+      if (options.obsEnabled === false) throw new Error('OBS est désactivé dans le rôle pilotage. Choisissez votre régie de stream.');
       const remote = isRemoteRequest(req);
       const url = remote ? local.settings.obsUrl : req.body.obsUrl !== undefined ? normalizeObsUrl(String(req.body.obsUrl).trim()) : local.settings.obsUrl;
       const password = remote ? currentObsPassword : Object.prototype.hasOwnProperty.call(req.body, 'obsPassword') ? String(req.body.obsPassword ?? '') : currentObsPassword;
@@ -2655,9 +2904,9 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
     const name = error instanceof Error ? error.name : '';
     const status = name === 'NOT_FOUND' ? 404
       : ['REMOTE_SCOPE_DENIED', 'TWITCH_NOT_AUTHORIZED'].includes(name) ? 403
-        : ['COMMAND_ALREADY_RECEIVED', 'CHECKLIST_INCOMPLETE', 'CONFIRM_REQUIRED', 'TWITCH_DISCONNECTED', 'NOT_EDITABLE'].includes(name) ? 409
+        : ['REVISION_CONFLICT', 'COMMAND_ALREADY_RECEIVED', 'CHECKLIST_INCOMPLETE', 'CONFIRM_REQUIRED', 'TWITCH_DISCONNECTED', 'NOT_EDITABLE'].includes(name) ? 409
           : 400;
-    const code = name === 'COMMAND_ALREADY_RECEIVED' ? name : name === 'CHECKLIST_INCOMPLETE' ? 'CHECKLIST_INCOMPLETE'
+    const code = ['REVISION_CONFLICT', 'COMMAND_ALREADY_RECEIVED'].includes(name) ? name : name === 'CHECKLIST_INCOMPLETE' ? 'CHECKLIST_INCOMPLETE'
       : name === 'CONFIRM_REQUIRED' ? 'CONFIRM_REQUIRED'
         : name === 'TWITCH_DISCONNECTED' ? 'TWITCH_DISCONNECTED'
           : name === 'NOT_FOUND' ? 'NOT_FOUND'
@@ -2690,7 +2939,14 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
   const address = server.address();
   const actualPort = typeof address === 'object' && address ? address.port : requestedPort;
   runtimePort = actualPort;
+  const autoStartReplay = () => {
+    if (!obs.state.connected || !obs.state.streaming) { replayAutoStartAttempted = false; return; }
+    if (replayAutoStartAttempted || !control.snapshot().configuration.replayAutoStart) return;
+    replayAutoStartAttempted = true;
+    void obs.setReplayBuffer(true).then(() => { replayAutoStartError = ''; }, error => { replayAutoStartError = error instanceof Error ? error.message : 'Tampon indisponible.'; }).finally(broadcast);
+  };
   const unsubscribeObs = obs.onStateChanged(() => {
+    autoStartReplay();
     const obsPayload = { connected: obs.state.connected, streaming: obs.state.streaming, streamingKnown: obs.state.streamingKnown !== false, scene: obs.state.scene };
     eventCore.publish({ type: 'obs.state.changed', source: 'obs', payload: obsPayload });
     if (!obs.state.connected) eventCore.publish({ type: 'obs.disconnected', source: 'obs', payload: obsPayload });
@@ -2710,6 +2966,7 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
     }
     broadcast();
   });
+  autoStartReplay();
   let maintenanceFlight: Promise<void> | undefined;
   const maintainProjections = () => maintenanceFlight ??= (async () => {
     // Yield the global planning queue between series so an explicit edit/retry
@@ -2755,7 +3012,7 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
     })().catch(logError).finally(finishProviderStartup);
   }, 0);
   providerStartup.unref();
-  void obs.configure(local.settings.obsUrl, currentObsPassword).then(broadcast).catch(error => { logError(error); broadcast(); });
+  if (options.obsEnabled !== false) void obs.configure(local.settings.obsUrl, currentObsPassword).then(broadcast).catch(error => { logError(error); broadcast(); });
   void Promise.resolve(logger.info(`StreamDashboard ready on ${host}:${actualPort}`)).catch(() => undefined);
 
   let stopPromise: Promise<void> | undefined;
@@ -2779,6 +3036,8 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
     for (const ws of sockets.clients) ws.terminate();
     sockets.close();
     await new Promise<void>((resolve, reject) => server.close(error => error ? reject(error) : resolve()));
+    await wizebotCommands.stop();
+    await control.stop();
     await commands.stop();
     await planningQueue;
     if (timerExpiry) clearTimeout(timerExpiry);
@@ -2789,6 +3048,7 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
     twitch.close();
     twitchEventSub.stop();
     await streamlabs.disconnect();
+    await streamlabsFeed.stop();
     await obs.close();
     await providerStartupWork;
     await save();

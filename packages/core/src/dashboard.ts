@@ -28,6 +28,8 @@ export function applyDashboardCommand(state: DashboardDomainState, command: Dash
   switch (command.type) {
     case 'mode.set': state.mode = command.mode; return true;
     case 'timer.start': {
+      // A second controller starting an already running timer must not reset its deadline.
+      if (command.seconds === undefined && state.timer.running && remaining() > 0) return true;
       if (command.seconds !== undefined) {
         const seconds = boundedSeconds(command.seconds);
         state.timer.duration = seconds;

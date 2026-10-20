@@ -1,11 +1,11 @@
 import { createHash, randomBytes, randomUUID, timingSafeEqual } from 'node:crypto';
 import type { RemoteDevice } from '../../../packages/contracts/src/index.js';
 
-interface Pairing { digest: Buffer; expiresAt: number; used: boolean }
+interface Pairing { digest: Buffer; expiresAt: number; used: boolean; management?: boolean }
 interface WsTicket { deviceId: string; expiresAt: number; used: boolean }
-interface DeviceRecord extends RemoteDevice { credentialHash: Buffer }
-export interface PersistedPairing { id: string; digest: string; expiresAt: number }
-export interface PersistedRemoteDevice extends RemoteDevice { credentialHash: string }
+interface DeviceRecord extends RemoteDevice { credentialHash: Buffer; management?: boolean }
+export interface PersistedPairing { id: string; digest: string; expiresAt: number; management?: boolean }
+export interface PersistedRemoteDevice extends RemoteDevice { credentialHash: string; management?: boolean }
 
 export class RemoteAuth {
   private pairing = new Map<string, Pairing>();
@@ -17,7 +17,7 @@ export class RemoteAuth {
     for (const value of pending) {
       if (!value || typeof value.digest !== 'string') continue;
       const digest = Buffer.from(value.digest, 'base64');
-      if (digest.length === 32 && value.expiresAt > this.now()) this.pairing.set(value.id, { digest, expiresAt: value.expiresAt, used: false });
+      if (digest.length === 32 && value.expiresAt > this.now()) this.pairing.set(value.id, { digest, expiresAt: value.expiresAt, used: false, management: value.management === true });
     }
     for (const device of initial) {
       const credentialHash = Buffer.from(device.credentialHash, 'base64');
@@ -25,12 +25,12 @@ export class RemoteAuth {
     }
   }
 
-  createPairing(ttlMs = 5 * 60_000) {
+  createPairing(ttlMs = 5 * 60_000, management = false) {
     this.cleanup();
     const code = randomBytes(6).toString('base64url').toUpperCase();
     const id = randomUUID();
     const expiresAt = this.now() + ttlMs;
-    this.pairing.set(id, { digest: this.hash(code), expiresAt, used: false });
+    this.pairing.set(id, { digest: this.hash(code), expiresAt, used: false, management });
     return { id, code, expiresAt: new Date(expiresAt).toISOString() };
   }
 
@@ -52,8 +52,9 @@ export class RemoteAuth {
       createdAt: at,
       lastSeenAt: at,
       credentialHash: this.hash(credential),
+      management: value.management === true,
     });
-    return { deviceId, credential };
+    return { deviceId, credential, management: value.management === true };
   }
 
   authenticate(credential: string) {
@@ -67,6 +68,8 @@ export class RemoteAuth {
     }
     return null;
   }
+
+  canManage(id: string) { const device = this.devices.get(id); return Boolean(device && !device.revokedAt && device.management); }
 
   createWsTicket(credential: string, ttlMs = 15_000) {
     this.cleanup();
@@ -102,7 +105,7 @@ export class RemoteAuth {
 
   serializePairings(): PersistedPairing[] {
     this.cleanup();
-    return [...this.pairing].map(([id, value]) => ({ id, digest: value.digest.toString('base64'), expiresAt: value.expiresAt }));
+    return [...this.pairing].map(([id, value]) => ({ id, digest: value.digest.toString('base64'), expiresAt: value.expiresAt, management: value.management === true }));
   }
 
   serialize(): PersistedRemoteDevice[] {

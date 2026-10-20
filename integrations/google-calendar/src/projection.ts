@@ -1,3 +1,4 @@
+import { randomUuid } from '../../../packages/core/src/uuid.js';
 import { createHash } from 'node:crypto';
 import type { CalendarItem, RecurrenceProjectionIdentity } from '../../../packages/contracts/src/index.js';
 import { expandRecurringItems, migrateRecurrence } from '../../../packages/core/src/recurrence.js';
@@ -106,7 +107,7 @@ export async function resolveGoogleOccurrenceConflict(item: CalendarItem, key: s
           desiredPublication: { local: true, twitch: false, google: true }, ownership: 'LOCAL', editable: true,
           providers: { google: { status: 'synced', remoteId: entry.remoteId, calendarId: entry.calendarId, remoteRevision: latest.revision } } };
         restore(restored);
-        (link!.projectionRetirements ??= {})[key] = { calendarId: entry.calendarId, creationId: entry.creationId ?? crypto.randomUUID(), retained: true };
+        (link!.projectionRetirements ??= {})[key] = { calendarId: entry.calendarId, creationId: entry.creationId ?? randomUuid(), retained: true };
         delete link!.projections![key];
       } else {
         // Arm only this DELETE with its newly read precondition. Persist before

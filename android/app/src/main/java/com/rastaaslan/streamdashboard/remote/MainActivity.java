@@ -90,7 +90,7 @@ public class MainActivity extends Activity {
     setContentView(webView);
     ensurePingNotifications();
     captureDeepLink(getIntent());
-    webView.loadUrl(ORIGIN + "/mobile/index.html");
+    webView.loadUrl(ORIGIN + "/mobile/control/index.html");
   }
 
   @Override protected void onNewIntent(Intent intent) {
@@ -149,6 +149,18 @@ public class MainActivity extends Activity {
     } else if (route == DeepLinkRouter.Route.OAUTH && providerBridge != null) {
       providerBridge.acceptOAuthCallback(data);
     }
+  }
+
+  @Override protected void onDestroy() {
+    pageReady=false;
+    if(providerBridge!=null)providerBridge.close();
+    if(webView!=null)webView.destroy();
+    super.onDestroy();
+  }
+
+  void dispatchProviderResult(String id,String result) {
+    if (BuildConfig.PREVIEW_MODE || !pageReady) return;
+    webView.evaluateJavascript("window.dispatchEvent(new CustomEvent('provider-result',{detail:{id:"+org.json.JSONObject.quote(id)+",result:"+org.json.JSONObject.quote(result)+"}}))",null);
   }
 
   void dispatchProviderAuth(String provider, boolean connected) {
