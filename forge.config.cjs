@@ -6,6 +6,8 @@ module.exports = {
   packagerConfig: {
     name: 'StreamDashboard',
     electronVersion,
+    // Windows resources require numeric components; Electron keeps package.json's full version.
+    appVersion: require('./package.json').version.split('-')[0],
     executableName: 'StreamDashboard',
     appBundleId: 'com.rastaaslan.streamdashboard',
     icon: './resources/streamdashboard',
