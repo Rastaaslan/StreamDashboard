@@ -5,6 +5,7 @@ import android.app.PendingIntent;
 import android.content.Intent;
 import com.google.android.gms.auth.api.identity.*;
 import com.google.android.gms.common.api.Scope;
+import com.google.android.gms.common.api.ApiException;
 import com.google.android.gms.tasks.Tasks;
 import java.util.*;
 import java.util.concurrent.TimeUnit;
@@ -22,17 +23,31 @@ final class GoogleAuthorizationAdapter implements GoogleAuthorizationFlow.Adapte
     return new GoogleAuthorizationFlow.Grant(result.getAccessToken(), result.getGrantedScopes(), result.hasResolution() ? result.getPendingIntent() : null);
   }
   public void authorize(List<String> scopes, GoogleAuthorizationFlow.Callback callback) {
-    activity.runOnUiThread(() -> Identity.getAuthorizationClient(activity).authorize(request(scopes))
-      .addOnSuccessListener(result -> callback.success(grant(result)))
-      .addOnFailureListener(error -> callback.failure()));
+    activity.runOnUiThread(() -> {
+      try {
+        Identity.getAuthorizationClient(activity).authorize(request(scopes))
+          .addOnSuccessListener(result -> callback.success(grant(result)))
+          .addOnFailureListener(error -> callback.failure(diagnostic(error)));
+      } catch (Exception error) { callback.failure(diagnostic(error)); }
+    });
   }
   public void launch(Object resolution, int requestCode) throws Exception {
     activity.startIntentSenderForResult(((PendingIntent)resolution).getIntentSender(), requestCode, null, 0, 0, 0);
   }
   public GoogleAuthorizationFlow.Grant result(Object data) throws Exception {
-    return grant(Identity.getAuthorizationClient(activity).getAuthorizationResultFromIntent((Intent)data));
+    try { return grant(Identity.getAuthorizationClient(activity).getAuthorizationResultFromIntent((Intent)data)); }
+    catch (Exception error) { throw diagnostic(error); }
   }
   public GoogleAuthorizationFlow.Grant refresh(List<String> scopes) throws Exception {
-    return grant(Tasks.await(Identity.getAuthorizationClient(activity).authorize(request(scopes)), 30, TimeUnit.SECONDS));
+    try { return grant(Tasks.await(Identity.getAuthorizationClient(activity).authorize(request(scopes)), 30, TimeUnit.SECONDS)); }
+    catch (Exception error) { throw diagnostic(error); }
+  }
+  static GoogleAuthorizationFlow.AuthException diagnostic(Exception error) {
+    Throwable cause = error;
+    while (cause instanceof java.util.concurrent.ExecutionException && cause.getCause() != null) cause = cause.getCause();
+    // Only a public status code crosses the bridge, never SDK messages or tokens.
+    return new GoogleAuthorizationFlow.AuthException(cause instanceof ApiException
+      ? "GOOGLE_API_" + ((ApiException)cause).getStatusCode()
+      : cause instanceof java.util.concurrent.TimeoutException ? "TIMEOUT" : "AUTH");
   }
 }

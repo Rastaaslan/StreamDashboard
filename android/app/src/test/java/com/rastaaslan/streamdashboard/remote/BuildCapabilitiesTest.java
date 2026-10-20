@@ -11,7 +11,8 @@ public class BuildCapabilitiesTest {
     assertEquals("", BuildCapabilities.code(false, "public-id"));
   }
   @Test public void diagnosticNamesGoogleAdapterWithoutExposingIds() {
-    String diagnostic = BuildCapabilities.json(false, "google-id", "twitch-id");
+    String diagnostic = BuildCapabilities.json(false, "", "twitch-id");
+    assertFalse(diagnostic.contains("NOT_CONFIGURED"));
     assertTrue(diagnostic.contains("google-authorization-client"));
     assertFalse(diagnostic.contains("google-id"));
     assertFalse(diagnostic.contains("streamdashboard://"));

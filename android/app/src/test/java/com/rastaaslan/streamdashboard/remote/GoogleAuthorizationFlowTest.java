@@ -53,13 +53,13 @@ public class GoogleAuthorizationFlowTest {
     assertSame(data, adapter.receivedData); assertTrue(flow.connected()); assertEquals(Collections.singletonList("true:"), events);
     flow.acceptGoogleResult(adapter.requestCode, true, data); assertEquals(1, events.size());
   }
-  @Test public void cancellationClearsSessionAndReportsFailure() {
+  @Test public void cancellationRetainsExistingSessionAndReportsCancellation() {
     connected(); resolve();
     flow.acceptGoogleResult(adapter.requestCode, false, null);
-    assertFalse(flow.connected()); assertEquals("false:AUTH", events.get(events.size()-1));
+    assertTrue(flow.connected()); assertEquals("true:CANCELED", events.get(events.size()-1));
   }
   @Test public void sdkFailureAndInvalidResultNeverConnect() {
-    flow.authorizeGoogle(); adapter.callback.failure(); assertEquals("false:AUTH", events.get(0));
+    flow.authorizeGoogle(); adapter.callback.failure(new Exception("private SDK detail")); assertEquals("false:AUTH", events.get(0));
     resolve(); adapter.brokenResult = true;
     flow.acceptGoogleResult(adapter.requestCode, true, new Object());
     assertFalse(flow.connected()); assertEquals("false:AUTH", events.get(1));
@@ -116,6 +116,41 @@ public class GoogleAuthorizationFlowTest {
     flow.authorizeScopes(Collections.singletonList(youtube));
     assertTrue(adapter.requested.containsAll(CALENDAR)); assertTrue(adapter.requested.contains(youtube));
     adapter.callback.success(token("missing-youtube"));
-    assertFalse(flow.connected()); assertEquals("false:SCOPES", events.get(events.size()-1));
+    assertTrue(flow.connected()); assertEquals("true:SCOPES", events.get(events.size()-1));
+  }
+
+  @Test public void sdkStatusIsRetainedWithoutTheSdkMessage() {
+    flow.authorizeGoogle();
+    adapter.callback.failure(new GoogleAuthorizationFlow.AuthException("GOOGLE_API_10"));
+    assertEquals(Collections.singletonList("false:GOOGLE_API_10"), events);
+    assertFalse(flow.authorizing());
+  }
+  @Test public void canceledResultStillReportsGoogleErrorWhenDataExists() {
+    resolve();
+    GoogleAuthorizationFlow replacement = new GoogleAuthorizationFlow(new FakeAdapter() {
+      public GoogleAuthorizationFlow.Grant result(Object data) throws Exception {
+        throw new GoogleAuthorizationFlow.AuthException("GOOGLE_API_10");
+      }
+      public void authorize(List<String> scopes, GoogleAuthorizationFlow.Callback callback) {
+        callback.success(new GoogleAuthorizationFlow.Grant(null, null, new Object()));
+      }
+    }, (connected, code) -> events.add(connected + ":" + code));
+    replacement.authorizeGoogle(); replacement.acceptGoogleResult(GoogleAuthorizationFlow.REQUEST_CODE, false, new Object());
+    assertEquals(Collections.singletonList("false:GOOGLE_API_10"), events);
+  }
+  @Test public void overlappingRequestsCannotReplacePendingConsent() {
+    resolve();
+    assertFalse(flow.authorizeScopes(Collections.singletonList("youtube")));
+    assertEquals(1, adapter.launches);
+    flow.acceptGoogleResult(adapter.requestCode, true, new Object());
+    assertTrue(flow.connected()); assertFalse(flow.authorizing());
+  }
+  @Test public void failedYoutubeRequestDoesNotRequireYoutubeForCalendarRefresh() throws Exception {
+    connected();
+    flow.authorizeScopes(Collections.singletonList("https://www.googleapis.com/auth/youtube.readonly"));
+    adapter.callback.failure(new GoogleAuthorizationFlow.AuthException("GOOGLE_API_7"));
+    assertTrue(flow.connected()); assertEquals(CALENDAR, flow.refresh().scopes);
+    assertEquals(CALENDAR, adapter.refreshScopes);
+    assertEquals("true:GOOGLE_API_7", events.get(events.size()-1));
   }
 }

@@ -12,10 +12,10 @@ final class GoogleAuthorizationFlow {
     final List<String> scopes;
     final Object resolution;
     Grant(String token, List<String> scopes, Object resolution) {
-      this.token = token; this.scopes = new ArrayList<>(scopes); this.resolution = resolution;
+      this.token = token; this.scopes = scopes == null ? Collections.emptyList() : new ArrayList<>(scopes); this.resolution = resolution;
     }
   }
-  interface Callback { void success(Grant grant); void failure(); }
+  interface Callback { void success(Grant grant); void failure(Exception error); }
   interface Adapter {
     void authorize(List<String> scopes, Callback callback);
     void launch(Object resolution, int requestCode) throws Exception;
@@ -33,9 +33,11 @@ final class GoogleAuthorizationFlow {
   private List<String> requested = SCOPES;
   private int generation;
   private boolean pendingResolution;
+  private boolean authorizing;
   GoogleAuthorizationFlow(Adapter adapter, Observer observer) { this.adapter = adapter; this.observer = observer; }
   synchronized boolean connected() { return session != null; }
-  synchronized void logout() { generation++; pendingResolution = false; session = null; }
+  synchronized boolean authorizing() { return authorizing; }
+  synchronized void logout() { generation++; pendingResolution = false; authorizing = false; session = null; }
   synchronized List<String> scopes() { return session == null ? Collections.emptyList() : new ArrayList<>(session.scopes); }
   synchronized void restore(List<String> scopes) throws Exception {
     if (generation != 0 || session != null || pendingResolution) return;
@@ -43,7 +45,9 @@ final class GoogleAuthorizationFlow {
     session = validate(adapter.refresh(requested)); // never launches account UI on restart
   }
   synchronized void authorizeGoogle() { authorizeScopes(SCOPES); }
-  synchronized void authorizeScopes(List<String> scopes) {
+  synchronized boolean authorizeScopes(List<String> scopes) {
+    if (authorizing) return false;
+    authorizing = true;
     LinkedHashSet<String> union = new LinkedHashSet<>(scopes);
     if (session != null) union.addAll(session.scopes);
     requested = new ArrayList<>(union);
@@ -58,36 +62,48 @@ final class GoogleAuthorizationFlow {
             else complete(grant);
           } catch (Exception error) { fail(error); }
         } }
-        public void failure() { synchronized (GoogleAuthorizationFlow.this) { if (attempt == generation) fail(new AuthException("AUTH")); } }
+        public void failure(Exception error) { synchronized (GoogleAuthorizationFlow.this) { if (attempt == generation) fail(error); } }
       });
     } catch (Exception error) { fail(error); }
+    return true;
   }
   synchronized void acceptGoogleResult(int requestCode, boolean accepted, Object data) {
     if (requestCode != REQUEST_CODE || !pendingResolution) return;
     pendingResolution = false;
     try {
-      if (!accepted || data == null) throw new AuthException("AUTH");
-      complete(adapter.result(data));
+      if (data == null) throw new AuthException(accepted ? "AUTH" : "CANCELED");
+      Grant grant = adapter.result(data); // Preserve a Google SDK status even on RESULT_CANCELED.
+      if (!accepted) throw new AuthException("CANCELED");
+      complete(grant);
     } catch (Exception error) { fail(error); }
   }
   private Grant validate(Grant grant) throws AuthException {
+    return validate(grant, requested);
+  }
+  private Grant validate(Grant grant, List<String> scopes) throws AuthException {
     if (grant.resolution != null || grant.token == null || grant.token.isEmpty()) throw new AuthException("REAUTH_REQUIRED");
-    if (!grant.scopes.containsAll(requested)) throw new AuthException("SCOPES");
+    if (!grant.scopes.containsAll(scopes)) throw new AuthException("SCOPES");
     return grant;
   }
   private void complete(Grant grant) throws AuthException {
-    session = validate(grant); observer.completed(true, "");
+    session = validate(grant); authorizing = false; observer.completed(true, "");
   }
   private void fail(Exception error) {
-    session = null; pendingResolution = false;
-    observer.completed(false, error instanceof AuthException ? ((AuthException)error).code : "AUTH");
+    // A failed request for additional access must not revoke a working connection.
+    pendingResolution = false; authorizing = false;
+    requested = session == null ? SCOPES : new ArrayList<>(session.scopes);
+    observer.completed(session != null, error instanceof AuthException ? ((AuthException)error).code : "AUTH");
   }
   synchronized Grant refresh() throws Exception {
     if (session == null) throw new AuthException("REAUTH_REQUIRED");
     try {
       // Refresh never launches interactive UI from a background Calendar operation.
-      session = validate(adapter.refresh(requested));
+      List<String> granted = new ArrayList<>(session.scopes);
+      session = validate(adapter.refresh(granted), granted);
       return session;
-    } catch (AuthException error) { session = null; throw error; }
+    } catch (AuthException error) {
+      if (error.code.equals("REAUTH_REQUIRED") || error.code.equals("SCOPES")) session = null;
+      throw error;
+    }
   }
 }

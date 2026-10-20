@@ -24,6 +24,7 @@ public final class ProviderBridge {
   private final GoogleAuthorizationFlow googleAuth;
   private final Activity activity;
   private final SecureCredentialStore credentials;
+  private volatile String googleAuthorizationProvider = "google";
 
   ProviderBridge(Activity activity) {
     this.activity = activity; credentials = new SecureCredentialStore(activity);
@@ -35,7 +36,9 @@ public final class ProviderBridge {
     new Thread(() -> { try {
       String scopes = credentials.get("google_grants");
       if (!scopes.isEmpty()) googleAuth.restore(Arrays.asList(scopes.split(" ")));
-    } catch (Exception ignored) { } }, "provider-restore").start();
+    } catch (Exception error) {
+      notifyAuth("google", false, error instanceof GoogleAuthorizationFlow.AuthException ? ((GoogleAuthorizationFlow.AuthException)error).code : "AUTH");
+    } }, "provider-restore").start();
   }
   private final java.util.concurrent.ExecutorService operations = new java.util.concurrent.ThreadPoolExecutor(1,1,0L,java.util.concurrent.TimeUnit.MILLISECONDS,new java.util.concurrent.ArrayBlockingQueue<Runnable>(32));
   void close(){operations.shutdown();}
@@ -229,8 +232,8 @@ public final class ProviderBridge {
   void acceptOAuthCallback(Uri uri) { }
 
   private void persistGoogleGrants() { try { credentials.put("google_grants", String.join(" ", googleAuth.scopes())); } catch (Exception ignored) { } }
-  private void notifyAuth(String provider, boolean connected) { notifyAuth(provider, connected, "AUTH"); }
-  private void notifyAuth(String provider, boolean connected, String code) { diagnostics.remove(provider); if (!connected) { try { diagnostics.put(provider, ok().put("code", code)); } catch (JSONException ignored) { } } activity.runOnUiThread(() -> ((MainActivity)activity).dispatchProviderAuth(provider, connected)); }
+  private void notifyAuth(String provider, boolean connected) { notifyAuth(provider, connected, connected ? "" : "AUTH"); }
+  private void notifyAuth(String provider, boolean connected, String code) { diagnostics.remove(provider); if (!code.isEmpty()) { try { diagnostics.put(provider, ok().put("code", code).put("authorizationError", true)); } catch (JSONException ignored) { } } activity.runOnUiThread(() -> ((MainActivity)activity).dispatchProviderAuth(provider, connected)); }
   private String status(String provider, String clientId) {
     try {
       boolean configured = provider.equals("google") || !clientId.isEmpty(), connected = provider.equals("google") ? googleAuth.connected() : !credentials.get(provider).isEmpty();
@@ -253,7 +256,7 @@ public final class ProviderBridge {
       }
       String lastSync = credentials.get(provider + "_last_sync");
       result.put("lastSync", lastSync.isEmpty() ? 0 : Long.parseLong(lastSync));
-      if (provider.equals("google")) result.put("youtubeAuthorized", googleAuth.scopes().contains("https://www.googleapis.com/auth/youtube.readonly")).put("calendarAuthorized", googleAuth.scopes().containsAll(GoogleAuthorizationFlow.SCOPES));
+      if (provider.equals("google")) result.put("youtubeAuthorized", googleAuth.scopes().contains("https://www.googleapis.com/auth/youtube.readonly")).put("calendarAuthorized", googleAuth.scopes().containsAll(GoogleAuthorizationFlow.SCOPES)).put("authorizing", googleAuth.authorizing()).put("authorizationProvider", googleAuthorizationProvider);
       return result.put("ok", true).put("configured", configured).put("connected", connected).put("capabilities", capabilities).toString();
     } catch (Exception e) { return failure("INTERNAL", "État indisponible."); }
   }
@@ -301,12 +304,16 @@ public final class ProviderBridge {
     diagnostics.put(provider, result);
     return status(provider, clientId);
   }
-  private String authorizeGoogle(boolean youtube) {
+  private synchronized String authorizeGoogle(boolean youtube) {
     if (BuildConfig.PREVIEW_MODE) return failure("NOT_CONFIGURED", "Autorisation désactivée dans la prévisualisation.");
     if (GoogleApiAvailability.getInstance().isGooglePlayServicesAvailable(activity) != ConnectionResult.SUCCESS)
       return failure("GOOGLE_PLAY_SERVICES", "Services Google Play indisponibles.");
+    if (googleAuth.authorizing()) return failure("BUSY", "Une autorisation Google est déjà en cours. Terminez-la avant de recommencer.");
+    googleAuthorizationProvider = youtube ? "youtube" : "google";
+    diagnostics.remove("google");
     googleAuth.authorizeScopes(youtube ? Collections.singletonList("https://www.googleapis.com/auth/youtube.readonly") : GoogleAuthorizationFlow.SCOPES);
-    return ok().toString();
+    try { return ok().put("nativeAuthorization", true).toString(); }
+    catch (JSONException error) { return failure("INTERNAL", "État indisponible."); }
   }
   void acceptGoogleResult(int requestCode, int resultCode, Intent data) {
     googleAuth.acceptGoogleResult(requestCode, resultCode == Activity.RESULT_OK, data);
