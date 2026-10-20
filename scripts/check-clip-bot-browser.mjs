@@ -83,6 +83,7 @@ try {
   await phone.addInitScript(value => localStorage.setItem('streamdashboard.device', value), paired.credential);
   await desktop.goto(host.url + '/mobile/control/');
   await phone.goto(remote + '/mobile/control/');
+  for(const page of [desktop,phone]){await expect(page.locator('#device-setup-form')).toBeVisible();await page.locator('#device-setup-form button').click();}
   await expect(desktop.locator('[data-action="micro"]')).toBeEnabled();
   await expect(phone.locator('[data-action="micro"]')).toBeEnabled();
   await desktop.keyboard.press('Control+Alt+Shift+F1');

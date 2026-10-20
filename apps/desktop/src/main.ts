@@ -1,6 +1,6 @@
 import { app, BrowserWindow, dialog, ipcMain, shell, type OpenDialogOptions } from 'electron';
 import path from 'node:path';
-import { copyFile, mkdir, rename, stat, unlink } from 'node:fs/promises';
+import { copyFile, mkdir, readFile, writeFile, rename, stat, unlink } from 'node:fs/promises';
 import { randomUUID } from 'node:crypto';
 import { createDashboardWindow, isAllowedExternalAuthUrl, isAllowedTwitchUrl } from './window.js';
 import { startDesktopRuntime, type DesktopRuntime } from './lifecycle.js';
@@ -32,6 +32,8 @@ let runtimePromise: Promise<DesktopRuntime> | undefined;
 let cleanupPromise: Promise<void> | undefined;
 const startup = new AbortController();
 let failing = false;
+let controllerRole = false;
+const roleFile = path.join(app.getPath('userData'), 'device-role.json');
 
 function present() {
   if (!primary || quitting) return;
@@ -82,7 +84,11 @@ function boot(): Promise<void> {
       log('Electron ready; creating visible startup window');
       const preview = process.argv.includes('--ui-preview=desktop-v2');
       const legacy = process.argv.includes('--ui-legacy=desktop-v1');
-      const client = process.argv.includes('--role=client');
+      let savedRole = 'stream';
+      try { savedRole = JSON.parse(await readFile(roleFile, 'utf8')).role; }
+      catch (error) { if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw new Error('Choix de rôle illisible. Consultez device-role.json.'); }
+      const client = process.argv.includes('--role=client') || (!process.argv.includes('--role=host') && savedRole === 'control');
+      controllerRole = client;
       const route = legacy ? '/' : preview ? '/preview/' : '/mobile/control/';
       const uiOrigin = `http://127.0.0.1:${client ? 48134 : 48133}`;
       const targetUrl = new URL(route, uiOrigin).toString();
@@ -99,6 +105,8 @@ function boot(): Promise<void> {
       stopControllerKeys = installControllerKeys(() => window, app.getPath('userData'), uiOrigin);
       if (client) {
         controllerServer = await startControllerAssets(path.join(app.getAppPath(), 'apps', 'mobile'));
+        runtimePromise = startDesktopRuntime(logger, startup.signal, true);
+        runtime = await runtimePromise;
         if (!quitting) await window!.loadURL(targetUrl + '?role=client');
         return;
       }
@@ -117,6 +125,23 @@ function boot(): Promise<void> {
 
 void app.whenReady().then(() => primary ? boot() : undefined).catch(fail);
 ipcMain.handle('app:get-version', () => app.getVersion());
+ipcMain.handle('app:device-profile', async () => {
+  let profile: {name?:string;role?:string} | undefined;
+  try { profile = JSON.parse(await readFile(roleFile, 'utf8')); }
+  catch (error) { if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error; }
+  return {name:profile?.name,role:controllerRole?'control':'stream',configured:Boolean(profile)};
+});
+ipcMain.handle('app:set-device-role', async (event, role: unknown, name: unknown) => {
+  const origin = `http://127.0.0.1:${controllerRole ? 48134 : 48133}`;
+  if (event.sender !== window?.webContents || new URL(event.senderFrame?.url || 'about:blank').origin !== origin || !['stream','control'].includes(String(role)) || typeof name !== 'string' || !name.trim() || name.length > 80) throw new Error('Choix de rôle refusé.');
+  const changed = (role === 'control') !== controllerRole;
+  const obs = runtime?.dashboard.state().obs;
+  if (changed && (obs?.streaming || obs?.recording)) throw new Error('Terminez le live et l’enregistrement avant de changer le rôle de ce PC.');
+  await mkdir(path.dirname(roleFile), {recursive:true});
+  await writeFile(roleFile + '.tmp', JSON.stringify({version:1,role,name:name.trim()})); await rename(roleFile + '.tmp', roleFile);
+  if (changed) { app.relaunch({args:[...process.argv.slice(1).filter(value => !value.startsWith('--role=')), role === 'control' ? '--role=client' : '--role=host']}); app.quit(); }
+  return {restart:changed};
+});
 ipcMain.handle('app:open-twitch-activation', async (_event, url: unknown) => {
   if (typeof url !== 'string' || !isAllowedTwitchUrl(url)) return false;
   await shell.openExternal(url); return true;

@@ -125,6 +125,8 @@ interface LocalData {
   streamerPings: StreamerPing[];
 }
 export interface DashboardServerOptions {
+  /** A control-only desktop owns its accounts but must never connect to OBS. */
+  obsEnabled?: boolean;
   /** Cancels acquisition; startup settles only after partial resources are closed. */
   startupSignal?: AbortSignal;
   tagEngine?: TagEngine;
@@ -2397,7 +2399,7 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
           currentObsPassword = newPassword;
         }
         await save();
-        if (obsChanged) await obs.configure(newUrl, newPassword);
+        if (obsChanged && options.obsEnabled !== false) await obs.configure(newUrl, newPassword);
         broadcast();
         return snapshot();
       });
@@ -2794,6 +2796,7 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
 
   const obsTest: express.RequestHandler = async (req, res, next) => {
     try {
+      if (options.obsEnabled === false) throw new Error('OBS est désactivé dans le rôle pilotage. Choisissez votre régie de stream.');
       const remote = isRemoteRequest(req);
       const url = remote ? local.settings.obsUrl : req.body.obsUrl !== undefined ? normalizeObsUrl(String(req.body.obsUrl).trim()) : local.settings.obsUrl;
       const password = remote ? currentObsPassword : Object.prototype.hasOwnProperty.call(req.body, 'obsPassword') ? String(req.body.obsPassword ?? '') : currentObsPassword;
@@ -2936,7 +2939,7 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
     })().catch(logError).finally(finishProviderStartup);
   }, 0);
   providerStartup.unref();
-  void obs.configure(local.settings.obsUrl, currentObsPassword).then(broadcast).catch(error => { logError(error); broadcast(); });
+  if (options.obsEnabled !== false) void obs.configure(local.settings.obsUrl, currentObsPassword).then(broadcast).catch(error => { logError(error); broadcast(); });
   void Promise.resolve(logger.info(`StreamDashboard ready on ${host}:${actualPort}`)).catch(() => undefined);
 
   let stopPromise: Promise<void> | undefined;

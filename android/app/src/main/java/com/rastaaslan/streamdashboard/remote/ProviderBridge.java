@@ -17,9 +17,9 @@ import org.json.*;
 
 /** Narrow, local-origin-only provider API. OAuth credentials never cross this bridge. */
 public final class ProviderBridge {
-  private static final String TWITCH_SCOPES = "channel:manage:schedule channel:read:schedule";
+  private static final String TWITCH_SCOPES = "channel:manage:schedule";
   private static final String GOOGLE_SCOPES = "https://www.googleapis.com/auth/calendar.events https://www.googleapis.com/auth/calendar.readonly";
-  private static final long OAUTH_PENDING_TTL_MS = 10 * 60_000L;
+  private static final String DEVICE_PENDING = "twitch_device_pending";
   private final Map<String, JSONObject> diagnostics = new java.util.concurrent.ConcurrentHashMap<>();
   private final GoogleAuthorizationFlow googleAuth;
   private final Activity activity;
@@ -29,21 +29,35 @@ public final class ProviderBridge {
     this.activity = activity; credentials = new SecureCredentialStore(activity);
     googleAuth = new GoogleAuthorizationFlow(new GoogleAuthorizationAdapter(activity), (connected, code) -> {
       credentials.clear("google"); // retire tokens from the former custom-scheme flow
+      if (connected) persistGoogleGrants();
       notifyAuth("google", connected, code);
     });
+    new Thread(() -> { try {
+      String scopes = credentials.get("google_grants");
+      if (!scopes.isEmpty()) googleAuth.restore(Arrays.asList(scopes.split(" ")));
+    } catch (Exception ignored) { } }, "provider-restore").start();
   }
   @JavascriptInterface public String twitchTest(String ignored) { return testProvider("twitch"); }
   @JavascriptInterface public String googleTest(String ignored) { return testProvider("google"); }
   @JavascriptInterface public String twitchStatus(String ignored) { return status("twitch", BuildConfig.TWITCH_ANDROID_CLIENT_ID); }
   @JavascriptInterface public String googleStatus(String ignored) {
-    if (!BuildConfig.GOOGLE_ANDROID_CLIENT_ID.trim().isEmpty() && GoogleApiAvailability.getInstance().isGooglePlayServicesAvailable(activity) != ConnectionResult.SUCCESS)
+    if (GoogleApiAvailability.getInstance().isGooglePlayServicesAvailable(activity) != ConnectionResult.SUCCESS)
       return "{\"ok\":true,\"configured\":false,\"connected\":false,\"code\":\"GOOGLE_PLAY_SERVICES\",\"capabilities\":[]}";
     return status("google", BuildConfig.GOOGLE_ANDROID_CLIENT_ID);
   }
-  @JavascriptInterface public String twitchAuthorize(String ignored) { return authorize("twitch", BuildConfig.TWITCH_ANDROID_CLIENT_ID, "https://id.twitch.tv/oauth2/authorize", TWITCH_SCOPES); }
-  @JavascriptInterface public String googleAuthorize(String ignored) { return authorizeGoogle(); }
-  @JavascriptInterface public String twitchLogout(String ignored) { diagnostics.remove("twitch"); credentials.clear("twitch"); credentials.clear(pendingKey("twitch")); return ok().toString(); }
-  @JavascriptInterface public String googleLogout(String ignored) { googleAuth.logout(); diagnostics.remove("google"); credentials.clear("google"); credentials.clear(pendingKey("google")); return ok().toString(); }
+  @JavascriptInterface public String twitchAuthorize(String ignored) { return guarded(() -> startTwitchDevice()); }
+  @JavascriptInterface public String googleAuthorize(String ignored) { return authorizeGoogle(false); }
+  @JavascriptInterface public String youtubeAuthorize(String ignored) { return authorizeGoogle(true); }
+  @JavascriptInterface public synchronized String twitchPoll(String ignored) { return guarded(() -> pollTwitchDevice()); }
+  @JavascriptInterface public String youtubeTest(String ignored) { return guarded(() -> {
+    JSONObject result = google("GET", "https://www.googleapis.com/youtube/v3/channels?part=snippet&mine=true", null, null);
+    JSONArray items = result.optJSONArray("items");
+    if (items == null || items.length() == 0) throw new ProviderException("ACCOUNT", "Aucune chaîne YouTube sur ce compte.");
+    JSONObject channel = items.getJSONObject(0);
+    return ok().put("connected", true).put("tested", true).put("channelId", channel.getString("id")).put("account", channel.getJSONObject("snippet").getString("title"));
+  }); }
+  @JavascriptInterface public synchronized String twitchLogout(String ignored) { diagnostics.remove("twitch"); credentials.clear("twitch"); credentials.clear(DEVICE_PENDING); return ok().toString(); }
+  @JavascriptInterface public String googleLogout(String ignored) { googleAuth.logout(); diagnostics.remove("google"); credentials.clear("google"); credentials.clear("google_grants"); return ok().toString(); }
   @JavascriptInterface public String twitchSearchCategories(String raw) { return guarded(() -> twitchSearch(body(raw).optString("query"))); }
   @JavascriptInterface public String twitchCreatePlanning(String raw) { return guardedMutation("twitch", () -> twitchMutate("create", body(raw))); }
   @JavascriptInterface public String twitchUpdatePlanning(String raw) { return guardedMutation("twitch", () -> twitchMutate("update", body(raw))); }
@@ -55,26 +69,15 @@ public final class ProviderBridge {
   @JavascriptInterface public String twitchReconcilePlanning(String raw) { return guarded(() -> reconcilePlanning("twitch", body(raw))); }
   @JavascriptInterface public String googleReconcilePlanning(String raw) { return guarded(() -> reconcilePlanning("google", body(raw))); }
 
-  void acceptOAuthCallback(Uri uri) {
-    if (uri == null || DeepLinkRouter.route(uri.toString()) != DeepLinkRouter.Route.OAUTH) return;
-    String provider = uri.getQueryParameter("provider");
-    String code = uri.getQueryParameter("code");
-    String state = uri.getQueryParameter("state");
-    if (!"twitch".equals(provider)) return;
-    if (code == null || state == null) { notifyAuth(provider, false); return; }
-    final String verifier;
-    try { verifier = consumePendingVerifier(provider, state); }
-    catch (Exception ignored) { notifyAuth(provider, false); return; }
-    if (verifier == null) { notifyAuth(provider, false); return; }
-    final String selected = provider;
-    new Thread(() -> { try { exchangeCode(selected, code, verifier); notifyAuth(selected, true); } catch (Exception ignored) { notifyAuth(selected, false); } }).start();
-  }
+  // Old custom-scheme code exchanges are no longer accepted; Twitch uses DCF.
+  void acceptOAuthCallback(Uri uri) { }
 
+  private void persistGoogleGrants() { try { credentials.put("google_grants", String.join(" ", googleAuth.scopes())); } catch (Exception ignored) { } }
   private void notifyAuth(String provider, boolean connected) { notifyAuth(provider, connected, "AUTH"); }
   private void notifyAuth(String provider, boolean connected, String code) { diagnostics.remove(provider); if (!connected) { try { diagnostics.put(provider, ok().put("code", code)); } catch (JSONException ignored) { } } activity.runOnUiThread(() -> ((MainActivity)activity).dispatchProviderAuth(provider, connected)); }
   private String status(String provider, String clientId) {
     try {
-      boolean configured = !clientId.isEmpty(), connected = provider.equals("google") ? googleAuth.connected() : !credentials.get(provider).isEmpty();
+      boolean configured = provider.equals("google") || !clientId.isEmpty(), connected = provider.equals("google") ? googleAuth.connected() : !credentials.get(provider).isEmpty();
       JSONObject result = diagnostics.containsKey(provider) ? new JSONObject(diagnostics.get(provider).toString()) : ok();
       JSONArray capabilities = new JSONArray();
       if (configured) capabilities.put("connect");
@@ -85,11 +88,16 @@ public final class ProviderBridge {
         JSONArray previous = result.getJSONArray("capabilities");
         for (int i = 0; i < previous.length(); i++) {
           String cap = previous.getString(i);
-          if (cap.equals("calendar") || cap.equals("schedule") || cap.equals("categories")) capabilities.put(cap);
+          if (cap.equals("calendar") || cap.equals("schedule") || cap.equals("categories") || cap.equals("metadata") || cap.equals("chat")) capabilities.put(cap);
         }
+      }
+      if (provider.equals("twitch")) {
+        String raw = credentials.get(DEVICE_PENDING);
+        if (!raw.isEmpty()) { JSONObject pending = new JSONObject(raw); if (pending.optLong("expiresAt") > System.currentTimeMillis()) result.put("pending", publicDevice(pending)); }
       }
       String lastSync = credentials.get(provider + "_last_sync");
       result.put("lastSync", lastSync.isEmpty() ? 0 : Long.parseLong(lastSync));
+      if (provider.equals("google")) result.put("youtubeAuthorized", googleAuth.scopes().contains("https://www.googleapis.com/auth/youtube.readonly")).put("calendarAuthorized", googleAuth.scopes().containsAll(GoogleAuthorizationFlow.SCOPES));
       return result.put("ok", true).put("configured", configured).put("connected", connected).put("capabilities", capabilities).toString();
     } catch (Exception e) { return failure("INTERNAL", "État indisponible."); }
   }
@@ -97,7 +105,7 @@ public final class ProviderBridge {
     String clientId = provider.equals("twitch") ? BuildConfig.TWITCH_ANDROID_CLIENT_ID : BuildConfig.GOOGLE_ANDROID_CLIENT_ID;
     JSONObject result = ok();
     try {
-      if (clientId.isEmpty()) throw new ProviderException("NOT_CONFIGURED", "Configuration requise.");
+      if (provider.equals("twitch") && clientId.isEmpty()) throw new ProviderException("NOT_CONFIGURED", "Configuration requise.");
       if (provider.equals("google") ? !googleAuth.connected() : credentials.get(provider).isEmpty()) throw new ProviderException("REAUTH_REQUIRED", "Connexion requise.");
       JSONObject session = token(provider);
       JSONArray granted = new JSONArray();
@@ -110,12 +118,13 @@ public final class ProviderBridge {
           if (Arrays.asList(TWITCH_SCOPES.split(" ")).contains(scope)) granted.put(scope);
         }
         result.put("scopes", granted);
-        if (!granted.toString().contains("channel:manage:schedule")) throw new ProviderException("SCOPES", "Permissions requises.");
+
         JSONObject user = twitch("GET", "https://api.twitch.tv/helix/users", null).getJSONArray("data").getJSONObject(0);
         capabilities.put("categories");
-        // Twitch only permits schedule writes for affiliates and partners.
-        if (user.optString("broadcaster_type").isEmpty()) throw new ProviderException("ACCOUNT", "Compte affilié ou partenaire requis.");
-        capabilities.put("schedule");
+        result.put("account", user.optString("display_name")).put("channelId", user.getString("id"));
+        if (granted.toString().contains("channel:manage:broadcast")) capabilities.put("metadata");
+        if (granted.toString().contains("user:write:chat")) capabilities.put("chat");
+        if (!user.optString("broadcaster_type").isEmpty() && granted.toString().contains("channel:manage:schedule")) capabilities.put("schedule");
       } else {
         // Token scope is returned by Google OAuth; never return the token itself.
         for (String scope : session.optString("scope").split(" ")) {
@@ -136,64 +145,55 @@ public final class ProviderBridge {
     diagnostics.put(provider, result);
     return status(provider, clientId);
   }
-  private String authorizeGoogle() {
-    if (BuildConfig.PREVIEW_MODE || BuildConfig.GOOGLE_ANDROID_CLIENT_ID.trim().isEmpty())
-      return failure("NOT_CONFIGURED", "Google Android non provisionné : Client ID Android, package et certificat requis.");
-    googleAuth.authorizeGoogle();
+  private String authorizeGoogle(boolean youtube) {
+    if (BuildConfig.PREVIEW_MODE) return failure("NOT_CONFIGURED", "Autorisation désactivée dans la prévisualisation.");
+    if (GoogleApiAvailability.getInstance().isGooglePlayServicesAvailable(activity) != ConnectionResult.SUCCESS)
+      return failure("GOOGLE_PLAY_SERVICES", "Services Google Play indisponibles.");
+    googleAuth.authorizeScopes(youtube ? Collections.singletonList("https://www.googleapis.com/auth/youtube.readonly") : GoogleAuthorizationFlow.SCOPES);
     return ok().toString();
   }
   void acceptGoogleResult(int requestCode, int resultCode, Intent data) {
     googleAuth.acceptGoogleResult(requestCode, resultCode == Activity.RESULT_OK, data);
   }
-
-  private String authorize(String provider, String clientId, String endpoint, String scopes) {
-    if (clientId.isEmpty()) return failure("NOT_CONFIGURED", provider.equals("google") ? "Google autonome non configuré" : "Twitch autonome non configuré");
-    try {
-      diagnostics.remove(provider);
-      String verifier = random(48), state = random(24), challenge = base64(MessageDigest.getInstance("SHA-256").digest(verifier.getBytes(StandardCharsets.US_ASCII)));
-      long now = System.currentTimeMillis();
-      JSONObject pending = new JSONObject()
-        .put("provider", provider)
-        .put("state", state)
-        .put("verifier", verifier)
-        .put("createdAt", now)
-        .put("expiresAt", now + OAUTH_PENDING_TTL_MS);
-      credentials.put(pendingKey(provider), pending.toString());
-      Uri uri = Uri.parse(endpoint).buildUpon().appendQueryParameter("client_id", clientId).appendQueryParameter("redirect_uri", "streamdashboard://oauth?provider=" + provider).appendQueryParameter("response_type", "code").appendQueryParameter("scope", scopes).appendQueryParameter("state", state).appendQueryParameter("code_challenge", challenge).appendQueryParameter("code_challenge_method", "S256").build();
-      activity.startActivity(new Intent(Intent.ACTION_VIEW, uri)); return ok().put("launched", true).toString();
-    } catch (Exception e) { return failure("AUTH", "Impossible de lancer l’autorisation."); }
-  }
-  private static String pendingKey(String provider) { return "oauth_pending_" + provider; }
-
-  private String consumePendingVerifier(String provider, String state) throws Exception {
-    String key = pendingKey(provider);
-    String raw = credentials.get(key);
-    credentials.clear(key); // single-use even for malformed/expired callbacks
-    if (raw.isEmpty()) return null;
-    JSONObject pending;
-    try { pending = new JSONObject(raw); }
-    catch (JSONException error) { return null; }
+  private synchronized JSONObject startTwitchDevice() throws Exception {
+    if (BuildConfig.TWITCH_ANDROID_CLIENT_ID.isEmpty()) throw new ProviderException("NOT_CONFIGURED", "Identifiant public Twitch absent de cette distribution.");
+    String raw = credentials.get(DEVICE_PENDING);
+    if (!raw.isEmpty()) { JSONObject previous = new JSONObject(raw); if (previous.optLong("expiresAt") > System.currentTimeMillis()) return publicDevice(previous); }
+    JSONObject value = request("POST", "https://id.twitch.tv/oauth2/device", null, form(Map.of("client_id", BuildConfig.TWITCH_ANDROID_CLIENT_ID, "scopes", TWITCH_SCOPES)), null);
     long now = System.currentTimeMillis();
-    long createdAt = pending.optLong("createdAt", 0);
-    long expiresAt = pending.optLong("expiresAt", 0);
-    if (!provider.equals(pending.optString("provider")) || createdAt <= 0 || expiresAt <= now || expiresAt - createdAt > OAUTH_PENDING_TTL_MS) return null;
-    String expectedState = pending.optString("state");
-    if (!constantTimeEquals(expectedState, state)) return null;
-    String verifier = pending.optString("verifier");
-    return verifier.isEmpty() ? null : verifier;
+    value.put("expiresAt", now + Math.max(1, value.optLong("expires_in", 600)) * 1000);
+    value.put("interval", Math.max(5, value.optLong("interval", 5))).put("nextPoll", now + 5000);
+    credentials.put(DEVICE_PENDING, value.toString());
+    return publicDevice(value);
   }
-
-  private static boolean constantTimeEquals(String left, String right) {
-    if (left == null || right == null) return false;
-    return MessageDigest.isEqual(left.getBytes(StandardCharsets.UTF_8), right.getBytes(StandardCharsets.UTF_8));
+  private JSONObject publicDevice(JSONObject pending) throws Exception {
+    // Device code and provider tokens stay in encrypted native storage.
+    return ok().put("user_code", pending.getString("user_code")).put("verification_uri", pending.getString("verification_uri"))
+      .put("expiresAt", pending.optLong("expiresAt")).put("interval", pending.optLong("interval", 5));
   }
-
-  private void exchangeCode(String provider, String code, String verifier) throws Exception {
-    String clientId = provider.equals("twitch") ? BuildConfig.TWITCH_ANDROID_CLIENT_ID : BuildConfig.GOOGLE_ANDROID_CLIENT_ID;
-    String endpoint = "https://id.twitch.tv/oauth2/token";
-    String form = form(Map.of("client_id",clientId,"code",code,"code_verifier",verifier,"grant_type","authorization_code","redirect_uri","streamdashboard://oauth?provider="+provider));
-    JSONObject token = request("POST", endpoint, null, form, null);
-    token.put("obtained_at", System.currentTimeMillis()); credentials.put(provider, token.toString());
+  private synchronized JSONObject pollTwitchDevice() throws Exception {
+    String raw = credentials.get(DEVICE_PENDING);
+    if (raw.isEmpty()) return ok().put("pending", false);
+    JSONObject pending = new JSONObject(raw); long now = System.currentTimeMillis();
+    if (now >= pending.optLong("expiresAt")) { credentials.clear(DEVICE_PENDING); throw new ProviderException("EXPIRED", "Code expiré. Relancez la connexion Twitch."); }
+    if (now < pending.optLong("nextPoll")) return ok().put("pending", true);
+    pending.put("nextPoll", now + pending.optLong("interval", 5) * 1000); credentials.put(DEVICE_PENDING, pending.toString());
+    try {
+      JSONObject token = request("POST", "https://id.twitch.tv/oauth2/token", null, form(Map.of("client_id", BuildConfig.TWITCH_ANDROID_CLIENT_ID,
+        "scopes", TWITCH_SCOPES, "device_code", pending.getString("device_code"), "grant_type", "urn:ietf:params:oauth:grant-type:device_code")), null);
+      if (token.optString("access_token").isEmpty()) throw new ProviderException("AUTH", "Autorisation Twitch incomplète.");
+      token.put("obtained_at", now); credentials.put("twitch", token.toString()); credentials.clear(DEVICE_PENDING); notifyAuth("twitch", true);
+      return ok().put("connected", true).put("pending", false);
+    } catch (ProviderException error) {
+      if (error.getMessage().equals("authorization_pending")) return ok().put("pending", true);
+      if (error.getMessage().equals("slow_down") || error.code.equals("HTTP_429")) {
+        long interval = pending.optLong("interval", 5) + 5;
+        pending.put("interval", interval).put("nextPoll", now + interval * 1000); credentials.put(DEVICE_PENDING, pending.toString());
+        return ok().put("pending", true);
+      }
+      if (error.code.equals("HTTP_400") || error.code.equals("HTTP_403")) credentials.clear(DEVICE_PENDING);
+      throw error;
+    }
   }
   private synchronized JSONObject token(String provider) throws Exception {
     if (provider.equals("google")) {
@@ -202,7 +202,7 @@ public final class ProviderBridge {
         GoogleAuthorizationFlow.Grant grant = googleAuth.refresh();
         return new JSONObject().put("access_token", grant.token).put("scope", String.join(" ", grant.scopes));
       } catch (GoogleAuthorizationFlow.AuthException error) {
-        throw new ProviderException(error.code, "Réautoriser Google avec les permissions Calendar.");
+        throw new ProviderException(error.code, "Réautoriser Google avec les permissions du service demandé.");
       }
     }
     JSONObject token = new JSONObject(credentials.get(provider));
@@ -214,12 +214,12 @@ public final class ProviderBridge {
     JSONObject fresh;
     try { fresh = request("POST", endpoint, null, form(Map.of("client_id",clientId,"refresh_token",refresh,"grant_type","refresh_token")), null); }
     catch (ProviderException e) { if (e.code.equals("HTTP_400") || e.code.equals("REAUTH_REQUIRED")) throw new ProviderException("REAUTH_REQUIRED", "Réautoriser ce compte."); throw e; }
-    if (!fresh.has("scope")) fresh.put("scope", token.optString("scope"));
+    if (!fresh.has("scope")) fresh.put("scope", token.optJSONArray("scope"));
     if (!fresh.has("refresh_token")) fresh.put("refresh_token", refresh); fresh.put("obtained_at", System.currentTimeMillis()); credentials.put(provider, fresh.toString()); return fresh;
   }
   private void requirePublication(String provider) throws Exception {
     JSONObject result = new JSONObject(testProvider(provider));
-    if (!result.optBoolean("tested")) throw new ProviderException(result.optString("code", "SCOPES"), "Tester les permissions de ce compte avant publication.");
+    if (!result.optBoolean("tested") || !result.optJSONArray("capabilities").toString().contains(provider.equals("twitch") ? "schedule" : "calendar")) throw new ProviderException(result.optString("code", "SCOPES"), "Tester les permissions de ce compte avant publication.");
   }
   private JSONObject recordSync(String provider, JSONObject value) throws Exception {
     JSONObject result = diagnostics.get(provider);

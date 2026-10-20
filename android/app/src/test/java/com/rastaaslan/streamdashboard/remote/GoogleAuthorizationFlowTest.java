@@ -97,4 +97,25 @@ public class GoogleAuthorizationFlowTest {
     resolve(); flow.logout(); flow.acceptGoogleResult(adapter.requestCode, true, new Object());
     assertFalse(flow.connected()); assertTrue(events.isEmpty());
   }
+  @Test public void restartRestoresGrantsWithoutAccountUi() throws Exception {
+    flow.restore(CALENDAR);
+    assertTrue(flow.connected()); assertEquals(0, adapter.launches); assertEquals(1, adapter.refreshes);
+    assertEquals(CALENDAR, adapter.refreshScopes);
+  }
+  @Test public void restartNeedsConsentWithoutLaunchingUiOrClaimingConnected() {
+    adapter.renewed = new GoogleAuthorizationFlow.Grant(null, Collections.emptyList(), new Object());
+    assertThrows(GoogleAuthorizationFlow.AuthException.class, () -> flow.restore(CALENDAR));
+    assertFalse(flow.connected()); assertEquals(0, adapter.launches);
+  }
+  @Test public void lateRestoreCannotUndoLogout() throws Exception {
+    flow.logout(); flow.restore(CALENDAR);
+    assertFalse(flow.connected()); assertEquals(0, adapter.refreshes);
+  }
+  @Test public void youtubeConsentRetainsCalendarGrantsAndChecksNewScope() {
+    connected(); String youtube = "https://www.googleapis.com/auth/youtube.readonly";
+    flow.authorizeScopes(Collections.singletonList(youtube));
+    assertTrue(adapter.requested.containsAll(CALENDAR)); assertTrue(adapter.requested.contains(youtube));
+    adapter.callback.success(token("missing-youtube"));
+    assertFalse(flow.connected()); assertEquals("false:SCOPES", events.get(events.size()-1));
+  }
 }

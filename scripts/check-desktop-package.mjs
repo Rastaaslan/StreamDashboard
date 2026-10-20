@@ -16,8 +16,8 @@ for (const file of files) {
   assert.ok(!/\.log$/.test(file), `Unexpected packaged log: ${file}`);
 }
 const lifecycle = readArchive('dist/apps/desktop/src/lifecycle.js').toString();
-assert.match(lifecycle, /port: 48133/);
-for (const file of ['apps/mobile/control/planning.js', 'apps/mobile/planning-export.js', 'apps/mobile/control/live-monitor.js', 'apps/mobile/control/control.js', 'apps/mobile/control/index.html', 'dist/apps/desktop/src/controller.js', 'apps/mobile/shared/planning-editor.js', 'apps/web/preview/preview.js', 'dist/integrations/obs/src/client.js']) {
+assert.match(lifecycle, /port: controller \? 48135 : 48133/);
+for (const file of ['dist/apps/desktop/src/main.js', 'dist/apps/desktop/src/lifecycle.js', 'dist/apps/desktop/src/preload.cjs', 'apps/mobile/control/device-accounts.js', 'apps/mobile/control/device-workspace.js', 'apps/mobile/control/autonomy-store.js', 'apps/mobile/control/planning.js', 'apps/mobile/planning-export.js', 'apps/mobile/control/live-monitor.js', 'apps/mobile/control/control.js', 'apps/mobile/control/index.html', 'dist/apps/desktop/src/controller.js', 'apps/mobile/shared/planning-editor.js', 'apps/web/preview/preview.js', 'dist/integrations/obs/src/client.js']) {
   assert.deepEqual(readArchive(file), readFileSync(file), `Packaged asset diverges from source/build: ${file}`);
 }
-console.log('Desktop ASAR checked: public provider IDs, fixed port, runtime assets and source/log exclusions.');
+console.log('Desktop ASAR checked: public provider IDs, role ports, runtime assets and source/log exclusions.');

@@ -7,6 +7,8 @@ contextBridge.exposeInMainWorld('streamDashboardDesktop', {
   setControllerCredential: (value: string) => ipcRenderer.invoke('controller:credential:set', value),
   onControllerReceipt: (callback: (receipt: unknown) => void) => { ipcRenderer.on('controller:receipt', (_event, receipt) => callback(receipt)); },
   getVersion: (): Promise<string> => ipcRenderer.invoke('app:get-version'),
+  getDeviceProfile: () => ipcRenderer.invoke('app:device-profile'),
+  setDeviceRole: (role: string, name: string) => ipcRenderer.invoke('app:set-device-role', role, name),
   openTwitchActivation: (url: string): Promise<boolean> => ipcRenderer.invoke('app:open-twitch-activation', url),
   openExternalAuth: (url: string): Promise<boolean> => ipcRenderer.invoke('app:open-external-auth', url),
   openLogs: (): Promise<void> => ipcRenderer.invoke('app:open-logs'),

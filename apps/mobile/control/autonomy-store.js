@@ -15,6 +15,7 @@ export async function openReplica(scope, factory=globalThis.indexedDB){
  const change=async update=>{current=await transact(update);return current;};
  return {
   get record(){return clone(current);},
+  async seed(response){await change(record=>{if(!record.bundle){record.workspace=response.workspace;record.bundle=clone(response.bundle);}});},
   async reload(){current=await transact();return current;},
   view(){if(!current.bundle)return null;let bundle=clone(current.bundle);for(const op of current.pending){const remote=resources(bundle)[op.key]??null;bundle=overlay(bundle,{[op.key]:merge(op.base,op.value,remote).value});}return bundle;},
   async stage(changes,bases){await change(record=>{
@@ -35,6 +36,24 @@ export async function openReplica(scope, factory=globalThis.indexedDB){
    if(keep&&!equal(base,value))record.pending.push({id:newId(),key,base,value,createdAt:new Date().toISOString()});
   });},
   async draft(key,value){await change(record=>{record.drafts[key]=clone(value);});},
+  // Move the outbox atomically; the original local workspace remains readable.
+  // Stable operation IDs make repeated imports and lost responses harmless.
+  async importLocal(sourceScope){
+   if(sourceScope===scope)throw new Error('Choisissez une régie de destination.');
+   await new Promise((resolve,reject)=>{
+    const tx=db.transaction('replicas','readwrite'),table=tx.objectStore('replicas');
+    const sourceRequest=table.get(sourceScope),targetRequest=table.get(scope);let ready=0;
+    const apply=()=>{if(++ready!==2)return;try{
+     const source=sourceRequest.result,target=targetRequest.result;
+     if(!source?.workspace?.startsWith('local:')||!target?.bundle||target.workspace.startsWith('local:'))throw new Error('Connectez d’abord la régie de destination.');
+     let bundle=clone(source.bundle);
+     for(const op of source.pending){bundle=overlay(bundle,{[op.key]:merge(op.base,op.value,resources(bundle)[op.key]??null).value});if(!target.pending.some(x=>x.id===op.id))target.pending.push(clone(op));}
+     source.bundle=bundle;source.pending=[];table.put(source,sourceScope);table.put(target,scope);
+    }catch(e){tx.abort();reject(e);}};
+    sourceRequest.onsuccess=apply;targetRequest.onsuccess=apply;
+    tx.oncomplete=resolve;tx.onerror=()=>reject(tx.error);tx.onabort=()=>reject(tx.error||new Error('Import annulé.'));
+   });current=await transact();
+  },
   close(){db.close();},
  };
 }
