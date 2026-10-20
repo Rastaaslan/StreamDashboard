@@ -1,9 +1,10 @@
 import { integrationState, transitionIntegration } from '../../../packages/core/src/integrations.js';
 import type { IntegrationState } from '../../../packages/contracts/src/index.js';
 import type { Support } from '../../../packages/core/src/live-control-domains.js';
+import { normalizeStreamlabsEvents, type StreamlabsEvent } from './events.js';
 
 export interface SupportProvider { readonly id: string; state(): IntegrationState; connect(): Promise<void>; disconnect(): Promise<void> }
-export interface StreamlabsTransport { connect(token: string, onTip: (value: unknown) => void, onDisconnect: (error?: Error) => void): Promise<() => Promise<void>> }
+export interface StreamlabsTransport { connect(token: string, onTip: (value: unknown) => void, onDisconnect: (error?: Error) => void, onEvent?: (value: unknown) => void): Promise<() => Promise<void>> }
 
 export class StreamlabsAdapter implements SupportProvider {
   readonly id = 'streamlabs';
@@ -14,7 +15,7 @@ export class StreamlabsAdapter implements SupportProvider {
   private pending?: Promise<void>;
   private attempts = 0;
 
-  constructor(private token: string, private readonly onSupport: (support: Support) => Promise<void>, private readonly transport?: StreamlabsTransport, private readonly logger?: Pick<Console, 'info' | 'warn'>) {
+  constructor(private token: string, private readonly onSupport: (support: Support) => Promise<void>, private readonly transport?: StreamlabsTransport, private readonly logger?: Pick<Console, 'info' | 'warn'>, private readonly onEvents?: (events: StreamlabsEvent[]) => Promise<void>) {
     this.lifecycle = integrationState(transport ? (token.trim() ? 'DISCONNECTED' : 'NOT_CONFIGURED') : 'NOT_SUPPORTED');
   }
   state() { return structuredClone(this.lifecycle); }
@@ -42,7 +43,16 @@ export class StreamlabsAdapter implements SupportProvider {
     const generation = ++this.generation;
     let disconnected = false;
     try {
-      const close = await this.transport.connect(this.token, value => { if (generation !== this.generation) return; void this.receive(value).catch(() => { if (generation !== this.generation) return; this.lifecycle = transitionIntegration(this.lifecycle, 'DEGRADED', { error: { code: 'STREAMLABS_EVENT_INVALID', message: 'Événement Streamlabs invalide.', retryable: false, details: null } }); }); }, error => { if (generation !== this.generation) return; disconnected = true; this.close = undefined; this.lifecycle = transitionIntegration(this.lifecycle, 'DEGRADED', { error: { code: 'STREAMLABS_DISCONNECTED', message: error?.message ?? 'Connexion Streamlabs interrompue.', retryable: true, details: null } }); this.logger?.warn('Streamlabs reconnecting'); this.schedule(generation); });
+      const close = await this.transport.connect(this.token, value => { if (generation !== this.generation) return; void this.receive(value).catch(() => { if (generation !== this.generation) return; this.lifecycle = transitionIntegration(this.lifecycle, 'DEGRADED', { error: { code: 'STREAMLABS_EVENT_INVALID', message: 'Événement Streamlabs invalide.', retryable: false, details: null } }); }); }, error => { if (generation !== this.generation) return; disconnected = true; this.close = undefined; this.lifecycle = transitionIntegration(this.lifecycle, 'DEGRADED', { error: { code: 'STREAMLABS_DISCONNECTED', message: error?.message ?? 'Connexion Streamlabs interrompue.', retryable: true, details: null } }); this.logger?.warn('Streamlabs reconnecting'); this.schedule(generation); }, value => {
+        if (generation !== this.generation || !this.onEvents) return;
+        const events = normalizeStreamlabsEvents(value);
+        if (!events.length) return;
+        void this.onEvents(events).then(() => {
+          if (generation === this.generation) this.lifecycle = { ...this.lifecycle, lastEventAt: events.at(-1)!.receivedAt };
+        }).catch(() => {
+          if (generation === this.generation) this.lifecycle = transitionIntegration(this.lifecycle, 'DEGRADED', { error: { code: 'STREAMLABS_HISTORY_FAILED', message: 'Historique Streamlabs non sauvegardé.', retryable: true, details: null } });
+        });
+      });
       if (generation !== this.generation || disconnected) { await close(); return; }
       this.close = close;
       this.lifecycle = transitionIntegration(this.lifecycle, 'CONNECTED');

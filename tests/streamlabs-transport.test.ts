@@ -31,6 +31,15 @@ describe('transport Streamlabs officiel', () => {
     expect(extractDonations({ type: 'donation', message: [{ _id: 'd1', name: 'Ada', amount: '5.25', currency: 'EUR', message: 'GG' }] })).toEqual([expect.objectContaining({ id: 'd1', amountMinor: 525, currency: 'EUR' })]);
   });
 
+  it('forwards all activity while keeping the donation pipeline isolated', async () => {
+    const socket=new FakeSocket(),tip=vi.fn(),event=vi.fn();
+    const ready=new StreamlabsSocketTransport({createSocket:()=>socket as never}).connect('secret',tip,vi.fn(),event);
+    socket.emit('message',Buffer.from('0{"pingInterval":25000,"pingTimeout":20000}'));socket.emit('message',Buffer.from('40'));const close=await ready;
+    for(const type of ['follow','subscription','raid','bits','superchat','donation'])socket.emit('message',Buffer.from('42'+JSON.stringify(['event',{type,message:[{_id:type,amount:'2',currency:'EUR'}]}])));
+    expect(event).toHaveBeenCalledTimes(6);expect(tip).toHaveBeenCalledTimes(1);
+    await close();socket.emit('message',Buffer.from('42'+JSON.stringify(['event',{type:'follow',message:[{_id:'late'}]}])));expect(event).toHaveBeenCalledTimes(6);
+  });
+
   it('alimente le runtime de façon idempotente et dégrade les événements invalides', async () => {
     const stored: never[] = []; const runtime = new SupportRuntime([], async () => undefined, value => stored.push(value as never));
     let receive: (value: unknown) => void = () => undefined;

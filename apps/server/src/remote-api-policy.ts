@@ -1,6 +1,6 @@
 const GET_EXACT = new Set([
   '/v1/state','/v1/profile','/v1/connections','/v1/control-hub','/v1/events','/v1/soundboard',
-  '/v1/automations','/v1/automations/capabilities','/v1/supports','/v1/twitch/categories',
+  '/v1/automations','/v1/automations/capabilities','/v1/streamlabs/events','/v1/supports','/v1/twitch/categories',
   '/v1/twitch/videos','/v1/twitch/clips','/v1/twitch/chatters','/v1/twitch/moderation/capabilities',
   '/v1/discord/status','/v1/discord/guilds',
 ]);
