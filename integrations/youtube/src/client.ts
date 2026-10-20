@@ -3,6 +3,7 @@ import type { SecretStore } from '../../../apps/server/src/storage.js';
 import type { LiveMetadata } from '../../../packages/contracts/src/control.js';
 
 interface Broadcast { id: string; snippet: { title: string; channelId: string; liveChatId?: string; scheduledStartTime?: string }; status: { lifeCycleStatus: string }; contentDetails: { boundStreamId?: string } }
+interface YouTubeSelection { clientId: string; broadcastId: string; channelId: string }
 interface VideoSnippet { title: string; description: string; categoryId: string; channelId: string; tags?: string[]; defaultLanguage?: string; defaultAudioLanguage?: string }
 type MetadataField = 'title' | 'description' | 'categoryId' | 'tags';
 
@@ -83,12 +84,19 @@ async function responseError(response:Response) {
   return new YouTubeApiError(response.status,reason||(response.status===401?'authError':response.status===429?'rateLimitExceeded':response.status>=500?'backendError':response.status===403?'forbidden':'unknown'));
 }
 const uncertainTransition=(message:string)=>Object.assign(new Error('Transition YouTube non confirmée. '+message+' Vérifiez son état avant une nouvelle commande.'),{name:'ACTION_UNCERTAIN'});
+const transientObservation=(error:unknown)=>error instanceof YouTubeApiError&&(error.httpStatus===0||error.httpStatus>=500||error.reason==='invalidResponse');
+const observationUnavailable=(error:YouTubeApiError)=>Object.assign(new Error('Lecture YouTube temporairement indisponible. '+error.message),{name:'ACTION_OBSERVATION_UNAVAILABLE'});
 
 export class YouTubeClient {
   private attempt?: { state: string; verifier: string; redirect: string; clientId: string; expires: number };
   private refreshFlight?: Promise<Record<string,string>>;
   private transitionAttempts = new Set<string>();
-  constructor(private secrets: SecretStore, private configuration: () => { clientId: string; broadcastId: string; channelId: string }, private request: typeof fetch = fetch) {}
+  constructor(private secrets: SecretStore, private configuration: () => YouTubeSelection, private request: typeof fetch = fetch) {}
+  private selection(): YouTubeSelection { return {...this.configuration()}; }
+  private assertSelection(selected: YouTubeSelection) {
+    const current=this.configuration();
+    if (current.clientId!==selected.clientId || current.channelId!==selected.channelId || current.broadcastId!==selected.broadcastId) throw new Error('La cible YouTube a changé pendant la lecture. Actualisez les informations.');
+  }
   async status() {
     const configuration=this.configuration(),tokens=await this.secrets.getYouTubeTokens?.();
     return {configured:Boolean(configuration.clientId),connected:Boolean(configuration.clientId&&tokens?.refreshToken&&tokens.clientId===configuration.clientId),...configuration,pending:Boolean(this.attempt&&this.attempt.clientId===configuration.clientId&&this.attempt.expires>Date.now())};
@@ -130,8 +138,10 @@ export class YouTubeClient {
     }
     return this.refreshFlight;
   }
-  private async api<T>(path:string,init:RequestInit={}):Promise<T> {
+  private async api<T>(path:string,init:RequestInit={},selected?:YouTubeSelection):Promise<T> {
+    if(selected)this.assertSelection(selected);
     const tokens=await this.tokens();
+    if(selected)this.assertSelection(selected);
     const response=await this.request('https://www.googleapis.com/youtube/v3/'+path,{...init,headers:{Authorization:'Bearer '+tokens.accessToken,'Content-Type':'application/json'},signal:AbortSignal.timeout(15_000)})
       .catch(()=>{throw new YouTubeApiError(0,'networkError');});
     if(!response.ok)throw await responseError(response);
@@ -159,20 +169,32 @@ export class YouTubeClient {
     const items=await this.pages<{id:string;snippet:{title:string;customUrl?:string}}>('channels',{part:'id,snippet',mine:'true'});
     return [...new Map(items.map(item=>[item.id,item])).values()].map(item=>({id:item.id,title:item.snippet.title,...(item.snippet.customUrl?{customUrl:item.snippet.customUrl}:{})}));
   }
-  private async target() {
-    const config=this.configuration(); if (!config.broadcastId || !config.channelId) throw new Error('Sélectionnez la diffusion YouTube et sa chaîne dans Configuration.');
-    const value=await this.api<{items:Broadcast[]}>(`liveBroadcasts?part=id,snippet,status,contentDetails&id=${encodeURIComponent(config.broadcastId)}`);
-    const target=value.items[0];
-    if (!target || target.snippet.channelId!==config.channelId) throw new Error('La diffusion YouTube sélectionnée est absente ou appartient à une autre chaîne.');
+  private async target(selected=this.selection()) {
+    if (!selected.broadcastId || !selected.channelId) throw new Error('Sélectionnez la diffusion YouTube et sa chaîne dans Configuration.');
+    const value=await this.api<{items?:Broadcast[]}>(`liveBroadcasts?part=id,snippet,status,contentDetails&id=${encodeURIComponent(selected.broadcastId)}`,{},selected);
+    this.assertSelection(selected);
+    const target=Array.isArray(value.items)?value.items.find(item=>item?.id===selected.broadcastId):undefined;
+    if (!target || target.snippet?.channelId!==selected.channelId) throw new Error('La diffusion YouTube sélectionnée est absente ou appartient à une autre chaîne.');
+    if (typeof target.status?.lifeCycleStatus!=='string' || !target.contentDetails || typeof target.contentDetails!=='object') throw new YouTubeApiError(200,'invalidResponse');
     return target;
   }
+  private assertStartTarget(target: Broadcast) {
+    if (['complete','revoked'].includes(target.status.lifeCycleStatus)) throw new Error('La diffusion YouTube est terminée. Sélectionnez une nouvelle diffusion préparée.');
+    if (!target.contentDetails.boundStreamId) throw new Error('Aucun flux lié à cette diffusion YouTube. Préparez la diffusion dans YouTube Studio.');
+  }
+  /** Read-only preflight, called before starting the associated OBS output. */
+  async assertStartable():Promise<void> {
+    const selected=this.selection(),target=await this.target(selected);
+    this.assertStartTarget(target);
+  }
   async broadcastState():Promise<YouTubeBroadcastState> {
-    const target=await this.target();
+    const selected=this.selection(),target=await this.target(selected);
     const streamId=target.contentDetails.boundStreamId;
     let ingestionStatus:string|null=null;
     if(streamId){
       // Only status is requested: ingestion addresses and stream keys never enter this response.
-      const streams=await this.api<{items:Array<{status?:{streamStatus?:string}}>} >('liveStreams?part=status&id='+encodeURIComponent(streamId));
+      const streams=await this.api<{items:Array<{status?:{streamStatus?:string}}>} >('liveStreams?part=status&id='+encodeURIComponent(streamId),{},selected);
+      this.assertSelection(selected);
       const status=streams.items?.[0]?.status?.streamStatus;
       if(typeof status==='string')ingestionStatus=status;
     }
@@ -182,28 +204,34 @@ export class YouTubeClient {
   async live() { const target=await this.target(); return target.status.lifeCycleStatus==='live'; }
   /** Read only the selected broadcast's public metadata; never exposes provider bodies or tokens. */
   async readMetadata():Promise<YouTubeMetadata> {
-    const selected={...this.configuration()},target=await this.target();
+    const selected=this.selection(),target=await this.target(selected);
     if (target.id!==selected.broadcastId || target.snippet.channelId!==selected.channelId) throw new Error('La diffusion YouTube relue ne correspond pas à la cible sélectionnée.');
-    const result=await this.api<{items?:Array<{id:string;snippet?:VideoSnippet}>}>(`videos?part=snippet&id=${encodeURIComponent(target.id)}`);
-    const current=this.configuration();
-    if (current.clientId!==selected.clientId || current.channelId!==selected.channelId || current.broadcastId!==selected.broadcastId) throw new Error('La cible YouTube a changé pendant la lecture. Actualisez les informations.');
+    const result=await this.api<{items?:Array<{id:string;snippet?:VideoSnippet}>}>(`videos?part=snippet&id=${encodeURIComponent(target.id)}`,{},selected);
+    this.assertSelection(selected);
     const video=Array.isArray(result.items)?result.items.find(item=>item?.id===target.id):undefined,snippet=video?.snippet;
     if (!snippet || snippet.channelId!==selected.channelId) throw new Error('Vidéo YouTube introuvable sur la chaîne sélectionnée.');
     if (typeof snippet.title!=='string' || typeof snippet.description!=='string' || typeof snippet.categoryId!=='string' || (snippet.tags!==undefined && (!Array.isArray(snippet.tags) || snippet.tags.some(tag=>typeof tag!=='string')))) throw new YouTubeApiError(200,'invalidResponse');
     return {broadcastId:target.id,channelId:snippet.channelId,title:snippet.title,description:snippet.description,youtubeCategoryId:snippet.categoryId,tags:[...(snippet.tags??[])]};
   }
   async transition(start:boolean,operationId='') {
-    const config=this.configuration(),key=JSON.stringify([config.clientId,config.channelId,config.broadcastId,start,operationId]);
+    const selected=this.selection(),key=JSON.stringify([selected.clientId,selected.channelId,selected.broadcastId,start,operationId]);
     let target:Broadcast;
-    try{target=await this.target();}
-    catch(error){if(this.transitionAttempts.has(key))throw uncertainTransition(error instanceof Error?error.message:'État indisponible.');throw error;}
+    try{target=await this.target(selected);}
+    catch(error){
+      if(this.transitionAttempts.has(key))throw uncertainTransition(error instanceof Error?error.message:'État indisponible.');
+      if(transientObservation(error))throw observationUnavailable(error as YouTubeApiError);
+      throw error;
+    }
     if(start&&['complete','revoked'].includes(target.status.lifeCycleStatus))throw new Error('La diffusion YouTube est terminée. Sélectionnez une nouvelle diffusion préparée.');
     if((start&&['live','liveStarting','testStarting'].includes(target.status.lifeCycleStatus))||(!start&&target.status.lifeCycleStatus!=='live'))return;
     // A stale observation must not repeat an accepted or unacknowledged POST.
     if(this.transitionAttempts.has(key))return;
     if(start){
-      if(!target.contentDetails.boundStreamId)throw new Error('Aucun flux lié à cette diffusion YouTube. Préparez la diffusion dans YouTube Studio.');
-      const streams=await this.api<{items:Array<{status:{streamStatus:string}}>} >('liveStreams?part=status&id='+encodeURIComponent(target.contentDetails.boundStreamId));
+      this.assertStartTarget(target);
+      let streams:{items:Array<{status:{streamStatus:string}}>};
+      try{streams=await this.api('liveStreams?part=status&id='+encodeURIComponent(target.contentDetails.boundStreamId!),{},selected);}
+      catch(error){if(transientObservation(error))throw observationUnavailable(error as YouTubeApiError);throw error;}
+      this.assertSelection(selected);
       if(streams.items[0]?.status.streamStatus!=='active')return;
     }
     // Another caller may have sent the same operation while ingestion was being read.
@@ -211,11 +239,11 @@ export class YouTubeClient {
     this.transitionAttempts.add(key);
     if(this.transitionAttempts.size>256)this.transitionAttempts.delete(this.transitionAttempts.values().next().value!);
     try{
-      await this.api('liveBroadcasts/transition?part=id,status&id='+encodeURIComponent(target.id)+'&broadcastStatus='+(start?'live':'complete'),{method:'POST'});
+      await this.api('liveBroadcasts/transition?part=id,status&id='+encodeURIComponent(target.id)+'&broadcastStatus='+(start?'live':'complete'),{method:'POST'},selected);
     }catch(error){
       if(error instanceof YouTubeApiError&&error.reason==='redundantTransition'){
         let observed:Broadcast;
-        try{observed=await this.target();}
+        try{observed=await this.target(selected);}
         catch(readError){throw uncertainTransition(readError instanceof Error?readError.message:'État indisponible.');}
         if(start&&['complete','revoked'].includes(observed.status.lifeCycleStatus))throw new Error('La diffusion YouTube est terminée. Sélectionnez une nouvelle diffusion préparée.');
         return;
@@ -226,21 +254,23 @@ export class YouTubeClient {
     }
   }
   async update(value: LiveMetadata) {
-    const target=await this.target();
+    const selected=this.selection(),target=await this.target(selected);
     if (['complete','revoked'].includes(target.status.lifeCycleStatus)) throw new Error('La diffusion sélectionnée est terminée.');
-    const result=await this.api<{items:Array<{id:string;snippet:VideoSnippet}>}>(`videos?part=snippet&id=${encodeURIComponent(target.id)}`);
-    const snippet=result.items[0]?.snippet; if (!snippet || snippet.channelId!==this.configuration().channelId) throw new Error('Vidéo YouTube introuvable sur la chaîne sélectionnée.');
+    const result=await this.api<{items:Array<{id:string;snippet:VideoSnippet}>}>(`videos?part=snippet&id=${encodeURIComponent(target.id)}`,{},selected);
+    this.assertSelection(selected);
+    const snippet=result.items.find(item=>item.id===target.id)?.snippet; if (!snippet || snippet.channelId!==selected.channelId) throw new Error('Vidéo YouTube introuvable sur la chaîne sélectionnée.');
     // Retain writable fields omitted by the common form: videos.update replaces snippet properties.
     const updated={title:value.title,description:value.description,categoryId:value.youtubeCategoryId,tags:value.tags,...(snippet.defaultLanguage?{defaultLanguage:snippet.defaultLanguage}:{}),...(snippet.defaultAudioLanguage?{defaultAudioLanguage:snippet.defaultAudioLanguage}:{})};
-    await this.api('videos?part=snippet',{method:'PUT',body:JSON.stringify({id:target.id,snippet:updated})});
-    const check=await this.api<{items:Array<{snippet:VideoSnippet}>}>(`videos?part=snippet&id=${encodeURIComponent(target.id)}`);
-    const actual=check.items[0]?.snippet;
+    await this.api('videos?part=snippet',{method:'PUT',body:JSON.stringify({id:target.id,snippet:updated})},selected);
+    const check=await this.api<{items:Array<{id:string;snippet:VideoSnippet}>}>(`videos?part=snippet&id=${encodeURIComponent(target.id)}`,{},selected);
+    this.assertSelection(selected);
+    const actual=check.items.find(item=>item.id===target.id&&item.snippet.channelId===selected.channelId)?.snippet;
     const differences=metadataDifferences(actual,value);
     if (differences.length) throw new YouTubeMetadataVerificationError(differences);
   }
   async chat(message: string) {
-    const target=await this.target();
+    const selected=this.selection(),target=await this.target(selected);
     if (target.status.lifeCycleStatus!=='live'||!target.snippet.liveChatId) throw new Error('Le chat de la diffusion YouTube sélectionnée est indisponible.');
-    await this.api('liveChat/messages?part=snippet',{method:'POST',body:JSON.stringify({snippet:{liveChatId:target.snippet.liveChatId,type:'textMessageEvent',textMessageDetails:{messageText:message}}})});
+    await this.api('liveChat/messages?part=snippet',{method:'POST',body:JSON.stringify({snippet:{liveChatId:target.snippet.liveChatId,type:'textMessageEvent',textMessageDetails:{messageText:message}}})},selected);
   }
 }

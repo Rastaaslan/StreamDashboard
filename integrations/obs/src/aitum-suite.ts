@@ -1,3 +1,5 @@
+import { isObsRequestRejection, uncertainOutput } from './output-result.js';
+
 export interface SuiteOutput { name: string; type: string; active: boolean }
 type VendorRequest = (type: string, data: Record<string, string>) => Promise<unknown>;
 type HotkeyList = () => Promise<string[]>;
@@ -14,7 +16,9 @@ export class AitumSuiteOutputs {
     const value = await this.request(type, data);
     if (!value || typeof value !== 'object' || (value as {success?:unknown}).success !== true) {
       const error = value && typeof value === 'object' ? (value as {error?:unknown}).error : undefined;
-      throw new Error(`Stream Suite : ${typeof error === 'string' ? error.slice(0,300) : 'réponse non confirmée'}`);
+      throw Object.assign(new Error(`Stream Suite : ${typeof error === 'string' ? error.slice(0,300) : 'réponse non confirmée'}`), {
+        name: value && typeof value === 'object' && (value as {success?:unknown}).success === false ? 'AITUM_REQUEST_REJECTED' : 'AITUM_RESPONSE_INVALID',
+      });
     }
     return value as Record<string, unknown>;
   }
@@ -52,7 +56,21 @@ export class AitumSuiteOutputs {
       const expected = `AitumStreamSuite${operation}Output${name}`;
       if (hotkeys.filter(value => value === expected).length !== 1) throw new Error('Routage Stream Suite absent ou ambigu. Vérifiez les noms des sorties dans OBS puis relancez la détection.');
     }
-    await this.call(active ? 'start_output' : 'stop_output', { output: name });
+    try {
+      await this.call(active ? 'start_output' : 'stop_output', { output: name });
+      assertCurrent();
+    } catch (error) {
+      if (isObsRequestRejection(error) || (error instanceof Error && error.name === 'AITUM_REQUEST_REJECTED')) throw error;
+      // A missing acknowledgement can follow a successfully routed hotkey.
+      // Observe only the original connection, never dispatch the hotkey again.
+      try {
+        assertCurrent();
+        const confirmed = (await this.list()).filter(output => output.name === name);
+        assertCurrent();
+        if (confirmed.length === 1 && confirmed[0].type === 'stream' && confirmed[0].active === active) return;
+      } catch { /* The shared controller continues observing the platform. */ }
+      throw uncertainOutput('Commande Stream Suite envoyée ; état de la sortie non confirmé. Vérifiez avant de réessayer.');
+    }
     // Deliberately no "start_all_*", native fallback or automatic mutation retry.
   }
 }

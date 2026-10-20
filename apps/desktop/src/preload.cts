@@ -11,6 +11,12 @@ contextBridge.exposeInMainWorld('streamDashboardDesktop', {
   setDeviceRole: (role: string, name: string) => ipcRenderer.invoke('app:set-device-role', role, name),
   openTwitchActivation: (url: string): Promise<boolean> => ipcRenderer.invoke('app:open-twitch-activation', url),
   openExternalAuth: (url: string): Promise<boolean> => ipcRenderer.invoke('app:open-external-auth', url),
+  openTwitchViewerSession: (value: {channel: string}): Promise<{status: 'closed'}> => ipcRenderer.invoke('viewer:open-twitch-session', value),
+  onTwitchViewerSessionClosed: (callback: () => void): (() => void) => {
+    const listener = () => callback();
+    ipcRenderer.on('viewer:twitch-session-closed', listener);
+    return () => ipcRenderer.removeListener('viewer:twitch-session-closed', listener);
+  },
   openLogs: (): Promise<void> => ipcRenderer.invoke('app:open-logs'),
   ensureObsRunning: (): Promise<{ launched: boolean; detail: string }> => ipcRenderer.invoke('app:ensure-obs-running'),
   selectSoundFile: (): Promise<string | null> => ipcRenderer.invoke('soundboard:select-file'),

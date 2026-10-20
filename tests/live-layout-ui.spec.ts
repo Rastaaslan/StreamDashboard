@@ -84,6 +84,7 @@ async function setup(page: Page, activity = false) {
     });
     win.layoutSources = [{ id: 'regie', label: 'Régie · PC de stream' }];
     if (!standalone) {
+      win.streamDashboardDesktop = { openTwitchViewerSession: async () => ({ status: 'closed' }) };
       const monitorModulePath = '/mobile/control/live-monitor.js';
       const monitorModule = await import(monitorModulePath);
       win.layoutState = { host: { hostname: 'PC de stream', monitor: { twitchLogin: 'creator_test' } }, configuration: { youtube: { broadcastId: 'Abc_1234-XY' } } };
@@ -141,6 +142,17 @@ for (const viewport of [{ width: 1366, height: 768 }, { width: 1920, height: 108
     const chats = page.locator('#live-monitor .monitor-chat');
     await expect(chats).toHaveCount(2);
     const video = await documentBox(page.locator('.monitor-video'));
+    await expect(page.getByRole('button', { name: 'Connexion visionneuse', exact: true })).toBeVisible();
+    await expect(page.locator('[data-monitor-viewer-status]')).toContainText('propre connexion web sur cet appareil');
+    for (const control of await page.locator('.monitor-video .monitor-footer > *').all()) {
+      const box = await documentBox(control);
+      expect(box.x).toBeGreaterThanOrEqual(video.x);
+      expect(box.x + box.width).toBeLessThanOrEqual(video.x + video.width);
+      expect(box.y + box.height).toBeLessThanOrEqual(video.y + video.height);
+    }
+    const player = await documentBox(page.locator('[data-monitor-slot="video"] iframe'));
+    expect(player.width).toBeGreaterThanOrEqual(400);
+    expect(player.height).toBeGreaterThanOrEqual(300);
     const activity = await documentBox(page.locator('#streamlabs-feed'));
     const firstChat = await documentBox(chats.nth(0));
     const secondChat = await documentBox(chats.nth(1));

@@ -396,6 +396,15 @@ export class TwitchClient {
     return value.data ?? [];
   }
 
+  async getGameById(id: string) {
+    if (!/^\d{1,30}$/.test(id)) throw new Error('Identifiant de catégorie Twitch invalide.');
+    const value = await this.api<{ data: Array<{ id: string; name: string; box_art_url?: string }> }>(`/games?id=${encodeURIComponent(id)}`);
+    const game = value.data?.find(item => item.id === id);
+    return game && typeof game.name === 'string' && game.name.trim()
+      ? { id: game.id, name: game.name, ...(typeof game.box_art_url === 'string' ? { box_art_url: game.box_art_url } : {}) }
+      : null;
+  }
+
   async updateChannelMetadata(value: { title?: string; gameId?: string; tags?: string[] }) {
     if (!this.state.connected) throw new Error('Connectez Twitch avant de préparer le live.');
     this.requireScope(BROADCAST_SCOPE);

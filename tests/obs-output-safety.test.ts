@@ -85,6 +85,53 @@ describe('OBS output destination routing', () => {
     await expect(obs.setOutput('Aitum Stream Suite Output Removed destination', true)).rejects.toThrow(/absente/);
     expect(socket().call.mock.calls.some(([type]) => type === 'StartOutput')).toBe(false);
   });
+  it.each([true,false])('confirms a lost native output acknowledgement by observation, without a second mutation (%s)', async active => {
+    socket().outputs = [{ ...streamOutput('Selected output'), outputActive: !active }];
+    const original = socket().call.getMockImplementation()!;
+    socket().call.mockImplementation(async(type,data)=>{
+      const result = await original(type,data);
+      if(type===(active?'StartOutput':'StopOutput'))throw new Error('Reply lost');
+      return result;
+    });
+    await expect(obs.setOutput('Selected output',active)).resolves.toBeUndefined();
+    expect(socket().call.mock.calls.filter(([type])=>type===(active?'StartOutput':'StopOutput'))).toHaveLength(1);
+  });
+  it('reports failed confirmation after a native start as uncertain even for an explicit read error',async()=>{
+    socket().outputs = [streamOutput('Selected output')];
+    const original = socket().call.getMockImplementation()!;let reads=0;
+    socket().call.mockImplementation(async(type,data)=>{
+      if(type==='GetOutputStatus'&&++reads>1)throw Object.assign(new Error('Output temporarily unavailable'),{code:600});
+      return original(type,data);
+    });
+    await expect(obs.setOutput('Selected output',true)).rejects.toMatchObject({name:'ACTION_UNCERTAIN'});
+    expect(socket().call.mock.calls.filter(([type])=>type==='StartOutput')).toHaveLength(1);
+    expect(socket().outputs[0].outputActive).toBe(true);
+  });
+  it('keeps native preflight and explicit mutation rejections definitive',async()=>{
+    socket().outputs = [streamOutput('Selected output')];
+    const original = socket().call.getMockImplementation()!;
+    socket().call.mockImplementation(async(type,data)=>{
+      if(type==='GetOutputStatus')throw new Error('Read failed before dispatch');
+      return original(type,data);
+    });
+    const preflight=await obs.setOutput('Selected output',true).catch(error=>error);
+    expect(preflight.name).not.toBe('ACTION_UNCERTAIN');
+    expect(socket().call.mock.calls.filter(([type])=>type==='StartOutput')).toHaveLength(0);
+    socket().call.mockImplementation(async(type,data)=>{
+      if(type==='StartOutput')throw Object.assign(new Error('Rejected by OBS'),{code:600});
+      return original(type,data);
+    });
+    const rejection=await obs.setOutput('Selected output',true).catch(error=>error);
+    expect(rejection).toMatchObject({code:600});expect(rejection.name).not.toBe('ACTION_UNCERTAIN');
+    expect(socket().call.mock.calls.filter(([type])=>type==='StartOutput')).toHaveLength(1);
+  });
+  it('refuses malformed native preflight state without attempting to start',async()=>{
+    socket().outputs = [streamOutput('Selected output')];
+    const original = socket().call.getMockImplementation()!;
+    socket().call.mockImplementation(async(type,data)=>type==='GetOutputStatus'?{}:original(type,data));
+    await expect(obs.setOutput('Selected output',true)).rejects.toThrow(/État.*indisponible/);
+    expect(socket().call.mock.calls.some(([type])=>type==='StartOutput')).toBe(false);
+  });
 });
 describe('replay configuration and runtime availability', () => {
   it('retains Advanced profile settings when the replay output is not instantiated', async () => {

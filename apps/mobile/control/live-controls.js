@@ -6,7 +6,7 @@ export function liveControlState(data, online, now = Date.now()) {
   const running = (data?.receipts || []).some(receipt => receipt.status === 'running' && ['live.start', 'live.stop'].includes(receipt.action));
   const destinations = Object.fromEntries(platforms.map(platform => {
     const observed = host.platforms?.[platform], target = configuration.outputs?.[platform], output = host.outputStatus?.[platform];
-    const sameBroadcast = platform !== 'youtube' || !observed?.id || observed.id === configuration.youtube?.broadcastId;
+    const sameBroadcast = platform !== 'youtube' || ((!observed?.id || observed.id === configuration.youtube?.broadcastId) && (!observed?.channelId || observed.channelId === configuration.youtube?.channelId));
     const currentObservation = online && sameBroadcast && fresh(observed, now);
     const live = currentObservation && typeof observed.live === 'boolean' ? observed.live : null;
     const sameOutput = output && output.kind === target?.kind && output.name === target?.name;
@@ -15,8 +15,13 @@ export function liveControlState(data, online, now = Date.now()) {
       : sameOutput && fresh(output, now) && typeof output.active === 'boolean' ? output.active : null;
     const configured = target && target.kind !== 'unconfigured' && (platform !== 'youtube' || Boolean(configuration.youtube?.broadcastId && configuration.youtube?.channelId));
     const transitioning = currentObservation && ['liveStarting', 'testStarting'].includes(observed?.broadcastState);
-    const canStart = online && obs.connected && !running && !transitioning && configured && live === false;
-    return [platform, { live, active, transitioning: Boolean(transitioning), configured: Boolean(configured), canStart: Boolean(canStart), observedAt: observed?.observedAt, broadcastState: currentObservation ? observed?.broadcastState : null, ingestionStatus: currentObservation ? observed?.ingestionStatus : null, error: observed?.error || output?.error || '' }];
+    const startBlockReason = platform === 'youtube' && currentObservation && live === false
+      ? ['complete', 'revoked'].includes(observed?.broadcastState)
+        ? 'Diffusion terminée : choisissez une nouvelle diffusion YouTube préparée.'
+        : observed?.bound === false ? 'Diffusion sans flux lié : terminez sa préparation dans YouTube Studio.' : ''
+      : '';
+    const canStart = online && obs.connected && !running && !transitioning && !startBlockReason && configured && live === false;
+    return [platform, { live, active, transitioning: Boolean(transitioning), configured: Boolean(configured), canStart: Boolean(canStart), startBlockReason, observedAt: observed?.observedAt, broadcastState: currentObservation ? observed?.broadcastState : null, ingestionStatus: currentObservation ? observed?.ingestionStatus : null, error: observed?.error || output?.error || '' }];
   }));
   const mainActive = online && obs.connected && obs.streamingKnown !== false && obs.streaming === true;
   const anyActive = mainActive || platforms.some(platform => destinations[platform].live === true || destinations[platform].active === true);

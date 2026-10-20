@@ -1,5 +1,6 @@
 import OBSWebSocket from 'obs-websocket-js';
 import { AitumSuiteOutputs } from './aitum-suite.js';
+import { isObsRequestRejection, uncertainOutput } from './output-result.js';
 import type { ObsState } from '../../../packages/contracts/src/index.js';
 
 function friendlyError(error: unknown) {
@@ -133,10 +134,19 @@ export class ObsClient {
     if (flags?.OBS_OUTPUT_SERVICE !== true) throw new Error('Choisissez une sortie de diffusion OBS, pas un enregistrement, un tampon ou une caméra virtuelle.');
     const state = await this.call('GetOutputStatus', { outputName: name });
     assertCurrent();
-    if (state.outputActive !== active) await this.call(active ? 'StartOutput' : 'StopOutput', { outputName: name });
-    const confirmed = await this.call('GetOutputStatus', { outputName: name });
-    assertCurrent();
-    if (confirmed.outputActive !== active) throw new Error('OBS n’a pas confirmé la sortie demandée.');
+    if (typeof state.outputActive !== 'boolean') throw new Error('État de la sortie OBS indisponible.');
+    if (state.outputActive === active) return;
+    try { await this.call(active ? 'StartOutput' : 'StopOutput', { outputName: name }); }
+    catch (error) { if (isObsRequestRejection(error)) throw error; }
+    // Read after both an acknowledgement and a transport failure: the command
+    // may already have run. Never retry it or confirm against a new connection.
+    try {
+      assertCurrent();
+      const confirmed = await this.call('GetOutputStatus', { outputName: name });
+      assertCurrent();
+      if (confirmed.outputActive === active) return;
+    } catch { /* An observation failure cannot prove the dispatch failed. */ }
+    throw uncertainOutput('Commande OBS envoyée ; état de la sortie non confirmé. Vérifiez avant de réessayer.');
   }
   private client = new OBSWebSocket();
   private reconnects = 0;
@@ -476,12 +486,20 @@ export class ObsClient {
   async volume(inputName: string, inputVolumeMul: number) { if (!Number.isFinite(inputVolumeMul) || inputVolumeMul < 0 || inputVolumeMul > 20) throw new Error('Volume OBS invalide.'); await this.requireInput(inputName, true); await this.call('SetInputVolume', { inputName, inputVolumeMul }); }
   async volumeDb(inputName: string, inputVolumeDb: number) { if (!Number.isFinite(inputVolumeDb) || inputVolumeDb < -100 || inputVolumeDb > 26) throw new Error('Volume OBS invalide.'); await this.requireInput(inputName, true); await this.call('SetInputVolume', { inputName, inputVolumeDb }); }
   async stream(start: boolean) {
-    this.requireConnected();
+    const assertCurrent = this.outputConnectionGuard();
     if (this.streamPending) throw new Error('Changement de diffusion OBS déjà en cours.');
     this.streamPending = true;
     try {
       const status = await this.call('GetStreamStatus');
-      if (status.outputActive !== start) await this.call(start ? 'StartStream' : 'StopStream');
+      assertCurrent();
+      if (typeof status.outputActive !== 'boolean') throw new Error('État de la sortie principale OBS indisponible.');
+      if (status.outputActive !== start) {
+        try { await this.call(start ? 'StartStream' : 'StopStream'); }
+        catch (error) {
+          if (isObsRequestRejection(error)) throw error;
+          throw uncertainOutput('Commande de diffusion OBS envoyée ; accusé non reçu. Vérifiez l’état avant de réessayer.');
+        }
+      }
     } finally { this.streamPending = false; }
   }
   async record(start: boolean) { this.requireConnected(); const status = await this.call('GetRecordStatus'); if (status.outputActive === start) return; await this.call(start ? 'StartRecord' : 'StopRecord'); }

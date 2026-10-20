@@ -8,6 +8,7 @@ import { handleSquirrelStartup } from './squirrel.js';
 import { startUpdater } from './updater.js';
 import { DesktopLogger } from './logger.js';
 import { presentWindow } from './presentation.js';
+import { openTwitchViewerSession } from './twitch-viewer.js';
 import { installControllerKeys, startControllerAssets } from './controller.js';
 import type { Server } from 'node:http';
 
@@ -149,6 +150,18 @@ ipcMain.handle('app:open-twitch-activation', async (_event, url: unknown) => {
 ipcMain.handle('app:open-external-auth', async (_event, url: unknown) => {
   if (typeof url !== 'string' || !isAllowedExternalAuthUrl(url)) return false;
   await shell.openExternal(url); return true;
+});
+ipcMain.handle('viewer:open-twitch-session', (event, value: unknown) => {
+  const owner = window;
+  const origin = `http://127.0.0.1:${controllerRole ? 48134 : 48133}`;
+  if (!owner || owner.isDestroyed() || event.sender !== owner.webContents
+    || event.senderFrame !== owner.webContents.mainFrame
+    || new URL(event.senderFrame?.url || 'about:blank').origin !== origin) {
+    throw new Error('Interface non autorisée.');
+  }
+  const channel = value && typeof value === 'object' ? (value as {channel?: unknown}).channel : undefined;
+  if (typeof channel !== 'string' || !/^[a-zA-Z0-9_]{1,25}$/.test(channel)) throw new Error('Chaîne Twitch invalide.');
+  return openTwitchViewerSession(owner, channel);
 });
 ipcMain.handle('app:open-logs', async () => { if (runtime) await shell.openPath(path.dirname(runtime.logger.file)); });
 ipcMain.handle('app:ensure-obs-running', async () => runtime?.ensureObsRunning() ?? { launched: false, detail: 'StreamDashboard Desktop n’est pas prêt.' });

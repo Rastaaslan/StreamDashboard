@@ -1,5 +1,6 @@
 import type { DashboardCommand, DashboardSettings, DashboardState, RunMode } from '../../../packages/contracts/src/index.js';
 import { applyDashboardCommand, startNewSessionTimer, type DashboardDomainState } from '../../../packages/core/src/dashboard.js';
+import { uncertainOutput } from '../../../integrations/obs/src/output-result.js';
 
 export const END_SCENE_VISIBILITY_MS = 1_500;
 
@@ -99,18 +100,28 @@ export class DashboardCommandService {
 
   private async applyStreamState(expected: boolean) {
     this.requireActiveConnection();
+    const confirmFromRefresh = async () => {
+      try {
+        this.requireActiveConnection();
+        await this.obs.refresh();
+        this.requireActiveConnection();
+        return this.obs.state.streamingKnown !== false && this.obs.state.streaming === expected;
+      } catch { return false; }
+    };
     try { await this.obs.stream(expected); }
     catch (commandError) {
-      try { await this.obs.refresh(); } catch { /* keep the original command error */ }
-      if (this.activeGeneration !== this.obs.connectionGeneration || !this.obs.state.connected || this.obs.state.streamingKnown === false || this.obs.state.streaming !== expected) throw commandError;
+      // The OBS adapter distinguishes a rejected request from a lost acknowledgement.
+      // Only an uncertain dispatch may be recovered by observing its result.
+      if ((commandError as { name?: string } | null)?.name !== 'ACTION_UNCERTAIN' || !await confirmFromRefresh()) throw commandError;
       return;
     }
-    this.requireActiveConnection();
-    if (!this.obs.waitForStreaming) return;
-    try { await this.obs.waitForStreaming(expected); this.requireActiveConnection(); }
-    catch (confirmationError) {
-      try { await this.obs.refresh(); } catch { /* confirmation error remains authoritative */ }
-      if (this.activeGeneration !== this.obs.connectionGeneration || !this.obs.state.connected || this.obs.state.streamingKnown === false || this.obs.state.streaming !== expected) throw confirmationError;
+    try {
+      this.requireActiveConnection();
+      if (!this.obs.waitForStreaming) return;
+      await this.obs.waitForStreaming(expected);
+      this.requireActiveConnection();
+    } catch {
+      if (!await confirmFromRefresh()) throw uncertainOutput(`Commande d’${expected ? 'activation' : 'arrêt'} déjà transmise à OBS, mais son résultat n’a pas été confirmé. Vérifiez l’état de la diffusion avant toute nouvelle tentative.`);
     }
   }
 

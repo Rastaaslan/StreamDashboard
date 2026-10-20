@@ -58,3 +58,19 @@ export function isSameOrigin(candidate: string, expected: string) {
   try { return new URL(candidate).origin === new URL(expected).origin; }
   catch { return false; }
 }
+
+/** The viewer's web login stays on Twitch, in this PC's existing Electron session. */
+export function isAllowedTwitchViewerUrl(value: string) {
+  try {
+    const url = new URL(value);
+    return url.protocol === 'https:' && !url.username && !url.password && !url.port
+      && ['twitch.tv', 'www.twitch.tv', 'passport.twitch.tv', 'id.twitch.tv'].includes(url.hostname);
+  } catch { return false; }
+}
+
+export function isTwitchViewerLoginUrl(value: string) {
+  if (!isAllowedTwitchViewerUrl(value)) return false;
+  const url = new URL(value);
+  return ['twitch.tv', 'www.twitch.tv', 'passport.twitch.tv'].includes(url.hostname)
+    && /^\/login\/?$/.test(url.pathname);
+}

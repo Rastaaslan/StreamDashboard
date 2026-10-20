@@ -115,6 +115,66 @@ describe('service de commandes', () => {
     expect(commit).not.toHaveBeenCalled();
   });
 
+  it.each([true, false])('garde un résultat incertain si la connexion change après l’accusé de streaming %s', async expected => {
+    const { service, obs, commit, domain } = setup();
+    let generation = 1;
+    Object.defineProperty(obs, 'connectionGeneration', { get: () => generation });
+    obs.state.streaming = !expected;
+    const before = structuredClone(domain);
+    obs.waitForStreaming = vi.fn();
+    vi.mocked(obs.stream).mockImplementation(async () => { obs.state.streaming = expected; generation++; });
+    await expect(service.execute({ type: expected ? 'session.start' : 'session.stop' })).rejects.toMatchObject({ name: 'ACTION_UNCERTAIN' });
+    expect(obs.stream).toHaveBeenCalledExactlyOnceWith(expected);
+    expect(obs.waitForStreaming).not.toHaveBeenCalled();
+    expect(obs.refresh).toHaveBeenCalledOnce();
+    expect(domain).toEqual(before); expect(commit).not.toHaveBeenCalled();
+  });
+
+  it.each(['état contraire', 'lecture échouée', 'état inconnu'])('ne rejoue pas StartStream après une confirmation perdue : %s', async scenario => {
+    const { service, obs, commit, domain } = setup();
+    obs.waitForStreaming = vi.fn(async () => { throw new Error('event missed'); });
+    vi.mocked(obs.stream).mockImplementation(async () => { obs.state.streaming = true; });
+    vi.mocked(obs.refresh).mockImplementation(async () => {
+      if (!vi.mocked(obs.stream).mock.calls.length) return;
+      if (scenario === 'lecture échouée') throw new Error('refresh unavailable');
+      obs.state.streaming = scenario !== 'état contraire';
+      obs.state.streamingKnown = scenario !== 'état inconnu';
+    });
+    await expect(service.execute({ type: 'session.start' })).rejects.toMatchObject({ name: 'ACTION_UNCERTAIN' });
+    expect(obs.stream).toHaveBeenCalledExactlyOnceWith(true);
+    expect(obs.waitForStreaming).toHaveBeenCalledExactlyOnceWith(true);
+    expect(obs.refresh).toHaveBeenCalledTimes(2);
+    expect(domain.mode).toBe('idle'); expect(domain.timer.running).toBe(false); expect(commit).not.toHaveBeenCalled();
+  });
+
+  it('confirme par relecture un StartStream dont l’accusé a été perdu, sans le rejouer', async () => {
+    const { service, obs, commit, domain } = setup();
+    vi.mocked(obs.stream).mockRejectedValueOnce(Object.assign(new Error('ack lost'), { name: 'ACTION_UNCERTAIN' }));
+    vi.mocked(obs.refresh).mockImplementation(async () => { if (vi.mocked(obs.stream).mock.calls.length) obs.state.streaming = true; });
+    await service.execute({ type: 'session.start' });
+    expect(obs.stream).toHaveBeenCalledExactlyOnceWith(true);
+    expect(obs.refresh).toHaveBeenCalledTimes(2);
+    expect(domain.mode).toBe('live'); expect(domain.timer.running).toBe(true); expect(commit).toHaveBeenCalledOnce();
+  });
+
+  it('conserve un refus RPC définitif même si le cache OBS indique ensuite le live', async () => {
+    const { service, obs, commit, domain } = setup();
+    const rejection = Object.assign(new Error('StartStream rejected'), { code: 600 });
+    vi.mocked(obs.stream).mockImplementation(async () => { obs.state.streaming = true; throw rejection; });
+    await expect(service.execute({ type: 'session.start' })).rejects.toBe(rejection);
+    expect(obs.stream).toHaveBeenCalledExactlyOnceWith(true);
+    expect(obs.refresh).toHaveBeenCalledOnce();
+    expect(domain.mode).toBe('idle'); expect(commit).not.toHaveBeenCalled();
+  });
+
+  it('conserve un échec de préflight sans envoyer StartStream', async () => {
+    const { service, obs, commit } = setup();
+    const rejection = new Error('OBS status unavailable');
+    vi.mocked(obs.refresh).mockRejectedValueOnce(rejection);
+    await expect(service.execute({ type: 'session.start' })).rejects.toBe(rejection);
+    expect(obs.stream).not.toHaveBeenCalled(); expect(commit).not.toHaveBeenCalled();
+  });
+
   it('affiche la scène de fin avant StopStream puis ne change le domaine qu’après confirmation', async () => {
     const domain = { mode: 'live' as const, timer: { running: true, duration: 300, remaining: 200, deadline: Date.now() + 200_000 }, checklist: [] };
     const order: string[] = [];
@@ -158,6 +218,7 @@ describe('service de commandes', () => {
     const service = new DashboardCommandService(domain, obs, vi.fn(async () => ({}) as never));
     await service.execute({ type: 'session.stop' });
     expect(obs.refresh).toHaveBeenCalledTimes(2);
+    expect(obs.stream).toHaveBeenCalledExactlyOnceWith(false);
     expect(domain.mode).toBe('end'); expect(domain.timer.running).toBe(false);
   });
 

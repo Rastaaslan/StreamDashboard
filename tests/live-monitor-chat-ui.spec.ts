@@ -7,6 +7,11 @@ let server: Server, origin: string;
 test.beforeAll(async () => {
   const app = express();
   app.use('/mobile', express.static(path.resolve('apps/mobile')));
+  app.get('/api/v1/twitch/categories', (req, res) => {
+    // The shipped route originally accepted q only: ?query= silently returned [].
+    if (req.query.id === '460637') { res.json([{ id: '460637', name: 'Dead Island 2' }]); return; }
+    res.json(req.query.q === 'Minecraft' ? [{ id: '27471', name: 'Minecraft' }] : []);
+  });
   app.get('/', (_req, res) => res.send('<!doctype html><meta charset="utf-8"><link rel="stylesheet" href="/mobile/control/control.css"><main style="padding:24px"><div id="monitor"></div><div id="chat" style="max-width:480px"></div><div id="feed"></div></main>'));
   server = await new Promise<Server>(resolve => { const running = app.listen(0, '127.0.0.1', () => resolve(running)); });
   origin = 'http://127.0.0.1:' + (server.address() as { port: number }).port;
@@ -162,6 +167,143 @@ test('monitor keeps public video frames stable and exposes creator tools alongsi
   await page.getByRole('button', { name: 'Masquer les écrans' }).click();
   await expect(page.locator('#monitor iframe')).toHaveCount(0);
   await page.evaluate(() => { (window as any).monitor.destroy(); });
+});
+
+async function setupViewerSession(page: Page) {
+  await page.setViewportSize({ width: 1600, height: 1000 });
+  await page.evaluate(async () => {
+    const win = window as any;
+    win.viewerCalls = [];
+    win.streamDashboardDesktop = {
+      openTwitchViewerSession: (value: unknown) => {
+        win.viewerCalls.push(value);
+        return new Promise(resolve => { win.closeViewer = () => resolve({ status: 'closed' }); });
+      },
+      onTwitchViewerSessionClosed: (listener: () => void) => { win.viewerClosed = listener; return () => { win.viewerUnsubscribed = true; }; },
+    };
+    const modulePath = '/mobile/control/live-monitor.js';
+    const module = await import(modulePath);
+    win.data = { host: { monitor: { twitchLogin: 'creator_test' } }, configuration: { youtube: { broadcastId: 'Abc_1234-XY' } } };
+    win.monitor = module.createLiveMonitor(document.querySelector('#monitor'), { request: async () => ({
+      identity: { broadcasterId: '123', userName: 'creator_test', displayName: 'Créateur test' }, accountConnected: true,
+      capabilities: { chatRead: true, chatWrite: true }, chat: { connected: true, messages: [] },
+    }) });
+    win.monitor.update(win.data, { online: true, sourceKey: 'regie' });
+    win.videoFrame = document.querySelector('[data-monitor-slot="video"] iframe');
+    win.youtubeFrame = document.querySelector('[data-monitor-slot="youtube"] iframe');
+  });
+}
+
+test('viewer login is local and closing it reloads only Twitch without claiming login success', async ({ page }) => {
+  await setupViewerSession(page);
+  const draft = page.getByLabel('Message Twitch', { exact: true });
+  await expect(draft).toBeEnabled();
+  await draft.fill('Brouillon conservé pendant la connexion');
+  await page.getByRole('button', { name: 'Connexion visionneuse', exact: true }).click();
+  await expect(page.locator('[data-monitor-viewer-status]')).toContainText('fenêtre de cet appareil');
+  await expect(page.locator('[data-monitor-connect]')).toBeDisabled();
+  expect(await page.evaluate(() => (window as any).viewerCalls)).toEqual([{ channel: 'creator_test' }]);
+  expect(await page.evaluate(() => (window as any).videoFrame === document.querySelector('[data-monitor-slot="video"] iframe'))).toBe(true);
+  await page.evaluate(() => (window as any).closeViewer());
+  await expect(page.locator('[data-monitor-viewer-status]')).toContainText('Visionneuse rechargée');
+  expect(await page.evaluate(() => (window as any).videoFrame === document.querySelector('[data-monitor-slot="video"] iframe'))).toBe(false);
+  expect(await page.evaluate(() => (window as any).youtubeFrame === document.querySelector('[data-monitor-slot="youtube"] iframe'))).toBe(true);
+  await expect(draft).toHaveValue('Brouillon conservé pendant la connexion');
+  await expect(page.locator('[data-monitor-connect]')).toBeEnabled();
+  await expect(page.locator('[data-monitor-viewer-status]')).not.toContainText('connectée');
+});
+
+test('a late viewer close cannot reload a newly selected source or the YouTube player', async ({ page }) => {
+  await setupViewerSession(page);
+  await page.getByRole('button', { name: 'Connexion visionneuse', exact: true }).click();
+  await page.getByRole('button', { name: 'YouTube', exact: true }).click();
+  await page.evaluate(() => { (window as any).currentFrame = document.querySelector('[data-monitor-slot="video"] iframe'); });
+  await page.evaluate(() => (window as any).closeViewer());
+  await expect(page.locator('[data-monitor-connect]')).toBeHidden();
+  expect(await page.evaluate(() => (window as any).currentFrame === document.querySelector('[data-monitor-slot="video"] iframe'))).toBe(true);
+  await page.getByRole('button', { name: 'Twitch', exact: true }).click();
+  await page.getByRole('button', { name: 'Connexion visionneuse', exact: true }).click();
+  await page.evaluate(() => {
+    const win = window as any;
+    win.data.host.monitor.twitchLogin = 'another_test';
+    win.monitor.update(win.data, { online: true, sourceKey: 'other-regie' });
+    win.currentFrame = document.querySelector('[data-monitor-slot="video"] iframe');
+    win.closeViewer();
+  });
+  await expect(page.locator('[data-monitor-connect]')).toBeEnabled();
+  expect(await page.evaluate(() => (window as any).currentFrame === document.querySelector('[data-monitor-slot="video"] iframe'))).toBe(true);
+  await expect(page.locator('[data-monitor-viewer-status]')).not.toContainText('Visionneuse rechargée');
+});
+
+test('native Twitch popup completion refreshes only an active Twitch frame and unsubscribes on destroy', async ({ page }) => {
+  await setupViewerSession(page);
+  await page.evaluate(() => (window as any).viewerClosed());
+  expect(await page.evaluate(() => (window as any).videoFrame === document.querySelector('[data-monitor-slot="video"] iframe'))).toBe(false);
+  expect(await page.evaluate(() => (window as any).youtubeFrame === document.querySelector('[data-monitor-slot="youtube"] iframe'))).toBe(true);
+  await page.getByRole('button', { name: 'YouTube', exact: true }).click();
+  await page.evaluate(() => { const win = window as any; win.currentFrame = document.querySelector('[data-monitor-slot="video"] iframe'); win.viewerClosed(); });
+  expect(await page.evaluate(() => (window as any).currentFrame === document.querySelector('[data-monitor-slot="video"] iframe'))).toBe(true);
+  await page.evaluate(() => { const win = window as any; win.monitor.destroy(); win.viewerClosed(); });
+  expect(await page.evaluate(() => (window as any).viewerUnsubscribed)).toBe(true);
+  await expect(page.locator('#monitor iframe')).toHaveCount(0);
+});
+
+async function setupCategoryPicker(page: Page, defer = false) {
+  await page.evaluate(async deferred => {
+    const win = window as any;
+    document.querySelector('#chat')!.innerHTML = '<form id="category-form"><label>Rechercher un jeu ou une catégorie Twitch<input type="search" id="twitch-game-query"></label><input type="hidden" name="twitchGameId" value="460637"><p id="twitch-game-selected"></p><button type="button" data-twitch-category-search>Rechercher sur Twitch</button><div id="category-results"></div></form>';
+    const form = document.querySelector<HTMLFormElement>('#category-form')!;
+    const modulePath = '/mobile/control/twitch-category-picker.js';
+    const module = await import(modulePath);
+    win.categoryCalls = []; win.remembered = []; win.categoryCurrent = true; win.categoryPending = [];
+    form.addEventListener('submit', event => { event.preventDefault(); win.unexpectedSubmit = true; });
+    win.picker = module.createTwitchCategoryPicker(form, {
+      initialName: deferred ? 'Dead Island 2' : '',
+      isCurrent: () => win.categoryCurrent,
+      remember: (game: unknown) => win.remembered.push(game),
+      request: async (url: string) => {
+        win.categoryCalls.push(url);
+        if (deferred) return new Promise(resolve => win.categoryPending.push(resolve));
+        return (await fetch(url)).json();
+      },
+    });
+  }, defer);
+}
+
+test('category search uses q and resolves a saved game name after a fresh start', async ({ page }) => {
+  await setupCategoryPicker(page);
+  await expect(page.locator('#twitch-game-selected')).toHaveText('Jeu sélectionné : Dead Island 2');
+  const query = page.getByLabel('Rechercher un jeu ou une catégorie Twitch');
+  await query.fill('Minecraft'); await query.press('Enter');
+  await page.getByRole('button', { name: 'Minecraft', exact: true }).click();
+  await expect(page.locator('#twitch-game-selected')).toHaveText('Jeu sélectionné : Minecraft');
+  await expect(page.locator('input[name="twitchGameId"]')).toHaveValue('27471');
+  expect(await page.evaluate(() => (window as any).categoryCalls)).toEqual([
+    '/api/v1/twitch/categories?id=460637', '/api/v1/twitch/categories?q=Minecraft',
+  ]);
+  expect(await page.evaluate(() => (window as any).unexpectedSubmit)).toBeUndefined();
+});
+
+test('late category results cannot replace a newer search or cross sources', async ({ page }) => {
+  await setupCategoryPicker(page, true);
+  const query = page.getByLabel('Rechercher un jeu ou une catégorie Twitch');
+  await query.fill('Minecraft'); await query.press('Enter');
+  await query.fill('Another'); await query.press('Enter');
+  await page.evaluate(() => (window as any).categoryPending[0]([{ id: '27471', name: 'Minecraft' }]));
+  await expect(page.locator('#category-results')).not.toContainText('Minecraft');
+  await page.evaluate(() => { const win = window as any; win.categoryCurrent = false; win.categoryPending[1]([{ id: '123', name: 'Autre source' }]); });
+  await expect(page.locator('#category-results')).not.toContainText('Autre source');
+  await expect(page.locator('input[name="twitchGameId"]')).toHaveValue('460637');
+});
+
+test('invalid category responses are reported instead of pretending Twitch found no games', async ({ page }) => {
+  await setupCategoryPicker(page, true);
+  const query = page.getByLabel('Rechercher un jeu ou une catégorie Twitch');
+  await query.fill('Minecraft'); await query.press('Enter');
+  await page.evaluate(() => (window as any).categoryPending[0]({ unexpected: true }));
+  await expect(page.locator('#category-results')).toContainText('Réponse Twitch illisible');
+  await expect(page.locator('#twitch-game-selected')).toHaveText('Jeu sélectionné : Dead Island 2');
+  await expect(page.getByRole('button', { name: 'Rechercher sur Twitch' })).toBeEnabled();
 });
 
 async function setupFeed(page: Page) {

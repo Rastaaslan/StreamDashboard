@@ -36,7 +36,7 @@ export function installControllerKeys(window: () => BrowserWindow | null, userDa
         pending=true;
         void (async()=>{
           try {
-            const response=await fetch(`${server}/api/v2/actions`,{method:'POST',headers:{'Content-Type':'application/json',...(value.credential?{Authorization:`Device ${value.credential}`}:{})},body:JSON.stringify({id:randomUUID(),issuedAt:new Date().toISOString(),action:action.id}),signal:AbortSignal.timeout(65_000)});
+            const response=await fetch(`${server}/api/v2/actions`,{method:'POST',headers:{'Content-Type':'application/json',...(value.credential?{Authorization:`Device ${value.credential}`}:{})},body:JSON.stringify({id:randomUUID(),issuedAt:new Date().toISOString(),action:action.id}),signal:AbortSignal.timeout(120_000)});
             const result=await response.json() as {error?:{message?:string};status?:string;message?:string};
             if(!response.ok)throw new Error(result.error?.message||'Commande refusée par la régie.');
             state.lastResult=result;window()?.webContents.send('controller:receipt',result);

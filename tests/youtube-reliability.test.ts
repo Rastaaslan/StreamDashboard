@@ -43,18 +43,19 @@ function fixture(
   };
   return {client:new YouTubeClient(secrets,options.configuration??(()=>({...configuration})),transport),calls};
 }
-async function controller(client:YouTubeClient) {
+async function controller(client:YouTubeClient, wait: (ms:number)=>Promise<void> = async()=>{}) {
   const directory=await mkdtemp(path.join(os.tmpdir(),'sd-youtube-reliability-'));
   directories.push(directory);
   const adapter:ControlAdapter = {
     live:vi.fn(async()=>client.live()),
+    preflight:vi.fn(async(_platform,start)=>{if(start)await client.assertStartable();}),
     output:vi.fn(async()=>{}),
     settle:vi.fn(async(_platform,start,requestId)=>client.transition(start,requestId)),
     metadata:vi.fn(async()=>{}),
     action:vi.fn(async()=>{})
   };
   const file=path.join(directory,'control.json');
-  const control=await ControlService.open(file,adapter,()=>{},async()=>{});
+  const control=await ControlService.open(file,adapter,()=>{},wait);
   controls.push(control);
   return {control,adapter,file};
 }
@@ -150,6 +151,16 @@ describe('YouTube metadata confirmation and read-only diagnosis',()=>{
     await expect(client.readMetadata()).rejects.toThrow('La cible YouTube a changé pendant la lecture');
     expect(calls).toHaveLength(2);
   });
+  it('does not update metadata after the selected target changes during the snippet read',async()=>{
+    const selected={...configuration};
+    const {client,calls}=fixture(url=>{
+      if(url.pathname.endsWith('/liveBroadcasts'))return json({items:[broadcast()]});
+      selected.broadcastId='new-selection';
+      return json({items:[{id:configuration.broadcastId,snippet:snippet()}]});
+    },{configuration:()=>selected});
+    await expect(client.update(requested)).rejects.toThrow('La cible YouTube a changé');
+    expect(calls.some(({init})=>init.method==='PUT')).toBe(false);
+  });
 });
 
 describe('YouTube discovery and safe diagnostics',()=>{
@@ -239,6 +250,59 @@ describe('YouTube signal and broadcast diagnosis',()=>{
     expect(error).toMatchObject({name:'YouTubeApiError',reason:'quotaExceeded',httpStatus:403});
     expect(String(error)).not.toContain('PRIVATE_PROVIDER_DETAILS');
   });
+  it('does not publish ingestion observations from a selection replaced during the read',async()=>{
+    const selected={...configuration};
+    const {client}=fixture(url=>{
+      if(url.pathname.endsWith('/liveStreams')){
+        selected.broadcastId='new-selection';
+        return json({items:[{status:{streamStatus:'active'}}]});
+      }
+      return json({items:[broadcast()]});
+    },{configuration:()=>selected});
+    await expect(client.broadcastState()).rejects.toThrow('La cible YouTube a changé');
+  });
+});
+
+describe('YouTube preflight before OBS dispatch',()=>{
+  it.each(['ready','testing'])('checks a bound %s broadcast using GET only',async status=>{
+    const {client,calls}=fixture(()=>json({items:[broadcast(status)]}));
+    await expect(client.assertStartable()).resolves.toBeUndefined();
+    expect(calls).toHaveLength(1);
+    expect(calls.every(({init})=>init.method===undefined||init.method==='GET')).toBe(true);
+  });
+  it.each([
+    ['complete',true,'terminée'],
+    ['revoked',true,'terminée'],
+    ['created',false,'Aucun flux lié'],
+  ])('does not dispatch OBS for %s with bound=%s',async(status,bound,message)=>{
+    const target={...broadcast(String(status)),contentDetails:bound?{boundStreamId:'linked-stream'}:{}};
+    const {client,calls}=fixture(()=>json({items:[target]}));
+    const {control,adapter}=await controller(client);
+    const receipt=await control.execute(start());
+    expect(receipt).toMatchObject({status:'failed',platforms:{youtube:{status:'failed'}}});
+    expect(receipt.platforms?.youtube?.message).toContain(message);
+    expect(adapter.preflight).toHaveBeenCalledExactlyOnceWith('youtube',true);
+    expect(adapter.output).not.toHaveBeenCalled();
+    expect(adapter.settle).not.toHaveBeenCalled();
+    expect(calls.some(({init})=>init.method==='POST')).toBe(false);
+  });
+  it('refuses a target changed during preflight instead of starting a different configured output',async()=>{
+    const selected={...configuration};let reads=0;
+    const {client,calls}=fixture(()=>{
+      if(++reads===2)selected.broadcastId='new-selection';
+      return json({items:[broadcast()]});
+    },{configuration:()=>selected});
+    const {control,adapter}=await controller(client);
+    const receipt=await control.execute(start());
+    expect(receipt.status).toBe('failed');
+    expect(receipt.platforms?.youtube?.message).toContain('La cible YouTube a changé');
+    expect(adapter.output).not.toHaveBeenCalled();
+    expect(calls.some(({init})=>init.method==='POST')).toBe(false);
+  });
+  it('refuses another broadcast returned for the requested ID',async()=>{
+    const {client}=fixture(()=>json({items:[broadcast('ready','another-broadcast')]}));
+    await expect(client.assertStartable()).rejects.toThrow('absente ou appartient à une autre chaîne');
+  });
 });
 
 describe('YouTube transitions and durable command confirmation',()=>{
@@ -271,6 +335,86 @@ describe('YouTube transitions and durable command confirmation',()=>{
     });
     await Promise.all([client.transition(true,'parallel_operation'),client.transition(true,'parallel_operation')]);
     expect(calls.filter(({init})=>init.method==='POST')).toHaveLength(1);
+  });
+  it('does not transition a target replaced while reading ingestion',async()=>{
+    const selected={...configuration};
+    const {client,calls}=fixture(url=>{
+      if(url.pathname.endsWith('/liveStreams')){
+        selected.broadcastId='new-selection';
+        return json({items:[{status:{streamStatus:'active'}}]});
+      }
+      return json({items:[broadcast()]});
+    },{configuration:()=>selected});
+    await expect(client.transition(true,'changed_target')).rejects.toThrow('La cible YouTube a changé');
+    expect(calls.some(({init})=>init.method==='POST')).toBe(false);
+  });
+  it('continues settling after a transient observation outage before ingestion becomes active',async()=>{
+    let outputStarted=false,ingestionRead=false,readFailed=false,posted=false;
+    const {client,calls}=fixture((url,init)=>{
+      if(init.method==='POST'){posted=true;return json({id:'selected-live',status:{lifeCycleStatus:'liveStarting'}});}
+      if(url.pathname.endsWith('/liveStreams')){
+        ingestionRead=true;
+        return json({items:[{status:{streamStatus:readFailed?'active':'inactive'}}]});
+      }
+      if(outputStarted&&ingestionRead&&!readFailed){readFailed=true;throw new Error('Transient observation outage');}
+      return json({items:[broadcast(posted?'live':'ready')]});
+    });
+    const {control,adapter}=await controller(client);
+    adapter.output=vi.fn(async()=>{outputStarted=true;});
+    expect(await control.execute(start())).toMatchObject({status:'succeeded',platforms:{youtube:{live:true}}});
+    expect(readFailed).toBe(true);
+    expect(adapter.output).toHaveBeenCalledTimes(1);
+    expect(calls.filter(({init})=>init.method==='POST')).toHaveLength(1);
+    expect(adapter.settle).toHaveBeenCalledTimes(2);
+  });
+  it.each(['target','ingestion'])('recovers a transient %s read within settle without repeating the OBS dispatch',async resource=>{
+    let outputStarted=false,readFailed=false,posted=false;
+    const {client,calls}=fixture((url,init)=>{
+      if(init.method==='POST'){posted=true;return json({id:'selected-live',status:{lifeCycleStatus:'liveStarting'}});}
+      const ingestion=url.pathname.endsWith('/liveStreams');
+      if(outputStarted&&!readFailed&&((resource==='ingestion')===ingestion)){
+        readFailed=true;
+        return json({error:{errors:[{reason:'backendError'}]}},503);
+      }
+      if(ingestion)return json({items:[{status:{streamStatus:'active'}}]});
+      return json({items:[broadcast(posted?'live':'ready')]});
+    });
+    const {control,adapter}=await controller(client);
+    adapter.output=vi.fn(async()=>{outputStarted=true;});
+    expect(await control.execute(start())).toMatchObject({status:'succeeded',platforms:{youtube:{live:true}}});
+    expect(readFailed).toBe(true);
+    expect(adapter.output).toHaveBeenCalledTimes(1);
+    expect(calls.filter(({init})=>init.method==='POST')).toHaveLength(1);
+  });
+  it('confirms a normal slow YouTube transition without a second POST',async()=>{
+    const began=Date.now();let now=began,posted=false;
+    const clock=vi.spyOn(Date,'now').mockImplementation(()=>now);
+    try{
+      const {client,calls}=fixture((url,init)=>{
+        if(init.method==='POST'){posted=true;return json({id:'selected-live',status:{lifeCycleStatus:'liveStarting'}});}
+        if(url.pathname.endsWith('/liveStreams'))return json({items:[{status:{streamStatus:'active'}}]});
+        return json({items:[broadcast(posted?(now-began>=55_000?'live':'liveStarting'):'ready')]});
+      });
+      const {control,adapter}=await controller(client,async ms=>{now+=ms;});
+      expect(await control.execute(start())).toMatchObject({status:'succeeded',platforms:{youtube:{live:true}}});
+      expect(now-began).toBeGreaterThanOrEqual(55_000);
+      expect(now-began).toBeLessThanOrEqual(60_000);
+      expect(adapter.output).toHaveBeenCalledTimes(1);
+      expect(calls.filter(({init})=>init.method==='POST')).toHaveLength(1);
+    }finally{clock.mockRestore();}
+  });
+  it('ends observation at the YouTube deadline when ingestion never arrives',async()=>{
+    const began=Date.now();let now=began;
+    const clock=vi.spyOn(Date,'now').mockImplementation(()=>now);
+    try{
+      const {client,calls}=fixture(url=>url.pathname.endsWith('/liveStreams')
+        ?json({items:[{status:{streamStatus:'inactive'}}]}):json({items:[broadcast()]}));
+      const {control,adapter}=await controller(client,async ms=>{now+=ms;});
+      expect(await control.execute(start())).toMatchObject({status:'uncertain',platforms:{youtube:{live:false}}});
+      expect(now-began).toBe(60_000);
+      expect(adapter.output).toHaveBeenCalledTimes(1);
+      expect(calls.some(({init})=>init.method==='POST')).toBe(false);
+    }finally{clock.mockRestore();}
   });
   it('observes a redundant transition through to live without issuing a second POST',async()=>{
     let posted=false, observations=0;
@@ -338,7 +482,7 @@ describe('YouTube transitions and durable command confirmation',()=>{
     expect(receipt).toMatchObject({status:'uncertain',platforms:{youtube:{status:'uncertain'}}});
     expect(receipt.platforms?.youtube).not.toHaveProperty('live');
     expect(adapter.output).toHaveBeenCalledTimes(1);
-    expect(adapter.settle).toHaveBeenCalledTimes(1);
+    expect(vi.mocked(adapter.settle!).mock.calls.length).toBeGreaterThan(1);
   });
   it('recovers an uncertain OBS dispatch through observation without sending a YouTube transition',async()=>{
     const {client}=fixture(()=>json({items:[broadcast()]}));

@@ -6,8 +6,10 @@ import { resolveTags, editedTags, tagMetadata, tagPreferences, type TagEngine } 
 import { googleRecurrence, parseGoogleRecurrence } from '../../../integrations/google-calendar/src/recurrence.js';
 import express from 'express';
 import { ControlService } from './control-service.js';
+import { replayAutoStartDecision } from './replay-auto-start.js';
 import { registerControlRoutes } from './control-routes.js';
 import { registerTwitchChatRoutes } from './twitch-chat-routes.js';
+import { sameTwitchTags } from '../../../integrations/twitch/src/metadata.js';
 import { YouTubeClient, YouTubeApiError } from '../../../integrations/youtube/src/client.js';
 import { createServer, type Server } from 'node:http';
 import { mkdir, readFile, stat, unlink, writeFile } from 'node:fs/promises';
@@ -1076,7 +1078,7 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
   });
   const platformLive: Record<string, { live: boolean | null; observedAt: string; error?: string; id?: string; broadcastState?: string; ingestionStatus?: string | null; bound?: boolean }> = {};
   const outputStatus: Record<string, { kind: string; name: string; active: boolean | null; observedAt: string; error?: string }> = {};
-  let outputObservation: Promise<void> | undefined, outputsObservedAt = 0;
+  let outputObservation: Promise<void> | undefined, outputsObservedAt = 0, outputsObservedGeneration = -1;
   const observeOutputs = () => {
     if (outputObservation) return outputObservation;
     if (Date.now() - outputsObservedAt < 2_000) return Promise.resolve();
@@ -1108,7 +1110,7 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
           outputStatus[platform] = { ...target, active, observedAt: new Date().toISOString() };
         } catch (error) { outputStatus[platform] = { ...target, active: null, observedAt: new Date().toISOString(), error: error instanceof Error ? error.message : 'État de sortie inconnu.' }; }
       }
-    })().finally(() => { outputsObservedAt = Date.now();outputObservation = undefined; });
+    })().finally(() => { outputsObservedAt = Date.now(); outputsObservedGeneration = generation; outputObservation = undefined; autoStartReplay(); });
     return outputObservation;
   };
   let platformObservation: Promise<void> | undefined;
@@ -1133,6 +1135,9 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
         platformLive[platform] = { live, observedAt: new Date().toISOString() }; return live;
       } catch (error) { platformLive[platform] = { live: null, observedAt: new Date().toISOString(), error: error instanceof Error ? error.message : 'État indisponible' }; throw error; }
     },
+    preflight: async (platform, start) => {
+      if (platform === 'youtube' && start) await youtube.assertStartable();
+    },
     output: async (platform, start) => {
       const target = control.snapshot().configuration.outputs[platform];
       if (target.kind === 'unconfigured') throw new Error(`Sélectionnez la sortie OBS ${platform} dans Configuration.`);
@@ -1142,13 +1147,16 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
         if (obs.state.streaming !== start) await commands.execute({ type: start ? 'session.start' : 'session.stop' });
       } else if (target.kind === 'aitum-suite') await obs.setStreamSuiteOutput(target.name, start);
       else await obs.setOutput(target.name, start);
+      if (outputObservation) await outputObservation;
+      outputsObservedAt = 0;
+      await observeOutputs();
     },
     settle: async (platform, start, requestId) => { if (platform === 'youtube') await youtube.transition(start, requestId); },
     metadata: async (platform, value) => {
       if (platform === 'youtube') { await youtube.update(value); return; }
       await twitch.updateChannelMetadata({ title: value.title, ...(value.twitchGameId ? { gameId: value.twitchGameId } : {}), tags: value.tags });
       const channel = await twitch.getChannelMetadata();
-      if (channel.title !== value.title || (value.twitchGameId && channel.gameId !== value.twitchGameId) || JSON.stringify(channel.tags ?? []) !== JSON.stringify(value.tags)) throw new Error('Twitch n’a pas confirmé toutes les informations demandées.');
+      if (channel.title !== value.title || (value.twitchGameId && channel.gameId !== value.twitchGameId) || !sameTwitchTags(channel.tags, value.tags)) throw new Error('Twitch n’a pas confirmé toutes les informations demandées.');
       twitchChannel = { ...twitchChannel, ...channel }; broadcast();
     },
     action: async (action, id) => {
@@ -2080,7 +2088,14 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
   });
   app.get('/api/v1/twitch/categories', async (req, res, next) => {
     try {
-      const query = String(req.query.q ?? '').trim();
+      if (req.query.id !== undefined) {
+        const id = typeof req.query.id === 'string' ? req.query.id : '';
+        if (!/^[0-9]{1,30}$/.test(id)) { res.status(400).json({error:{message:'Identifiant de catégorie Twitch invalide.'}}); return; }
+        const game = await twitch.getGameById(id);
+        res.json(game ? [game] : []); return;
+      }
+      const queryValue = req.query.q ?? req.query.query;
+      const query = typeof queryValue === 'string' ? queryValue.trim() : '';
       if (!query || query.length > 80) { res.json([]); return; }
       res.json(await twitch.searchGames(query));
     } catch (error) { next(error); }
@@ -3018,10 +3033,15 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
   const address = server.address();
   const actualPort = typeof address === 'object' && address ? address.port : requestedPort;
   runtimePort = actualPort;
-  const autoStartReplay = () => {
-    if (!obs.state.connected || !obs.state.streaming) { replayAutoStartAttempted = false; return; }
-    if (replayAutoStartAttempted || !control.snapshot().configuration.replayAutoStart) return;
-    replayAutoStartAttempted = true;
+  function autoStartReplay() {
+    const configuration = control.snapshot().configuration;
+    const decision = replayAutoStartDecision({
+      obs: { ...obs.state, connectionGeneration: obs.connectionGeneration },
+      outputs: configuration.outputs, observations: outputStatus, observationGeneration: outputsObservedGeneration,
+      enabled: configuration.replayAutoStart === true, attempted: replayAutoStartAttempted,
+    });
+    replayAutoStartAttempted = decision.attempted;
+    if (!decision.start) return;
     void obs.setReplayBuffer(true).then(() => { replayAutoStartError = ''; }, error => { replayAutoStartError = error instanceof Error ? error.message : 'Tampon indisponible.'; }).finally(broadcast);
   };
   const unsubscribeObs = obs.onStateChanged(() => {

@@ -45,4 +45,51 @@ describe('Installed Stream Suite 1.2.4 protocol',()=>{
     await expect(suite.set('YouTube',true,()=>{if(!current)throw new Error('Connexion remplacée');})).rejects.toThrow('remplacée');
     expect(request).toHaveBeenCalledTimes(1);
   });
+  it.each([true,false])('confirms a lost %s acknowledgement by reading the exact output without repeating its hotkey',async(active)=>{
+    const outputs=[{name:'YouTube',type:'stream',active:!active}];
+    const request=vi.fn(async(type:string,_data:Record<string,string>)=>{
+      if(type==='get_outputs')return {success:true,outputs};
+      outputs[0].active=active;throw new Error('Reply lost');
+    });
+    const suite=new AitumSuiteOutputs(request,async()=>routes('YouTube'));
+    await expect(suite.set('YouTube',active)).resolves.toBeUndefined();
+    expect(request.mock.calls.filter(([type])=>type===(active?'start_output':'stop_output'))).toHaveLength(1);
+    expect(request.mock.calls.filter(([type])=>type==='get_outputs')).toHaveLength(2);
+  });
+  it.each([new Error('Reply lost'),Object.assign(new Error('Socket closed'),{code:1006}),undefined])('keeps an unconfirmed or malformed dispatch uncertain and never retries it (%s)',async(failure)=>{
+    const request=vi.fn(async(type:string,_data:Record<string,string>)=>{
+      if(type==='get_outputs')return {success:true,outputs:[{name:'YouTube',type:'stream',active:false}]};
+      if(failure)throw failure;
+      return undefined;
+    });
+    const suite=new AitumSuiteOutputs(request,async()=>routes('YouTube'));
+    await expect(suite.set('YouTube',true)).rejects.toMatchObject({name:'ACTION_UNCERTAIN'});
+    expect(request.mock.calls.filter(([type])=>type==='start_output')).toHaveLength(1);
+    expect(request.mock.calls.filter(([type])=>type==='get_outputs')).toHaveLength(2);
+  });
+  it('keeps an explicit vendor or OBS request rejection definitive',async()=>{
+    for(const rejection of [{success:false,error:'output not found'},Object.assign(new Error('Vendor absent'),{code:600})]){
+      const request=vi.fn(async(type:string,_data:Record<string,string>)=>{
+        if(type==='get_outputs')return {success:true,outputs:[{name:'YouTube',type:'stream',active:false}]};
+        if(rejection instanceof Error)throw rejection;
+        return rejection;
+      });
+      const suite=new AitumSuiteOutputs(request,async()=>routes('YouTube'));
+      const error=await suite.set('YouTube',true).catch(value=>value);
+      expect(error).toBeInstanceOf(Error);expect(error.name).not.toBe('ACTION_UNCERTAIN');
+      expect(request.mock.calls.filter(([type])=>type==='start_output')).toHaveLength(1);
+      expect(request.mock.calls.filter(([type])=>type==='get_outputs')).toHaveLength(1);
+    }
+  });
+  it('does not use a replaced connection to confirm a dispatched hotkey',async()=>{
+    let current=true;
+    const request=vi.fn(async(type:string,_data:Record<string,string>)=>{
+      if(type==='get_outputs')return {success:true,outputs:[{name:'YouTube',type:'stream',active:false}]};
+      current=false;return {success:true};
+    });
+    const suite=new AitumSuiteOutputs(request,async()=>routes('YouTube'));
+    await expect(suite.set('YouTube',true,()=>{if(!current)throw new Error('Connexion remplacée');})).rejects.toMatchObject({name:'ACTION_UNCERTAIN'});
+    expect(request.mock.calls.filter(([type])=>type==='start_output')).toHaveLength(1);
+    expect(request.mock.calls.filter(([type])=>type==='get_outputs')).toHaveLength(1);
+  });
 });

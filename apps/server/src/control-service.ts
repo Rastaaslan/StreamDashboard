@@ -5,6 +5,7 @@ import { defaultControlData, wizebotPresets, type ActionResult, type ControlData
 
 export interface ControlAdapter {
   live(platform: Platform): Promise<boolean>;
+  preflight?(platform: Platform, start: boolean): Promise<void>;
   output(platform: Platform, start: boolean): Promise<void>;
   settle?(platform: Platform, start: boolean, requestId?: string): Promise<void>;
   metadata(platform: Platform, value: LiveMetadata): Promise<void>;
@@ -122,6 +123,8 @@ export class ControlService {
                 let live: boolean | undefined = await this.adapter.live(p);
                 let confirmationError: string | undefined;
                 if (live !== wanted || !wanted) {
+                  // Refuse an unusable destination before sending anything to OBS.
+                  await this.adapter.preflight?.(p, wanted);
                   // An unknown dispatch result permits observation, never an automatic second command.
                   let observeOnly = false;
                   live = undefined;
@@ -130,21 +133,31 @@ export class ControlService {
                     if (!(error instanceof Error) || error.name !== 'ACTION_UNCERTAIN') throw error;
                     confirmationError = error.message; observeOnly = true;
                   }
-                  for (let n = 0; n < 12; n++) {
+                  // YouTube may need a full minute to confirm its live transition.
+                  // The deadline also accounts for time spent reading the provider.
+                  const attempts = p === 'youtube' ? 41 : 12;
+                  const deadline = Date.now() + (p === 'youtube' ? 60_000 : 16_500);
+                  for (let n = 0; n < attempts; n++) {
+                    if (n > 0 && Date.now() >= deadline) break;
                     if (!observeOnly) {
                       try { await this.adapter.settle?.(p, wanted, request.id); }
                       catch (error) {
-                        if (!(error instanceof Error) || error.name !== 'ACTION_UNCERTAIN') throw error;
-                        confirmationError = error.message; observeOnly = true;
+                        if (!(error instanceof Error) || !['ACTION_UNCERTAIN','ACTION_OBSERVATION_UNAVAILABLE'].includes(error.name)) throw error;
+                        confirmationError = error.message;
+                        if (error.name === 'ACTION_UNCERTAIN') observeOnly = true;
                       }
                     }
                     try { live = await this.adapter.live(p); }
                     catch (error) {
-                      live = undefined; observeOnly = true;
+                      // A failed GET says nothing about a side effect. Keep settling:
+                      // the adapter deduplicates any accepted/uncertain transition.
+                      live = undefined;
                       confirmationError = 'Commande envoyée ; état de la plateforme indisponible. ' + (error instanceof Error ? error.message : 'Vérifiez le résultat avant reprise.');
                     }
                     if (live === wanted || this.stopped) break;
-                    if (n < 11) await this.wait(1500);
+                    const remaining = deadline - Date.now();
+                    if (remaining <= 0) break;
+                    if (n < attempts - 1) await this.wait(Math.min(1500, remaining));
                   }
                 }
                 result = {status:live === wanted ? 'succeeded' : 'uncertain', message:live === wanted ? (live ? 'En direct confirmé par la plateforme' : 'Arrêt confirmé par la plateforme') : confirmationError || 'Commande envoyée ; état attendu non confirmé. Vérifier avant reprise.', ...(live === undefined ? {} : {live}), observedAt:new Date().toISOString()};

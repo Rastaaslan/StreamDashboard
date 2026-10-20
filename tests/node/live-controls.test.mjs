@@ -52,3 +52,44 @@ test('does not offer another finalization while YouTube is already transitioning
   const state=liveControlState(data,true,now);assert.equal(state.destinations.youtube.canStart,false);assert.equal(state.running,true);
  }
 });
+
+test('blocks a terminated or unbound YouTube target before starting either OBS output',()=>{
+ for(const target of [{broadcastState:'complete',bound:true},{broadcastState:'revoked',bound:true},{broadcastState:'created',bound:false}]){
+  const data=fixture();Object.assign(data.host.platforms.youtube,{id:'selected',channelId:'channel',...target});
+  const state=liveControlState(data,true,now);
+  assert.equal(state.destinations.youtube.canStart,false);
+  assert.equal(state.canStartBoth,false);
+  assert.match(state.destinations.youtube.startBlockReason,target.bound?/Diffusion terminée/:/sans flux lié/);
+  assert.equal(state.destinations.twitch.canStart,true,'An unusable YouTube target must not prevent an individual Twitch live');
+ }
+});
+
+test('never carries a YouTube start-block reason across stale observations, offline mode or a different target',()=>{
+ for(const change of [
+  data=>{data.host.platforms.youtube.observedAt=new Date(now-60_000).toISOString();},
+  data=>{data.host.platforms.youtube.id='old-broadcast';},
+  data=>{data.host.platforms.youtube.channelId='old-channel';},
+ ]){
+  const data=fixture();Object.assign(data.host.platforms.youtube,{id:'selected',channelId:'channel',broadcastState:'complete',bound:true});change(data);
+  const state=liveControlState(data,true,now);
+  assert.equal(state.destinations.youtube.live,null);
+  assert.equal(state.destinations.youtube.startBlockReason,'');
+  assert.equal(state.destinations.youtube.canStart,false);
+ }
+ const data=fixture();Object.assign(data.host.platforms.youtube,{broadcastState:'created',bound:false});
+ assert.equal(liveControlState(data,false,now).destinations.youtube.startBlockReason,'');
+});
+
+test('preserves finalization of a bound target receiving video and preserves an already confirmed live',()=>{
+ const data=fixture();Object.assign(data.host.platforms.youtube,{id:'selected',channelId:'channel',broadcastState:'ready',bound:true,ingestionStatus:'active'});
+ data.host.outputStatus.youtube.active=true;
+ const ready=liveControlState(data,true,now);
+ assert.equal(ready.destinations.youtube.canStart,true);
+ assert.equal(ready.destinations.youtube.startBlockReason,'');
+ assert.equal(ready.canStartBoth,false);
+ Object.assign(data.host.platforms.youtube,{live:true,broadcastState:'live',bound:false});
+ const live=liveControlState(data,true,now);
+ assert.equal(live.destinations.youtube.live,true);
+ assert.equal(live.destinations.youtube.canStart,false);
+ assert.equal(live.destinations.youtube.startBlockReason,'');
+});
