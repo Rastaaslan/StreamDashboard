@@ -11,6 +11,7 @@ import { credentialStorage } from '../storage.js';
 import { createLiveMonitor } from './live-monitor.js';
 import { createStreamlabsFeed } from './streamlabs-feed.js';
 import { createPlanning } from './planning.js';
+import { readDeckPreferences, saveDeckPreferences, defaultDeckFavorites, renderPerformancePage } from './performance-ui.js';
 let streamlabsFeed, streamlabsFeedRoot, streamlabsConfigTarget, liveMonitor, autonomy, localPlanning, deviceProviders, deviceServices, dialogBase, submittingBase, storageError='';
 const formBases=new WeakMap();
 
@@ -19,10 +20,14 @@ const esc = value => String(value ?? '').replace(/[&<>"']/g, char => ({'&':'&amp
 const uuid = () => globalThis.crypto?.randomUUID?.() ?? `req_${Date.now()}_${Math.random().toString(36).slice(2)}`;
 const labels = {running:'En cours',succeeded:'Réussi',failed:'Échec',partial:'Partiel',uncertain:'À vérifier'};
 const icons = {'mic.toggle':'♩','mode.set':'▣','scene.set':'▣','timer.add':'+','sound.play':'♫','sound.stop':'■','alert.play':'✦','chat.send':'↗','wizebot.command':'✉','replay.save':'✂','replay.start':'▶','replay.stop':'■','live.start':'◉','live.stop':'■'};
-const compact=Boolean(globalThis.StreamDashboardNative)||matchMedia('(max-width:700px)').matches;
-if(compact&&!localStorage.getItem('sd2.performance-first')){localStorage.setItem('sd2.page','deck');localStorage.setItem('sd2.performance-first','1');}
-let data, sounds, replay, soundError='', soundCategory='', deckCategory='all', online=false, page=localStorage.getItem('sd2.page') || (compact?'deck':'live'), tab='obs', busy=false, refreshFlight, pointerHeld=false, configurationDraft, profileDraft, noticeTimer;
 const native=Boolean(globalThis.StreamDashboardNative);
+const compactViewport=matchMedia('(max-width:700px), (pointer:coarse) and (max-width:1100px)');
+let compact=native||compactViewport.matches;
+document.documentElement.classList.toggle('compact-app',compact);
+if(compact&&!localStorage.getItem('sd2.performance-first')){localStorage.setItem('sd2.page','deck');localStorage.setItem('sd2.performance-first','1');}
+if(compact&&!localStorage.getItem('sd2.live-deck-intro')){localStorage.setItem('sd2.page','deck');localStorage.setItem('sd2.live-deck-intro','1');}
+let data, sounds, replay, soundError='', soundCategory='', deckCategory='all', online=false, page=localStorage.getItem('sd2.page') || (compact?'deck':'live'), tab='obs', busy=false, refreshFlight, pointerHeld=false, configurationDraft, profileDraft, noticeTimer;
+let deckScope, deckPreferences, deckEditing=false, deckEditBank='all', activeCommands=0;
 const clientRole=new URL(location.href).searchParams.get('role')==='client';
 let device=readDevice(localStorage,native);
 const desktopProfile=await globalThis.streamDashboardDesktop?.getDeviceProfile?.();
@@ -71,6 +76,7 @@ function syncDialog(){
  modal(`<h2>Synchronisation de cet appareil</h2><p>${esc(storageError||autonomy?.lastError||localSaveMessage())}</p><p class="small">Dernière connexion : ${record?.lastSync?new Date(record.lastSync).toLocaleString('fr-FR'):'aucune'}. Les données restent disponibles après fermeture de l’application.</p>${server?'<button data-task="sync-now">Synchroniser maintenant</button>':'<button data-task="connection">Associer une régie</button>'}<button class="secondary" data-task="sync-export">Exporter ma copie locale</button>${(record?.pending||[]).filter((x,i,all)=>all.findIndex(v=>v.key===x.key)===i).map(op=>{const last=record.pending.filter(x=>x.key===op.key).at(-1);return `<section class="panel spacer"><b>${esc(op.key)}</b><p>${esc(op.issue?.message||'En attente de connexion')}</p>${op.issue?`<p>Champs : ${esc(op.issue.fields?.join(', ')||'élément complet')}</p><div class="form-grid"><label>Ma version<textarea readonly rows="6">${esc(JSON.stringify(last.value,null,2))}</textarea></label><label>Version de la régie<textarea readonly rows="6">${esc(JSON.stringify(resources(record.bundle)[op.key]??null,null,2))}</textarea></label></div><button data-sync-keep="${esc(op.key)}">Conserver ma version</button><button class="secondary" data-sync-remote="${esc(op.key)}">Utiliser la version de la régie</button>`:''}</section>`;}).join('')}`);
 }
 function shell() {
+  document.body.classList.toggle('performance-mode',Boolean(compact&&data&&['deck','sounds'].includes(page)));
   const toggle=$('#workspace-toggle');toggle.textContent=server?'Mon espace':localStorage.getItem('sd2.server')?'Ma régie':'Appareil autonome';toggle.dataset.task=server?'use-local':localStorage.getItem('sd2.server')?'use-paired':'device-setup';
   $('.aside-foot small').textContent=server?'Exécution sur le PC de stream':'Comptes et données sur cet appareil';
   $('nav').querySelectorAll('button').forEach(button=>button.classList.toggle('active',button.dataset.page===page||(button.dataset.page==='manage'&&['planning','settings','actions'].includes(page))));
@@ -99,7 +105,20 @@ function livePage() {
  const state=data.host.state, remaining=state.timer.remaining??0;
  return `<div id="live-overview"><h1>Votre prochain live</h1><p class="subtitle">Votre live, vos scènes et vos interactions. Une régie pour tous vos appareils.</p><div class="grid statuses">${platformCard('obs','OBS Studio','◉')}${platformCard('twitch','Twitch','T')}${platformCard('youtube','YouTube','▶')}</div></div><div id="live-monitor"></div>${!native?'<div id="streamlabs-feed"></div>':''}<div id="live-controls"><div class="grid columns"><section class="panel live-hero"><div class="hero-top"><span class="eyebrow">TWITCH + YOUTUBE</span><span class="pill">${!online?'RÉGIE DÉCONNECTÉE':state.obs.streaming?'OBS EN ÉMISSION':'PRÉPARATION'}</span></div><div class="hero-title">${esc(data.configuration.metadata.title||'Votre prochain live commence ici')}</div><p class="scene-label">${online?'Scène actuelle':'Dernière scène connue'} · <b>${esc(state.obs.scene||'OBS non connecté')}</b></p><button class="secondary" data-task="metadata">Modifier les informations du live</button><div class="live-tools"><button data-action="live.start" ${!online||busy?'disabled':''}>◉ Lancer le live</button><button class="danger" data-action="live.stop" ${!online||busy?'disabled':''}>■ Arrêter les deux</button></div><p class="small muted">Le résultat est confirmé séparément par Twitch et YouTube.</p></section><section class="panel"><span class="eyebrow">MINUTEUR DU STREAM</span><div class="timer" data-timer-clock>${timerClock(remaining)}</div><p data-timer-status class="small ${state.timer.running?'succeeded':'muted'}">${timerStatus(state.timer)}</p><div class="timer-buttons"><button class="secondary" data-command="timer.start" ${!online||busy||state.timer.running?'disabled':''}>${remaining>0&&remaining<state.timer.duration?'Reprendre':'Démarrer'}</button><button class="secondary" data-command="timer.pause" ${!online||busy||!state.timer.running?'disabled':''}>Pause</button><button class="secondary" data-command="timer.reset" ${!online||busy?'disabled':''}>Remettre à 5 min</button><button class="secondary" data-task="timer-duration">Choisir la durée</button></div><p class="small muted">L’overlay affiche le compteur en mode Introduction ou Pause.</p><button class="secondary" data-task="timer-overlay">Vérifier le minuteur dans OBS</button><div class="checklist">${state.checklist.map(c=>`<label class="check"><input type="checkbox" data-check="${esc(c.id)}" ${c.done?'checked':''}>${esc(c.label)}</label>`).join('')}</div></section></div><section class="spacer"><div class="section-heading"><h2>À portée de main</h2><button class="secondary" data-page="deck">Ouvrir mon Deck ↗</button></div><div class="deck">${data.configuration.actions.slice(0,6).map(actionButton).join('')}</div></section><section class="panel spacer"><div class="section-heading"><h2>Dernières actions</h2><span class="small muted">Exécution sur ${esc(data.host.hostname)}</span></div>${resultRows()}</section></div>`;
 }
+function ensureDeckPreferences(){
+ const scope=server||LOCAL_SCOPE;
+ if(deckScope!==scope){deckScope=scope;deckPreferences=readDeckPreferences(localStorage,scope);deckEditing=false;}
+ if(!deckPreferences&&data){const initial={version:1,bank:'favorites',soundCategory:'',favorites:defaultDeckFavorites(data,sounds)};if(online||initial.favorites.length){deckPreferences=initial;saveDeckPreferences(localStorage,scope,initial);}return initial;}
+ return deckPreferences;
+}
+function updateDeckPreferences(patch){const current=ensureDeckPreferences();if(!current)return;const next={...current,...patch};deckPreferences=saveDeckPreferences(localStorage,deckScope,next)||next;}
+function mobilePerformancePage(mode){
+ const prefs=ensureDeckPreferences();
+ return renderPerformancePage({data,sounds,replay,online,busy,blocked:commandsBlocked(),mode,bank:deckEditing&&mode==='deck'?deckEditBank:prefs.bank,soundCategory:prefs.soundCategory,editing:deckEditing,favorites:prefs.favorites,actionState,esc});
+}
+function resetPerformanceView(){const content=$('#content');if(content)content.dataset.renderedPage='';render();window.scrollTo(0,0);}
 function deckPage(){
+ if(compact)return mobilePerformancePage('deck');
  const groups=[['all','Tout'],['scenes','Scènes'],['alerts','Alertes'],['messages','Messages'],['wizebot','WizeBot']];
  const actions=data.configuration.actions.filter(a=>deckCategory==='all'||(deckCategory==='scenes'&&['mode.set','scene.set'].includes(a.type))||(deckCategory==='alerts'&&a.type==='alert.play')||(deckCategory==='messages'&&a.type==='chat.send')||(deckCategory==='wizebot'&&a.type==='wizebot.command'));
  return `<div class="performance-head"><div><span class="eyebrow">À VOUS DE JOUER</span><h1>Mon Deck</h1></div><span class="pill">${esc(data.host.state.obs.scene||'OBS indisponible')}</span></div><div class="tabs pad-tabs">${groups.map(([id,label])=>`<button class="${id===deckCategory?'':'secondary'}" data-deck-category="${id}">${label}</button>`).join('')}</div>${deckCategory==='wizebot'?wizebotToolbar():replayPanel()}<div class="deck performance-deck">${actions.map(actionButton).join('')||'<p class="empty">Ajoutez vos boutons depuis Gestion → Boutons & macros.</p>'}</div><div class="sound-transport">${stopAudioButton()}<button class="secondary" data-page="sounds">♫ Ouvrir la soundboard</button></div><section class="last-feedback" aria-live="polite">${resultRows()}</section>`;
@@ -109,6 +128,7 @@ function wizebotToolbar(){return `<section class="panel replay-panel"><div class
 function editWizebot(id){configurationDraft=structuredClone(data.configuration);const a=configurationDraft.actions.find(x=>x.id===id)||{id:'wizebot_'+uuid().slice(0,8),label:'',type:'wizebot.command',value:'!',color:'purple',shortcut:''};modal(`<h2>${id?'Modifier':'Ajouter'} une commande WizeBot</h2><form id="wizebot-form" data-id="${esc(a.id)}">${input('Nom du bouton','label',a.label,'text','required maxlength="80"')}${input('Commande à envoyer dans Twitch','value',a.value,'text','required maxlength="500" placeholder="!discord"')}<p class="small muted">Saisis exactement la commande de ta chaîne, avec ses paramètres éventuels. Exemple : !uptime. Aucune clé API WizeBot nécessaire.</p>${select('Couleur','color',[['purple','Violet'],['green','Vert'],['amber','Ambre'],['red','Rouge']],a.color)}<div class="form-actions">${id?`<button type="button" class="danger" data-remove-action="${esc(a.id)}">Supprimer</button>`:''}<button>Enregistrer le bouton</button></div></form>`);}
 function stopAudioButton(){return `<button class="danger" data-action="sound.stop" ${!online?'disabled':''}>■ Arrêter le son</button>`;}
 function soundsPage(){
+ if(compact)return mobilePerformancePage('sounds');
  const catalog=sounds?.sounds||[],categories=[...new Set(catalog.map(s=>s.category))];
  const shown=catalog.filter(s=>soundCategory==='favorites'?s.favorite:!soundCategory||s.category===soundCategory);
  return `<div class="performance-head"><div><span class="eyebrow">SONS SUR LE PC DE STREAM</span><h1>Soundboard</h1></div><span class="pill">${catalog.length} sons</span></div><div class="tabs pad-tabs">${[['','Tous'],['favorites','★ Favoris'],...categories.map(c=>[c,c])].map(([id,label])=>`<button class="${soundCategory===id?'':'secondary'}" data-sound-category="${esc(id)}">${esc(label)}</button>`).join('')}</div>${soundError?`<p class="warn">${esc(soundError)}</p>`:''}<div class="sound-transport"><p aria-live="polite">${!online?'État audio inconnu · régie déconnectée':sounds?.currentPlayback?'♫ '+esc(catalog.find(s=>s.id===sounds.currentPlayback.soundId)?.name||'Lecture en cours'):'Prêt · aucun son en cours'}</p>${stopAudioButton()}</div><div class="deck performance-deck sound-pads">${shown.map(s=>`<div class="sound-pad"><button class="green ${sounds?.currentPlayback?.soundId===s.id?'pad-active':''}" data-play-sound="${esc(s.id)}" ${!online||busy||!s.enabled||!s.sourceAvailable?'disabled':''}><span>♫</span><b>${esc(s.name)}</b><small>${!online?'Régie déconnectée':!s.enabled?'Désactivé':!s.sourceAvailable?'Fichier indisponible':sounds?.currentPlayback?.soundId===s.id?'Lecture en cours':esc(s.category)}</small></button><button class="favorite secondary" data-favorite-sound="${esc(s.id)}" aria-label="${s.favorite?'Retirer des':'Ajouter aux'} favoris" aria-pressed="${!!s.favorite}">${s.favorite?'★':'☆'}</button></div>`).join('')||'<p class="empty">Aucun son ici. Importez vos fichiers depuis Gestion → Bibliothèque audio.</p>'}</div><section class="last-feedback">${resultRows()}</section>`;
@@ -133,6 +153,9 @@ function settingsPage(){
  return `<h1>Configuration</h1><p class="subtitle">Vos réglages sont sauvegardés sur cet appareil, puis synchronisés avec la régie.</p><div class="tabs">${[['obs','OBS et scènes'],['platforms','Diffusion'],['profile','Profil'],['integrations','Intégrations'],['devices','Appareils & macros']].map(([id,label])=>`<button class="${id===tab?'':'secondary'}" data-tab="${id}">${label}</button>`).join('')}</div><section class="panel config-panel">${content}</section>`;
 }
 function render(){
+ const samePerformance=compact&&['deck','sounds'].includes(page)&&$('#content').dataset.renderedPage===page;
+ const scroll=samePerformance?window.scrollY:0;
+ const bankScroll=samePerformance?$('.deck-banks')?.scrollLeft||0:0;
  shell();
  if(!data){$('#content').innerHTML='<section class="panel"><h1>Retrouver votre régie</h1><p class="subtitle">Connectez-vous au PC de stream pour retrouver les scènes, le Deck et votre planning.</p><button data-task="connection">Configurer la connexion</button></section>';liveMonitor=undefined;return;}
  if(page==='live'){
@@ -163,6 +186,8 @@ function render(){
   $('#content').innerHTML=page==='deck'?deckPage():page==='sounds'?soundsPage():page==='planning'?planning.page():page==='actions'?actionsPage():page==='manage'?managePage():settingsPage();
  }
  if(commandsBlocked())document.querySelectorAll('[data-action], [data-play-sound], [data-command]').forEach(button=>{button.disabled=true;button.title='Synchronisez les réglages en attente avant de déclencher une commande.';});
+ $('#content').dataset.renderedPage=page;
+ if(samePerformance){const banks=$('.deck-banks');if(banks)banks.scrollLeft=bankScroll;window.scrollTo(0,scroll);}
  rememberForms();
 }
 function rememberForms(){if(autonomy?.store.view()){const base=resources(autonomy.store.view());document.querySelectorAll('form').forEach(f=>{if(!formBases.has(f))formBases.set(f,base);});}}
@@ -190,7 +215,7 @@ async function refresh(force=false){
  })().finally(()=>{refreshFlight=undefined;});
  return refreshFlight;
 }
-async function runAction(action,platform,soundId){if(!online||(busy&&action!=='sound.stop'))return;if(commandsBlocked()){toast('Synchronisez les réglages en attente avant de déclencher une commande.');return;}const configured=data.configuration.actions.find(a=>a.id===action);if((action==='live.stop'||configured?.type==='live.stop')&&!confirm('Arrêter la diffusion Twitch ET YouTube ?'))return;busy=true;render();try{const result=await api('/api/v2/actions',{id:uuid(),issuedAt:new Date().toISOString(),action:['live.start','live.stop'].includes(configured?.type)?configured.type:action, ...(platform?{platform}:{}),...(soundId?{soundId}:{})});toast(`${labels[result.status]} · ${result.message}`);globalThis.StreamDashboardNative?.haptic(result.status==='succeeded'?'light':'heavy');}catch(e){toast(`Résultat non reçu : ${e.message}. Vérifiez le journal avant de recommencer.`);}finally{busy=false;await refresh(true);}}
+async function runAction(action,platform,soundId){if(!online||(busy&&action!=='sound.stop'))return;if(commandsBlocked()){toast('Synchronisez les réglages en attente avant de déclencher une commande.');return;}const configured=data.configuration.actions.find(a=>a.id===action);if((action==='live.stop'||configured?.type==='live.stop')&&!confirm('Arrêter la diffusion Twitch ET YouTube ?'))return;activeCommands++;busy=true;try{render();const result=await api('/api/v2/actions',{id:uuid(),issuedAt:new Date().toISOString(),action:['live.start','live.stop'].includes(configured?.type)?configured.type:action, ...(platform?{platform}:{}),...(soundId?{soundId}:{})});toast(`${labels[result.status]} · ${result.message}`);globalThis.StreamDashboardNative?.haptic(result.status==='succeeded'?'light':'heavy');}catch(e){toast(`Résultat non reçu : ${e.message}. Vérifiez le journal avant de recommencer.`);}finally{busy=--activeCommands>0;await refresh(true);}}
 async function openAuthorization(value){const url=value.url||value.authorizationUrl||value.verification_uri||value.verificationUri; if(!url){toast(JSON.stringify(value));return;}if(data.host.local&&globalThis.streamDashboardDesktop?.openExternalAuth)await globalThis.streamDashboardDesktop.openExternalAuth(url);modal(`<h2>Autorisation du service</h2><p class="small">${value.user_code||value.userCode?'Code : <b>'+esc(value.user_code||value.userCode)+'</b>':'Terminez cette autorisation dans le navigateur du PC de stream.'}</p><p><a href="${esc(url)}" target="_blank" rel="noopener">Ouvrir l’autorisation</a></p><label>Lien à ouvrir sur le PC de stream<textarea readonly>${esc(url)}</textarea></label>`);}
 async function jsonEditor(title,path,key,method='PUT'){const response=await api(path);profileDraft=response;modal(`<h2>${esc(title)}</h2><form id="json-form" data-path="${esc(path)}" data-key="${esc(key||'')}" data-method="${method}"><label>Configuration JSON<textarea name="value" rows="16">${esc(JSON.stringify(key?response[key]:response,null,2))}</textarea></label><div class="form-actions"><button>Enregistrer</button></div></form>`);}
 async function task(name){
@@ -252,21 +277,27 @@ async function task(name){
 
 }
 document.addEventListener('click',async event=>{const b=event.target.closest('button');if(!b)return;try{
+ if(b.disabled)return;
+ if(b.dataset.deckBank!==undefined){if(deckEditing)deckEditBank=b.dataset.deckBank;else updateDeckPreferences({bank:b.dataset.deckBank});resetPerformanceView();return;}
+ if(b.dataset.deckEdit!==undefined){ensureDeckPreferences();deckEditing=!deckEditing;if(deckEditing)deckEditBank='all';resetPerformanceView();return;}
+ if(b.dataset.deckFavorite!==undefined){const prefs=ensureDeckPreferences(),key=b.dataset.deckFavorite;updateDeckPreferences({favorites:prefs.favorites.includes(key)?prefs.favorites.filter(id=>id!==key):[...prefs.favorites,key]});render();return;}
+ if(b.dataset.deckClips!==undefined){modal(`<h2>Clips OBS</h2>${replayPanel()}`);return;}
+ if(b.dataset.deckLog!==undefined){modal(`<h2>Dernières actions</h2>${resultRows()}`);return;}
  if(b.dataset.planning){b.disabled=true;try{await planning.click(b);}finally{b.disabled=false;}return;}
  if(b.dataset.syncKeep||b.dataset.syncRemote){const key=b.dataset.syncKeep||b.dataset.syncRemote;if(b.dataset.syncKeep&&!confirm('Appliquer votre version à cette entité ? La version de la régie sera remplacée après comparaison.'))return;await autonomy.resolve(key,!!b.dataset.syncKeep);await refresh(true);syncDialog();return;}
  if(b.dataset.deckCategory!==undefined){deckCategory=b.dataset.deckCategory;render();return;}
- if(b.dataset.soundCategory!==undefined){soundCategory=b.dataset.soundCategory;render();return;}
+ if(b.dataset.soundCategory!==undefined){if(compact){updateDeckPreferences({soundCategory:b.dataset.soundCategory});resetPerformanceView();}else{soundCategory=b.dataset.soundCategory;render();}return;}
  if(await deviceAccounts.click(b))return;
  if(await wizebotManagement.click(b))return;
  if(b.dataset.playSound){await runAction('sound.play',undefined,b.dataset.playSound);return;}
  if(b.dataset.favoriteSound){const sound=sounds.sounds.find(s=>s.id===b.dataset.favoriteSound);await api('/api/v1/soundboard/sounds/'+encodeURIComponent(sound.id),{favorite:!sound.favorite},'PUT');await refresh(true);return;}
- if(b.dataset.page){page=b.dataset.page;localStorage.setItem('sd2.page',page);render();return;}
+ if(b.dataset.page){deckEditing=false;page=b.dataset.page;localStorage.setItem('sd2.page',page);resetPerformanceView();return;}
  if(b.dataset.tab){tab=b.dataset.tab;render();return;}
  if(b.dataset.suiteOutput!==undefined){const f=$('#platform-form'),p=b.dataset.platform;f.elements[p+'-kind'].value='aitum-suite';f.elements[p+'-name'].value=b.dataset.suiteOutput;toast('Association préparée. Enregistrez la diffusion pour la conserver.');return;}
  if(b.dataset.task){await task(b.dataset.task);return;}
  if(b.dataset.action){await runAction(b.dataset.action);return;}
  if(b.dataset.retry){await runAction(b.dataset.retry.startsWith('metadata.')?'metadata.retry':b.dataset.retry,b.dataset.platform);return;}
- if(b.dataset.command){if(busy||!online)return;busy=true;try{await api('/api/v1/commands',{type:b.dataset.command,commandId:uuid()});await refresh(true);toast(timerStatus(data.host.state.timer));}finally{busy=false;render();}return;}
+ if(b.dataset.command){if(busy||!online)return;activeCommands++;busy=true;try{await api('/api/v1/commands',{type:b.dataset.command,commandId:uuid()});await refresh(true);toast(timerStatus(data.host.state.timer));}finally{busy=--activeCommands>0;render();}return;}
  if(b.dataset.editAction){editAction(b.dataset.editAction);return;}
  if(b.dataset.removeAction){if(!confirm('Supprimer ce bouton et son association macro ?'))return;configurationDraft.actions=configurationDraft.actions.filter(a=>a.id!==b.dataset.removeAction);await api('/api/v2/configuration',{configuration:configurationDraft,expectedRevision:configurationDraft.revision},'PUT');dialog.close();await refresh(true);return;}
  if(b.dataset.broadcast){$('#platform-form').elements.broadcastId.value=b.dataset.broadcast;$('#platform-form').elements.channelId.value=b.dataset.channel;dialog.close();return;}
@@ -319,7 +350,8 @@ document.addEventListener('keydown',event=>{if(globalThis.streamDashboardDesktop
 const initial=new URL(location.href);if(initial.searchParams.has('pair')){connectionDialog();$('#connection-form').elements.link.value=location.href;history.replaceState(null,'',location.pathname);}
 globalThis.streamDashboardDesktop?.onControllerReceipt?.(receipt=>{toast(`${labels[receipt.status]||'Macro'} · ${receipt.message}`);void refresh(true);});
 globalThis.StreamDashboardNative?.setKeepAwake(true);
-globalThis.StreamDashboardHandleBack=()=>{if(dialog.open){dialog.close();return true;}if(page!=='deck'){page='deck';render();return true;}return false;};
+globalThis.StreamDashboardHandleBack=()=>{if(dialog.open){dialog.close();return true;}if(deckEditing){deckEditing=false;resetPerformanceView();return true;}if(page!=='deck'){page='deck';localStorage.setItem('sd2.page',page);resetPerformanceView();return true;}return false;};
+compactViewport.addEventListener('change',()=>{compact=native||compactViewport.matches;document.documentElement.classList.toggle('compact-app',compact);render();});
 globalThis.addEventListener('native-pairing',event=>{const u=new URL(event.detail);connectionDialog();$('#connection-form').elements.server.value=u.searchParams.get('server')||'';$('#connection-form').elements.pair.value=u.searchParams.get('id')||'';$('#connection-form').elements.code.value=u.searchParams.get('code')||'';});
 await openLocal();void navigator.storage?.persist?.().catch(()=>{});render();await refresh(true);if(firstUse&&!dialog.open&&(!data?.host.planning.length)&&(!data?.host.settings.streamerName||data.host.settings.streamerName==='Streamer'))deviceSetup();setInterval(()=>{void refresh();},2500);setInterval(()=>{void deviceAccounts.poll();},5000);
 
