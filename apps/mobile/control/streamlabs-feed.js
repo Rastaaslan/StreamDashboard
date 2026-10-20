@@ -105,14 +105,19 @@ export function createStreamlabsConfiguration(root,{label,request,changed=()=>{}
 // control; changing workspace never carries an unrelated source selection across.
 export function createStreamlabsFeed(root,{request,configure,storage=localStorage}){
  let sources=[],source='',workspaceKey='',items=[],provider={},history=null,lastRead='',error='',stale=true,flight,checked=0,generation=0,disposed=false;
- let platform='all',type='all';
+ let platform='all',type='all',renderedEvents;
  const cacheKey=()=>'sd2.streamlabs.history:'+source;
  const preferenceKey=()=>'sd2.streamlabs.source:'+workspaceKey;
  function readCache(){
   items=[];provider={};history=null;lastRead='';stale=true;error='';
   try{const cached=JSON.parse(storage.getItem(cacheKey())||'null');if(cached){items=activityItems(cached.items).slice(0,100);provider=cached.provider||{};history=publicHistory(cached.history);lastRead=cached.at||'';if(Array.isArray(cached.items)&&items.length!==cached.items.length)storage.setItem(cacheKey(),JSON.stringify({items,provider,history,at:lastRead}));}}catch{}
  }
- root.innerHTML='<section class="panel spacer streamlabs-feed"><div class="section-heading"><div><span class="eyebrow">ACTIVITÉ DU LIVE</span><h2>Événements Streamlabs</h2></div><button type="button" class="secondary" data-feed-refresh>Actualiser</button></div><div class="streamlabs-filters"><label>Source<select data-feed-source aria-label="Source Streamlabs"></select></label><label>Plateforme<select data-feed-platform aria-label="Plateforme Streamlabs"><option value="all">Toutes</option><option value="twitch">Twitch</option><option value="youtube">YouTube</option><option value="streamlabs">Streamlabs</option></select></label><label>Événements<select data-feed-type aria-label="Type d’événement Streamlabs"><option value="all">Tous</option><option value="follow">Follows / abonnés YouTube</option><option value="subscription">Abonnements / membres</option><option value="donation">Dons</option><option value="bits">Bits</option><option value="raid">Raids</option><option value="superchat">Super Chats</option></select></label><button type="button" class="secondary" data-feed-config>Configurer Streamlabs</button></div><p class="small muted" data-feed-source-info></p><p data-feed-status role="status"></p><p data-feed-history-status role="status"></p><div class="streamlabs-events" data-feed-events></div><p class="small muted" data-feed-history-note></p></section>';
+ root.innerHTML='<section class="panel streamlabs-feed streamlabs-feed-compact"><div class="section-heading streamlabs-heading"><h2>Streamlabs</h2><div class="streamlabs-tools"><button type="button" class="secondary" data-feed-refresh>Actualiser</button><details class="streamlabs-options" data-feed-options><summary aria-label="Filtres et connexion Streamlabs">Filtres<span data-feed-filter-count></span></summary><div class="streamlabs-options-body"><div class="streamlabs-filters"><label>Source<select data-feed-source aria-label="Source Streamlabs"></select></label><label>Plateforme<select data-feed-platform aria-label="Plateforme Streamlabs"><option value="all">Toutes</option><option value="twitch">Twitch</option><option value="youtube">YouTube</option><option value="streamlabs">Streamlabs</option></select></label><label>Événements<select data-feed-type aria-label="Type d’événement Streamlabs"><option value="all">Tous</option><option value="follow">Follows / abonnés YouTube</option><option value="subscription">Abonnements / membres</option><option value="donation">Dons</option><option value="bits">Bits</option><option value="raid">Raids</option><option value="superchat">Super Chats</option></select></label></div><button type="button" class="secondary" data-feed-config>Configurer Streamlabs</button><p class="small muted" data-feed-source-info></p><p data-feed-status role="status"></p><p data-feed-history-status role="status"></p><p class="small muted" data-feed-history-note></p></div></details></div></div><p class="small streamlabs-summary" data-feed-summary role="status"><span class="streamlabs-summary-context"><span data-feed-summary-source></span><span data-feed-summary-count></span></span><span data-feed-summary-direct></span><span data-feed-summary-history></span></p><div class="streamlabs-events" data-feed-events tabindex="0" aria-label="Événements Streamlabs"></div></section>';
+ function summaryPart(selector,text,state){
+  const node=root.querySelector(selector);
+  if(node.textContent!==text)node.textContent=text;
+  if(state)node.dataset.state=state;
+ }
  function draw(){
   if(disposed||!root.isConnected)return;
   const status=root.querySelector('[data-feed-status]');
@@ -126,8 +131,20 @@ export function createStreamlabsFeed(root,{request,configure,storage=localStorag
   const label=sources.find(value=>value.id===source)?.label;
   root.querySelector('[data-feed-source-info]').textContent=label?'Source : '+label+'. L’historique du compte utilise la connexion Streamlabs de cette source.':'Aucune source Streamlabs disponible.';
   const shown=items.filter(e=>(platform==='all'||e.platform===platform)&&(type==='all'||e.type===type));
+  const filterCount=Number(platform!=='all')+Number(type!=='all');
+  summaryPart('[data-feed-summary-source]',label||'Aucune source');
+  summaryPart('[data-feed-summary-count]',(filterCount?shown.length+' / '+items.length:items.length)+' événement'+(items.length===1?'':'s'));
+  summaryPart('[data-feed-filter-count]',filterCount?' ('+filterCount+')':'');
+  root.querySelector('[data-feed-options] > summary').setAttribute('aria-label','Filtres et connexion Streamlabs'+(filterCount?' · '+filterCount+' filtre'+(filterCount===1?' actif':'s actifs'):''));
+  const directText=stale?'Direct non confirmé':({CONNECTED:'Direct actif',CONNECTING:'Direct en connexion',DISCONNECTED:'Direct déconnecté',NOT_CONFIGURED:'Direct à connecter',NOT_SUPPORTED:'Direct indisponible',DEGRADED:'Direct dégradé',ERROR:'Direct en erreur'}[provider.status]||'Direct non confirmé');
+  const directState=stale?'stale':provider.status==='CONNECTED'?'ok':provider.status==='CONNECTING'?'pending':['DISCONNECTED','DEGRADED','ERROR'].includes(provider.status)?'error':'idle';
+  const historyText=!history?'Historique local':stale?'Historique non confirmé':history.status==='ERROR'?'Historique en erreur':!history.configured?'Historique à connecter':history.status==='SYNCING'?'Historique en cours':history.status==='SYNCED'?'Historique à jour':'Historique non confirmé';
+  const historyState=!history?'idle':stale?'stale':history.status==='ERROR'?'error':!history.configured?'idle':history.status==='SYNCING'?'pending':history.status==='SYNCED'?'ok':'stale';
+  summaryPart('[data-feed-summary-direct]',directText,directState);
+  summaryPart('[data-feed-summary-history]',historyText,historyState);
   const list=root.querySelector('[data-feed-events]'),scroll=list.scrollTop;
-  list.innerHTML=streamlabsRows(shown)||'<p class="empty">'+(items.length?'Aucun événement pour ces filtres.':history?.status==='SYNCING'?'Récupération de l’historique Streamlabs…':history?.status==='SYNCED'?'Aucun événement disponible pour ce compte Streamlabs.':history?.configured?'L’historique du compte n’a pas encore pu être récupéré.':provider.status==='NOT_CONFIGURED'?'Connectez Streamlabs pour recevoir les événements ici.':'Aucun événement enregistré pour cette source.')+'</p>';
+  const eventMarkup=streamlabsRows(shown)||'<p class="empty">'+(items.length?'Aucun événement pour ces filtres.':history?.status==='SYNCING'?'Récupération de l’historique Streamlabs…':history?.status==='SYNCED'?'Aucun événement disponible pour ce compte Streamlabs.':history?.configured?'L’historique du compte n’a pas encore pu être récupéré.':provider.status==='NOT_CONFIGURED'?'Connectez Streamlabs pour recevoir les événements ici.':'Aucun événement enregistré pour cette source.')+'</p>';
+  if(eventMarkup!==renderedEvents){list.innerHTML=eventMarkup;renderedEvents=eventMarkup;}
   list.scrollTop=scroll;
   root.querySelector('[data-feed-config]').disabled=!source;
  }

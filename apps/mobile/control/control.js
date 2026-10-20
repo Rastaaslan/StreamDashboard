@@ -82,6 +82,8 @@ function syncDialog(){
 }
 function shell() {
   document.body.classList.toggle('performance-mode',Boolean(compact&&data&&['deck','sounds'].includes(page)));
+  document.body.classList.toggle('live-page',Boolean(data&&page==='live'));
+  document.body.classList.toggle('activity-page',Boolean(data&&page==='activity'));
   const toggle=$('#workspace-toggle');toggle.textContent=server?'Mon espace':localStorage.getItem('sd2.server')?'Ma régie':'Appareil autonome';toggle.dataset.task=server?'use-local':localStorage.getItem('sd2.server')?'use-paired':'device-setup';
   $('.aside-foot small').textContent=server?'Exécution sur le PC de stream':'Comptes et données sur cet appareil';
   $('nav').querySelectorAll('button').forEach(button=>button.classList.toggle('active',button.dataset.page===page||(button.dataset.page==='manage'&&['planning','settings','actions'].includes(page))));
@@ -108,7 +110,7 @@ function resultRows() {const receipts=(data?.receipts||[]).slice(-5).reverse();r
 function platformCard(name,label,icon) {const live=liveControlState(data,online),p=live.destinations[name],s=data.host.state;const text=!online?'État inconnu · régie déconnectée':name==='obs'?(!s.obs.connected?'OBS indisponible':s.obs.streamingKnown===false?'État de sortie inconnu':s.obs.streaming?'Sortie principale en émission':'OBS connecté · principale arrêtée'):p.live===true?'En direct confirmé':p.active===true?'OBS émet · confirmation du live attendue':p.live===false?'Hors ligne confirmé':p.error || 'État non vérifié';return `<div class="panel status-card"><span class="platform-icon ${name==='youtube'?'yt':name}">${icon}</span><div><b>${label}</b><small class="${p?.live?'succeeded':''}">${esc(text)}</small></div></div>`;}
 function livePage() {
  const state=data.host.state, remaining=state.timer.remaining??0, live=liveControlState(data,online);
- return `<div id="live-overview"><h1>${esc(live.heading)}</h1><p class="subtitle">Votre live, vos scènes et vos interactions. Une régie pour tous vos appareils.</p><div class="grid statuses">${platformCard('obs','OBS Studio','◉')}${platformCard('twitch','Twitch','T')}${platformCard('youtube','YouTube','▶')}</div></div><div id="live-monitor"></div>${!native?'<div id="streamlabs-feed"></div>':''}<div id="live-controls"><div class="grid columns"><section class="panel live-hero"><div class="hero-top"><span class="eyebrow">TWITCH + YOUTUBE</span><span class="pill">${!online?'RÉGIE DÉCONNECTÉE':live.running?'COMMANDE EN COURS':live.anyActive?'DIFFUSION EN COURS':'PRÉPARATION'}</span></div><div class="hero-title">${esc(data.configuration.metadata.title||'Votre prochain live commence ici')}</div><p class="scene-label">${online?'Scène actuelle':'Dernière scène connue'} · <b>${esc(state.obs.scene||'OBS non connecté')}</b></p><div class="row-actions"><button class="secondary" data-task="metadata">Modifier les informations du live</button><button class="secondary" data-task="replay-config">✂ Clips OBS</button></div><div class="live-tools"><button data-action="live.start" ${!live.canStartBoth||busy?'disabled':''}>◉ ${live.running?'Commande en cours':live.bothLive?'Live déjà lancé':live.anyActive?'Diffusion en cours':'Lancer Twitch et YouTube'}</button><button class="danger" data-action="live.stop" ${!online||busy||live.running?'disabled':''}>■ Arrêter les deux</button></div>${liveDestinationControls(live)}<p class="small muted">Le signal OBS et la confirmation de chaque plateforme sont suivis séparément.</p></section><section class="panel"><span class="eyebrow">MINUTEUR DU STREAM</span><div class="timer" data-timer-clock>${timerClock(remaining)}</div><p data-timer-status class="small ${state.timer.running?'succeeded':'muted'}">${timerStatus(state.timer)}</p><div class="timer-buttons"><button class="secondary" data-command="timer.start" ${!online||busy||state.timer.running?'disabled':''}>${remaining>0&&remaining<state.timer.duration?'Reprendre':'Démarrer'}</button><button class="secondary" data-command="timer.pause" ${!online||busy||!state.timer.running?'disabled':''}>Pause</button><button class="secondary" data-command="timer.reset" ${!online||busy?'disabled':''}>Remettre à 5 min</button><button class="secondary" data-task="timer-duration">Choisir la durée</button></div><p class="small muted">L’overlay affiche le compteur en mode Introduction ou Pause.</p><button class="secondary" data-task="timer-overlay">Vérifier le minuteur dans OBS</button><div class="checklist">${state.checklist.map(c=>`<label class="check"><input type="checkbox" data-check="${esc(c.id)}" ${c.done?'checked':''}>${esc(c.label)}</label>`).join('')}</div></section></div><section class="spacer"><div class="section-heading"><h2>À portée de main</h2><button class="secondary" data-page="deck">Ouvrir mon Deck ↗</button></div><div class="deck">${data.configuration.actions.slice(0,6).map(actionButton).join('')}</div></section><section class="panel spacer"><div class="section-heading"><h2>Dernières actions</h2><span class="small muted">Exécution sur ${esc(data.host.hostname)}</span></div>${resultRows()}</section></div>`;
+ return `<div id="live-overview"><h1>${esc(live.heading)}</h1><p class="subtitle">Votre live, vos scènes et vos interactions. Une régie pour tous vos appareils.</p><div class="grid statuses">${platformCard('obs','OBS Studio','◉')}${platformCard('twitch','Twitch','T')}${platformCard('youtube','YouTube','▶')}</div></div><div id="live-monitor"></div><div id="streamlabs-feed"></div><div id="live-controls"><div class="grid columns"><section class="panel live-hero"><div class="hero-top"><span class="eyebrow">TWITCH + YOUTUBE</span><span class="pill">${!online?'RÉGIE DÉCONNECTÉE':live.running?'COMMANDE EN COURS':live.anyActive?'DIFFUSION EN COURS':'PRÉPARATION'}</span></div><div class="hero-title">${esc(data.configuration.metadata.title||'Votre prochain live commence ici')}</div><p class="scene-label">${online?'Scène actuelle':'Dernière scène connue'} · <b>${esc(state.obs.scene||'OBS non connecté')}</b></p><div class="row-actions"><button class="secondary" data-task="metadata">Modifier les informations du live</button><button class="secondary" data-task="replay-config">✂ Clips OBS</button></div><div class="live-tools"><button data-action="live.start" ${!live.canStartBoth||busy?'disabled':''}>◉ ${live.running?'Commande en cours':live.bothLive?'Live déjà lancé':live.anyActive?'Diffusion en cours':'Lancer Twitch et YouTube'}</button><button class="danger" data-action="live.stop" ${!online||busy||live.running?'disabled':''}>■ Arrêter les deux</button></div>${liveDestinationControls(live)}<p class="small muted">Le signal OBS et la confirmation de chaque plateforme sont suivis séparément.</p></section><section class="panel"><span class="eyebrow">MINUTEUR DU STREAM</span><div class="timer" data-timer-clock>${timerClock(remaining)}</div><p data-timer-status class="small ${state.timer.running?'succeeded':'muted'}">${timerStatus(state.timer)}</p><div class="timer-buttons"><button class="secondary" data-command="timer.start" ${!online||busy||state.timer.running?'disabled':''}>${remaining>0&&remaining<state.timer.duration?'Reprendre':'Démarrer'}</button><button class="secondary" data-command="timer.pause" ${!online||busy||!state.timer.running?'disabled':''}>Pause</button><button class="secondary" data-command="timer.reset" ${!online||busy?'disabled':''}>Remettre à 5 min</button><button class="secondary" data-task="timer-duration">Choisir la durée</button></div><p class="small muted">L’overlay affiche le compteur en mode Introduction ou Pause.</p><button class="secondary" data-task="timer-overlay">Vérifier le minuteur dans OBS</button><div class="checklist">${state.checklist.map(c=>`<label class="check"><input type="checkbox" data-check="${esc(c.id)}" ${c.done?'checked':''}>${esc(c.label)}</label>`).join('')}</div></section></div><section class="spacer"><div class="section-heading"><h2>À portée de main</h2><button class="secondary" data-page="deck">Ouvrir mon Deck ↗</button></div><div class="deck">${data.configuration.actions.slice(0,6).map(actionButton).join('')}</div></section><section class="panel spacer"><div class="section-heading"><h2>Dernières actions</h2><span class="small muted">Exécution sur ${esc(data.host.hostname)}</span></div>${resultRows()}</section></div>`;
 }
 function canRetryPlatform(receipt,platform){
  if(!receipt.action.startsWith('live.'))return true;
@@ -188,23 +190,22 @@ function render(){
   if(!$('#live-monitor')){
    $('#content').innerHTML=livePage();
    liveMonitor?.destroy();
-   liveMonitor=createLiveMonitor($('#live-monitor'),{native,request:liveChatRequest,configure:()=>{page='settings';tab='platforms';localStorage.setItem('sd2.page',page);render();}});
+   liveMonitor=createLiveMonitor($('#live-monitor'),{native,activityRoot:$('#streamlabs-feed'),request:liveChatRequest,configure:()=>{page='settings';tab='platforms';localStorage.setItem('sd2.page',page);render();}});
   }else{
    const template=document.createElement('template');template.innerHTML=livePage();
    // Update changing state without detaching the video or either chat iframe.
    for(const id of ['live-overview','live-controls'])$('#'+id).innerHTML=template.content.querySelector('#'+id).innerHTML;
   }
   updateLiveMonitor();
-  if(!native){
-   if(!streamlabsFeed||!streamlabsFeedRoot?.isConnected){
-    streamlabsFeedRoot=$('#streamlabs-feed');
-    streamlabsFeed=createStreamlabsFeed(streamlabsFeedRoot,{request:streamlabsRequest,configure:streamlabsConfiguration});
-   }
-   const sources=[];
-   if(server)sources.push({id:server,label:server===localEndpoint?'Cet appareil':`Régie · ${data.host.hostname||server}`});
-   if(localEndpoint&&localEndpoint!==server)sources.push({id:localEndpoint,label:'Cet appareil · connexion indépendante'});
-   streamlabsFeed.update(sources,{workspaceKey:server||LOCAL_SCOPE,preferredSource:server||localEndpoint});
+  updateStreamlabsFeed();
+ }else if(page==='activity'){
+  liveMonitor?.destroy();liveMonitor=undefined;
+  if($('#content').dataset.renderedPage!=='activity'||!$('#streamlabs-feed')){
+   streamlabsFeed?.destroy();streamlabsFeed=undefined;streamlabsFeedRoot=undefined;
+   $('#content').innerHTML='<div class="activity-page-heading"><div><span class="eyebrow">LE SUIVI DU LIVE</span><h1>Activité</h1></div><button class="secondary" data-page="deck">Mon Deck ↗</button></div><div id="activity-context"></div><div id="streamlabs-feed"></div>';
   }
+  $('#activity-context').innerHTML=!server&&!localEndpoint?'<p class="activity-hint">Associez votre régie pour retrouver ses événements Streamlabs sur ce téléphone.</p><button class="secondary" data-task="connection">Associer une régie</button>':'';
+  updateStreamlabsFeed();
  }else{
   liveMonitor?.destroy();liveMonitor=undefined;streamlabsFeed?.destroy();streamlabsFeed=undefined;streamlabsFeedRoot=undefined;
   $('#content').innerHTML=page==='deck'?deckPage():page==='sounds'?soundsPage():page==='planning'?planning.page():page==='actions'?actionsPage():page==='manage'?managePage():settingsPage();
@@ -213,6 +214,17 @@ function render(){
  $('#content').dataset.renderedPage=page;
  if(samePerformance){const banks=$('.deck-banks');if(banks)banks.scrollLeft=bankScroll;window.scrollTo(0,scroll);}
  rememberForms();
+}
+function updateStreamlabsFeed(){
+ if(!streamlabsFeed||!streamlabsFeedRoot?.isConnected){
+  streamlabsFeed?.destroy();
+  streamlabsFeedRoot=$('#streamlabs-feed');
+  streamlabsFeed=createStreamlabsFeed(streamlabsFeedRoot,{request:streamlabsRequest,configure:streamlabsConfiguration});
+ }
+ const sources=[];
+ if(server)sources.push({id:server,label:server===localEndpoint?'Cet appareil':`Régie · ${data.host.hostname||server}`});
+ if(localEndpoint&&localEndpoint!==server)sources.push({id:localEndpoint,label:'Cet appareil · connexion indépendante'});
+ streamlabsFeed.update(sources,{workspaceKey:server||LOCAL_SCOPE,preferredSource:server||localEndpoint});
 }
 function streamlabsRequest(target,options={}){
  if(!target||(target!==server&&target!==localEndpoint))throw new Error('La source Streamlabs a changé. Actualisez avant de réessayer.');
@@ -255,7 +267,7 @@ async function refresh(force=false){
    const [audio,clips]=await Promise.all([network('/api/v1/soundboard').catch(()=>null),network('/api/v2/replay').catch(error=>({active:null,error:error.message}))]);
    replay=clips;data=autonomy.store.view().data;sounds=autonomy.store.view().sounds;
    if(audio){sounds={...audio,sounds:sounds.sounds.map(s=>({...s,sourceAvailable:audio.sounds.find(x=>x.id===s.id)?.sourceAvailable===true}))};}soundError='';const reconnect=!online;online=true;shell();updateLiveMonitor();
-   if(force||reconnect||(!dialog.open&&['live','deck','sounds','planning'].includes(page)&&!pointerHeld&&!document.activeElement?.matches('input, textarea, select, [contenteditable]')))render();
+   if(force||reconnect||(!dialog.open&&['live','activity','deck','sounds','planning'].includes(page)&&!pointerHeld&&!document.activeElement?.matches('input, textarea, select, [contenteditable]')))render();
    void configureMacros();
   }catch(e){online=false;void configureMacros();replay={active:null,error:'Régie déconnectée'};if(sounds)sounds.currentPlayback=null;shell();updateLiveMonitor();if(!dialog.open)render();if(force)toast(e.message);}
  })().finally(()=>{refreshFlight=undefined;});
@@ -399,7 +411,7 @@ async function task(name){
  if(name==='import-sound'){modal(`<h2>Importer un son dans cet espace</h2><form id="sound-import"><label>Fichier audio<input type="file" name="file" accept=".wav,.mp3,.ogg,.aac,.m4a,.flac" required></label>${input('Nom du son','name','','text','required')}<button>Importer</button></form>`);return;}
  if(name==='google-calendars'){const r=await api('/api/v1/google/calendars');modal(`<h2>Calendrier de destination</h2>${(Array.isArray(r)?r:r.items||[]).filter(c=>c.writable||['owner','writer'].includes(c.accessRole)).map(c=>`<p><button class="secondary" data-calendar="${esc(c.id)}">${esc(c.summary)}</button></p>`).join('')||'<p>Connectez Google pour afficher les calendriers accessibles.</p>'}`);return;}
  if(name==='google-secret'){modal(`<h2>Client Secret Google sur la régie</h2><form id="secret-form" data-path="/api/v1/google/oauth/config" data-method="POST" data-key="clientSecret">${input('Client Secret Google Desktop','secret','','password','required')}<button>Enregistrer dans le stockage sécurisé</button></form>`);return;}
- if(name==='streamlabs'&&!native){const target=server||localEndpoint;streamlabsConfiguration({id:target,label:target===localEndpoint?'Cet appareil':`Régie · ${data.host.hostname||target}`});return;}
+ if(name==='streamlabs'&&(server||localEndpoint)){const target=server||localEndpoint;streamlabsConfiguration({id:target,label:target===localEndpoint?'Cet appareil':`Régie · ${data.host.hostname||target}`});return;}
  if(name==='streamlabs'||name==='wizebot'){modal(`<h2>${name==='streamlabs'?'Streamlabs':'WizeBot'}</h2><form id="integration-form" data-provider="${name}">${name==='wizebot'?input('URL API WizeBot','apiBaseUrl','','url','required'):''}${input(name==='streamlabs'?'Socket Token Streamlabs':'Jeton WizeBot','token','','password','required')}<button>Connecter</button></form>`);return;}
  if(name==='discord'){const r=await api('/api/v1/discord/status');modal(`<h2>Discord</h2><form id="discord-form">${input('Jeton du bot (vide pour conserver)','token','','password')}${input('ID du serveur','guildId',r.guildId)}${input('ID du salon','channelId',r.channelId)}${input('Message par défaut','defaultMessage',r.defaultMessage)}<button>Enregistrer</button></form>`);return;}
  if(name==='shortcut-status'){const r=await globalThis.streamDashboardDesktop?.controllerStatus?.();$('#shortcut-status').textContent=r?JSON.stringify(r):'Les raccourcis globaux nécessitent l’application Windows ouverte sur cet ordinateur.';return;}

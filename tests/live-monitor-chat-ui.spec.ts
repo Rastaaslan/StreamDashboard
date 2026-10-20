@@ -186,6 +186,7 @@ async function setupFeed(page: Page) {
 
 test('Streamlabs polls independently of renders or focus and stops after leaving the view', async ({ page }) => {
   await setupFeed(page);
+  await page.getByLabel('Filtres et connexion Streamlabs', { exact: true }).click();
   await page.getByLabel('Plateforme Streamlabs').focus();
   await page.evaluate(() => { (window as any).count = 1; });
   await page.clock.fastForward(2600);
@@ -207,6 +208,7 @@ test('Streamlabs defaults to the workspace source and remembers explicit choices
   await page.evaluate(() => { const win = window as any; win.feed.update(win.sources, { workspaceKey: 'paired', preferredSource: 'regie' }); });
   await expect(page.getByLabel('Source Streamlabs')).toHaveValue('regie');
   await expect(page.locator('[data-feed-source-info]')).toContainText('Source : Régie · FIXE');
+  await page.getByLabel('Filtres et connexion Streamlabs', { exact: true }).click();
   await page.getByLabel('Source Streamlabs').selectOption('local');
   await page.evaluate(() => {
     const win = window as any;
@@ -222,6 +224,7 @@ test('late Streamlabs replies never overwrite the selected source or its history
   await setupFeed(page);
   await page.evaluate(() => { const win = window as any; win.defer = 'regie'; void win.feed.refresh(true); });
   await expect.poll(() => page.evaluate(() => (window as any).pendingReads.length)).toBe(1);
+  await page.getByLabel('Filtres et connexion Streamlabs', { exact: true }).click();
   await page.getByLabel('Source Streamlabs').selectOption('local');
   await expect(page.locator('.streamlabs-event')).toContainText('local événement 0');
   await page.evaluate(() => {

@@ -4,8 +4,36 @@ import type { LiveMetadata } from '../../../packages/contracts/src/control.js';
 
 interface Broadcast { id: string; snippet: { title: string; channelId: string; liveChatId?: string; scheduledStartTime?: string }; status: { lifeCycleStatus: string }; contentDetails: { boundStreamId?: string } }
 interface VideoSnippet { title: string; description: string; categoryId: string; channelId: string; tags?: string[]; defaultLanguage?: string; defaultAudioLanguage?: string }
+type MetadataField = 'title' | 'description' | 'categoryId' | 'tags';
+
+const metadataFieldLabels: Record<MetadataField,string> = {title:'titre',description:'description',categoryId:'catégorie YouTube',tags:'tags'};
+function sameTags(actual: unknown, expected: string[]) {
+  const tags=actual === undefined ? [] : actual;
+  if (!Array.isArray(tags) || tags.some(tag=>typeof tag !== 'string') || tags.length !== expected.length) return false;
+  // Tag order has no meaning here; retain exact spelling and duplicate counts.
+  const sortedExpected=[...expected].sort();
+  return [...tags].sort().every((tag,index)=>tag===sortedExpected[index]);
+}
+function metadataDifferences(actual: VideoSnippet | undefined, expected: LiveMetadata): MetadataField[] {
+  const fields: MetadataField[] = [];
+  if (actual?.title !== expected.title) fields.push('title');
+  if (actual?.description !== expected.description) fields.push('description');
+  if (actual?.categoryId !== expected.youtubeCategoryId) fields.push('categoryId');
+  if (!actual || !sameTags(actual.tags,expected.tags)) fields.push('tags');
+  return fields;
+}
+
+/** Exposes field names only: provider payloads and metadata values stay out of errors. */
+export class YouTubeMetadataVerificationError extends Error {
+  readonly fields: MetadataField[];
+  constructor(fields: MetadataField[]) {
+    super('YouTube n’a pas confirmé les champs suivants : '+fields.map(field=>metadataFieldLabels[field]).join(', ')+'. Vérifiez ces champs dans YouTube Studio avant de réessayer.');
+    this.name='YouTubeMetadataVerificationError';this.fields=[...fields];
+  }
+}
 export interface YouTubeChannelIdentity { id: string; title: string; customUrl?: string }
 export interface YouTubeBroadcastState { id:string; channelId:string; broadcastState:string; live:boolean; bound:boolean; ingestionStatus:string|null; observedAt:string }
+export interface YouTubeMetadata { broadcastId:string; channelId:string; title:string; description:string; youtubeCategoryId:string; tags:string[] }
 const reasonMessages: Record<string,string> = {
   authError:'Autorisation expirée ou invalide. Reconnectez YouTube.',
   invalid_grant:'Autorisation expirée ou révoquée. Reconnectez YouTube.',
@@ -152,6 +180,18 @@ export class YouTubeClient {
     return {id:target.id,channelId:target.snippet.channelId,broadcastState,live:broadcastState==='live',bound:Boolean(streamId),ingestionStatus,observedAt:new Date().toISOString()};
   }
   async live() { const target=await this.target(); return target.status.lifeCycleStatus==='live'; }
+  /** Read only the selected broadcast's public metadata; never exposes provider bodies or tokens. */
+  async readMetadata():Promise<YouTubeMetadata> {
+    const selected={...this.configuration()},target=await this.target();
+    if (target.id!==selected.broadcastId || target.snippet.channelId!==selected.channelId) throw new Error('La diffusion YouTube relue ne correspond pas à la cible sélectionnée.');
+    const result=await this.api<{items?:Array<{id:string;snippet?:VideoSnippet}>}>(`videos?part=snippet&id=${encodeURIComponent(target.id)}`);
+    const current=this.configuration();
+    if (current.clientId!==selected.clientId || current.channelId!==selected.channelId || current.broadcastId!==selected.broadcastId) throw new Error('La cible YouTube a changé pendant la lecture. Actualisez les informations.');
+    const video=Array.isArray(result.items)?result.items.find(item=>item?.id===target.id):undefined,snippet=video?.snippet;
+    if (!snippet || snippet.channelId!==selected.channelId) throw new Error('Vidéo YouTube introuvable sur la chaîne sélectionnée.');
+    if (typeof snippet.title!=='string' || typeof snippet.description!=='string' || typeof snippet.categoryId!=='string' || (snippet.tags!==undefined && (!Array.isArray(snippet.tags) || snippet.tags.some(tag=>typeof tag!=='string')))) throw new YouTubeApiError(200,'invalidResponse');
+    return {broadcastId:target.id,channelId:snippet.channelId,title:snippet.title,description:snippet.description,youtubeCategoryId:snippet.categoryId,tags:[...(snippet.tags??[])]};
+  }
   async transition(start:boolean,operationId='') {
     const config=this.configuration(),key=JSON.stringify([config.clientId,config.channelId,config.broadcastId,start,operationId]);
     let target:Broadcast;
@@ -195,7 +235,8 @@ export class YouTubeClient {
     await this.api('videos?part=snippet',{method:'PUT',body:JSON.stringify({id:target.id,snippet:updated})});
     const check=await this.api<{items:Array<{snippet:VideoSnippet}>}>(`videos?part=snippet&id=${encodeURIComponent(target.id)}`);
     const actual=check.items[0]?.snippet;
-    if (!actual || actual.title!==value.title || actual.description!==value.description || actual.categoryId!==value.youtubeCategoryId || JSON.stringify(actual.tags??[])!==JSON.stringify(value.tags)) throw new Error('YouTube n’a pas confirmé toutes les informations demandées.');
+    const differences=metadataDifferences(actual,value);
+    if (differences.length) throw new YouTubeMetadataVerificationError(differences);
   }
   async chat(message: string) {
     const target=await this.target();

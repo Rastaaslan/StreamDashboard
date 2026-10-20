@@ -1,7 +1,7 @@
 import { createTwitchChat } from './twitch-chat.js';
 
 // Keep platform frames mounted. Authenticated chat uses the runtime API separately.
-export function createLiveMonitor(root, { native = false, configure = () => {}, request } = {}) {
+export function createLiveMonitor(root, { native = false, configure = () => {}, request, activityRoot } = {}) {
   if (native) { root.hidden = true; return { update() {}, destroy() {} }; }
   let source = localStorage.getItem('sd2.monitor-source') === 'youtube' ? 'youtube' : 'twitch';
   let enabled = localStorage.getItem('sd2.monitor-enabled') !== 'false' && matchMedia('(min-width:701px)').matches;
@@ -14,6 +14,11 @@ export function createLiveMonitor(root, { native = false, configure = () => {}, 
     + '<section class="panel monitor-chat"><div class="monitor-heading"><h3><span class="chat-dot youtube-dot"></span>Chat YouTube</h3><button type="button" class="secondary" data-monitor-reload="youtube">↻<span class="sr-only"> Recharger le chat YouTube</span></button></div><div class="monitor-slot" data-monitor-slot="youtube"></div><div class="monitor-footer monitor-creator-links"><a data-monitor-link="youtube" target="_blank" rel="noopener noreferrer">Chat dans le navigateur ↗</a><a data-monitor-link="youtube-creator" target="_blank" rel="noopener noreferrer">YouTube Studio ↗</a></div></section>'
     + '</div><p class="small muted" data-monitor-note>Le chat Twitch utilise le compte affiché ici. Le chat YouTube intégré a sa propre connexion ; YouTube Studio donne accès aux outils de votre chaîne dans votre navigateur.</p>';
   const get = selector => root.querySelector(selector);
+  if (activityRoot) {
+    activityRoot.classList.add('monitor-activity');
+    get('[data-monitor-body]').classList.add('monitor-grid-with-activity');
+    get('[data-monitor-body]').append(activityRoot);
+  }
   const slots = Object.fromEntries(['video', 'youtube'].map(key => [key, get('[data-monitor-slot="' + key + '"]')]));
   const twitchChat = createTwitchChat(get('[data-twitch-native]'), { request, configure });
 
@@ -41,7 +46,10 @@ export function createLiveMonitor(root, { native = false, configure = () => {}, 
     if (disposed) return;
     get('[data-monitor-toggle]').textContent = enabled ? 'Masquer les écrans' : 'Afficher les écrans';
     get('[data-monitor-toggle]').setAttribute('aria-expanded', String(enabled));
-    get('[data-monitor-body]').hidden = !enabled; get('[data-monitor-note]').hidden = !enabled;
+    get('[data-monitor-body]').hidden = !enabled && !activityRoot;
+    get('[data-monitor-body]').dataset.screensEnabled = String(enabled);
+    root.querySelectorAll('.monitor-video, .monitor-chat').forEach(card => { card.hidden = !enabled; });
+    get('[data-monitor-note]').hidden = !enabled;
     twitchChat.update({ ...context, online: context.online === true && enabled, sourceLabel: state?.host?.hostname || '' });
     if (!enabled) {
       for (const slot of Object.values(slots)) { slot.replaceChildren(); delete slot.dataset.identity; }

@@ -11,8 +11,8 @@ dependencies {
 
 def stableKeystore = System.getenv('ANDROID_KEYSTORE_PATH')
 def hasStableSigning = stableKeystore && System.getenv('ANDROID_KEYSTORE_PASSWORD') && System.getenv('ANDROID_KEY_ALIAS') && System.getenv('ANDROID_KEY_PASSWORD')
-def buildVersionCode = (System.getenv('ANDROID_VERSION_CODE') ?: '2000016') as Integer
-def buildVersionName = System.getenv('ANDROID_VERSION_NAME') ?: '2.0.0-rc.11.2'
+def buildVersionCode = (System.getenv('ANDROID_VERSION_CODE') ?: '2000017') as Integer
+def buildVersionName = System.getenv('ANDROID_VERSION_NAME') ?: '2.0.0-rc.11.4'
 def twitchAndroidClientId = System.getenv('TWITCH_ANDROID_CLIENT_ID') ?: new groovy.json.JsonSlurper().parse(rootProject.file('../resources/distribution.json')).twitchClientId ?: ''
 def googleAndroidClientId = System.getenv('GOOGLE_ANDROID_CLIENT_ID') ?: ''
 

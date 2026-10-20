@@ -26,6 +26,8 @@ test('old offline cache hides widget controls before its limit and preserves vie
  await expect(page.locator('[data-feed-events]')).toContainText('Achat conservé');
  await expect(page.locator('[data-feed-events]')).not.toContainText('Commande interne');
  await expect(page.locator('[data-feed-status]')).toContainText('réception non confirmée');
+ await expect(page.locator('[data-feed-summary-direct]')).toHaveText('Direct non confirmé');
+ await expect(page.locator('[data-feed-summary-direct]')).toHaveAttribute('data-state','stale');
  expect(await page.evaluate(()=>JSON.parse(localStorage.getItem('sd2.streamlabs.history:host')!).items.map((e:any)=>e.id))).toEqual(['follow','future']);
 });
 test('old server controls stay out of visible and cached history while gifts remain available',async({page})=>{
@@ -44,6 +46,7 @@ test('old server controls stay out of visible and cached history while gifts rem
  await expect(page.locator('[data-feed-events]')).not.toContainText('Commande interne');
  await expect(page.locator('[data-feed-events]')).toContainText('Viewer réel portant ce nom');
  await expect(page.locator('[data-feed-events]')).toContainText('Abonnement offert');
+ await page.locator('[data-feed-options] > summary').click();
  await page.getByLabel('Type d’événement Streamlabs').selectOption('subscription');
  await expect(page.locator('.streamlabs-event')).toHaveCount(1);
  expect(await page.evaluate(()=>JSON.parse(localStorage.getItem('sd2.streamlabs.history:host')!).items.map((e:any)=>e.id))).toEqual(['follow','gift']);
@@ -65,6 +68,7 @@ test('desktop feed filters real-shaped events, isolates sources and keeps offlin
  });
  await expect(page.locator('.streamlabs-event')).toHaveCount(3);
  await expect(page.locator('[data-feed-events] img, [data-feed-events] script')).toHaveCount(0);
+ await page.locator('[data-feed-options] > summary').click();
  await page.getByLabel('Plateforme Streamlabs').selectOption('youtube');await expect(page.locator('.streamlabs-event')).toHaveCount(1);await expect(page.locator('.streamlabs-detail')).toContainText('2,00');
  await page.getByLabel('Plateforme Streamlabs').selectOption('all');await page.getByLabel('Type d’événement Streamlabs').selectOption('raid');await expect(page.locator('.streamlabs-detail')).toHaveText('138 personnes');
  await page.getByLabel('Type d’événement Streamlabs').selectOption('all');
@@ -73,6 +77,7 @@ test('desktop feed filters real-shaped events, isolates sources and keeps offlin
  await expect(page.locator('[data-feed-status]')).toContainText('réception non confirmée');await expect(page.locator('.streamlabs-event')).toContainText('Connexion indépendante');
  await page.getByLabel('Source Streamlabs').selectOption('host');await expect(page.locator('.streamlabs-event')).toHaveCount(3);await expect(page.locator('[data-feed-status]')).toContainText('réception non confirmée');
  await page.getByRole('button',{name:'Configurer Streamlabs'}).click();expect(await page.evaluate(()=>(window as any).configured)).toBe(true);
+ await page.locator('[data-feed-options] > summary').click();
  await page.screenshot({path:'test-results/streamlabs-feed-desktop.png',fullPage:true});
 });
 
@@ -92,6 +97,9 @@ test('cloud history uses original dates and remains independent of the live conn
  await expect(page.locator('[data-feed-history-status]')).toHaveClass(/succeeded/);
  await expect(page.locator('[data-feed-status]')).toContainText('Déconnecté');
  await expect(page.locator('[data-feed-status]')).not.toHaveClass(/succeeded/);
+ await expect(page.locator('[data-feed-summary-history]')).toHaveText('Historique à jour');
+ await expect(page.locator('[data-feed-summary-history]')).toHaveAttribute('data-state','ok');
+ await expect(page.locator('[data-feed-summary-direct]')).toHaveText('Direct déconnecté');
  const oldRow=page.locator('.streamlabs-event').filter({hasText:'Ancien follow'});
  await expect(oldRow.locator('time')).toHaveAttribute('datetime','2017-10-04T19:20:08.000Z');
  await expect(oldRow.locator('time')).toContainText('2017');
@@ -110,10 +118,14 @@ test('cloud history uses original dates and remains independent of the live conn
  await expect(page.locator('[data-feed-status]')).toHaveClass(/succeeded/);
  await expect(page.locator('[data-feed-history-status]')).toContainText('synchronisation indisponible');
  await expect(page.locator('[data-feed-history-status]')).not.toHaveClass(/succeeded/);
+ await expect(page.locator('[data-feed-summary-history]')).toHaveText('Historique en erreur');
+ await expect(page.locator('[data-feed-summary-history]')).toHaveAttribute('data-state','error');
  await expect(page.locator('.streamlabs-event')).toHaveCount(3);
  await page.evaluate(()=>{(window as any).fail=true;});
  await page.getByRole('button',{name:'Actualiser',exact:true}).click();
  await expect(page.locator('[data-feed-history-status]')).toContainText('synchronisation non confirmée');
+ await expect(page.locator('[data-feed-summary-history]')).toHaveText('Historique non confirmé');
+ await expect(page.locator('[data-feed-summary-history]')).toHaveAttribute('data-state','stale');
  await expect(page.locator('.streamlabs-event')).toHaveCount(3);
 });
 
@@ -131,6 +143,90 @@ test('manual refresh requests a cloud update while ordinary polling stays unforc
  await expect.poll(()=>page.evaluate(()=>(window as any).calls.at(-1).refresh)).toBe(true);
  await expect(page.locator('[data-feed-history-status]')).toContainText('Historique du compte à connecter');
  await expect(page.locator('[data-feed-status]')).toContainText('réception active');
+ await expect(page.locator('[data-feed-summary-history]')).toHaveText('Historique à connecter');
+ await expect(page.locator('[data-feed-summary-direct]')).toHaveText('Direct actif');
+});
+
+test('compact activity keeps filters folded and preserves source, focus and event rows through refresh',async({page})=>{
+ await page.setViewportSize({width:390,height:844});await page.goto(origin);
+ await page.evaluate(async()=>{
+  localStorage.clear();const win=window as any;win.calls=[];const modulePath='/mobile/control/streamlabs-feed.js';const module=await import(modulePath);
+  win.feed=module.createStreamlabsFeed(document.querySelector('#feed'),{request:async(source:string,options:{refresh:boolean})=>{
+   win.calls.push({source,refresh:options.refresh});
+   return {provider:{status:'CONNECTED'},history:{status:'SYNCED',configured:true,count:2,lastSyncAt:'2026-10-20T17:00:00.000Z'},items:[
+    {id:source+'-follow',type:'follow',platform:'youtube',displayName:source==='host'?'Abonné de la régie':'Abonné du compte local',origin:'cloud',occurredAt:'2026-10-20T16:00:00.000Z',receivedAt:'2026-10-20T17:00:00.000Z'},
+    {id:source+'-raid',type:'raid',platform:'twitch',displayName:'Raid Twitch',count:12,receivedAt:'2026-10-20T17:00:00.000Z'},
+   ]};
+  },configure:()=>{}});
+  win.feed.update([{id:'host',label:'Régie · FIXE'},{id:'own',label:'Cet appareil · Jeu'}],{workspaceKey:'paired-host',preferredSource:'host'});
+ });
+ const options=page.locator('[data-feed-options]');
+ const toggle=options.locator('summary');
+ await expect(page.locator('.streamlabs-event')).toHaveCount(2);
+ await expect(options).not.toHaveAttribute('open');
+ await expect(page.getByLabel('Source Streamlabs')).not.toBeVisible();
+ await expect(page.getByRole('button',{name:'Actualiser',exact:true})).toBeVisible();
+ await expect(page.locator('[data-feed-summary-source]')).toHaveText('Régie · FIXE');
+ await expect(page.locator('[data-feed-summary-count]')).toHaveText('2 événements');
+ await expect(page.locator('.streamlabs-event').first()).toBeVisible();
+ await toggle.click();
+ await page.getByLabel('Source Streamlabs').selectOption('own');
+ await page.getByLabel('Plateforme Streamlabs').selectOption('youtube');
+ await page.getByLabel('Type d’événement Streamlabs').selectOption('follow');
+ await expect(page.locator('.streamlabs-event')).toHaveCount(1);
+ await expect(page.locator('.streamlabs-event')).toContainText('Abonné du compte local');
+ await expect(page.locator('[data-feed-summary-count]')).toHaveText('1 / 2 événements');
+ await expect(toggle).toContainText('(2)');
+ await page.getByLabel('Type d’événement Streamlabs').focus();
+ await page.evaluate(async()=>{const win=window as any;win.visibleEvent=document.querySelector('.streamlabs-event');await win.feed.refresh(true);});
+ await expect(options).toHaveAttribute('open');
+ await expect(page.getByLabel('Type d’événement Streamlabs')).toBeFocused();
+ expect(await page.evaluate(()=>document.querySelector('.streamlabs-event')===(window as any).visibleEvent)).toBe(true);
+ await toggle.click();
+ await page.getByRole('button',{name:'Actualiser',exact:true}).click();
+ await expect.poll(()=>page.evaluate(()=>(window as any).calls.at(-1).source)).toBe('own');
+ await expect(options).not.toHaveAttribute('open');
+ await expect(page.locator('[data-feed-summary-source]')).toHaveText('Cet appareil · Jeu');
+ await expect(page.locator('.streamlabs-event')).toContainText('Abonné du compte local');
+ expect(await page.evaluate(()=>localStorage.getItem('sd2.streamlabs.source:paired-host'))).toBe('own');
+ await toggle.click();
+ await expect(page.getByLabel('Source Streamlabs')).toHaveValue('own');
+ await expect(page.getByLabel('Plateforme Streamlabs')).toHaveValue('youtube');
+ await expect(page.getByLabel('Type d’événement Streamlabs')).toHaveValue('follow');
+});
+
+test('folding options never accepts a late source response or carries a source choice into another workspace',async({page})=>{
+ await page.goto(origin);
+ await page.evaluate(async()=>{
+  localStorage.clear();const win=window as any;const modulePath='/mobile/control/streamlabs-feed.js';const module=await import(modulePath);
+  win.feed=module.createStreamlabsFeed(document.querySelector('#feed'),{request:async(source:string)=>{
+   if(source==='host')return new Promise(resolve=>{win.resolveOldSource=resolve;});
+   return {provider:{status:'CONNECTED'},items:[{id:source,type:'follow',platform:'twitch',displayName:source==='own'?'Compte local conservé':'Nouvelle régie',receivedAt:'2026-10-20T17:00:00.000Z'}]};
+  },configure:()=>{}});
+  win.sources=[{id:'host',label:'Régie · A'},{id:'own',label:'Cet appareil · Jeu'}];
+  win.feed.update(win.sources,{workspaceKey:'paired-a',preferredSource:'host'});
+ });
+ await expect.poll(()=>page.evaluate(()=>typeof (window as any).resolveOldSource)).toBe('function');
+ const options=page.locator('[data-feed-options]');
+ await options.locator('summary').click();
+ await page.getByLabel('Source Streamlabs').selectOption('own');
+ await expect(page.locator('.streamlabs-event')).toContainText('Compte local conservé');
+ await options.locator('summary').click();
+ await page.evaluate(async()=>{
+  (window as any).resolveOldSource({provider:{status:'ERROR'},items:[{id:'stale',type:'follow',platform:'twitch',displayName:'Réponse périmée',receivedAt:'2026-10-20T17:00:00.000Z'}]});
+  await Promise.resolve();
+ });
+ await expect(page.locator('[data-feed-summary-source]')).toHaveText('Cet appareil · Jeu');
+ await expect(page.locator('[data-feed-summary-direct]')).toHaveText('Direct actif');
+ await expect(page.locator('[data-feed-events]')).not.toContainText('Réponse périmée');
+ await expect(options).not.toHaveAttribute('open');
+ await page.evaluate(()=>{const win=window as any;win.feed.update(win.sources,{workspaceKey:'paired-a',preferredSource:'host'});});
+ await expect(page.locator('[data-feed-summary-source]')).toHaveText('Cet appareil · Jeu');
+ await page.evaluate(()=>{(window as any).feed.update([{id:'other-host',label:'Régie · B'},{id:'own',label:'Cet appareil · Jeu'}],{workspaceKey:'paired-b',preferredSource:'other-host'});});
+ await expect(page.locator('[data-feed-summary-source]')).toHaveText('Régie · B');
+ await expect(page.locator('.streamlabs-event')).toContainText('Nouvelle régie');
+ await expect(options).not.toHaveAttribute('open');
+ expect(await page.evaluate(()=>localStorage.getItem('sd2.streamlabs.source:paired-a'))).toBe('own');
 });
 
 test('history configuration sends only the entered widget URL and keeps live credentials separate',async({page})=>{

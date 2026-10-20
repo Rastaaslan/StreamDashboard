@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { mkdtemp, rm } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
-import { YouTubeApiError, YouTubeClient } from '../integrations/youtube/src/client.js';
+import { YouTubeApiError, YouTubeClient, YouTubeMetadataVerificationError } from '../integrations/youtube/src/client.js';
 import { ControlService, type ControlAdapter } from '../apps/server/src/control-service.js';
 import type { SecretStore } from '../apps/server/src/storage.js';
 
@@ -22,7 +22,7 @@ const broadcast = (status='ready', id='selected-live', scheduledStartTime?:strin
 });
 function fixture(
   respond:(url:URL, init:RequestInit)=>Response|Promise<Response>,
-  options:{clientId?:string; expired?:boolean}={}
+  options:{clientId?:string; expired?:boolean; configuration?:()=>typeof configuration}={}
 ) {
   const calls:Array<{url:URL; init:RequestInit}>=[];
   let tokens:Record<string,string> = {
@@ -41,7 +41,7 @@ function fixture(
     calls.push({url,init});
     return respond(url,init);
   };
-  return {client:new YouTubeClient(secrets,()=>({...configuration}),transport),calls};
+  return {client:new YouTubeClient(secrets,options.configuration??(()=>({...configuration})),transport),calls};
 }
 async function controller(client:YouTubeClient) {
   const directory=await mkdtemp(path.join(os.tmpdir(),'sd-youtube-reliability-'));
@@ -59,6 +59,98 @@ async function controller(client:YouTubeClient) {
   return {control,adapter,file};
 }
 const start = (id='youtube_start_001') => ({id,action:'live.start',platform:'youtube' as const,issuedAt:new Date().toISOString()});
+
+describe('YouTube metadata confirmation and read-only diagnosis',()=>{
+  const requested={title:'Spooktober',description:"Jeu d'horreur en cours !",youtubeCategoryId:'20',twitchGameId:'',tags:['DeadIsland2','Action','Horror','zombie','chill','fun','gaming','Halloween','survie']};
+  const snippet=(overrides:Record<string,unknown>={})=>({title:requested.title,description:requested.description,categoryId:requested.youtubeCategoryId,channelId:configuration.channelId,tags:[...requested.tags],...overrides});
+  function updateFixture(observed:Record<string,unknown>|null){
+    let reads=0;
+    return fixture((url,init)=>{
+      if(url.pathname.endsWith('/liveBroadcasts'))return json({items:[broadcast()]});
+      expect(url.pathname).toBe('/youtube/v3/videos');
+      if(init.method==='PUT')return json({id:configuration.broadcastId,snippet:snippet()});
+      expect(url.searchParams.get('id')).toBe(configuration.broadcastId);
+      const value=++reads===1?snippet({defaultLanguage:'fr',defaultAudioLanguage:'fr'}):observed;
+      return json({items:value?[{id:configuration.broadcastId,snippet:value}]:[]});
+    });
+  }
+  it('confirms a permutation of exactly the requested tags and preserves languages without mutating the request',async()=>{
+    const input=structuredClone(requested),before=structuredClone(input);
+    const {client,calls}=updateFixture(snippet({tags:[...requested.tags].reverse()}));
+    await expect(client.update(input)).resolves.toBeUndefined();
+    expect(input).toEqual(before);
+    const writes=calls.filter(({init})=>init.method==='PUT');
+    expect(writes).toHaveLength(1);
+    expect(JSON.parse(String(writes[0].init.body))).toEqual({id:configuration.broadcastId,snippet:{title:requested.title,description:requested.description,categoryId:'20',tags:requested.tags,defaultLanguage:'fr',defaultAudioLanguage:'fr'}});
+    expect(calls).toHaveLength(4);
+  });
+  it.each([
+    ['title','titre',{title:'PRIVATE_PROVIDER_VALUE'}],
+    ['description','description',{description:requested.description+' '}],
+    ['categoryId','catégorie YouTube',{categoryId:'27'}],
+    ['tags','tags',{tags:requested.tags.slice(1)}],
+  ])('identifies the divergent %s field without exposing its values or repeating the write',async(field,label,overrides)=>{
+    const {client,calls}=updateFixture(snippet(overrides as Record<string,unknown>));
+    const error=await client.update(requested).catch((value:unknown)=>value);
+    expect(error).toBeInstanceOf(YouTubeMetadataVerificationError);
+    expect(error).toMatchObject({fields:[field]});
+    expect(String(error)).toContain(String(label));
+    expect(String(error)).not.toContain('PRIVATE_PROVIDER_VALUE');
+    expect(String(error)).not.toContain('TEST_ACCESS_TOKEN_PRIVATE');
+    expect(calls.filter(({init})=>init.method==='PUT')).toHaveLength(1);
+    expect(calls).toHaveLength(4);
+  });
+  it.each([
+    ['case',requested.tags.map(tag=>tag.toLowerCase())],
+    ['additional tag',[...requested.tags,'extra']],
+    ['duplicate replacing a tag',[requested.tags[1],...requested.tags.slice(1)]],
+  ])('rejects changed tag content (%s) even when the other fields match',async(_label,tags)=>{
+    const {client}=updateFixture(snippet({tags}));
+    await expect(client.update(requested)).rejects.toMatchObject({fields:['tags']});
+  });
+  it('reports all unconfirmed fields when the verification returns no video',async()=>{
+    const {client}=updateFixture(null);
+    await expect(client.update(requested)).rejects.toMatchObject({fields:['title','description','categoryId','tags']});
+  });
+  it('reads only the selected broadcast public fields through GETs and ignores extra provider data',async()=>{
+    const observed=snippet({defaultLanguage:'fr',access_token:'PRIVATE_EXTRA_FIELD',raw:{secret:'PRIVATE_EXTRA_FIELD'}});
+    const {client,calls}=fixture(url=>url.pathname.endsWith('/liveBroadcasts')
+      ?json({items:[{...broadcast(),access_token:'PRIVATE_EXTRA_FIELD'}]})
+      :json({items:[{id:configuration.broadcastId,snippet:observed,raw:{secret:'PRIVATE_EXTRA_FIELD'}}],access_token:'PRIVATE_EXTRA_FIELD'}));
+    const value=await client.readMetadata();
+    expect(value).toEqual({broadcastId:configuration.broadcastId,channelId:configuration.channelId,title:requested.title,description:requested.description,youtubeCategoryId:'20',tags:requested.tags});
+    expect(JSON.stringify(value)).not.toContain('PRIVATE_EXTRA_FIELD');
+    expect(JSON.stringify(value)).not.toContain('TEST_ACCESS_TOKEN_PRIVATE');
+    expect(calls).toHaveLength(2);
+    expect(calls.every(({init})=>init.method===undefined||init.method==='GET')).toBe(true);
+    expect(calls.every(({init})=>init.body===undefined)).toBe(true);
+    expect(calls.map(({url})=>[url.pathname,url.searchParams.get('id')])).toEqual([
+      ['/youtube/v3/liveBroadcasts',configuration.broadcastId],['/youtube/v3/videos',configuration.broadcastId]
+    ]);
+  });
+  it('reads absent tags as an empty list without inventing other metadata',async()=>{
+    const {client}=fixture(url=>url.pathname.endsWith('/liveBroadcasts')?json({items:[broadcast()]}):json({items:[{id:configuration.broadcastId,snippet:snippet({tags:undefined})}]}));
+    expect(await client.readMetadata()).toMatchObject({title:requested.title,description:requested.description,youtubeCategoryId:'20',tags:[]});
+  });
+  it.each([
+    {id:'other-video',snippet:snippet()},
+    {id:configuration.broadcastId,snippet:snippet({channelId:'other-channel'})},
+  ])('does not return a video from another target or channel',async video=>{
+    const {client,calls}=fixture(url=>url.pathname.endsWith('/liveBroadcasts')?json({items:[broadcast()]}):json({items:[video]}));
+    await expect(client.readMetadata()).rejects.toThrow('Vidéo YouTube introuvable sur la chaîne sélectionnée');
+    expect(calls.every(({init})=>init.method===undefined||init.method==='GET')).toBe(true);
+  });
+  it('ignores metadata returned after the configured target has changed',async()=>{
+    let selected={...configuration};
+    const {client,calls}=fixture(url=>{
+      if(url.pathname.endsWith('/liveBroadcasts'))return json({items:[broadcast()]});
+      selected={...selected,broadcastId:'new-selection'};
+      return json({items:[{id:configuration.broadcastId,snippet:snippet()}]});
+    },{configuration:()=>({...selected})});
+    await expect(client.readMetadata()).rejects.toThrow('La cible YouTube a changé pendant la lecture');
+    expect(calls).toHaveLength(2);
+  });
+});
 
 describe('YouTube discovery and safe diagnostics',()=>{
   it('finds prepared broadcasts beyond completed first-page events and preserves their date',async()=>{
