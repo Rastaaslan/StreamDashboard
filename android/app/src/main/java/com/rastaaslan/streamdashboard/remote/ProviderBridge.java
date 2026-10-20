@@ -21,32 +21,56 @@ public final class ProviderBridge {
   private static final String GOOGLE_SCOPES = "https://www.googleapis.com/auth/calendar.events https://www.googleapis.com/auth/calendar.readonly";
   private static final String DEVICE_PENDING = "twitch_device_pending";
   private final Map<String, JSONObject> diagnostics = new java.util.concurrent.ConcurrentHashMap<>();
-  private final GoogleAuthorizationFlow googleAuth;
+  private final GoogleAuthorizationFlow googleAuth, youtubeAuth;
+  private final GoogleAuthorizationAdapter googleAdapter, youtubeAdapter;
   private final Activity activity;
   private final SecureCredentialStore credentials;
-  private volatile String googleAuthorizationProvider = "google";
 
   ProviderBridge(Activity activity) {
     this.activity = activity; credentials = new SecureCredentialStore(activity);
-    googleAuth = new GoogleAuthorizationFlow(new GoogleAuthorizationAdapter(activity), (connected, code) -> {
-      credentials.clear("google"); // retire tokens from the former custom-scheme flow
-      if (connected) persistGoogleGrants();
-      notifyAuth("google", connected, code);
-    });
-    new Thread(() -> { try {
-      String scopes = credentials.get("google_grants");
-      if (!scopes.isEmpty()) googleAuth.restore(Arrays.asList(scopes.split(" ")));
-    } catch (Exception error) {
-      notifyAuth("google", false, error instanceof GoogleAuthorizationFlow.AuthException ? ((GoogleAuthorizationFlow.AuthException)error).code : "AUTH");
-    } }, "provider-restore").start();
+    googleAdapter = new GoogleAuthorizationAdapter(activity, "Compte pour Google Agenda");
+    youtubeAdapter = new GoogleAuthorizationAdapter(activity, "Compte pour YouTube");
+    googleAuth = new GoogleAuthorizationFlow(googleAdapter, (connected, code) -> completeGoogleAccount("google", connected, code));
+    youtubeAuth = new GoogleAuthorizationFlow(youtubeAdapter, (connected, code) -> completeGoogleAccount("youtube", connected, code));
+    new Thread(() -> {
+      restoreGoogleAccount("google");
+      restoreGoogleAccount("youtube");
+    }, "provider-restore").start();
   }
+  private static final List<String> YOUTUBE_SCOPES = Collections.singletonList("https://www.googleapis.com/auth/youtube.readonly");
+  private boolean googleFamily(String provider) { return provider.equals("google") || provider.equals("youtube"); }
+  private GoogleAuthorizationFlow googleFlow(String provider) { return provider.equals("youtube") ? youtubeAuth : googleAuth; }
+  private void restoreGoogleAccount(String provider) {
+    try {
+      String saved = credentials.get(provider + "_account_grant");
+      if (!saved.isEmpty()) {
+        JSONObject grant = new JSONObject(saved);
+        googleFlow(provider).restore(provider.equals("youtube") ? YOUTUBE_SCOPES : GoogleAuthorizationFlow.SCOPES, grant.getString("account"));
+      } else if (!credentials.get("google_grants").isEmpty()) {
+        // Legacy grants do not identify an account. Require an explicit choice rather than guessing.
+        notifyAuth(provider, false, "ACCOUNT_SELECTION_REQUIRED");
+      }
+    } catch (Exception error) {
+      notifyAuth(provider, false, error instanceof GoogleAuthorizationFlow.AuthException ? ((GoogleAuthorizationFlow.AuthException)error).code : "AUTH");
+    }
+  }
+  private void completeGoogleAccount(String provider, boolean connected, String code) {
+    if (connected && code.isEmpty()) {
+      try {
+        GoogleAuthorizationFlow flow = googleFlow(provider);
+        credentials.put(provider + "_account_grant", new JSONObject().put("account", flow.account()).put("scopes", String.join(" ", flow.scopes())).toString());
+      } catch (Exception error) { code = "ACCOUNT_SAVE_FAILED"; }
+    }
+    notifyAuth(provider, connected, code);
+  }
+
   private final java.util.concurrent.ExecutorService operations = new java.util.concurrent.ThreadPoolExecutor(1,1,0L,java.util.concurrent.TimeUnit.MILLISECONDS,new java.util.concurrent.ArrayBlockingQueue<Runnable>(32));
-  void close(){operations.shutdown();}
+  void close(){googleAuth.logout();youtubeAuth.logout();operations.shutdown();}
   @JavascriptInterface public String requestAsync(String raw) {
     try {
       if(raw==null||raw.length()>14_100_000)throw new IllegalArgumentException();
       JSONObject input=new JSONObject(raw);String id=input.getString("id"),method=input.getString("method");
-      Set<String> allowed=Set.of("twitchTest","googleTest","youtubeTest","twitchStatus","googleStatus","twitchAuthorize","googleAuthorize","youtubeAuthorize","twitchPoll","twitchLogout","googleLogout","twitchSearchCategories","twitchCreatePlanning","twitchUpdatePlanning","twitchDeletePlanning","googleCreatePlanning","googleUpdatePlanning","googleDeletePlanning","twitchReconcilePlanning","googleReconcilePlanning","googleCalendars","googleEvents","googleReadPlanning","twitchReadPlanning","deviceService","wizebotSendEdit");
+      Set<String> allowed=Set.of("twitchTest","googleTest","youtubeTest","youtubeStatus","twitchStatus","googleStatus","twitchAuthorize","googleAuthorize","youtubeAuthorize","twitchPoll","twitchLogout","googleLogout","youtubeLogout","twitchSearchCategories","twitchCreatePlanning","twitchUpdatePlanning","twitchDeletePlanning","googleCreatePlanning","googleUpdatePlanning","googleDeletePlanning","twitchReconcilePlanning","googleReconcilePlanning","googleCalendars","googleEvents","googleReadPlanning","twitchReadPlanning","deviceService","wizebotSendEdit");
       if(!id.matches("[a-zA-Z0-9_-]{8,100}")||!allowed.contains(method))throw new IllegalArgumentException();
       String payload=input.getJSONObject("payload").toString();
       operations.execute(() -> {
@@ -62,24 +86,26 @@ public final class ProviderBridge {
   @JavascriptInterface public String twitchTest(String ignored) { return testProvider("twitch"); }
   @JavascriptInterface public String googleTest(String ignored) { return testProvider("google"); }
   @JavascriptInterface public String twitchStatus(String ignored) { return status("twitch", BuildConfig.TWITCH_ANDROID_CLIENT_ID); }
-  @JavascriptInterface public String googleStatus(String ignored) {
+  @JavascriptInterface public String googleStatus(String ignored) { return googleProviderStatus("google"); }
+  @JavascriptInterface public String youtubeStatus(String ignored) { return googleProviderStatus("youtube"); }
+  private String googleProviderStatus(String provider) {
     if (GoogleApiAvailability.getInstance().isGooglePlayServicesAvailable(activity) != ConnectionResult.SUCCESS)
       return "{\"ok\":true,\"configured\":false,\"connected\":false,\"code\":\"GOOGLE_PLAY_SERVICES\",\"capabilities\":[]}";
-    return status("google", BuildConfig.GOOGLE_ANDROID_CLIENT_ID);
+    return status(provider, BuildConfig.GOOGLE_ANDROID_CLIENT_ID);
   }
   @JavascriptInterface public String twitchAuthorize(String ignored) { return guarded(() -> startTwitchDevice()); }
   @JavascriptInterface public String googleAuthorize(String ignored) { return authorizeGoogle(false); }
   @JavascriptInterface public String youtubeAuthorize(String ignored) { return authorizeGoogle(true); }
   @JavascriptInterface public synchronized String twitchPoll(String ignored) { return guarded(() -> pollTwitchDevice()); }
-  @JavascriptInterface public String youtubeTest(String ignored) { return guarded(() -> {
-    JSONObject result = google("GET", "https://www.googleapis.com/youtube/v3/channels?part=snippet&mine=true", null, null);
-    JSONArray items = result.optJSONArray("items");
-    if (items == null || items.length() == 0) throw new ProviderException("ACCOUNT", "Aucune chaîne YouTube sur ce compte.");
-    JSONObject channel = items.getJSONObject(0);
-    return ok().put("connected", true).put("tested", true).put("channelId", channel.getString("id")).put("account", channel.getJSONObject("snippet").getString("title"));
-  }); }
+  @JavascriptInterface public String youtubeTest(String ignored) { return testProvider("youtube"); }
   @JavascriptInterface public synchronized String twitchLogout(String ignored) { diagnostics.remove("twitch"); credentials.clear("twitch"); credentials.clear(DEVICE_PENDING); return ok().toString(); }
-  @JavascriptInterface public String googleLogout(String ignored) { googleAuth.logout(); diagnostics.remove("google"); credentials.clear("google"); credentials.clear("google_grants"); return ok().toString(); }
+  @JavascriptInterface public String googleLogout(String ignored) { return logoutGoogleAccount("google"); }
+  @JavascriptInterface public String youtubeLogout(String ignored) { return logoutGoogleAccount("youtube"); }
+  private String logoutGoogleAccount(String provider) { return guarded(() -> {
+    googleFlow(provider).logout(); diagnostics.remove(provider); credentials.clear(provider + "_account_grant");
+    if (provider.equals("google")) { credentials.clear("google"); credentials.clear("google_grants"); }
+    return ok();
+  }); }
   @JavascriptInterface public String twitchSearchCategories(String raw) { return guarded(() -> twitchSearch(body(raw).optString("query"))); }
   @JavascriptInterface public String twitchCreatePlanning(String raw) { return guardedMutation("twitch", () -> twitchMutate("create", body(raw))); }
   @JavascriptInterface public String twitchUpdatePlanning(String raw) { return guardedMutation("twitch", () -> twitchMutate("update", body(raw))); }
@@ -231,12 +257,11 @@ public final class ProviderBridge {
   // Old custom-scheme code exchanges are no longer accepted; Twitch uses DCF.
   void acceptOAuthCallback(Uri uri) { }
 
-  private void persistGoogleGrants() { try { credentials.put("google_grants", String.join(" ", googleAuth.scopes())); } catch (Exception ignored) { } }
   private void notifyAuth(String provider, boolean connected) { notifyAuth(provider, connected, connected ? "" : "AUTH"); }
   private void notifyAuth(String provider, boolean connected, String code) { diagnostics.remove(provider); if (!code.isEmpty()) { try { diagnostics.put(provider, ok().put("code", code).put("authorizationError", true)); } catch (JSONException ignored) { } } activity.runOnUiThread(() -> ((MainActivity)activity).dispatchProviderAuth(provider, connected)); }
   private String status(String provider, String clientId) {
     try {
-      boolean configured = provider.equals("google") || !clientId.isEmpty(), connected = provider.equals("google") ? googleAuth.connected() : !credentials.get(provider).isEmpty();
+      boolean configured = googleFamily(provider) || !clientId.isEmpty(), connected = googleFamily(provider) ? googleFlow(provider).connected() : !credentials.get(provider).isEmpty();
       JSONObject result = diagnostics.containsKey(provider) ? new JSONObject(diagnostics.get(provider).toString()) : ok();
       JSONArray capabilities = new JSONArray();
       if (configured) capabilities.put("connect");
@@ -247,7 +272,7 @@ public final class ProviderBridge {
         JSONArray previous = result.getJSONArray("capabilities");
         for (int i = 0; i < previous.length(); i++) {
           String cap = previous.getString(i);
-          if (cap.equals("calendar") || cap.equals("schedule") || cap.equals("categories") || cap.equals("metadata") || cap.equals("chat")) capabilities.put(cap);
+          if (cap.equals("calendar") || cap.equals("schedule") || cap.equals("categories") || cap.equals("metadata") || cap.equals("chat") || cap.equals("channel")) capabilities.put(cap);
         }
       }
       if (provider.equals("twitch")) {
@@ -256,7 +281,12 @@ public final class ProviderBridge {
       }
       String lastSync = credentials.get(provider + "_last_sync");
       result.put("lastSync", lastSync.isEmpty() ? 0 : Long.parseLong(lastSync));
-      if (provider.equals("google")) result.put("youtubeAuthorized", googleAuth.scopes().contains("https://www.googleapis.com/auth/youtube.readonly")).put("calendarAuthorized", googleAuth.scopes().containsAll(GoogleAuthorizationFlow.SCOPES)).put("authorizing", googleAuth.authorizing()).put("authorizationProvider", googleAuthorizationProvider);
+      if (googleFamily(provider)) {
+        GoogleAuthorizationFlow flow = googleFlow(provider);
+        result.put("account", flow.account()).put("authorizing", flow.authorizing());
+        if (provider.equals("google")) result.put("calendarAuthorized", flow.connected());
+        else result.put("youtubeAuthorized", flow.connected());
+      }
       return result.put("ok", true).put("configured", configured).put("connected", connected).put("capabilities", capabilities).toString();
     } catch (Exception e) { return failure("INTERNAL", "État indisponible."); }
   }
@@ -265,7 +295,7 @@ public final class ProviderBridge {
     JSONObject result = ok();
     try {
       if (provider.equals("twitch") && clientId.isEmpty()) throw new ProviderException("NOT_CONFIGURED", "Configuration requise.");
-      if (provider.equals("google") ? !googleAuth.connected() : credentials.get(provider).isEmpty()) throw new ProviderException("REAUTH_REQUIRED", "Connexion requise.");
+      if (googleFamily(provider) ? !googleFlow(provider).connected() : credentials.get(provider).isEmpty()) throw new ProviderException("REAUTH_REQUIRED", "Connexion requise.");
       JSONObject session = token(provider);
       JSONArray granted = new JSONArray();
       JSONArray capabilities = new JSONArray();
@@ -284,6 +314,13 @@ public final class ProviderBridge {
         if (granted.toString().contains("channel:manage:broadcast")) capabilities.put("metadata");
         if (granted.toString().contains("user:write:chat")) capabilities.put("chat");
         if (!user.optString("broadcaster_type").isEmpty() && granted.toString().contains("channel:manage:schedule")) capabilities.put("schedule");
+      } else if (provider.equals("youtube")) {
+        JSONObject response = googleRequest("youtube", "GET", "https://www.googleapis.com/youtube/v3/channels?part=snippet&mine=true", null, null);
+        JSONArray items = response.optJSONArray("items");
+        if (items == null || items.length() == 0) throw new ProviderException("ACCOUNT", "Aucune chaîne YouTube sur ce compte.");
+        JSONObject channel = items.getJSONObject(0);
+        result.put("channelId", channel.getString("id")).put("channelName", channel.getJSONObject("snippet").getString("title"));
+        capabilities.put("channel");
       } else {
         // Token scope is returned by Google OAuth; never return the token itself.
         for (String scope : session.optString("scope").split(" ")) {
@@ -308,15 +345,17 @@ public final class ProviderBridge {
     if (BuildConfig.PREVIEW_MODE) return failure("NOT_CONFIGURED", "Autorisation désactivée dans la prévisualisation.");
     if (GoogleApiAvailability.getInstance().isGooglePlayServicesAvailable(activity) != ConnectionResult.SUCCESS)
       return failure("GOOGLE_PLAY_SERVICES", "Services Google Play indisponibles.");
-    if (googleAuth.authorizing()) return failure("BUSY", "Une autorisation Google est déjà en cours. Terminez-la avant de recommencer.");
-    googleAuthorizationProvider = youtube ? "youtube" : "google";
-    diagnostics.remove("google");
-    googleAuth.authorizeScopes(youtube ? Collections.singletonList("https://www.googleapis.com/auth/youtube.readonly") : GoogleAuthorizationFlow.SCOPES);
+    if (googleAuth.authorizing() || youtubeAuth.authorizing()) return failure("BUSY", "Une autorisation Google est déjà en cours. Terminez-la avant de recommencer.");
+    String provider = youtube ? "youtube" : "google";
+    diagnostics.remove(provider);
+    googleFlow(provider).authorizeScopes(youtube ? YOUTUBE_SCOPES : GoogleAuthorizationFlow.SCOPES);
     try { return ok().put("nativeAuthorization", true).toString(); }
     catch (JSONException error) { return failure("INTERNAL", "État indisponible."); }
   }
   void acceptGoogleResult(int requestCode, int resultCode, Intent data) {
+    if (googleAdapter.acceptAccountResult(requestCode, resultCode, data) || youtubeAdapter.acceptAccountResult(requestCode, resultCode, data)) return;
     googleAuth.acceptGoogleResult(requestCode, resultCode == Activity.RESULT_OK, data);
+    youtubeAuth.acceptGoogleResult(requestCode, resultCode == Activity.RESULT_OK, data);
   }
   private synchronized JSONObject startTwitchDevice() throws Exception {
     if (BuildConfig.TWITCH_ANDROID_CLIENT_ID.isEmpty()) throw new ProviderException("NOT_CONFIGURED", "Identifiant public Twitch absent de cette distribution.");
@@ -359,10 +398,11 @@ public final class ProviderBridge {
     }
   }
   private synchronized JSONObject token(String provider) throws Exception {
-    if (provider.equals("google")) {
-      if (!googleAuth.connected()) throw new ProviderException("REAUTH_REQUIRED", "Reconnecter Google.");
+    if (googleFamily(provider)) {
+      GoogleAuthorizationFlow flow = googleFlow(provider);
+      if (!flow.connected()) throw new ProviderException("REAUTH_REQUIRED", "Reconnecter le compte de ce service.");
       try {
-        GoogleAuthorizationFlow.Grant grant = googleAuth.refresh();
+        GoogleAuthorizationFlow.Grant grant = flow.refresh();
         return new JSONObject().put("access_token", grant.token).put("scope", String.join(" ", grant.scopes));
       } catch (GoogleAuthorizationFlow.AuthException error) {
         throw new ProviderException(error.code, "Réautoriser Google avec les permissions du service demandé.");
@@ -569,7 +609,8 @@ public final class ProviderBridge {
       "HTTP_412", "HTTP_413", "HTTP_415", "HTTP_422", "HTTP_429").contains(code);
   }
   private JSONObject twitch(String method,String url,String body)throws Exception { JSONObject t=token("twitch"); return request(method,url,body,null,Map.of("Authorization","Bearer "+t.getString("access_token"),"Client-Id",BuildConfig.TWITCH_ANDROID_CLIENT_ID)); }
-  private JSONObject google(String method,String url,String body,String etag)throws Exception { Map<String,String> h=new HashMap<>(); h.put("Authorization","Bearer "+token("google").getString("access_token")); if(etag!=null&&!etag.isEmpty())h.put("If-Match",etag); return request(method,url,body,null,h); }
+  private JSONObject google(String method,String url,String body,String etag)throws Exception { return googleRequest("google",method,url,body,etag); }
+  private JSONObject googleRequest(String provider,String method,String url,String body,String etag)throws Exception { Map<String,String> h=new HashMap<>(); h.put("Authorization","Bearer "+token(provider).getString("access_token")); if(etag!=null&&!etag.isEmpty())h.put("If-Match",etag); return request(method,url,body,null,h); }
   private String twitchUserId()throws Exception { return twitch("GET","https://api.twitch.tv/helix/users",null).getJSONArray("data").getJSONObject(0).getString("id"); }
   private JSONObject request(String method,String address,String json,String form,Map<String,String> headers)throws Exception {
     HttpURLConnection c=(HttpURLConnection)new URL(address).openConnection(); c.setInstanceFollowRedirects(false); c.setRequestMethod(method); c.setConnectTimeout(10000); c.setReadTimeout(15000); c.setRequestProperty("Accept","application/json");

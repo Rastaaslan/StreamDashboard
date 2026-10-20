@@ -36,14 +36,28 @@ test('ProviderBridge compiles with javac and accepts only idempotent deletion re
     'SecureCredentialStore.java': `package ${pkg}; class SecureCredentialStore { SecureCredentialStore(android.app.Activity a) {} String get(String k) { return ""; } void put(String k,String v) {} void clear(String k) {} }`,
     'BuildConfig.java': `package ${pkg}; class BuildConfig { static final String TWITCH_ANDROID_CLIENT_ID="", GOOGLE_ANDROID_CLIENT_ID=""; static final boolean PREVIEW_MODE=false; }`,
     'GoogleAuthorizationAdapter.java': `package ${pkg}; class GoogleAuthorizationAdapter implements GoogleAuthorizationFlow.Adapter {
-      GoogleAuthorizationAdapter(android.app.Activity activity) {}
-      public void authorize(java.util.List<String> scopes, GoogleAuthorizationFlow.Callback callback) {}
+      private final String account;
+      GoogleAuthorizationAdapter(android.app.Activity activity, String title) { account=title.contains("YouTube")?"video@example.test":"agenda@example.test"; }
+      boolean acceptAccountResult(int requestCode, int resultCode, android.content.Intent data) { return false; }
+      public void authorize(java.util.List<String> scopes, GoogleAuthorizationFlow.Callback callback) { callback.success(new GoogleAuthorizationFlow.Grant("token-"+account,scopes,null,account)); }
       public void launch(Object resolution, int requestCode) {}
       public GoogleAuthorizationFlow.Grant result(Object data) { return null; }
-      public GoogleAuthorizationFlow.Grant refresh(java.util.List<String> scopes) { return null; }
+      public GoogleAuthorizationFlow.Grant refresh(java.util.List<String> scopes, String selected) { if(!account.equals(selected))throw new AssertionError("Wrong refresh account"); return new GoogleAuthorizationFlow.Grant("token-"+account,scopes,null,account); }
     }`,
     'DeletionPolicyTest.java': `package ${pkg}; public class DeletionPolicyTest {
       public static void main(String[] args) throws Exception {
+        ProviderBridge bridge = new ProviderBridge(new android.app.Activity());
+        bridge.googleAuthorize("{}"); bridge.youtubeAuthorize("{}");
+        if(!bridge.googleStatus("{}").contains("agenda@example.test")||!bridge.youtubeStatus("{}").contains("video@example.test"))throw new AssertionError("Accounts not separated");
+        java.lang.reflect.Method providerToken=ProviderBridge.class.getDeclaredMethod("token",String.class); providerToken.setAccessible(true);
+        org.json.JSONObject calendarToken=(org.json.JSONObject)providerToken.invoke(bridge,"google");
+        org.json.JSONObject videoToken=(org.json.JSONObject)providerToken.invoke(bridge,"youtube");
+        if(!calendarToken.getString("access_token").equals("token-agenda@example.test")||!videoToken.getString("access_token").equals("token-video@example.test"))throw new AssertionError("Cross-provider token routing");
+        bridge.youtubeLogout("{}");
+        if(!bridge.googleStatus("{}").contains("connected=true")||!bridge.youtubeStatus("{}").contains("connected=false"))throw new AssertionError("YouTube logout disconnected Calendar");
+        bridge.youtubeAuthorize("{}"); bridge.googleLogout("{}");
+        if(!bridge.youtubeStatus("{}").contains("connected=true")||!bridge.googleStatus("{}").contains("connected=false"))throw new AssertionError("Calendar logout disconnected YouTube");
+        bridge.close();
         String diagnostic = ProviderBridge.safeProviderMessage("Invalid duration token-secret", java.util.Map.of("Authorization", "Bearer token-secret"));
         if (!diagnostic.equals("Invalid duration [redacted]")) throw new AssertionError(diagnostic);
 

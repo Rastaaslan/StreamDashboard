@@ -4,15 +4,22 @@ import java.util.*;
 
 /** Native authorization state machine. The SDK adapter owns Android UI and account grants. */
 final class GoogleAuthorizationFlow {
-  static final int REQUEST_CODE = 731;
+  private static final java.util.concurrent.atomic.AtomicInteger REQUEST_CODES = new java.util.concurrent.atomic.AtomicInteger(731);
+  static int nextRequestCode() {
+    int code = REQUEST_CODES.getAndIncrement();
+    if (code > 65535) throw new IllegalStateException("AUTH");
+    return code;
+  }
   static final List<String> SCOPES = Collections.unmodifiableList(Arrays.asList(
     "https://www.googleapis.com/auth/calendar.events", "https://www.googleapis.com/auth/calendar.readonly"));
   static final class Grant {
     final String token;
     final List<String> scopes;
     final Object resolution;
-    Grant(String token, List<String> scopes, Object resolution) {
+    final String account;
+    Grant(String token, List<String> scopes, Object resolution, String account) {
       this.token = token; this.scopes = scopes == null ? Collections.emptyList() : new ArrayList<>(scopes); this.resolution = resolution;
+      this.account = account == null ? "" : account;
     }
   }
   interface Callback { void success(Grant grant); void failure(Exception error); }
@@ -20,7 +27,8 @@ final class GoogleAuthorizationFlow {
     void authorize(List<String> scopes, Callback callback);
     void launch(Object resolution, int requestCode) throws Exception;
     Grant result(Object data) throws Exception;
-    Grant refresh(List<String> scopes) throws Exception;
+    Grant refresh(List<String> scopes, String account) throws Exception;
+    default void cancel() { }
   }
   interface Observer { void completed(boolean connected, String code); }
   static final class AuthException extends Exception {
@@ -34,23 +42,25 @@ final class GoogleAuthorizationFlow {
   private int generation;
   private boolean pendingResolution;
   private boolean authorizing;
+  private int pendingRequestCode;
   GoogleAuthorizationFlow(Adapter adapter, Observer observer) { this.adapter = adapter; this.observer = observer; }
   synchronized boolean connected() { return session != null; }
   synchronized boolean authorizing() { return authorizing; }
-  synchronized void logout() { generation++; pendingResolution = false; authorizing = false; session = null; }
+  synchronized void logout() { generation++; pendingResolution = false; authorizing = false; session = null; adapter.cancel(); }
+  synchronized String account() { return session == null ? "" : session.account; }
   synchronized List<String> scopes() { return session == null ? Collections.emptyList() : new ArrayList<>(session.scopes); }
-  synchronized void restore(List<String> scopes) throws Exception {
+  synchronized void restore(List<String> scopes, String account) throws Exception {
     if (generation != 0 || session != null || pendingResolution) return;
+    if (account == null || account.isEmpty()) throw new AuthException("ACCOUNT_SELECTION_REQUIRED");
     requested = new ArrayList<>(scopes);
-    session = validate(adapter.refresh(requested)); // never launches account UI on restart
+    session = validateAccount(validate(adapter.refresh(requested, account)), account);
   }
   synchronized void authorizeGoogle() { authorizeScopes(SCOPES); }
   synchronized boolean authorizeScopes(List<String> scopes) {
     if (authorizing) return false;
     authorizing = true;
-    LinkedHashSet<String> union = new LinkedHashSet<>(scopes);
-    if (session != null) union.addAll(session.scopes);
-    requested = new ArrayList<>(union);
+    // Each flow belongs to one service. Never merge scopes from a different account.
+    requested = new ArrayList<>(new LinkedHashSet<>(scopes));
     final int attempt = ++generation;
     pendingResolution = false;
     try {
@@ -58,7 +68,7 @@ final class GoogleAuthorizationFlow {
         public void success(Grant grant) { synchronized (GoogleAuthorizationFlow.this) {
           if (attempt != generation) return;
           try {
-            if (grant.resolution != null) { pendingResolution = true; adapter.launch(grant.resolution, REQUEST_CODE); }
+            if (grant.resolution != null) { pendingResolution = true; pendingRequestCode = nextRequestCode(); adapter.launch(grant.resolution, pendingRequestCode); }
             else complete(grant);
           } catch (Exception error) { fail(error); }
         } }
@@ -68,7 +78,7 @@ final class GoogleAuthorizationFlow {
     return true;
   }
   synchronized void acceptGoogleResult(int requestCode, boolean accepted, Object data) {
-    if (requestCode != REQUEST_CODE || !pendingResolution) return;
+    if (requestCode != pendingRequestCode || !pendingResolution) return;
     pendingResolution = false;
     try {
       if (data == null) throw new AuthException(accepted ? "AUTH" : "CANCELED");
@@ -82,7 +92,13 @@ final class GoogleAuthorizationFlow {
   }
   private Grant validate(Grant grant, List<String> scopes) throws AuthException {
     if (grant.resolution != null || grant.token == null || grant.token.isEmpty()) throw new AuthException("REAUTH_REQUIRED");
+    if (grant.account.isEmpty()) throw new AuthException("ACCOUNT_SELECTION_REQUIRED");
     if (!grant.scopes.containsAll(scopes)) throw new AuthException("SCOPES");
+    // Store only this service's scopes even if the SDK returns other existing grants.
+    return new Grant(grant.token, scopes, null, grant.account);
+  }
+  private Grant validateAccount(Grant grant, String account) throws AuthException {
+    if (!grant.account.equals(account)) throw new AuthException("ACCOUNT_MISMATCH");
     return grant;
   }
   private void complete(Grant grant) throws AuthException {
@@ -99,10 +115,10 @@ final class GoogleAuthorizationFlow {
     try {
       // Refresh never launches interactive UI from a background Calendar operation.
       List<String> granted = new ArrayList<>(session.scopes);
-      session = validate(adapter.refresh(granted), granted);
+      session = validateAccount(validate(adapter.refresh(granted, session.account), granted), session.account);
       return session;
     } catch (AuthException error) {
-      if (error.code.equals("REAUTH_REQUIRED") || error.code.equals("SCOPES")) session = null;
+      if (error.code.equals("REAUTH_REQUIRED") || error.code.equals("SCOPES") || error.code.equals("ACCOUNT_MISMATCH")) session = null;
       throw error;
     }
   }
