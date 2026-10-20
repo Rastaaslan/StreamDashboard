@@ -9,7 +9,7 @@ module.exports = {
     electronVersion,
     // Windows resources require numeric components. Restore the runtime SemVer before ASAR.
     appVersion: applicationVersion.split('-')[0],
-    beforeAsar: [async buildPath => {
+    beforeAsar: [async ({ buildPath }) => {
       const fs = require('node:fs/promises');
       const manifestPath = require('node:path').join(buildPath, 'package.json');
       const manifest = JSON.parse(await fs.readFile(manifestPath, 'utf8'));
