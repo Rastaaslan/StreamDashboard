@@ -11,10 +11,10 @@ import { credentialStorage } from '../storage.js';
 import { createLiveMonitor } from './live-monitor.js';
 import { renderYouTubePicker, youtubeBroadcastStatus } from './youtube-picker.js';
 import { liveControlState } from './live-controls.js';
-import { createStreamlabsFeed } from './streamlabs-feed.js';
+import { createStreamlabsFeed, createStreamlabsConfiguration } from './streamlabs-feed.js';
 import { createPlanning } from './planning.js';
 import { readDeckPreferences, saveDeckPreferences, defaultDeckFavorites, renderPerformancePage } from './performance-ui.js';
-let streamlabsFeed, streamlabsFeedRoot, streamlabsConfigTarget, liveMonitor, autonomy, localPlanning, deviceProviders, deviceServices, dialogBase, submittingBase, storageError='';
+let streamlabsFeed, streamlabsFeedRoot, liveMonitor, autonomy, localPlanning, deviceProviders, deviceServices, dialogBase, submittingBase, storageError='';
 const formBases=new WeakMap();
 let youtubePicker;
 const twitchGameNames=new Map();
@@ -49,7 +49,7 @@ function toast(message) { $('#notice').textContent=message; $('#notice').style.d
 function normalizeServer(value) { const url=new URL(value);if(!['http:','https:'].includes(url.protocol)||url.username||url.password)throw new Error('Adresse HTTP du PC de stream attendue.'); return url.origin; }
 async function network(path, body, method=body===undefined?'GET':'POST',target=server,token=target===localEndpoint?'':credential) {
   if(!target)throw new Error('Renseignez l’adresse du PC de stream.');
-  const response=await fetch(target+path,{method,headers:{...(token?{Authorization:`Device ${token}`} : {}),...(body!==undefined?{'Content-Type':'application/json'}:{})},...(body!==undefined?{body:JSON.stringify(body)}:{}),signal:AbortSignal.timeout(path==='/api/v2/actions'||path.startsWith('/api/v2/wizebot/')||path.startsWith('/api/v2/youtube/')||path==='/api/v2/autonomy/sync'?65_000:8_000)});
+  const response=await fetch(target+path,{method,headers:{...(token?{Authorization:`Device ${token}`} : {}),...(body!==undefined?{'Content-Type':'application/json'}:{})},...(body!==undefined?{body:JSON.stringify(body)}:{}),signal:AbortSignal.timeout(path==='/api/v2/actions'||path.startsWith('/api/v2/wizebot/')||path.startsWith('/api/v2/youtube/')||path==='/api/v2/autonomy/sync'?65_000:path.startsWith('/api/v1/streamlabs/events')||path.startsWith('/api/v1/supports/streamlabs/history/')?20_000:8_000)});
   if(response.status===204)return {};
   const value=await response.json();
   if(!response.ok) { const error=new Error(value.error?.message || value.error || `Erreur ${response.status}`); error.status=response.status;error.body=value;throw error; }
@@ -198,10 +198,7 @@ function render(){
   if(!native){
    if(!streamlabsFeed||!streamlabsFeedRoot?.isConnected){
     streamlabsFeedRoot=$('#streamlabs-feed');
-    streamlabsFeed=createStreamlabsFeed(streamlabsFeedRoot,{request:streamlabsRequest,configure:target=>{
-     streamlabsConfigTarget=target.id;
-     modal(`<h2>Streamlabs · ${esc(target.label)}</h2><p>Le Socket Token reste enregistré sur cette source. Il permet la réception des événements.</p><form id="streamlabs-feed-config">${input('Socket Token Streamlabs','token','','password','required autocomplete="off"')}<button>Connecter et enregistrer</button></form>`);
-    }});
+    streamlabsFeed=createStreamlabsFeed(streamlabsFeedRoot,{request:streamlabsRequest,configure:streamlabsConfiguration});
    }
    const sources=[];
    if(server)sources.push({id:server,label:server===localEndpoint?'Cet appareil':`Régie · ${data.host.hostname||server}`});
@@ -217,9 +214,17 @@ function render(){
  if(samePerformance){const banks=$('.deck-banks');if(banks)banks.scrollLeft=bankScroll;window.scrollTo(0,scroll);}
  rememberForms();
 }
-function streamlabsRequest(target){
+function streamlabsRequest(target,options={}){
  if(!target||(target!==server&&target!==localEndpoint))throw new Error('La source Streamlabs a changé. Actualisez avant de réessayer.');
- return network('/api/v1/streamlabs/events',undefined,'GET',target,target===localEndpoint?'':credential);
+ return network('/api/v1/streamlabs/events'+(options.refresh?'?refresh=1':''),undefined,'GET',target,target===localEndpoint?'':credential);
+}
+function streamlabsConfiguration(target){
+ if(!target?.id||(target.id!==server&&target.id!==localEndpoint))throw new Error('La source Streamlabs a changé. Actualisez avant de réessayer.');
+ modal('<div id="streamlabs-configuration"></div>');
+ createStreamlabsConfiguration($('#streamlabs-configuration'),{label:target.label,request:(path,body,method)=>{
+  if(target.id!==server&&target.id!==localEndpoint)throw new Error('La source Streamlabs a changé. Rouvrez sa configuration avant de réessayer.');
+  return network(path,body,method,target.id,target.id===localEndpoint?'':credential);
+ },changed:()=>{void streamlabsFeed?.refresh(true);},notify:toast});
 }
 function liveChatRequest(path,body,method,sourceKey){
  const target=server||localEndpoint;
@@ -394,6 +399,7 @@ async function task(name){
  if(name==='import-sound'){modal(`<h2>Importer un son dans cet espace</h2><form id="sound-import"><label>Fichier audio<input type="file" name="file" accept=".wav,.mp3,.ogg,.aac,.m4a,.flac" required></label>${input('Nom du son','name','','text','required')}<button>Importer</button></form>`);return;}
  if(name==='google-calendars'){const r=await api('/api/v1/google/calendars');modal(`<h2>Calendrier de destination</h2>${(Array.isArray(r)?r:r.items||[]).filter(c=>c.writable||['owner','writer'].includes(c.accessRole)).map(c=>`<p><button class="secondary" data-calendar="${esc(c.id)}">${esc(c.summary)}</button></p>`).join('')||'<p>Connectez Google pour afficher les calendriers accessibles.</p>'}`);return;}
  if(name==='google-secret'){modal(`<h2>Client Secret Google sur la régie</h2><form id="secret-form" data-path="/api/v1/google/oauth/config" data-method="POST" data-key="clientSecret">${input('Client Secret Google Desktop','secret','','password','required')}<button>Enregistrer dans le stockage sécurisé</button></form>`);return;}
+ if(name==='streamlabs'&&!native){const target=server||localEndpoint;streamlabsConfiguration({id:target,label:target===localEndpoint?'Cet appareil':`Régie · ${data.host.hostname||target}`});return;}
  if(name==='streamlabs'||name==='wizebot'){modal(`<h2>${name==='streamlabs'?'Streamlabs':'WizeBot'}</h2><form id="integration-form" data-provider="${name}">${name==='wizebot'?input('URL API WizeBot','apiBaseUrl','','url','required'):''}${input(name==='streamlabs'?'Socket Token Streamlabs':'Jeton WizeBot','token','','password','required')}<button>Connecter</button></form>`);return;}
  if(name==='discord'){const r=await api('/api/v1/discord/status');modal(`<h2>Discord</h2><form id="discord-form">${input('Jeton du bot (vide pour conserver)','token','','password')}${input('ID du serveur','guildId',r.guildId)}${input('ID du salon','channelId',r.channelId)}${input('Message par défaut','defaultMessage',r.defaultMessage)}<button>Enregistrer</button></form>`);return;}
  if(name==='shortcut-status'){const r=await globalThis.streamDashboardDesktop?.controllerStatus?.();$('#shortcut-status').textContent=r?JSON.stringify(r):'Les raccourcis globaux nécessitent l’application Windows ouverte sur cet ordinateur.';return;}
@@ -433,11 +439,6 @@ document.addEventListener('click',async event=>{const b=event.target.closest('bu
 }catch(e){toast(e.message);}});
 document.addEventListener('change',async event=>{if(planning.change(event.target))return;if(event.target.matches('[data-replay-auto]')){try{const c=structuredClone(data.configuration);c.replayAutoStart=event.target.checked;await api('/api/v2/configuration',{configuration:c,expectedRevision:c.revision},'PUT');await refresh(true);}catch(e){toast(e.message);await refresh(true);}return;}if(event.target.dataset.check){try{await api('/api/v1/commands',{type:'checklist.toggle',id:event.target.dataset.check,commandId:uuid()});await refresh(true);}catch(e){toast(e.message);}}});
 document.addEventListener('submit',async event=>{const f=event.target;submittingBase=formBases.get(f);event.preventDefault();const v=Object.fromEntries(new FormData(f));const submit=f.querySelector('button:not([type=button])');if(submit)submit.disabled=true;try{
- if(f.id==='streamlabs-feed-config'){
-  const result=await network('/api/v1/supports/streamlabs/config',{token:v.token},'PUT',streamlabsConfigTarget,streamlabsConfigTarget===localEndpoint?'':credential);
-  dialog.close();await streamlabsFeed?.refresh(true);
-  toast(result.status==='CONNECTED'?'Streamlabs connecté.':result.lastError?.message||'Configuration enregistrée ; connexion non confirmée.');return;
- }
  if(f.id==='device-setup-form'){const previous=device;device=saveDevice(v);try{await globalThis.streamDashboardDesktop?.setDeviceRole?.(v.role,v.name);}catch(e){device=previous;localStorage.setItem('sd2.device',JSON.stringify(previous));throw e;}dialog.close();render();toast('Appareil configuré.');return;}
  if(await planning.submit(f))return;
  if(await wizebotManagement.submit(f))return;

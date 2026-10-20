@@ -46,6 +46,10 @@ for (const file of [
   'dist/apps/server/src/twitch-chat-routes.js', 'dist/apps/server/src/control-routes.js',
   'dist/apps/server/src/control-service.js', 'dist/integrations/youtube/src/client.js',
   'dist/apps/server/src/streamlabs-feed.js', 'dist/integrations/streamlabs/src/events.js',
+  'dist/apps/server/src/streamlabs-history.js', 'dist/integrations/streamlabs/src/history.js',
+  'dist/apps/server/src/index.js', 'dist/apps/server/src/storage.js',
+  'dist/apps/server/src/remote-api-policy.js', 'dist/apps/server/src/live-control-routes.js',
+  'dist/apps/desktop/src/secrets.js',
   'dist/integrations/obs/src/client.js',
 ]) {
   assert.deepEqual(readArchive(file), readFileSync(file), 'Packaged asset diverges from source/build: ' + file);

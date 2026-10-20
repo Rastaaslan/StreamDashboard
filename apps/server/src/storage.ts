@@ -26,6 +26,9 @@ export interface SecretStore {
   getStreamlabsToken?(): Promise<string>;
   setStreamlabsToken?(token: string): Promise<void>;
   clearStreamlabsToken?(): Promise<void>;
+  getStreamlabsWidgetToken?(): Promise<string>;
+  setStreamlabsWidgetToken?(token: string): Promise<void>;
+  clearStreamlabsWidgetToken?(): Promise<void>;
   getStreamlabsOAuth?(): Promise<{ clientId: string; clientSecret: string; accessToken?: string } | null>;
   setStreamlabsOAuth?(configuration: { clientId: string; clientSecret: string; accessToken?: string }): Promise<void>;
   clearStreamlabsOAuth?(): Promise<void>;
@@ -46,6 +49,7 @@ export class MemorySecretStore implements SecretStore {
   private googleClientSecret = '';
   private discord = '';
   private streamlabs = '';
+  private streamlabsWidget = '';
   private streamlabsOAuth: { clientId: string; clientSecret: string; accessToken?: string } | null = null;
   private wizebot: { apiBaseUrl: string; token: string } | null = null;
 
@@ -66,6 +70,9 @@ export class MemorySecretStore implements SecretStore {
   async getStreamlabsToken() { return this.streamlabs; }
   async setStreamlabsToken(token: string) { this.streamlabs = token; }
   async clearStreamlabsToken() { this.streamlabs = ''; }
+  async getStreamlabsWidgetToken() { return this.streamlabsWidget; }
+  async setStreamlabsWidgetToken(token: string) { this.streamlabsWidget = token; }
+  async clearStreamlabsWidgetToken() { this.streamlabsWidget = ''; }
   async getStreamlabsOAuth() { return this.streamlabsOAuth ? { ...this.streamlabsOAuth } : null; }
   async setStreamlabsOAuth(configuration: { clientId: string; clientSecret: string; accessToken?: string }) { this.streamlabsOAuth = { ...configuration }; }
   async clearStreamlabsOAuth() { this.streamlabsOAuth = null; }

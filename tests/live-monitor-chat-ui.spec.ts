@@ -206,7 +206,7 @@ test('Streamlabs defaults to the workspace source and remembers explicit choices
   await expect(page.getByLabel('Source Streamlabs')).toHaveValue('local');
   await page.evaluate(() => { const win = window as any; win.feed.update(win.sources, { workspaceKey: 'paired', preferredSource: 'regie' }); });
   await expect(page.getByLabel('Source Streamlabs')).toHaveValue('regie');
-  await expect(page.locator('[data-feed-source-info]')).toContainText('Historique de Régie · FIXE');
+  await expect(page.locator('[data-feed-source-info]')).toContainText('Source : Régie · FIXE');
   await page.getByLabel('Source Streamlabs').selectOption('local');
   await page.evaluate(() => {
     const win = window as any;

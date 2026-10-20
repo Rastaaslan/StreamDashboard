@@ -3,6 +3,7 @@ import { createHash, randomUUID } from 'node:crypto';
 export interface StreamlabsEvent {
   id: string; platform: 'twitch' | 'youtube' | 'streamlabs'; type: string;
   displayName: string; message: string; receivedAt: string; occurredAt: string | null;
+  origin?: 'cloud';
   amount?: number; currency?: string; amountLabel?: string;
   count?: number; months?: number; subType?: string; recipient?: string; test: boolean;
 }

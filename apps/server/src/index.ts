@@ -72,6 +72,8 @@ import { AutomationRuntime } from './automation-runtime.js';
 import type { Automation, Support } from '../../../packages/core/src/live-control-domains.js';
 import { SupportRuntime } from './support-runtime.js';
 import { StreamlabsFeed, STREAMLABS_HISTORY_LIMIT } from './streamlabs-feed.js';
+import { StreamlabsHistory } from './streamlabs-history.js';
+import { mergeStreamlabsHistory } from '../../../integrations/streamlabs/src/history.js';
 import { StreamlabsAdapter } from '../../../integrations/streamlabs/src/adapter.js';
 import type { StreamlabsTransport } from '../../../integrations/streamlabs/src/adapter.js';
 import { StreamlabsSocketTransport } from '../../../integrations/streamlabs/src/socket-transport.js';
@@ -728,6 +730,7 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
   let streamlabsSocketToken = await secrets.getStreamlabsToken?.() ?? process.env.STREAMLABS_SOCKET_TOKEN ?? '';
   const streamlabsOAuthSecrets = await secrets.getStreamlabsOAuth?.() ?? null;
   const streamlabs = new StreamlabsAdapter(streamlabsSocketToken, value => support.record(value).then(() => undefined), options.streamlabsTransport ?? new StreamlabsSocketTransport({ logger, signal: runtimeAbort.signal }), logger, events => streamlabsFeed.record(events));
+  const streamlabsHistory = new StreamlabsHistory({ directory: path.join(dataDir, 'streamlabs-history'), secrets, fetchApi: runtimeFetch(options.streamlabsFetch), signal: runtimeAbort.signal, connectionStamp: () => streamlabs.state().lastConnectedAt });
   const storedWizeBot = await secrets.getWizeBotConfiguration?.() ?? null;
   const environmentWizeBot = process.env.WIZEBOT_API_URL && process.env.WIZEBOT_TOKEN ? { apiBaseUrl: process.env.WIZEBOT_API_URL, token: process.env.WIZEBOT_TOKEN } : null;
   const wizebot = new WizeBotAdapter(storedWizeBot ?? environmentWizeBot, options.wizebotTransport ?? new WizeBotHttpTransport(runtimeFetch()), logger);
@@ -1922,9 +1925,23 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
     if (local.sounds.some(sound => path.resolve(sound.source) === resolved)) return;
     await unlink(resolved).catch(() => undefined);
   };
-  app.get('/api/v1/streamlabs/events', (_req, res) => res.json({ items: streamlabsFeed.list(), provider: streamlabs.state(), retentionLimit: STREAMLABS_HISTORY_LIMIT }));
+  app.get('/api/v1/streamlabs/events', async (req, res, next) => {
+    try {
+      await streamlabsHistory.refresh(req.query.refresh === '1');
+      res.json({ items: mergeStreamlabsHistory(streamlabsFeed.list(), streamlabsHistory.list(), STREAMLABS_HISTORY_LIMIT), provider: streamlabs.state(), history: streamlabsHistory.snapshot(), retentionLimit: STREAMLABS_HISTORY_LIMIT });
+    } catch (error) { next(error); }
+  });
+  app.get('/api/v1/supports/streamlabs/history/status', async (req, res, next) => {
+    try { if (!requireLocal(req, res)) return; await streamlabsHistory.refresh(); res.json(streamlabsHistory.snapshot()); } catch (error) { next(error); }
+  });
+  app.put('/api/v1/supports/streamlabs/history/config', async (req, res, next) => {
+    try { if (!requireLocal(req, res)) return; res.json(await streamlabsHistory.configure(req.body?.widgetUrl)); } catch (error) { next(error); }
+  });
+  app.delete('/api/v1/supports/streamlabs/history/config', async (req, res, next) => {
+    try { if (!requireLocal(req, res)) return; res.json(await streamlabsHistory.clear()); } catch (error) { next(error); }
+  });
   registerLiveControlRoutes({
-    app, soundboard, automation, support, streamlabs, streamlabsOAuth, streamlabsRedirectUri, wizebot, eventCore, secrets, requireLocal, isRemote: isRemoteRequest, save, broadcast,
+    app, soundboard, automation, support, streamlabs, streamlabsHistory, streamlabsOAuth, streamlabsRedirectUri, wizebot, eventCore, secrets, requireLocal, isRemote: isRemoteRequest, save, broadcast,
     sounds: () => local.sounds, setSounds: value => { local.sounds = value; }, sessionStartedAt: () => twitchLive.startedAt,
     resolveSoundLibraryFile, removeSoundLibraryFile,
     soundboardObsStatus: () => obsSoundboardSetup.status(soundboardTargetScenes()),
@@ -3066,7 +3083,7 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
     providerStartupWork = (async () => {
       await Promise.all([
         initializeTwitch(), initializeGoogle(),
-        initializeStreamlabs().catch(logError), wizebot.refresh().catch(logError),
+        initializeStreamlabs().catch(logError), streamlabsHistory.start().catch(logError), wizebot.refresh().catch(logError),
       ]);
       if (backgroundStopped) return;
       await plan(() => drainCompanionProviders(local.planning, local.companion, providerAdapters(), save));
@@ -3110,6 +3127,7 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
     twitch.close();
     twitchEventSub.stop();
     await streamlabs.disconnect();
+    await streamlabsHistory.stop();
     await streamlabsFeed.stop();
     await obs.close();
     await providerStartupWork;
