@@ -26,6 +26,7 @@ export async function collectActiveSceneSources(sceneName: string, sceneItems: (
 
 export class ObsClient {
   private replaySaving = false;
+  private replayChanging = false;
   async replayStatus() {
     this.requireConnected();
     const generation = this.generation;
@@ -63,21 +64,36 @@ export class ObsClient {
     }
   }
   async setReplayBuffer(active: boolean) {
-    this.requireConnected();
+    const assertCurrent = this.outputConnectionGuard();
     if (this.replaySaving) throw new Error('Sauvegarde du clip en cours.');
-    const state = await this.replayStatus();
-    if (state.active === active) return;
-    if (active && (!state.enabled || !state.available)) throw new Error(state.error || 'Tampon de replay OBS indisponible.');
-    await this.call(active ? 'StartReplayBuffer' : 'StopReplayBuffer');
-    for (let n = 0; n < 15; n++) {
-      if ((await this.call('GetReplayBufferStatus')).outputActive === active) return;
-      await new Promise(resolve => setTimeout(resolve, 100));
-    }
-    throw new Error('OBS n’a pas confirmé l’état du tampon de replay.');
+    if (this.replayChanging) throw new Error('Changement du tampon de replay déjà en cours.');
+    this.replayChanging = true;
+    try {
+      const state = await this.replayStatus();
+      assertCurrent();
+      if (state.active === active) return;
+      if (active && (!state.enabled || !state.available)) throw new Error(state.error || 'Tampon de replay OBS indisponible.');
+      try { await this.call(active ? 'StartReplayBuffer' : 'StopReplayBuffer'); }
+      catch (error) { if (isObsRequestRejection(error)) throw error; }
+      // A lost acknowledgement is not a refusal. Observe the original OBS
+      // connection only; never resend a replay start/stop after reconnecting.
+      try {
+        for (let n = 0; n < 15; n++) {
+          assertCurrent();
+          const observed = await this.call('GetReplayBufferStatus');
+          assertCurrent();
+          if (observed.outputActive === active) return;
+          if (typeof observed.outputActive !== 'boolean') break;
+          if (n < 14) await new Promise(resolve => setTimeout(resolve, 100));
+        }
+      } catch { /* No observation can prove that the dispatched command failed. */ }
+      throw uncertainOutput('Commande du tampon de replay envoyée ; état non confirmé. Vérifiez le tampon dans OBS avant de réessayer.');
+    } finally { this.replayChanging = false; }
   }
   async saveReplay() {
     this.requireConnected();
     if (this.replaySaving) throw new Error('Sauvegarde du clip déjà en cours.');
+    if (this.replayChanging) throw new Error('Changement du tampon de replay en cours. Attendez sa confirmation avant de sauvegarder un clip.');
     this.replaySaving = true;
     const client = this.client, generation = this.generation;
     let savedPath = '', dispatched = false;
@@ -89,13 +105,21 @@ export class ObsClient {
       if (generation !== this.generation) throw new Error('Connexion OBS remplacée.');
       client.on('ReplayBufferSaved', saved);
       dispatched = true;
-      await this.call('SaveReplayBuffer');
+      try { await this.call('SaveReplayBuffer'); }
+      catch (error) {
+        // An explicit OBS request rejection proves that no clip was saved by
+        // this request; a transport failure remains an uncertain dispatch.
+        if (isObsRequestRejection(error)) dispatched = false;
+        throw error;
+      }
       // The request acknowledgement alone is not a saved clip. Wait for the event
       // or a new path; a stale previous replay must never count as success.
       for (let n = 0; n < 40; n++) {
         if (generation !== this.generation) throw new Error('Connexion OBS interrompue pendant la sauvegarde.');
         if (savedPath) return savedPath;
         const current = await this.call('GetLastReplayBufferReplay').then(value => value.savedReplayPath, () => '');
+        this.requireConnected();
+        if (generation !== this.generation) throw new Error('Connexion OBS interrompue pendant la sauvegarde.');
         if (current && current !== previous) return current;
         await new Promise(resolve => setTimeout(resolve, 250));
       }

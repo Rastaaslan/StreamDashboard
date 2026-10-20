@@ -17,9 +17,9 @@ function setup() {
     delete: vi.fn(async id => { remote.delete(id); }),
     read: vi.fn(async id => ({ deleted: !remote.has(id) })),
   };
-  const persist = async (items: CalendarItem[]) => { saved = structuredClone(items); };
+  const persist = vi.fn(async (items: CalendarItem[]) => { saved = structuredClone(items); });
   const restart = () => new PlanningOrchestrator(structuredClone(saved), { twitch: provider }, persist);
-  return { orchestrator: new PlanningOrchestrator([], { twitch: provider }, persist), provider, remote, restart };
+  return { orchestrator: new PlanningOrchestrator([], { twitch: provider }, persist), provider, remote, restart, persist, disk: () => structuredClone(saved) };
 }
 afterEach(() => vi.useRealTimers());
 
@@ -44,6 +44,48 @@ describe('Twitch rolling materialization', () => {
     item.recurrence!.exceptions![occurrences[1].occurrenceKey!] = { cancelled: true };
     await other.orchestrator.create(item);
     expect([...other.remote.values()].map(item => item.startAtUtc.slice(0, 10))).toEqual(['2026-01-01', '2026-01-15']);
+  });
+  it.each([false, true])('saves local-only metadata without per-occurrence mutation checkpoints after restart; legacy=%s', async legacy => {
+    const ctx = setup();
+    const created = await ctx.orchestrator.create({ ...series(), description: 'Original notes', allDay: false });
+    const identities = Object.values(created.providers!.twitch!.projections!).map(entry => entry.remoteId).sort();
+    if (legacy) {
+      const saved = ctx.disk();
+      for (const entry of Object.values(saved[0].providers!.twitch!.projections!)) {
+        const event = entry.event;
+        entry.appliedContent = JSON.stringify([event.title, event.description, event.allDay, event.startAtUtc, event.endAtUtc, event.twitchCategoryId ?? '']);
+      }
+      await ctx.persist(saved);
+    }
+    ctx.persist.mockClear();
+    vi.mocked(ctx.provider.read!).mockClear();
+    const tags = { values: ['Français'], source: 'manual' as const };
+    await ctx.restart().update('s', { title: created.title, startAtUtc: created.startAtUtc, endAtUtc: created.endAtUtc, description: 'Offline notes', allDay: true, tags });
+    expect(ctx.provider.read).toHaveBeenCalledTimes(7); // Fresh conflict/deletion checks are retained.
+    expect(ctx.provider.update).not.toHaveBeenCalled();
+    expect(ctx.provider.create).toHaveBeenCalledTimes(7);
+    // Canonical edit, Twitch summary, then Google's explicit withdrawal and
+    // summary: the all-day/midday fixture cannot use a native Google recurrence.
+    expect(ctx.persist).toHaveBeenCalledTimes(4);
+    const saved = ctx.disk()[0];
+    expect(saved).toMatchObject({ description: 'Offline notes', allDay: true, tags });
+    const entries = Object.values(saved.providers!.twitch!.projections!);
+    expect(entries.map(entry => entry.remoteId).sort()).toEqual(identities);
+    for (const entry of entries) expect(entry.event).toMatchObject({ description: 'Offline notes', allDay: true, tags });
+    await ctx.restart().refreshTwitch();
+    expect(ctx.provider.update).not.toHaveBeenCalled();
+  });
+  it('still detects remote conflicts during an edit of local-only metadata', async () => {
+    const ctx = setup();
+    const create = vi.mocked(ctx.provider.create).getMockImplementation()!;
+    vi.mocked(ctx.provider.create).mockImplementation(async item => ({ ...await create(item), fingerprint: 'original' }));
+    const created = await ctx.orchestrator.create(series());
+    vi.mocked(ctx.provider.read!).mockResolvedValue({ fingerprint: 'edited-elsewhere' });
+    const updated = await ctx.restart().update('s', { title: created.title, startAtUtc: created.startAtUtc, endAtUtc: created.endAtUtc, description: 'Local notes' });
+    expect(updated.providers!.twitch!.status).toBe('error');
+    expect(Object.values(updated.providers!.twitch!.projections!).every(entry => entry.status === 'conflict')).toBe(true);
+    expect(ctx.provider.update).not.toHaveBeenCalled();
+    expect(ctx.provider.create).toHaveBeenCalledTimes(7);
   });
   it('shifts the window and deletes only owned obsolete occurrences', async () => {
     const ctx = setup(); await ctx.orchestrator.create(series());

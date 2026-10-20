@@ -70,6 +70,19 @@ assert(!renderPerformancePage({ ...base, bank: 'favorites', favorites: [] }).inc
 assert(renderPerformancePage({ ...base, replay: { active: null } }).includes('data-deck-clips'));
 const noChat = renderPerformancePage({ ...base, data: { ...fixture, host: { ...fixture.host, chat: { connected: true, canSend: false } } } });
 assert(disabled(executableButtons(noChat).find(tag => tag.includes('data-action="custom-wiz"'))));
+const localMarkup = renderPerformancePage({ ...base, online: false, local: true });
+const localButtons = executableButtons(localMarkup);
+assert(!disabled(localButtons.find(tag => tag.includes('data-play-sound="custom-sound"'))));
+assert(disabled(localButtons.find(tag => tag.includes('data-play-sound="missing-sound"'))));
+assert(!disabled(localButtons.find(tag => tag.includes('data-action="sound.stop"'))));
+assert(!disabled(localButtons.find(tag => tag.includes('data-action="custom-wiz"'))));
+assert(disabled(localButtons.find(tag => tag.includes('data-action="custom-micro"'))));
+assert(!localMarkup.includes('Régie déconnectée'));
+const startingButtons = executableButtons(renderPerformancePage({ ...base, online: false, local: true, busy: true,
+  sounds: { ...sounds, currentPlayback: { soundId: 'custom-sound', status: 'starting' } } }));
+assert(!disabled(startingButtons.find(tag => tag.includes('data-action="sound.stop"'))));
+assert(startingButtons.filter(tag => !tag.includes('data-action="sound.stop"')).every(disabled));
+assert(executableButtons(renderPerformancePage({ ...base, online: false, local: true, blocked: true })).every(disabled));
 console.log('PASS module: scoped storage, malformed storage, empty favorites, custom IDs, escaped HTML, no live pads, offline, blocked, safe edit, sound stop, replay, WizeBot');
 
 const listeners = new Map();
@@ -80,7 +93,7 @@ let sent = [];
 const scope = vm.createContext({
   online: false, busy: false, activeCommands: 0, compact: true,
   data: { configuration: { actions: [] } }, sounds: { sounds: [] },
-  page: 'deck', server: 'regie-A', LOCAL_SCOPE: 'device-workspace-v1',
+  page: 'deck', server: 'regie-A', deviceAudio: undefined, LOCAL_SCOPE: 'device-workspace-v1',
   deckScope: undefined, deckPreferences: undefined, deckEditing: false, deckEditBank: 'all',
   readDeckPreferences, saveDeckPreferences, defaultDeckFavorites, localStorage,
   renderPerformancePage: options => options, actionState: () => '', esc: String,

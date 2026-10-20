@@ -72,6 +72,7 @@ export class ControlService {
     return new ControlService(store, data, adapter, notify, wait);
   }
   snapshot() { return structuredClone(this.data); }
+  get hasPendingActions() { return this.inFlight.size > 0 || this.pendingActions.size > 0; }
   async stop() { this.stopped = true; await this.queue; }
   private serialize<T>(fn: () => Promise<T>): Promise<T> { const op = this.queue.then(fn); this.queue = op.catch(() => {}); return op; }
   private async save() { await this.store.write(this.data); this.notify(); }

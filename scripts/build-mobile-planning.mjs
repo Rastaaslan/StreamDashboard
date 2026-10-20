@@ -10,6 +10,7 @@ await build({
     export { randomUuid } from './packages/core/src/uuid.ts';
     export { defaultProductProfile, validateProductProfile } from './packages/core/src/product-profile.ts';
     export { parseWizeBotCatalog } from './integrations/wizebot/src/catalog.ts';
+    export { normalizeStreamlabsHistory, mergeStreamlabsHistory } from './integrations/streamlabs/src/history.ts';
     export { generateTwitchTags } from './packages/core/src/twitch-tags.ts';
     export { googleRecurrence, parseGoogleRecurrence } from './integrations/google-calendar/src/recurrence.ts';`,
     resolveDir: process.cwd(), sourcefile: 'mobile-planning-entry.js' },

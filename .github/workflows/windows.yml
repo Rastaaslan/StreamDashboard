@@ -39,6 +39,9 @@ jobs:
         run: npm run build
       - name: Static security invariants
         run: npm run security:check
+      - name: Verify idle installation guards with Windows PowerShell 5.1
+        shell: powershell
+        run: .\scripts\qa-rc117-idle-guard.ps1
       - name: Check mobile JavaScript syntax
         run: npm run check:shipped-js
       - name: Smoke remote/mobile security flow

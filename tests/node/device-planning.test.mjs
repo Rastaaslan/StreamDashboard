@@ -63,3 +63,10 @@ test('browser engine keeps exactly the server SHA-256 occurrence identity',async
  const {createHash}=await import('../../scripts/mobile-hash-shim.js');const {createHash:native}=await import('node:crypto');
  for(const value of ['',JSON.stringify([identity.seriesLocalId,identity.occurrenceKey]),'é😀'.repeat(100)])assert.equal(createHash('sha256').update(value).digest('hex'),native('sha256').update(value).digest('hex'));
 });
+
+test('invalid end dates are rejected before local persistence or provider I/O',async()=>{
+ const s=setup(),r=s.runtime();
+ for(const endAtUtc of ['not-a-date','',undefined,'2030-11-01T17:00:00Z'])await assert.rejects(r.route('/api/v2/planning',{...event,endAtUtc},'POST'),/période valides/);
+ await assert.rejects(r.route('/api/v1/planning/bulk-delete/preview',{start:event.startAtUtc,end:'not-a-date',destinations:{local:true}},'POST'),/Période invalide/);
+ assert.equal(s.writes,0);assert.equal(s.calls.length,0);assert.equal(s.store.view().data.host.planning.length,0);
+});

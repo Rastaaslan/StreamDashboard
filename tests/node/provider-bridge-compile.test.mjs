@@ -4,7 +4,7 @@ import { mkdirSync, mkdtempSync, writeFileSync, rmSync } from 'node:fs';
 import path from 'node:path';
 
 // Android signature stubs and a map-backed JSONObject exercise payload policy, not Android/OAuth runtime.
-test('ProviderBridge compiles with javac and accepts only idempotent deletion responses', t => {
+test('ProviderBridge compiles and enforces provider isolation, deletion and Streamlabs payload policy', t => {
   try { execFileSync('javac', ['-version'], { stdio: 'inherit' }); }
   catch (error) { if (error.code !== 'ENOENT') throw error; t.skip('javac unavailable'); return; }
   mkdirSync('test-results', { recursive: true });
@@ -23,7 +23,7 @@ test('ProviderBridge compiles with javac and accepts only idempotent deletion re
       public String toString() { return values.toString(); }
       public JSONObject() {} public JSONObject(String s) throws JSONException {}
       public JSONObject put(String k,Object v) throws JSONException { values.put(k,v); return this; }
-      public String getString(String k) throws JSONException { return (String)values.get(k); }
+      public String getString(String k) throws JSONException { return (String)values.get(k); } public Object opt(String k) { return values.get(k); }
       public String optString(String k) { return optString(k, ""); } public String optString(String k,String d) { return (String)values.getOrDefault(k,d); }
       public long optLong(String k) { return 0; } public long optLong(String k,long d) { return d; }
       public boolean optBoolean(String k) { return java.lang.Boolean.TRUE.equals(values.get(k)); } public boolean has(String k) { return values.containsKey(k); }
@@ -32,7 +32,7 @@ test('ProviderBridge compiles with javac and accepts only idempotent deletion re
       public JSONArray getJSONArray(String k) throws JSONException { return (JSONArray)values.get(k); }
       public JSONArray optJSONArray(String k) { return (JSONArray)values.get(k); }
     }`,
-    'org/json/JSONArray.java': 'package org.json; public class JSONArray { private java.util.List<Object> values=new java.util.ArrayList<>(); public JSONArray put(Object v) { values.add(v); return this; } public int length() { return values.size(); } public String getString(int i) throws JSONException { return (String)values.get(i); } public JSONObject getJSONObject(int i) throws JSONException { return (JSONObject)values.get(i); } }',
+    'org/json/JSONArray.java': 'package org.json; public class JSONArray { private java.util.List<Object> values=new java.util.ArrayList<>(); public JSONArray put(Object v) { values.add(v); return this; } public int length() { return values.size(); } public Object get(int i) throws JSONException { return values.get(i); } public String getString(int i) throws JSONException { return (String)values.get(i); } public JSONObject getJSONObject(int i) throws JSONException { return (JSONObject)values.get(i); } }',
     'SecureCredentialStore.java': `package ${pkg}; class SecureCredentialStore { SecureCredentialStore(android.app.Activity a) {} String get(String k) { return ""; } void put(String k,String v) {} void clear(String k) {} }`,
     'BuildConfig.java': `package ${pkg}; class BuildConfig { static final String TWITCH_ANDROID_CLIENT_ID="", GOOGLE_ANDROID_CLIENT_ID=""; static final boolean PREVIEW_MODE=false; }`,
     'GoogleAuthorizationAdapter.java': `package ${pkg}; class GoogleAuthorizationAdapter implements GoogleAuthorizationFlow.Adapter {
@@ -81,6 +81,20 @@ test('ProviderBridge compiles with javac and accepts only idempotent deletion re
         if(!ProviderBridge.wizebotResource("ajax: '"+resource+"'").equals(resource))throw new AssertionError("WizeBot list discovery");
         try{ProviderBridge.wizebotResource("ajax: 'https://example.test/steal'");throw new AssertionError("External list URL accepted");}catch(Exception expected){}
 
+        String widget="abcdefghijklmnopqrstuvwxyz123456";
+        if(!StreamlabsCloudClient.widgetToken(widget).equals(widget)||!StreamlabsCloudClient.widgetToken("https://streamlabs.com/alert-box/v3?token="+widget).equals(widget)||!StreamlabsCloudClient.widgetToken("https://streamlabs.com/widgets/"+widget).equals(widget))throw new AssertionError("Widget token parsing");
+        for(String invalid:new String[]{"https://example.test/?token="+widget,"http://streamlabs.com/?token="+widget,"https://streamlabs.com:444/?token="+widget,"https://name@streamlabs.com/?token="+widget,"https://streamlabs.com/?token="+widget+"&token="+widget,"https://streamlabs.com/widgets/"+widget+"?token=another_widget_abcdefghijklmnopqrstuvwxyz","socket-token"}){
+          try{StreamlabsCloudClient.widgetToken(invalid);throw new AssertionError("Unsafe widget accepted");}catch(StreamlabsCloudClient.Failure expected){}
+        }
+        if(!StreamlabsCloudClient.accountKey(widget).matches("[a-f0-9]{64}")||StreamlabsCloudClient.accountKey(widget).equals(StreamlabsCloudClient.accountKey(widget+"x")))throw new AssertionError("Streamlabs account isolation");
+        org.json.JSONObject donor=new org.json.JSONObject().put("type","donation").put("platform","streamlabs").put("_id","event1").put("display_name","Alice").put("amount",3).put("currency","EUR").put("message","Bravo").put("email","private@example.test").put("oauth_token","should-not-cross").put("donor",new org.json.JSONObject().put("email","hidden@example.test"));
+        org.json.JSONObject widgetRow=new org.json.JSONObject().put("type","rollendcredits").put("platform","twitch_account").put("_id","noise");
+        org.json.JSONObject rawHistory=new org.json.JSONObject().put("access_token","secret-top").put("data",new org.json.JSONObject().put("donations",new org.json.JSONArray().put(donor).put("malformed")).put("follows",new org.json.JSONArray().put(widgetRow)).put("credentials",new org.json.JSONObject().put("token","secret-nested")));
+        org.json.JSONObject cleanHistory=StreamlabsCloudClient.publicPayload(rawHistory),cleanData=cleanHistory.getJSONObject("data"),cleanDonor=cleanData.getJSONArray("donations").getJSONObject(0);
+        if(cleanHistory.has("access_token")||cleanData.has("credentials")||cleanDonor.has("email")||cleanDonor.has("oauth_token")||cleanDonor.has("donor"))throw new AssertionError("Streamlabs private fields crossed native boundary");
+        if(cleanData.getJSONArray("donations").length()!=1||cleanData.getJSONArray("follows").length()!=0||!cleanDonor.getString("message").equals("Bravo")||!cleanDonor.opt("amount").equals(3))throw new AssertionError("Public activity lost or widget noise retained");
+        try{StreamlabsCloudClient.publicPayload(new org.json.JSONObject().put("data",new org.json.JSONObject().put("token","secret")));throw new AssertionError("Invalid history treated as success");}catch(StreamlabsCloudClient.Failure expected){}
+
         for (String code : new String[]{"INVALID_PAYLOAD", "INVALID_LINK", "REAUTH_REQUIRED", "HTTP_400", "HTTP_401", "HTTP_403", "HTTP_404", "HTTP_405", "HTTP_410", "HTTP_412", "HTTP_413", "HTTP_415", "HTTP_422", "HTTP_429"}) {
           if (!ProviderBridge.isDefinitiveNonCreation(code)) throw new AssertionError(code);
         }
@@ -112,7 +126,7 @@ test('ProviderBridge compiles with javac and accepts only idempotent deletion re
       const file = path.join(directory, name);
       mkdirSync(path.dirname(file), { recursive: true }); writeFileSync(file, source); return file;
     });
-    execFileSync('javac', ['-d', path.join(directory, 'classes'), ...files, 'android/app/src/main/java/com/rastaaslan/streamdashboard/remote/ProviderBridge.java', 'android/app/src/main/java/com/rastaaslan/streamdashboard/remote/GoogleAuthorizationFlow.java'], { stdio: 'inherit' });
+    execFileSync('javac', ['-d', path.join(directory, 'classes'), ...files, 'android/app/src/main/java/com/rastaaslan/streamdashboard/remote/ProviderBridge.java', 'android/app/src/main/java/com/rastaaslan/streamdashboard/remote/GoogleAuthorizationFlow.java', 'android/app/src/main/java/com/rastaaslan/streamdashboard/remote/StreamlabsCloudClient.java'], { stdio: 'inherit' });
     execFileSync('java', ['-cp', path.join(directory, 'classes'), pkg + '.DeletionPolicyTest'], { stdio: 'inherit' });
   } finally { rmSync(directory, { recursive: true, force: true }); }
 });

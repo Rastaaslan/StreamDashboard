@@ -1,4 +1,5 @@
 import { callDeviceBridge } from './device-bridge.js';
+import { createDeviceStreamlabs } from './device-streamlabs.js';
 import {parseWizeBotCatalog} from '../shared/planning-engine.js';
 
 // Non-live integrations are addressed on this device. Credentials never enter
@@ -9,8 +10,9 @@ export function createDeviceServices({store,autonomy,request,bridge=globalThis.S
  async function call(payload){
   if(typeof bridge?.deviceService!=='function')throw new Error('Mettez à jour cette application pour configurer ce service local.');
   const result=await callDeviceBridge(bridge,'deviceService',payload);
-  if(result.ok===false)throw new Error(result.message||'Service indisponible.');return result;
+  if(result.ok===false)throw Object.assign(new Error(result.message||'Service indisponible.'),{code:result.code});return result;
  }
+ const streamlabs=bridge?createDeviceStreamlabs({store,call}):null;
  const configPaths={'/api/v1/discord/token':'discord','/api/v1/supports/streamlabs/config':'streamlabs','/api/v1/wizebot/config':'wizebot'};
  async function catalog(refresh=false){
   if(!refresh)return store.record.drafts.wizebotCatalog||{channel:'',fetchedAt:'',items:[],edits:[]};
@@ -23,6 +25,7 @@ export function createDeviceServices({store,autonomy,request,bridge=globalThis.S
   await store.draft('wizebotCatalog',result);return result;
  }
  async function route(path,body,method){
+  if(streamlabs){const value=await streamlabs.route(path,body,method);if(value!==undefined)return value;}
   if(configPaths[path])return bridge?call({provider:configPaths[path],operation:'configure',value:body}):request(path,body,method);
   if(path==='/api/v1/google/oauth/config'&&!bridge)return request(path,body,method);
   if(path==='/api/v1/discord/status'){
@@ -35,6 +38,32 @@ export function createDeviceServices({store,autonomy,request,bridge=globalThis.S
    // uncertain and requires checking Discord before another explicit click.
    if(bridge)return call({provider:'discord',operation:'publish',...settings,...body});
    await request('/api/v1/discord/settings',settings,'PUT');return request(path,body,method);
+  }
+  if(path==='/api/v2/wizebot/context'&&(!method||method==='GET')){
+   let context;
+   if(bridge)context=await call({provider:'wizebot',operation:'context'});
+   else{const state=await request('/api/v1/twitch/chat/state');context={connected:state.accountConnected===true,canSend:state.capabilities?.chatWrite===true,channel:state.identity?.userName||''};}
+   await store.draft('deviceChat',{connected:context.connected===true,canSend:context.canSend===true,channel:context.channel});return context;
+  }
+  if(path==='/api/v2/wizebot/command'&&method==='POST'){
+   const {commandId,channel,command}=body||{};
+   if(!/^[a-zA-Z0-9_-]{8,100}$/.test(commandId||'')||!/^[a-z0-9_]{1,25}$/.test(channel||'')||typeof command!=='string'||command.length>500||!/^![\p{L}\p{N}_-]+(?: [^\r\n]*)?$/u.test(command)||/[\x00-\x1f\x7f]/.test(command))throw new Error('Commande WizeBot ou chaîne invalide.');
+   const receipts=structuredClone(store.record.drafts.wizebotCommands||[]),previous=receipts.find(value=>value.commandId===commandId);
+   if(previous){if(previous.channel!==channel||previous.command!==command)throw new Error('Identifiant de commande réutilisé.');return previous;}
+   const receipt={commandId,channel,command,status:'uncertain',message:'Envoi Twitch non confirmé. Aucun renvoi automatique.'};
+   receipts.push(receipt);await store.draft('wizebotCommands',receipts.slice(-200));
+   try{
+    let result;
+    if(bridge)result=await callDeviceBridge(bridge,'wizebotSendCommand',{commandId,channel,command});
+    else{
+     const state=await request('/api/v1/twitch/chat/state');
+     if(!state.accountConnected||!state.capabilities?.chatWrite||!state.identity?.broadcasterId||state.identity.userName!==channel)result={ok:false,code:'INVALID_LINK',message:'Le compte Twitch ou ses droits ont changé. Actualisez vos boutons WizeBot.'};
+     else{const sent=await request('/api/v1/twitch/chat/messages',{message:command,expectedBroadcasterId:state.identity.broadcasterId},'POST');result={ok:true,status:'sent',messageId:sent.messageId,message:'Commande envoyée dans le chat Twitch. La réponse de WizeBot reste à vérifier.'};}
+    }
+    if(result.ok===false){receipt.status=['INVALID_PAYLOAD','INVALID_LINK','REAUTH_REQUIRED','NOT_CONFIGURED','HTTP_400','HTTP_401','HTTP_403','HTTP_429'].includes(result.code)?'failed':'uncertain';receipt.message=result.message||receipt.message;}
+    else{receipt.status=result.status==='sent'?'succeeded':result.status==='failed'?'failed':'uncertain';receipt.message=result.message||receipt.message;if(result.messageId)receipt.messageId=result.messageId;}
+   }catch(error){if(!bridge&&[400,401,403,409,429].includes(error?.status)){receipt.status='failed';receipt.message='La commande a été refusée par Twitch. Vérifiez le compte et les droits du tchat.';}}
+   await store.draft('wizebotCommands',receipts.slice(-200));return receipt;
   }
   if(path==='/api/v2/wizebot/catalog')return catalog();
   if(path==='/api/v2/wizebot/refresh')return catalog(true);

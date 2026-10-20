@@ -40,7 +40,7 @@ export async function createAutonomy(scope,network,onChange=()=>{}){
     value=clone(old);value.recurrence.exceptions||={};const previous=value.recurrence.exceptions[body.occurrenceKey];
     value.recurrence.exceptions[body.occurrenceKey]=method==='DELETE'?{...previous,cancelled:true}:mergeOccurrencePatch(previous,body.patch);
    }else value=method==='DELETE'?null:{...old,...pick(body,fields.planning)};
-   if(value!==null){if(!value.title?.trim()||value.title.length>140||!Number.isFinite(Date.parse(value.startAtUtc))||Date.parse(value.endAtUtc)<=Date.parse(value.startAtUtc))throw new Error('Titre et période valides requis.');}
+   if(value!==null){if(!value.title?.trim()||value.title.length>140||!Number.isFinite(Date.parse(value.startAtUtc))||!Number.isFinite(Date.parse(value.endAtUtc))||Date.parse(value.endAtUtc)<=Date.parse(value.startAtUtc))throw new Error('Titre et période valides requis.');}
    await stage({['planning/'+id]:value});return {savedLocally:true,createdItemId:id};
   }
   for(const [prefix,kind] of [['/api/v1/companion/templates','template'],['/api/v1/automations','automation'],['/api/v1/soundboard/sounds','sound']]){

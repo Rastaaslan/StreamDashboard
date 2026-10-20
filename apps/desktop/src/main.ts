@@ -1,6 +1,6 @@
 import { app, BrowserWindow, dialog, ipcMain, shell, type OpenDialogOptions } from 'electron';
 import path from 'node:path';
-import { copyFile, mkdir, readFile, writeFile, rename, stat, unlink } from 'node:fs/promises';
+import { copyFile, mkdir, readFile, rename, stat, unlink } from 'node:fs/promises';
 import { randomUUID } from 'node:crypto';
 import { createDashboardWindow, isAllowedExternalAuthUrl, isAllowedTwitchUrl } from './window.js';
 import { startDesktopRuntime, type DesktopRuntime } from './lifecycle.js';
@@ -10,6 +10,8 @@ import { DesktopLogger } from './logger.js';
 import { presentWindow } from './presentation.js';
 import { openTwitchViewerSession } from './twitch-viewer.js';
 import { installControllerKeys, startControllerAssets } from './controller.js';
+import { persistDeviceRole, requireDesktopRestartSafety } from './restart-safety.js';
+import { isSameOrigin } from './security.js';
 import type { Server } from 'node:http';
 
 const squirrelHandled = handleSquirrelStartup();
@@ -34,6 +36,7 @@ let cleanupPromise: Promise<void> | undefined;
 const startup = new AbortController();
 let failing = false;
 let controllerRole = false;
+let roleChangePending = false;
 const roleFile = path.join(app.getPath('userData'), 'device-role.json');
 
 function present() {
@@ -134,14 +137,20 @@ ipcMain.handle('app:device-profile', async () => {
 });
 ipcMain.handle('app:set-device-role', async (event, role: unknown, name: unknown) => {
   const origin = `http://127.0.0.1:${controllerRole ? 48134 : 48133}`;
-  if (event.sender !== window?.webContents || new URL(event.senderFrame?.url || 'about:blank').origin !== origin || !['stream','control'].includes(String(role)) || typeof name !== 'string' || !name.trim() || name.length > 80) throw new Error('Choix de rôle refusé.');
+  if (!window || window.isDestroyed() || event.sender !== window.webContents || event.senderFrame !== window.webContents.mainFrame || !isSameOrigin(event.senderFrame?.url || '', origin) || !['stream','control'].includes(String(role)) || typeof name !== 'string' || !name.trim() || name.length > 80) throw new Error('Choix de rôle refusé.');
+  if (roleChangePending || quitting) throw new Error('Un changement de rôle ou un arrêt est déjà en cours.');
   const changed = (role === 'control') !== controllerRole;
-  const obs = runtime?.dashboard.state().obs;
-  if (changed && (obs?.streaming || obs?.recording)) throw new Error('Terminez le live et l’enregistrement avant de changer le rôle de ce PC.');
-  await mkdir(path.dirname(roleFile), {recursive:true});
-  await writeFile(roleFile + '.tmp', JSON.stringify({version:1,role,name:name.trim()})); await rename(roleFile + '.tmp', roleFile);
-  if (changed) { app.relaunch({args:[...process.argv.slice(1).filter(value => !value.startsWith('--role=')), role === 'control' ? '--role=client' : '--role=host']}); app.quit(); }
-  return {restart:changed};
+  const current = runtime;
+  const requireSafe = changed ? async () => {
+    if (quitting || !current || runtime !== current) throw new Error('Vérification du changement de rôle indisponible. Réessayez.');
+    await requireDesktopRestartSafety(() => current.dashboard.assessRestartSafety());
+  } : undefined;
+  roleChangePending = true;
+  try {
+    await persistDeviceRole(roleFile, {version:1,role:role as 'stream'|'control',name:name.trim()}, requireSafe);
+    if (changed) { app.relaunch({args:[...process.argv.slice(1).filter(value => !value.startsWith('--role=')), role === 'control' ? '--role=client' : '--role=host']}); app.quit(); }
+    return {restart:changed};
+  } finally { roleChangePending = false; }
 });
 ipcMain.handle('app:open-twitch-activation', async (_event, url: unknown) => {
   if (typeof url !== 'string' || !isAllowedTwitchUrl(url)) return false;
@@ -176,7 +185,9 @@ ipcMain.handle('soundboard:select-file', async () => {
 ipcMain.handle('soundboard:import-file', async (_event, source: unknown) => {
   if (typeof source !== 'string' || !path.isAbsolute(source) || !SOUND_EXTENSIONS.has(path.extname(source).toLowerCase())) throw new Error('Format audio refusé.');
   const info = await stat(source); if (!info.isFile() || info.size > 100 * 1024 * 1024) throw new Error('Le fichier audio est invalide ou dépasse 100 Mo.');
-  const library = path.join(app.getPath('userData'), 'soundboard'); await mkdir(library, { recursive: true });
+  // The client has its own local runtime and library; an import must not end up
+  // in the host role's profile, where that runtime cannot resolve its libraryId.
+  const library = path.join(app.getPath('userData'), ...(controllerRole ? ['device-runtime'] : []), 'soundboard'); await mkdir(library, { recursive: true });
   const destination = path.join(library, `${randomUUID()}${path.extname(source).toLowerCase()}`); const temporary = `${destination}.tmp`;
   try { await copyFile(source, temporary); await rename(temporary, destination); } catch (error) { await unlink(temporary).catch(() => undefined); throw error; }
   return { libraryId: path.basename(destination) };

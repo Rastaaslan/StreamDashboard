@@ -14,27 +14,32 @@ let report: (() => void) | undefined;
 let stop: (() => Promise<void>) | undefined;
 afterEach(async () => { await (stop ? stop() : server?.stop()); stop = undefined; report?.(); report = undefined; vi.unstubAllGlobals(); vi.restoreAllMocks(); if (folder) await rm(folder, { recursive: true, force: true }); });
 
-async function fixture(provider: 'twitch' | 'google') {
+async function fixture(provider: 'twitch' | 'google', initialPlanning?: CalendarItem[]) {
   const metricsBefore = syncDiagnostics();
   const trace = process.env.CB126_TRACE === '1';
-  const phases: Record<string, { count: number; ms: number }> = {};
+  const phases: Record<string, { count: number; ms: number; persistenceWrites?: number }> = {};
+  const persistenceFiles: Record<string, number> = {};
   const calls: Record<string, number> = {};
   const timed = async <T>(name: string, work: () => Promise<T>): Promise<T> => {
     const start = performance.now();
+    const beforeWrites = phases.persistence?.count ?? 0;
     try { return await work(); } finally {
       const phase = phases[name] ??= { count: 0, ms: 0 };
       phase.count++; phase.ms += performance.now() - start;
+      if (trace && name !== 'persistence') phase.persistenceWrites = (phase.persistenceWrites ?? 0) + (phases.persistence?.count ?? 0) - beforeWrites;
     }
   };
   const write = AtomicJsonStore.prototype.write;
   vi.spyOn(AtomicJsonStore.prototype, 'write').mockImplementation(function (this: AtomicJsonStore<object>, value) {
+    const file = this.file.split(/[\\/]/).at(-1)!;
+    persistenceFiles[file] = (persistenceFiles[file] ?? 0) + 1;
     return timed('persistence', async () => {
       if (process.env.CB126_DISK_MS) await new Promise(resolve => setTimeout(resolve, Number(process.env.CB126_DISK_MS)));
       await write.call(this, value);
     });
   });
   stop = () => timed('teardown', () => server!.stop());
-  if (trace) report = () => console.log('CB126', JSON.stringify({ phases, calls,
+  if (trace) report = () => console.log('CB126', JSON.stringify({ phases, persistenceFiles, calls,
     sync: Object.fromEntries(Object.entries(syncDiagnostics()).map(([key, value]) => [key, {
       count: value.count - (metricsBefore[key]?.count ?? 0),
       ms: value.milliseconds - (metricsBefore[key]?.milliseconds ?? 0),
@@ -100,6 +105,7 @@ async function fixture(provider: 'twitch' | 'google') {
   const file = join(folder, 'dashboard.json');
   const state = JSON.parse(await readFile(file, 'utf8'));
   state.twitch = { broadcasterId: '42', userName: 'u', displayName: 'U' };
+  if (initialPlanning) state.planning = structuredClone(initialPlanning);
   await writeFile(file, JSON.stringify(state));
   if (provider === 'twitch') await secrets.setTwitchTokens({ accessToken: 'token', refreshToken: '' });
   else await secrets.setGoogleTokens({ accessToken: 'token', refreshToken: 'refresh', expiresAt: String(Date.now() + 365 * 86400000) });
@@ -115,7 +121,7 @@ async function fixture(provider: 'twitch' | 'google') {
   const start = new Date(); start.setUTCDate(start.getUTCDate() + 1); start.setUTCHours(12, 0, 0, 0);
   const input = { title: 'Matrix', category: 'live', startAtUtc: start.toISOString(), endAtUtc: new Date(+start + 3600000).toISOString(), desiredPublication: { local: true, twitch: provider === 'twitch', google: provider === 'google' } };
   const item = () => server!.state().planning.find(value => value.title === 'Matrix')!;
-  return { request, input, item, remote, writes, calls, phases, offline: (value: boolean) => { offline = value; },
+  return { request, input, item, remote, writes, calls, phases, persistenceFiles, offline: (value: boolean) => { offline = value; },
     raceGooglePatch: () => { raceGooglePatch = true; },
     loseCreateResponse: () => { loseCreateResponse = true; },
     rejectCreate: (value: boolean) => { rejectCreate = value; },
@@ -159,10 +165,17 @@ for (const provider of ['twitch', 'google'] as const) {
       expect(f.writes.filter(write => write.method === 'DELETE')).toHaveLength(ids.length);
       expect(f.writes.filter(write => write.method === 'PATCH')).toHaveLength(0);
       expect(f.calls['GET /oauth2/validate']).toBe(2);
-      expect(f.calls['GET /helix/schedule']).toBe(1 + 4 * ids.length);
+      // One shared create inventory, then one fresh conflict read per occurrence
+      // on restart, retry and edit. Local-only metadata needs no adapter update.
+      expect(f.calls['GET /helix/schedule']).toBe(1 + 3 * ids.length);
       // Includes real durable storage, restart maintenance and explicit retry.
-      // Bound per-occurrence writes plus the fixed lifecycle summaries (create/restart/retry/edit/delete).
-      expect(f.phases.persistence.count).toBeLessThanOrEqual(4 * ids.length + 8);
+      // The current application also opens two durable stores once on each of
+      // its three starts. Bound these explicitly; retain the original planning
+      // lifecycle budget instead of attributing these six writes to occurrences.
+      const starts = f.phases.bootstrap.count + f.phases.startup.count;
+      expect(f.persistenceFiles['autonomy-v1.json']).toBe(starts);
+      expect(f.persistenceFiles['streamlabs-events.json']).toBe(starts);
+      expect(f.phases.persistence.count - 2 * starts).toBeLessThanOrEqual(4 * ids.length + 8);
     }
   });
 }
@@ -395,7 +408,36 @@ it.each(['twitch', 'google'] as const)('%s offline occurrence move survives relo
   expect(f.item().providers![provider]!.lastError).toBeUndefined();
 });
 
-it('Twitch sync settles a lost replacement CREATE response without retiring the recovered identity again', async () => {
+it('Twitch sync refuses CREATE when its durable HTTP-route intent cannot be saved', async () => {
+  const start = Date.now() + 86400000;
+  const f = await fixture('twitch', [{ id: 'queued', localId: 'queued', title: 'Matrix', description: 'Local draft must survive', category: 'live', ownership: 'LOCAL',
+    startAtUtc: new Date(start).toISOString(), endAtUtc: new Date(start + 3600000).toISOString(),
+    desiredPublication: { local: true, twitch: true, google: false }, providers: { twitch: { status: 'pending' } } }]);
+  const before = await f.disk();
+  expect(f.writes).toEqual([]);
+  const writes = vi.mocked(AtomicJsonStore.prototype.write);
+  const original = writes.getMockImplementation()!;
+  let refused = 0;
+  writes.mockImplementation(async function (this: AtomicJsonStore<object>, value) {
+    const items = (value as { planning?: CalendarItem[] }).planning;
+    if (items?.find(item => item.id === 'queued')?.providers?.twitch?.uncertainCreate) {
+      refused++;
+      throw new Error('Simulated intent checkpoint unavailable');
+    }
+    return original.call(this, value);
+  });
+  try {
+    await f.request('twitch/sync', {}, 'POST', false);
+    expect(refused).toBe(1);
+    expect(f.calls['POST /helix/schedule/segment'] ?? 0).toBe(0);
+    expect(f.writes).toEqual([]);
+    expect(await f.disk()).toEqual(before);
+  } finally {
+    writes.mockImplementation(original);
+  }
+});
+
+it('Twitch sync preserves a lost replacement CREATE without adopting, importing or retiring its unproven candidate', async () => {
   const f = await fixture('twitch');
   await f.request('planning', { ...f.input, recurrence: { frequency: 'weekly', interval: 1, timeZone: 'UTC' } });
   const id = f.item().id;
@@ -405,13 +447,32 @@ it('Twitch sync settles a lost replacement CREATE response without retiring the 
   expect(f.item().providers!.twitch!.uncertainCreate).toBeTruthy();
   expect(f.active()).toHaveLength(1);
   const remoteId = f.active()[0].id, writes = f.writes.length;
+  // Compare the durable JSON representation: undefined fields are intentionally
+  // absent after restart, while every defined request/identity field must remain.
+  const intent = JSON.parse(JSON.stringify(f.item().providers!.twitch!.uncertainCreate));
+  const replacement = JSON.parse(JSON.stringify(f.item().providers!.twitch!.nativeReplacementRequested));
+  const tags = { values: ['Français'], source: 'manual' as const };
+  f.offline(true);
+  await f.request(`planning/${id}`, { description: 'Notes saved offline', tags }, 'PUT');
+  f.offline(false);
+  f.remote.set('independent', { ...f.active()[0], id: 'independent', title: 'Independent remote event' });
   await f.restart();
   await f.request('twitch/sync');
-  expect(f.item().providers!.twitch!.status).toBe('synced');
-  expect(f.item().providers!.twitch!.uncertainCreate).toBeFalsy();
-  expect(f.item().providers!.twitch!.nativeReplacementRequested).toBeUndefined();
-  await f.restart(); await f.request(`planning/${id}/retry/twitch`);
-  expect(f.active().map(event => event.id)).toEqual([remoteId]);
+  expect(f.item()).toMatchObject({ id, ownership: 'LOCAL', description: 'Notes saved offline', tags });
+  expect(f.item().providers!.twitch!).toMatchObject({ status: 'error', uncertainCreate: intent, nativeReplacementRequested: replacement });
+  expect(f.item().providers!.twitch!.remoteId).toBeUndefined();
+  expect(f.item().providers!.twitch!.lastError).toContain('vérifiez le planning dans Twitch');
+  const saved = await f.disk();
+  expect(saved.map(item => item.id).sort()).toEqual([id, 'twitch:independent'].sort());
+  expect(saved.find(item => item.id === id)).toMatchObject({ description: 'Notes saved offline', tags });
+  expect(saved.find(item => item.id === 'twitch:independent')).toMatchObject({ ownership: 'EXTERNAL', providers: { twitch: { remoteId: 'independent', status: 'synced' } } });
+  await f.restart();
+  await f.request(`planning/${id}/retry/twitch`, {}, 'POST', false);
+  await f.request('twitch/sync');
+  expect(f.item().providers!.twitch!.uncertainCreate).toEqual(intent);
+  expect(f.item().providers!.twitch!.remoteId).toBeUndefined();
+  expect(f.active().map(event => event.id).sort()).toEqual([remoteId, 'independent'].sort());
+  expect((await f.disk()).map(item => item.id).sort()).toEqual([id, 'twitch:independent'].sort());
   expect(f.writes).toHaveLength(writes);
 });
 

@@ -93,3 +93,45 @@ test('preserves finalization of a bound target receiving video and preserves an 
  assert.equal(live.destinations.youtube.canStart,false);
  assert.equal(live.destinations.youtube.startBlockReason,'');
 });
+
+test('never offers an individual start when its OBS output is unknown or belongs to an old target',()=>{
+ for(const change of [
+  data=>{delete data.host.outputStatus.youtube;},
+  data=>{data.host.outputStatus.youtube.active=null;},
+  data=>{data.host.outputStatus.youtube.observedAt=new Date(now-60_000).toISOString();},
+  data=>{data.host.outputStatus.youtube.name='Old Output';},
+ ]){
+  const data=fixture();change(data);
+  const state=liveControlState(data,true,now);
+  assert.equal(state.destinations.youtube.active,null);
+  assert.equal(state.destinations.youtube.canStart,false);
+  assert.equal(state.unconfirmed,true);
+  assert.equal(state.heading,'État de diffusion à vérifier');
+  assert.equal(state.destinations.twitch.canStart,true,'The independently confirmed destination remains usable');
+ }
+});
+
+test('does not convert missing or unconfirmed main output data into a stopped Twitch live',()=>{
+ for(const change of [
+  data=>{data.host.state.obs.streamingKnown=false;},
+  data=>{delete data.host.state.obs.streaming;},
+  data=>{data.host.state.obs.connected=false;},
+ ]){
+  const data=fixture();change(data);
+  const state=liveControlState(data,true,now);
+  assert.equal(state.destinations.twitch.active,null);
+  assert.equal(state.destinations.twitch.canStart,false);
+  assert.equal(state.canStartBoth,false);
+  assert.equal(state.heading,'État de diffusion à vérifier');
+ }
+});
+
+test('cannot relaunch Twitch while its output is already sending, and keeps YouTube finalization available',()=>{
+ const data=fixture();data.host.state.obs.streaming=true;
+ data.host.outputStatus.youtube.active=true;
+ const state=liveControlState(data,true,now);
+ assert.equal(state.destinations.twitch.live,false);
+ assert.equal(state.destinations.twitch.canStart,false);
+ assert.equal(state.destinations.youtube.canStart,true);
+ assert.equal(state.heading,'Diffusion en cours');
+});

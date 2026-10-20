@@ -61,9 +61,9 @@ var __commonJS = (cb, mod) => function __require2() {
 };
 var __copyProps = (to, from, except, desc) => {
   if (from && typeof from === "object" || typeof from === "function") {
-    for (let key of __getOwnPropNames(from))
-      if (!__hasOwnProp.call(to, key) && key !== except)
-        __defProp(to, key, { get: () => from[key], enumerable: !(desc = __getOwnPropDesc(from, key)) || desc.enumerable });
+    for (let key2 of __getOwnPropNames(from))
+      if (!__hasOwnProp.call(to, key2) && key2 !== except)
+        __defProp(to, key2, { get: () => from[key2], enumerable: !(desc = __getOwnPropDesc(from, key2)) || desc.enumerable });
   }
   return to;
 };
@@ -671,8 +671,8 @@ var require_core = __commonJS({
            *     var HmacSHA256 = CryptoJS.lib.Hasher._createHmacHelper(CryptoJS.algo.SHA256);
            */
           _createHmacHelper: function(hasher) {
-            return function(message, key) {
-              return new C_algo.HMAC.init(hasher, key).finalize(message);
+            return function(message, key2) {
+              return new C_algo.HMAC.init(hasher, key2).finalize(message);
             };
           }
         });
@@ -890,7 +890,7 @@ function projectRecurrence(source, window2) {
   const seriesId = source.localId || source.id;
   if (!seriesId)
     throw new Error("Missing series identity");
-  const key = (wall) => `${seriesId}:${wallKey(wall)}`;
+  const key2 = (wall) => `${seriesId}:${wallKey(wall)}`;
   const seek = (target) => {
     let low = 0, high = 1;
     while (resolve(at(high)) < target)
@@ -926,7 +926,7 @@ function projectRecurrence(source, window2) {
         high = mid;
     }
     const wall = at(low);
-    if (key(wall) === exceptionKey && resolve(wall) <= until)
+    if (key2(wall) === exceptionKey && resolve(wall) <= until)
       candidates.set(exceptionKey, wall);
   }
   const output = /* @__PURE__ */ new Map();
@@ -960,7 +960,7 @@ function projectRecurrence(source, window2) {
     if (!Number.isFinite(original)) throw new Error("Invalid recurrence cadence range");
     if (original >= to || original > until) break;
     if (counted && output.size >= window2.nextCount && original > instant(sorted()[window2.nextCount - 1].startAtUtc)) break;
-    add(key(wall), wall);
+    add(key2(wall), wall);
   }
   return counted ? sorted().slice(0, window2.nextCount) : sorted();
 }
@@ -971,9 +971,9 @@ function expandRecurringItems(items, { from, to, nextCount, accept }) {
 function recurrenceForNewSeries(rule, id) {
   if (!rule) return rule;
   const copy = structuredClone(rule);
-  if (copy.exceptions) copy.exceptions = Object.fromEntries(Object.entries(copy.exceptions).map(([key, value]) => {
-    const match = key.match(/:(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2})$/);
-    return [match ? `${id}:${match[1]}` : key, value];
+  if (copy.exceptions) copy.exceptions = Object.fromEntries(Object.entries(copy.exceptions).map(([key2, value]) => {
+    const match = key2.match(/:(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2})$/);
+    return [match ? `${id}:${match[1]}` : key2, value];
   }));
   return copy;
 }
@@ -986,42 +986,42 @@ async function boundedMap(values, work) {
 }
 
 // packages/core/src/series-deletion.ts
-async function recoverIdentity(identity, name, provider, persist) {
-  if (!identity.uncertainCreate) return;
-  if (!provider?.recoverCreation) throw new Error(`${name} : r\xE9cup\xE9ration en lecture seule indisponible. Reconnectez le provider puis r\xE9essayez la suppression.`);
-  const original = structuredClone(identity.uncertainCreate.event);
-  const recovered = await provider.recoverCreation({ ...original, providers: { [name]: identity } });
-  if (!recovered.id || recovered.owned !== true) throw new Error(`${name} : ownership non \xE9tabli. V\xE9rifiez l\u2019identit\xE9 distante avant de r\xE9essayer.`);
-  identity.remoteId = recovered.id;
-  identity.remoteRevision = recovered.revision;
-  identity.fingerprint = recovered.fingerprint;
-  identity.calendarId = recovered.calendarId ?? identity.calendarId;
-  identity.projectionOwned = true;
-  identity.status = "pending";
-  if ("event" in identity) identity.event = original;
-  delete identity.uncertainCreate;
-  delete identity.lastError;
+async function recoverIdentity(identity2, name2, provider, persist) {
+  if (!identity2.uncertainCreate) return;
+  if (!provider?.recoverCreation) throw new Error(`${name2} : r\xE9cup\xE9ration en lecture seule indisponible. Reconnectez le provider puis r\xE9essayez la suppression.`);
+  const original = structuredClone(identity2.uncertainCreate.event);
+  const recovered = await provider.recoverCreation({ ...original, providers: { [name2]: identity2 } });
+  if (!recovered.id || recovered.owned !== true) throw new Error(`${name2} : ownership non \xE9tabli. V\xE9rifiez l\u2019identit\xE9 distante avant de r\xE9essayer.`);
+  identity2.remoteId = recovered.id;
+  identity2.remoteRevision = recovered.revision;
+  identity2.fingerprint = recovered.fingerprint;
+  identity2.calendarId = recovered.calendarId ?? identity2.calendarId;
+  identity2.projectionOwned = true;
+  identity2.status = "pending";
+  if ("event" in identity2) identity2.event = original;
+  delete identity2.uncertainCreate;
+  delete identity2.lastError;
   await persist();
 }
 async function recoverSeriesDeletionIdentities(item, providers, persist) {
-  for (const name of ["twitch", "google"]) {
-    const link = item.providers?.[name];
+  for (const name2 of ["twitch", "google"]) {
+    const link = item.providers?.[name2];
     if (!link) continue;
     let recovered = false;
-    for (const identity of [link, ...Object.values(link.projections ?? {}).filter((entry) => entry.managedBy === "StreamDashboard" && entry.projectionOwned !== false)]) {
-      if (!identity.uncertainCreate) continue;
+    for (const identity2 of [link, ...Object.values(link.projections ?? {}).filter((entry) => entry.managedBy === "StreamDashboard" && entry.projectionOwned !== false)]) {
+      if (!identity2.uncertainCreate) continue;
       try {
-        await recoverIdentity(identity, name, providers[name], persist);
+        await recoverIdentity(identity2, name2, providers[name2], persist);
         recovered = true;
       } catch (error) {
-        identity.status = "error";
-        identity.lastError = error.message;
+        identity2.status = "error";
+        identity2.lastError = error.message;
         link.status = "error";
-        link.lastError = `Suppression en attente : ${identity.lastError}`;
+        link.lastError = `Suppression en attente : ${identity2.lastError}`;
         await persist();
       }
     }
-    if (recovered && ![link, ...Object.values(link.projections ?? {})].some((identity) => identity.uncertainCreate)) {
+    if (recovered && ![link, ...Object.values(link.projections ?? {})].some((identity2) => identity2.uncertainCreate)) {
       link.status = "error";
       link.lastError = "Suppression en attente : identit\xE9 retrouv\xE9e. R\xE9essayez la suppression pour terminer le nettoyage distant.";
       await persist();
@@ -1042,79 +1042,79 @@ async function deleteSeriesProjections(item, providers, save, retry = false) {
     return queued;
   };
   const failures = [];
-  for (const name of ["twitch", "google"]) {
-    const link = item.providers?.[name];
+  for (const name2 of ["twitch", "google"]) {
+    const link = item.providers?.[name2];
     if (!link) continue;
-    if (name === "twitch" && link.projectionOwned && !link.remoteId) link.remoteId = item.twitchSegmentId;
-    const remove = async (identity, event) => {
-      if (identity.uncertainCreate) {
-        const original = structuredClone(identity.uncertainCreate.event);
-        await recoverIdentity(identity, name, providers[name], persist);
-        event = { ...original, providers: { [name]: identity } };
+    if (name2 === "twitch" && link.projectionOwned && !link.remoteId) link.remoteId = item.twitchSegmentId;
+    const remove = async (identity2, event) => {
+      if (identity2.uncertainCreate) {
+        const original = structuredClone(identity2.uncertainCreate.event);
+        await recoverIdentity(identity2, name2, providers[name2], persist);
+        event = { ...original, providers: { [name2]: identity2 } };
       }
-      if (!identity.remoteId) return;
-      const provider = providers[name];
-      if (!provider) throw new Error(`${name} non connect\xE9.`);
-      if (identity.status === "conflict") {
+      if (!identity2.remoteId) return;
+      const provider = providers[name2];
+      if (!provider) throw new Error(`${name2} non connect\xE9.`);
+      if (identity2.status === "conflict") {
         if (!retry) throw Object.assign(new Error("Conflit distant : r\xE9essayez explicitement la suppression pour confirmer le retrait courant."), { status: 412 });
         if (!provider.read) throw new Error("Lecture distante requise pour confirmer la suppression en conflit.");
-        const latest = await provider.read(identity.remoteId, event, { resolveConflict: true });
+        const latest = await provider.read(identity2.remoteId, event, { resolveConflict: true });
         if (latest.deleted) {
-          delete identity.remoteId;
-          delete identity.remoteRevision;
+          delete identity2.remoteId;
+          delete identity2.remoteRevision;
           await persist();
           return;
         }
-        if (name === "google" && !latest.revision) throw new Error("ETag courant requis pour supprimer.");
-        if (name === "twitch" && !latest.fingerprint) throw new Error("Empreinte courante requise pour supprimer.");
-        identity.remoteRevision = latest.revision;
-        identity.fingerprint = latest.fingerprint;
+        if (name2 === "google" && !latest.revision) throw new Error("ETag courant requis pour supprimer.");
+        if (name2 === "twitch" && !latest.fingerprint) throw new Error("Empreinte courante requise pour supprimer.");
+        identity2.remoteRevision = latest.revision;
+        identity2.fingerprint = latest.fingerprint;
       }
-      identity.status = "pending";
+      identity2.status = "pending";
       try {
-        await provider.delete(identity.remoteId, event, identity.remoteRevision);
+        await provider.delete(identity2.remoteId, event, identity2.remoteRevision);
       } catch (error) {
         const failure = error;
         if (![404, 410].includes(failure.status ?? 0) && failure.code !== "DELETED_REMOTELY") throw error;
       }
-      delete identity.remoteId;
-      delete identity.remoteRevision;
-      delete identity.fingerprint;
-      identity.status = "not-published";
-      delete identity.lastError;
+      delete identity2.remoteId;
+      delete identity2.remoteRevision;
+      delete identity2.fingerprint;
+      identity2.status = "not-published";
+      delete identity2.lastError;
       await persist();
     };
-    const attempt = async (identity, event) => {
+    const attempt = async (identity2, event) => {
       try {
-        await remove(identity, event);
+        await remove(identity2, event);
         return true;
       } catch (error) {
         const failure = error;
-        identity.status = identity.status === "conflict" || failure.status === 412 || ["CONFLICT", "GOOGLE_PROJECTION_CONFLICT"].includes(failure.code ?? "") ? "conflict" : "error";
-        identity.lastError = error.message;
-        failures.push(`${name}: ${identity.lastError}`);
+        identity2.status = identity2.status === "conflict" || failure.status === 412 || ["CONFLICT", "GOOGLE_PROJECTION_CONFLICT"].includes(failure.code ?? "") ? "conflict" : "error";
+        identity2.lastError = error.message;
+        failures.push(`${name2}: ${identity2.lastError}`);
         await persist();
         return false;
       }
     };
     if (link.projectionOwned === true || link.uncertainCreate) {
-      if (await attempt(link, { ...item, providers: { [name]: link } })) {
-        if (name === "twitch") delete item.twitchSegmentId;
+      if (await attempt(link, { ...item, providers: { [name2]: link } })) {
+        if (name2 === "twitch") delete item.twitchSegmentId;
       }
     }
-    await boundedMap(Object.entries(link.projections ?? {}), async ([key, entry]) => {
+    await boundedMap(Object.entries(link.projections ?? {}), async ([key2, entry]) => {
       if (entry.managedBy !== "StreamDashboard" || entry.projectionOwned === false) return;
       entry.pendingDeletion = true;
       const { recurrence, seriesId, occurrenceKey, providers: ignored, conflict, twitchSegmentId, ...body } = entry.event;
-      const event = { ...body, twitchRecurring: false, providers: { [name]: entry } };
-      if (await attempt(entry, event)) delete link.projections[key];
+      const event = { ...body, twitchRecurring: false, providers: { [name2]: entry } };
+      if (await attempt(entry, event)) delete link.projections[key2];
     });
-    if (failures.some((value) => value.startsWith(name + ":"))) {
+    if (failures.some((value) => value.startsWith(name2 + ":"))) {
       if (link.status !== "conflict") link.status = "error";
-      link.lastError = `Suppression de s\xE9rie en attente. R\xE9essayez la suppression : ${failures.filter((value) => value.startsWith(name + ":")).join("; ")}`;
+      link.lastError = `Suppression de s\xE9rie en attente. R\xE9essayez la suppression : ${failures.filter((value) => value.startsWith(name2 + ":")).join("; ")}`;
     } else {
-      delete item.providers[name];
-      if (item.conflict?.provider === name) delete item.conflict;
+      delete item.providers[name2];
+      if (item.conflict?.provider === name2) delete item.conflict;
     }
     await persist();
   }
@@ -1168,7 +1168,7 @@ function parseGoogleRecurrence(input) {
   const rule = { frequency: parts.FREQ?.toLowerCase(), interval: Number(parts.INTERVAL), timeZone, ...until ? { until } : {} };
   if (!(rule.interval === 1 || rule.frequency === "weekly" && rule.interval === 2)) rule.version = 2;
   const canonical = googleRecurrence({ ...input, recurrence: rule })[0].slice(6).split(";").sort();
-  if (JSON.stringify(canonical) !== JSON.stringify(Object.entries(parts).map(([key, value]) => `${key}=${value}`).sort())) return refuse();
+  if (JSON.stringify(canonical) !== JSON.stringify(Object.entries(parts).map(([key2, value]) => `${key2}=${value}`).sort())) return refuse();
   return rule;
 }
 function googleRecurrence(input) {
@@ -1253,7 +1253,7 @@ function publicationContent(event, provider) {
     event.seriesId || null,
     event.occurrenceKey || null,
     event.desiredPublication?.[provider] === true
-  ], (_key, value) => value && typeof value === "object" && !Array.isArray(value) ? Object.fromEntries(Object.keys(value).sort().map((key) => [key, value[key]])) : value);
+  ], (_key, value) => value && typeof value === "object" && !Array.isArray(value) ? Object.fromEntries(Object.keys(value).sort().map((key2) => [key2, value[key2]])) : value);
 }
 
 // packages/core/src/provider-identity.ts
@@ -1306,13 +1306,13 @@ async function createWithDurableIntent(item, provider, persist, create, prepare)
 }
 
 // packages/core/src/provider-projection.ts
-function projectionContent(item) {
-  return JSON.stringify([item.title, item.description, item.allDay, item.startAtUtc, item.endAtUtc, item.twitchCategoryId ?? ""]);
+function projectionContent(item, name2) {
+  return JSON.stringify(name2 === "twitch" ? [item.title, item.startAtUtc, item.endAtUtc, item.twitchCategoryId ?? ""] : [item.title, item.description, item.allDay, item.startAtUtc, item.endAtUtc, item.twitchCategoryId ?? ""]);
 }
-function request(event, link, name) {
+function request(event, link, name2) {
   const { recurrence, seriesId, occurrenceKey, providers, conflict, twitchSegmentId, ...body } = event;
-  if (name === "google" && body.projection?.mode === "materialized") body.projection = { ...body.projection, creationId: link.creationId };
-  return { ...body, twitchRecurring: false, providers: { [name]: link } };
+  if (name2 === "google" && body.projection?.mode === "materialized") body.projection = { ...body.projection, creationId: link.creationId };
+  return { ...body, twitchRecurring: false, providers: { [name2]: link } };
 }
 function reconcileProviderProjection(...args) {
   const [item, original, save, options] = args;
@@ -1340,16 +1340,16 @@ function reconcileProviderProjection(...args) {
   return measureSync(options.name, "total", () => syncBatch(() => measureSync(options.name, "rolling", () => reconcileProjection(item, provider, persist, options))));
 }
 async function reconcileProjection(item, provider, persist, options) {
-  const { name, materialized } = options;
-  if (name === "google" && item.providers?.google?.nativeRetained && item.providers.google.remoteId && item.desiredPublication?.google) return true;
-  if (!materialized && !item.providers?.[name]?.projections && !item.providers?.[name]?.nativeReplacementRequested) return false;
+  const { name: name2, materialized } = options;
+  if (name2 === "google" && item.providers?.google?.nativeRetained && item.providers.google.remoteId && item.desiredPublication?.google) return true;
+  if (!materialized && !item.providers?.[name2]?.projections && !item.providers?.[name2]?.nativeReplacementRequested) return false;
   if (item.ownership !== "LOCAL") return true;
-  const link = (item.providers ??= {})[name] ??= { status: "pending" };
-  if (name === "google" && options.explicitWithdrawal && item.desiredPublication?.google === false) {
+  const link = (item.providers ??= {})[name2] ??= { status: "pending" };
+  if (name2 === "google" && options.explicitWithdrawal && item.desiredPublication?.google === false) {
     link.nativeWithdrawalRequested = true;
     await persist();
   }
-  const desired = item.desiredPublication?.[name] === true;
+  const desired = item.desiredPublication?.[name2] === true;
   const fail = (target, error) => {
     const failure = error;
     target.status = failure.code === "CONFLICT" || failure.code === "GOOGLE_PROJECTION_CONFLICT" || failure.status === 412 ? "conflict" : "error";
@@ -1357,7 +1357,7 @@ async function reconcileProjection(item, provider, persist, options) {
     if (failure.code === "GOOGLE_PROJECTION_RETIRED" || failure.code === "DELETED_REMOTELY" || [404, 410].includes(failure.status ?? 0)) target.deletedRemotely = true;
   };
   if (link.uncertainCreate || desired && link.deletedRemotely && !options.retry) {
-    fail(link, new Error(link.uncertainCreate ? "Cr\xE9ation native distante incertaine : r\xE9conciliez son identit\xE9 avant de mat\xE9rialiser." : "S\xE9rie supprim\xE9e \xE0 distance \u2014 retry explicite requis."));
+    fail(link, new Error(link.uncertainCreate ? `Cr\xE9ation native distante incertaine : ${name2 === "twitch" ? "v\xE9rifiez le planning dans Twitch. Aucune identit\xE9 candidate ne sera adopt\xE9e ou republi\xE9e automatiquement." : "r\xE9conciliez son identit\xE9 avant de mat\xE9rialiser."}` : "S\xE9rie supprim\xE9e \xE0 distance \u2014 retry explicite requis."));
     await persist();
     return true;
   }
@@ -1366,8 +1366,8 @@ async function reconcileProjection(item, provider, persist, options) {
   const bounds2 = { from: new Date(now).toISOString(), nextCount: 7 };
   link.projectionWindow = bounds2;
   const recover = async (entry) => {
-    if (!provider || !entry.uncertainCreate || name !== "google" || entry.event.projection?.mode !== "materialized") return;
-    const original = request(entry.uncertainCreate.event, { ...entry, uncertainCreate: void 0 }, name);
+    if (!provider || !entry.uncertainCreate || name2 !== "google" || entry.event.projection?.mode !== "materialized") return;
+    const original = request(entry.uncertainCreate.event, { ...entry, uncertainCreate: void 0 }, name2);
     try {
       const recovered = await provider.create(original);
       entry.remoteId = recovered.id;
@@ -1386,29 +1386,29 @@ async function reconcileProjection(item, provider, persist, options) {
   if (desired && materialized) {
     for (const occurrence of (options.expand ?? expandRecurringItems)([{ ...item, providers: void 0 }], {
       ...bounds2,
-      accept: (occurrence2) => occurrence2.desiredPublication?.[name] !== false && !(name === "google" && link.projectionRetirements?.[occurrence2.occurrenceKey]?.retained)
+      accept: (occurrence2) => occurrence2.desiredPublication?.[name2] !== false && !(name2 === "google" && link.projectionRetirements?.[occurrence2.occurrenceKey]?.retained)
     })) {
       if (occurrence.occurrenceKey && expected.has(occurrence.occurrenceKey)) throw new Error("Duplicate projected occurrence identity");
       if (!occurrence.occurrenceKey) throw new Error("Le moteur doit fournir une occurrenceKey stable.");
-      if (name === "google" && link.projectionRetirements?.[occurrence.occurrenceKey]?.retained) continue;
-      if (occurrence.desiredPublication?.[name] !== false && Date.parse(occurrence.endAtUtc) > now) {
-        expected.set(occurrence.occurrenceKey, request(occurrence, { status: "pending", projectionOwned: true, calendarId: link.calendarId }, name));
+      if (name2 === "google" && link.projectionRetirements?.[occurrence.occurrenceKey]?.retained) continue;
+      if (occurrence.desiredPublication?.[name2] !== false && Date.parse(occurrence.endAtUtc) > now) {
+        expected.set(occurrence.occurrenceKey, request(occurrence, { status: "pending", projectionOwned: true, calendarId: link.calendarId }, name2));
       }
     }
   }
-  if (link.remoteId || name === "twitch" && item.twitchSegmentId) {
-    if (link.status === "conflict" || item.conflict?.provider === name) return true;
-    if (!link.projectionOwned && !(name === "google" && !desired && link.nativeWithdrawalRequested) || !provider) {
-      fail(link, new Error(`Retirez explicitement la publication ${name} existante avant de mat\xE9rialiser cette s\xE9rie.`));
+  if (link.remoteId || name2 === "twitch" && item.twitchSegmentId) {
+    if (link.status === "conflict" || item.conflict?.provider === name2) return true;
+    if (!link.projectionOwned && !(name2 === "google" && !desired && link.nativeWithdrawalRequested) || !provider) {
+      fail(link, new Error(`Retirez explicitement la publication ${name2} existante avant de mat\xE9rialiser cette s\xE9rie.`));
       await persist();
       return true;
     }
     try {
-      if (name === "google") {
+      if (name2 === "google") {
         link.nativeWithdrawalRequested = true;
         await persist();
       }
-      if (name === "twitch" && provider.read) {
+      if (name2 === "twitch" && provider.read) {
         const remote = await provider.read(link.remoteId ?? item.twitchSegmentId, item);
         if (!remote.deleted && link.fingerprint && remote.fingerprint !== link.fingerprint) {
           throw Object.assign(new Error("La s\xE9rie Twitch a chang\xE9 \xE0 distance. R\xE9solvez le conflit avant son remplacement."), { code: "CONFLICT" });
@@ -1419,7 +1419,7 @@ async function reconcileProjection(item, provider, persist, options) {
       delete link.remoteRevision;
       delete link.fingerprint;
       delete link.nativeWithdrawalRequested;
-      if (name === "twitch") {
+      if (name2 === "twitch") {
         delete item.twitchSegmentId;
         item.twitchRecurring = false;
         if (materialized || !desired) delete link.nativeReplacementRequested;
@@ -1431,10 +1431,10 @@ async function reconcileProjection(item, provider, persist, options) {
       return true;
     }
   }
-  await boundedMap(Object.entries(entries), async ([key, entry]) => {
-    if (expected.has(key) && !entry.pendingDeletion || entry.managedBy !== "StreamDashboard") return;
+  await boundedMap(Object.entries(entries), async ([key2, entry]) => {
+    if (expected.has(key2) && !entry.pendingDeletion || entry.managedBy !== "StreamDashboard") return;
     try {
-      if (name === "google") {
+      if (name2 === "google") {
         entry.pendingDeletion = true;
         await persist();
         if (entry.status === "conflict") return;
@@ -1442,28 +1442,28 @@ async function reconcileProjection(item, provider, persist, options) {
       await recover(entry);
       if (entry.uncertainCreate) throw new Error("Cr\xE9ation distante incertaine : identit\xE9 \xE0 r\xE9concilier avant nettoyage.");
       if (entry.remoteId) {
-        if (!provider) throw new Error(`${name} non connect\xE9.`);
+        if (!provider) throw new Error(`${name2} non connect\xE9.`);
         try {
-          await provider.delete(entry.remoteId, request(entry.event, entry, name), entry.remoteRevision);
+          await provider.delete(entry.remoteId, request(entry.event, entry, name2), entry.remoteRevision);
         } catch (error) {
           if (![404, 410].includes(error.status ?? 0) && error.code !== "DELETED_REMOTELY") throw error;
         }
       }
-      if (name === "google") (link.projectionRetirements ??= {})[key] = { calendarId: entry.calendarId, creationId: randomUuid() };
-      delete entries[key];
-      expected.delete(key);
+      if (name2 === "google") (link.projectionRetirements ??= {})[key2] = { calendarId: entry.calendarId, creationId: randomUuid() };
+      delete entries[key2];
+      expected.delete(key2);
     } catch (error) {
       fail(entry, error);
     }
     await persist();
   });
-  await boundedMap([...expected], async ([key, event]) => {
-    let entry = entries[key];
+  await boundedMap([...expected], async ([key2, event]) => {
+    let entry = entries[key2];
     if (entry && entry.managedBy !== "StreamDashboard") return;
     if (!entry) {
-      const retired = name === "google" ? link.projectionRetirements?.[key] : void 0;
-      entry = entries[key] = {
-        occurrenceKey: key,
+      const retired = name2 === "google" ? link.projectionRetirements?.[key2] : void 0;
+      entry = entries[key2] = {
+        occurrenceKey: key2,
         managedBy: "StreamDashboard",
         event,
         status: "pending",
@@ -1472,56 +1472,59 @@ async function reconcileProjection(item, provider, persist, options) {
         accountId: link.accountId ?? Object.values(entries).find((value) => value.accountId)?.accountId,
         creationId: retired?.creationId
       };
-      if (retired) delete link.projectionRetirements[key];
+      if (retired) delete link.projectionRetirements[key2];
     }
     try {
       if (entry.pendingDeletion) return;
       if (entry.status === "conflict") return;
-      if (!provider) throw new Error(`${name} non connect\xE9.`);
+      if (!provider) throw new Error(`${name2} non connect\xE9.`);
       await recover(entry);
       if (entry.uncertainCreate) throw new Error("Cr\xE9ation distante incertaine. R\xE9conciliez son identit\xE9 avant de republier.");
       let observed;
       if (entry.remoteId && provider.read) {
-        const remote = observed = await provider.read(entry.remoteId, request(entry.event, entry, name));
+        const remote = observed = await provider.read(entry.remoteId, request(entry.event, entry, name2));
         if (remote.deleted) entry.deletedRemotely = true;
-        else if (entry.fingerprint && remote.fingerprint && entry.fingerprint !== remote.fingerprint || name === "google" && entry.remoteRevision && remote.revision && entry.remoteRevision !== remote.revision) {
-          throw Object.assign(new Error(`Occurrence modifi\xE9e \xE0 distance : conflit ${name}.`), { code: "CONFLICT" });
+        else if (entry.fingerprint && remote.fingerprint && entry.fingerprint !== remote.fingerprint || name2 === "google" && entry.remoteRevision && remote.revision && entry.remoteRevision !== remote.revision) {
+          throw Object.assign(new Error(`Occurrence modifi\xE9e \xE0 distance : conflit ${name2}.`), { code: "CONFLICT" });
         }
       }
       if (entry.deletedRemotely) {
         if (!options.retry) throw new Error("Occurrence supprim\xE9e \xE0 distance \u2014 retry explicite requis.");
         if (entry.remoteId && !provider.read) throw new Error("Lecture distante requise avant republication.");
-        const remote = entry.remoteId ? observed ?? await provider.read(entry.remoteId, request(entry.event, entry, name)) : void 0;
+        const remote = entry.remoteId ? observed ?? await provider.read(entry.remoteId, request(entry.event, entry, name2)) : void 0;
         if (!remote || remote.deleted) {
           delete entry.remoteId;
           delete entry.fingerprint;
           delete entry.remoteRevision;
-          if (name === "google") entry.creationId = randomUuid();
+          if (name2 === "google") entry.creationId = randomUuid();
         }
         entry.deletedRemotely = false;
       }
-      if (!entry.remoteId || entry.appliedContent !== projectionContent(event) || entry.status !== "synced") {
+      const content = projectionContent(event, name2);
+      const sameAppliedContent = entry.appliedContent === content || name2 === "twitch" && entry.appliedContent === projectionContent(entry.event) && projectionContent(entry.event, name2) === content;
+      if (!entry.remoteId || !sameAppliedContent || entry.status !== "synced") {
         entry.status = "pending";
         if (entry.remoteId) await persist();
-        const body = request(event, entry, name);
+        const body = request(event, entry, name2);
         if (entry.remoteId) {
           const result = await provider.update(entry.remoteId, body, entry.remoteRevision);
           entry.fingerprint = result.fingerprint;
           entry.remoteRevision = result.revision;
         } else {
-          const result = await createWithDurableIntent(body, name, persist, (value) => provider.create(value), provider.prepareCreate);
+          const result = await createWithDurableIntent(body, name2, persist, (value) => provider.create(value), provider.prepareCreate);
           entry.calendarId = result.calendarId ?? entry.calendarId;
           entry.remoteId = result.id;
           entry.fingerprint = result.fingerprint;
           entry.remoteRevision = result.revision;
         }
         entry.event = { ...event, projection: body.projection };
-        entry.appliedContent = projectionContent(event);
+        entry.appliedContent = content;
         entry.status = "synced";
         entry.lastSyncedAt = new Date(now).toISOString();
         delete entry.lastError;
       } else {
-        entry.event = { ...entry.event, tags: event.tags, tagPreferences: event.tagPreferences };
+        entry.event = { ...event, projection: entry.event.projection ?? event.projection };
+        entry.appliedContent = content;
         return;
       }
     } catch (error) {
@@ -1529,7 +1532,7 @@ async function reconcileProjection(item, provider, persist, options) {
     }
     await persist();
   });
-  summarizeProjection(item, name, now);
+  summarizeProjection(item, name2, now);
   await persist();
   if (!materialized && !Object.keys(entries).length) {
     delete link.projections;
@@ -1539,24 +1542,24 @@ async function reconcileProjection(item, provider, persist, options) {
   }
   return true;
 }
-function summarizeProjection(item, name, now = Date.now()) {
-  const link = item.providers[name];
-  const desired = item.desiredPublication?.[name] === true;
+function summarizeProjection(item, name2, now = Date.now()) {
+  const link = item.providers[name2];
+  const desired = item.desiredPublication?.[name2] === true;
   link.projectionMode = "materialized";
   const failures = Object.values(link.projections ?? {}).filter((entry) => entry.status === "error" || entry.status === "conflict");
   link.status = failures.length ? "error" : Object.values(link.projections ?? {}).some((entry) => entry.status === "pending") ? "pending" : desired ? "synced" : "not-published";
-  if (failures.length) link.lastError = `${failures.length} occurrence(s) ${name} en erreur : ${failures[0].lastError}`;
+  if (failures.length) link.lastError = `${failures.length} occurrence(s) ${name2} en erreur : ${failures[0].lastError}`;
   else {
     delete link.lastError;
     link.deletedRemotely = false;
     link.lastSyncedAt = new Date(now).toISOString();
   }
-  if (name === "twitch" && ["synced", "not-published"].includes(link.status)) delete item.syncError;
+  if (name2 === "twitch" && ["synced", "not-published"].includes(link.status)) delete item.syncError;
 }
 
 // integrations/google-calendar/src/projection.ts
-function googleProjectionLocalId(identity) {
-  return identity.mode === "master" ? identity.seriesLocalId : `sd-occ-${createHash("sha256").update(JSON.stringify([identity.seriesLocalId, identity.occurrenceKey])).digest("hex")}`;
+function googleProjectionLocalId(identity2) {
+  return identity2.mode === "master" ? identity2.seriesLocalId : `sd-occ-${createHash("sha256").update(JSON.stringify([identity2.seriesLocalId, identity2.occurrenceKey])).digest("hex")}`;
 }
 function projectGoogleSeries(item, window2, source = { expand: expandRecurringItems }) {
   if (item.seriesId || item.occurrenceKey) throw new Error("Une projection exige une s\xE9rie canonique.");
@@ -1571,8 +1574,8 @@ function projectGoogleSeries(item, window2, source = { expand: expandRecurringIt
   }
   try {
     googleRecurrence(item);
-    const identity = { mode: "master", seriesLocalId };
-    return { mode: "master", entries: [{ identity, input: { ...item, localId: seriesLocalId, projection: identity } }] };
+    const identity2 = { mode: "master", seriesLocalId };
+    return { mode: "master", entries: [{ identity: identity2, input: { ...item, localId: seriesLocalId, projection: identity2 } }] };
   } catch (error) {
     if (!item.recurrence) throw error;
   }
@@ -1581,18 +1584,18 @@ function projectGoogleSeries(item, window2, source = { expand: expandRecurringIt
   if (!Number.isFinite(from) || window2.nextCount === void 0 && !Number.isFinite(to) || to <= from) throw new Error("Fen\xEAtre de projection invalide.");
   const keys = /* @__PURE__ */ new Set();
   const entries = source.expand([structuredClone(item)], window2).map((occurrence) => {
-    const key = occurrence.occurrenceKey;
+    const key2 = occurrence.occurrenceKey;
     const start = Date.parse(occurrence.startAtUtc);
     const end = Date.parse(occurrence.endAtUtc);
-    if (!key || occurrence.seriesId !== item.id || keys.has(key) || !Number.isFinite(start) || !Number.isFinite(end) || end <= start || start >= to || end <= from) {
+    if (!key2 || occurrence.seriesId !== item.id || keys.has(key2) || !Number.isFinite(start) || !Number.isFinite(end) || end <= start || start >= to || end <= from) {
       throw new Error("Occurrence de projection invalide ou dupliqu\xE9e.");
     }
-    keys.add(key);
+    keys.add(key2);
     assertGoogleMaterializedAllDay(occurrence);
-    const identity = { mode: "materialized", seriesLocalId, occurrenceKey: key };
+    const identity2 = { mode: "materialized", seriesLocalId, occurrenceKey: key2 };
     const input = {
-      localId: googleProjectionLocalId(identity),
-      projection: identity,
+      localId: googleProjectionLocalId(identity2),
+      projection: identity2,
       desiredPublication: structuredClone(occurrence.desiredPublication),
       title: occurrence.title,
       description: occurrence.description,
@@ -1600,7 +1603,7 @@ function projectGoogleSeries(item, window2, source = { expand: expandRecurringIt
       endAtUtc: occurrence.endAtUtc,
       allDay: occurrence.allDay
     };
-    return { identity, input };
+    return { identity: identity2, input };
   });
   return { mode: "materialized", window: { from: window2.from, to: window2.to, nextCount: window2.nextCount }, entries };
 }
@@ -1619,12 +1622,12 @@ async function reconcileGoogleProjection(item, provider, persist, options = {}) 
       ...options,
       name: "google",
       materialized: needsGoogleMaterialization(item),
-      expand: (items, window2) => items.flatMap((master) => projectGoogleSeries(master, window2).entries.map(({ input, identity }) => ({
+      expand: (items, window2) => items.flatMap((master) => projectGoogleSeries(master, window2).entries.map(({ input, identity: identity2 }) => ({
         ...master,
         ...input,
         recurrence: void 0,
         seriesId: void 0,
-        occurrenceKey: identity.mode === "materialized" ? identity.occurrenceKey : void 0
+        occurrenceKey: identity2.mode === "materialized" ? identity2.occurrenceKey : void 0
       })))
     });
   } catch (error) {
@@ -1635,9 +1638,9 @@ async function reconcileGoogleProjection(item, provider, persist, options = {}) 
     return true;
   }
 }
-async function resolveGoogleOccurrenceConflict(item, key, strategy, provider, persist, restore) {
+async function resolveGoogleOccurrenceConflict(item, key2, strategy, provider, persist, restore) {
   const link = item.providers?.google;
-  const entry = link?.projections?.[key];
+  const entry = link?.projections?.[key2];
   if (item.ownership !== "LOCAL" || !entry || entry.managedBy !== "StreamDashboard" || entry.status !== "conflict") throw new Error("Aucun conflit Google pour cette occurrence.");
   try {
     if (entry.pendingDeletion) {
@@ -1652,7 +1655,7 @@ async function resolveGoogleOccurrenceConflict(item, key, strategy, provider, pe
         const restored = {
           ...entry.event,
           ...latest2.remote,
-          id: `${item.id}::google-retained::${key}`,
+          id: `${item.id}::google-retained::${key2}`,
           projection: body.projection,
           recurrence: void 0,
           seriesId: void 0,
@@ -1663,8 +1666,8 @@ async function resolveGoogleOccurrenceConflict(item, key, strategy, provider, pe
           providers: { google: { status: "synced", remoteId: entry.remoteId, calendarId: entry.calendarId, remoteRevision: latest2.revision } }
         };
         restore(restored);
-        (link.projectionRetirements ??= {})[key] = { calendarId: entry.calendarId, creationId: entry.creationId ?? randomUuid(), retained: true };
-        delete link.projections[key];
+        (link.projectionRetirements ??= {})[key2] = { calendarId: entry.calendarId, creationId: entry.creationId ?? randomUuid(), retained: true };
+        delete link.projections[key2];
       } else {
         entry.remoteRevision = latest2.revision ?? entry.remoteRevision;
         entry.deletionDecision = "delete";
@@ -1679,7 +1682,7 @@ async function resolveGoogleOccurrenceConflict(item, key, strategy, provider, pe
     const latest = await provider.read(entry.remoteId, { ...entry.event, providers: { google: entry } });
     if (latest.deleted) throw Object.assign(new Error("Occurrence supprim\xE9e \xE0 distance \u2014 retry explicite requis."), { code: "DELETED_REMOTELY" });
     if (!latest.remote || !latest.revision) throw new Error("Version Google distante indisponible.");
-    const projected = projectGoogleSeries(item, { ...link.projectionWindow, accept: (occurrence) => occurrence.desiredPublication?.google !== false && !link.projectionRetirements?.[occurrence.occurrenceKey]?.retained }).entries.find((value) => value.identity.mode === "materialized" && value.identity.occurrenceKey === key);
+    const projected = projectGoogleSeries(item, { ...link.projectionWindow, accept: (occurrence) => occurrence.desiredPublication?.google !== false && !link.projectionRetirements?.[occurrence.occurrenceKey]?.retained }).entries.find((value) => value.identity.mode === "materialized" && value.identity.occurrenceKey === key2);
     if (!projected) throw new Error("Occurrence hors fen\xEAtre : actualisez la projection.");
     let event = { ...entry.event, ...projected.input };
     if (event.projection?.mode === "materialized") event.projection = { ...event.projection, creationId: entry.creationId };
@@ -1698,7 +1701,7 @@ async function resolveGoogleOccurrenceConflict(item, key, strategy, provider, pe
       };
       assertGoogleMaterializedAllDay({ ...event, ...patch });
       const exceptions = item.recurrence.exceptions ??= {};
-      exceptions[key] = { ...exceptions[key], patch: { ...exceptions[key]?.patch, ...patch } };
+      exceptions[key2] = { ...exceptions[key2], patch: { ...exceptions[key2]?.patch, ...patch } };
       event = { ...event, ...patch };
     }
     entry.event = event;
@@ -1743,9 +1746,9 @@ async function reconcileTwitchProjection(item, provider, persist, options = {}) 
     return true;
   }
 }
-async function resolveTwitchOccurrenceConflict(item, key, strategy, provider, persist) {
+async function resolveTwitchOccurrenceConflict(item, key2, strategy, provider, persist) {
   const link = item.providers?.twitch;
-  const entry = link?.projections?.[key];
+  const entry = link?.projections?.[key2];
   if (item.ownership !== "LOCAL" || !entry || entry.managedBy !== "StreamDashboard" || entry.status !== "conflict") {
     throw new Error("Aucun conflit Twitch \xE0 r\xE9soudre pour cette occurrence.");
   }
@@ -1755,7 +1758,7 @@ async function resolveTwitchOccurrenceConflict(item, key, strategy, provider, pe
     const latest = await provider.read(entry.remoteId, request2(entry.event, entry));
     if (latest.deleted) throw Object.assign(new Error("Occurrence supprim\xE9e \xE0 distance \u2014 retry explicite requis."), { code: "DELETED_REMOTELY" });
     if (!latest.remote || !latest.fingerprint) throw new Error("Version ou empreinte distante indisponible.");
-    const occurrence = expandRecurringItems([{ ...item, providers: void 0 }], { ...link.projectionWindow, accept: (occurrence2) => occurrence2.desiredPublication?.twitch !== false }).find((value) => value.occurrenceKey === key);
+    const occurrence = expandRecurringItems([{ ...item, providers: void 0 }], { ...link.projectionWindow, accept: (occurrence2) => occurrence2.desiredPublication?.twitch !== false }).find((value) => value.occurrenceKey === key2);
     if (!occurrence) throw new Error("Occurrence hors fen\xEAtre : actualisez la projection Twitch.");
     entry.fingerprint = latest.fingerprint;
     entry.remoteRevision = latest.revision;
@@ -1775,11 +1778,11 @@ async function resolveTwitchOccurrenceConflict(item, key, strategy, provider, pe
         twitchCategoryName: remote.twitchCategoryName ?? ""
       };
       const exceptions = item.recurrence.exceptions ??= {};
-      exceptions[key] = { ...exceptions[key], patch: { ...exceptions[key]?.patch, ...patch } };
+      exceptions[key2] = { ...exceptions[key2], patch: { ...exceptions[key2]?.patch, ...patch } };
       event = { ...event, ...patch };
     }
     entry.event = event;
-    entry.appliedContent = projectionContent(event);
+    entry.appliedContent = projectionContent(event, "twitch");
     entry.status = "synced";
     entry.deletedRemotely = false;
     entry.lastSyncedAt = (/* @__PURE__ */ new Date()).toISOString();
@@ -1905,17 +1908,17 @@ var PlanningOrchestrator = class {
         return this.all();
       }
       const failed = [];
-      for (const name of ["twitch", "google"]) {
-        if (!destinations[name]) continue;
-        const remoteId = this.remoteId(item, name);
+      for (const name2 of ["twitch", "google"]) {
+        if (!destinations[name2]) continue;
+        const remoteId = this.remoteId(item, name2);
         if (!remoteId) {
-          if (!await this.unpublishOne(item, name)) failed.push(name);
+          if (!await this.unpublishOne(item, name2)) failed.push(name2);
           continue;
         }
-        if (name === "twitch" && item.twitchRecurring && !destinations.confirmRecurring) {
+        if (name2 === "twitch" && item.twitchRecurring && !destinations.confirmRecurring) {
           throw new Error("Suppression explicite de la s\xE9rie Twitch r\xE9currente requise.");
         }
-        if (!await this.unpublishOne(item, name)) failed.push(name);
+        if (!await this.unpublishOne(item, name2)) failed.push(name2);
       }
       if (failed.length && destinations.local) {
         await this.persist(this.items);
@@ -2128,48 +2131,48 @@ var PlanningOrchestrator = class {
     await this.persist(this.items);
   }
   async reconcileDesiredPublication(item, confirmRecurring = false, updateLinked = false) {
-    for (const name of ["twitch", "google"]) {
-      const desired = item.desiredPublication?.[name] ?? false;
-      if (name === "twitch" && await reconcileTwitchProjection(item, this.providers.twitch, () => this.persist(this.items))) continue;
-      if (name === "google" && await reconcileGoogleProjection(item, this.providers.google, () => this.persist(this.items), { explicitWithdrawal: !desired })) continue;
-      const remoteId = this.remoteId(item, name);
-      if (!remoteId && item.providers?.[name]?.uncertainCreate) {
-        const link2 = item.providers[name];
+    for (const name2 of ["twitch", "google"]) {
+      const desired = item.desiredPublication?.[name2] ?? false;
+      if (name2 === "twitch" && await reconcileTwitchProjection(item, this.providers.twitch, () => this.persist(this.items))) continue;
+      if (name2 === "google" && await reconcileGoogleProjection(item, this.providers.google, () => this.persist(this.items), { explicitWithdrawal: !desired })) continue;
+      const remoteId = this.remoteId(item, name2);
+      if (!remoteId && item.providers?.[name2]?.uncertainCreate) {
+        const link2 = item.providers[name2];
         link2.status = "error";
         link2.lastError = "Cr\xE9ation distante incertaine. R\xE9conciliez son identit\xE9 avant de republier.";
         await this.persist(this.items);
         continue;
       }
-      if (desired && !providerSupportsRecurrence(name, item)) {
+      if (desired && !providerSupportsRecurrence(name2, item)) {
         item.providers ??= {};
-        const link2 = item.providers[name] ??= { status: "error" };
+        const link2 = item.providers[name2] ??= { status: "error" };
         link2.status = "error";
-        link2.lastError = `La r\xE9currence locale ne peut pas encore \xEAtre repr\xE9sent\xE9e fid\xE8lement sur ${name}. L\u2019\xE9v\xE9nement local est conserv\xE9.`;
+        link2.lastError = `La r\xE9currence locale ne peut pas encore \xEAtre repr\xE9sent\xE9e fid\xE8lement sur ${name2}. L\u2019\xE9v\xE9nement local est conserv\xE9.`;
         await this.persist(this.items);
         continue;
       }
       if (!desired) {
         if (!remoteId) {
           item.providers ??= {};
-          const link2 = item.providers[name] ??= { status: "not-published" };
+          const link2 = item.providers[name2] ??= { status: "not-published" };
           link2.status = "not-published";
           link2.deletedRemotely = false;
           delete link2.lastError;
           await this.persist(this.items);
           continue;
         }
-        if (name === "twitch" && item.twitchRecurring && !confirmRecurring) {
-          const link2 = this.ensureLink(item, name, remoteId);
+        if (name2 === "twitch" && item.twitchRecurring && !confirmRecurring) {
+          const link2 = this.ensureLink(item, name2, remoteId);
           link2.status = "error";
           link2.lastError = "Cette publication Twitch appartient \xE0 une s\xE9rie r\xE9currente. Confirmation requise pour la retirer.";
           await this.persist(this.items);
           continue;
         }
-        await this.unpublishOne(item, name);
+        await this.unpublishOne(item, name2);
         continue;
       }
-      const link = item.providers?.[name];
-      if (item.conflict?.provider === name) {
+      const link = item.providers?.[name2];
+      if (item.conflict?.provider === name2) {
         if (link) {
           link.status = "conflict";
           link.lastError = "Conflit distant non r\xE9solu \u2014 choisissez la version \xE0 conserver.";
@@ -2178,26 +2181,26 @@ var PlanningOrchestrator = class {
         continue;
       }
       if (!remoteId) {
-        await this.publishOne(item, name, name !== "twitch");
+        await this.publishOne(item, name2, name2 !== "twitch");
         continue;
       }
-      if (updateLinked) await this.publishOne(item, name);
+      if (updateLinked) await this.publishOne(item, name2);
     }
   }
-  async publishOne(item, name, explicitRetry = false) {
-    const desired = item.desiredPublication?.[name] ?? false;
+  async publishOne(item, name2, explicitRetry = false) {
+    const desired = item.desiredPublication?.[name2] ?? false;
     item.providers ??= {};
-    const existingRemoteId = this.remoteId(item, name);
-    const link = item.providers[name] ??= { status: desired ? "pending" : "not-published" };
+    const existingRemoteId = this.remoteId(item, name2);
+    const link = item.providers[name2] ??= { status: desired ? "pending" : "not-published" };
     if (existingRemoteId && !link.remoteId) link.remoteId = existingRemoteId;
     if (!desired) {
       if (!existingRemoteId) link.status = "not-published";
       return;
     }
     if (link.deletedRemotely && !explicitRetry) return;
-    if (!this.remoteId(item, name)) {
+    if (!this.remoteId(item, name2)) {
       try {
-        assertProviderCreationCertain(item, name);
+        assertProviderCreationCertain(item, name2);
       } catch (error) {
         link.status = "error";
         link.lastError = error.message;
@@ -2208,30 +2211,30 @@ var PlanningOrchestrator = class {
     link.status = "pending";
     if (explicitRetry) delete link.lastError;
     await this.persist(this.items);
-    await this.attempt(item, name, async (remoteProvider) => {
+    await this.attempt(item, name2, async (remoteProvider) => {
       if (explicitRetry && link.deletedRemotely) {
-        const previousId = this.remoteId(item, name);
+        const previousId = this.remoteId(item, name2);
         const remote = previousId && remoteProvider.read ? await remoteProvider.read(previousId, item) : void 0;
-        if (!remote || remote.deleted) this.clearRemoteIdentity(item, name);
+        if (!remote || remote.deleted) this.clearRemoteIdentity(item, name2);
         link.deletedRemotely = false;
         await this.persist(this.items);
       }
-      const remoteId = this.remoteId(item, name);
+      const remoteId = this.remoteId(item, name2);
       if (remoteId) {
         const result = await remoteProvider.update(remoteId, item, link.remoteRevision);
         delete link.uncertainCreate;
         if (result.revision !== void 0) link.remoteRevision = result.revision;
-        if (name === "twitch") link.fingerprint = result.fingerprint;
+        if (name2 === "twitch") link.fingerprint = result.fingerprint;
       } else {
-        const result = await createWithDurableIntent(item, name, () => this.persist(this.items), (request3) => remoteProvider.create(request3), remoteProvider.prepareCreate);
+        const result = await createWithDurableIntent(item, name2, () => this.persist(this.items), (request3) => remoteProvider.create(request3), remoteProvider.prepareCreate);
         delete link.nativeReplacementRequested;
         link.projectionOwned = result.owned !== false;
         link.projectionMode = "native";
         link.remoteId = result.id;
         if (result.revision !== void 0) link.remoteRevision = result.revision;
-        if (name === "twitch") link.fingerprint = result.fingerprint;
+        if (name2 === "twitch") link.fingerprint = result.fingerprint;
         link.calendarId = result.calendarId ?? link.calendarId;
-        if (name === "twitch") {
+        if (name2 === "twitch") {
           link.projectionMode = "native";
           link.projectionOwned = result.owned !== false;
           item.twitchSegmentId = result.id;
@@ -2240,26 +2243,26 @@ var PlanningOrchestrator = class {
       }
     });
   }
-  async unpublishOne(item, name) {
-    const remoteId = this.remoteId(item, name);
-    if (name === "google") {
-      const link2 = this.ensureLink(item, name, remoteId);
+  async unpublishOne(item, name2) {
+    const remoteId = this.remoteId(item, name2);
+    if (name2 === "google") {
+      const link2 = this.ensureLink(item, name2, remoteId);
       item.desiredPublication ??= { local: true, twitch: false, google: false };
       item.desiredPublication.google = false;
       link2.nativeWithdrawalRequested = true;
       delete link2.nativeRetained;
       await this.persist(this.items);
     }
-    if (name === "twitch") {
+    if (name2 === "twitch") {
       item.desiredPublication ??= { local: true, twitch: false, google: false };
       item.desiredPublication.twitch = false;
       await this.persist(this.items);
     }
-    if (name === "twitch" && (!remoteId || item.providers?.twitch?.projectionOwned) && (needsTwitchMaterialization(item) || item.providers?.twitch?.projections)) {
+    if (name2 === "twitch" && (!remoteId || item.providers?.twitch?.projectionOwned) && (needsTwitchMaterialization(item) || item.providers?.twitch?.projections)) {
       await reconcileTwitchProjection(item, this.providers.twitch, () => this.persist(this.items));
       return !["error", "conflict"].includes(item.providers?.twitch?.status ?? "");
     }
-    if (name === "google" && item.providers?.google?.projections) {
+    if (name2 === "google" && item.providers?.google?.projections) {
       item.desiredPublication ??= { local: true, twitch: false, google: false };
       item.desiredPublication.google = false;
       await this.persist(this.items);
@@ -2267,40 +2270,40 @@ var PlanningOrchestrator = class {
       return !["error", "conflict"].includes(item.providers.google.status);
     }
     if (!remoteId) {
-      if (name === "twitch") {
-        assertProviderCreationCertain(item, name);
+      if (name2 === "twitch") {
+        assertProviderCreationCertain(item, name2);
         item.twitchRecurring = false;
       }
       return true;
     }
-    const link = this.ensureLink(item, name, remoteId);
-    if (name === "google" && link.status === "conflict") return false;
+    const link = this.ensureLink(item, name2, remoteId);
+    if (name2 === "google" && link.status === "conflict") return false;
     link.status = "pending";
     await this.persist(this.items);
-    const ok = await this.attempt(item, name, (remoteProvider) => remoteProvider.delete(remoteId, item, link.remoteRevision));
+    const ok = await this.attempt(item, name2, (remoteProvider) => remoteProvider.delete(remoteId, item, link.remoteRevision));
     if (ok) {
       delete link.deletionPeriod;
       delete link.nativeWithdrawalRequested;
-      if (name === "twitch") item.twitchRecurring = false;
-      this.clearRemoteIdentity(item, name);
+      if (name2 === "twitch") item.twitchRecurring = false;
+      this.clearRemoteIdentity(item, name2);
       link.status = "not-published";
       link.deletedRemotely = false;
       delete link.lastError;
-      if (item.conflict?.provider === name) delete item.conflict;
+      if (item.conflict?.provider === name2) delete item.conflict;
       await this.persist(this.items);
-      if (name === "twitch" && item.providers?.twitch?.projections) {
+      if (name2 === "twitch" && item.providers?.twitch?.projections) {
         await reconcileTwitchProjection(item, this.providers.twitch, () => this.persist(this.items));
         return !["error", "conflict"].includes(item.providers.twitch.status);
       }
     }
     return ok;
   }
-  async attempt(item, name, operation) {
-    const link = item.providers[name];
-    const provider = this.providers[name];
+  async attempt(item, name2, operation) {
+    const link = item.providers[name2];
+    const provider = this.providers[name2];
     if (!provider) {
       link.status = "error";
-      link.lastError = `${name} non connect\xE9.`;
+      link.lastError = `${name2} non connect\xE9.`;
       await this.persist(this.items);
       return false;
     }
@@ -2310,38 +2313,38 @@ var PlanningOrchestrator = class {
       link.lastSyncedAt = (/* @__PURE__ */ new Date()).toISOString();
       link.deletedRemotely = false;
       delete link.lastError;
-      if (name === "twitch") delete item.syncError;
+      if (name2 === "twitch") delete item.syncError;
       await this.persist(this.items);
       return true;
     } catch (error) {
       const failure = error;
       link.status = failure.code === "CONFLICT" || failure.status === 412 ? "conflict" : "error";
       if (link.status === "conflict") {
-        item.conflict = { provider: name, detectedAt: (/* @__PURE__ */ new Date()).toISOString(), remote: failure.remote };
+        item.conflict = { provider: name2, detectedAt: (/* @__PURE__ */ new Date()).toISOString(), remote: failure.remote };
         if (failure.fingerprint) link.fingerprint = failure.fingerprint;
       }
-      if ((failure.code === "DELETED_REMOTELY" || failure.status === 404 || failure.status === 410) && (name !== "twitch" || this.remoteId(item, name))) link.deletedRemotely = true;
+      if ((failure.code === "DELETED_REMOTELY" || failure.status === 404 || failure.status === 410) && (name2 !== "twitch" || this.remoteId(item, name2))) link.deletedRemotely = true;
       link.lastError = error instanceof Error ? error.message : String(error);
       await this.persist(this.items);
       return false;
     }
   }
-  remoteId(item, name) {
-    return item.providers?.[name]?.remoteId ?? (name === "twitch" ? item.twitchSegmentId : void 0);
+  remoteId(item, name2) {
+    return item.providers?.[name2]?.remoteId ?? (name2 === "twitch" ? item.twitchSegmentId : void 0);
   }
-  ensureLink(item, name, remoteId) {
+  ensureLink(item, name2, remoteId) {
     item.providers ??= {};
-    const link = item.providers[name] ??= { status: remoteId ? "synced" : "not-published" };
+    const link = item.providers[name2] ??= { status: remoteId ? "synced" : "not-published" };
     if (remoteId && !link.remoteId) link.remoteId = remoteId;
     return link;
   }
-  clearRemoteIdentity(item, name) {
-    const link = item.providers?.[name];
+  clearRemoteIdentity(item, name2) {
+    const link = item.providers?.[name2];
     if (link) {
       delete link.remoteId;
       delete link.remoteRevision;
     }
-    if (name === "twitch") {
+    if (name2 === "twitch") {
       delete item.twitchSegmentId;
       delete link?.fingerprint;
     }
@@ -2373,9 +2376,9 @@ var defaultProductProfile = () => ({
 var forbidden = /(?:token|secret|password|credential|authorization|refreshToken|accessToken)/i;
 function assertSecretFree(value, at = "profile") {
   if (!value || typeof value !== "object") return;
-  for (const [key, child] of Object.entries(value)) {
-    if (forbidden.test(key)) throw new Error(`Le profil ne peut pas contenir de secret (${at}.${key}).`);
-    assertSecretFree(child, `${at}.${key}`);
+  for (const [key2, child] of Object.entries(value)) {
+    if (forbidden.test(key2)) throw new Error(`Le profil ne peut pas contenir de secret (${at}.${key2}).`);
+    assertSecretFree(child, `${at}.${key2}`);
   }
 }
 var plainObject = (value) => Boolean(value && typeof value === "object" && !Array.isArray(value));
@@ -2384,7 +2387,7 @@ function validateProductProfile(value) {
   if (value.version !== 1) throw new Error(`Version de profil non prise en charge: ${String(value.version)}.`);
   assertSecretFree(value);
   const result = structuredClone(defaultProductProfile());
-  for (const key of ["profile", "modules", "appearance", "mobile", "providers", "onboarding", "obs"]) if (plainObject(value[key])) Object.assign(result[key], value[key]);
+  for (const key2 of ["profile", "modules", "appearance", "mobile", "providers", "onboarding", "obs"]) if (plainObject(value[key2])) Object.assign(result[key2], value[key2]);
   for (const id of Object.keys(result.modules)) if (typeof result.modules[id] !== "boolean") throw new Error(`Module invalide: ${id}.`);
   if (!/^#[0-9a-f]{6}$/i.test(result.appearance.accent)) throw new Error("La couleur principale doit utiliser le format #RRGGBB.");
   if (!["system", "light", "dark", "oled"].includes(result.appearance.theme)) throw new Error("Th\xE8me invalide.");
@@ -2861,6 +2864,163 @@ function parseWizeBotCatalog(value) {
   });
 }
 
+// integrations/streamlabs/src/events.ts
+var STREAMLABS_CONTROL_TYPES = /* @__PURE__ */ new Set(["rollendcredits", "sessionreset", "userstatesessionreset"]);
+function isStreamlabsActivityType(value) {
+  return typeof value === "string" && /^[a-z][a-z0-9_-]{0,39}$/i.test(value) && !STREAMLABS_CONTROL_TYPES.has(value.toLowerCase().replace(/[-_]/g, ""));
+}
+
+// integrations/streamlabs/src/history.ts
+var COLLECTION_TYPES = {
+  donations: ["donation"],
+  subscriptions: ["subscription"],
+  follows: ["follow"],
+  raids: ["raid"],
+  bits: ["bits"]
+};
+function record(value) {
+  return value !== null && typeof value === "object" && !Array.isArray(value) ? value : null;
+}
+function text(value, max) {
+  return typeof value === "string" || typeof value === "number" && Number.isFinite(value) ? String(value).slice(0, max) : "";
+}
+function name(...values) {
+  for (const value of values) {
+    const candidate = text(value, 100).trim();
+    if (candidate) return candidate;
+  }
+  return "";
+}
+function nonnegative(value) {
+  if (typeof value !== "number" && typeof value !== "string") return void 0;
+  if (typeof value === "string" && !value.trim()) return void 0;
+  const number = Number(value);
+  return Number.isFinite(number) && number >= 0 ? number : void 0;
+}
+function count(value) {
+  const number = nonnegative(value);
+  return number !== void 0 && Number.isSafeInteger(number) ? number : void 0;
+}
+function identity(value) {
+  if (typeof value === "number") return Number.isSafeInteger(value) && value >= 0 ? String(value) : null;
+  return typeof value === "string" && value.length > 0 && value.length <= 6e3 && value.trim() ? value : null;
+}
+function cloudDate(value) {
+  if (typeof value !== "string") return null;
+  const match = /^(\d{4})-(\d{2})-(\d{2})[ T](\d{2}):(\d{2}):(\d{2})(?:\.(\d{1,3}))?(Z|[+-]\d{2}:\d{2})?$/.exec(value);
+  if (!match) return null;
+  const [, year, month, day, hour, minute, second, fraction, zone] = match;
+  const milliseconds = (fraction ?? "").padEnd(3, "0");
+  const local = `${year}-${month}-${day}T${hour}:${minute}:${second}.${milliseconds}Z`;
+  const localTime = Date.parse(local);
+  if (!Number.isFinite(localTime) || new Date(localTime).toISOString() !== local) return null;
+  if (zone && zone !== "Z" && (Number(zone.slice(1, 3)) > 23 || Number(zone.slice(4, 6)) > 59)) return null;
+  const instant2 = Date.parse(`${local.slice(0, -1)}${zone ?? "Z"}`);
+  return Number.isFinite(instant2) ? new Date(instant2).toISOString() : null;
+}
+function normalizeStreamlabsHistory(payload, now = /* @__PURE__ */ new Date()) {
+  const data = record(record(payload)?.data);
+  if (!data) return [];
+  const events = [];
+  const receivedAt = now.toISOString();
+  for (const [collection, types] of Object.entries(COLLECTION_TYPES)) {
+    const rows = data[collection];
+    if (!Array.isArray(rows)) continue;
+    for (const value of rows) {
+      const row = record(value);
+      if (!row || typeof row.type !== "string" || !types.includes(row.type) || !isStreamlabsActivityType(row.type)) continue;
+      const type = row.type;
+      const platform = row.platform === "twitch_account" ? "twitch" : row.platform === "youtube_account" ? "youtube" : row.platform === "streamlabs" ? "streamlabs" : null;
+      if (!platform) continue;
+      const occurredAt = cloudDate(row.created_at);
+      const eventIdentity = identity(row._id);
+      const providerId = identity(row.id);
+      if (!eventIdentity && (!providerId || !occurredAt)) continue;
+      const cloudIdentity = eventIdentity ?? `cloud:${JSON.stringify([row.platform, type, row.created_at, providerId])}`;
+      const subType = text(row.sub_type ?? row.subType, 40);
+      const gift = type === "subscription" && /gift/i.test(subType);
+      const event = {
+        // Match the Socket API's exact _id hash when an actual event _id exists.
+        // Otherwise this namespaced composite is stable across repeated imports.
+        id: createHash("sha256").update(JSON.stringify([platform, type, cloudIdentity])).digest("hex"),
+        platform,
+        type,
+        displayName: (gift ? name(row.gifter_display_name, row.gifter, row.from_display_name, row.from) : name(row.display_name, row.name, row.from_display_name, row.from)) || "Anonyme",
+        message: text(row.message ?? row.comment, 2e3),
+        receivedAt,
+        occurredAt,
+        origin: "cloud",
+        test: row.isTest === true || row.is_test === true
+      };
+      if (type === "donation") {
+        const amount = nonnegative(row.amount);
+        const currency = typeof row.currency === "string" ? row.currency.trim().toUpperCase() : "";
+        const amountLabel = text(row.formatted_amount ?? row.formattedAmount ?? row.displayString, 80);
+        if (amount !== void 0) event.amount = amount;
+        if (/^[A-Z]{3}$/.test(currency)) event.currency = currency;
+        if (amountLabel) event.amountLabel = amountLabel;
+      }
+      if (type === "bits") {
+        const amount = count(row.amount);
+        if (amount !== void 0) event.count = amount;
+      }
+      if (type === "raid") {
+        const viewers = count(row.raiders ?? row.viewers);
+        if (viewers !== void 0) event.count = viewers;
+      }
+      if (type === "subscription") {
+        const months = count(row.months);
+        const gifts = count(row.gifted ?? row.count);
+        const recipient = gift ? name(row.recipient, row.recipient_name, row.display_name, row.name) : name(row.recipient, row.recipient_name);
+        if (months !== void 0) event.months = months;
+        if (gifts !== void 0) event.count = gifts;
+        if (subType) event.subType = subType;
+        if (recipient) event.recipient = recipient;
+      }
+      events.push(event);
+    }
+  }
+  return mergeStreamlabsHistory([], events, events.length);
+}
+function eventTime(event) {
+  const occurred = typeof event.occurredAt === "string" ? Date.parse(event.occurredAt) : NaN;
+  if (Number.isFinite(occurred)) return occurred;
+  if (event.origin === "cloud") return Number.NEGATIVE_INFINITY;
+  const received = Date.parse(event.receivedAt);
+  return Number.isFinite(received) ? received : Number.NEGATIVE_INFINITY;
+}
+function key(event) {
+  return JSON.stringify([event.platform, event.type, event.id]);
+}
+function combine(first, second) {
+  const preferred = first.origin === "cloud" && second.origin !== "cloud" ? second : first;
+  const fallback = preferred === first ? second : first;
+  const combined = { ...structuredClone(fallback), ...structuredClone(preferred) };
+  if (!Number.isFinite(Date.parse(preferred.occurredAt ?? "")) && Number.isFinite(Date.parse(fallback.occurredAt ?? ""))) {
+    combined.occurredAt = fallback.occurredAt;
+  }
+  if (preferred.origin !== "cloud") delete combined.origin;
+  return combined;
+}
+function mergeStreamlabsHistory(localItems, cloudItems, limit = 1e3) {
+  const items = /* @__PURE__ */ new Map();
+  for (const source of [localItems, cloudItems]) {
+    for (const event of source) {
+      if (!event || typeof event.id !== "string" || !event.id || !isStreamlabsActivityType(event.type)) continue;
+      const eventKey = key(event);
+      const existing = items.get(eventKey);
+      items.set(eventKey, existing ? combine(existing, event) : structuredClone(event));
+    }
+  }
+  const boundedLimit = Number.isFinite(limit) ? Math.max(0, Math.floor(limit)) : 1e3;
+  return [...items.values()].sort((a, b) => {
+    const aTime = eventTime(a), bTime = eventTime(b);
+    if (aTime !== bTime) return aTime > bTime ? -1 : 1;
+    const aKey = key(a), bKey = key(b);
+    return aKey < bKey ? -1 : aKey > bKey ? 1 : 0;
+  }).slice(0, boundedLimit);
+}
+
 // packages/core/src/twitch-tags.ts
 var TWITCH_TAG_LIMIT = 10;
 var TWITCH_TAG_MAX_LENGTH = 25;
@@ -2956,6 +3116,8 @@ export {
   defaultProductProfile,
   generateTwitchTags,
   googleRecurrence,
+  mergeStreamlabsHistory,
+  normalizeStreamlabsHistory,
   parseGoogleRecurrence,
   parseWizeBotCatalog,
   randomUuid,

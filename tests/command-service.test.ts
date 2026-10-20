@@ -27,13 +27,35 @@ describe('service de commandes', () => {
     let finish!: () => void;
     vi.mocked(obs.restartMedia).mockImplementation(() => new Promise<void>(resolve => { finish = resolve; }));
     const operation = service.execute({ type: 'obs.media.restart', input: 'Jingle' });
+    expect(service.hasPendingCommands).toBe(true);
+    const activeRevision = service.activityRevision;
     await Promise.resolve();
     let stopped = false;
     const closing = service.stop().then(() => { stopped = true; });
     await expect(service.execute({ type: 'obs.media.restart', input: 'Jingle' })).rejects.toThrow('arrêt');
     expect(stopped).toBe(false);
     finish(); await Promise.all([operation, closing]);
+    expect(service.hasPendingCommands).toBe(false);
+    expect(service.activityRevision).toBeGreaterThan(activeRevision);
     expect(stopped).toBe(true); expect(obs.restartMedia).toHaveBeenCalledOnce(); expect(commit).toHaveBeenCalledOnce();
+  });
+
+  it('reste occupé pour la commande suivante puis libère la garde même après un refus OBS', async () => {
+    const { service, obs } = setup();
+    let release!: () => void;
+    vi.mocked(obs.restartMedia).mockImplementationOnce(() => new Promise<void>(resolve => { release = resolve; }))
+      .mockRejectedValueOnce(new Error('OBS refused'));
+    const first = service.execute({ type: 'obs.media.restart', input: 'A' });
+    const second = service.execute({ type: 'obs.media.restart', input: 'B' });
+    const rejected = expect(second).rejects.toThrow('OBS refused');
+    await Promise.resolve();
+    expect(service.hasPendingCommands).toBe(true);
+    const revision = service.activityRevision;
+    release();
+    await first;
+    await rejected;
+    expect(service.hasPendingCommands).toBe(false);
+    expect(service.activityRevision).toBeGreaterThan(revision);
   });
 
   it('active Chatting en un appui tout en restant dans le mode live', async () => {

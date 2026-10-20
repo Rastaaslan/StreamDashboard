@@ -534,6 +534,13 @@ export class TwitchClient {
       const missingLocalIds = new Set<string>();
 
       for (const item of merged) {
+        const uncertain = item.providers?.twitch;
+        if (uncertain?.uncertainCreate && !item.deletionPending) {
+          uncertain.status = 'error';
+          uncertain.lastError = 'Création Twitch incertaine : vérifiez le planning dans Twitch. L’identité distante n’est pas confirmée ; aucune republication automatique.';
+          item.syncError = uncertain.lastError;
+          continue;
+        }
         const remoteId = item.providers?.twitch?.remoteId ?? item.twitchSegmentId;
         if (item.deletionPending || item.ownership !== 'LOCAL' || !remoteId || remoteIds.has(remoteId)) continue;
         missingLocalIds.add(item.id);
@@ -548,16 +555,18 @@ export class TwitchClient {
         delete item.twitchSegmentId;
       }
 
-      const deletingRequests = items.filter(item => item.deletionPending).flatMap(item => {
+      const uncertainRequests = items.flatMap(item => {
         const link = item.providers?.twitch;
         return [link, ...Object.values(link?.projections ?? {})].flatMap(identity => identity?.uncertainCreate
           ? [identity.uncertainCreate.event as unknown as CalendarItem] : []);
       });
       for (const segment of segments) {
-        // An unresolved deletion journal must not return as an imported local row.
-        if (deletingRequests.some(request => this.sameContent(request, segment))) continue;
         if (projectionIds.has(segment.id)) continue;
         const existingById = linkedByRemoteId.get(segment.id);
+        // Matching content cannot prove ownership of a lost CREATE. Do not
+        // turn its candidate into a duplicate imported row, including before
+        // deletion is requested. Other confirmed identities still synchronize.
+        if (!existingById && uncertainRequests.some(request => this.sameContent(request, segment))) continue;
         if (existingById?.deletionPending) continue;
         if (existingById && (needsTwitchMaterialization(existingById) || existingById.providers?.twitch?.projections)) continue;
         const recoveredLocal = existingById ?? merged.find(item =>
@@ -635,6 +644,7 @@ export class TwitchClient {
         && !needsTwitchMaterialization(item) && !item.providers?.twitch?.projections
         && !item.twitchSegmentId
         && !item.providers?.twitch?.remoteId
+        && !item.providers?.twitch?.uncertainCreate
         && item.ownership !== 'EXTERNAL'
         && !missingLocalIds.has(item.id)
         && !item.syncError)) {
@@ -928,7 +938,7 @@ export class TwitchClient {
       // Revoked scopes must stop advertising actions before the next hourly validation.
       await this.validateSession().catch(() => undefined);
     }
-    const result = await this.json<T>(response, endpoint === '/schedule/segment');
+    const result = await this.json<T>(response, endpoint === '/schedule/segment', endpoint === '/channels' && init?.method === 'PATCH');
     if (generation !== this.generation) throw new Error('Opération Twitch annulée.');
     return result;
   }
@@ -964,7 +974,7 @@ export class TwitchClient {
     if (generation !== this.generation) throw new Error('Connexion Twitch annulée.');
   }
 
-  private async json<T>(response: Response, providerMessage = false): Promise<T> {
+  private async json<T>(response: Response, providerMessage = false, channelUpdate = false): Promise<T> {
     if (response.status === 204) return undefined as T;
     let value: T & { message?: string };
     try {
@@ -972,7 +982,10 @@ export class TwitchClient {
     } catch {
       throw new TwitchHttpError(response.ok ? 502 : response.status, 'Réponse Twitch invalide.', response.headers.get('retry-after'));
     }
-    if (!response.ok) throw new TwitchHttpError(response.status, providerMessage && typeof value.message === 'string' && value.message.trim() ? `Twitch HTTP ${response.status}: ${safeTwitchMessage(value.message, [this.credentials.accessToken, this.credentials.refreshToken])}` : response.status === 429 ? 'Limite Twitch atteinte. Réessayez plus tard.' : `Twitch HTTP ${response.status}`, response.headers.get('retry-after'));
+    if (!response.ok) {
+      const message = typeof value?.message === 'string' ? value.message : '';
+      throw new TwitchHttpError(response.status, providerMessage && message.trim() ? `Twitch HTTP ${response.status}: ${safeTwitchMessage(message, [this.credentials.accessToken, this.credentials.refreshToken])}` : response.status === 429 ? 'Limite Twitch atteinte. Réessayez plus tard.' : `Twitch HTTP ${response.status}`, response.headers.get('retry-after'), channelUpdate && response.status === 400 && /\btags?\b/i.test(message));
+    }
     return value;
   }
 }
@@ -988,5 +1001,11 @@ export function safeTwitchMessage(message: string, secrets: string[]) {
 }
 
 export class TwitchHttpError extends Error {
-  constructor(readonly status: number, message: string, readonly retryAfter: string | null = null) { super(message); this.name = 'TWITCH_HTTP_ERROR'; }
+  constructor(readonly status: number, message: string, readonly retryAfter: string | null = null, readonly tagsRejected = false) { super(message); this.name = 'TWITCH_HTTP_ERROR'; }
+}
+
+/** Only a parsed HTTP rejection of the tag field permits a metadata-only
+ * fallback. A network failure, 5xx, or unrelated 400 cannot prove rejection. */
+export function isTwitchTagsRejection(error: unknown): error is TwitchHttpError {
+  return error instanceof TwitchHttpError && error.status === 400 && error.tagsRejected;
 }

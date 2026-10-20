@@ -18,6 +18,7 @@ import android.os.Vibrator;
 import android.view.WindowManager;
 import android.webkit.JavascriptInterface;
 import android.webkit.WebChromeClient;
+import android.webkit.ValueCallback;
 import android.webkit.WebResourceRequest;
 import android.webkit.WebResourceResponse;
 import android.webkit.WebSettings;
@@ -51,13 +52,11 @@ public class MainActivity extends Activity {
   private static final String ORIGIN = "http://" + APP_HOST;
   private static final String PING_CHANNEL_ID = "streamer-pings";
   private static boolean isAllowedExternalUri(Uri uri) {
-    if (uri == null || !"https".equalsIgnoreCase(uri.getScheme())) return false;
-    String host = uri.getHost();
-    if (host == null) return false;
-    host = host.toLowerCase(java.util.Locale.ROOT);
-    return host.equals("twitch.tv") || host.endsWith(".twitch.tv");
+    return uri != null && ExternalNavigationPolicy.accepts(uri.toString());
   }
   private static final int NOTIFICATION_PERMISSION_REQUEST = 7001;
+  private static final int AUDIO_FILE_REQUEST = 730; // Below the Google authorization request-code range.
+  private ValueCallback<Uri[]> fileSelection;
   private WebView webView;
   private ProviderBridge providerBridge;
   private WebViewAssetLoader assetLoader;
@@ -85,7 +84,19 @@ public class MainActivity extends Activity {
       providerBridge = new ProviderBridge(this);
       webView.addJavascriptInterface(providerBridge, "StreamDashboardProviders");
     }
-    webView.setWebChromeClient(new WebChromeClient());
+    webView.setWebChromeClient(new WebChromeClient(){
+      @Override public boolean onShowFileChooser(WebView view,ValueCallback<Uri[]> callback,FileChooserParams params){
+        Uri origin=Uri.parse(view.getUrl()==null?"":view.getUrl());
+        if(!"http".equals(origin.getScheme())||!APP_HOST.equals(origin.getHost())||origin.getPath()==null||!origin.getPath().startsWith("/mobile/"))return false;
+        if(fileSelection!=null)fileSelection.onReceiveValue(null);
+        fileSelection=callback;
+        try{
+          Intent choose=new Intent(Intent.ACTION_OPEN_DOCUMENT).addCategory(Intent.CATEGORY_OPENABLE).setType("audio/*").putExtra(Intent.EXTRA_ALLOW_MULTIPLE,false);
+          startActivityForResult(choose,AUDIO_FILE_REQUEST);
+        }catch(Exception error){fileSelection=null;callback.onReceiveValue(null);}
+        return true;
+      }
+    });
     webView.setWebViewClient(new LocalOnlyClient());
     setContentView(webView);
     ensurePingNotifications();
@@ -153,6 +164,7 @@ public class MainActivity extends Activity {
 
   @Override protected void onDestroy() {
     pageReady=false;
+    if(fileSelection!=null){fileSelection.onReceiveValue(null);fileSelection=null;}
     if(providerBridge!=null)providerBridge.close();
     if(webView!=null)webView.destroy();
     super.onDestroy();
@@ -212,6 +224,14 @@ public class MainActivity extends Activity {
 
   @Override protected void onActivityResult(int requestCode, int resultCode, Intent data) {
     super.onActivityResult(requestCode, resultCode, data);
+    if(requestCode==AUDIO_FILE_REQUEST){
+      ValueCallback<Uri[]> callback=fileSelection;fileSelection=null;
+      if(callback!=null){
+        Uri selected=resultCode==RESULT_OK&&data!=null?data.getData():null;
+        callback.onReceiveValue(selected!=null&&FileSelectionPolicy.accepts(selected.toString(),getPackageName())?new Uri[]{selected}:null);
+      }
+      return;
+    }
     if (providerBridge != null) providerBridge.acceptGoogleResult(requestCode, resultCode, data);
   }
 
@@ -234,17 +254,17 @@ public class MainActivity extends Activity {
         Cipher cipher = Cipher.getInstance("AES/GCM/NoPadding");
         cipher.init(Cipher.DECRYPT_MODE, key(), new GCMParameterSpec(128, Base64.decode(values[0], Base64.NO_WRAP)));
         return new String(cipher.doFinal(Base64.decode(values[1], Base64.NO_WRAP)), java.nio.charset.StandardCharsets.UTF_8);
-      } catch (Exception ignored) { clearCredential(); return ""; }
+      } catch (Exception ignored) { return ""; } // A transient keystore failure must not delete the saved pairing.
     }
-    @JavascriptInterface public void setCredential(String value) {
+    @JavascriptInterface public boolean setCredential(String value) {
       try {
         Cipher cipher = Cipher.getInstance("AES/GCM/NoPadding");
         cipher.init(Cipher.ENCRYPT_MODE, key());
         String blob = Base64.encodeToString(cipher.getIV(), Base64.NO_WRAP) + "." + Base64.encodeToString(cipher.doFinal(value.getBytes(java.nio.charset.StandardCharsets.UTF_8)), Base64.NO_WRAP);
-        getSharedPreferences(PREFS, MODE_PRIVATE).edit().putString("credential", blob).apply();
-      } catch (Exception ignored) { clearCredential(); }
+        return getSharedPreferences(PREFS, MODE_PRIVATE).edit().putString("credential", blob).commit();
+      } catch (Exception ignored) { return false; }
     }
-    @JavascriptInterface public void clearCredential() { getSharedPreferences(PREFS, MODE_PRIVATE).edit().remove("credential").apply(); }
+    @JavascriptInterface public boolean clearCredential() { return getSharedPreferences(PREFS, MODE_PRIVATE).edit().remove("credential").commit(); }
     @JavascriptInterface public void setKeepAwake(boolean enabled) { runOnUiThread(() -> { if (enabled) getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON); else getWindow().clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON); }); }
     @JavascriptInterface public void haptic(String strength) {
       Vibrator vibrator = (Vibrator)getSystemService(VIBRATOR_SERVICE);

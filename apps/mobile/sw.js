@@ -1,4 +1,4 @@
-const CACHE = 'streamdashboard-mobile-v21-live-tags';
+const CACHE = 'streamdashboard-mobile-v22-autonomous-deck';
 const PATHS = new Set([
   '/mobile/',
   '/mobile/index.html',
@@ -28,6 +28,35 @@ const PATHS = new Set([
   '/mobile/manifest.webmanifest',
   '/mobile/icon-192.png',
   '/mobile/icon-512.png',
+  '/mobile/control/',
+  '/mobile/control/index.html',
+  '/mobile/control-fonts.css',
+  '/mobile/control/autonomy-store.js',
+  '/mobile/control/autonomy.js',
+  '/mobile/control/control.css',
+  '/mobile/control/control.js',
+  '/mobile/control/controller-bindings.js',
+  '/mobile/control/device-accounts.js',
+  '/mobile/control/device-audio.js',
+  '/mobile/control/device-bridge.js',
+  '/mobile/control/device-providers.js',
+  '/mobile/control/device-services.js',
+  '/mobile/control/device-streamlabs.js',
+  '/mobile/control/device-workspace.js',
+  '/mobile/control/live-controls.js',
+  '/mobile/control/live-monitor.js',
+  '/mobile/control/local-planning.js',
+  '/mobile/control/performance-ui.js',
+  '/mobile/control/performance.css',
+  '/mobile/control/planning.js',
+  '/mobile/control/streamlabs-feed.js',
+  '/mobile/control/twitch-category-picker.js',
+  '/mobile/control/twitch-chat.css',
+  '/mobile/control/twitch-chat.js',
+  '/mobile/control/wizebot.js',
+  '/mobile/control/youtube-picker.js',
+  '/mobile/shared/autonomy.js',
+  '/mobile/shared/planning-engine.js',
 ]);
 const ASSETS = [
   './',
@@ -57,6 +86,35 @@ const ASSETS = [
   'manifest.webmanifest',
   'icon-192.png',
   'icon-512.png',
+  'control/',
+  'control/index.html',
+  'control-fonts.css',
+  'control/autonomy-store.js',
+  'control/autonomy.js',
+  'control/control.css',
+  'control/control.js',
+  'control/controller-bindings.js',
+  'control/device-accounts.js',
+  'control/device-audio.js',
+  'control/device-bridge.js',
+  'control/device-providers.js',
+  'control/device-services.js',
+  'control/device-streamlabs.js',
+  'control/device-workspace.js',
+  'control/live-controls.js',
+  'control/live-monitor.js',
+  'control/local-planning.js',
+  'control/performance-ui.js',
+  'control/performance.css',
+  'control/planning.js',
+  'control/streamlabs-feed.js',
+  'control/twitch-category-picker.js',
+  'control/twitch-chat.css',
+  'control/twitch-chat.js',
+  'control/wizebot.js',
+  'control/youtube-picker.js',
+  'shared/autonomy.js',
+  'shared/planning-engine.js',
 ];
 
 self.addEventListener('install', event => {
@@ -65,7 +123,7 @@ self.addEventListener('install', event => {
 
 self.addEventListener('activate', event => {
   event.waitUntil(caches.keys()
-    .then(keys => Promise.all(keys.filter(key => key !== CACHE).map(key => caches.delete(key))))
+    .then(keys => Promise.all(keys.filter(key => key.startsWith('streamdashboard-mobile-') && key !== CACHE).map(key => caches.delete(key))))
     .then(() => self.clients.claim()));
 });
 

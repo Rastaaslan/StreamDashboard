@@ -44,9 +44,13 @@ export function streamlabsRows(items){return activityItems(items).map(e=>{
 
 /** Credentials stay in the password fields until sent to the selected source;
  * status responses never prefill them or enter browser storage. */
-export function createStreamlabsConfiguration(root,{label,request,changed=()=>{},notify=()=>{}}){
+export function createStreamlabsConfiguration(root,{label,request,changed=()=>{},notify=()=>{},socketSupported=true}){
  let history=null,busy=false,generation=0;
  root.innerHTML='<h2>Streamlabs · '+esc(label)+'</h2><section><h3>Réception des nouveaux événements</h3><p class="small muted">Le Socket Token connecte le suivi en direct sur cette source.</p><form id="streamlabs-feed-config"><label>Socket Token Streamlabs<input name="token" type="password" required autocomplete="off" maxlength="1000"></label><button>Connecter et enregistrer</button></form><p class="small" data-streamlabs-direct-status role="status"></p></section><section class="spacer"><h3>Historique du compte Streamlabs</h3><p class="small muted">Retrouvez les follows, abonnements, dons et autres événements encore disponibles chez Streamlabs, même si l’application était fermée. Collez l’URL d’un de vos widgets Streamlabs, comme la liste d’événements ou les alertes.</p><p class="small muted" data-streamlabs-history-status role="status">Vérification de l’historique du compte…</p><form id="streamlabs-history-config"><label>URL d’un widget Streamlabs<input name="widgetUrl" type="password" required autocomplete="off" maxlength="4096" placeholder="Collez l’URL du widget"></label><div class="form-actions"><button>Enregistrer et récupérer l’historique</button><button type="button" class="secondary" data-streamlabs-history-clear disabled>Déconnecter l’historique</button></div></form></section>';
+ if(!socketSupported){
+  const direct=root.querySelector('#streamlabs-feed-config')?.closest('section');
+  if(direct)direct.innerHTML='<h3>Activité sur cet appareil</h3><p class="small muted">L’historique du compte est disponible directement sur Android. La connexion Socket en temps réel nécessite une régie ; les événements sont récupérés par actualisation de l’historique ci-dessous.</p>';
+ }
  const current=()=>root.isConnected;
  const historyStatus=root.querySelector('[data-streamlabs-history-status]');
  function controls(){

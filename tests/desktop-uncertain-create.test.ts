@@ -38,11 +38,13 @@ it.each(['google', 'twitch'] as const)('blocks %s CREATE after lost Android resp
   await secrets.setTwitchTokens({ accessToken: 'twitch-token' });
   const nativeFetch = globalThis.fetch;
   const remoteWrites = vi.fn();
+  const unprovenTwitchSegment = { id: 'response-lost', title: 'Original', start_time: '2030-10-01T18:00:00Z',
+    end_time: '2030-10-01T20:00:00Z', is_recurring: false, category: { id: 'game', name: 'Game' } };
   vi.stubGlobal('fetch', vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
     const url = String(input);
     if (url.startsWith('http://127.0.0.1:')) return nativeFetch(input, init);
     if (init?.method === 'POST') { remoteWrites(); remoteCount++; }
-    if (url.includes('/schedule')) return Response.json({ data: { segments: init?.method === 'POST' ? [{ id: 'duplicate' }] : [] } });
+    if (url.includes('/schedule')) return Response.json({ data: { segments: init?.method === 'POST' ? [{ id: 'duplicate' }] : provider === 'twitch' ? [unprovenTwitchSegment] : [] } });
     if (url.includes('googleapis.com')) return Response.json(init?.method === 'POST'
       ? { id: 'duplicate', summary: 'Edited', start: { dateTime: '2030-10-01T18:00:00Z' }, end: { dateTime: '2030-10-01T20:00:00Z' } }
       : { items: [] });
@@ -67,6 +69,7 @@ it.each(['google', 'twitch'] as const)('blocks %s CREATE after lost Android resp
   const item = snapshot.planning[0];
   expect(item.title).toBe('Edited on Desktop');
   expect(item.providers[provider]).toMatchObject({ status: 'error', uncertainCreate: { event: { title: 'Original' } } });
+  const originalIntent = JSON.parse(JSON.stringify(item.providers[provider].uncertainCreate));
   const retry = await nativeFetch(server.url + '/api/v1/planning/uncertain/retry/' + provider, { method: 'POST', headers, body: '{}' });
   expect(retry.ok).toBe(false);
   // Calling the core directly must be protected too, without the HTTP outbox guard.
@@ -74,18 +77,36 @@ it.each(['google', 'twitch'] as const)('blocks %s CREATE after lost Android resp
   const orchestrator = new PlanningOrchestrator([item], { [provider]: { create, update: vi.fn(), delete: vi.fn() } }, async () => {});
   await expect(orchestrator.retry(item.id, provider)).rejects.toThrow(/incertaine/);
   expect(create).not.toHaveBeenCalled();
-  // A provider-wide Twitch refresh has a separate create path.
+  // Provider-wide refresh must continue without replaying this CREATE, adopting
+  // the same-content candidate or importing it as a duplicate local event.
   if (provider === 'twitch') {
-    const twitch = new TwitchClient({ clientId: 'twitch', accessToken: 'token', refreshToken: '', broadcasterId: '42', userName: '', displayName: '' });
-    vi.mocked(globalThis.fetch).mockResolvedValueOnce(Response.json({ client_id: 'twitch', user_id: '42', scopes: ['channel:manage:schedule'] }));
-    expect(await twitch.validateSession()).toBe(true);
-    vi.mocked(globalThis.fetch).mockClear();
-    await expect(twitch.sync([item])).rejects.toThrow(/incertaine/);
+    let persisted = JSON.stringify([item]);
+    for (let restart = 0; restart < 2; restart++) {
+      const twitch = new TwitchClient({ clientId: 'twitch', accessToken: 'token', refreshToken: '', broadcasterId: '42', userName: '', displayName: '' });
+      vi.mocked(globalThis.fetch).mockResolvedValueOnce(Response.json({ client_id: 'twitch', user_id: '42', scopes: ['channel:manage:schedule'] }));
+      expect(await twitch.validateSession()).toBe(true);
+      vi.mocked(globalThis.fetch).mockClear();
+      const refreshed = await twitch.sync(JSON.parse(persisted), async items => { persisted = JSON.stringify(items); });
+      expect(refreshed).toHaveLength(1);
+      expect(refreshed[0]).toMatchObject({ id: 'uncertain', title: 'Edited on Desktop', providers: { twitch: { status: 'error', uncertainCreate: originalIntent } } });
+      expect(refreshed[0].providers!.twitch!.remoteId).toBeUndefined();
+      expect(refreshed[0].twitchSegmentId).toBeUndefined();
+      expect(refreshed[0].providers!.twitch!.lastError).toContain('vérifiez le planning dans Twitch');
+      expect(JSON.parse(persisted)[0].providers.twitch.uncertainCreate).toEqual(originalIntent);
+      for (const call of vi.mocked(globalThis.fetch).mock.calls) expect(call[1]?.method ?? 'GET').toBe('GET');
+      twitch.close();
+    }
   }
   expect(remoteWrites).not.toHaveBeenCalled();
   expect(remoteCount).toBe(1);
   await server.stop(); server = await startDashboardServer(options);
-  expect((await nativeFetch(server.url + '/api/v1/companion/snapshot').then(r => r.json())).planning[0].providers[provider].uncertainCreate).toBeTruthy();
+  const restarted = await nativeFetch(server.url + '/api/v1/companion/snapshot').then(r => r.json());
+  expect(restarted.planning).toHaveLength(1);
+  expect(restarted.planning[0]).toMatchObject({ id: 'uncertain', title: 'Edited on Desktop' });
+  expect(restarted.planning[0].providers[provider].uncertainCreate).toEqual(originalIntent);
+  expect(restarted.planning[0].providers[provider].remoteId).toBeUndefined();
+  expect(remoteWrites).not.toHaveBeenCalled();
+  expect(remoteCount).toBe(1);
 });
 
 it.each(['google', 'twitch'] as const)('persists a Desktop %s create intent before I/O and only resumes publication after identity recovery', async provider => {

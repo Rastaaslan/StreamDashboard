@@ -140,31 +140,39 @@ function sceneTarget(action, context) {
   return action.value === 'chatting' ? settings.chattingScene : settings.modeScenes?.[action.value];
 }
 
-function commonState(context, allowBusy = false) {
-  if (!context.online) return 'Régie déconnectée';
+function commonState(context, allowBusy = false, localCapability = false) {
+  if (!context.online && !(context.local && localCapability)) return context.local ? 'Régie nécessaire' : 'Régie déconnectée';
   if (context.blocked) return 'Synchronisation requise';
   if (context.busy && !allowBusy) return 'Action en cours';
   return '';
 }
 
 function soundState(sound, context) {
-  const common = commonState(context);
+  const common = commonState(context, false, true);
   if (common) return { disabled: true, text: common, active: false };
   if (!sound.enabled) return { disabled: true, text: 'Son désactivé', active: false };
   if (!sound.sourceAvailable) return { disabled: true, text: 'Fichier indisponible', active: false };
   const active = context.sounds?.currentPlayback?.soundId === sound.id;
-  return { disabled: false, text: active ? 'En lecture' : sound.category || 'Jouer le son', active };
+  return { disabled: false, text: active ? context.sounds.currentPlayback.status === 'starting' ? 'Chargement du son' : 'En lecture' : context.local ? 'Jouer sur cet appareil' : sound.category || 'Jouer le son', active };
 }
 
 function actionStatus(action, context) {
+  if (action.type === 'sound.play') {
+    const sound = context.catalog.find(item => item.id === action.value);
+    return sound ? soundState(sound, context) : { disabled: true, text: 'Son à configurer', active: false };
+  }
+  if (context.local && action.type === 'sound.stop') {
+    const active = Boolean(context.sounds?.currentPlayback);
+    return { disabled: !active || context.blocked, text: active ? 'Arrêter la lecture locale' : 'Aucun son en cours', active: false };
+  }
+  if (context.local && action.type === 'wizebot.command') {
+    const common = commonState(context, false, true);
+    return { disabled: Boolean(common), text: common || 'Compte Twitch de cet appareil', active: false };
+  }
   const common = commonState(context);
   if (common) return { disabled: true, text: common, active: false };
   if (action.type === 'wizebot.command' && !(context.data?.host?.chat?.connected && context.data?.host?.chat?.canSend)) {
     return { disabled: true, text: 'Twitch à reconnecter', active: false };
-  }
-  if (action.type === 'sound.play') {
-    const sound = context.catalog.find(item => item.id === action.value);
-    return sound ? soundState(sound, context) : { disabled: true, text: 'Son à configurer', active: false };
   }
   if (action.type === 'mic.toggle') {
     const target = action.value || context.data?.host?.settings?.primaryMicInput;
@@ -207,13 +215,13 @@ function dock(context) {
   const microState = micro ? actionStatus(micro, context) : { disabled: true, text: 'À configurer', active: false };
   const clipAction = context.actions.find(action => action.type === 'replay.save');
   const clipActive = context.online && context.replay?.active === true;
-  const audioKnown = Boolean(context.online && context.sounds?.currentPlayback);
+  const audioKnown = Boolean((context.online || context.local) && context.sounds?.currentPlayback);
   const standardBlock = Boolean(commonState(context));
   const editLabel = 'Terminez la sélection des favoris';
   const microHandler = !context.editing && micro ? `data-action="${context.esc(micro.id)}"` : '';
   const clipHandler = context.editing ? '' : clipActive ? `data-action="${context.esc(clipAction?.id || 'replay.save')}"` : 'data-deck-clips';
   const stopHandler = context.editing ? '' : 'data-action="sound.stop"';
-  return `<div class="deck-dock" role="group" aria-label="Commandes rapides"><button type="button" class="deck-dock-button" ${microHandler} data-active="${microState.active}" data-muted="${!!microState.muted}" ${context.editing || microState.disabled ? 'disabled' : ''} aria-label="${context.esc((micro?.label || 'Micro') + ' — ' + (context.editing ? editLabel : microState.text))}"><span class="pad-icon">${icon(micro ? actionIcon(micro, context) : 'mic')}</span><span class="pad-label">Micro</span><span class="pad-state">${context.esc(context.editing ? 'En édition' : microState.text)}</span></button><button type="button" class="deck-dock-button" ${clipHandler} ${context.editing || standardBlock ? 'disabled' : ''}><span class="pad-icon">${icon('clip')}</span><span class="pad-label">${clipActive ? 'Clip' : 'Préparer clips'}</span><span class="pad-state">${context.esc(context.editing ? 'En édition' : commonState(context) || (clipActive ? `${Number(context.replay?.seconds) > 0 ? context.replay.seconds + ' s' : 'Tampon actif'}` : 'Ouvrir les réglages'))}</span></button><button type="button" class="deck-dock-button" data-tone="stop" ${stopHandler} ${context.editing || !audioKnown || context.blocked ? 'disabled' : ''}><span class="pad-icon">${icon('stop')}</span><span class="pad-label">Stop son</span><span class="pad-state">${context.esc(context.editing ? 'En édition' : !context.online ? 'Régie déconnectée' : context.blocked ? 'Synchronisation requise' : audioKnown ? 'Couper la lecture' : 'Aucun son en cours')}</span></button></div>`;
+  return `<div class="deck-dock" role="group" aria-label="Commandes rapides"><button type="button" class="deck-dock-button" ${microHandler} data-active="${microState.active}" data-muted="${!!microState.muted}" ${context.editing || microState.disabled ? 'disabled' : ''} aria-label="${context.esc((micro?.label || 'Micro') + ' — ' + (context.editing ? editLabel : microState.text))}"><span class="pad-icon">${icon(micro ? actionIcon(micro, context) : 'mic')}</span><span class="pad-label">Micro</span><span class="pad-state">${context.esc(context.editing ? 'En édition' : microState.text)}</span></button><button type="button" class="deck-dock-button" ${clipHandler} ${context.editing || standardBlock ? 'disabled' : ''}><span class="pad-icon">${icon('clip')}</span><span class="pad-label">${clipActive ? 'Clip' : 'Préparer clips'}</span><span class="pad-state">${context.esc(context.editing ? 'En édition' : commonState(context) || (clipActive ? `${Number(context.replay?.seconds) > 0 ? context.replay.seconds + ' s' : 'Tampon actif'}` : 'Ouvrir les réglages'))}</span></button><button type="button" class="deck-dock-button" data-tone="stop" ${stopHandler} ${context.editing || !audioKnown || context.blocked ? 'disabled' : ''}><span class="pad-icon">${icon('stop')}</span><span class="pad-label">Stop son</span><span class="pad-state">${context.esc(context.editing ? 'En édition' : !context.online && !context.local ? 'Régie déconnectée' : context.blocked ? 'Synchronisation requise' : audioKnown ? 'Couper la lecture' : 'Aucun son en cours')}</span></button></div>`;
 }
 
 function concise(value, limit = 140) {
@@ -226,7 +234,7 @@ function feedback(context) {
   const latest = receipts[receipts.length - 1];
   const labels = { running: 'En cours', succeeded: 'Confirmé', failed: 'Échec', partial: 'Partiel', uncertain: 'À vérifier' };
   const status = Object.hasOwn(labels, latest?.status) ? latest.status : 'idle';
-  const idleMessage = !context.online ? 'Retrouvez la régie pour utiliser les commandes.'
+  const idleMessage = context.local ? 'Vos sons et commandes WizeBot utilisent cet appareil. Les commandes OBS nécessitent une régie.' : !context.online ? 'Retrouvez la régie pour utiliser les commandes.'
     : context.blocked ? 'Synchronisez vos réglages pour reprendre les commandes.'
     : context.editing ? 'Vos favoris sont enregistrés sur cet appareil.'
     : context.busy ? 'Une commande est en cours. Attendez sa confirmation.'
@@ -236,9 +244,9 @@ function feedback(context) {
 
 function sessionBar(context) {
   const scene = context.obs.scene;
-  const host = context.data?.host?.hostname || 'Régie';
-  const state = !context.online ? 'Régie déconnectée' : context.blocked ? 'Réglages à synchroniser' : context.obs.connected ? 'Régie connectée' : 'OBS déconnecté';
-  const sceneText = context.online && context.obs.connected ? scene || 'Scène non confirmée'
+  const host = context.data?.host?.hostname || (context.local ? 'Cet appareil' : 'Régie');
+  const state = context.local ? 'Espace autonome' : !context.online ? 'Régie déconnectée' : context.blocked ? 'Réglages à synchroniser' : context.obs.connected ? 'Régie connectée' : 'OBS déconnecté';
+  const sceneText = context.local ? 'Lecture sur cet appareil' : context.online && context.obs.connected ? scene || 'Scène non confirmée'
     : scene ? 'Dernière scène · ' + scene : 'Scène non confirmée';
   return `<div class="deck-session-bar" data-online="${context.online}" data-blocked="${context.blocked}"><span class="deck-connection-dot" aria-hidden="true"></span><div><strong>${context.esc(state)}</strong><span>${context.esc(host)}</span></div><div><span>${context.online && context.obs.connected ? 'À l’écran' : 'Dernier état'}</span><strong>${context.esc(sceneText)}</strong></div></div>`;
 }
@@ -254,7 +262,7 @@ export function renderPerformancePage(options = {}) {
   const bank = BANK_IDS.has(options.bank) ? options.bank : 'favorites';
   const soundCategory = typeof options.soundCategory === 'string' ? options.soundCategory : '';
   const context = { ...options, esc, actions, catalog, favorites, favoriteSet: new Set(favorites), editing,
-    online: options.online === true, busy: options.busy === true, blocked: options.blocked === true,
+    online: options.online === true, local: options.local === true, busy: options.busy === true, blocked: options.blocked === true,
     obs: options.data?.host?.state?.obs || {} };
   const actionItems = actions.map(value => ({ kind: 'action', key: 'action:' + value.id, value }));
   const soundItems = catalog.map(value => ({ kind: 'sound', key: 'sound:' + value.id, value }));

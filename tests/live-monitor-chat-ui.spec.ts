@@ -138,6 +138,63 @@ test('account changes clear the draft and late responses cannot cross sources or
   await expect(page.locator('[data-twitch-identity]')).toContainText('Compte local');
 });
 
+test('Twitch chat keeps receiving while the main dashboard is not refreshing and stops on destruction', async ({ page }) => {
+  await page.clock.install();
+  await setupChat(page);
+  const draft = page.getByLabel('Message Twitch', { exact: true });
+  await draft.fill('Brouillon conservé pendant une lecture OBS lente');
+  await draft.focus();
+  await page.evaluate(() => {
+    const win = window as any;
+    win.snapshot.chat.messages.push({ id: 'next', broadcasterId: '123', chatter: { id: '456', login: 'viewer_test' }, text: 'Message reçu sans rafraîchir la régie', receivedAt: new Date().toISOString() });
+  });
+  await page.clock.fastForward(2_600);
+  await expect(page.locator('[data-twitch-messages]')).toContainText('Message reçu sans rafraîchir la régie');
+  await expect(draft).toHaveValue('Brouillon conservé pendant une lecture OBS lente');
+  await expect(draft).toBeFocused();
+  const calls = await page.evaluate(() => { const win = window as any; win.chat.destroy(); return win.calls.length; });
+  await page.clock.fastForward(12_000);
+  expect(await page.evaluate(() => (window as any).calls.length)).toBe(calls);
+});
+
+test('a pending chat read expires the visible confirmation and cannot leave sending enabled', async ({ page }) => {
+  await page.clock.install();
+  await setupChat(page);
+  const draft = page.getByLabel('Message Twitch', { exact: true });
+  await draft.fill('Attendre une identité confirmée');
+  await page.evaluate(() => { const win = window as any; win.deferReads = true; void win.chat.refresh(true); });
+  await expect.poll(() => page.evaluate(() => (window as any).pendingReads?.length)).toBe(1);
+  await page.clock.fastForward(11_000);
+  await expect(draft).toBeDisabled();
+  await expect(page.locator('[data-twitch-status]')).toContainText('État actuel non confirmé');
+  await expect(page.getByRole('button', { name: 'Envoyer', exact: true })).toBeDisabled();
+  expect(await page.evaluate(() => (window as any).pendingReads.length)).toBe(1);
+  await page.evaluate(() => { const win = window as any; win.deferReads = false; win.pendingReads.shift()(structuredClone(win.snapshot)); });
+  await expect(draft).toBeEnabled();
+  await expect(draft).toHaveValue('Attendre une identité confirmée');
+  await page.evaluate(() => (window as any).chat.destroy());
+});
+
+test('reconnecting the dashboard waits for a new chat identity before enabling an old draft', async ({ page }) => {
+  await page.clock.install();
+  await setupChat(page);
+  const draft = page.getByLabel('Message Twitch', { exact: true });
+  await draft.fill('Brouillon après reconnexion');
+  await page.evaluate(() => {
+    const win = window as any;
+    win.chat.update({ online: false, sourceKey: 'regie' });
+    win.deferReads = true;
+    win.chat.update({ online: true, sourceKey: 'regie' });
+  });
+  await expect(draft).toBeDisabled();
+  await expect(draft).toHaveValue('Brouillon après reconnexion');
+  await expect.poll(() => page.evaluate(() => (window as any).pendingReads?.length)).toBe(1);
+  await page.evaluate(() => { const win = window as any; win.deferReads = false; win.pendingReads.shift()(structuredClone(win.snapshot)); });
+  await expect(draft).toBeEnabled();
+  expect(await page.evaluate(() => (window as any).calls.filter((call: any) => call.method === 'POST'))).toEqual([]);
+  await page.evaluate(() => (window as any).chat.destroy());
+});
+
 test('monitor keeps public video frames stable and exposes creator tools alongside native Twitch chat', async ({ page }) => {
   await page.setViewportSize({ width: 1600, height: 1000 });
   await page.evaluate(async () => {

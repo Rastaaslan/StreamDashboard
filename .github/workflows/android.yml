@@ -1,4 +1,4 @@
-name: Android remote
+name: Android qualification and signed release
 
 on:
   pull_request:
@@ -50,16 +50,90 @@ jobs:
         run: npm run test:browser
       - name: Synchronize Android assets
         run: npm run android:sync
-      - name: Require Android provider IDs
-        env:
-          TWITCH_ANDROID_CLIENT_ID: ${{ secrets.TWITCH_ANDROID_CLIENT_ID }}
-          GOOGLE_ANDROID_CLIENT_ID: ${{ secrets.GOOGLE_ANDROID_CLIENT_ID }}
+      - name: Read Android product identity
+        shell: bash
         run: |
-          if [[ -z "${TWITCH_ANDROID_CLIENT_ID//[[:space:]]/}" || -z "${GOOGLE_ANDROID_CLIENT_ID//[[:space:]]/}" ]]; then
-            echo "TWITCH_ANDROID_CLIENT_ID and GOOGLE_ANDROID_CLIENT_ID are required for release APKs." >&2
-            exit 1
-          fi
+          node --input-type=module <<'NODE'
+          import { appendFileSync, readFileSync } from 'node:fs';
+          const gradle = readFileSync('android/app/build.gradle', 'utf8');
+          const manifest = JSON.parse(readFileSync('package.json', 'utf8'));
+          const match = (pattern, name) => {
+            const value = gradle.match(pattern)?.[1];
+            if (!value) throw new Error(`Android ${name} is missing from build.gradle.`);
+            return value;
+          };
+          const applicationId = match(/applicationId\s+'([A-Za-z0-9_.]+)'/, 'application ID');
+          const versionCode = match(/def buildVersionCode\s*=\s*\(System\.getenv\('ANDROID_VERSION_CODE'\)\s*\?:\s*'(\d+)'\)/, 'version code');
+          const versionName = match(/def buildVersionName\s*=\s*System\.getenv\('ANDROID_VERSION_NAME'\)\s*\?:\s*'([A-Za-z0-9.-]+)'/, 'version name');
+          if (applicationId !== 'com.rastaaslan.streamdashboard.remote.next') throw new Error('Unexpected Android product identity.');
+          if (!Number.isSafeInteger(Number(versionCode)) || Number(versionCode) <= 0) throw new Error('Invalid Android version code.');
+          if (versionName !== manifest.version) throw new Error('Android and package.json versions differ.');
+          appendFileSync(process.env.GITHUB_ENV, `ANDROID_APPLICATION_ID=${applicationId}\nANDROID_VERSION_CODE=${versionCode}\nANDROID_VERSION_NAME=${versionName}\n`);
+          console.log(`Android product: ${applicationId}, ${versionName} (${versionCode})`);
+          NODE
+      - name: Lint, test and build QA APKs without signing secrets
+        run: |
+          ./android/gradlew -p android --max-workers=2 testDebugUnitTest lintDebug assembleDebug assemblePreview
+          cp android/app/build/outputs/apk/debug/app-debug.apk StreamDashboard-Next-QA-debug.apk
+          cp android/app/build/outputs/apk/preview/app-preview.apk StreamDashboard-Next-QA-preview.apk
+          cat > Android-QA-README.txt <<'NOTE'
+          QA artifacts only, signed with the runner's temporary debug certificate.
+          These APKs are not a stable signed release or an update for an installed app.
+          Debug has the production package ID: use a disposable test device/profile.
+          Preview has a separate package ID and disables provider connections.
+          Google sign-in on Debug also depends on registration of its package/certificate;
+          this qualification does not demonstrate a real provider login.
+          NOTE
+      - name: Verify QA APK identities and signatures
+        shell: bash
+        run: |
+          APKSIGNER=$(find "$ANDROID_HOME/build-tools" -type f -name apksigner -print | sort -V | tail -n 1)
+          AAPT=$(find "$ANDROID_HOME/build-tools" -type f -name aapt -print | sort -V | tail -n 1)
+          test -n "$APKSIGNER" && test -x "$APKSIGNER"
+          test -n "$AAPT" && test -x "$AAPT"
+          for VARIANT in debug preview; do
+            APK="StreamDashboard-Next-QA-$VARIANT.apk"
+            PACKAGE_ID="$ANDROID_APPLICATION_ID"
+            VERSION_NAME="$ANDROID_VERSION_NAME"
+            if [[ "$VARIANT" == preview ]]; then PACKAGE_ID+='.preview'; VERSION_NAME+='-preview'; fi
+            test -s "$APK"
+            "$APKSIGNER" verify --verbose "$APK"
+            BADGING=$("$AAPT" dump badging "$APK")
+            PACKAGE_LINE="${BADGING%%$'\n'*}"
+            if [[ "$PACKAGE_LINE" != "package: name='$PACKAGE_ID' versionCode='$ANDROID_VERSION_CODE' versionName='$VERSION_NAME'"* ]]; then
+              echo "QA APK package or version mismatch ($VARIANT)." >&2
+              exit 1
+            fi
+            if [[ "$VARIANT" == preview ]]; then
+              printf '%s\n' "$BADGING" | grep -Fx "application-label:'StreamDashboard Preview'"
+            fi
+          done
+          echo "ANDROID_APKSIGNER=$APKSIGNER" >> "$GITHUB_ENV"
+          echo "ANDROID_AAPT=$AAPT" >> "$GITHUB_ENV"
+      - name: Upload Android QA artifacts
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
+        with:
+          name: StreamDashboard-Next-QA-${{ github.run_id }}
+          path: |
+            StreamDashboard-Next-QA-debug.apk
+            StreamDashboard-Next-QA-preview.apk
+            Android-QA-README.txt
+          if-no-files-found: error
+      - name: Require release Twitch client ID
+        if: github.event_name == 'workflow_dispatch'
+        shell: bash
+        env:
+          TWITCH_ANDROID_CLIENT_ID: ${{ secrets.TWITCH_ANDROID_CLIENT_ID || vars.TWITCH_ANDROID_CLIENT_ID || vars.TWITCH_CLIENT_ID }}
+        run: |
+          node --input-type=module <<'NODE'
+          import { appendFileSync, readFileSync } from 'node:fs';
+          const distribution = JSON.parse(readFileSync('resources/distribution.json', 'utf8'));
+          const clientId = process.env.TWITCH_ANDROID_CLIENT_ID || distribution.twitchClientId || '';
+          if (!/^[A-Za-z0-9]+$/.test(clientId)) throw new Error('A valid Twitch client ID is required for release APKs.');
+          appendFileSync(process.env.GITHUB_ENV, `TWITCH_ANDROID_CLIENT_ID=${clientId}\n`);
+          NODE
       - name: Require stable Android signing identity
+        if: github.event_name == 'workflow_dispatch'
         shell: bash
         env:
           KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
@@ -72,60 +146,63 @@ jobs:
             echo "Stable Android signing is not configured. Refusing to publish an ephemeral debug-signed APK." >&2
             exit 1
           fi
+          EXPECTED_CERT_SHA256=$(printf '%s' "$ANDROID_CERT_SHA256" | tr -d '[:space:]:' | tr '[:lower:]' '[:upper:]')
+          if [[ ! "$EXPECTED_CERT_SHA256" =~ ^[A-F0-9]{64}$ ]]; then
+            echo "Stable Android certificate SHA-256 must contain exactly 64 hexadecimal digits." >&2
+            exit 1
+          fi
           KEYSTORE_PATH="$RUNNER_TEMP/streamdashboard-remote.jks"
+          umask 077
           printf '%s' "$KEYSTORE_BASE64" | base64 --decode > "$KEYSTORE_PATH"
           test -s "$KEYSTORE_PATH"
           chmod 600 "$KEYSTORE_PATH"
           echo "ANDROID_KEYSTORE_PATH=$KEYSTORE_PATH" >> "$GITHUB_ENV"
-          echo "ANDROID_VERSION_CODE=$((900000 + GITHUB_RUN_NUMBER))" >> "$GITHUB_ENV"
-          echo "ANDROID_VERSION_NAME=0.9.0-rc.${GITHUB_RUN_NUMBER}" >> "$GITHUB_ENV"
-      - name: Lint and build installable APK
+      - name: Build stable signed release APK
+        if: github.event_name == 'workflow_dispatch'
         env:
-          TWITCH_ANDROID_CLIENT_ID: ${{ secrets.TWITCH_ANDROID_CLIENT_ID }}
-          GOOGLE_ANDROID_CLIENT_ID: ${{ secrets.GOOGLE_ANDROID_CLIENT_ID }}
           ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
           ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
           ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
         run: |
-          ./android/gradlew -p android testDebugUnitTest lintDebug assembleRelease assemblePreview
-          cp android/app/build/outputs/apk/release/app-release.apk StreamDashboard-Remote-rc.apk
-          cp android/app/build/outputs/apk/preview/app-preview.apk StreamDashboard-Preview.apk
-      - name: Verify APK identity, version and signature
+          ./android/gradlew -p android --max-workers=2 assembleRelease
+          cp android/app/build/outputs/apk/release/app-release.apk "StreamDashboard-Next-${ANDROID_VERSION_NAME}-android.apk"
+      - name: Verify release APK identity, version and stable signature
+        if: github.event_name == 'workflow_dispatch'
         shell: bash
         env:
           ANDROID_CERT_SHA256: ${{ secrets.ANDROID_CERT_SHA256 }}
         run: |
-          APK=StreamDashboard-Remote-rc.apk
+          APK="StreamDashboard-Next-${ANDROID_VERSION_NAME}-android.apk"
           test -s "$APK"
-          APKSIGNER=$(find "$ANDROID_HOME/build-tools" -type f -name apksigner -print | sort -V | tail -n 1)
-          AAPT=$(find "$ANDROID_HOME/build-tools" -type f -name aapt -print | sort -V | tail -n 1)
-          test -n "$APKSIGNER" && test -x "$APKSIGNER"
-          test -n "$AAPT" && test -x "$AAPT"
-          CERTS=$("$APKSIGNER" verify --verbose --print-certs "$APK")
+          test -x "$ANDROID_APKSIGNER" && test -x "$ANDROID_AAPT"
+          CERTS=$("$ANDROID_APKSIGNER" verify --verbose --print-certs "$APK")
           printf '%s\n' "$CERTS"
-          ACTUAL_CERT_SHA256=$(printf '%s\n' "$CERTS" | sed -n -E 's/^.*certificate SHA-256 digest:[[:space:]]*//p' | head -n 1 | tr -d '[:space:]:' | tr '[:lower:]' '[:upper:]')
+          mapfile -t CERT_DIGESTS < <(printf '%s\n' "$CERTS" | sed -n -E 's/^.*certificate SHA-256 digest:[[:space:]]*//p')
+          if [[ "${#CERT_DIGESTS[@]}" -ne 1 ]]; then
+            echo "Exactly one stable Android signing certificate is required." >&2
+            exit 1
+          fi
+          ACTUAL_CERT_SHA256=$(printf '%s' "${CERT_DIGESTS[0]}" | tr -d '[:space:]:' | tr '[:lower:]' '[:upper:]')
           EXPECTED_CERT_SHA256=$(printf '%s' "$ANDROID_CERT_SHA256" | tr -d '[:space:]:' | tr '[:lower:]' '[:upper:]')
-          if [[ -z "$ACTUAL_CERT_SHA256" || "$ACTUAL_CERT_SHA256" != "$EXPECTED_CERT_SHA256" ]]; then
+          if [[ ! "$ACTUAL_CERT_SHA256" =~ ^[A-F0-9]{64}$ || "$ACTUAL_CERT_SHA256" != "$EXPECTED_CERT_SHA256" ]]; then
             echo "Stable Android signing certificate SHA-256 mismatch." >&2
             exit 1
           fi
-          "$AAPT" dump badging "$APK" | grep "package: name='com.rastaaslan.streamdashboard.remote'"
-          "$AAPT" dump badging "$APK" | grep "versionCode='$ANDROID_VERSION_CODE' versionName='$ANDROID_VERSION_NAME'"
-          PREVIEW=StreamDashboard-Preview.apk
-          test -s "$PREVIEW"
-          "$APKSIGNER" verify --verbose "$PREVIEW"
-          "$AAPT" dump badging "$PREVIEW" | grep "package: name='com.rastaaslan.streamdashboard.remote.preview'"
-          "$AAPT" dump badging "$PREVIEW" | grep "application-label:'StreamDashboard Preview'"
-      - name: Upload Android APK
+          BADGING=$("$ANDROID_AAPT" dump badging "$APK")
+          PACKAGE_LINE="${BADGING%%$'\n'*}"
+          if [[ "$PACKAGE_LINE" != "package: name='$ANDROID_APPLICATION_ID' versionCode='$ANDROID_VERSION_CODE' versionName='$ANDROID_VERSION_NAME'"* ]]; then
+            echo "Release APK package or version mismatch." >&2
+            exit 1
+          fi
+      - name: Upload stable Android release APK
+        if: github.event_name == 'workflow_dispatch'
         uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
         with:
-          name: StreamDashboard-Remote
-          path: StreamDashboard-Remote-rc.apk
+          name: StreamDashboard-Next-${{ env.ANDROID_VERSION_NAME }}-android
+          path: StreamDashboard-Next-${{ env.ANDROID_VERSION_NAME }}-android.apk
           if-no-files-found: error
-
-      - name: Upload Android Preview APK
-        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
-        with:
-          name: StreamDashboard-Preview
-          path: StreamDashboard-Preview.apk
-          if-no-files-found: error
+      - name: Remove decoded signing material
+        if: always() && github.event_name == 'workflow_dispatch'
+        shell: bash
+        run: |
+          if [[ -n "${ANDROID_KEYSTORE_PATH:-}" ]]; then rm -f -- "$ANDROID_KEYSTORE_PATH"; fi

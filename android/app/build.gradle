@@ -11,8 +11,8 @@ dependencies {
 
 def stableKeystore = System.getenv('ANDROID_KEYSTORE_PATH')
 def hasStableSigning = stableKeystore && System.getenv('ANDROID_KEYSTORE_PASSWORD') && System.getenv('ANDROID_KEY_ALIAS') && System.getenv('ANDROID_KEY_PASSWORD')
-def buildVersionCode = (System.getenv('ANDROID_VERSION_CODE') ?: '2000019') as Integer
-def buildVersionName = System.getenv('ANDROID_VERSION_NAME') ?: '2.0.0-rc.11.6'
+def buildVersionCode = (System.getenv('ANDROID_VERSION_CODE') ?: '2000020') as Integer
+def buildVersionName = System.getenv('ANDROID_VERSION_NAME') ?: '2.0.0-rc.11.7'
 def twitchAndroidClientId = System.getenv('TWITCH_ANDROID_CLIENT_ID') ?: new groovy.json.JsonSlurper().parse(rootProject.file('../resources/distribution.json')).twitchClientId ?: ''
 def googleAndroidClientId = System.getenv('GOOGLE_ANDROID_CLIENT_ID') ?: ''
 
@@ -62,7 +62,9 @@ android {
 // Enforce this for local builds as well as CI artifact publication.
 gradle.taskGraph.whenReady { graph ->
     if (graph.allTasks.any { it.name == 'preReleaseBuild' } &&
-        (!twitchAndroidClientId.trim() || !googleAndroidClientId.trim())) {
-        throw new GradleException('Release requires TWITCH_ANDROID_CLIENT_ID and GOOGLE_ANDROID_CLIENT_ID')
+        !twitchAndroidClientId.matches('[A-Za-z0-9]+')) {
+        throw new GradleException('Release requires a valid Twitch client ID (TWITCH_ANDROID_CLIENT_ID or resources/distribution.json)')
     }
+    // Google AuthorizationClient uses this application's package and signing
+    // certificate. GOOGLE_ANDROID_CLIENT_ID is not a release prerequisite.
 }

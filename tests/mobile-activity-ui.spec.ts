@@ -212,16 +212,28 @@ test('Mon espace isolates native mobile Activity from the previously paired Stre
   await expect(page.locator('#connection')).toContainText('Espace de cet appareil');
   await page.locator('nav [data-page="activity"]').click();
   await expect(page.getByRole('heading', { name: 'Activité', exact: true })).toBeVisible();
-  await expect(page.locator('#activity-context')).toContainText('Associez votre régie');
-  await expect(page.locator('[data-feed-summary-source]')).toHaveText('Aucune source');
+  await expect(page.locator('#activity-context')).toContainText('Historique Streamlabs de cet appareil');
+  await expect(page.locator('[data-feed-summary-source]')).toHaveText('Cet appareil · historique Streamlabs');
   await expect(page.locator('.streamlabs-event')).toHaveCount(0);
   await expect(page.locator('#streamlabs-feed')).not.toContainText(FOLLOWER);
   await expect(page.locator('#streamlabs-feed')).not.toContainText(SUBSCRIBER);
   await expect(page.locator('[data-feed-summary-history]')).not.toHaveAttribute('data-state', 'ok');
   await expect(page.locator('[data-feed-history-status]')).not.toHaveClass(/succeeded/);
   await page.locator('[data-feed-options] > summary').click();
-  await expect(page.locator('[data-feed-source] option')).toHaveCount(0);
-  await expect(page.getByRole('button', { name: 'Configurer Streamlabs' })).toBeDisabled();
+  await expect(page.locator('[data-feed-source] option')).toHaveCount(1);
+  await expect(page.locator('[data-feed-status]')).toContainText('Mettez à jour cette application pour configurer l’historique Streamlabs sur cet appareil.');
+  await expect(page.locator('[data-feed-summary-direct]')).not.toHaveAttribute('data-state', 'ok');
+  await page.getByRole('button', { name: 'Configurer Streamlabs' }).click();
+  // This old Android fixture deliberately has no provider bridge. Its local
+  // configuration must report that fact, not promise a fictitious connection.
+  await expect(page.locator('#streamlabs-feed-config')).toHaveCount(0);
+  await expect(page.locator('[data-streamlabs-history-status]')).toContainText('Mettez à jour cette application');
+  await expect(page.locator('[data-streamlabs-history-status]')).not.toHaveClass(/succeeded/);
+  await page.getByLabel('URL d’un widget Streamlabs').fill('https://streamlabs.com/widgets/event-list?token=fake-unavailable-bridge');
+  await page.locator('#streamlabs-history-config').getByRole('button', { name: 'Enregistrer et récupérer l’historique' }).click();
+  await expect(page.locator('[data-streamlabs-history-status]')).toContainText('Mettez à jour cette application');
+  await expect(page.locator('[data-streamlabs-history-clear]')).toBeDisabled();
+  await page.locator('[data-task="close-dialog"]').click();
   await page.locator('[data-feed-options] > summary').click();
   const pairedReads = backend.calls.filter(call => call.path === '/api/v1/streamlabs/events').length;
   await page.clock.fastForward(5000);

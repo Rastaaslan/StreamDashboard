@@ -26,3 +26,57 @@ test('autonomous bot edits require exact readback and never resend an uncertain 
  assert.equal((await r.route('/api/v2/wizebot/edit',lost,'POST')).status,'uncertain');
  assert.equal((await s.open().route('/api/v2/wizebot/edit',{...lost,id:'request_0003'},'POST')).status,'uncertain');assert.equal(s.sent,2);
 });
+
+function commandSetup(){
+ const record={workspace:'local:commands',drafts:{}},sent=[],operations=[];let lost=false,refusal,failStore=false;
+ const store={record,reload:async()=>{},draft:async(k,v)=>{if(failStore)throw new Error('Stockage indisponible');record.drafts[k]=structuredClone(v);}};
+ const bridge={deviceService:raw=>{const payload=JSON.parse(raw);operations.push(payload);assert.equal(payload.operation,'context');return JSON.stringify({ok:true,connected:true,canSend:true,channel:'test_channel'});},wizebotSendCommand:raw=>{
+  const payload=JSON.parse(raw);assert.ok(record.drafts.wizebotCommands.some(x=>x.commandId===payload.commandId&&x.status==='uncertain'),'intent is durable before chat I/O');sent.push(payload);
+  if(lost)throw new Error('Transport perdu');return JSON.stringify(refusal||{ok:true,status:'sent',messageId:'accepted-1',message:'Commande envoyée dans le chat Twitch.'});
+ }};
+ return {store,sent,operations,open:()=>createDeviceServices({store,bridge}),lose:()=>{lost=true;},refuse:value=>{refusal=value;},failStore:()=>{failStore=true;}};
+}
+const chatCommand={commandId:'command_0001',channel:'test_channel',command:'!bonjour une chaîne'};
+test('manual WizeBot buttons obtain local context without any catalog and persist one receipt per press',async()=>{
+ const s=commandSetup(),r=s.open();const context=await r.route('/api/v2/wizebot/context');assert.equal(context.channel,'test_channel');assert.equal(context.canSend,true);assert.equal(s.store.record.drafts.wizebotCatalog,undefined);
+ assert.deepEqual(s.store.record.drafts.deviceChat,{connected:true,canSend:true,channel:'test_channel'});
+ const receipt=await r.route('/api/v2/wizebot/command',chatCommand,'POST');assert.equal(receipt.status,'succeeded');assert.equal(receipt.messageId,'accepted-1');
+ const duplicate=await s.open().route('/api/v2/wizebot/command',chatCommand,'POST');assert.deepEqual(duplicate,receipt);assert.equal(s.sent.length,1);
+ await assert.rejects(r.route('/api/v2/wizebot/command',{...chatCommand,command:'!autre'},'POST'),/réutilisé/);assert.equal(s.sent.length,1);
+ assert.equal(await r.route('/api/v2/wizebot/command',{...chatCommand,commandId:'command_0002'},'GET'),undefined);assert.equal(s.sent.length,1);
+});
+test('a lost local chat result remains uncertain across restart and refuses automatic replay',async()=>{
+ const s=commandSetup();s.lose();const receipt=await s.open().route('/api/v2/wizebot/command',chatCommand,'POST');assert.equal(receipt.status,'uncertain');
+ assert.equal((await s.open().route('/api/v2/wizebot/command',chatCommand,'POST')).status,'uncertain');assert.equal(s.sent.length,1);
+});
+test('native account changes and missing chat permission remain explicit failures',async()=>{
+ for(const code of ['INVALID_LINK','REAUTH_REQUIRED']){const s=commandSetup();s.refuse({ok:false,code,message:'Le compte doit être vérifié.'});assert.equal((await s.open().route('/api/v2/wizebot/command',chatCommand,'POST')).status,'failed');assert.equal(s.sent.length,1);}
+ const s=commandSetup();s.refuse({ok:false,code:'NETWORK',message:'Résultat non confirmé.'});assert.equal((await s.open().route('/api/v2/wizebot/command',chatCommand,'POST')).status,'uncertain');
+});
+test('invalid commands or failed durable storage never reach the native chat transport',async()=>{
+ const s=commandSetup(),r=s.open();for(const patch of [{command:'texte'},{command:'!ok\n!second'},{command:'!ok\u0000'},{command:'!'+ 'a'.repeat(500)},{channel:'other.example'},{commandId:'short'}])await assert.rejects(r.route('/api/v2/wizebot/command',{...chatCommand,...patch},'POST'),/invalide/);
+ assert.equal(s.sent.length,0);s.failStore();await assert.rejects(r.route('/api/v2/wizebot/command',chatCommand,'POST'),/Stockage/);assert.equal(s.sent.length,0);
+});
+
+function desktopCommandSetup(){
+ const record={workspace:'local:desktop-commands',drafts:{}},sent=[];let channel='test_channel',lost=false,failStore=false;
+ const store={record,reload:async()=>{},draft:async(k,v)=>{if(failStore)throw new Error('Disk unavailable');record.drafts[k]=structuredClone(v);}};
+ const request=async(path,body,method)=>{
+  if(path==='/api/v1/twitch/chat/state')return {accountConnected:true,capabilities:{chatWrite:true},identity:{userName:channel,broadcasterId:'broadcaster-1'}};
+  assert.equal(path,'/api/v1/twitch/chat/messages');assert.equal(method,'POST');
+  assert.equal(body.expectedBroadcasterId,'broadcaster-1');assert.equal(record.drafts.wizebotCommands.at(-1).status,'uncertain');sent.push(body);
+  if(lost)throw new Error('Response lost');return {messageId:'desktop-accepted'};
+ };
+ return {store,sent,open:()=>createDeviceServices({store,request,bridge:null}),channel:value=>{channel=value;},lose:()=>{lost=true;},failStore:()=>{failStore=true;}};
+}
+test('desktop local WizeBot uses its own fresh Twitch identity and persists before sending',async()=>{
+ const s=desktopCommandSetup();assert.equal((await s.open().route('/api/v2/wizebot/context')).channel,'test_channel');
+ assert.equal((await s.open().route('/api/v2/wizebot/command',chatCommand,'POST')).status,'succeeded');
+ assert.equal((await s.open().route('/api/v2/wizebot/command',chatCommand,'POST')).messageId,'desktop-accepted');assert.equal(s.sent.length,1);
+ s.channel('another_channel');assert.equal((await s.open().route('/api/v2/wizebot/command',{...chatCommand,commandId:'changed_0002'},'POST')).status,'failed');assert.equal(s.sent.length,1);
+});
+test('desktop local lost response is never replayed; unavailable storage prevents chat I/O',async()=>{
+ const s=desktopCommandSetup();s.lose();assert.equal((await s.open().route('/api/v2/wizebot/command',chatCommand,'POST')).status,'uncertain');
+ assert.equal((await s.open().route('/api/v2/wizebot/command',chatCommand,'POST')).status,'uncertain');assert.equal(s.sent.length,1);
+ const denied=desktopCommandSetup();denied.failStore();await assert.rejects(denied.open().route('/api/v2/wizebot/command',chatCommand,'POST'),/Disk unavailable/);assert.equal(denied.sent.length,0);
+});

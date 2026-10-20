@@ -6,13 +6,14 @@ import vm from 'node:vm';
 const base = 'https://dashboard.test/mobile/';
 const mobileRoot = new URL('../apps/mobile/', import.meta.url);
 const workerSource = await readFile(new URL('sw.js', mobileRoot), 'utf8');
-const localFile = url => new URL(new URL(url).pathname.slice('/mobile/'.length) || 'index.html', mobileRoot);
+const localFile = url => { const relative = new URL(url).pathname.slice('/mobile/'.length); return new URL(relative.endsWith('/') || !relative ? relative + 'index.html' : relative, mobileRoot); };
+const previousCache = 'streamdashboard-mobile-v21-live-tags';
 
 // Discover entry modules and transitive static imports/re-exports from the shipped
 // files, rather than maintaining a second list that could miss a new dependency.
-async function startupModules() {
-  const html = await readFile(new URL('index.html', mobileRoot), 'utf8');
-  const pending = [...html.matchAll(/<script\b[^>]*type="module"[^>]*src="([^"]+)"/g)].map(match => new URL(match[1], base).href);
+async function startupModules(entry = 'index.html') {
+  const html = await readFile(new URL(entry, mobileRoot), 'utf8');
+  const pending = [...html.matchAll(/<script\b[^>]*type="module"[^>]*src="([^"]+)"/g)].map(match => new URL(match[1], new URL(entry, base)).href);
   assert.ok(pending.length, 'At least one startup module must be discovered');
   const modules = new Map();
   while (pending.length) {
@@ -29,9 +30,24 @@ async function startupModules() {
   return modules;
 }
 
+async function startupStyles(entry) {
+  const html = await readFile(new URL(entry, mobileRoot), 'utf8');
+  const pending = [...html.matchAll(/<link\b[^>]*rel="stylesheet"[^>]*href="([^"]+)"/g)]
+    .map(match => new URL(match[1], new URL(entry, base)).href);
+  const styles = new Map();
+  while (pending.length) {
+    const url = pending.pop();
+    if (styles.has(url)) continue;
+    const source = await readFile(localFile(url), 'utf8');
+    styles.set(url, source);
+    for (const match of source.matchAll(/@import\s+url\(['"]?([^'"\s)]+)['"]?\)/g)) pending.push(new URL(match[1], url).href);
+  }
+  return styles;
+}
+
 function workerHarness() {
   const listeners = new Map();
-  const stores = new Map([['streamdashboard-mobile-v12', new Map()]]);
+  const stores = new Map([[previousCache, new Map()], ['unrelated-cache', new Map()]]);
   const attempts = [];
   let claimed = false, skipped = false;
   const key = value => new URL(typeof value === 'string' ? value : value.url, base).href;
@@ -88,13 +104,14 @@ test('new cache installs every startup module and serves its bytes when all netw
   const worker = workerHarness();
   await worker.lifecycle('install');
   assert.equal(worker.skipped, true);
-  const newCaches = [...worker.stores.keys()].filter(name => name !== 'streamdashboard-mobile-v12');
+  const newCaches = [...worker.stores.keys()].filter(name => name.startsWith('streamdashboard-mobile-') && name !== previousCache);
   assert.equal(newCaches.length, 1, 'The precache version must change');
   const precache = worker.stores.get(newCaches[0]);
   for (const url of modules.keys()) assert.ok(precache.has(url), `Missing precache entry: ${url}`);
   await worker.lifecycle('activate');
-  assert.equal(worker.stores.has('streamdashboard-mobile-v12'), false);
+  assert.equal(worker.stores.has(previousCache), false);
   assert.equal(worker.claimed, true);
+  assert.equal(worker.stores.has('unrelated-cache'), true, 'Activation must not delete other applications’ caches');
   for (const [url, source] of modules) {
     const result = worker.request(url);
     assert.ok(result, `Worker does not intercept mandatory module: ${url}`);
@@ -120,4 +137,27 @@ test('offline support remains scoped to same-origin static GET requests', async 
     ['https://dashboard.test/api/v1/state', 'GET'],
   ]) assert.equal(worker.request(url, method), undefined);
   assert.equal(worker.attempts.length, 0);
+});
+
+test('the production control shell, local services and styles boot entirely from installed assets without network', async () => {
+  const assets = new Map([...await startupModules('control/index.html'), ...await startupStyles('control/index.html')]);
+  for (const file of ['control/device-audio.js', 'control/device-streamlabs.js', 'control/device-services.js', 'control/device-bridge.js', 'control/local-planning.js', 'shared/planning-engine.js', 'shared/autonomy.js', 'control/performance.css', 'control-fonts.css']) {
+    assert.ok(assets.has(new URL(file, base).href), `Production dependency not exercised: ${file}`);
+  }
+  const worker = workerHarness();
+  await worker.lifecycle('install');
+  await worker.lifecycle('activate');
+  for (const [url, source] of assets) {
+    const pending = worker.request(url);
+    assert.ok(pending, `Missing offline control route: ${url}`);
+    const response = await pending;
+    assert.ok(response?.ok, `Missing installed control asset: ${url}`);
+    assert.equal(await response.text(), source, `Stale production asset: ${url}`);
+  }
+  for (const entry of ['control/', 'control/index.html']) {
+    const response = await worker.request(new URL(entry, base));
+    assert.equal(await response.text(), await readFile(new URL('control/index.html', mobileRoot), 'utf8'));
+  }
+  assert.equal(worker.request(new URL('control/device-audio.js?credential=private', base)), undefined);
+  assert.equal(worker.request('https://dashboard.test/api/v2/wizebot/command', 'POST'), undefined);
 });

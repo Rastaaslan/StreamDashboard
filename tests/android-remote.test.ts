@@ -89,11 +89,14 @@ describe('Android remote runtime', () => {
     expect(androidActivity).toContain('WebViewAssetLoader');
     expect(androidActivity).not.toContain('MIXED_CONTENT_ALWAYS_ALLOW');
     expect(androidActivity).toContain('import android.webkit.WebChromeClient;');
-    expect(androidActivity).toContain('webView.setWebChromeClient(new WebChromeClient());');
+    expect(androidActivity).toContain('webView.setWebChromeClient(new WebChromeClient(){');
+    expect(androidActivity).toContain('onShowFileChooser');
+    expect(androidActivity).toContain('Intent.ACTION_OPEN_DOCUMENT');
+    expect(androidActivity).toContain('FileSelectionPolicy.accepts(selected.toString(),getPackageName())');
   });
-  it('ouvre seulement les ressources Twitch HTTPS dans le navigateur système', () => {
+  it('ouvre seulement les destinations live et WizeBot autorisées dans le navigateur système', () => {
     expect(androidActivity).toContain('isAllowedExternalUri');
-    expect(androidActivity).toContain('host.equals("twitch.tv") || host.endsWith(".twitch.tv")');
+    expect(androidActivity).toContain('ExternalNavigationPolicy.accepts(uri.toString())');
     expect(androidActivity).toContain('startActivity(new Intent(Intent.ACTION_VIEW, uri))');
     expect(androidActivity).not.toContain('if (!"https".equalsIgnoreCase(uri.getScheme())) return;');
   });

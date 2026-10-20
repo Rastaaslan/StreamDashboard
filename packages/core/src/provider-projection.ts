@@ -4,8 +4,12 @@ import type { CalendarItem, ProviderLink } from '../../contracts/src/index.js';
 import type { PlanningProvider } from './planning.js';
 import { expandRecurringItems } from './recurrence.js';
 import { createWithDurableIntent } from './provider-identity.js';
-export function projectionContent(item: CalendarItem) {
-  return JSON.stringify([item.title, item.description, item.allDay, item.startAtUtc, item.endAtUtc, item.twitchCategoryId ?? '']);
+export function projectionContent(item: CalendarItem, name?: 'twitch' | 'google') {
+  // Description and all-day display are local metadata on a Twitch schedule.
+  // They must not produce a pending mutation/checkpoint for every occurrence.
+  return JSON.stringify(name === 'twitch'
+    ? [item.title, item.startAtUtc, item.endAtUtc, item.twitchCategoryId ?? '']
+    : [item.title, item.description, item.allDay, item.startAtUtc, item.endAtUtc, item.twitchCategoryId ?? '']);
 }
 function request(event: CalendarItem, link: ProviderLink, name: 'twitch' | 'google'): CalendarItem {
   // A projected occurrence is a provider one-off, with identity kept locally.
@@ -68,7 +72,7 @@ async function reconcileProjection(
   };
   if (link.uncertainCreate || (desired && link.deletedRemotely && !options.retry)) {
     fail(link, new Error(link.uncertainCreate
-      ? 'Création native distante incertaine : réconciliez son identité avant de matérialiser.'
+      ? `Création native distante incertaine : ${name === 'twitch' ? 'vérifiez le planning dans Twitch. Aucune identité candidate ne sera adoptée ou republiée automatiquement.' : 'réconciliez son identité avant de matérialiser.'}`
       : 'Série supprimée à distance — retry explicite requis.'));
     await persist(); return true;
   }
@@ -190,7 +194,13 @@ async function reconcileProjection(
         }
         entry.deletedRemotely = false;
       }
-      if (!entry.remoteId || entry.appliedContent !== projectionContent(event) || entry.status !== 'synced') {
+      const content = projectionContent(event, name);
+      // Upgrade the previous shared content format from its verified local
+      // snapshot. Missing or inconsistent applied content still requires update.
+      const sameAppliedContent = entry.appliedContent === content
+        || (name === 'twitch' && entry.appliedContent === projectionContent(entry.event)
+          && projectionContent(entry.event, name) === content);
+      if (!entry.remoteId || !sameAppliedContent || entry.status !== 'synced') {
         entry.status = 'pending';
         // A new identity is checkpointed by createWithDurableIntent before I/O.
         if (entry.remoteId) await persist();
@@ -202,12 +212,13 @@ async function reconcileProjection(
           const result = await createWithDurableIntent(body, name, persist, value => provider.create(value), provider.prepareCreate);
           entry.calendarId = result.calendarId ?? entry.calendarId; entry.remoteId = result.id; entry.fingerprint = result.fingerprint; entry.remoteRevision = result.revision;
         }
-        entry.event = { ...event, projection: body.projection }; entry.appliedContent = projectionContent(event);
+        entry.event = { ...event, projection: body.projection }; entry.appliedContent = content;
         entry.status = 'synced'; entry.lastSyncedAt = new Date(now).toISOString(); delete entry.lastError;
       } else {
-        // Tags belong to live preflight, not provider schedule content. Refresh
-        // the local occurrence snapshot without issuing an unrelated remote write.
-        entry.event = { ...entry.event, tags: event.tags, tagPreferences: event.tagPreferences };
+        // Keep local-only metadata current, including offline edits, while
+        // retaining the persisted Google creation incarnation when present.
+        entry.event = { ...event, projection: entry.event.projection ?? event.projection };
+        entry.appliedContent = content;
         // No remote mutation/identity transition: the final summary saves these.
         return;
       }

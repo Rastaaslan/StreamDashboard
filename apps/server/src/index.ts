@@ -87,7 +87,9 @@ import { AutonomyService } from './autonomy-service.js';
 import { registerAutonomyRoutes, invokeManagement } from './autonomy-routes.js';
 import { pick, fields } from '../../mobile/shared/autonomy.js';
 import { registerLiveControlRoutes, automationInput } from './live-control-routes.js';
+import { applyLegacyTwitchMetadata } from './twitch-metadata-route.js';
 import { ProductProfileStore } from './profile-store.js';
+import { assessRestartSafety } from './restart-safety.js';
 import { validateProductProfile, type ProductProfile } from '../../../packages/core/src/product-profile.js';
 import { resolveModules } from '../../../packages/core/src/module-registry.js';
 import {
@@ -164,6 +166,7 @@ export interface DashboardServerHandle {
   port: number;
   url: string;
   state(): DashboardState;
+  assessRestartSafety(): Promise<{ safe: boolean; reason?: string }>;
   /** Settles after the deferred initial provider maintenance (not required to show the window). */
   providersReady: Promise<void>;
   stop(): Promise<void>;
@@ -633,6 +636,8 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
   );
   let googleCalendars: Array<{ id: string; summary: string; writable: boolean }> = [];
   let twitchChannel: { title: string; gameId: string; gameName: string; tags?: string[]; tagsWarning?: string } = { title: '', gameId: '', gameName: '' };
+  let twitchRuntimeGeneration = 0;
+  let twitchMetadataQueue: Promise<void> = Promise.resolve();
   let twitchLive: Awaited<ReturnType<TwitchClient['getLiveState']>> = { isLive: false, title: null, category: null, categoryId: null, startedAt: null, viewerCount: null, thumbnailUrl: null };
   let twitchChatters: Awaited<ReturnType<TwitchClient['chatters']>> = { items: [], total: 0, cursor: null };
   let chatMessages: TwitchChatMessage[] = [];
@@ -786,7 +791,7 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
     if (!acceptedHost(req.headers.host)) { res.status(403).json({ ok: false, error: { code: 'HOST_REJECTED', message: 'Adresse du PC non autorisée. Utilisez une adresse LAN affichée sur le PC.' } }); return; }
     res.set('Cache-Control', 'no-store');
     res.set({
-      'Content-Security-Policy': "default-src 'self'; connect-src 'self' https://static-cdn.jtvnw.net ws://127.0.0.1:* ws://localhost:* ws://[::1]:* ws: wss:; script-src 'self'; style-src 'self' 'unsafe-inline'; frame-src https://player.twitch.tv https://www.twitch.tv https://www.youtube.com; img-src 'self' data: blob: https://static-cdn.jtvnw.net https://clips-media-assets2.twitch.tv https://clips-media-assets.twitch.tv; object-src 'none'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'",
+      'Content-Security-Policy': "default-src 'self'; media-src 'self' blob:; connect-src 'self' https://static-cdn.jtvnw.net ws://127.0.0.1:* ws://localhost:* ws://[::1]:* ws: wss:; script-src 'self'; style-src 'self' 'unsafe-inline'; frame-src https://player.twitch.tv https://www.twitch.tv https://www.youtube.com; img-src 'self' data: blob: https://static-cdn.jtvnw.net https://clips-media-assets2.twitch.tv https://clips-media-assets.twitch.tv; object-src 'none'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'",
       'X-Content-Type-Options': 'nosniff',
       'X-Frame-Options': 'DENY',
       'Referrer-Policy': 'no-referrer',
@@ -1459,6 +1464,7 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
   };
   executeAutomationCommand = async command => { await executeCommand({ ...command, commandId: `auto_${randomUUID()}`, correlationId: `auto_${randomUUID()}` }); };
   const resetTwitchRuntime = () => {
+    twitchRuntimeGeneration++;
     twitchEventSubKey = '';
     chatMessages = []; chatStatus = 'DISCONNECTED';
     twitchChatters = { items: [], total: 0, cursor: null };
@@ -1948,7 +1954,8 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
   app.delete('/api/v1/supports/streamlabs/history/config', async (req, res, next) => {
     try { if (!requireLocal(req, res)) return; res.json(await streamlabsHistory.clear()); } catch (error) { next(error); }
   });
-  registerLiveControlRoutes({
+  const liveControlRoutes = registerLiveControlRoutes({
+    signal: runtimeAbort.signal,
     app, soundboard, automation, support, streamlabs, streamlabsHistory, streamlabsOAuth, streamlabsRedirectUri, wizebot, eventCore, secrets, requireLocal, isRemote: isRemoteRequest, save, broadcast,
     sounds: () => local.sounds, setSounds: value => { local.sounds = value; }, sessionStartedAt: () => twitchLive.startedAt,
     resolveSoundLibraryFile, removeSoundLibraryFile,
@@ -2111,17 +2118,24 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
   });
   app.post('/api/v1/twitch/channel', async (req, res, next) => {
     try {
-      const configuration = control.snapshot().configuration;
-      const metadata = { ...configuration.metadata,
-        title: typeof req.body?.title === 'string' ? req.body.title : configuration.metadata.title || twitchChannel.title,
-        twitchGameId: typeof req.body?.gameId === 'string' ? req.body.gameId : configuration.metadata.twitchGameId,
-        tags: req.body?.tags === undefined ? configuration.metadata.tags : req.body.tags,
+      const generation = twitchRuntimeGeneration;
+      const assertSession = () => {
+        if (generation !== twitchRuntimeGeneration || runtimeAbort.signal.aborted) throw new Error('Les informations Twitch ont changé de connexion. Rouvrez le formulaire.');
       };
-      const receipt = await control.execute({ id: randomUUID(), issuedAt: new Date().toISOString(), action: 'metadata.apply', expectedRevision: configuration.revision, metadata });
-      res.status(receipt.status === 'succeeded' ? 200 : 409).json({ ...(isRemoteRequest(req) ? toRemoteDashboardState(snapshot()) : snapshot()), receipt,
-        ...(receipt.status !== 'succeeded' ? { error: { code: 'MULTISTREAM_INCOMPLETE', message: receipt.message } } : {}),
+      const operation = twitchMetadataQueue.then(async () => {
+        assertSession();
+        const channel = await applyLegacyTwitchMetadata(req.body, twitchChannel, async patch => {
+          assertSession();
+          await twitch.updateChannelMetadata(patch);
+          assertSession();
+        });
+        assertSession();
+        twitchChannel = channel;
+        broadcast();
       });
-      return;
+      twitchMetadataQueue = operation.catch(() => undefined);
+      await operation;
+      res.json(isRemoteRequest(req) ? toRemoteDashboardState(snapshot()) : snapshot());
     } catch (error) { next(error); }
   });
   app.post('/api/v1/commands', async (req, res, next) => {
@@ -2683,7 +2697,13 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
       res.json(await providerSync('twitch', async () => {
         const deleting = local.planning.filter(item => item.deletionPending).map(item => item.id);
         if (deleting.length) await planning().refreshTwitch(Date.now(), deleting);
-        local.planning = await twitch.sync(structuredClone(local.planning));
+        local.planning = await twitch.sync(structuredClone(local.planning), async items => {
+          runtimeAbort.signal.throwIfAborted();
+          // providerSync holds the planning queue for this whole operation.
+          // Persist a detached intent before Twitch receives a CREATE request.
+          local.planning = structuredClone(items);
+          await save();
+        });
         await planning().refreshTwitch();
         local.twitchLastSyncedAt = new Date().toISOString();
         invalidatePreflight();
@@ -3082,19 +3102,7 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
   validator.unref();
   const twitchLivePoller = setInterval(() => { void refreshTwitchLive(); }, 30_000);
   twitchLivePoller.unref();
-  const initializeStreamlabs = async () => {
-    if (!streamlabsSocketToken && streamlabsOAuthSecrets?.accessToken) {
-      try {
-        streamlabsSocketToken = await streamlabsOAuth.socketToken(streamlabsOAuthSecrets.accessToken);
-        if (backgroundStopped) return;
-        await secrets.setStreamlabsToken?.(streamlabsSocketToken);
-        streamlabs.configure(streamlabsSocketToken);
-      } catch (error) {
-        void Promise.resolve(logger.warn('Impossible de restaurer le Socket Token Streamlabs depuis OAuth.', error)).catch(() => undefined);
-      }
-    }
-    if (!backgroundStopped) await streamlabs.connect();
-  };
+  const initializeStreamlabs = () => liveControlRoutes.initializeStreamlabs(streamlabsSocketToken, streamlabsOAuthSecrets?.accessToken);
   let finishProviderStartup!: () => void;
   const providersReady = new Promise<void>(resolve => { finishProviderStartup = resolve; });
   let providerStartupWork: Promise<void> | undefined;
@@ -3160,5 +3168,10 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
     throw startupSignal?.aborted ? startupSignal.reason : error;
   }
   const urlHost = host === '0.0.0.0' ? '127.0.0.1' : host === '::1' ? '[::1]' : host;
-  return { port: actualPort, url: `http://${urlHost}:${actualPort}`, state: snapshot, providersReady, server, stop };
+  return { port: actualPort, url: `http://${urlHost}:${actualPort}`, state: snapshot, providersReady, server, stop,
+    assessRestartSafety: () => assessRestartSafety({ obsEnabled: options.obsEnabled !== false, stopped: () => Boolean(stopPromise),
+      pending: () => control.hasPendingActions || commands.hasPendingCommands,
+      revision: () => JSON.stringify([commands.activityRevision, control.snapshot().receipts.map(receipt => [receipt.id, receipt.status])]),
+      configuration: () => control.snapshot().configuration, obs }),
+  };
 }

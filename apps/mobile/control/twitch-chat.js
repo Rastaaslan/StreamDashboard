@@ -1,4 +1,5 @@
 const FRESH_FOR_MS = 10_000;
+const REFRESH_EVERY_MS = 2_500;
 const BADGES = { broadcaster: 'Diffuseur', moderator: 'Modérateur', vip: 'VIP', subscriber: 'Abonné' };
 const bounded = (value, maximum = 2_000) => typeof value === 'string' ? value.slice(0, maximum) : '';
 
@@ -40,11 +41,21 @@ export function createTwitchChat(root, { request, configure = () => {} } = {}) {
   const send = get('[data-twitch-send]'), resultLabel = get('[data-twitch-result]');
   const nodes = new Map();
   let sourceKey = '', sourceLabel = '', online = false, snapshot = null, disposed = false;
-  let generation = 0, flight, checkedAt = 0, receivedAt = 0, readError = false, sending = false, result = '';
+  let generation = 0, flight, checkedAt = 0, receivedAt = 0, readError = false, sending = false, result = '', pollTimer;
 
-  function fresh() { return !disposed && online && snapshot && !readError && Date.now() - receivedAt <= FRESH_FOR_MS; }
+  function fresh() {
+    const age = Date.now() - receivedAt;
+    return !disposed && online && snapshot && !readError && age >= -5_000 && age <= FRESH_FOR_MS;
+  }
   function maySend() { return Boolean(fresh() && snapshot.accountConnected && snapshot.capabilities.chatWrite && typeof request === 'function'); }
   function setResult(message) { result = message; resultLabel.textContent = result; }
+  function stopPolling() { clearInterval(pollTimer); pollTimer = undefined; }
+  function poll() {
+    if (disposed || !root.isConnected || !online || !sourceKey || typeof request !== 'function') { stopPolling(); return; }
+    // A slow OBS/configuration request must not freeze the chat or leave an old
+    // identity looking fresh while another chat read is still pending.
+    draw(); void refresh();
+  }
   function clearSource() {
     generation++; flight = undefined; snapshot = null; checkedAt = 0; receivedAt = 0; readError = false; sending = false;
     nodes.clear(); list.replaceChildren(); draft.value = ''; setResult('');
@@ -169,11 +180,13 @@ export function createTwitchChat(root, { request, configure = () => {} } = {}) {
       const nextKey = typeof context.sourceKey === 'string' ? context.sourceKey : '';
       if (nextKey !== sourceKey) { clearSource(); sourceKey = nextKey; }
       const nextOnline = context.online === true;
-      if (online && !nextOnline) { generation++; flight = undefined; sending = false; }
+      if (online && !nextOnline) { generation++; flight = undefined; sending = false; readError = Boolean(snapshot); }
       if (!online && nextOnline) checkedAt = 0;
       online = nextOnline; sourceLabel = bounded(context.sourceLabel, 100); draw(); void refresh();
+      if (online && sourceKey && typeof request === 'function') { pollTimer ??= setInterval(poll, REFRESH_EVERY_MS); }
+      else stopPolling();
     },
     refresh,
-    destroy() { disposed = true; generation++; online = false; flight = undefined; },
+    destroy() { disposed = true; generation++; online = false; flight = undefined; stopPolling(); },
   };
 }

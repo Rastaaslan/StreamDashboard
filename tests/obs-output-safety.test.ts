@@ -163,4 +163,88 @@ describe('replay configuration and runtime availability', () => {
     socket().replayError = new Error('Connection closed');
     await expect(obs.replayStatus()).rejects.toThrow(/joindre OBS/);
   });
+  it.each([true, false])('confirms a replay change after a lost acknowledgement without a second mutation (%s)', async active => {
+    socket().replayActive = !active;
+    const original = socket().call.getMockImplementation()!;
+    socket().call.mockImplementation(async (type, data) => {
+      const result = await original(type, data);
+      if (type === (active ? 'StartReplayBuffer' : 'StopReplayBuffer')) throw new Error('Acknowledgement lost');
+      return result;
+    });
+    await expect(obs.setReplayBuffer(active)).resolves.toBeUndefined();
+    expect(socket().call.mock.calls.filter(([type]) => type === (active ? 'StartReplayBuffer' : 'StopReplayBuffer'))).toHaveLength(1);
+  });
+  it('keeps an explicitly rejected replay change definitive', async () => {
+    const original = socket().call.getMockImplementation()!;
+    socket().call.mockImplementation(async (type, data) => {
+      if (type === 'StartReplayBuffer') throw Object.assign(new Error('Replay disabled'), { code: 604 });
+      return original(type, data);
+    });
+    const error = await obs.setReplayBuffer(true).catch(error => error);
+    expect(error).toMatchObject({ code: 604 });
+    expect(error.name).not.toBe('ACTION_UNCERTAIN');
+    expect(socket().call.mock.calls.filter(([type]) => type === 'StartReplayBuffer')).toHaveLength(1);
+  });
+  it('keeps a dispatched replay change uncertain if its confirmation becomes unavailable', async () => {
+    const original = socket().call.getMockImplementation()!;
+    let started = false;
+    socket().call.mockImplementation(async (type, data) => {
+      if (type === 'StartReplayBuffer') started = true;
+      if (type === 'GetReplayBufferStatus' && started) throw Object.assign(new Error('Output unavailable'), { code: 604 });
+      return original(type, data);
+    });
+    await expect(obs.setReplayBuffer(true)).rejects.toMatchObject({ name: 'ACTION_UNCERTAIN' });
+    expect(socket().call.mock.calls.filter(([type]) => type === 'StartReplayBuffer')).toHaveLength(1);
+  });
+  it('does not confirm a replay command against a replacement OBS connection', async () => {
+    const previous = socket(), original = previous.call.getMockImplementation()!;
+    previous.call.mockImplementation(async (type, data) => {
+      const result = await original(type, data);
+      if (type === 'StartReplayBuffer') await obs.configure('ws://127.0.0.1:4455', '');
+      return result;
+    });
+    await expect(obs.setReplayBuffer(true)).rejects.toMatchObject({ name: 'ACTION_UNCERTAIN' });
+    expect(previous.call.mock.calls.filter(([type]) => type === 'StartReplayBuffer')).toHaveLength(1);
+    expect(socket()).not.toBe(previous);
+    expect(socket().call.mock.calls.some(([type]) => ['StartReplayBuffer', 'GetReplayBufferStatus'].includes(type))).toBe(false);
+  });
+  it('does not let an automatic preparation and a manual replay action dispatch concurrently', async () => {
+    let finish!: (value: Awaited<ReturnType<typeof obs.replayStatus>>) => void;
+    const status = vi.spyOn(obs, 'replayStatus').mockImplementation(() => new Promise(resolve => { finish = resolve; }));
+    const first = obs.setReplayBuffer(true);
+    await expect(obs.setReplayBuffer(false)).rejects.toThrow('déjà en cours');
+    await expect(obs.saveReplay()).rejects.toThrow('Changement du tampon');
+    finish({ mode: 'Advanced', enabled: true, available: true, active: false, seconds: 30, directory: 'D:/Clips', error: '' });
+    await first;
+    expect(status).toHaveBeenCalledTimes(1);
+    expect(socket().call.mock.calls.filter(([type]) => type === 'StartReplayBuffer')).toHaveLength(1);
+  });
+  it('does not label an explicitly rejected SaveReplayBuffer as an uncertain saved clip', async () => {
+    socket().replayActive = true;
+    const original = socket().call.getMockImplementation()!;
+    socket().call.mockImplementation(async (type, data) => {
+      if (type === 'SaveReplayBuffer') throw Object.assign(new Error('Replay unavailable'), { code: 604 });
+      return original(type, data);
+    });
+    const error = await obs.saveReplay().catch(error => error);
+    expect(error).toMatchObject({ code: 604 });
+    expect(error.name).not.toBe('ACTION_UNCERTAIN');
+    expect(socket().call.mock.calls.filter(([type]) => type === 'SaveReplayBuffer')).toHaveLength(1);
+  });
+  it('discards a saved path when the OBS connection changes during confirmation', async () => {
+    socket().replayActive = true;
+    const previous = socket(), original = previous.call.getMockImplementation()!;
+    let reads = 0;
+    previous.call.mockImplementation(async (type, data) => {
+      if (type === 'GetLastReplayBufferReplay') {
+        if (++reads === 1) return { savedReplayPath: 'D:/Clips/old.mp4' };
+        await obs.configure('ws://127.0.0.1:4455', '');
+        return { savedReplayPath: 'D:/Clips/late.mp4' };
+      }
+      return original(type, data);
+    });
+    await expect(obs.saveReplay()).rejects.toMatchObject({ name: 'ACTION_UNCERTAIN' });
+    expect(previous.call.mock.calls.filter(([type]) => type === 'SaveReplayBuffer')).toHaveLength(1);
+    expect(socket().call.mock.calls.some(([type]) => type === 'SaveReplayBuffer')).toBe(false);
+  });
 });

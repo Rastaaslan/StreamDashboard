@@ -4,6 +4,8 @@ import type { LiveMetadata } from '../../../packages/contracts/src/control.js';
 
 interface Broadcast { id: string; snippet: { title: string; channelId: string; liveChatId?: string; scheduledStartTime?: string }; status: { lifeCycleStatus: string }; contentDetails: { boundStreamId?: string } }
 interface YouTubeSelection { clientId: string; broadcastId: string; channelId: string }
+interface YouTubeAuthContext { clientId: string; generation: number }
+interface YouTubeRequestSelection extends YouTubeSelection, YouTubeAuthContext {}
 interface VideoSnippet { title: string; description: string; categoryId: string; channelId: string; tags?: string[]; defaultLanguage?: string; defaultAudioLanguage?: string }
 type MetadataField = 'title' | 'description' | 'categoryId' | 'tags';
 
@@ -88,12 +90,18 @@ const transientObservation=(error:unknown)=>error instanceof YouTubeApiError&&(e
 const observationUnavailable=(error:YouTubeApiError)=>Object.assign(new Error('Lecture YouTube temporairement indisponible. '+error.message),{name:'ACTION_OBSERVATION_UNAVAILABLE'});
 
 export class YouTubeClient {
-  private attempt?: { state: string; verifier: string; redirect: string; clientId: string; expires: number };
-  private refreshFlight?: Promise<Record<string,string>>;
+  private attempt?: { state: string; verifier: string; redirect: string; clientId: string; expires: number; generation: number };
+  private generation = 0;
+  private tokenWrites: Promise<void> = Promise.resolve();
+  private refreshFlight?: { context: YouTubeAuthContext; refreshToken: string; promise: Promise<Record<string,string>> };
   private transitionAttempts = new Set<string>();
   constructor(private secrets: SecretStore, private configuration: () => YouTubeSelection, private request: typeof fetch = fetch) {}
-  private selection(): YouTubeSelection { return {...this.configuration()}; }
-  private assertSelection(selected: YouTubeSelection) {
+  private selection(): YouTubeRequestSelection { return {...this.configuration(),generation:this.generation}; }
+  private assertAuth(context: YouTubeAuthContext) {
+    if (context.generation !== this.generation || context.clientId !== this.configuration().clientId) throw new Error('Connexion YouTube remplacée ou déconnectée. Recommencez depuis le compte actuel.');
+  }
+  private assertSelection(selected: YouTubeRequestSelection) {
+    this.assertAuth(selected);
     const current=this.configuration();
     if (current.clientId!==selected.clientId || current.channelId!==selected.channelId || current.broadcastId!==selected.broadcastId) throw new Error('La cible YouTube a changé pendant la lecture. Actualisez les informations.');
   }
@@ -104,54 +112,85 @@ export class YouTubeClient {
   authorize(redirect: string) {
     const clientId = this.configuration().clientId;
     if (!clientId) throw new Error('Renseignez le Client ID Google Desktop pour YouTube.');
+    // Supersede an older authorization/refresh without deleting the still-valid
+    // account if this browser authorization is later cancelled by the user.
+    this.generation++; this.refreshFlight=undefined;
     const verifier = randomBytes(48).toString('base64url'), state = randomBytes(32).toString('base64url');
-    this.attempt = { state, verifier, redirect, clientId, expires:Date.now()+600_000 };
+    this.attempt = { state, verifier, redirect, clientId, expires:Date.now()+600_000, generation:this.generation };
     const params = new URLSearchParams({client_id:clientId, redirect_uri:redirect, response_type:'code', scope:'https://www.googleapis.com/auth/youtube.force-ssl', access_type:'offline', prompt:'consent', state, code_challenge:createHash('sha256').update(verifier).digest('base64url'), code_challenge_method:'S256'});
     return { url:`https://accounts.google.com/o/oauth2/v2/auth?${params}`, expiresAt:this.attempt.expires, openOn:'stream-host' };
   }
-  private async tokenRequest(body:Record<string,string>) {
+  private async tokenRequest(body:Record<string,string>,context:YouTubeAuthContext) {
+    this.assertAuth(context);
     const secret=await this.secrets.getGoogleClientSecret?.();
+    this.assertAuth(context);
     const response=await this.request('https://oauth2.googleapis.com/token',{method:'POST',body:new URLSearchParams({...body,...(secret?{client_secret:secret}:{})}),signal:AbortSignal.timeout(15_000)})
       .catch(()=>{throw new YouTubeApiError(0,'networkError');});
+    this.assertAuth(context);
     if(!response.ok)throw await responseError(response);
     const value=await response.json().catch(()=>{throw new YouTubeApiError(response.status,'invalidResponse');}) as {access_token:string;refresh_token?:string;expires_in:number};
-    if(typeof value?.access_token!=='string'||!value.access_token||!Number.isFinite(value.expires_in)||value.expires_in<=0)throw new YouTubeApiError(response.status,'invalidResponse');
+    this.assertAuth(context);
+    if(typeof value?.access_token!=='string'||!value.access_token||!Number.isFinite(value.expires_in)||value.expires_in<=0||(value.refresh_token!==undefined&&(typeof value.refresh_token!=='string'||!value.refresh_token)))throw new YouTubeApiError(response.status,'invalidResponse');
     return value;
+  }
+  private writeTokens(operation:()=>Promise<void>) {
+    const pending=this.tokenWrites.then(operation);
+    this.tokenWrites=pending.catch(()=>undefined);
+    return pending;
+  }
+  private async persistTokens(context:YouTubeAuthContext,tokens:Record<string,string>) {
+    await this.writeTokens(async()=>{
+      this.assertAuth(context);
+      await this.secrets.setYouTubeTokens?.(tokens);
+    });
+    this.assertAuth(context);
   }
   async exchange(code: string, state: string) {
     const attempt = this.attempt;
     if (!attempt || attempt.expires < Date.now() || state.length !== attempt.state.length || !timingSafeEqual(Buffer.from(state),Buffer.from(attempt.state)) || !code || code.length > 4000) throw new Error('Retour OAuth expiré ou invalide.');
     this.attempt = undefined;
     if (attempt.clientId !== this.configuration().clientId) throw new Error('Configuration YouTube modifiée pendant la connexion.');
-    const value = await this.tokenRequest({client_id:attempt.clientId,code,code_verifier:attempt.verifier,redirect_uri:attempt.redirect,grant_type:'authorization_code'});
+    const value = await this.tokenRequest({client_id:attempt.clientId,code,code_verifier:attempt.verifier,redirect_uri:attempt.redirect,grant_type:'authorization_code'},attempt);
     if (!value.refresh_token || !value.access_token || !this.secrets.setYouTubeTokens) throw new Error('Autorisation YouTube incomplète. Reconnectez le compte.');
-    await this.secrets.setYouTubeTokens({clientId:attempt.clientId, accessToken:value.access_token,refreshToken:value.refresh_token,expiresAt:String(Date.now()+value.expires_in*1000)});
+    await this.persistTokens(attempt,{clientId:attempt.clientId, accessToken:value.access_token,refreshToken:value.refresh_token,expiresAt:String(Date.now()+value.expires_in*1000)});
   }
-  async disconnect() { this.attempt=undefined; await this.secrets.clearYouTubeTokens?.(); }
-  private async tokens() {
+  async disconnect() {
+    this.generation++; this.attempt=undefined; this.refreshFlight=undefined; this.transitionAttempts.clear();
+    // Queue the clear after any disk write which already started. Otherwise a
+    // late write can resurrect the account after disconnect has returned.
+    await this.writeTokens(async()=>{await this.secrets.clearYouTubeTokens?.();});
+  }
+  private async tokens(context:YouTubeAuthContext) {
+    this.assertAuth(context);
     const tokens = await this.secrets.getYouTubeTokens?.();
+    this.assertAuth(context);
     if (!tokens?.refreshToken || tokens.clientId !== this.configuration().clientId) throw new Error('Connectez YouTube dans Configuration.');
     if (Number(tokens.expiresAt)>Date.now()+60_000) return tokens;
-    if (!this.refreshFlight) {
-      this.refreshFlight=(async()=>{const value=await this.tokenRequest({client_id:tokens.clientId,refresh_token:tokens.refreshToken,grant_type:'refresh_token'}); const next={...tokens,accessToken:value.access_token,expiresAt:String(Date.now()+value.expires_in*1000)}; await this.secrets.setYouTubeTokens?.(next); return next;})();
-      void this.refreshFlight.finally(()=>{this.refreshFlight=undefined;}).catch(()=>{});
+    if (!this.refreshFlight || this.refreshFlight.context.generation!==context.generation || this.refreshFlight.context.clientId!==context.clientId || this.refreshFlight.refreshToken!==tokens.refreshToken) {
+      const promise=(async()=>{const value=await this.tokenRequest({client_id:tokens.clientId,refresh_token:tokens.refreshToken,grant_type:'refresh_token'},context); const next={...tokens,accessToken:value.access_token,refreshToken:value.refresh_token??tokens.refreshToken,expiresAt:String(Date.now()+value.expires_in*1000)}; await this.persistTokens(context,next); return next;})();
+      const flight={context,refreshToken:tokens.refreshToken,promise};
+      this.refreshFlight=flight;
+      void promise.finally(()=>{if(this.refreshFlight===flight)this.refreshFlight=undefined;}).catch(()=>{});
     }
-    return this.refreshFlight;
+    return this.refreshFlight.promise;
   }
-  private async api<T>(path:string,init:RequestInit={},selected?:YouTubeSelection):Promise<T> {
-    if(selected)this.assertSelection(selected);
-    const tokens=await this.tokens();
-    if(selected)this.assertSelection(selected);
+  private async api<T>(path:string,init:RequestInit={},selected=this.selection()):Promise<T> {
+    this.assertSelection(selected);
+    const tokens=await this.tokens(selected);
+    this.assertSelection(selected);
     const response=await this.request('https://www.googleapis.com/youtube/v3/'+path,{...init,headers:{Authorization:'Bearer '+tokens.accessToken,'Content-Type':'application/json'},signal:AbortSignal.timeout(15_000)})
       .catch(()=>{throw new YouTubeApiError(0,'networkError');});
+    this.assertSelection(selected);
     if(!response.ok)throw await responseError(response);
-    return await response.json().catch(()=>{throw new YouTubeApiError(response.status,'invalidResponse');}) as T;
+    const value=await response.json().catch(()=>{throw new YouTubeApiError(response.status,'invalidResponse');}) as T;
+    this.assertSelection(selected);
+    return value;
   }
   private async pages<T>(resource:string,parameters:Record<string,string>):Promise<T[]> {
-    const items:T[]=[],seen=new Set<string>();let pageToken='';
+    const selected=this.selection(),items:T[]=[],seen=new Set<string>();let pageToken='';
     for(let page=0;page<100;page++){
       const query=new URLSearchParams({...parameters,maxResults:'50',...(pageToken?{pageToken}:{})});
-      const result=await this.api<{items?:T[];nextPageToken?:string}>(resource+'?'+query);
+      const result=await this.api<{items?:T[];nextPageToken?:string}>(resource+'?'+query,{},selected);
       if(!Array.isArray(result.items))throw new YouTubeApiError(200,'invalidResponse');
       items.push(...result.items);
       if(!result.nextPageToken)return items;

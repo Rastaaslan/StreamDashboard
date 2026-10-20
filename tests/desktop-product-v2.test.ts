@@ -7,9 +7,10 @@ const renderer = readFileSync(new URL('../apps/web/preview/preview.js', import.m
 const css = readFileSync(new URL('../apps/web/preview/preview.css', import.meta.url), 'utf8');
 const server = readFileSync(new URL('../apps/server/src/index.ts', import.meta.url), 'utf8');
 
-describe('Desktop V2 promu en production', () => {
-  it('est bien le shell chargé par Electron et possède une CSP', () => {
-    expect(main).toContain("'/preview/?runtime=1'");
+describe('Desktop V2 conservé comme aperçu et shell partagé en production', () => {
+  it('garde l’aperçu explicite à côté du shell partagé et conserve sa CSP', () => {
+    expect(main).toContain("process.argv.includes('--ui-preview=desktop-v2')");
+    expect(main).toContain("preview ? '/preview/' : '/mobile/control/'");
     expect(html).toContain('Content-Security-Policy');
     expect(html).toContain("script-src 'self'");
     expect(html).toContain('id="brand-context"');
