@@ -1,3 +1,4 @@
+import { validateProductProfile } from '../shared/planning-engine.js';
 import { openReplica, newId } from './autonomy-store.js';
 import { fields, pick, resources, equal, clone } from '../shared/autonomy.js';
 import { mergeOccurrencePatch } from '../shared/recurrence.js';
@@ -49,7 +50,7 @@ export async function createAutonomy(scope,network,onChange=()=>{}){
     return stage({[kind+'/'+id]:method==='DELETE'?null:{...resource(kind,id),...pick(body,fields[kind])}});
    }
   }
-  if(path==='/api/v1/profile'&&method==='PUT')return stage({'profile/root':body});
+  if(path==='/api/v1/profile'&&method==='PUT')return stage({'profile/root':validateProductProfile(body)});
   if(path==='/api/v1/discord/settings'&&method==='PUT')return stage({'discord/root':body});
   if(path==='/api/v1/google/target'&&method==='PUT')return stage({'google/root':body});
   if(path==='/api/v1/planning/bulk-delete/preview'){

@@ -1,3 +1,4 @@
+import { defaultProductProfile } from '../shared/planning-engine.js';
 import { newId } from './autonomy-store.js';
 
 export const LOCAL_SCOPE = 'device-workspace-v1';
@@ -25,6 +26,6 @@ export function newWorkspace(device) {
     data:{configuration:{version:1,revision:0,actions,replayAutoStart:true,outputs:{twitch:{kind:'unconfigured',name:''},youtube:{kind:'unconfigured',name:''}},youtube:{clientId:'',broadcastId:'',channelId:''},metadata:{title:'',description:'',twitchGameId:'',youtubeCategoryId:'20',tags:[]}},receipts:[],metadataResults:{},
       host:{hostname:device.name,standalone:true,local:false,settings,settingsRevision:'local',planning:[],planningRevisions:{},occurrences:[],platforms:{},
         state:{mode:'idle',obs:{connected:false,streaming:false,inputs:{},scenes:[]},twitch:{connected:false},timer:{running:false,duration:300,remaining:300,deadline:null},checklist:[]}}},
-    sounds:{sounds:[],available:false,currentPlayback:null},extras:{templates:[],automations:[],profile:{version:1},discord:{guildId:null,channelId:null,defaultMessage:''},google:{calendarId:null},wizebot:{commands:[],receipts:[]}},
+    sounds:{sounds:[],available:false,currentPlayback:null},extras:{templates:[],automations:[],profile:defaultProductProfile(),discord:{guildId:null,channelId:null,defaultMessage:''},google:{calendarId:null},wizebot:{channel:'',fetchedAt:'',items:[],edits:[]}},
   }};
 }

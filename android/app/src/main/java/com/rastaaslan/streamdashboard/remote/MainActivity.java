@@ -151,6 +151,18 @@ public class MainActivity extends Activity {
     }
   }
 
+  @Override protected void onDestroy() {
+    pageReady=false;
+    if(providerBridge!=null)providerBridge.close();
+    if(webView!=null)webView.destroy();
+    super.onDestroy();
+  }
+
+  void dispatchProviderResult(String id,String result) {
+    if (BuildConfig.PREVIEW_MODE || !pageReady) return;
+    webView.evaluateJavascript("window.dispatchEvent(new CustomEvent('provider-result',{detail:{id:"+org.json.JSONObject.quote(id)+",result:"+org.json.JSONObject.quote(result)+"}}))",null);
+  }
+
   void dispatchProviderAuth(String provider, boolean connected) {
     if (BuildConfig.PREVIEW_MODE || !pageReady) return;
     webView.evaluateJavascript("window.dispatchEvent(new CustomEvent('provider-auth',{detail:{provider:"+org.json.JSONObject.quote(provider)+",connected:"+connected+"}}))",null);

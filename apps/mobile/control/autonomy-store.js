@@ -1,11 +1,11 @@
-import { clone, equal, merge, overlay, resources } from '../shared/autonomy.js';
+import { clone, equal, merge, overlay, resources, fields, pick } from '../shared/autonomy.js';
 export const newId=()=>globalThis.crypto?.randomUUID?.()||'edit_'+Date.now()+'_'+Math.random().toString(36).slice(2);
 const containsSecret=value=>Boolean(value&&typeof value==='object'&&Object.entries(value).some(([key,v])=>/(?:token|secret|password|credential|authorization)/i.test(key)||containsSecret(v)));
 const empty = () => ({version:1,workspace:null,bundle:null,pending:[],lastSync:null,drafts:{}});
 /** Each transaction reads the newest record: multiple windows cannot overwrite each other's outbox. */
 export async function openReplica(scope, factory=globalThis.indexedDB){
  if(!factory)throw new Error('Le stockage local est indisponible. Aucun enregistrement hors ligne ne sera annoncé.');
- const db=await new Promise((resolve,reject)=>{const request=factory.open('streamdashboard-autonomy-v1',1);request.onupgradeneeded=()=>request.result.createObjectStore('replicas');request.onsuccess=()=>resolve(request.result);request.onerror=()=>reject(request.error);});
+ const db=await new Promise((resolve,reject)=>{const request=factory.open('streamdashboard-autonomy-v1',2);request.onupgradeneeded=()=>{for(const name of ['replicas','assets'])if(!request.result.objectStoreNames.contains(name))request.result.createObjectStore(name);};request.onsuccess=()=>resolve(request.result);request.onerror=()=>reject(request.error);});
  const transact=update=>new Promise((resolve,reject)=>{
   const tx=db.transaction('replicas',update?'readwrite':'readonly'),table=tx.objectStore('replicas'),request=table.get(scope);let value;
   request.onsuccess=()=>{try{value=request.result||empty();if(update){value=update(value)||value;table.put(value,scope);}}catch(e){tx.abort();reject(e);}};
@@ -17,7 +17,20 @@ export async function openReplica(scope, factory=globalThis.indexedDB){
   get record(){return clone(current);},
   async seed(response){await change(record=>{if(!record.bundle){record.workspace=response.workspace;record.bundle=clone(response.bundle);}});},
   async reload(){current=await transact();return current;},
-  view(){if(!current.bundle)return null;let bundle=clone(current.bundle);for(const op of current.pending){const remote=resources(bundle)[op.key]??null;bundle=overlay(bundle,{[op.key]:merge(op.base,op.value,remote).value});}return bundle;},
+  view(){if(!current.bundle)return null;let bundle=clone(current.bundle);for(const op of current.pending){const remote=resources(bundle)[op.key]??null;bundle=overlay(bundle,{[op.key]:merge(op.base,op.value,remote).value});}if(current.localPlanning)bundle.data.host.planning=clone(current.localPlanning);return bundle;},
+  // The native planner persists its journal before provider I/O, including
+  // uncertain creates and pending deletions. Never reduce it to editable fields.
+  async commitPlanning(items){await change(record=>{
+   if(!record.workspace?.startsWith('local:'))throw new Error('Espace autonome requis.');
+   const previous=record.localPlanning||this.view().data.host.planning;
+   for(const item of items){const old=previous.find(x=>x.id===item.id);if(old?.transferredTo&&!equal(old,item))throw new Error('Événement transféré : gérez-le dans l’espace de destination.');}
+   for(const id of new Set([...previous,...items].map(x=>x.id))){
+    const old=previous.find(x=>x.id===id),next=items.find(x=>x.id===id),base=old?pick(old,fields.planning):null,value=next?pick(next,fields.planning):null;
+    if(!equal(base,value))record.pending.push({id:newId(),key:'planning/'+id,base,value,createdAt:new Date().toISOString()});
+   }
+   record.localPlanning=clone(items);
+   for(const item of record.localPlanning){const link=item.providers?.twitch;if(link?.projections){const ids=[...new Set(Object.values(link.projections).map(x=>x.accountId).filter(Boolean))];if(ids.length===1)link.accountId=ids[0];}}
+  });},
   async stage(changes,bases){await change(record=>{
    if(Object.values(changes).some(value=>containsSecret(value)))throw new Error('Les secrets nécessitent une connexion sécurisée à la régie ; ils ne sont pas conservés dans la copie locale.');
    if(!record.bundle)throw new Error('Une première connexion est nécessaire pour récupérer les données de cette régie.');
@@ -36,23 +49,45 @@ export async function openReplica(scope, factory=globalThis.indexedDB){
    if(keep&&!equal(base,value))record.pending.push({id:newId(),key,base,value,createdAt:new Date().toISOString()});
   });},
   async draft(key,value){await change(record=>{record.drafts[key]=clone(value);});},
+  async addSound(file,name){
+   if(!current.workspace?.startsWith('local:'))throw new Error('Espace autonome requis.');
+   if(!name?.trim()||!file?.size||file.size>100*1024*1024||!/^.*\.(wav|mp3|ogg|aac|m4a|flac)$/i.test(file.name))throw new Error('Nom et fichier audio requis (100 Mo maximum).');
+   const id=newId(),value={name:name.trim(),favorite:false,volume:1,enabled:true,cooldownMs:0,category:'Général',monitoringMode:'stream'};
+   await new Promise((resolve,reject)=>{const tx=db.transaction(['replicas','assets'],'readwrite'),table=tx.objectStore('replicas'),r=table.get(scope);
+    r.onsuccess=()=>{const record=r.result;record.pending.push({id:newId(),key:'sound/'+id,base:null,value,createdAt:new Date().toISOString()});record.localAssets||={};record.localAssets[id]={name:file.name,type:file.type,size:file.size};tx.objectStore('assets').put(file,scope+'/'+id);table.put(record,scope);};
+    tx.oncomplete=resolve;tx.onerror=()=>reject(tx.error);tx.onabort=()=>reject(tx.error||new Error('Import audio annulé.'));
+   });current=await transact();return id;
+  },
+  async soundAsset(id){return new Promise((resolve,reject)=>{const r=db.transaction('assets').objectStore('assets').get(scope+'/'+id);r.onsuccess=()=>resolve(r.result);r.onerror=()=>reject(r.error);});},
   // Move the outbox atomically; the original local workspace remains readable.
   // Stable operation IDs make repeated imports and lost responses harmless.
   async importLocal(sourceScope){
    if(sourceScope===scope)throw new Error('Choisissez une régie de destination.');
-   await new Promise((resolve,reject)=>{
+   const source=await openReplica(sourceScope,factory);const workspace=source.record.workspace;source.close();
+   const transfer=()=>new Promise((resolve,reject)=>{
     const tx=db.transaction('replicas','readwrite'),table=tx.objectStore('replicas');
     const sourceRequest=table.get(sourceScope),targetRequest=table.get(scope);let ready=0;
     const apply=()=>{if(++ready!==2)return;try{
      const source=sourceRequest.result,target=targetRequest.result;
      if(!source?.workspace?.startsWith('local:')||!target?.bundle||target.workspace.startsWith('local:'))throw new Error('Connectez d’abord la régie de destination.');
      let bundle=clone(source.bundle);
-     for(const op of source.pending){bundle=overlay(bundle,{[op.key]:merge(op.base,op.value,resources(bundle)[op.key]??null).value});if(!target.pending.some(x=>x.id===op.id))target.pending.push(clone(op));}
+     const owned=source.localPlanning;
+     const transferIds=new Set();
+     for(const op of source.pending){
+      bundle=overlay(bundle,{[op.key]:merge(op.base,op.value,resources(bundle)[op.key]??null).value});
+      if(owned&&op.key.startsWith('planning/')){transferIds.add(op.key.slice(9));continue;}
+      if(!target.pending.some(x=>x.id===op.id))target.pending.push(clone(op));
+     }
+     if(owned)for(const id of transferIds){const item=owned.find(x=>x.id===id);if(!item||item.transferredTo)continue;
+      if(Object.values(item.providers||{}).some(link=>link.uncertainCreate||Object.values(link.projections||{}).some(entry=>entry.uncertainCreate)))throw new Error('Réconciliez les publications incertaines avant de transférer : '+item.title);
+      target.pending.push({id:newId(),key:'planningTransfer/'+id,base:null,value:clone(item),createdAt:new Date().toISOString()});
+      item.transferredTo=target.workspace;item.editable=false;
+     }
      source.bundle=bundle;source.pending=[];table.put(source,sourceScope);table.put(target,scope);
     }catch(e){tx.abort();reject(e);}};
     sourceRequest.onsuccess=apply;targetRequest.onsuccess=apply;
     tx.oncomplete=resolve;tx.onerror=()=>reject(tx.error);tx.onabort=()=>reject(tx.error||new Error('Import annulé.'));
-   });current=await transact();
+   });if(globalThis.navigator?.locks)await navigator.locks.request('sd-planning:'+workspace,transfer);else await transfer();current=await transact();
   },
   close(){db.close();},
  };

@@ -26,13 +26,13 @@ test('ProviderBridge compiles with javac and accepts only idempotent deletion re
       public String getString(String k) throws JSONException { return (String)values.get(k); }
       public String optString(String k) { return optString(k, ""); } public String optString(String k,String d) { return (String)values.getOrDefault(k,d); }
       public long optLong(String k) { return 0; } public long optLong(String k,long d) { return d; }
-      public boolean optBoolean(String k) { return false; } public boolean has(String k) { return values.containsKey(k); }
-      public JSONObject getJSONObject(String k) throws JSONException { return this; }
+      public boolean optBoolean(String k) { return java.lang.Boolean.TRUE.equals(values.get(k)); } public boolean has(String k) { return values.containsKey(k); }
+      public JSONObject getJSONObject(String k) throws JSONException { return (JSONObject)values.get(k); }
       public JSONObject optJSONObject(String k) { return (JSONObject)values.get(k); }
-      public JSONArray getJSONArray(String k) throws JSONException { return null; }
-      public JSONArray optJSONArray(String k) { return null; }
+      public JSONArray getJSONArray(String k) throws JSONException { return (JSONArray)values.get(k); }
+      public JSONArray optJSONArray(String k) { return (JSONArray)values.get(k); }
     }`,
-    'org/json/JSONArray.java': 'package org.json; public class JSONArray { public JSONArray put(Object v) { return this; } public int length() { return 0; } public String getString(int i) throws JSONException { return ""; } public JSONObject getJSONObject(int i) throws JSONException { return null; } }',
+    'org/json/JSONArray.java': 'package org.json; public class JSONArray { private java.util.List<Object> values=new java.util.ArrayList<>(); public JSONArray put(Object v) { values.add(v); return this; } public int length() { return values.size(); } public String getString(int i) throws JSONException { return (String)values.get(i); } public JSONObject getJSONObject(int i) throws JSONException { return (JSONObject)values.get(i); } }',
     'SecureCredentialStore.java': `package ${pkg}; class SecureCredentialStore { SecureCredentialStore(android.app.Activity a) {} String get(String k) { return ""; } void put(String k,String v) {} void clear(String k) {} }`,
     'BuildConfig.java': `package ${pkg}; class BuildConfig { static final String TWITCH_ANDROID_CLIENT_ID="", GOOGLE_ANDROID_CLIENT_ID=""; static final boolean PREVIEW_MODE=false; }`,
     'GoogleAuthorizationAdapter.java': `package ${pkg}; class GoogleAuthorizationAdapter implements GoogleAuthorizationFlow.Adapter {
@@ -53,6 +53,19 @@ test('ProviderBridge compiles with javac and accepts only idempotent deletion re
         if (!patch.getString("title").equals("New") || patch.has("start_time") || patch.has("duration") || patch.has("timezone") || patch.has("category_id")) throw new AssertionError("Recurring title PATCH overspecified: " + patch);
         event.put("endAtUtc", "2020-01-01T20:00:00Z");
         if (!ProviderBridge.twitchSchedulePayload(event, original).getString("duration").equals("120")) throw new AssertionError("Duration must be a string");
+
+        org.json.JSONObject allDay=new org.json.JSONObject().put("id","event").put("localId","local").put("title","Jour").put("allDay",true).put("description","x".repeat(4000)).put("startAtUtc","2030-11-01T00:00:00Z").put("endAtUtc","2030-11-02T00:00:00Z");
+        org.json.JSONObject payload=ProviderBridge.googlePlanningPayload(allDay);
+        if(!payload.getJSONObject("start").getString("date").equals("2030-11-01")||payload.getJSONObject("start").has("dateTime"))throw new AssertionError("all-day flattened to time");
+        if(payload.getString("description").length()!=4000)throw new AssertionError("description truncated");
+        if(!payload.getJSONObject("extendedProperties").getJSONObject("private").getString("streamDashboardId").equals("local"))throw new AssertionError("identity missing");
+        if(!ProviderBridge.googleRemoteId(allDay).equals("sd25bf8e1a2393f1108d37029b3df5593236c755742ec93465bbafa9b290bddcf6"))throw new AssertionError("Google ID differs from server SHA256");
+        allDay.put("allDay",false).put("recurrence",new org.json.JSONObject().put("timeZone","Europe/Paris")).put("recurrenceLines",new org.json.JSONArray().put("RRULE:FREQ=WEEKLY;INTERVAL=1"));
+        payload=ProviderBridge.googlePlanningPayload(allDay);
+        if(!payload.getJSONObject("start").getString("timeZone").equals("Europe/Paris")||!payload.getJSONArray("recurrence").getString(0).startsWith("RRULE:"))throw new AssertionError("recurrence omitted");
+        String resource="ajax/list/commands_list.php?t="+"a".repeat(64);
+        if(!ProviderBridge.wizebotResource("ajax: '"+resource+"'").equals(resource))throw new AssertionError("WizeBot list discovery");
+        try{ProviderBridge.wizebotResource("ajax: 'https://example.test/steal'");throw new AssertionError("External list URL accepted");}catch(Exception expected){}
 
         for (String code : new String[]{"INVALID_PAYLOAD", "INVALID_LINK", "REAUTH_REQUIRED", "HTTP_400", "HTTP_401", "HTTP_403", "HTTP_404", "HTTP_405", "HTTP_410", "HTTP_412", "HTTP_413", "HTTP_415", "HTTP_422", "HTTP_429"}) {
           if (!ProviderBridge.isDefinitiveNonCreation(code)) throw new AssertionError(code);
@@ -77,7 +90,7 @@ test('ProviderBridge compiles with javac and accepts only idempotent deletion re
         }
       }
     }`,
-    'MainActivity.java': `package ${pkg}; class MainActivity extends android.app.Activity { void dispatchProviderAuth(String p,boolean c) {} }`,
+    'MainActivity.java': `package ${pkg}; class MainActivity extends android.app.Activity { void dispatchProviderAuth(String p,boolean c) {} void dispatchProviderResult(String id,String result) {} }`,
     'DeepLinkRouter.java': `package ${pkg}; class DeepLinkRouter { enum Route { OAUTH } static Route route(String s) { return null; } }`,
   };
   try {

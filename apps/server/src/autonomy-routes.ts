@@ -7,7 +7,7 @@ export function registerAutonomyRoutes(app:express.Application, service:Autonomy
  observe():Promise<void>;
  apply(key:string,value:any,req:express.Request):Promise<void>;
 }){
- const allowed=new Set(['settings','planning','action','output','youtube','preferences','profile','template','sound','automation','discord','google']);
+ const allowed=new Set(['settings','planning','planningTransfer','action','output','youtube','preferences','profile','template','sound','automation','discord','google']);
  app.get('/api/v2/autonomy', (req,res)=>{void options.observe().catch(()=>{});res.json({workspace:service.workspace,bundle:options.bundle(req)});});
  app.post('/api/v2/autonomy/sync',async(req,res,next)=>{
   try{
@@ -16,7 +16,8 @@ export function registerAutonomyRoutes(app:express.Application, service:Autonomy
    if(edit.value!==null&&(!edit.value||typeof edit.value!=='object'||Array.isArray(edit.value)))throw new Error('Objet attendu.');
    if(fields[kind]&&edit.value!==null&&Object.keys(edit.value).some(k=>!fields[kind].includes(k)))throw new Error('Champ non synchronisable.');
    if(edit.value===null&&!['planning','action','template','sound','automation'].includes(kind))throw new Error('Cette configuration ne peut pas être supprimée.');
-   const receipt=await service.apply(req.body.workspace,edit,()=>resources(options.bundle(req))[edit.key]??null,value=>options.apply(edit.key,value,req));
+   const read=()=>kind==='planningTransfer'?options.bundle(req).data.host.planning.find((item:any)=>item.id===id)??null:resources(options.bundle(req))[edit.key]??null;
+   const receipt=await service.apply(req.body.workspace,edit,read,value=>options.apply(edit.key,value,req));
    res.json({receipt,workspace:service.workspace,bundle:options.bundle(req)});
   }catch(e){next(e);}
  });

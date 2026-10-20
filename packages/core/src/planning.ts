@@ -8,7 +8,7 @@ import { assertProviderCreationCertain, createWithDurableIntent } from './provid
 import type { CalendarItem, ProviderLink } from '../../contracts/src/index.js';
 
 export type ProviderName = 'twitch' | 'google';
-export interface CreatePreparation { calendarId?: string }
+export interface CreatePreparation { calendarId?: string; accountId?: string }
 export interface PlanningProvider {
   /** Resolve the immutable destination before persisting a CREATE intent. No remote mutation. */
   prepareCreate?(item: CalendarItem): CreatePreparation | Promise<CreatePreparation>;

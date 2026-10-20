@@ -36,6 +36,8 @@ export async function createWithDurableIntent<T extends { id: string; revision?:
   if (prepare) {
     const destination = await prepare(item);
     if (destination.calendarId) link.calendarId = destination.calendarId;
+    if (link.accountId && destination.accountId && link.accountId !== destination.accountId) throw Object.assign(new Error('Reconnectez le compte propriétaire de cette publication.'),{mutationNotStarted:true});
+    if (destination.accountId) link.accountId = destination.accountId;
   }
   const request = provider === 'twitch' ? twitchCreateRequest(item) : structuredClone(item);
   const { providers: _providers, conflict: _conflict, ...original } = request;

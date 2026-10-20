@@ -17,7 +17,7 @@ import org.json.*;
 
 /** Narrow, local-origin-only provider API. OAuth credentials never cross this bridge. */
 public final class ProviderBridge {
-  private static final String TWITCH_SCOPES = "channel:manage:schedule";
+  private static final String TWITCH_SCOPES = "channel:manage:schedule user:write:chat";
   private static final String GOOGLE_SCOPES = "https://www.googleapis.com/auth/calendar.events https://www.googleapis.com/auth/calendar.readonly";
   private static final String DEVICE_PENDING = "twitch_device_pending";
   private final Map<String, JSONObject> diagnostics = new java.util.concurrent.ConcurrentHashMap<>();
@@ -36,6 +36,25 @@ public final class ProviderBridge {
       String scopes = credentials.get("google_grants");
       if (!scopes.isEmpty()) googleAuth.restore(Arrays.asList(scopes.split(" ")));
     } catch (Exception ignored) { } }, "provider-restore").start();
+  }
+  private final java.util.concurrent.ExecutorService operations = new java.util.concurrent.ThreadPoolExecutor(1,1,0L,java.util.concurrent.TimeUnit.MILLISECONDS,new java.util.concurrent.ArrayBlockingQueue<Runnable>(32));
+  void close(){operations.shutdown();}
+  @JavascriptInterface public String requestAsync(String raw) {
+    try {
+      if(raw==null||raw.length()>14_100_000)throw new IllegalArgumentException();
+      JSONObject input=new JSONObject(raw);String id=input.getString("id"),method=input.getString("method");
+      Set<String> allowed=Set.of("twitchTest","googleTest","youtubeTest","twitchStatus","googleStatus","twitchAuthorize","googleAuthorize","youtubeAuthorize","twitchPoll","twitchLogout","googleLogout","twitchSearchCategories","twitchCreatePlanning","twitchUpdatePlanning","twitchDeletePlanning","googleCreatePlanning","googleUpdatePlanning","googleDeletePlanning","twitchReconcilePlanning","googleReconcilePlanning","googleCalendars","googleEvents","googleReadPlanning","twitchReadPlanning","deviceService","wizebotSendEdit");
+      if(!id.matches("[a-zA-Z0-9_-]{8,100}")||!allowed.contains(method))throw new IllegalArgumentException();
+      String payload=input.getJSONObject("payload").toString();
+      operations.execute(() -> {
+        String result;
+        try { result=(String)ProviderBridge.class.getMethod(method,String.class).invoke(this,payload); }
+        catch(Exception error){result=failure("NETWORK","Résultat non confirmé. Vérifiez ce service avant de recommencer.");}
+        final String delivered=result;
+        activity.runOnUiThread(() -> ((MainActivity)activity).dispatchProviderResult(id,delivered));
+      });
+      return ok().toString();
+    }catch(Exception error){return failure("BUSY","Service occupé ou requête invalide. Aucune opération ajoutée.");}
   }
   @JavascriptInterface public String twitchTest(String ignored) { return testProvider("twitch"); }
   @JavascriptInterface public String googleTest(String ignored) { return testProvider("google"); }
@@ -68,6 +87,143 @@ public final class ProviderBridge {
 
   @JavascriptInterface public String twitchReconcilePlanning(String raw) { return guarded(() -> reconcilePlanning("twitch", body(raw))); }
   @JavascriptInterface public String googleReconcilePlanning(String raw) { return guarded(() -> reconcilePlanning("google", body(raw))); }
+
+  @JavascriptInterface public String googleCalendars(String raw) { return guarded(() -> googleCalendars()); }
+  @JavascriptInterface public String googleEvents(String raw) { return guarded(() -> googleEvents(body(raw))); }
+  @JavascriptInterface public String googleReadPlanning(String raw) { return guarded(() -> readPlanning("google", body(raw))); }
+  @JavascriptInterface public String twitchReadPlanning(String raw) { return guarded(() -> readPlanning("twitch", body(raw))); }
+
+  private JSONObject googleCalendars() throws Exception {
+    JSONArray items = new JSONArray(); String cursor = ""; int pages = 0;
+    do {
+      JSONObject result = google("GET", "https://www.googleapis.com/calendar/v3/users/me/calendarList?maxResults=250" + (cursor.isEmpty() ? "" : "&pageToken=" + enc(cursor)), null, null);
+      JSONArray values = result.optJSONArray("items");
+      if (values != null) for (int i=0; i<values.length(); i++) { JSONObject c=values.getJSONObject(i); items.put(new JSONObject().put("id",c.getString("id")).put("summary",c.optString("summary")).put("primary",c.optBoolean("primary")).put("accessRole",c.optString("accessRole")).put("writable",c.optString("accessRole").equals("owner")||c.optString("accessRole").equals("writer"))); }
+      cursor=result.optString("nextPageToken"); if (++pages>20) throw new ProviderException("LIMIT", "Trop de calendriers pour une lecture complète.");
+    } while (!cursor.isEmpty());
+    return ok().put("items",items);
+  }
+  private JSONObject googleEvents(JSONObject input) throws Exception {
+    String calendar=limited(input.optString("calendarId","primary"),200);
+    JSONObject selected=google("GET","https://www.googleapis.com/calendar/v3/users/me/calendarList/"+enc(calendar),null,null);
+    calendar=selected.getString("id"); JSONArray items=new JSONArray(); String cursor=""; int pages=0;
+    do {
+      JSONObject result=google("GET","https://www.googleapis.com/calendar/v3/calendars/"+enc(calendar)+"/events?maxResults=250&singleEvents=false&showDeleted=false"+(cursor.isEmpty()?"":"&pageToken="+enc(cursor)),null,null);
+      JSONArray values=result.optJSONArray("items");
+      if(values!=null)for(int i=0;i<values.length();i++){JSONObject value=values.getJSONObject(i);if(!value.optString("status").equals("cancelled")&&value.has("start")&&value.has("end"))items.put(googleRemote(value).put("remoteId",value.getString("id")).put("revision",value.optString("etag")));}
+      cursor=result.optString("nextPageToken");if(++pages>40)throw new ProviderException("LIMIT","Import trop volumineux. Aucun résultat partiel n’a été enregistré.");
+    }while(!cursor.isEmpty());
+    return ok().put("items",items).put("calendarId",calendar);
+  }
+  static JSONObject googleRemote(JSONObject value) throws Exception {
+    JSONObject start=value.getJSONObject("start"),end=value.getJSONObject("end"); boolean allDay=start.has("date");
+    return new JSONObject().put("title",value.optString("summary","Sans titre")).put("description",value.optString("description"))
+      .put("startAtUtc",allDay?start.getString("date")+"T00:00:00.000Z":start.getString("dateTime"))
+      .put("endAtUtc",allDay?end.getString("date")+"T00:00:00.000Z":end.getString("dateTime"))
+      .put("allDay",allDay).put("category","personal").put("recurrenceLines",value.optJSONArray("recurrence") == null ? new JSONArray() : value.getJSONArray("recurrence"))
+      .put("recurrenceTimeZone",start.optString("timeZone"));
+  }
+  private JSONObject readPlanning(String provider, JSONObject input) throws Exception {
+    JSONObject link=input.getJSONObject("link");String id=limited(link.optString("remoteId"),200);requireId(id);
+    try {
+      if(provider.equals("google")){
+        String calendar=limited(link.optString("calendarId","primary"),200);
+        JSONObject value=google("GET","https://www.googleapis.com/calendar/v3/calendars/"+enc(calendar)+"/events/"+enc(id),null,null);
+        if(value.optString("status").equals("cancelled"))return ok().put("deleted",true);
+        return ok().put("revision",value.optString("etag")).put("remote",googleRemote(value));
+      }
+      JSONObject response=twitch("GET","https://api.twitch.tv/helix/schedule?broadcaster_id="+enc(twitchUserId())+"&id="+enc(id),null);
+      JSONArray values=response.getJSONObject("data").optJSONArray("segments");
+      if(values==null||values.length()==0)return ok().put("deleted",true);
+      JSONObject value=values.getJSONObject(0),category=value.optJSONObject("category");
+      return ok().put("fingerprint",twitchFingerprint(value)).put("recurring",value.optBoolean("is_recurring")).put("remote",new JSONObject().put("title",value.optString("title")).put("startAtUtc",value.getString("start_time")).put("endAtUtc",value.getString("end_time")).put("twitchCategoryId",category==null?"":category.optString("id")).put("twitchCategoryName",category==null?"":category.optString("name")));
+    } catch(ProviderException e){if(isAbsentPlanningDelete(provider,e.code))return ok().put("deleted",true);throw e;}
+  }
+
+  @JavascriptInterface public String deviceService(String raw) { return guarded(() -> {
+    if(raw==null||raw.length()>14_000_000)throw new ProviderException("INVALID_PAYLOAD","Données trop volumineuses.");
+    JSONObject input=new JSONObject(raw);String provider=input.optString("provider"),operation=input.optString("operation");
+    if(!Arrays.asList("discord","streamlabs","wizebot").contains(provider))throw new ProviderException("INVALID_PAYLOAD","Service inconnu.");
+    String key="service_"+provider;
+    if(operation.equals("configure")) {
+      JSONObject value=input.getJSONObject("value");String token=limited(value.optString("token"),4096).trim();
+      if(token.isEmpty()||token.contains("\n")||token.contains("\r"))throw new ProviderException("INVALID_PAYLOAD","Jeton invalide.");
+      credentials.put(key,new JSONObject().put("token",token).toString());return ok().put("configured",true);
+    }
+    if(provider.equals("wizebot")&&operation.equals("catalog"))return publicWizebot();
+    String saved=credentials.get(key);if(saved.isEmpty()){if(operation.equals("status"))return ok().put("connected",false).put("configured",false);throw new ProviderException("REAUTH_REQUIRED","Connectez ce service sur cet appareil.");}
+    String token=new JSONObject(saved).getString("token");
+    if(provider.equals("discord")&&operation.equals("status")) {
+      JSONObject user=request("GET","https://discord.com/api/v10/users/@me",null,null,Map.of("Authorization","Bot "+token));
+      return ok().put("connected",true).put("configured",true).put("account",user.optString("username"));
+    }
+    if(provider.equals("discord")&&operation.equals("publish"))return discordPlanning(input,token);
+    if(operation.equals("status"))return ok().put("configured",true);
+    throw new ProviderException("INVALID_PAYLOAD","Opération de service inconnue.");
+  }); }
+  @JavascriptInterface public synchronized String wizebotSendEdit(String raw) { return guarded(() -> {
+    JSONObject input=body(raw);String id=input.optString("id"),commandId=input.optString("commandId"),response=input.optString("response").trim();
+    String message="!cmd edit "+commandId+" "+response;
+    if(!id.matches("[a-zA-Z0-9_-]{8,100}")||!commandId.matches("[0-9]{1,30}")||response.isEmpty()||message.length()>500||response.matches("(?s).*[\\x00-\\x1f\\x7f].*")||response.contains("###")||response.toLowerCase(Locale.ROOT).matches("(?s).*\\$cmd\\s*\\(.*"))throw new ProviderException("INVALID_PAYLOAD","Réponse WizeBot invalide.");
+    JSONObject test=new JSONObject(testProvider("twitch"));if(!test.optBoolean("tested")||!test.optJSONArray("capabilities").toString().contains("chat"))throw new ProviderException("REAUTH_REQUIRED","Réautorisez Twitch pour modifier WizeBot depuis cet appareil.");
+    JSONObject user=twitch("GET","https://api.twitch.tv/helix/users",null).getJSONArray("data").getJSONObject(0);
+    if(!input.optString("channel").equals(user.getString("login")))throw new ProviderException("INVALID_LINK","La chaîne Twitch a changé.");
+    String signature=base64(MessageDigest.getInstance("SHA-256").digest((user.getString("id")+"\n"+message).getBytes(StandardCharsets.UTF_8))),key="wizebot_edit_"+id,old=credentials.get(key);
+    if(!old.isEmpty()){JSONObject previous=new JSONObject(old);if(!signature.equals(previous.optString("signature")))throw new ProviderException("INVALID_PAYLOAD","Identifiant réutilisé.");return previous;}
+    JSONObject receipt=ok().put("signature",signature).put("status","uncertain").put("message","Envoi Twitch non confirmé. Vérifiez WizeBot avant de recommencer.");
+    credentials.put(key,receipt.toString());
+    JSONObject result=twitch("POST","https://api.twitch.tv/helix/chat/messages",new JSONObject().put("broadcaster_id",user.getString("id")).put("sender_id",user.getString("id")).put("message",message).toString()).getJSONArray("data").getJSONObject(0);
+    if(result.optBoolean("is_sent")&&!result.optString("message_id").isEmpty())receipt.put("status","sent").put("messageId",result.getString("message_id"));
+    else receipt.put("status","failed").put("message","Message refusé par Twitch.");
+    credentials.put(key,receipt.toString());return receipt;
+  }); }
+  private JSONObject publicWizebot() throws Exception {
+    String channel=twitch("GET","https://api.twitch.tv/helix/users",null).getJSONArray("data").getJSONObject(0).getString("login").toLowerCase(Locale.ROOT);
+    if(!channel.matches("[a-z0-9_]{1,25}"))throw new ProviderException("ACCOUNT","Chaîne Twitch invalide.");
+    String base="https://"+channel+".streaming.lv/";
+    Map<String,String> cookies=new HashMap<>();
+    publicPage(base+"?commands",null,cookies);
+    String page=publicPage(base+"ajax.php","p=commands&request%5Bcommands%5D=",cookies);
+    String resource=wizebotResource(page);
+    return ok().put("channel",channel).put("canSend",new JSONObject(testProvider("twitch")).optJSONArray("capabilities").toString().contains("chat")).put("catalog",new JSONObject(publicPage(base+resource,null,cookies)));
+  }
+  static String wizebotResource(String page)throws Exception {
+    java.util.regex.Matcher match=java.util.regex.Pattern.compile("ajax:\\s*['\"](ajax/list/commands_list\\.php\\?t=[a-f0-9]{32,128})['\"]",java.util.regex.Pattern.CASE_INSENSITIVE).matcher(page);
+    if(!match.find())throw new ProviderException("FORMAT","Activez la liste publique des commandes dans WizeBot, ou vérifiez son format.");
+    return match.group(1);
+  }
+  private String publicPage(String address,String form,Map<String,String> cookies) throws Exception {
+    HttpURLConnection connection=(HttpURLConnection)new URL(address).openConnection();
+    connection.setInstanceFollowRedirects(false);connection.setConnectTimeout(10000);connection.setReadTimeout(15000);
+    connection.setRequestProperty("Accept","*/*");connection.setRequestProperty("Cache-Control","no-cache");
+    if(!cookies.isEmpty())connection.setRequestProperty("Cookie",String.join("; ",cookies.values()));
+    try {
+      if(form!=null){connection.setRequestMethod("POST");connection.setDoOutput(true);connection.setRequestProperty("Content-Type","application/x-www-form-urlencoded");try(OutputStream out=connection.getOutputStream()){out.write(form.getBytes(StandardCharsets.UTF_8));}}
+      int status=connection.getResponseCode();if(status<200||status>=300)throw new ProviderException("HTTP_"+status,"Catalogue public WizeBot indisponible.");
+      for(Map.Entry<String,List<String>> entry:connection.getHeaderFields().entrySet())if(entry.getKey()!=null&&entry.getKey().equalsIgnoreCase("Set-Cookie"))for(String cookie:entry.getValue()){String pair=cookie.split(";",2)[0];cookies.put(pair.split("=",2)[0],pair);}
+      try(InputStream in=connection.getInputStream()){return readStream(in);}
+    }finally{connection.disconnect();}
+  }
+  private JSONObject discordPlanning(JSONObject input,String token) throws Exception {
+    String channel=input.optString("channelId");if(!channel.matches("[0-9]{1,24}"))throw new ProviderException("INVALID_PAYLOAD","Choisissez un salon Discord.");
+    byte[] image=Base64.getDecoder().decode(input.getString("imageBase64"));
+    if(image.length>10_000_000||image.length<8||image[0]!=(byte)137||image[1]!=80||image[2]!=78||image[3]!=71)throw new ProviderException("INVALID_PAYLOAD","Image PNG requise (10 Mo maximum).");
+    String boundary="StreamDashboard"+UUID.randomUUID().toString().replace("-","");
+    JSONObject payload=new JSONObject().put("content",limited(input.optString("defaultMessage"),2000)).put("allowed_mentions",new JSONObject().put("parse",new JSONArray()));
+    ByteArrayOutputStream bytes=new ByteArrayOutputStream();
+    bytes.write(("--"+boundary+"\r\nContent-Disposition: form-data; name=\"payload_json\"\r\nContent-Type: application/json\r\n\r\n"+payload+"\r\n--"+boundary+"\r\nContent-Disposition: form-data; name=\"files[0]\"; filename=\"planning.png\"\r\nContent-Type: image/png\r\n\r\n").getBytes(StandardCharsets.UTF_8));
+    bytes.write(image);bytes.write(("\r\n--"+boundary+"--\r\n").getBytes(StandardCharsets.UTF_8));
+    HttpURLConnection connection=(HttpURLConnection)new URL("https://discord.com/api/v10/channels/"+channel+"/messages").openConnection();
+    connection.setInstanceFollowRedirects(false);connection.setRequestMethod("POST");connection.setConnectTimeout(10000);connection.setReadTimeout(15000);connection.setDoOutput(true);
+    connection.setRequestProperty("Authorization","Bot "+token);connection.setRequestProperty("Content-Type","multipart/form-data; boundary="+boundary);
+    try {
+      try(OutputStream out=connection.getOutputStream()){bytes.writeTo(out);}
+      int status=connection.getResponseCode();if(status<200||status>=300)throw new ProviderException("HTTP_"+status,"Discord n’a pas confirmé l’envoi. Vérifiez le salon avant de recommencer.");
+      JSONObject result;try(InputStream in=connection.getInputStream()){result=new JSONObject(readStream(in));}
+      if(result.optString("id").isEmpty())throw new ProviderException("UNCERTAIN","Résultat Discord incomplet : vérifiez le salon.");
+      return ok().put("messageId",result.getString("id")).put("channelName",channel);
+    }finally{connection.disconnect();}
+  }
 
   // Old custom-scheme code exchanges are no longer accepted; Twitch uses DCF.
   void acceptOAuthCallback(Uri uri) { }
@@ -135,7 +291,7 @@ public final class ProviderBridge {
         JSONObject calendar = google("GET", "https://www.googleapis.com/calendar/v3/users/me/calendarList/primary", null, null);
         String role = calendar.optString("accessRole");
         if (!role.equals("owner") && !role.equals("writer")) throw new ProviderException("CALENDAR", "Calendrier non accessible en écriture.");
-        result.put("calendar", "primary"); capabilities.put("calendar");
+        result.put("calendar", calendar.getString("id")); capabilities.put("calendar");
       }
       result.put("tested", true).put("testedAt", System.currentTimeMillis()).put("capabilities", capabilities);
     } catch (ProviderException e) {
@@ -240,9 +396,17 @@ public final class ProviderBridge {
     JSONObject event = input.getJSONObject("event"), link = input.optJSONObject("link");
     if (link == null) link = new JSONObject();
     boolean isGoogle = provider.equals("google");
+    if(!isGoogle&&event.has("localId")) {
+      String receipt=credentials.get(twitchReceiptKey(event));
+      if(receipt.isEmpty())throw new ProviderException("CREATE_UNCERTAIN","Aucun reçu Twitch confirmé. Vérifiez le planning Twitch avant de résoudre cette publication.");
+      JSONObject confirmed=new JSONObject(receipt);
+      if(!confirmed.getString("accountId").equals(twitchUserId()))throw new ProviderException("INVALID_LINK","Reconnectez le compte Twitch d’origine.");
+      return confirmed;
+    }
+    if(!isGoogle&&!link.optString("accountId").isEmpty()&&!link.optString("accountId").equals(twitchUserId()))throw new ProviderException("INVALID_LINK","Reconnectez la chaîne Twitch propriétaire avant réconciliation.");
     String calendar = limited(link.optString("calendarId", "primary"), 200);
     String base = isGoogle
-      ? "https://www.googleapis.com/calendar/v3/calendars/" + enc(calendar) + "/events?showDeleted=false&privateExtendedProperty=" + enc("streamDashboardEventId=" + event.getString("id"))
+      ? "https://www.googleapis.com/calendar/v3/calendars/" + enc(calendar) + "/events?showDeleted=false&privateExtendedProperty=" + enc((event.has("localId") ? "streamDashboardId=" + event.getString("localId") : "streamDashboardEventId=" + event.getString("id")))
       : "https://api.twitch.tv/helix/schedule?first=25&broadcaster_id=" + enc(twitchUserId());
     JSONObject found = null;
     String cursor = "";
@@ -258,7 +422,8 @@ public final class ProviderBridge {
           JSONObject extended = candidate.optJSONObject("extendedProperties");
           JSONObject properties = extended == null ? null : extended.optJSONObject("private");
           match = !candidate.optString("status").equals("cancelled") && properties != null
-            && event.getString("id").equals(properties.optString("streamDashboardEventId"));
+            && (event.has("localId") ? event.getString("localId").equals(properties.optString("streamDashboardId")) : event.getString("id").equals(properties.optString("streamDashboardEventId")))
+            && (event.optJSONObject("projection") == null || event.getJSONObject("projection").optString("creationId").equals(properties.optString("streamDashboardCreationId")));
         } else {
           JSONObject category = candidate.optJSONObject("category");
           match = event.optString("title").equals(candidate.optString("title"))
@@ -287,8 +452,12 @@ public final class ProviderBridge {
     requirePublication("twitch");
     JSONObject event = input.getJSONObject("event"), link = input.optJSONObject("link"); if (link == null) link = new JSONObject();
     String broadcaster = twitchUserId(), remoteId = limited(link.optString("remoteId"), 120);
+    if(!link.optString("accountId").isEmpty()&&!link.optString("accountId").equals(broadcaster))throw new ProviderException("INVALID_LINK","Reconnectez la chaîne Twitch propriétaire de cet événement.");
     if (action.equals("delete")) {
       requireId(remoteId);
+      JSONObject current=readPlanning("twitch",input);
+      if(current.optBoolean("deleted"))return ok().put("remoteId",remoteId);
+      if(!link.optString("fingerprint").isEmpty()&&!link.optString("fingerprint").equals(current.optString("fingerprint")))throw new ProviderException("CONFLICT","Le planning Twitch a changé avant la suppression.");
       try { twitch("DELETE", "https://api.twitch.tv/helix/schedule/segment?broadcaster_id="+enc(broadcaster)+"&id="+enc(remoteId), null); }
       catch (ProviderException error) { if (!isAbsentPlanningDelete("twitch", error.code)) throw error; }
       return ok().put("remoteId", remoteId);
@@ -303,9 +472,15 @@ public final class ProviderBridge {
     JSONObject payload = twitchSchedulePayload(event, currentSegment);
     if (currentSegment != null && payload.toString().equals("{}")) return ok().put("remoteId", remoteId).put("fingerprint", twitchFingerprint(currentSegment)).put("remoteSnapshot", currentSegment);
     String url = "https://api.twitch.tv/helix/schedule/segment?broadcaster_id="+enc(broadcaster) + (action.equals("update") ? "&id="+enc(remoteId) : "");
+    if(action.equals("create")&&event.has("localId"))credentials.clear(twitchReceiptKey(event));
     JSONObject response = twitch(action.equals("create") ? "POST" : "PATCH", url, payload.toString());
     JSONObject segment = response.getJSONObject("data").getJSONArray("segments").getJSONObject(0);
-    return ok().put("remoteId", segment.getString("id")).put("fingerprint", twitchFingerprint(segment)).put("remoteSnapshot", segment);
+    JSONObject confirmed=ok().put("remoteId", segment.getString("id")).put("fingerprint", twitchFingerprint(segment)).put("remoteSnapshot", segment).put("accountId",broadcaster);
+    if(action.equals("create")&&event.has("localId"))credentials.put(twitchReceiptKey(event),confirmed.toString());
+    return confirmed;
+  }
+  private static String twitchReceiptKey(JSONObject event)throws Exception {
+    return "planning_twitch_"+base64(MessageDigest.getInstance("SHA-256").digest(new JSONArray().put(event.optString("localId",event.getString("id"))).put(event.getString("id")).put(event.getString("startAtUtc")).put(event.getString("endAtUtc")).toString().getBytes(StandardCharsets.UTF_8)));
   }
   static JSONObject twitchSchedulePayload(JSONObject event, JSONObject currentSegment) throws Exception {
     JSONObject payload = new JSONObject();
@@ -313,7 +488,8 @@ public final class ProviderBridge {
     if (currentSegment == null || !title.equals(currentSegment.optString("title"))) payload.put("title", title);
     JSONObject currentCategory = currentSegment == null ? null : currentSegment.optJSONObject("category");
     if (!category.isEmpty() && (currentCategory == null || !category.equals(currentCategory.optString("id")))) payload.put("category_id", category);
-    if (currentSegment == null || !start.equals(iso(currentSegment.getString("start_time")))) payload.put("start_time", start).put("timezone", "UTC");
+    if (currentSegment == null || (!currentSegment.optBoolean("is_recurring") && !start.equals(iso(currentSegment.getString("start_time"))))) payload.put("start_time", start).put("timezone", event.optJSONObject("recurrence") == null ? "UTC" : event.getJSONObject("recurrence").optString("timeZone","UTC"));
+    if (currentSegment == null) payload.put("is_recurring", event.optJSONObject("recurrence") != null || event.optBoolean("twitchRecurring"));
     int minutes = duration(event);
     if (currentSegment == null || minutes != Duration.between(Instant.parse(currentSegment.getString("start_time")), Instant.parse(currentSegment.getString("end_time"))).toMinutes()) payload.put("duration", String.valueOf(minutes));
     return payload;
@@ -323,16 +499,58 @@ public final class ProviderBridge {
     JSONObject event=input.getJSONObject("event"), link=input.optJSONObject("link"); if(link==null)link=new JSONObject();
     String calendar=limited(link.optString("calendarId","primary"),200), remoteId=limited(link.optString("remoteId"),200);
     String base="https://www.googleapis.com/calendar/v3/calendars/"+enc(calendar)+"/events";
+    if(!action.equals("create") && event.optJSONObject("projection") != null) {
+      JSONObject current=google("GET",base+"/"+enc(remoteId),null,null);
+      JSONObject ext=current.optJSONObject("extendedProperties"),properties=ext==null?null:ext.optJSONObject("private"),projection=event.getJSONObject("projection");
+      if(properties==null||!properties.optString("streamDashboardManaged").equals("true")||!event.optString("localId",event.getString("id")).equals(properties.optString("streamDashboardId"))
+        ||!projection.optString("seriesLocalId").equals(properties.optString("streamDashboardSeriesId"))||!projection.optString("occurrenceKey").equals(properties.optString("streamDashboardOccurrenceKey"))
+        ||!projection.optString("creationId").equals(properties.optString("streamDashboardCreationId")))throw new ProviderException("CONFLICT","Identité de projection Google différente. Aucune modification effectuée.");
+    }
     if(action.equals("delete")){
       requireId(remoteId);
+      if(link.optString("revision").isEmpty())throw new ProviderException("INVALID_LINK","Révision Google requise avant suppression.");
       try { google("DELETE",base+"/"+enc(remoteId),null,link.optString("revision")); }
       catch (ProviderException error) { if (!isAbsentPlanningDelete("google", error.code)) throw error; }
       return ok().put("remoteId",remoteId).put("calendarId",calendar);
     }
-    JSONObject payload=new JSONObject().put("summary",limited(event.optString("title"),140)).put("description",limited(event.optString("description"),500)).put("start",new JSONObject().put("dateTime",iso(event.getString("startAtUtc")))).put("end",new JSONObject().put("dateTime",iso(event.getString("endAtUtc")))).put("extendedProperties",new JSONObject().put("private",new JSONObject().put("streamDashboardEventId",limited(event.getString("id"),200))));
+    JSONObject payload=googlePlanningPayload(event);
+    if(action.equals("create") && event.optJSONObject("projection") != null && event.getJSONObject("projection").optString("mode").equals("materialized"))payload.put("id", googleRemoteId(event));
+    if(!action.equals("create") && link.optString("revision").isEmpty())throw new ProviderException("INVALID_LINK","Révision Google manquante : relisez cet événement avant de le modifier.");
     String method=action.equals("create")?"POST":"PATCH";if(!action.equals("create")){requireId(remoteId);base+="/"+enc(remoteId);}
-    JSONObject response=google(method,base,payload.toString(),action.equals("update")?link.optString("revision"):null);
+    JSONObject response=null;
+    if(action.equals("create")&&payload.has("id")) {
+      try { response=google("GET",base+"/"+enc(payload.getString("id")),null,null); validateGoogleIdentity(event,response); }
+      catch(ProviderException error){if(!error.code.equals("HTTP_404"))throw error;}
+    }
+    if(response==null)try { response=google(method,base,payload.toString(),action.equals("update")?link.optString("revision"):null); }
+    catch(ProviderException error){
+      if(!action.equals("create")||!payload.has("id")||!error.code.equals("CONFLICT"))throw error;
+      response=google("GET",base+"/"+enc(payload.getString("id")),null,null);validateGoogleIdentity(event,response);
+    }
     return ok().put("remoteId",response.getString("id")).put("calendarId",calendar).put("revision",response.optString("etag")).put("remoteSnapshot",response);
+  }
+  private static void validateGoogleIdentity(JSONObject event,JSONObject remote)throws Exception {
+    if(remote.optString("status").equals("cancelled"))throw new ProviderException("GOOGLE_PROJECTION_RETIRED","Cette incarnation Google a été supprimée.");
+    JSONObject ext=remote.optJSONObject("extendedProperties"),properties=ext==null?null:ext.optJSONObject("private"),projection=event.optJSONObject("projection");
+    if(properties==null||!properties.optString("streamDashboardManaged").equals("true")||!event.optString("localId",event.getString("id")).equals(properties.optString("streamDashboardId"))
+      ||projection!=null&&(!projection.optString("seriesLocalId").equals(properties.optString("streamDashboardSeriesId"))||!projection.optString("occurrenceKey").equals(properties.optString("streamDashboardOccurrenceKey"))||!projection.optString("creationId").equals(properties.optString("streamDashboardCreationId"))))throw new ProviderException("CONFLICT","Identité Google différente. Aucune publication effectuée.");
+  }
+  static String googleRemoteId(JSONObject event) throws Exception {
+    String localId=event.optString("localId",event.getString("id")); JSONObject projection=event.optJSONObject("projection");
+    String identity=projection!=null&&!projection.optString("creationId").isEmpty()?new JSONArray().put(localId).put(projection.getString("creationId")).toString():localId;
+    byte[] hash=MessageDigest.getInstance("SHA-256").digest(identity.getBytes(StandardCharsets.UTF_8));StringBuilder out=new StringBuilder("sd");for(byte b:hash)out.append(String.format("%02x",b));return out.toString();
+  }
+  static JSONObject googlePlanningPayload(JSONObject event) throws Exception {
+    boolean allDay=event.optBoolean("allDay");String start=iso(event.getString("startAtUtc")),end=iso(event.getString("endAtUtc"));
+    if(!Instant.parse(end).isAfter(Instant.parse(start)))throw new ProviderException("INVALID_PAYLOAD","Période Google invalide.");
+    JSONObject beginning=new JSONObject(),ending=new JSONObject();
+    if(allDay){if(!start.endsWith("T00:00:00Z")||!end.endsWith("T00:00:00Z"))throw new ProviderException("INVALID_PAYLOAD","Journée entière : bornes UTC requises.");beginning.put("date",start.substring(0,10));ending.put("date",end.substring(0,10));}
+    else {beginning.put("dateTime",start);ending.put("dateTime",end);JSONObject rule=event.optJSONObject("recurrence");if(rule!=null){String zone=rule.getString("timeZone");ZoneId.of(zone);beginning.put("timeZone",zone);ending.put("timeZone",zone);}}
+    JSONObject properties=new JSONObject().put("streamDashboardManaged","true").put("streamDashboardId",limited(event.optString("localId",event.getString("id")),200)).put("streamDashboardEventId",event.getString("id"));
+    JSONObject projection=event.optJSONObject("projection");
+    if(projection!=null){properties.put("streamDashboardProjection",projection.getString("mode")).put("streamDashboardSeriesId",projection.getString("seriesLocalId"));if(projection.has("occurrenceKey"))properties.put("streamDashboardOccurrenceKey",projection.getString("occurrenceKey"));if(projection.has("creationId"))properties.put("streamDashboardCreationId",projection.getString("creationId"));}
+    return new JSONObject().put("summary",limited(event.optString("title"),140)).put("description",limited(event.optString("description"),4000)).put("start",beginning).put("end",ending)
+      .put("recurrence",event.optJSONArray("recurrenceLines")==null?new JSONArray():event.getJSONArray("recurrenceLines")).put("extendedProperties",new JSONObject().put("private",properties));
   }
   static boolean isAbsentPlanningDelete(String provider, String code) {
     return (provider.equals("twitch") || provider.equals("google")) && code.equals("HTTP_404")
@@ -347,7 +565,7 @@ public final class ProviderBridge {
   private JSONObject google(String method,String url,String body,String etag)throws Exception { Map<String,String> h=new HashMap<>(); h.put("Authorization","Bearer "+token("google").getString("access_token")); if(etag!=null&&!etag.isEmpty())h.put("If-Match",etag); return request(method,url,body,null,h); }
   private String twitchUserId()throws Exception { return twitch("GET","https://api.twitch.tv/helix/users",null).getJSONArray("data").getJSONObject(0).getString("id"); }
   private JSONObject request(String method,String address,String json,String form,Map<String,String> headers)throws Exception {
-    HttpURLConnection c=(HttpURLConnection)new URL(address).openConnection(); c.setRequestMethod(method); c.setConnectTimeout(10000); c.setReadTimeout(15000); c.setRequestProperty("Accept","application/json");
+    HttpURLConnection c=(HttpURLConnection)new URL(address).openConnection(); c.setInstanceFollowRedirects(false); c.setRequestMethod(method); c.setConnectTimeout(10000); c.setReadTimeout(15000); c.setRequestProperty("Accept","application/json");
     if(headers!=null)for(Map.Entry<String,String> h:headers.entrySet())c.setRequestProperty(h.getKey(),h.getValue()); String outgoing=json!=null?json:form;
     if(outgoing!=null){c.setDoOutput(true);c.setRequestProperty("Content-Type",json!=null?"application/json":"application/x-www-form-urlencoded");try(OutputStream o=c.getOutputStream()){o.write(outgoing.getBytes(StandardCharsets.UTF_8));}}
     int status=c.getResponseCode(); InputStream stream=status>=400?c.getErrorStream():c.getInputStream(); String value=stream==null?"":readStream(stream);
@@ -374,7 +592,7 @@ public final class ProviderBridge {
     ByteArrayOutputStream out = new ByteArrayOutputStream();
     byte[] buffer = new byte[4096];
     int read;
-    while ((read = stream.read(buffer)) != -1) out.write(buffer, 0, read);
+    while ((read = stream.read(buffer)) != -1) { if (out.size()+read>8_000_000) throw new IOException("Réponse trop volumineuse"); out.write(buffer, 0, read); }
     return new String(out.toByteArray(), StandardCharsets.UTF_8);
   }
   private interface Work { JSONObject run()throws Exception; }
@@ -387,7 +605,7 @@ public final class ProviderBridge {
     }
   }
   private String guarded(Work work){try{return work.run().put("ok",true).toString();}catch(ProviderException e){return failure(e.code,e.getMessage(),e.current);}catch(Exception e){return failure("NETWORK","Provider temporairement indisponible.");}}
-  private static JSONObject body(String raw)throws Exception {if(raw==null||raw.length()>16_000)throw new ProviderException("INVALID_PAYLOAD","Payload provider invalide.");try { return new JSONObject(raw); } catch (JSONException e) { throw new ProviderException("INVALID_PAYLOAD", "Payload provider invalide."); }}
+  private static JSONObject body(String raw)throws Exception {if(raw==null||raw.length()>256_000)throw new ProviderException("INVALID_PAYLOAD","Payload provider invalide.");try { return new JSONObject(raw); } catch (JSONException e) { throw new ProviderException("INVALID_PAYLOAD", "Payload provider invalide."); }}
   private static String limited(String value,int max)throws Exception {if(value==null)return "";if(value.length()>max)throw new ProviderException("INVALID_PAYLOAD","Champ provider trop long.");return value;}
   private static void requireId(String id)throws Exception{if(id.isEmpty())throw new ProviderException("INVALID_LINK","Identifiant provider absent.");}
   private static String iso(String raw)throws Exception{try{return Instant.parse(raw).truncatedTo(ChronoUnit.SECONDS).toString();}catch(java.time.format.DateTimeParseException e){throw new ProviderException("INVALID_PAYLOAD","Date provider invalide.");}}

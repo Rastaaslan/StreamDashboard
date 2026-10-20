@@ -1,3 +1,4 @@
+import { callDeviceBridge } from './device-bridge.js';
 // This adapter always addresses THIS device, independently of the selected regie.
 // OAuth tokens are confined to Android Keystore or the desktop secret store.
 export function createDeviceAccounts({bridge=globalThis.StreamDashboardProviders,request,modal,esc,toast,openExternal}) {
@@ -5,7 +6,7 @@ export function createDeviceAccounts({bridge=globalThis.StreamDashboardProviders
   const names={twitch:'Twitch',google:'Google Calendar',youtube:'YouTube'};
   async function call(method,payload={}) {
     if(typeof bridge?.[method]!=='function')throw new Error('Cette version ne prend pas en charge la connexion sur cet appareil.');
-    const value=JSON.parse(await bridge[method](JSON.stringify(payload)));
+    const value=await callDeviceBridge(bridge,method,payload);
     if(value.ok===false)throw new Error(value.message||value.code||'Connexion refusée.');
     return value;
   }
