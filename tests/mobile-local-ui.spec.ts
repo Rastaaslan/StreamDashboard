@@ -291,6 +291,29 @@ test('local Stop cancels a pending play, and changing workspace releases audio w
   expect(errors).toEqual([]);
 });
 
+test('disabling and restoring the display role releases viewers and keeps local Activity available', async ({ page }) => {
+  const { errors } = await setupLocal(page);
+  await page.locator('nav [data-page="live"]').click();
+  await expect(page.locator('[data-monitor-toggle]')).toBeVisible();
+  for (const enabled of [false, true]) {
+    await page.locator('nav [data-page="manage"]').click();
+    await page.locator('#content [data-page="settings"]').click();
+    await page.locator('[data-tab="devices"]').click();
+    await page.getByRole('button', { name: 'Mon installation', exact: true }).click();
+    await page.locator('[name="role-display"]').setChecked(enabled);
+    await page.getByRole('button', { name: 'Prévisualiser le changement' }).click();
+    await page.getByRole('button', { name: 'Appliquer', exact: true }).click();
+    await page.locator('nav [data-page="live"]').click();
+    if (enabled) await expect(page.locator('[data-monitor-toggle]')).toBeVisible();
+    else {
+      await expect(page.locator('#live-monitor')).toContainText('Visionneuses et chats désactivés');
+      await expect(page.locator('[data-monitor-toggle]')).toHaveCount(0);
+      await expect(page.locator('#streamlabs-feed')).toBeVisible();
+    }
+  }
+  expect(errors).toEqual([]);
+});
+
 test('local Activity configures cloud history through the native bridge and never claims a Socket connection', async ({ page }) => {
   const { backend, errors } = await setupLocal(page);
   await page.locator('nav [data-page="activity"]').click();

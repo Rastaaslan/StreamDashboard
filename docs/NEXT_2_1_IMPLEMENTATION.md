@@ -7,7 +7,7 @@ Les exigences P0 de [NEXT_2_1_REQUIREMENTS.md](NEXT_2_1_REQUIREMENTS.md) font au
 ## Code intégré
 
 - Contrat commun Windows, Android et navigateur : appareils, capacités, rôles, destinations, disponibilité observée et six presets. Aucune sélection de preset ne fabrique un appareil distant.
-- Éditeur commun de l’installation : prévisualisation, validation par révision, sauvegarde, restauration, retrait réversible, réactivation et choix d’un exécuteur connu. Un changement du rôle OBS vérifie la sécurité du redémarrage.
+- Éditeur commun de l’installation : prévisualisation, validation par révision, sauvegarde, restauration, retrait réversible, réactivation et choix d’un exécuteur connu. Un changement de rôle Windows vérifie la sécurité du redémarrage.
 - Migration RC11.7 : identité locale persistante, répertoire et origine historiques conservés. Les comptes, contenus, sessions web et espaces de travail ne sont pas déplacés par un changement de rôle.
 - Découverte authentifiée `GET /api/v2/device` : identité physique stable et champs publics explicitement sélectionnés. Un changement d’adresse conserve l’identité d’un agent 2.1. Une association RC11.7 garde un descripteur de compatibilité jusqu’à sa mise à niveau.
 - Associations chiffrées par origine dans Windows et Android. Une adresse inconnue ne reçoit jamais le jeton du dernier appareil utilisé. Les écritures Windows des comptes et du contrôleur sont sérialisées entre instances du même coffre.
@@ -22,6 +22,9 @@ Les exigences P0 de [NEXT_2_1_REQUIREMENTS.md](NEXT_2_1_REQUIREMENTS.md) font au
 - **Permissions par appareil** : observation, OBS, clips, audio, chat, cloud, planning et administration ; choix à l’association et modification avec comparaison de la version précédente. Un changement invalide les tickets WebSocket et ferme les sessions existantes. Les commandes en attente revérifient leurs permissions avant exécution.
 - **Chat YouTube API commun** : identité de chaîne/broadcast vérifiée, états avant live/ingestion/live/fin, changement de chat, réponses tardives écartées, messages conservés pendant les coupures, coalescence et respect des intervalles/quota. Windows et Android utilisent le même moteur d’état, avec leurs autorisations propres. Calendar reste séparé. Le chat web et Twitch restent visibles indépendamment.
 - **Audio local Windows sans OBS** : lecteur isolé appartenant à l’agent, sortie système ou sortie disponible explicitement choisie, volume et arrêt. Une sortie absente ne redirige pas le son vers OBS. La bibliothèque, la synchronisation et l’éditeur conservent cette destination. L’énumération des sorties est actualisée avant lecture et à l’ouverture de l’éditeur.
+- **Lecture audio simultanée facultative** : chaque son choisit remplacement ou superposition, avec huit lectures locales au maximum. Windows et Android/navigateur suivent toutes les lectures actives ; l’arrêt les libère ensemble. Une sortie OBS ne permettant pas le mixage le refuse explicitement.
+- **Rôles exécutés** : les macros globales, les effets audio, les services et le planning, les chats et les visionneuses suivent les rôles activés. Les effets sont revérifiés avant exécution ; une configuration persistée ne prouve pas que le moteur Windows a redémarré. Android applique les changements locaux sans relancer l’application.
+- **Transition récupérable** : le journal de l’installation distingue une écriture validée d’une interruption, préserve la sauvegarde précédente et réconcilie le démarrage Windows au prochain lancement. Une identité étrangère ou un état divergent suspend la récupération.
 - **Démarrage Windows facultatif** : entrée de démarrage par utilisateur, agent sans fenêtre et contrôle du résultat renvoyé par Windows. La modification est sérialisée avec la configuration de l’installation ; un échec d’écriture tente de rétablir le réglage précédent.
 - **Arrêt de l’agent** : les requêtes HTTP acceptées sont drainées avant sauvegarde ; les connexions TCP spéculatives sans requête sont fermées. Les vingt démarrages/arrêts réels du test Electron passent.
 
@@ -34,14 +37,16 @@ Ce code est une version d’essai, pas la version finale universelle. Aucune cel
 Restent à implémenter ou à compléter dans **ce même chantier 2.1** :
 
 - Qualification matérielle complète du nouveau transport TLS et de ses associations sur Windows et Android. Les anciennes adresses HTTP sont conservées mais demandent une nouvelle association HTTPS avant de transmettre un identifiant. La découverte réseau automatique facultative reste absente.
-- Cycle de vie effectif de tous les rôles audio/services/affichage et déplacement transactionnel de leurs responsabilités. Les rôles autres qu’OBS sont encore partiellement descriptifs.
-- Android comme exécuteur audio/affichage commandé depuis un autre appareil ; l’audio Android local et le contrôle d’agents Windows existent. Lecture audio multiple configurable et macros natives de tous les contenus locaux restent à compléter.
+- Qualification matérielle du cycle de vie des rôles et déplacement transactionnel de leurs responsabilités entre appareils. Le contrôle des moteurs locaux est implémenté ; le transfert complet des responsabilités reste à réaliser.
+- Android comme exécuteur audio/affichage commandé depuis un autre appareil ; l’audio Android local et le contrôle d’agents Windows existent. La lecture audio multiple locale est implémentée ; les macros natives de tous les contenus locaux restent à compléter.
 - Restauration après interruption couvrant l’ensemble des magasins et effets externes, pas seulement le fichier d’installation ; qualification complète des transitions et migration d’une copie réelle RC11.7.
 - Qualification matérielle Windows/Android, des sessions web et des comptes séparés ; chat YouTube pendant une diffusion expressément autorisée ; installation extérieure, mise à jour et retour arrière.
 
 Le téléphone n’était pas présent dans la liste ADB lors du contrôle du 21 octobre. Les applications stables de FIXE et du laptop sont restées actives ; aucun OBS n’a été arrêté et aucun live/message de chat n’a été déclenché. L’ouverture externe d’un lecteur ne prouve jamais la connexion de sa session intégrée.
 
 ## Qualification et livraison
+
+Les changements audio, rôles et récupération sont détaillés dans le [bilan du 21 octobre](qa/2026-10-21-execution-recovery.md).
 
 La [matrice de qualification](qa/next21-qualification.json) couvre les six setups, onze modules, dix scénarios obligatoires et neuf transitions. Les états partiels sont conservés tant que la preuve complète n’existe pas ; « indisponible » pour OBS/Clips sur Android seul est un comportement à vérifier.
 

@@ -62,10 +62,12 @@ export function registerLiveControlRoutes(options: Options) {
   app.post('/api/v1/soundboard/sounds', async (req, res, next) => {
     try {
       if (!options.requireLocal(req, res)) return;
-      if (!object(req.body) || Object.keys(req.body).some(key => !['libraryId','name','favorite','volume','enabled','cooldownMs','category','monitoringMode','outputId'].includes(key))) throw new Error('Nouveau son invalide.');
+      if (!object(req.body) || Object.keys(req.body).some(key => !['libraryId','name','favorite','volume','enabled','cooldownMs','category','monitoringMode','outputId','playbackMode'].includes(key))) throw new Error('Nouveau son invalide.');
       const source = await options.resolveSoundLibraryFile(String(req.body.libraryId ?? ''));
+      const playbackMode = req.body.playbackMode;
+      if (playbackMode !== undefined && playbackMode !== 'replace' && playbackMode !== 'mix') throw new Error('Mode de lecture invalide.');
       const sound = validateSound({
-        id: randomUUID(), source, outputId: 'obs', name: String(req.body.name ?? ''), category: String(req.body.category ?? ''),
+        id: randomUUID(), source, outputId: String(req.body.outputId ?? 'obs'), playbackMode, name: String(req.body.name ?? ''), category: String(req.body.category ?? ''),
         favorite: req.body.favorite === true, enabled: req.body.enabled !== false, volume: Number(req.body.volume ?? 1),
         cooldownMs: Number(req.body.cooldownMs ?? 0), monitoringMode: req.body.monitoringMode === 'monitor' ? 'monitor' : 'stream',
       });
@@ -78,7 +80,7 @@ export function registerLiveControlRoutes(options: Options) {
     try {
       const sounds = options.sounds(); const sound = sounds.find(value => value.id === req.params.id);
       if (!sound) { res.status(404).json({ ok: false, error: { code: 'SOUND_NOT_FOUND', message: 'Son introuvable.' } }); return; }
-      if (!object(req.body) || Object.keys(req.body).some(key => !['libraryId','name','favorite','volume','enabled','cooldownMs','category','monitoringMode','outputId'].includes(key))) throw new Error('Modification soundboard invalide.');
+      if (!object(req.body) || Object.keys(req.body).some(key => !['libraryId','name','favorite','volume','enabled','cooldownMs','category','monitoringMode','outputId','playbackMode'].includes(key))) throw new Error('Modification soundboard invalide.');
       const previousSource = sound.source;
       const source = req.body.libraryId === undefined ? previousSource : await options.resolveSoundLibraryFile(String(req.body.libraryId));
       const { libraryId: _libraryId, ...patch } = req.body;

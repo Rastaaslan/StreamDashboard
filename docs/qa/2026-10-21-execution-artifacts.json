@@ -1,0 +1,27 @@
+{
+  "date": "2026-10-21",
+  "candidate": "2.1.0-alpha.1",
+  "branch": "work/streamdashboard-next21-execution",
+  "baseCommit": "10ce5f3",
+  "universalQualificationComplete": false,
+  "validation": {
+    "vitest": { "passed": 1441, "files": 160 },
+    "node": { "passed": 284 },
+    "browser": { "passed": 81, "httpsFixtureRechecks": 15 },
+    "androidJvm": { "passed": 42 },
+    "electronLinuxXvfb": { "passed": 4, "startupCycles": 20 },
+    "windowsPackageIntegrity": "passed",
+    "newWindowsHardwareChecks": "blocked-by-occupied-candidate-ports",
+    "androidHardware": "pending"
+  },
+  "artifacts": {
+    "StreamDashboard-Next-2.1-execution-win32-x64.zip": {
+      "bytes": 170479592,
+      "sha256": "37fbeae3d9f6401645fb5795be7cea58a429ea1ba29db930e5f0b51521222944"
+    },
+    "StreamDashboard-Next-2.1-execution-android-debug.apk": {
+      "bytes": 3671451,
+      "sha256": "aba8ffa1aff5f738a2e91f0093958af796a184cb2b06a7828dc75bedb712b0f4"
+    }
+  }
+}

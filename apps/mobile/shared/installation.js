@@ -16,6 +16,14 @@ export const ROLES = Object.freeze({
 });
 const idPattern = /^[a-zA-Z0-9_-]{1,100}$/;
 const common = ['cloud', 'planning', 'chat', 'viewer', 'audio', 'storage'];
+export const roleForCapability = capability => ({obs:'obs-executor',clips:'obs-executor','global-keys':'controller',audio:'audio',cloud:'services',planning:'services',chat:'display',viewer:'display'})[capability];
+export function deviceRoleAvailable(device, capability) {
+  const role=roleForCapability(capability);return !role || device.roles.includes(role);
+}
+export function installationRequiresRestart(before, after) {
+  const left=before.devices.find(d=>d.id===before.localDeviceId),right=after.devices.find(d=>d.id===after.localDeviceId);
+  return left.platform==='windows' && Object.keys(ROLES).some(role=>left.roles.includes(role)!==right.roles.includes(role));
+}
 export const capabilitiesFor = platform => [...common, ...(platform === 'windows' ? ['obs', 'clips', 'global-keys'] : [])];
 const copy = value => structuredClone(value);
 const fail = message => { throw new Error(message); };
@@ -112,8 +120,7 @@ export function planInstallationChange(current, changes, expectedRevision) {
     }
   }
   next.configured = true; next.revision++;
-  const previousLocal = before.devices.find(d => d.id === before.localDeviceId);
-  const restart = previousLocal.roles.includes('obs-executor') !== local.roles.includes('obs-executor');
+  const restart = installationRequiresRestart(before, next);
   return { next: validateInstallation(next), restart, summary: [
     `Installation : ${SETUPS[next.preset]}`,
     `Cet appareil : ${local.name} · ${local.roles.map(r => ROLES[r]).join(', ') || 'aucun rôle'}`,
@@ -130,7 +137,9 @@ export function resolveCapability(installation, capability, observations = {}, t
   if (!device || !device.enabled) return result('unavailable', 'disabled', 'Appareil retiré ou désactivé.');
   if (!device.capabilities.includes(capability)) return result('unavailable', 'unsupported', 'Fonction incompatible avec cet appareil.');
   if (['obs', 'clips'].includes(capability) && !device.roles.includes('obs-executor')) return result('unavailable', 'agent-stopped', 'Le rôle d’exécution OBS est arrêté.');
+  if (!deviceRoleAvailable(device, capability)) return result('unavailable', 'role-stopped', 'Le rôle « '+ROLES[roleForCapability(capability)]+' » est désactivé sur cet appareil.');
   const observed = observations[selected];
+  if (observed?.roles && !deviceRoleAvailable({...device,roles:observed.roles},capability)) return result('unavailable','role-stopped','Le rôle requis est arrêté sur l’appareil cible.');
   if (!observed) return result('unknown', 'not-observed', 'Connexion de cet appareil non vérifiée.');
   if (observed.connected !== true) return result('unavailable', 'offline', 'Appareil déconnecté. Aucune commande ne sera mise en attente.');
   if (observed.permissions && !observed.permissions.includes(capability)) return result('unavailable', 'permission', 'Permission manquante sur cet appareil.');
@@ -141,20 +150,46 @@ export function resolveCapability(installation, capability, observations = {}, t
 // Browser/Android writes use Web Locks when offered; revision checks still
 // protect stale dialogs. Backups precede the single current-document write.
 export function createInstallationStore(storage, initialize, lock = work => globalThis.navigator?.locks ? navigator.locks.request('sd-installation-v2', work) : work()) {
-  const key = 'sd2.installation.v2', backup = key + '.backup';
-  const read = () => { const raw = storage.getItem(key); return raw ? validateInstallation(JSON.parse(raw)) : validateInstallation(initialize()); };
+  const key = 'sd2.installation.v2', backup = key + '.backup', journal = key + '.pending';
+  const erase = name => storage.removeItem ? storage.removeItem(name) : storage.setItem(name, '');
+  const same = (a,b) => JSON.stringify(a) === JSON.stringify(b);
+  const read = () => {
+    const raw = storage.getItem(key), pending = storage.getItem(journal);
+    const transaction = pending ? JSON.parse(pending) : null;
+    const current = raw ? validateInstallation(JSON.parse(raw)) : validateInstallation(transaction?.before || initialize());
+    if (!transaction) return current;
+    if (transaction.version !== 1) fail('Journal de transition incompatible.');
+    const before = validateInstallation(transaction.before), next = validateInstallation(transaction.next);
+    if (before.localDeviceId !== current.localDeviceId || next.localDeviceId !== current.localDeviceId || before.runtimeProfile !== current.runtimeProfile || next.runtimeProfile !== current.runtimeProfile || next.revision !== before.revision + 1) fail('Journal de transition d’un autre appareil.');
+    const committed = same(current,next);
+    if (!committed && !same(current,before)) fail('Configuration modifiée depuis l’interruption. Récupération suspendue.');
+    if (committed) storage.setItem(backup,JSON.stringify(before));
+    else if (transaction.backupBefore) storage.setItem(backup,JSON.stringify(validateInstallation(transaction.backupBefore)));
+    else erase(backup);
+    if (!raw) storage.setItem(key,JSON.stringify(current));
+    erase(journal);
+    return current;
+  };
+  const commit = (current,next) => {
+    const old = storage.getItem(backup);
+    storage.setItem(journal,JSON.stringify({version:1,before:current,next,backupBefore:old?validateInstallation(JSON.parse(old)):null}));
+    storage.setItem(backup,JSON.stringify(current));
+    storage.setItem(key,JSON.stringify(next));
+    try { erase(journal); } catch { /* The committed document selects recovery. */ }
+  };
   const change = (changes, revision) => lock(async () => {
     const current = read(), plan = planInstallationChange(current, changes, revision);
-    storage.setItem(backup, JSON.stringify(current));
-    storage.setItem(key, JSON.stringify(plan.next));
+    commit(current,plan.next);
     return plan;
   });
   const restore = revision => lock(async () => {
     const current = read();
     if (current.revision !== revision) fail('Installation modifiée ailleurs.');
     const raw = storage.getItem(backup); if (!raw) fail('Aucune configuration précédente disponible.');
-    const next = validateInstallation(JSON.parse(raw)); next.revision = current.revision + 1;
-    storage.setItem(backup, JSON.stringify(current)); storage.setItem(key, JSON.stringify(next));
+    const next = validateInstallation(JSON.parse(raw));
+    if (next.localDeviceId !== current.localDeviceId || next.runtimeProfile !== current.runtimeProfile) fail('Sauvegarde d’un autre appareil.');
+    next.revision = current.revision + 1;
+    commit(current,next);
     return next;
   });
   return { read, change, restore };

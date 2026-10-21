@@ -77,10 +77,12 @@ export interface Sound {
   enabled: boolean;
   outputId: string;
   monitoringMode?: 'stream' | 'monitor';
+  playbackMode?: 'replace' | 'mix';
 }
 export interface PublicSound extends Omit<Sound, 'source'> { sourceAvailable: boolean }
-export interface AudioOutput { id: string; name: string; isDefault: boolean; selectable: boolean }
-export interface SoundboardSnapshot { sounds: PublicSound[]; outputs: AudioOutput[]; currentPlayback: { soundId: string; commandId: string; startedAt: string } | null; available: boolean; supportedFormats: string[]; supportsVolume: boolean; supportsStop: boolean; supportsExplicitOutputSelection: boolean; error: StructuredError | null }
+export interface AudioOutput { id: string; name: string; isDefault: boolean; selectable: boolean; supportsMixing?: boolean }
+export interface ActiveSound { soundId: string; commandId: string; startedAt: string }
+export interface SoundboardSnapshot { sounds: PublicSound[]; outputs: AudioOutput[]; currentPlayback: ActiveSound | null; activePlaybacks?: ActiveSound[]; available: boolean; supportedFormats: string[]; supportsVolume: boolean; supportsStop: boolean; supportsExplicitOutputSelection: boolean; error: StructuredError | null }
 
 export interface TimerState {
   running: boolean;

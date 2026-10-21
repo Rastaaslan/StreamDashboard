@@ -37,7 +37,8 @@
             "tests/control-v2.test.ts",
             "tests/device-permissions.test.ts",
             "docs/qa/2026-10-21-transversal-modules.md",
-            "docs/qa/2026-10-21-tls-and-viewers.md"
+            "docs/qa/2026-10-21-tls-and-viewers.md",
+            "docs/qa/2026-10-21-execution-recovery.md"
           ]
         },
         {
@@ -52,7 +53,8 @@
             "tests/control-v2.test.ts",
             "tests/device-permissions.test.ts",
             "docs/qa/2026-10-21-transversal-modules.md",
-            "docs/qa/2026-10-21-tls-and-viewers.md"
+            "docs/qa/2026-10-21-tls-and-viewers.md",
+            "docs/qa/2026-10-21-execution-recovery.md"
           ]
         },
         {
@@ -67,7 +69,8 @@
             "tests/control-v2.test.ts",
             "tests/device-permissions.test.ts",
             "docs/qa/2026-10-21-transversal-modules.md",
-            "docs/qa/2026-10-21-tls-and-viewers.md"
+            "docs/qa/2026-10-21-tls-and-viewers.md",
+            "docs/qa/2026-10-21-execution-recovery.md"
           ]
         },
         {
@@ -82,7 +85,8 @@
             "tests/control-v2.test.ts",
             "tests/device-permissions.test.ts",
             "docs/qa/2026-10-21-transversal-modules.md",
-            "docs/qa/2026-10-21-tls-and-viewers.md"
+            "docs/qa/2026-10-21-tls-and-viewers.md",
+            "docs/qa/2026-10-21-execution-recovery.md"
           ]
         },
         {
@@ -96,7 +100,8 @@
             "tests/installation-ui.spec.ts",
             "tests/control-v2.test.ts",
             "tests/device-permissions.test.ts",
-            "docs/qa/2026-10-21-transversal-modules.md"
+            "docs/qa/2026-10-21-transversal-modules.md",
+            "docs/qa/2026-10-21-execution-recovery.md"
           ]
         },
         {
@@ -111,7 +116,8 @@
             "tests/control-v2.test.ts",
             "tests/device-permissions.test.ts",
             "docs/qa/2026-10-21-transversal-modules.md",
-            "docs/qa/2026-10-21-tls-and-viewers.md"
+            "docs/qa/2026-10-21-tls-and-viewers.md",
+            "docs/qa/2026-10-21-execution-recovery.md"
           ]
         }
       ]
@@ -131,7 +137,8 @@
             "tests/node/action-routing.test.mjs",
             "tests/desktop-controller.test.ts",
             "docs/qa/2026-10-21-transversal-modules.md",
-            "docs/qa/2026-10-21-tls-and-viewers.md"
+            "docs/qa/2026-10-21-tls-and-viewers.md",
+            "docs/qa/2026-10-21-execution-recovery.md"
           ]
         },
         {
@@ -146,7 +153,8 @@
             "tests/node/action-routing.test.mjs",
             "tests/desktop-controller.test.ts",
             "docs/qa/2026-10-21-transversal-modules.md",
-            "docs/qa/2026-10-21-tls-and-viewers.md"
+            "docs/qa/2026-10-21-tls-and-viewers.md",
+            "docs/qa/2026-10-21-execution-recovery.md"
           ]
         },
         {
@@ -161,7 +169,8 @@
             "tests/node/action-routing.test.mjs",
             "tests/desktop-controller.test.ts",
             "docs/qa/2026-10-21-transversal-modules.md",
-            "docs/qa/2026-10-21-tls-and-viewers.md"
+            "docs/qa/2026-10-21-tls-and-viewers.md",
+            "docs/qa/2026-10-21-execution-recovery.md"
           ]
         },
         {
@@ -176,7 +185,8 @@
             "tests/node/action-routing.test.mjs",
             "tests/desktop-controller.test.ts",
             "docs/qa/2026-10-21-transversal-modules.md",
-            "docs/qa/2026-10-21-tls-and-viewers.md"
+            "docs/qa/2026-10-21-tls-and-viewers.md",
+            "docs/qa/2026-10-21-execution-recovery.md"
           ]
         },
         {
@@ -191,7 +201,8 @@
             "tests/node/action-routing.test.mjs",
             "tests/desktop-controller.test.ts",
             "docs/qa/2026-10-21-transversal-modules.md",
-            "docs/qa/2026-10-21-tls-and-viewers.md"
+            "docs/qa/2026-10-21-tls-and-viewers.md",
+            "docs/qa/2026-10-21-execution-recovery.md"
           ]
         },
         {
@@ -206,7 +217,8 @@
             "tests/node/action-routing.test.mjs",
             "tests/desktop-controller.test.ts",
             "docs/qa/2026-10-21-transversal-modules.md",
-            "docs/qa/2026-10-21-tls-and-viewers.md"
+            "docs/qa/2026-10-21-tls-and-viewers.md",
+            "docs/qa/2026-10-21-execution-recovery.md"
           ]
         }
       ]
@@ -223,7 +235,8 @@
           "evidence": [
             "tests/node/universal-installation.test.mjs",
             "tests/installation-ui.spec.ts",
-            "docs/qa/2026-10-21-transversal-modules.md"
+            "docs/qa/2026-10-21-transversal-modules.md",
+            "docs/qa/2026-10-21-execution-recovery.md"
           ]
         },
         {
@@ -235,7 +248,8 @@
           "evidence": [
             "tests/node/universal-installation.test.mjs",
             "tests/installation-ui.spec.ts",
-            "docs/qa/2026-10-21-transversal-modules.md"
+            "docs/qa/2026-10-21-transversal-modules.md",
+            "docs/qa/2026-10-21-execution-recovery.md"
           ]
         },
         {
@@ -247,7 +261,8 @@
           "evidence": [
             "tests/node/universal-installation.test.mjs",
             "tests/installation-ui.spec.ts",
-            "docs/qa/2026-10-21-transversal-modules.md"
+            "docs/qa/2026-10-21-transversal-modules.md",
+            "docs/qa/2026-10-21-execution-recovery.md"
           ]
         },
         {
@@ -259,7 +274,8 @@
           "evidence": [
             "tests/node/universal-installation.test.mjs",
             "tests/installation-ui.spec.ts",
-            "docs/qa/2026-10-21-transversal-modules.md"
+            "docs/qa/2026-10-21-transversal-modules.md",
+            "docs/qa/2026-10-21-execution-recovery.md"
           ]
         },
         {
@@ -271,7 +287,8 @@
           "evidence": [
             "tests/node/universal-installation.test.mjs",
             "tests/installation-ui.spec.ts",
-            "docs/qa/2026-10-21-transversal-modules.md"
+            "docs/qa/2026-10-21-transversal-modules.md",
+            "docs/qa/2026-10-21-execution-recovery.md"
           ]
         },
         {
@@ -283,7 +300,8 @@
           "evidence": [
             "tests/node/universal-installation.test.mjs",
             "tests/installation-ui.spec.ts",
-            "docs/qa/2026-10-21-transversal-modules.md"
+            "docs/qa/2026-10-21-transversal-modules.md",
+            "docs/qa/2026-10-21-execution-recovery.md"
           ]
         }
       ]
@@ -302,7 +320,8 @@
             "tests/installation-ui.spec.ts",
             "tests/node/youtube-chat.test.mjs",
             "tests/youtube-reliability.test.ts",
-            "docs/qa/2026-10-21-transversal-modules.md"
+            "docs/qa/2026-10-21-transversal-modules.md",
+            "docs/qa/2026-10-21-execution-recovery.md"
           ]
         },
         {
@@ -316,7 +335,8 @@
             "tests/installation-ui.spec.ts",
             "tests/node/youtube-chat.test.mjs",
             "tests/youtube-reliability.test.ts",
-            "docs/qa/2026-10-21-transversal-modules.md"
+            "docs/qa/2026-10-21-transversal-modules.md",
+            "docs/qa/2026-10-21-execution-recovery.md"
           ]
         },
         {
@@ -330,7 +350,8 @@
             "tests/installation-ui.spec.ts",
             "tests/node/youtube-chat.test.mjs",
             "tests/youtube-reliability.test.ts",
-            "docs/qa/2026-10-21-transversal-modules.md"
+            "docs/qa/2026-10-21-transversal-modules.md",
+            "docs/qa/2026-10-21-execution-recovery.md"
           ]
         },
         {
@@ -344,7 +365,8 @@
             "tests/installation-ui.spec.ts",
             "tests/node/youtube-chat.test.mjs",
             "tests/youtube-reliability.test.ts",
-            "docs/qa/2026-10-21-transversal-modules.md"
+            "docs/qa/2026-10-21-transversal-modules.md",
+            "docs/qa/2026-10-21-execution-recovery.md"
           ]
         },
         {
@@ -358,7 +380,8 @@
             "tests/installation-ui.spec.ts",
             "tests/node/youtube-chat.test.mjs",
             "tests/youtube-reliability.test.ts",
-            "docs/qa/2026-10-21-transversal-modules.md"
+            "docs/qa/2026-10-21-transversal-modules.md",
+            "docs/qa/2026-10-21-execution-recovery.md"
           ]
         },
         {
@@ -372,7 +395,8 @@
             "tests/installation-ui.spec.ts",
             "tests/node/youtube-chat.test.mjs",
             "tests/youtube-reliability.test.ts",
-            "docs/qa/2026-10-21-transversal-modules.md"
+            "docs/qa/2026-10-21-transversal-modules.md",
+            "docs/qa/2026-10-21-execution-recovery.md"
           ]
         }
       ]
@@ -390,7 +414,8 @@
             "tests/node/universal-installation.test.mjs",
             "tests/installation-ui.spec.ts",
             "docs/qa/2026-10-21-transversal-modules.md",
-            "docs/qa/2026-10-21-tls-and-viewers.md"
+            "docs/qa/2026-10-21-tls-and-viewers.md",
+            "docs/qa/2026-10-21-execution-recovery.md"
           ]
         },
         {
@@ -403,7 +428,8 @@
             "tests/node/universal-installation.test.mjs",
             "tests/installation-ui.spec.ts",
             "docs/qa/2026-10-21-transversal-modules.md",
-            "docs/qa/2026-10-21-tls-and-viewers.md"
+            "docs/qa/2026-10-21-tls-and-viewers.md",
+            "docs/qa/2026-10-21-execution-recovery.md"
           ]
         },
         {
@@ -416,7 +442,8 @@
             "tests/node/universal-installation.test.mjs",
             "tests/installation-ui.spec.ts",
             "docs/qa/2026-10-21-transversal-modules.md",
-            "docs/qa/2026-10-21-tls-and-viewers.md"
+            "docs/qa/2026-10-21-tls-and-viewers.md",
+            "docs/qa/2026-10-21-execution-recovery.md"
           ]
         },
         {
@@ -429,7 +456,8 @@
             "tests/node/universal-installation.test.mjs",
             "tests/installation-ui.spec.ts",
             "docs/qa/2026-10-21-transversal-modules.md",
-            "docs/qa/2026-10-21-tls-and-viewers.md"
+            "docs/qa/2026-10-21-tls-and-viewers.md",
+            "docs/qa/2026-10-21-execution-recovery.md"
           ]
         },
         {
@@ -442,7 +470,8 @@
             "tests/node/universal-installation.test.mjs",
             "tests/installation-ui.spec.ts",
             "docs/qa/2026-10-21-transversal-modules.md",
-            "docs/qa/2026-10-21-tls-and-viewers.md"
+            "docs/qa/2026-10-21-tls-and-viewers.md",
+            "docs/qa/2026-10-21-execution-recovery.md"
           ]
         },
         {
@@ -455,7 +484,8 @@
             "tests/node/universal-installation.test.mjs",
             "tests/installation-ui.spec.ts",
             "docs/qa/2026-10-21-transversal-modules.md",
-            "docs/qa/2026-10-21-tls-and-viewers.md"
+            "docs/qa/2026-10-21-tls-and-viewers.md",
+            "docs/qa/2026-10-21-execution-recovery.md"
           ]
         }
       ]
@@ -474,7 +504,8 @@
             "tests/installation-ui.spec.ts",
             "tests/node/youtube-chat.test.mjs",
             "docs/qa/2026-10-21-transversal-modules.md",
-            "docs/qa/2026-10-21-tls-and-viewers.md"
+            "docs/qa/2026-10-21-tls-and-viewers.md",
+            "docs/qa/2026-10-21-execution-recovery.md"
           ]
         },
         {
@@ -488,7 +519,8 @@
             "tests/installation-ui.spec.ts",
             "tests/node/youtube-chat.test.mjs",
             "docs/qa/2026-10-21-transversal-modules.md",
-            "docs/qa/2026-10-21-tls-and-viewers.md"
+            "docs/qa/2026-10-21-tls-and-viewers.md",
+            "docs/qa/2026-10-21-execution-recovery.md"
           ]
         },
         {
@@ -502,7 +534,8 @@
             "tests/installation-ui.spec.ts",
             "tests/node/youtube-chat.test.mjs",
             "docs/qa/2026-10-21-transversal-modules.md",
-            "docs/qa/2026-10-21-tls-and-viewers.md"
+            "docs/qa/2026-10-21-tls-and-viewers.md",
+            "docs/qa/2026-10-21-execution-recovery.md"
           ]
         },
         {
@@ -516,7 +549,8 @@
             "tests/installation-ui.spec.ts",
             "tests/node/youtube-chat.test.mjs",
             "docs/qa/2026-10-21-transversal-modules.md",
-            "docs/qa/2026-10-21-tls-and-viewers.md"
+            "docs/qa/2026-10-21-tls-and-viewers.md",
+            "docs/qa/2026-10-21-execution-recovery.md"
           ]
         },
         {
@@ -530,7 +564,8 @@
             "tests/installation-ui.spec.ts",
             "tests/node/youtube-chat.test.mjs",
             "docs/qa/2026-10-21-transversal-modules.md",
-            "docs/qa/2026-10-21-tls-and-viewers.md"
+            "docs/qa/2026-10-21-tls-and-viewers.md",
+            "docs/qa/2026-10-21-execution-recovery.md"
           ]
         },
         {
@@ -544,7 +579,8 @@
             "tests/installation-ui.spec.ts",
             "tests/node/youtube-chat.test.mjs",
             "docs/qa/2026-10-21-transversal-modules.md",
-            "docs/qa/2026-10-21-tls-and-viewers.md"
+            "docs/qa/2026-10-21-tls-and-viewers.md",
+            "docs/qa/2026-10-21-execution-recovery.md"
           ]
         }
       ]
@@ -561,7 +597,8 @@
           "evidence": [
             "tests/node/universal-installation.test.mjs",
             "tests/installation-ui.spec.ts",
-            "docs/qa/2026-10-21-transversal-modules.md"
+            "docs/qa/2026-10-21-transversal-modules.md",
+            "docs/qa/2026-10-21-execution-recovery.md"
           ]
         },
         {
@@ -573,7 +610,8 @@
           "evidence": [
             "tests/node/universal-installation.test.mjs",
             "tests/installation-ui.spec.ts",
-            "docs/qa/2026-10-21-transversal-modules.md"
+            "docs/qa/2026-10-21-transversal-modules.md",
+            "docs/qa/2026-10-21-execution-recovery.md"
           ]
         },
         {
@@ -585,7 +623,8 @@
           "evidence": [
             "tests/node/universal-installation.test.mjs",
             "tests/installation-ui.spec.ts",
-            "docs/qa/2026-10-21-transversal-modules.md"
+            "docs/qa/2026-10-21-transversal-modules.md",
+            "docs/qa/2026-10-21-execution-recovery.md"
           ]
         },
         {
@@ -597,7 +636,8 @@
           "evidence": [
             "tests/node/universal-installation.test.mjs",
             "tests/installation-ui.spec.ts",
-            "docs/qa/2026-10-21-transversal-modules.md"
+            "docs/qa/2026-10-21-transversal-modules.md",
+            "docs/qa/2026-10-21-execution-recovery.md"
           ]
         },
         {
@@ -609,7 +649,8 @@
           "evidence": [
             "tests/node/universal-installation.test.mjs",
             "tests/installation-ui.spec.ts",
-            "docs/qa/2026-10-21-transversal-modules.md"
+            "docs/qa/2026-10-21-transversal-modules.md",
+            "docs/qa/2026-10-21-execution-recovery.md"
           ]
         },
         {
@@ -621,7 +662,8 @@
           "evidence": [
             "tests/node/universal-installation.test.mjs",
             "tests/installation-ui.spec.ts",
-            "docs/qa/2026-10-21-transversal-modules.md"
+            "docs/qa/2026-10-21-transversal-modules.md",
+            "docs/qa/2026-10-21-execution-recovery.md"
           ]
         }
       ]
@@ -638,7 +680,8 @@
           "evidence": [
             "tests/node/universal-installation.test.mjs",
             "tests/installation-ui.spec.ts",
-            "docs/qa/2026-10-21-transversal-modules.md"
+            "docs/qa/2026-10-21-transversal-modules.md",
+            "docs/qa/2026-10-21-execution-recovery.md"
           ]
         },
         {
@@ -650,7 +693,8 @@
           "evidence": [
             "tests/node/universal-installation.test.mjs",
             "tests/installation-ui.spec.ts",
-            "docs/qa/2026-10-21-transversal-modules.md"
+            "docs/qa/2026-10-21-transversal-modules.md",
+            "docs/qa/2026-10-21-execution-recovery.md"
           ]
         },
         {
@@ -662,7 +706,8 @@
           "evidence": [
             "tests/node/universal-installation.test.mjs",
             "tests/installation-ui.spec.ts",
-            "docs/qa/2026-10-21-transversal-modules.md"
+            "docs/qa/2026-10-21-transversal-modules.md",
+            "docs/qa/2026-10-21-execution-recovery.md"
           ]
         },
         {
@@ -674,7 +719,8 @@
           "evidence": [
             "tests/node/universal-installation.test.mjs",
             "tests/installation-ui.spec.ts",
-            "docs/qa/2026-10-21-transversal-modules.md"
+            "docs/qa/2026-10-21-transversal-modules.md",
+            "docs/qa/2026-10-21-execution-recovery.md"
           ]
         },
         {
@@ -686,7 +732,8 @@
           "evidence": [
             "tests/node/universal-installation.test.mjs",
             "tests/installation-ui.spec.ts",
-            "docs/qa/2026-10-21-transversal-modules.md"
+            "docs/qa/2026-10-21-transversal-modules.md",
+            "docs/qa/2026-10-21-execution-recovery.md"
           ]
         },
         {
@@ -698,7 +745,8 @@
           "evidence": [
             "tests/node/universal-installation.test.mjs",
             "tests/installation-ui.spec.ts",
-            "docs/qa/2026-10-21-transversal-modules.md"
+            "docs/qa/2026-10-21-transversal-modules.md",
+            "docs/qa/2026-10-21-execution-recovery.md"
           ]
         }
       ]
@@ -715,7 +763,8 @@
           "evidence": [
             "tests/node/universal-installation.test.mjs",
             "tests/installation-ui.spec.ts",
-            "docs/qa/2026-10-21-transversal-modules.md"
+            "docs/qa/2026-10-21-transversal-modules.md",
+            "docs/qa/2026-10-21-execution-recovery.md"
           ]
         },
         {
@@ -727,7 +776,8 @@
           "evidence": [
             "tests/node/universal-installation.test.mjs",
             "tests/installation-ui.spec.ts",
-            "docs/qa/2026-10-21-transversal-modules.md"
+            "docs/qa/2026-10-21-transversal-modules.md",
+            "docs/qa/2026-10-21-execution-recovery.md"
           ]
         },
         {
@@ -739,7 +789,8 @@
           "evidence": [
             "tests/node/universal-installation.test.mjs",
             "tests/installation-ui.spec.ts",
-            "docs/qa/2026-10-21-transversal-modules.md"
+            "docs/qa/2026-10-21-transversal-modules.md",
+            "docs/qa/2026-10-21-execution-recovery.md"
           ]
         },
         {
@@ -751,7 +802,8 @@
           "evidence": [
             "tests/node/universal-installation.test.mjs",
             "tests/installation-ui.spec.ts",
-            "docs/qa/2026-10-21-transversal-modules.md"
+            "docs/qa/2026-10-21-transversal-modules.md",
+            "docs/qa/2026-10-21-execution-recovery.md"
           ]
         },
         {
@@ -763,7 +815,8 @@
           "evidence": [
             "tests/node/universal-installation.test.mjs",
             "tests/installation-ui.spec.ts",
-            "docs/qa/2026-10-21-transversal-modules.md"
+            "docs/qa/2026-10-21-transversal-modules.md",
+            "docs/qa/2026-10-21-execution-recovery.md"
           ]
         },
         {
@@ -775,7 +828,8 @@
           "evidence": [
             "tests/node/universal-installation.test.mjs",
             "tests/installation-ui.spec.ts",
-            "docs/qa/2026-10-21-transversal-modules.md"
+            "docs/qa/2026-10-21-transversal-modules.md",
+            "docs/qa/2026-10-21-execution-recovery.md"
           ]
         }
       ]
@@ -795,7 +849,8 @@
             "tests/audio-destinations.test.ts",
             "tests/soundboard-runtime.test.ts",
             "docs/qa/2026-10-21-transversal-modules.md",
-            "docs/qa/2026-10-21-tls-and-viewers.md"
+            "docs/qa/2026-10-21-tls-and-viewers.md",
+            "docs/qa/2026-10-21-execution-recovery.md"
           ]
         },
         {
@@ -810,7 +865,8 @@
             "tests/audio-destinations.test.ts",
             "tests/soundboard-runtime.test.ts",
             "docs/qa/2026-10-21-transversal-modules.md",
-            "docs/qa/2026-10-21-tls-and-viewers.md"
+            "docs/qa/2026-10-21-tls-and-viewers.md",
+            "docs/qa/2026-10-21-execution-recovery.md"
           ]
         },
         {
@@ -825,7 +881,8 @@
             "tests/audio-destinations.test.ts",
             "tests/soundboard-runtime.test.ts",
             "docs/qa/2026-10-21-transversal-modules.md",
-            "docs/qa/2026-10-21-tls-and-viewers.md"
+            "docs/qa/2026-10-21-tls-and-viewers.md",
+            "docs/qa/2026-10-21-execution-recovery.md"
           ]
         },
         {
@@ -840,7 +897,8 @@
             "tests/audio-destinations.test.ts",
             "tests/soundboard-runtime.test.ts",
             "docs/qa/2026-10-21-transversal-modules.md",
-            "docs/qa/2026-10-21-tls-and-viewers.md"
+            "docs/qa/2026-10-21-tls-and-viewers.md",
+            "docs/qa/2026-10-21-execution-recovery.md"
           ]
         },
         {
@@ -854,7 +912,8 @@
             "tests/installation-ui.spec.ts",
             "tests/mobile-planning-audio.test.ts",
             "docs/qa/2026-10-21-transversal-modules.md",
-            "docs/qa/2026-10-21-tls-and-viewers.md"
+            "docs/qa/2026-10-21-tls-and-viewers.md",
+            "docs/qa/2026-10-21-execution-recovery.md"
           ]
         },
         {
@@ -869,7 +928,8 @@
             "tests/audio-destinations.test.ts",
             "tests/soundboard-runtime.test.ts",
             "docs/qa/2026-10-21-transversal-modules.md",
-            "docs/qa/2026-10-21-tls-and-viewers.md"
+            "docs/qa/2026-10-21-tls-and-viewers.md",
+            "docs/qa/2026-10-21-execution-recovery.md"
           ]
         }
       ]
@@ -886,7 +946,8 @@
           "evidence": [
             "tests/node/universal-installation.test.mjs",
             "tests/installation-ui.spec.ts",
-            "docs/qa/2026-10-21-transversal-modules.md"
+            "docs/qa/2026-10-21-transversal-modules.md",
+            "docs/qa/2026-10-21-execution-recovery.md"
           ]
         },
         {
@@ -898,7 +959,8 @@
           "evidence": [
             "tests/node/universal-installation.test.mjs",
             "tests/installation-ui.spec.ts",
-            "docs/qa/2026-10-21-transversal-modules.md"
+            "docs/qa/2026-10-21-transversal-modules.md",
+            "docs/qa/2026-10-21-execution-recovery.md"
           ]
         },
         {
@@ -910,7 +972,8 @@
           "evidence": [
             "tests/node/universal-installation.test.mjs",
             "tests/installation-ui.spec.ts",
-            "docs/qa/2026-10-21-transversal-modules.md"
+            "docs/qa/2026-10-21-transversal-modules.md",
+            "docs/qa/2026-10-21-execution-recovery.md"
           ]
         },
         {
@@ -922,7 +985,8 @@
           "evidence": [
             "tests/node/universal-installation.test.mjs",
             "tests/installation-ui.spec.ts",
-            "docs/qa/2026-10-21-transversal-modules.md"
+            "docs/qa/2026-10-21-transversal-modules.md",
+            "docs/qa/2026-10-21-execution-recovery.md"
           ]
         },
         {
@@ -934,7 +998,8 @@
           "evidence": [
             "tests/node/universal-installation.test.mjs",
             "tests/installation-ui.spec.ts",
-            "docs/qa/2026-10-21-transversal-modules.md"
+            "docs/qa/2026-10-21-transversal-modules.md",
+            "docs/qa/2026-10-21-execution-recovery.md"
           ]
         },
         {
@@ -946,7 +1011,8 @@
           "evidence": [
             "tests/node/universal-installation.test.mjs",
             "tests/installation-ui.spec.ts",
-            "docs/qa/2026-10-21-transversal-modules.md"
+            "docs/qa/2026-10-21-transversal-modules.md",
+            "docs/qa/2026-10-21-execution-recovery.md"
           ]
         }
       ]
@@ -961,7 +1027,8 @@
         "tests/node/universal-installation.test.mjs",
         "tests/installation-ui.spec.ts",
         "tests/installation-store.test.ts",
-        "docs/qa/2026-10-21-transversal-modules.md"
+        "docs/qa/2026-10-21-transversal-modules.md",
+        "docs/qa/2026-10-21-execution-recovery.md"
       ]
     },
     {
@@ -972,7 +1039,8 @@
         "tests/node/universal-installation.test.mjs",
         "tests/installation-ui.spec.ts",
         "tests/installation-store.test.ts",
-        "docs/qa/2026-10-21-transversal-modules.md"
+        "docs/qa/2026-10-21-transversal-modules.md",
+        "docs/qa/2026-10-21-execution-recovery.md"
       ]
     },
     {
@@ -983,7 +1051,8 @@
         "tests/node/universal-installation.test.mjs",
         "tests/installation-ui.spec.ts",
         "tests/installation-store.test.ts",
-        "docs/qa/2026-10-21-transversal-modules.md"
+        "docs/qa/2026-10-21-transversal-modules.md",
+        "docs/qa/2026-10-21-execution-recovery.md"
       ]
     },
     {
@@ -994,7 +1063,8 @@
         "tests/node/universal-installation.test.mjs",
         "tests/installation-ui.spec.ts",
         "tests/installation-store.test.ts",
-        "docs/qa/2026-10-21-transversal-modules.md"
+        "docs/qa/2026-10-21-transversal-modules.md",
+        "docs/qa/2026-10-21-execution-recovery.md"
       ]
     },
     {
@@ -1005,7 +1075,8 @@
         "tests/node/universal-installation.test.mjs",
         "tests/installation-ui.spec.ts",
         "tests/installation-store.test.ts",
-        "docs/qa/2026-10-21-transversal-modules.md"
+        "docs/qa/2026-10-21-transversal-modules.md",
+        "docs/qa/2026-10-21-execution-recovery.md"
       ]
     },
     {
@@ -1016,7 +1087,8 @@
         "tests/node/universal-installation.test.mjs",
         "tests/installation-ui.spec.ts",
         "tests/installation-store.test.ts",
-        "docs/qa/2026-10-21-transversal-modules.md"
+        "docs/qa/2026-10-21-transversal-modules.md",
+        "docs/qa/2026-10-21-execution-recovery.md"
       ]
     },
     {
@@ -1027,7 +1099,8 @@
         "tests/node/universal-installation.test.mjs",
         "tests/installation-ui.spec.ts",
         "tests/installation-store.test.ts",
-        "docs/qa/2026-10-21-transversal-modules.md"
+        "docs/qa/2026-10-21-transversal-modules.md",
+        "docs/qa/2026-10-21-execution-recovery.md"
       ]
     },
     {
@@ -1038,7 +1111,8 @@
         "tests/node/universal-installation.test.mjs",
         "tests/installation-ui.spec.ts",
         "tests/installation-store.test.ts",
-        "docs/qa/2026-10-21-transversal-modules.md"
+        "docs/qa/2026-10-21-transversal-modules.md",
+        "docs/qa/2026-10-21-execution-recovery.md"
       ]
     },
     {
@@ -1049,7 +1123,8 @@
         "tests/node/universal-installation.test.mjs",
         "tests/installation-ui.spec.ts",
         "tests/installation-store.test.ts",
-        "docs/qa/2026-10-21-transversal-modules.md"
+        "docs/qa/2026-10-21-transversal-modules.md",
+        "docs/qa/2026-10-21-execution-recovery.md"
       ]
     }
   ]

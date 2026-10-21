@@ -25,6 +25,7 @@ vi.mock('electron', async () => {
     dialog: { showErrorBox: vi.fn() }, ipcMain: { handle: vi.fn(), on: vi.fn() }, shell: {} };
 });
 vi.mock('../apps/desktop/src/installation-store.js', () => ({ InstallationStore: class {
+  async recover() { return this.read(); }
   async read() { return {version:2,revision:0,localDeviceId:'test-device',preset:'single-pc',runtimeProfile:'root',configured:false,background:state.background,routes:{obs:'test-device'},devices:[{id:'test-device',name:'Test',platform:'windows',enabled:true,roles:['controller','obs-executor','services'],capabilities:['obs','cloud']}]}; }
 } }));
 vi.mock('../apps/desktop/src/lifecycle.js', () => ({ startDesktopRuntime: state.start }));
@@ -73,7 +74,7 @@ it.each(['crash', 'server', 'load', 'secondary'] as const)('presents during star
       return;
     }
     await vi.waitFor(() => expect(state.start).toHaveBeenCalledTimes(1));
-    expect(state.installKeys).toHaveBeenCalledExactlyOnceWith(expect.any(Function),path.join('/unused','StreamDashboard-Next'),'http://127.0.0.1:48133',expect.any(Function));
+    expect(state.installKeys).toHaveBeenCalledExactlyOnceWith(expect.any(Function),path.join('/unused','StreamDashboard-Next'),'http://127.0.0.1:48133',expect.any(Function),true);
     expect(state.assets).not.toHaveBeenCalled();
     const window = state.windows[0];
     expect(window.options.show).toBe(true);

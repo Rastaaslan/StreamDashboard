@@ -152,8 +152,9 @@ function soundState(sound, context) {
   if (common) return { disabled: true, text: common, active: false };
   if (!sound.enabled) return { disabled: true, text: 'Son désactivé', active: false };
   if (!sound.sourceAvailable) return { disabled: true, text: 'Fichier indisponible', active: false };
-  const active = context.sounds?.currentPlayback?.soundId === sound.id;
-  return { disabled: false, text: active ? context.sounds.currentPlayback.status === 'starting' ? 'Chargement du son' : 'En lecture' : context.local ? 'Jouer sur cet appareil' : sound.category || 'Jouer le son', active };
+  const playing = (context.sounds?.activePlaybacks || [context.sounds?.currentPlayback]).find(value => value?.soundId === sound.id);
+  const active = Boolean(playing);
+  return { disabled: false, text: active ? playing.status === 'starting' ? 'Chargement du son' : 'En lecture' : context.local ? 'Jouer sur cet appareil' : sound.category || 'Jouer le son', active };
 }
 
 function actionStatus(action, context) {

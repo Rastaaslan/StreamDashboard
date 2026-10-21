@@ -1,4 +1,4 @@
-const CACHE = 'streamdashboard-mobile-v27-pinned-transport';
+const CACHE = 'streamdashboard-mobile-v28-execution-recovery';
 const PATHS = new Set([
   '/mobile/',
   '/mobile/index.html',

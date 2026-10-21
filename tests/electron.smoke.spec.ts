@@ -193,11 +193,14 @@ test('agent sans fenêtre : services autonomes disponibles et fenêtre refermabl
   const origin='http://127.0.0.1:48135';
   const upload=await fetch(origin+'/api/v2/sounds/upload?name=Silent-test&extension=wav',{method:'POST',headers:{'content-type':'application/octet-stream'},body:wav});
   expect(upload.status).toBe(201);const sound=await upload.json() as {id:string};
-  const edit=await fetch(origin+'/api/v1/soundboard/sounds/'+sound.id,{method:'PUT',headers:{'content-type':'application/json'},body:JSON.stringify({outputId:'device-default',volume:0})});expect(edit.status).toBe(200);
+  const edit=await fetch(origin+'/api/v1/soundboard/sounds/'+sound.id,{method:'PUT',headers:{'content-type':'application/json'},body:JSON.stringify({outputId:'device-default',volume:0,playbackMode:'mix'})});expect(edit.status).toBe(200);
   const send=async(action:string,id:string)=>{const response=await fetch(origin+'/api/v2/actions',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({id,issuedAt:new Date().toISOString(),action,...(action==='sound.play'?{soundId:sound.id}:{})})});return response.json() as Promise<{status:string;message:string}>;};
   const played=await send('sound.play','silent_audio_play');expect(played,played.message).toMatchObject({status:'succeeded'});
   expect(await application.evaluate(({BrowserWindow})=>BrowserWindow.getAllWindows().every(w=>!w.isVisible()))).toBe(true);
+  expect(await send('sound.play','silent_audio_mix')).toMatchObject({status:'succeeded'});
+  expect((await (await fetch(origin+'/api/v1/soundboard')).json()).activePlaybacks).toHaveLength(2);
   expect(await send('sound.stop','silent_audio_stop')).toMatchObject({status:'succeeded'});
+  expect((await (await fetch(origin+'/api/v1/soundboard')).json()).activePlaybacks).toHaveLength(0);
   await application.close();application=undefined;
   await expectEndpointClosed('http://127.0.0.1:48135');
  }finally{if(application)await application.close().catch(()=>{});await rm(profile,{recursive:true,force:true});}

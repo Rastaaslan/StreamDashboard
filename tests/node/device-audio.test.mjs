@@ -45,3 +45,33 @@ test('stop remains successful when the media play promise rejects after cancella
  assert.equal(s.player.snapshot().currentPlayback.status,'starting');s.player.stop();rejectPlay(new DOMException('Stopped','AbortError'));
  await assert.rejects(pending,{code:'CANCELED'});assert.equal(s.player.snapshot().currentPlayback,null);assert.equal(s.errors.length,0);assert.equal(s.revoked.length,1);
 });
+
+test('mix keeps two device sounds, individual volumes, independent completion and Stop releases all',async()=>{
+ const s=fixture();s.sounds.forEach(sound=>sound.playbackMode='mix');
+ await s.player.play('a');await s.player.play('b');
+ assert.equal(s.player.snapshot().activePlaybacks.length,2);assert.equal(s.media[0].pauses,0);
+ assert.equal(s.media[0].volume,.35);assert.equal(s.media[1].volume,1);
+ s.media[0].onended();assert.equal(s.player.snapshot().activePlaybacks.length,1);assert.equal(s.player.snapshot().currentPlayback.soundId,'b');
+ s.player.stop();assert.equal(s.player.snapshot().activePlaybacks.length,0);assert.equal(s.revoked.length,2);
+});
+test('Stop cancels every concurrent mixed asset read without restarting on late resolution',async()=>{
+ const s=fixture();s.sounds.forEach(sound=>sound.playbackMode='mix');
+ let resolve;s.waitAsset(new Promise(r=>resolve=r));
+ const a=s.player.play('a'),b=s.player.play('b');await new Promise(r=>setImmediate(r));
+ assert.equal(s.player.snapshot().activePlaybacks.length,2);s.player.stop();resolve();
+ assert.deepEqual((await Promise.allSettled([a,b])).map(r=>r.reason.code),['CANCELED','CANCELED']);assert.equal(s.media.length,0);
+});
+test('an unavailable mixed sound preserves the other playback; replacing stops all mixed sounds',async()=>{
+ const s=fixture();s.sounds.forEach(sound=>sound.playbackMode='mix');await s.player.play('a');
+ s.store.soundAsset=async()=>null;await assert.rejects(s.player.play('b'),/Réimportez/);assert.equal(s.media[0].pauses,0);
+ s.store.soundAsset=async()=>new Blob(['audio']);await s.player.play('b');
+ s.time(1700);s.sounds[0].playbackMode='replace';await s.player.play('a');
+ assert.equal(s.player.snapshot().activePlaybacks.length,1);assert.equal(s.media[0].pauses,1);assert.equal(s.media[1].pauses,1);
+});
+test('mix is bounded and duplicate preparation cannot bypass the cooldown',async()=>{
+ const s=fixture();s.sounds[0].playbackMode='mix';s.sounds[0].cooldownMs=0;
+ for(let n=0;n<8;n++)await s.player.play('a');
+ await assert.rejects(s.player.play('a'),/Huit/);assert.equal(s.player.snapshot().activePlaybacks.length,8);s.player.stop();
+ let resolve;s.waitAsset(new Promise(r=>resolve=r));const pending=s.player.play('a');
+ await assert.rejects(s.player.play('a'),/préparation/);resolve();await pending;
+});
