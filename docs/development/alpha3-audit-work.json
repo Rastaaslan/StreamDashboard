@@ -10,12 +10,98 @@
     "tests": "targeted-first; full integration once changes converge",
     "deployment": "candidate packages; installed versions preserved"
   },
-  "sentinel": {"service": "active", "campaignAdmitted": false, "blocker": "Protected administrator admission unavailable in this session; no access control changed"},
-  "codexbridge": {"jobStarted": false, "attempts": 1, "blocker": "Exact alpha.2 commit unavailable to protected CodexBridge checkout; create_job rejected before launch"},
+  "sentinel": {
+    "service": "active",
+    "campaignAdmitted": false,
+    "blocker": "Protected administrator admission unavailable in this session; no access control changed"
+  },
+  "codexbridge": {
+    "jobStarted": false,
+    "attempts": 1,
+    "blocker": "Exact alpha.2 commit unavailable to protected CodexBridge checkout; create_job rejected before launch"
+  },
   "work": [
-    {"ids": ["A01","A02"], "status": "implemented-targeted-tests-passed", "tests": 74},
-    {"ids": ["A03","A04"], "status": "implemented-validation-pending"},
-    {"ids": ["A05","A06"], "status": "implementation-in-progress"},
-    {"ids": ["A07","A08","A09","A10","A11"], "status": "implementation-in-progress"}
-  ]
+    {
+      "ids": [
+        "A01",
+        "A02"
+      ],
+      "status": "implemented-automated-validated",
+      "evidence": "7 stop-priority regressions; control-v2 and youtube-reliability suites"
+    },
+    {
+      "ids": [
+        "A03",
+        "A04",
+        "A05",
+        "A06"
+      ],
+      "status": "implemented-automated-validated-hardware-pending",
+      "evidence": "113 browser tests; 354 Node tests with offline regression rerun; native policy harness"
+    },
+    {
+      "ids": [
+        "A07"
+      ],
+      "status": "implemented",
+      "evidence": "5-minute YouTube quota backoff; explicit stop bypasses provider reads"
+    },
+    {
+      "ids": [
+        "A08",
+        "A09"
+      ],
+      "status": "implemented-hardware-pending",
+      "evidence": "rotation configChanges; persistent metadata draft; optional keep-awake; native configuration and initial favorites"
+    },
+    {
+      "ids": [
+        "A10"
+      ],
+      "status": "honest-capability-gating",
+      "evidence": "Autonomous Android has no automation engine; UI explains and prevents rule editing without a paired runtime"
+    },
+    {
+      "ids": [
+        "A11"
+      ],
+      "status": "implemented-validated",
+      "evidence": "package.json version drives Android and CI; qualification matrix matches alpha.3 while 75 full qualification cells stay open"
+    }
+  ],
+  "validation": {
+    "vitestUniqueTestsPassed": 1477,
+    "vitestEnvironmentNote": "4 suites require LAN access and passed on dam-server; added stale-stop regression passed separately",
+    "nodeUniqueTestsPassed": 354,
+    "nodeNote": "353/354 on full pass; sole offline-precache failure corrected and its three-test file rerun successfully",
+    "browser": {
+      "passed": 113,
+      "failed": 0,
+      "skipped": 0
+    },
+    "androidJvm": 47,
+    "androidLintErrors": 0,
+    "androidLintWarnings": 15,
+    "nativePolicyHarness": "passed",
+    "securityCheck": "passed",
+    "shippedJavaScriptFiles": 89,
+    "apkSourceAssetsMatched": 113,
+    "windowsPackageIntegrity": "passed",
+    "universalQualificationOpen": 75
+  },
+  "artifacts": {
+    "apk": {
+      "version": "2.1.0-alpha.3",
+      "versionCode": 2010003,
+      "sha256": "f87905f106ef66a7a3d1418f65c2de2a2ff963811ed07c1e2dfcf7fbfdd81932",
+      "bytes": 3766946,
+      "sameSignerAsAlpha2": true
+    },
+    "windows": {
+      "path": "out/StreamDashboard-win32-x64",
+      "exeSha256": "bf8b14b0738f3d29624fdc3ef8c4026c26a4046df801253c709689544e4ad865",
+      "asarSha256": "50fa42811a06bcf0f2ed2c08664db468e35f51ead3b076a3cc42f3baefb0cbde"
+    },
+    "installed": false
+  }
 }

@@ -10,7 +10,8 @@ const repository = fileURLToPath(new URL('../../', import.meta.url));
 const workflow = readFileSync(join(repository, '.github/workflows/android.yml'), 'utf8');
 const gradle = readFileSync(join(repository, 'android/app/build.gradle'), 'utf8');
 const version = JSON.parse(readFileSync(join(repository, 'package.json'), 'utf8')).version;
-const versionCode = gradle.match(/def buildVersionCode[^\n]*\?: '(\d+)'/)?.[1];
+const versionParts = version.match(/^(\d+)\.(\d+)\.(\d+)(?:-alpha\.(\d+))?$/);
+const versionCode = String(Number(versionParts[1])*1000000 + Number(versionParts[2])*10000 + Number(versionParts[3])*100 + (versionParts[4]?Number(versionParts[4]):99));
 const product = 'com.rastaaslan.streamdashboard.remote.next';
 const dispatchOnly = "github.event_name == 'workflow_dispatch'";
 // Execute the actual workflow run blocks, not a reimplementation of its gates.
@@ -108,7 +109,7 @@ test('PR qualification needs no secrets and the release upload follows all dispa
   assert.doesNotMatch(workflow, /GOOGLE_ANDROID_CLIENT_ID|900000|0\.9\.0-rc/);
 });
 
-test('metadata uses the product package and checked-in version, refusing stale package or manifest identity', shellOnly, () => {
+test('metadata uses the product package and checked-in version, refusing stale package identity and unsupported versions', shellOnly, () => {
   withFixture(({ run, target, put }) => {
     accepted(run('Read Android product identity', { ANDROID_VERSION_NAME: '0.9.0-rc.1', ANDROID_VERSION_CODE: '900001' }));
     const exported = readFileSync(target('github-env'), 'utf8');
@@ -116,7 +117,7 @@ test('metadata uses the product package and checked-in version, refusing stale p
     assert.ok(exported.includes(`ANDROID_VERSION_NAME=${version}\n`));
     assert.ok(exported.includes(`ANDROID_APPLICATION_ID=${product}\n`));
     put('package.json', JSON.stringify({ version: '0.9.0-rc.1' }));
-    refused(run('Read Android product identity'), /versions differ/);
+    refused(run('Read Android product identity'), /Unsupported Android version/);
     put('package.json', JSON.stringify({ version }));
     put('android/app/build.gradle', gradle.replace(`applicationId '${product}'`, "applicationId 'com.rastaaslan.streamdashboard.remote'"));
     refused(run('Read Android product identity'), /Unexpected Android product identity/);

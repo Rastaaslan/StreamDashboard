@@ -15,6 +15,7 @@ def packageVersion = new groovy.json.JsonSlurper().parse(rootProject.file('../pa
 def versionParts = packageVersion =~ /^(\d+)\.(\d+)\.(\d+)(?:-alpha\.(\d+))?$/
 if (!versionParts.matches()) throw new GradleException('Version Android non prise en charge : ' + packageVersion)
 def derivedVersionCode = versionParts[0][1].toInteger() * 1000000 + versionParts[0][2].toInteger() * 10000 + versionParts[0][3].toInteger() * 100 + (versionParts[0][4] ? versionParts[0][4].toInteger() : 99)
+if (versionParts[0][2].toInteger() > 99 || versionParts[0][3].toInteger() > 99 || (versionParts[0][4] && versionParts[0][4].toInteger() > 98) || derivedVersionCode <= 0 || derivedVersionCode > 2100000000) throw new GradleException('Version Android hors plage : ' + packageVersion)
 def buildVersionCode = (System.getenv('ANDROID_VERSION_CODE') ?: derivedVersionCode.toString()) as Integer
 def buildVersionName = System.getenv('ANDROID_VERSION_NAME') ?: packageVersion
 def twitchAndroidClientId = System.getenv('TWITCH_ANDROID_CLIENT_ID') ?: new groovy.json.JsonSlurper().parse(rootProject.file('../resources/distribution.json')).twitchClientId ?: ''

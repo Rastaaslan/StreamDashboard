@@ -392,3 +392,82 @@ test('a local WizeBot pad uses this device account once and persists its receipt
   expect(backend.unexpected).toEqual([]);
   expect(errors).toEqual([]);
 });
+
+test('alpha3 Android creates and selects YouTube, publishes metadata and keeps the draft without a régie',async({page})=>{
+ const {backend,errors}=await setupLocal(page);
+ await page.evaluate(()=>{
+  const w=window as any;w.__cloudCalls=[];
+  w.StreamDashboardProviders.platformService=(raw:string)=>{
+   const v=JSON.parse(raw);w.__cloudCalls.push(v);
+   if(v.operation==='youtube.channels')return JSON.stringify({ok:true,items:[{id:'channel',title:'Chaîne locale'}]});
+   if(v.operation==='youtube.streams')return JSON.stringify({ok:true,items:[{id:'stream',channelId:'channel',title:'Flux local'}]});
+   if(v.operation==='youtube.create')return JSON.stringify({ok:true,broadcastId:'Abc_1234-XY',channelId:'channel'});
+   return JSON.stringify({ok:true});
+  };
+ });
+ await page.locator('nav [data-page="live"]').click();
+ await page.locator('[data-task="metadata"]').click();
+ await page.locator('#metadata-form [name="title"]').fill('Titre du téléphone');
+ await page.locator('#metadata-form [data-task="youtube-create"]').click();
+ await page.locator('[name="madeForKids"]').selectOption('false');
+ await page.locator('[name="streamId"]').selectOption('stream');
+ await page.getByRole('button',{name:'Créer et préparer la diffusion'}).click();
+ await expect(page.locator('[data-prepare-result]')).toContainText('informations vérifiées');
+ await page.getByRole('button',{name:'Utiliser pour le prochain lancement'}).click();
+ await expect(page.locator('#dialog')).not.toBeVisible();
+ await page.locator('[data-task="metadata"]').click();
+ await expect(page.locator('#metadata-form [name="title"]')).toHaveValue('Titre du téléphone');
+ await page.locator('#metadata-form button[value="apply"]').click();
+ await expect(page.locator('#dialog')).not.toBeVisible();
+ const calls=await page.evaluate(()=>(window as any).__cloudCalls);
+ expect(calls.filter((v:any)=>v.operation==='youtube.create')).toHaveLength(1);
+ expect(calls.filter((v:any)=>v.operation==='youtube.metadata').at(-1)).toMatchObject({broadcastId:'Abc_1234-XY',channelId:'channel',metadata:{title:'Titre du téléphone'}});
+ expect(calls.filter((v:any)=>v.operation==='twitch.metadata')).toHaveLength(1);
+ await page.locator('[data-task="metadata"]').click();
+ await page.locator('#metadata-form [name="title"]').fill('Brouillon après publication');
+ await expect.poll(async()=>page.evaluate(async()=>{const mod='/mobile/control/autonomy-store.js';const {openReplica}=await import(mod);return (await openReplica('device-workspace-v1')).record.drafts.metadata?.title;})).toBe('Brouillon après publication');
+ await page.reload();
+ await page.locator('nav [data-page="live"]').click();await page.locator('[data-task="metadata"]').click();
+ await expect(page.locator('#metadata-form [name="title"]')).toHaveValue('Brouillon après publication');
+ expect(backend.calls).toEqual([]);expect(errors).toEqual([]);
+});
+
+test('alpha3 Android shows native Twitch chat and makes automation limits explicit',async({page})=>{
+ const {backend,errors}=await setupLocal(page);
+ await page.evaluate(()=>{
+  const w=window as any;
+  w.StreamDashboardProviders.twitchChatState=()=>JSON.stringify({ok:true,accountConnected:true,identity:{broadcasterId:'123',userName:'chaine_locale',displayName:'Chaîne locale'},capabilities:{chatRead:true,chatWrite:true},chat:{connected:true,messages:[{id:'m1',broadcasterId:'123',text:'Message natif de test',receivedAt:new Date().toISOString(),chatter:{id:'456',displayName:'Alice',badges:[]}}]}});
+  w.StreamDashboardProviders.twitchChatSend=(raw:string)=>{w.__sentChat=JSON.parse(raw);return JSON.stringify({ok:true,status:'sent',messageId:'m2'});};
+ });
+ await page.locator('nav [data-page="live"]').click();await page.locator('[data-monitor-toggle]').click();
+ await expect(page.locator('[data-twitch-messages]')).toContainText('Message natif de test');
+ await page.getByLabel('Message Twitch',{exact:true}).fill('Réponse de test');await page.locator('[data-twitch-send]').click();
+ await expect(page.locator('[data-twitch-result]')).toContainText('Message envoyé');
+ expect(await page.evaluate(()=>(window as any).__sentChat)).toMatchObject({message:'Réponse de test',expectedBroadcasterId:'123'});
+ await page.locator('nav [data-page="manage"]').click();await page.locator('.management-grid [data-page="settings"]').click();
+ await expect(page.locator('[data-tab="obs"]')).toHaveCount(0);
+ await page.locator('[data-tab="integrations"]').click();await page.locator('[data-task="automations"]').click();
+ await expect(page.locator('#dialog')).toContainText('ne possède pas de moteur');await expect(page.locator('[data-task="new-automation"]')).toHaveCount(0);
+ expect(backend.calls).toEqual([]);expect(errors).toEqual([]);
+});
+
+test('alpha3 YouTube preparation works on the insecure Android asset origin',async({page})=>{
+ const androidOrigin=origin.replace('127.0.0.1','appassets.androidplatform.net');
+ await page.route('**/*',async route=>route.request().url().startsWith(androidOrigin+'/')?route.fulfill({response:await route.fetch({url:route.request().url().replace('appassets.androidplatform.net','127.0.0.1')})}):route.abort());
+ await page.goto(androidOrigin+'/local-fixture');
+ const errors:string[]=[];page.on('pageerror',e=>errors.push(e.message));
+ expect(await page.evaluate(()=>typeof crypto.randomUUID)).toBe('undefined');
+ await page.evaluate(async()=>{
+  const mod='/mobile/control/youtube-preparation-ui.js';const {openYouTubePreparation}=await import(mod);const w=window as any;w.__posts=[];
+  document.body.innerHTML='<div id="root"></div>';
+  await openYouTubePreparation(document.querySelector('#root'),{request:async(path:string,body:any)=>{
+   if(path.endsWith('/channels'))return {items:[{id:'channel',title:'Chaîne'}]};
+   if(path.endsWith('/streams'))return {items:[{id:'stream',channelId:'channel',title:'Flux'}]};
+   w.__posts.push(body);return {status:'succeeded',broadcastId:'Abc_1234-XY',channelId:'channel',message:'Création simulée'};
+  },metadata:{title:'Test HTTP',description:'',youtubeCategoryId:'20',tags:[]},expectedRevision:0,isCurrent:()=>true,remember:async()=>{},select:async()=>{}});
+ });
+ await page.locator('[name="madeForKids"]').selectOption('false');await page.locator('[name="streamId"]').selectOption('stream');
+ await page.getByRole('button',{name:'Créer et préparer la diffusion'}).click();
+ await expect(page.locator('[data-prepare-result]')).toContainText('Création simulée');
+ expect(await page.evaluate(()=>(window as any).__posts[0].id)).toMatch(/^[a-f0-9-]{36}$/);expect(errors).toEqual([]);
+});

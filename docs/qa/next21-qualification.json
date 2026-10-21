@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "candidate": "2.1.0-alpha.1",
+  "candidate": "2.1.0-alpha.3",
   "setups": [
     "single-pc",
     "single-pc-deck",

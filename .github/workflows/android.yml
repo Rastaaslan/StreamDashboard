@@ -63,11 +63,13 @@ jobs:
             return value;
           };
           const applicationId = match(/applicationId\s+'([A-Za-z0-9_.]+)'/, 'application ID');
-          const versionCode = match(/def buildVersionCode\s*=\s*\(System\.getenv\('ANDROID_VERSION_CODE'\)\s*\?:\s*'(\d+)'\)/, 'version code');
-          const versionName = match(/def buildVersionName\s*=\s*System\.getenv\('ANDROID_VERSION_NAME'\)\s*\?:\s*'([A-Za-z0-9.-]+)'/, 'version name');
+          const parts = manifest.version.match(/^(\d+)\.(\d+)\.(\d+)(?:-alpha\.(\d+))?$/);
+          if (!parts) throw new Error('Unsupported Android version in package.json.');
+          const versionName = manifest.version;
+          const versionCode = Number(parts[1])*1000000 + Number(parts[2])*10000 + Number(parts[3])*100 + (parts[4] ? Number(parts[4]) : 99);
+          if (!/def packageVersion = .*package.json/.test(gradle) || !/def buildVersionName = .* \?: packageVersion/.test(gradle)) throw new Error('Android must use package.json version.');
           if (applicationId !== 'com.rastaaslan.streamdashboard.remote.next') throw new Error('Unexpected Android product identity.');
-          if (!Number.isSafeInteger(Number(versionCode)) || Number(versionCode) <= 0) throw new Error('Invalid Android version code.');
-          if (versionName !== manifest.version) throw new Error('Android and package.json versions differ.');
+          if (!Number.isSafeInteger(versionCode) || versionCode <= 0 || versionCode > 2100000000 || Number(parts[2]) > 99 || Number(parts[3]) > 99 || (parts[4] && Number(parts[4]) > 98)) throw new Error('Invalid Android version code.');
           appendFileSync(process.env.GITHUB_ENV, `ANDROID_APPLICATION_ID=${applicationId}\nANDROID_VERSION_CODE=${versionCode}\nANDROID_VERSION_NAME=${versionName}\n`);
           console.log(`Android product: ${applicationId}, ${versionName} (${versionCode})`);
           NODE

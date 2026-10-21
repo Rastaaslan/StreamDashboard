@@ -6,6 +6,7 @@ const publication=process.argv.includes('--publication'),prerelease=manifest.ver
 if(publication&&process.env.GITHUB_REF_NAME?.startsWith('v')&&process.env.GITHUB_REF_NAME!==`v${manifest.version}`)throw Error('Le tag ne correspond pas à la version du paquet.');
 const final=process.argv.includes('--final')||(publication&&!prerelease);
 const matrix=JSON.parse(await readFile(new URL('../docs/qa/next21-qualification.json',import.meta.url),'utf8'));
+if(matrix.candidate!==manifest.version)throw Error('La matrice de qualification ne correspond pas à la version candidate.');
 const requiredModules=['obs-aitum','macros','twitch','youtube','viewers','chats','streamlabs','wizebot','planning','sounds','obs-clips'];
 const requiredScenarios=['single-device','multiple-devices','android-paired','android-standalone','obs-agent-stopped','controller-stopped','network-loss','reconnection','role-change','rc117-migration'];
 const requiredTransitions=['single-to-dual','dual-to-single','add-device','remove-device','add-android','remove-android','move-roles','restore-configuration','migrate-rc117'];

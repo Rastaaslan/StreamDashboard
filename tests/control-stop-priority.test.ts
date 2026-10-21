@@ -67,4 +67,11 @@ describe('Stop always reaches the local outputs',()=>{
   const now=Date.now;vi.spyOn(Date,'now').mockImplementation(()=>now()+31000);gate.resolve();
   expect((await stop).status).toBe('succeeded');await action;expect(adapter.output).toHaveBeenCalledWith('youtube',false);await control.stop();
  });
+ it('does not cancel a start from a stale reassigned stop button',async()=>{
+  const gate=deferred(),entered=deferred();let active=false;
+  const {control,adapter}=await open({live:async()=>active,preflight:async()=>{entered.resolve();await gate.promise;},output:vi.fn(async(_p,wanted)=>{active=wanted;})});
+  const started=control.execute(command('live.start','start_stale_001','youtube'));await entered.promise;
+  await expect(control.execute({...command('live.stop','stop_stale_0001','youtube'),expectedAction:{id:'old_stop',type:'live.stop',label:'Old',value:'',shortcut:'',color:'red'}})).rejects.toThrow('Ce bouton a changé');
+  gate.resolve();expect((await started).status).toBe('succeeded');expect(adapter.output).toHaveBeenCalledExactlyOnceWith('youtube',true);await control.stop();
+ });
 });
