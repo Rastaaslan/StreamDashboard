@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import path from 'node:path';
 
-const state = vi.hoisted(() => ({ info: vi.fn(), primary: true, ready: undefined as (() => void) | undefined, start: vi.fn(), stop: vi.fn(), installKeys: vi.fn(), stopKeys: vi.fn(), assets: vi.fn(), paths: { appData: '/unused', userData: '/unused/old-profile' } as Record<string,string>, windows: [] as any[], displays: [{ workArea: { x: 0, y: 0, width: 1920, height: 1080 } }] }));
+const state = vi.hoisted(() => ({ info: vi.fn(), background: false, primary: true, ready: undefined as (() => void) | undefined, start: vi.fn(), stop: vi.fn(), installKeys: vi.fn(), stopKeys: vi.fn(), assets: vi.fn(), paths: { appData: '/unused', userData: '/unused/old-profile' } as Record<string,string>, windows: [] as any[], displays: [{ workArea: { x: 0, y: 0, width: 1920, height: 1080 } }] }));
 vi.mock('electron', async () => {
   const { EventEmitter } = await import('node:events');
   const app = Object.assign(new EventEmitter(), {
@@ -21,9 +21,12 @@ vi.mock('electron', async () => {
     close = vi.fn(()=>this.destroy());
     getBounds() { return this.bounds; } setBounds(value: any) { this.bounds = value; }
   }
-  return { app, BrowserWindow: Window, screen: { getAllDisplays: () => state.displays, getPrimaryDisplay: () => state.displays[0] },
+  return { app, BrowserWindow: Window, Tray: class extends EventEmitter {setToolTip(){} setContextMenu(){} destroy(){}}, Menu:{buildFromTemplate:(value:unknown)=>value},nativeImage:{createFromPath:()=>({})}, screen: { getAllDisplays: () => state.displays, getPrimaryDisplay: () => state.displays[0] },
     dialog: { showErrorBox: vi.fn() }, ipcMain: { handle: vi.fn(), on: vi.fn() }, shell: {} };
 });
+vi.mock('../apps/desktop/src/installation-store.js', () => ({ InstallationStore: class {
+  async read() { return {version:2,revision:0,localDeviceId:'test-device',preset:'single-pc',runtimeProfile:'root',configured:false,background:state.background,routes:{obs:'test-device'},devices:[{id:'test-device',name:'Test',platform:'windows',enabled:true,roles:['controller','obs-executor','services'],capabilities:['obs','cloud']}]}; }
+} }));
 vi.mock('../apps/desktop/src/lifecycle.js', () => ({ startDesktopRuntime: state.start }));
 vi.mock('../apps/desktop/src/controller.js', () => ({ installControllerKeys: state.installKeys, startControllerAssets: state.assets }));
 vi.mock('../apps/desktop/src/squirrel.js', () => ({ handleSquirrelStartup: () => false }));
@@ -37,7 +40,7 @@ let rejectionListeners: NodeJS.UnhandledRejectionListener[];
 beforeEach(async () => {
   const { app } = await import('electron');
   app.removeAllListeners();
-  vi.resetModules(); vi.clearAllMocks(); state.start.mockReset(); state.stop.mockReset(); state.primary = true; state.windows = [];
+  vi.resetModules(); vi.clearAllMocks(); state.start.mockReset(); state.stop.mockReset(); state.primary = true; state.background = false; state.windows = [];
   state.paths = { appData: '/unused', userData: '/unused/old-profile' };
   state.installKeys.mockReturnValue(state.stopKeys);
   state.info.mockResolvedValue(undefined);
@@ -200,4 +203,21 @@ it('opens the Twitch viewer only for the current trusted main frame', async () =
   await vi.waitFor(()=>expect(app.exit).toHaveBeenCalledWith(0));
   expect(state.stop).toHaveBeenCalledTimes(1);
   expect(state.stopKeys).toHaveBeenCalledTimes(1);
+});
+
+
+it('keeps one runtime and native macros while closing and reopening the dashboard in background mode',async()=>{
+ state.background=true;
+ state.start.mockResolvedValue({dashboard:{url:'http://127.0.0.1:48133'},stop:state.stop});
+ const {app}=await import('electron');
+ await import('../apps/desktop/src/main.js');state.ready!();
+ await vi.waitFor(()=>expect(state.windows[0]?.loadURL).toHaveBeenCalledTimes(2));
+ state.windows[0].destroy();app.emit('window-all-closed');
+ expect(app.quit).not.toHaveBeenCalled();expect(state.stopKeys).not.toHaveBeenCalled();
+ app.emit('activate');
+ await vi.waitFor(()=>expect(state.windows).toHaveLength(2));
+ await vi.waitFor(()=>expect(state.windows[1].loadURL).toHaveBeenCalledTimes(1));
+ expect(state.start).toHaveBeenCalledTimes(1);expect(state.installKeys).toHaveBeenCalledTimes(1);
+ app.emit('before-quit',{preventDefault:vi.fn()});
+ await vi.waitFor(()=>expect(state.stop).toHaveBeenCalledTimes(1));
 });

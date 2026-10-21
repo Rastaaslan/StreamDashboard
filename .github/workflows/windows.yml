@@ -89,6 +89,8 @@ jobs:
           cache: npm
       - name: Install dependencies
         run: npm ci
+      - name: Enforce universal final-release qualification
+        run: node scripts/check-universal-release.mjs --publication
       - name: Require signing secrets
         shell: pwsh
         env:
@@ -145,6 +147,10 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           gh release view "${{ github.ref_name }}" *> $null
-          if ($LASTEXITCODE -ne 0) { gh release create "${{ github.ref_name }}" --generate-notes }
+          if ($LASTEXITCODE -ne 0) {
+            $version = (Get-Content package.json | ConvertFrom-Json).version
+            if ($version.Contains('-')) { gh release create "${{ github.ref_name }}" --generate-notes --prerelease }
+            else { gh release create "${{ github.ref_name }}" --generate-notes }
+          }
           $assets = Get-ChildItem out/make -Recurse -File | ForEach-Object FullName
           gh release upload "${{ github.ref_name }}" --clobber $assets

@@ -7,12 +7,14 @@ import packageJson from '../package.json' with { type: 'json' };
 
 const packagedExecutable = process.env.STREAMDASHBOARD_PACKAGED_EXE;
 const RUNTIME_ORIGIN = 'http://127.0.0.1:48133';
+// Linux CI uses a virtual display and has no desktop keyring or GPU session.
+const testArgs=process.platform==='linux'?['--disable-gpu','--password-store=basic']:[];
 
-async function launch(profile: string): Promise<ElectronApplication> {
+async function launch(profile: string, extraArgs: string[] = []): Promise<ElectronApplication> {
   const env = { ...process.env, NODE_ENV: 'test', APPDATA: profile, XDG_CONFIG_HOME: profile };
   return electron.launch(packagedExecutable
-    ? { executablePath: path.resolve(packagedExecutable), args: [], env }
-    : { args: [path.resolve('.')], env });
+    ? { executablePath: path.resolve(packagedExecutable), args: [...testArgs,...extraArgs], env }
+    : { args: [path.resolve('.'),...testArgs,...extraArgs], env });
 }
 
 async function expectEndpointClosed(origin: string) {
@@ -41,10 +43,11 @@ test('Electron réel démarre, persiste, impose une instance et arrête son back
 
     // A new profile uses the same welcome form and controller shell as the
     // installed application. Keep its current host role, without a restart.
-    await expect(window.locator('#device-setup-form')).toBeVisible();
-    await window.locator('#device-setup-form [name="name"]').fill('PC du test Electron');
-    await window.locator('#device-setup-form [name="role"]').selectOption('stream');
-    await window.locator('#device-setup-form').getByRole('button', { name: 'Enregistrer et continuer' }).click();
+    await expect(window.locator('#installation-form')).toBeVisible();
+    await window.locator('#installation-form [name="name"]').fill('PC du test Electron');
+    await window.locator('#installation-form [name="preset"]').selectOption('single-pc');
+    await window.locator('#installation-form').getByRole('button', { name: 'Prévisualiser le changement' }).click();
+    await window.getByRole('button', { name: 'Appliquer', exact: true }).click();
     await expect(window.locator('#dialog')).not.toBeVisible();
     await expect(window.locator('#role')).toContainText('PC du test Electron');
 
@@ -123,7 +126,7 @@ test('Electron réel démarre, persiste, impose une instance et arrête son back
     application = await launch(profile);
     const reloaded = await application.firstWindow();
     await expectRuntimeReady(reloaded);
-    await expect(reloaded.locator('#device-setup-form')).toHaveCount(0);
+    await expect(reloaded.locator('#installation-form')).toHaveCount(0);
     await expect(reloaded.locator('#role')).toContainText('PC du test Electron');
     await expect(reloaded.locator('.brand small')).toHaveText(marker);
     const after = await reloaded.evaluate(() => fetch('/api/v1/state').then(response => response.json()));
@@ -131,8 +134,8 @@ test('Electron réel démarre, persiste, impose une instance et arrête son back
     const secondOrigin = await reloaded.evaluate(() => location.origin);
     await application.close(); application = undefined;
     await expectEndpointClosed(secondOrigin);
-  } finally {
-    if (application) await application.close().catch(() => undefined);
+  } catch(error) { console.error('Electron smoke failure',error);throw error; } finally {
+    if (application) {const timer=setTimeout(()=>application?.process().kill('SIGKILL'),15_000);try{await application.close().catch(() => undefined);}finally{clearTimeout(timer);}}
     await rm(profile, { recursive: true, force: true });
   }
 });
@@ -160,8 +163,31 @@ test('20 démarrages réels, fermeture précoce et libération du port', async (
       const lines = (await readFile(path.join(logs, 'logs', 'streamdashboard.log'), 'utf8')).trim().split('\n');
       expect(lines.at(-1)).toContain('Shutdown complete');
     }
-  } finally {
-    if (application) await application.close().catch(() => undefined);
+  } catch(error) { console.error('Electron smoke failure',error);throw error; } finally {
+    if (application) {const timer=setTimeout(()=>application?.process().kill('SIGKILL'),15_000);try{await application.close().catch(() => undefined);}finally{clearTimeout(timer);}}
     await rm(profile, { recursive: true, force: true });
   }
+});
+
+
+test('agent sans fenêtre : services autonomes disponibles et fenêtre refermable sans arrêt du runtime', async () => {
+ const profile=await mkdtemp(path.join(os.tmpdir(),'streamdashboard-agent-'));
+ let application: ElectronApplication | undefined;
+ try {
+  await expectEndpointClosed('http://127.0.0.1:48135');
+  application=await launch(profile,['--role=client','--agent']);
+  await expect.poll(async()=>{
+   try{return (await fetch('http://127.0.0.1:48135/api/v1/health')).status;}catch{return 0;}
+  }).toBe(200);
+  expect(await application.evaluate(({BrowserWindow})=>BrowserWindow.getAllWindows().length)).toBe(0);
+  await application.evaluate(({app})=>{app.emit('activate');});
+  const window=await application.firstWindow();
+  await expect(window).toHaveURL('http://127.0.0.1:48134/mobile/control/?role=client');
+  await expect(window.locator('#installation-form')).toBeVisible();
+  await application.evaluate(({BrowserWindow})=>{BrowserWindow.getAllWindows()[0].close();});
+  await expect.poll(()=>application!.evaluate(({BrowserWindow})=>BrowserWindow.getAllWindows().length)).toBe(0);
+  expect((await fetch('http://127.0.0.1:48135/api/v1/health')).status).toBe(200);
+  await application.close();application=undefined;
+  await expectEndpointClosed('http://127.0.0.1:48135');
+ }finally{if(application)await application.close().catch(()=>{});await rm(profile,{recursive:true,force:true});}
 });

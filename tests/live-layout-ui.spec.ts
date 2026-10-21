@@ -143,7 +143,7 @@ for (const viewport of [{ width: 1366, height: 768 }, { width: 1920, height: 108
     await expect(chats).toHaveCount(2);
     const video = await documentBox(page.locator('.monitor-video'));
     await expect(page.getByRole('button', { name: 'Connexion visionneuse', exact: true })).toBeVisible();
-    await expect(page.locator('[data-monitor-viewer-status]')).toContainText('propre connexion web sur cet appareil');
+    await expect(page.locator('[data-monitor-viewer-status]')).toContainText('non vérifiable automatiquement');
     for (const control of await page.locator('.monitor-video .monitor-footer > *').all()) {
       const box = await documentBox(control);
       expect(box.x).toBeGreaterThanOrEqual(video.x);

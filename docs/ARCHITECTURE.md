@@ -1,3 +1,5 @@
+> Next 2.1 : les exigences P0 de [NEXT_2_1_REQUIREMENTS.md](NEXT_2_1_REQUIREMENTS.md) et le contrat commun `apps/mobile/shared/installation.js` remplacent les hypothèses matérielles historiques ci-dessous. Voir [NEXT_2_1_IMPLEMENTATION.md](NEXT_2_1_IMPLEMENTATION.md) pour l’état réel du chantier.
+
 # Architecture StreamDashboard V1.x
 
 ```text

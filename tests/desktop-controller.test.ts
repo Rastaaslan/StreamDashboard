@@ -10,6 +10,8 @@ const native = vi.hoisted(() => ({
   unregisterAll: vi.fn(),
   getCredential: vi.fn(),
   setCredential: vi.fn(),
+  getBindings: vi.fn(),
+  setBindings: vi.fn(),
 }));
 vi.mock('electron', () => ({
   ipcMain: {
@@ -21,6 +23,8 @@ vi.mock('electron', () => ({
 vi.mock('../apps/desktop/src/secrets.js', () => ({ ElectronSecretStore: class {
   getController = native.getCredential;
   setController = native.setCredential;
+  getControllerBindings = native.getBindings;
+  setControllerBindings = native.setBindings;
 } }));
 
 const shortcut = 'Control+Alt+Shift+F1';
@@ -46,6 +50,7 @@ beforeEach(() => {
   native.unregisterAll.mockImplementation(() => native.callbacks.clear());
   native.getCredential.mockResolvedValue({ credential: 'synthetic-paired-device' });
   native.setCredential.mockResolvedValue(undefined);
+  native.getBindings.mockResolvedValue(null); native.setBindings.mockResolvedValue(undefined);
   owner = {
     isDestroyed: () => false,
     isVisible: vi.fn(() => false), isFocused: vi.fn(() => false), isMinimized: vi.fn(() => true),
@@ -205,4 +210,42 @@ describe('native macro configuration ownership', () => {
     await vi.advanceTimersByTimeAsync(10_000); previous();
     expect(native.register).toHaveBeenCalledTimes(attempts); expect(fetchMock).toHaveBeenCalledTimes(1);
   });
+});
+
+
+it('restores verified shortcuts without a renderer and never replays a command on boot',async()=>{
+ stop?.();owner=null;
+ native.getBindings.mockResolvedValue({server:'http://127.0.0.1:48133',credential:'',actions:[action()]});
+ fetchMock.mockResolvedValue(response({configuration:{actions:[action()]}}));
+ const keys=installControllerKeys(()=>null,'/tmp/controller-tests',origin);stop=keys;
+ await keys.restore();
+ expect(native.callbacks.has(shortcut)).toBe(true);
+ expect(fetchMock).toHaveBeenCalledTimes(1);expect(fetchMock.mock.calls[0][1]?.method).toBeUndefined();
+ native.callbacks.get(shortcut)!();await drain();expect(fetchMock).toHaveBeenCalledTimes(2);
+ expect(fetchMock.mock.calls[1][1]?.method).toBe('POST');
+});
+it('refuses to restore a shortcut whose executor action changed while the controller was stopped',async()=>{
+ stop?.();owner=null;
+ native.getBindings.mockResolvedValue({server:'http://127.0.0.1:48133',credential:'',actions:[action()]});
+ fetchMock.mockResolvedValue(response({configuration:{actions:[action({type:'live.start'})]}}));
+ const keys=installControllerKeys(()=>null,'/tmp/controller-tests',origin);stop=keys;
+ await keys.restore();expect(native.callbacks.size).toBe(0);
+});
+
+it('a secure-store failure cannot trigger a receipt/render/write loop',async()=>{
+ native.setBindings.mockRejectedValue(Error('Keyring unavailable'));
+ owner.webContents.send.mockImplementation(()=>{configure();});
+ configure();await drain();
+ for(let i=0;i<30;i++)configure();
+ await drain();
+ expect(native.setBindings).toHaveBeenCalledTimes(1);
+ expect(owner.webContents.send).toHaveBeenCalledTimes(1);
+ expect(status().registered).toEqual([shortcut]);
+});
+it('persists changed action parameters once without rewriting identical mappings on refresh',async()=>{
+ configure([action({value:'First mic'})]);await drain();
+ configure([action({value:'First mic'})]);await drain();
+ configure([action({value:'Second mic'})]);await drain();
+ expect(native.setBindings).toHaveBeenCalledTimes(2);
+ expect(native.setBindings.mock.calls.at(-1)?.[0].actions[0].value).toBe('Second mic');
 });

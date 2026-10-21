@@ -14,6 +14,8 @@ await build({
     export { generateTwitchTags } from './packages/core/src/twitch-tags.ts';
     export { googleRecurrence, parseGoogleRecurrence } from './integrations/google-calendar/src/recurrence.ts';`,
     resolveDir: process.cwd(), sourcefile: 'mobile-planning-entry.js' },
+  // Keep bundle module names stable when a worktree shares node_modules.
+  preserveSymlinks: true,
   outfile: 'apps/mobile/shared/planning-engine.js', bundle: true, format: 'esm', platform: 'browser', target: 'es2022',
   external: ['crypto'], legalComments: 'eof', banner:{js:'/*!\n'+licenses.join('\n\n')+'\n*/'},
   plugins: [{ name: 'browser-planning-platform', setup(builder) {

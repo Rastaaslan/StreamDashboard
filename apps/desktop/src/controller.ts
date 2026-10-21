@@ -25,6 +25,10 @@ export function installControllerKeys(window: () => BrowserWindow | null, userDa
   let pending: { generation: number; controller: AbortController } | undefined;
   let cooldownUntil = 0;
   let retryTimer: NodeJS.Timeout | undefined;
+  let restoreTimer: NodeJS.Timeout | undefined;
+  let userConfigured = false;
+  let persistence: Promise<unknown> = Promise.resolve();
+  let persistenceSignature: string | undefined;
   let state: { registered: string[]; unavailable: string[]; lastResult?: ControllerResult } = { registered: [], unavailable: [] };
 
   const trusted = (event: Electron.IpcMainInvokeEvent) => {
@@ -117,7 +121,7 @@ export function installControllerKeys(window: () => BrowserWindow | null, userDa
     // threw first, silently leaving the previous host's global shortcuts active.
     const server = actions.length ? normalizeServer(value.server) : '';
     const target = actions.length ? { server, credential: value.credential, actions } : undefined;
-    const nextSignature = target ? JSON.stringify([server, target.credential, actions.map(action => [action.id, action.shortcut, action.type])]) : '';
+    const nextSignature = target ? JSON.stringify([server, target.credential, actions]) : '';
     if (nextSignature === signature) { retryUnavailable(); return state; }
     generation++;
     pending?.controller.abort(); pending = undefined; cooldownUntil = 0;
@@ -129,15 +133,54 @@ export function installControllerKeys(window: () => BrowserWindow | null, userDa
 
   ipcMain.handle('controller:credential:get', async event => { if (!trusted(event)) throw new Error('Interface non autorisée.'); return (await secrets.getController())?.credential || ''; });
   ipcMain.handle('controller:credential:set', async (event, value: unknown) => { if (!trusted(event) || typeof value !== 'string' || value.length > 256) throw new Error('Credential invalide.'); await secrets.setController({ credential: value }); });
+  ipcMain.handle('controller:device-credential:get', async (event, server: string) => { if (!trusted(event)) throw new Error('Interface non autorisée.'); return secrets.getControllerDevice(normalizeServer(server)); });
+  ipcMain.handle('controller:device-credential:set', async (event, server: string, credential: string) => { if (!trusted(event) || typeof credential !== 'string' || credential.length > 256) throw new Error('Association invalide.'); await secrets.setControllerDevice(normalizeServer(server),credential); });
   ipcMain.handle('controller:status', event => { if (!trusted(event)) throw new Error('Interface non autorisée.'); return state; });
   ipcMain.handle('controller:configure', (event, value: ControllerConfiguration) => {
     if (!trusted(event)) throw new Error('Interface non autorisée.');
-    return configure(value);
+    const result = configure(value);
+    userConfigured = true; clearTimeout(restoreTimer);
+    // The secure store is owned by the native process, never by the renderer.
+    const saved = configuration ? structuredClone(configuration) : undefined;
+    const nextPersistenceSignature = JSON.stringify(saved) || '';
+    // Rendering a receipt calls configure again. Repeating a rejected disk write
+    // here would create a native receipt / renderer refresh loop and delay quit.
+    if(nextPersistenceSignature !== persistenceSignature) {
+      persistenceSignature = nextPersistenceSignature;
+      persistence = persistence.then(() => secrets.setControllerBindings(saved)).catch(() => {
+        publish({ status: 'failed', message: 'Les macros fonctionnent pour cette session, mais leur restauration au prochain démarrage n’a pas pu être enregistrée. Déverrouillez le stockage sécurisé puis relancez l’application.' });
+      });
+    }
+    return result;
   });
-  return () => {
+  const stop = () => {
     disposed = true; generation++;
     pending?.controller.abort(); pending = undefined;
-    cancelRetry(); globalShortcut.unregisterAll();
-    for (const name of ['controller:configure','controller:status','controller:credential:get','controller:credential:set']) ipcMain.removeHandler(name);
+    clearTimeout(restoreTimer); cancelRetry(); globalShortcut.unregisterAll();
+    for (const name of ['controller:configure','controller:status','controller:credential:get','controller:credential:set','controller:device-credential:get','controller:device-credential:set']) ipcMain.removeHandler(name);
   };
+  // A cold headless start arms only mappings confirmed by the current executor.
+  // No persisted command is replayed and no stale mapping is silently activated.
+  const restore = async () => {
+    if (disposed || userConfigured) return;
+    try {
+      const saved = await secrets.getControllerBindings();
+      if (!saved || disposed || userConfigured) return;
+      const server = normalizeServer(saved.server);
+      const response = await fetch(`${server}/api/v2/state`, { headers: saved.credential ? { Authorization: `Device ${saved.credential}` } : {}, signal: AbortSignal.timeout(8_000) });
+      if (!response.ok) throw new Error('Executor unavailable');
+      const value = await response.json() as { configuration?: { actions?: DeckAction[] } };
+      if (!Array.isArray(value.configuration?.actions)) throw new Error('Invalid executor state');
+      // Fetching the current action definitions keeps an old shortcut from
+      // triggering a different action after a remote configuration change.
+      const current = value.configuration.actions;
+      const confirmed = saved.actions.filter(action => current.some(item => JSON.stringify(item) === JSON.stringify(action)));
+      if (disposed || userConfigured) return;
+      configure({ ...saved, actions: confirmed });
+      if (confirmed.length !== saved.actions.length) publish({ status: 'failed', message: 'Certaines macros ont changé. Ouvrez le tableau de bord pour vérifier leurs associations.' });
+    } catch {
+      if (!disposed && !userConfigured) { restoreTimer = setTimeout(() => { void restore(); }, 5_000); restoreTimer.unref(); }
+    }
+  };
+  return Object.assign(stop, { restore, flush: () => persistence });
 }

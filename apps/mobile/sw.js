@@ -1,4 +1,4 @@
-const CACHE = 'streamdashboard-mobile-v22-autonomous-deck';
+const CACHE = 'streamdashboard-mobile-v23-universal-setups';
 const PATHS = new Set([
   '/mobile/',
   '/mobile/index.html',
@@ -36,6 +36,9 @@ const PATHS = new Set([
   '/mobile/control/control.css',
   '/mobile/control/control.js',
   '/mobile/control/controller-bindings.js',
+  '/mobile/control/device-credentials.js',
+  '/mobile/control/installation-ui.js',
+  '/mobile/shared/installation.js',
   '/mobile/control/device-accounts.js',
   '/mobile/control/device-audio.js',
   '/mobile/control/device-bridge.js',
@@ -94,6 +97,9 @@ const ASSETS = [
   'control/control.css',
   'control/control.js',
   'control/controller-bindings.js',
+  'control/device-credentials.js',
+  'control/installation-ui.js',
+  'shared/installation.js',
   'control/device-accounts.js',
   'control/device-audio.js',
   'control/device-bridge.js',

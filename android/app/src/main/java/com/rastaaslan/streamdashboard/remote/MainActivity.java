@@ -246,9 +246,10 @@ public class MainActivity extends Activity {
     private static final String ALIAS = "streamdashboard.remote.credential";
     private static final String PREFS = "secure_remote";
     @JavascriptInterface public boolean isAndroid() { return true; }
-    @JavascriptInterface public String getCredential() {
+    @JavascriptInterface public String getCredential() { return readCredential("credential"); }
+    private String readCredential(String entry) {
       try {
-        String blob = getSharedPreferences(PREFS, MODE_PRIVATE).getString("credential", "");
+        String blob = getSharedPreferences(PREFS, MODE_PRIVATE).getString(entry, "");
         if (blob.isEmpty()) return "";
         String[] values = blob.split("\\.", 2);
         Cipher cipher = Cipher.getInstance("AES/GCM/NoPadding");
@@ -256,13 +257,26 @@ public class MainActivity extends Activity {
         return new String(cipher.doFinal(Base64.decode(values[1], Base64.NO_WRAP)), java.nio.charset.StandardCharsets.UTF_8);
       } catch (Exception ignored) { return ""; } // A transient keystore failure must not delete the saved pairing.
     }
-    @JavascriptInterface public boolean setCredential(String value) {
+    @JavascriptInterface public boolean setCredential(String value) { return writeCredential("credential",value); }
+    private boolean writeCredential(String entry,String value) {
       try {
         Cipher cipher = Cipher.getInstance("AES/GCM/NoPadding");
         cipher.init(Cipher.ENCRYPT_MODE, key());
         String blob = Base64.encodeToString(cipher.getIV(), Base64.NO_WRAP) + "." + Base64.encodeToString(cipher.doFinal(value.getBytes(java.nio.charset.StandardCharsets.UTF_8)), Base64.NO_WRAP);
-        return getSharedPreferences(PREFS, MODE_PRIVATE).edit().putString("credential", blob).commit();
+        return getSharedPreferences(PREFS, MODE_PRIVATE).edit().putString(entry, blob).commit();
       } catch (Exception ignored) { return false; }
+    }
+    private String deviceCredentialKey(String target) throws Exception {
+      java.net.URI uri=new java.net.URI(target);
+      if(target.length()>2048||!("http".equals(uri.getScheme())||"https".equals(uri.getScheme()))||uri.getHost()==null||uri.getUserInfo()!=null||uri.getQuery()!=null||uri.getFragment()!=null||!(uri.getPath()==null||uri.getPath().isEmpty()))throw new IllegalArgumentException("Invalid origin");
+      byte[] digest=java.security.MessageDigest.getInstance("SHA-256").digest(target.getBytes(java.nio.charset.StandardCharsets.UTF_8));
+      return "device."+Base64.encodeToString(digest,Base64.URL_SAFE|Base64.NO_WRAP);
+    }
+    @JavascriptInterface public String getDeviceCredential(String target) {
+      try { return readCredential(deviceCredentialKey(target)); } catch(Exception ignored) { return ""; }
+    }
+    @JavascriptInterface public boolean setDeviceCredential(String target,String value) {
+      try { return value!=null&&value.length()<=256&&writeCredential(deviceCredentialKey(target),value); } catch(Exception ignored) { return false; }
     }
     @JavascriptInterface public boolean clearCredential() { return getSharedPreferences(PREFS, MODE_PRIVATE).edit().remove("credential").commit(); }
     @JavascriptInterface public void setKeepAwake(boolean enabled) { runOnUiThread(() -> { if (enabled) getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON); else getWindow().clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON); }); }

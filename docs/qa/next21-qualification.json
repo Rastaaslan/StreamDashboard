@@ -1,0 +1,665 @@
+{
+  "version": 1,
+  "candidate": "2.1.0-alpha.1",
+  "setups": [
+    "single-pc",
+    "single-pc-deck",
+    "dual-pc",
+    "dual-pc-deck",
+    "android-only",
+    "custom"
+  ],
+  "scenarios": [
+    "single-device",
+    "multiple-devices",
+    "android-paired",
+    "android-standalone",
+    "obs-agent-stopped",
+    "controller-stopped",
+    "network-loss",
+    "reconnection",
+    "role-change",
+    "rc117-migration"
+  ],
+  "modules": [
+    {
+      "id": "obs-aitum",
+      "qualification": [
+        {
+          "setup": "single-pc",
+          "behavior": "supported",
+          "implementation": "partial",
+          "automated": "partial",
+          "hardware": "pending",
+          "evidence": []
+        },
+        {
+          "setup": "single-pc-deck",
+          "behavior": "supported",
+          "implementation": "partial",
+          "automated": "partial",
+          "hardware": "pending",
+          "evidence": []
+        },
+        {
+          "setup": "dual-pc",
+          "behavior": "supported",
+          "implementation": "partial",
+          "automated": "partial",
+          "hardware": "pending",
+          "evidence": []
+        },
+        {
+          "setup": "dual-pc-deck",
+          "behavior": "supported",
+          "implementation": "partial",
+          "automated": "partial",
+          "hardware": "pending",
+          "evidence": []
+        },
+        {
+          "setup": "android-only",
+          "behavior": "unavailable",
+          "implementation": "partial",
+          "automated": "partial",
+          "hardware": "pending",
+          "evidence": []
+        },
+        {
+          "setup": "custom",
+          "behavior": "supported",
+          "implementation": "partial",
+          "automated": "partial",
+          "hardware": "pending",
+          "evidence": []
+        }
+      ]
+    },
+    {
+      "id": "macros",
+      "qualification": [
+        {
+          "setup": "single-pc",
+          "behavior": "supported",
+          "implementation": "partial",
+          "automated": "partial",
+          "hardware": "pending",
+          "evidence": []
+        },
+        {
+          "setup": "single-pc-deck",
+          "behavior": "supported",
+          "implementation": "partial",
+          "automated": "partial",
+          "hardware": "pending",
+          "evidence": []
+        },
+        {
+          "setup": "dual-pc",
+          "behavior": "supported",
+          "implementation": "partial",
+          "automated": "partial",
+          "hardware": "pending",
+          "evidence": []
+        },
+        {
+          "setup": "dual-pc-deck",
+          "behavior": "supported",
+          "implementation": "partial",
+          "automated": "partial",
+          "hardware": "pending",
+          "evidence": []
+        },
+        {
+          "setup": "android-only",
+          "behavior": "supported",
+          "implementation": "partial",
+          "automated": "partial",
+          "hardware": "pending",
+          "evidence": []
+        },
+        {
+          "setup": "custom",
+          "behavior": "supported",
+          "implementation": "partial",
+          "automated": "partial",
+          "hardware": "pending",
+          "evidence": []
+        }
+      ]
+    },
+    {
+      "id": "twitch",
+      "qualification": [
+        {
+          "setup": "single-pc",
+          "behavior": "supported",
+          "implementation": "partial",
+          "automated": "partial",
+          "hardware": "pending",
+          "evidence": []
+        },
+        {
+          "setup": "single-pc-deck",
+          "behavior": "supported",
+          "implementation": "partial",
+          "automated": "partial",
+          "hardware": "pending",
+          "evidence": []
+        },
+        {
+          "setup": "dual-pc",
+          "behavior": "supported",
+          "implementation": "partial",
+          "automated": "partial",
+          "hardware": "pending",
+          "evidence": []
+        },
+        {
+          "setup": "dual-pc-deck",
+          "behavior": "supported",
+          "implementation": "partial",
+          "automated": "partial",
+          "hardware": "pending",
+          "evidence": []
+        },
+        {
+          "setup": "android-only",
+          "behavior": "supported",
+          "implementation": "partial",
+          "automated": "partial",
+          "hardware": "pending",
+          "evidence": []
+        },
+        {
+          "setup": "custom",
+          "behavior": "supported",
+          "implementation": "partial",
+          "automated": "partial",
+          "hardware": "pending",
+          "evidence": []
+        }
+      ]
+    },
+    {
+      "id": "youtube",
+      "qualification": [
+        {
+          "setup": "single-pc",
+          "behavior": "supported",
+          "implementation": "partial",
+          "automated": "partial",
+          "hardware": "pending",
+          "evidence": []
+        },
+        {
+          "setup": "single-pc-deck",
+          "behavior": "supported",
+          "implementation": "partial",
+          "automated": "partial",
+          "hardware": "pending",
+          "evidence": []
+        },
+        {
+          "setup": "dual-pc",
+          "behavior": "supported",
+          "implementation": "partial",
+          "automated": "partial",
+          "hardware": "pending",
+          "evidence": []
+        },
+        {
+          "setup": "dual-pc-deck",
+          "behavior": "supported",
+          "implementation": "partial",
+          "automated": "partial",
+          "hardware": "pending",
+          "evidence": []
+        },
+        {
+          "setup": "android-only",
+          "behavior": "supported",
+          "implementation": "partial",
+          "automated": "partial",
+          "hardware": "pending",
+          "evidence": []
+        },
+        {
+          "setup": "custom",
+          "behavior": "supported",
+          "implementation": "partial",
+          "automated": "partial",
+          "hardware": "pending",
+          "evidence": []
+        }
+      ]
+    },
+    {
+      "id": "viewers",
+      "qualification": [
+        {
+          "setup": "single-pc",
+          "behavior": "supported",
+          "implementation": "partial",
+          "automated": "partial",
+          "hardware": "pending",
+          "evidence": []
+        },
+        {
+          "setup": "single-pc-deck",
+          "behavior": "supported",
+          "implementation": "partial",
+          "automated": "partial",
+          "hardware": "pending",
+          "evidence": []
+        },
+        {
+          "setup": "dual-pc",
+          "behavior": "supported",
+          "implementation": "partial",
+          "automated": "partial",
+          "hardware": "pending",
+          "evidence": []
+        },
+        {
+          "setup": "dual-pc-deck",
+          "behavior": "supported",
+          "implementation": "partial",
+          "automated": "partial",
+          "hardware": "pending",
+          "evidence": []
+        },
+        {
+          "setup": "android-only",
+          "behavior": "supported",
+          "implementation": "partial",
+          "automated": "partial",
+          "hardware": "pending",
+          "evidence": []
+        },
+        {
+          "setup": "custom",
+          "behavior": "supported",
+          "implementation": "partial",
+          "automated": "partial",
+          "hardware": "pending",
+          "evidence": []
+        }
+      ]
+    },
+    {
+      "id": "chats",
+      "qualification": [
+        {
+          "setup": "single-pc",
+          "behavior": "supported",
+          "implementation": "partial",
+          "automated": "partial",
+          "hardware": "pending",
+          "evidence": []
+        },
+        {
+          "setup": "single-pc-deck",
+          "behavior": "supported",
+          "implementation": "partial",
+          "automated": "partial",
+          "hardware": "pending",
+          "evidence": []
+        },
+        {
+          "setup": "dual-pc",
+          "behavior": "supported",
+          "implementation": "partial",
+          "automated": "partial",
+          "hardware": "pending",
+          "evidence": []
+        },
+        {
+          "setup": "dual-pc-deck",
+          "behavior": "supported",
+          "implementation": "partial",
+          "automated": "partial",
+          "hardware": "pending",
+          "evidence": []
+        },
+        {
+          "setup": "android-only",
+          "behavior": "supported",
+          "implementation": "partial",
+          "automated": "partial",
+          "hardware": "pending",
+          "evidence": []
+        },
+        {
+          "setup": "custom",
+          "behavior": "supported",
+          "implementation": "partial",
+          "automated": "partial",
+          "hardware": "pending",
+          "evidence": []
+        }
+      ]
+    },
+    {
+      "id": "streamlabs",
+      "qualification": [
+        {
+          "setup": "single-pc",
+          "behavior": "supported",
+          "implementation": "partial",
+          "automated": "partial",
+          "hardware": "pending",
+          "evidence": []
+        },
+        {
+          "setup": "single-pc-deck",
+          "behavior": "supported",
+          "implementation": "partial",
+          "automated": "partial",
+          "hardware": "pending",
+          "evidence": []
+        },
+        {
+          "setup": "dual-pc",
+          "behavior": "supported",
+          "implementation": "partial",
+          "automated": "partial",
+          "hardware": "pending",
+          "evidence": []
+        },
+        {
+          "setup": "dual-pc-deck",
+          "behavior": "supported",
+          "implementation": "partial",
+          "automated": "partial",
+          "hardware": "pending",
+          "evidence": []
+        },
+        {
+          "setup": "android-only",
+          "behavior": "supported",
+          "implementation": "partial",
+          "automated": "partial",
+          "hardware": "pending",
+          "evidence": []
+        },
+        {
+          "setup": "custom",
+          "behavior": "supported",
+          "implementation": "partial",
+          "automated": "partial",
+          "hardware": "pending",
+          "evidence": []
+        }
+      ]
+    },
+    {
+      "id": "wizebot",
+      "qualification": [
+        {
+          "setup": "single-pc",
+          "behavior": "supported",
+          "implementation": "partial",
+          "automated": "partial",
+          "hardware": "pending",
+          "evidence": []
+        },
+        {
+          "setup": "single-pc-deck",
+          "behavior": "supported",
+          "implementation": "partial",
+          "automated": "partial",
+          "hardware": "pending",
+          "evidence": []
+        },
+        {
+          "setup": "dual-pc",
+          "behavior": "supported",
+          "implementation": "partial",
+          "automated": "partial",
+          "hardware": "pending",
+          "evidence": []
+        },
+        {
+          "setup": "dual-pc-deck",
+          "behavior": "supported",
+          "implementation": "partial",
+          "automated": "partial",
+          "hardware": "pending",
+          "evidence": []
+        },
+        {
+          "setup": "android-only",
+          "behavior": "supported",
+          "implementation": "partial",
+          "automated": "partial",
+          "hardware": "pending",
+          "evidence": []
+        },
+        {
+          "setup": "custom",
+          "behavior": "supported",
+          "implementation": "partial",
+          "automated": "partial",
+          "hardware": "pending",
+          "evidence": []
+        }
+      ]
+    },
+    {
+      "id": "planning",
+      "qualification": [
+        {
+          "setup": "single-pc",
+          "behavior": "supported",
+          "implementation": "partial",
+          "automated": "partial",
+          "hardware": "pending",
+          "evidence": []
+        },
+        {
+          "setup": "single-pc-deck",
+          "behavior": "supported",
+          "implementation": "partial",
+          "automated": "partial",
+          "hardware": "pending",
+          "evidence": []
+        },
+        {
+          "setup": "dual-pc",
+          "behavior": "supported",
+          "implementation": "partial",
+          "automated": "partial",
+          "hardware": "pending",
+          "evidence": []
+        },
+        {
+          "setup": "dual-pc-deck",
+          "behavior": "supported",
+          "implementation": "partial",
+          "automated": "partial",
+          "hardware": "pending",
+          "evidence": []
+        },
+        {
+          "setup": "android-only",
+          "behavior": "supported",
+          "implementation": "partial",
+          "automated": "partial",
+          "hardware": "pending",
+          "evidence": []
+        },
+        {
+          "setup": "custom",
+          "behavior": "supported",
+          "implementation": "partial",
+          "automated": "partial",
+          "hardware": "pending",
+          "evidence": []
+        }
+      ]
+    },
+    {
+      "id": "sounds",
+      "qualification": [
+        {
+          "setup": "single-pc",
+          "behavior": "supported",
+          "implementation": "partial",
+          "automated": "partial",
+          "hardware": "pending",
+          "evidence": []
+        },
+        {
+          "setup": "single-pc-deck",
+          "behavior": "supported",
+          "implementation": "partial",
+          "automated": "partial",
+          "hardware": "pending",
+          "evidence": []
+        },
+        {
+          "setup": "dual-pc",
+          "behavior": "supported",
+          "implementation": "partial",
+          "automated": "partial",
+          "hardware": "pending",
+          "evidence": []
+        },
+        {
+          "setup": "dual-pc-deck",
+          "behavior": "supported",
+          "implementation": "partial",
+          "automated": "partial",
+          "hardware": "pending",
+          "evidence": []
+        },
+        {
+          "setup": "android-only",
+          "behavior": "supported",
+          "implementation": "partial",
+          "automated": "partial",
+          "hardware": "pending",
+          "evidence": []
+        },
+        {
+          "setup": "custom",
+          "behavior": "supported",
+          "implementation": "partial",
+          "automated": "partial",
+          "hardware": "pending",
+          "evidence": []
+        }
+      ]
+    },
+    {
+      "id": "obs-clips",
+      "qualification": [
+        {
+          "setup": "single-pc",
+          "behavior": "supported",
+          "implementation": "partial",
+          "automated": "partial",
+          "hardware": "pending",
+          "evidence": []
+        },
+        {
+          "setup": "single-pc-deck",
+          "behavior": "supported",
+          "implementation": "partial",
+          "automated": "partial",
+          "hardware": "pending",
+          "evidence": []
+        },
+        {
+          "setup": "dual-pc",
+          "behavior": "supported",
+          "implementation": "partial",
+          "automated": "partial",
+          "hardware": "pending",
+          "evidence": []
+        },
+        {
+          "setup": "dual-pc-deck",
+          "behavior": "supported",
+          "implementation": "partial",
+          "automated": "partial",
+          "hardware": "pending",
+          "evidence": []
+        },
+        {
+          "setup": "android-only",
+          "behavior": "unavailable",
+          "implementation": "partial",
+          "automated": "partial",
+          "hardware": "pending",
+          "evidence": []
+        },
+        {
+          "setup": "custom",
+          "behavior": "supported",
+          "implementation": "partial",
+          "automated": "partial",
+          "hardware": "pending",
+          "evidence": []
+        }
+      ]
+    }
+  ],
+  "transitions": [
+    {
+      "id": "single-to-dual",
+      "automated": "partial",
+      "hardware": "pending",
+      "evidence": []
+    },
+    {
+      "id": "dual-to-single",
+      "automated": "partial",
+      "hardware": "pending",
+      "evidence": []
+    },
+    {
+      "id": "add-device",
+      "automated": "partial",
+      "hardware": "pending",
+      "evidence": []
+    },
+    {
+      "id": "remove-device",
+      "automated": "partial",
+      "hardware": "pending",
+      "evidence": []
+    },
+    {
+      "id": "add-android",
+      "automated": "partial",
+      "hardware": "pending",
+      "evidence": []
+    },
+    {
+      "id": "remove-android",
+      "automated": "partial",
+      "hardware": "pending",
+      "evidence": []
+    },
+    {
+      "id": "move-roles",
+      "automated": "partial",
+      "hardware": "pending",
+      "evidence": []
+    },
+    {
+      "id": "restore-configuration",
+      "automated": "partial",
+      "hardware": "pending",
+      "evidence": []
+    },
+    {
+      "id": "migrate-rc117",
+      "automated": "partial",
+      "hardware": "pending",
+      "evidence": []
+    }
+  ]
+}

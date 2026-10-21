@@ -6,6 +6,8 @@ import type { SecretStore } from '../../server/src/storage.js';
 
 interface SecurePayload {
   controller?: { credential: string };
+  controllerDevices?: Record<string, string>;
+  controllerBindings?: { server: string; credential: string; actions: import('../../../packages/contracts/src/control.js').DeckAction[] };
   youtube?: Record<string, string>;
   twitch?: Record<string, string>;
   google?: Record<string, string>;
@@ -21,9 +23,9 @@ interface SecurePayload {
 export class ElectronSecretStore implements SecretStore {
   readonly persistent: boolean = true;
   private readonly file: string;
-  private writes: Promise<void> = Promise.resolve();
+  private static writes = new Map<string,Promise<void>>();
 
-  constructor(userData: string) { this.file = path.join(userData, 'secure', 'credentials.dat'); }
+  constructor(userData: string) { this.file = path.resolve(userData, 'secure', 'credentials.dat'); }
 
   private async readNow(): Promise<SecurePayload> {
     try {
@@ -37,7 +39,7 @@ export class ElectronSecretStore implements SecretStore {
   }
 
   private async read(): Promise<SecurePayload> {
-    await this.writes;
+    await ElectronSecretStore.writes.get(this.file);
     return this.readNow();
   }
 
@@ -67,18 +69,24 @@ export class ElectronSecretStore implements SecretStore {
   }
 
   private update(change: (value: SecurePayload) => void) {
-    const operation = this.writes.then(async () => {
+    const operation = (ElectronSecretStore.writes.get(this.file) ?? Promise.resolve()).then(async () => {
       const value = await this.readNow();
       change(value);
       await this.writeNow(value);
     });
-    this.writes = operation.catch(() => undefined);
+    const tail = operation.catch(() => undefined);
+    ElectronSecretStore.writes.set(this.file, tail);
+    void tail.then(() => { if(ElectronSecretStore.writes.get(this.file) === tail) ElectronSecretStore.writes.delete(this.file); });
     return operation;
   }
 
   async getTwitchTokens() { return (await this.read()).twitch ?? null; }
   async getController() { return (await this.read()).controller ?? null; }
-  async setController(controller: { credential: string }) { await this.update(value => { value.controller = { ...controller }; }); }
+  async getControllerDevice(server: string) { return (await this.read()).controllerDevices?.[server] || ''; }
+  async setControllerDevice(server: string, credential: string) { await this.update(value => { value.controllerDevices = { ...value.controllerDevices, [server]:credential }; }); }
+  async setController(controller: { credential: string }) { await this.update(value => { if (value.controller?.credential !== controller.credential) delete value.controllerBindings; value.controller = { ...controller }; }); }
+  async getControllerBindings() { return (await this.read()).controllerBindings ?? null; }
+  async setControllerBindings(bindings: SecurePayload['controllerBindings']) { await this.update(value => { if (bindings) value.controllerBindings = structuredClone(bindings); else delete value.controllerBindings; }); }
   async getYouTubeTokens() { return (await this.read()).youtube ?? null; }
   async setYouTubeTokens(youtube: Record<string, string>) { await this.update(value => { value.youtube = { ...youtube }; }); }
   async clearYouTubeTokens() { await this.update(value => { delete value.youtube; }); }

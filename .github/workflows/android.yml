@@ -119,6 +119,9 @@ jobs:
             StreamDashboard-Next-QA-preview.apk
             Android-QA-README.txt
           if-no-files-found: error
+      - name: Enforce universal final-release qualification
+        if: github.event_name == 'workflow_dispatch'
+        run: node scripts/check-universal-release.mjs --publication
       - name: Require release Twitch client ID
         if: github.event_name == 'workflow_dispatch'
         shell: bash

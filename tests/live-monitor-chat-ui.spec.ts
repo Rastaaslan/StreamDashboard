@@ -276,7 +276,7 @@ test('a late viewer close cannot reload a newly selected source or the YouTube p
   await page.getByRole('button', { name: 'YouTube', exact: true }).click();
   await page.evaluate(() => { (window as any).currentFrame = document.querySelector('[data-monitor-slot="video"] iframe'); });
   await page.evaluate(() => (window as any).closeViewer());
-  await expect(page.locator('[data-monitor-connect]')).toBeHidden();
+  await expect(page.locator('[data-monitor-connect]')).toContainText('YouTube');
   expect(await page.evaluate(() => (window as any).currentFrame === document.querySelector('[data-monitor-slot="video"] iframe'))).toBe(true);
   await page.getByRole('button', { name: 'Twitch', exact: true }).click();
   await page.getByRole('button', { name: 'Connexion visionneuse', exact: true }).click();

@@ -1,3 +1,4 @@
+import { publicInstallationDevice, type InstallationDevice } from '../../mobile/shared/installation.js';
 import { WizeBotService } from './wizebot-service.js';
 import { measureSync, syncBatch, syncDiagnostics } from '../../../packages/core/src/sync-performance.js';
 import { bulkDeleteSelection } from '../../../packages/core/src/planning-bulk-delete.js';
@@ -133,6 +134,7 @@ interface LocalData {
   streamerPings: StreamerPing[];
 }
 export interface DashboardServerOptions {
+  deviceDescriptor?: () => Promise<InstallationDevice>;
   /** A control-only desktop owns its accounts but must never connect to OBS. */
   obsEnabled?: boolean;
   /** Cancels acquisition; startup settles only after partial resources are closed. */
@@ -1810,6 +1812,12 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
     version: capabilities.serverVersion,
   });
   app.get('/api/v1/health', health);
+  app.get('/api/v2/device', async (_req,res,next) => {
+    try {
+      if(!options.deviceDescriptor){res.status(404).json({error:{message:'Identité universelle indisponible sur cet agent.'}});return;}
+      res.json({version:1,device:publicInstallationDevice(await options.deviceDescriptor()),observed:{obsConnected:obs.state.connected,observedAt:new Date().toISOString()}});
+    } catch(error){next(error);}
+  });
   app.get('/api/v1/state', (req, res) => res.json(isRemoteRequest(req) ? toRemoteDashboardState(snapshot()) : snapshot()));
   app.get('/api/v1/profile', (_req, res) => res.json({ profile: productProfile, modules: resolveModules(productProfile) }));
   app.put('/api/v1/profile/presentation', async (req, res, next) => {

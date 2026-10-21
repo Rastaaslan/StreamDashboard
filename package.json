@@ -1,7 +1,7 @@
 {
   "name": "stream-dashboard",
   "productName": "StreamDashboard Next",
-  "version": "2.0.0-rc.11.7",
+  "version": "2.1.0-alpha.1",
   "description": "Cockpit desktop Windows pour OBS, Twitch, Google Calendar et télécommande LAN",
   "author": "Rastaaslan",
   "repository": "https://github.com/Rastaaslan/StreamDashboard",
@@ -18,7 +18,7 @@
     "desktop:legacy": "npm run build && electron-forge start -- --ui-legacy=desktop-v1",
     "desktop:package": "npm run desktop:prepare && npm run desktop:icon && npm run build && electron-forge package --platform=win32 --arch=x64 && npm run desktop:check-package",
     "desktop:make": "npm run desktop:prepare && npm run desktop:icon && npm run build && electron-forge make --platform=win32 --arch=x64",
-    "release:check": "npm test && npm run build && npm run security:check && npm run check:shipped-js && npm run test:browser && npm run desktop:smoke && npm run desktop:package",
+    "release:check": "npm run universal:release-check && npm test && npm run build && npm run security:check && npm run check:shipped-js && npm run test:browser && npm run desktop:smoke && npm run desktop:package",
     "security:check": "tsx scripts/security-check.ts",
     "mobile:smoke": "tsx scripts/mobile-smoke.ts",
     "check:shipped-js": "node scripts/check-shipped-js.mjs",
@@ -33,7 +33,9 @@
     "test:node": "npm run build && node scripts/test-node.mjs",
     "test:browser": "playwright test -c playwright.mobile-network.config.ts",
     "desktop:check-package": "node scripts/check-desktop-package.mjs",
-    "desktop:client": "npm run build && electron-forge start -- --role=client"
+    "desktop:client": "npm run build && electron-forge start -- --role=client",
+    "universal:status": "node scripts/check-universal-release.mjs",
+    "universal:release-check": "node scripts/check-universal-release.mjs --final"
   },
   "dependencies": {
     "entities": "6.0.1",

@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
 import vm from 'node:vm';
+import {migrateInstallation,resolveCapability} from '../../apps/mobile/shared/installation.js';
 import { pathToFileURL, fileURLToPath } from 'node:url';
 
 // Regression coverage for the shipped controller. Integration functions and
@@ -93,7 +94,8 @@ let sent = [];
 const scope = vm.createContext({
   online: false, busy: false, activeCommands: 0, compact: true,
   data: { configuration: { actions: [] } }, sounds: { sounds: [] },
-  page: 'deck', server: 'regie-A', deviceAudio: undefined, LOCAL_SCOPE: 'device-workspace-v1',
+  page: 'deck', server: 'regie-A', localEndpoint:'regie-A', resolveCapability,
+  installationUI:{current:migrateInstallation({id:'fixture-host',platform:'windows'})}, deviceAudio: undefined, LOCAL_SCOPE: 'device-workspace-v1',
   deckScope: undefined, deckPreferences: undefined, deckEditing: false, deckEditBank: 'all',
   readDeckPreferences, saveDeckPreferences, defaultDeckFavorites, localStorage,
   renderPerformancePage: options => options, actionState: () => '', esc: String,
@@ -117,6 +119,7 @@ function sourceBetween(start, end) {
   return source.slice(begin, finish);
 }
 vm.runInContext(sourceBetween('function ensureDeckPreferences(){', 'function resetPerformanceView(){'), scope);
+vm.runInContext(sourceBetween('function actionAvailability(', 'function actionState('), scope);
 vm.runInContext(sourceBetween('async function runAction(', 'async function openAuthorization('), scope);
 vm.runInContext(sourceBetween("document.addEventListener('click',", "document.addEventListener('change',"), scope);
 vm.runInContext(source.split('\n').find(line => line.startsWith('globalThis.StreamDashboardHandleBack=')), scope);
@@ -196,3 +199,8 @@ scope.confirm = () => true;
 const confirmedStop = scope.runAction('custom-stop');
 assert.equal(sent[1].action, 'live.stop'); resolve('live.stop'); await confirmedStop;
 console.log('PASS dispatch: offline and pending-config guards, configured IDs retained, custom live-stop requires confirmation');
+
+// The native renderer now checks the selected device before dispatching OBS.
+sent=[];scope.online=true;scope.busy=false;scope.installationUI.current.devices[0].enabled=false;
+await scope.runAction('custom-micro');assert.equal(sent.length,0);
+console.log('PASS installation: a removed executor never receives a command');

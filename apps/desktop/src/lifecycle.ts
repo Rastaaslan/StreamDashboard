@@ -1,3 +1,4 @@
+import type { InstallationDevice } from '../../mobile/shared/installation.js';
 import { app } from 'electron';
 import { readFile } from 'node:fs/promises';
 import path from 'node:path';
@@ -8,7 +9,7 @@ import { launchObsIfRequested } from './obs-launcher.js';
 
 export interface DesktopRuntime { dashboard: DashboardServerHandle; logger: DesktopLogger; ensureObsRunning(): ReturnType<typeof launchObsIfRequested>; stop(): Promise<void> }
 
-export async function startDesktopRuntime(logger = new DesktopLogger(path.join(app.getPath('userData'), 'logs')), signal?: AbortSignal, controller = false): Promise<DesktopRuntime> {
+export async function startDesktopRuntime(logger = new DesktopLogger(path.join(app.getPath('userData'), 'logs')), signal?: AbortSignal, controller = false, obsEnabled = !controller, deviceDescriptor?: () => Promise<InstallationDevice>): Promise<DesktopRuntime> {
   signal?.throwIfAborted();
   let distribution: { twitchClientId?: string; googleClientId?: string } = {};
   try { distribution = JSON.parse(await readFile(path.join(app.getAppPath(), 'resources', 'distribution.json'), 'utf8')); } catch (error) { if ((error as NodeJS.ErrnoException).code !== 'ENOENT' || app.isPackaged) throw new Error('Configuration publique Desktop absente ou illisible. Réinstallez le paquet.'); }
@@ -20,17 +21,18 @@ export async function startDesktopRuntime(logger = new DesktopLogger(path.join(a
     obsExecutablePath = typeof config.settings?.obsExecutablePath === 'string' ? config.settings.obsExecutablePath : undefined;
     remoteEnabled = config.settings?.remoteEnabled === true;
   } catch (error) { if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw new Error('Configuration utilisateur Desktop illisible. Conservez dashboard.json et consultez les diagnostics.'); }
-  const obsResult = await launchObsIfRequested(!controller && launchObs, obsExecutablePath, signal);
+  const obsResult = await launchObsIfRequested(obsEnabled && launchObs, obsExecutablePath, signal);
   await logger.info(obsResult.detail).catch(() => undefined);
   signal?.throwIfAborted();
   const secretStore = new ElectronSecretStore(userData);
   const dashboard = await startDashboardServer({
     startupSignal: signal,
+    deviceDescriptor,
     // Fixed endpoint for OBS, OAuth and phones; binding failures must be explicit.
     port: controller ? 48135 : 48133,
-    host: !controller && remoteEnabled ? '0.0.0.0' : '127.0.0.1',
-    remoteEnabled: !controller && remoteEnabled,
-    obsEnabled: !controller,
+    host: obsEnabled && remoteEnabled ? '0.0.0.0' : '127.0.0.1',
+    remoteEnabled: obsEnabled && remoteEnabled,
+    obsEnabled,
     dataDir: path.join(userData, 'config'),
     soundLibraryDir: path.join(userData, 'soundboard'),
     webDir: path.join(app.getAppPath(), 'apps', 'web'),
@@ -48,7 +50,7 @@ export async function startDesktopRuntime(logger = new DesktopLogger(path.join(a
   return {
     dashboard,
     logger,
-    ensureObsRunning: () => launchObsIfRequested(!controller, dashboard.state().settings.obsExecutablePath),
+    ensureObsRunning: () => launchObsIfRequested(obsEnabled, dashboard.state().settings.obsExecutablePath),
     stop: () => stopPromise ??= (async () => {
       await dashboard.stop();
       await logger.info('Arrêt propre terminé').catch(() => undefined);

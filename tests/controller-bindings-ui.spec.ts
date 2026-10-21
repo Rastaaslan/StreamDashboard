@@ -26,6 +26,7 @@ async function setup(page: Page, rejectNative = false) {
     localStorage.setItem('sd2.workspace-mode', 'paired');
     localStorage.setItem('sd2.page', 'settings');
     win.credential = credential;
+    win.deviceCredentials = { [regie]:credential };
     win.nativeConfigurations = [];
     win.nativeConfiguration = { server: '', credential: '', actions: [] };
     win.rejectNative = rejectNative;
@@ -37,6 +38,8 @@ async function setup(page: Page, rejectNative = false) {
     win.streamDashboardDesktop = {
       getDeviceProfile: async () => ({ configured: true, name: 'PC jeu de test', role: 'control' }),
       getControllerCredential: async () => win.credential,
+      getDeviceCredential: async (server:string) => win.deviceCredentials[server]||'',
+      setDeviceCredential: async (server:string,value:string) => { win.deviceCredentials[server]=value; },
       setControllerCredential: async (value: string) => { win.credential = value; },
       configureController: async (value: any) => {
         win.nativeConfigurations.push(structuredClone(value));
@@ -59,6 +62,7 @@ async function setup(page: Page, rejectNative = false) {
       let json: unknown;
       if (url.pathname === '/api/v2/autonomy') json = backend.snapshot;
       else if (url.pathname === '/api/v1/soundboard') json = backend.snapshot.bundle.sounds;
+      else if (url.pathname === '/api/v2/device') json = {version:1,device:{id:url.origin===REGIE?'first-pc':'second-pc',name:'Fixture PC',platform:'windows',roles:['obs-executor'],capabilities:['obs','clips','audio'],enabled:true}};
       else if (url.pathname === '/api/v2/replay') json = { active: false, available: true, enabled: true, seconds: 20 };
       else if (url.pathname === '/api/v2/autonomy/sync') json = { ...backend.snapshot, receipt: { status: backend.conflict ? 'conflict' : 'applied', fields: ['label'], message: 'Réglage modifié sur la régie' } };
       else if (url.pathname === '/api/v1/remote/pair') { if (backend.pairGate) await backend.pairGate; json = { credential: 'new-synthetic-credential' }; }
