@@ -32,11 +32,13 @@ Les exigences P0 de [NEXT_2_1_REQUIREMENTS.md](NEXT_2_1_REQUIREMENTS.md) font au
 
 ## Frontières actuelles
 
+La continuité des copies locales lors d’un changement d’adresse est décrite dans la [preuve de conservation des espaces](qa/2026-10-21-workspace-identity.md). Les brouillons, modifications en attente, favoris et destinations de boutons retrouvent le même espace après association de sa nouvelle adresse.
+
 Ce code est une version d’essai, pas la version finale universelle. Aucune cellule n’est déclarée entièrement qualifiée.
 
 Restent à implémenter ou à compléter dans **ce même chantier 2.1** :
 
-- Qualification matérielle complète du nouveau transport TLS et de ses associations sur Windows et Android. Les anciennes adresses HTTP sont conservées mais demandent une nouvelle association HTTPS avant de transmettre un identifiant. La découverte réseau automatique facultative reste absente.
+- Qualification matérielle restante du transport TLS : Android, rotation du certificat, veille/reprise et changement de réseau. L’association Windows dans les deux sens, le refus d’une mauvaise empreinte, la fermeture de fenêtre et le redémarrage des deux PC ont été vérifiés sur FIXE et le laptop. Les anciennes adresses HTTP demandent une nouvelle association HTTPS avant de transmettre un identifiant. La découverte réseau automatique facultative reste absente.
 - Qualification matérielle du cycle de vie des rôles et déplacement transactionnel de leurs responsabilités entre appareils. Le contrôle des moteurs locaux est implémenté ; le transfert complet des responsabilités reste à réaliser.
 - Android comme exécuteur audio/affichage commandé depuis un autre appareil ; l’audio Android local et le contrôle d’agents Windows existent. La lecture audio multiple locale est implémentée ; les macros natives de tous les contenus locaux restent à compléter.
 - Restauration après interruption couvrant l’ensemble des magasins et effets externes, pas seulement le fichier d’installation ; qualification complète des transitions et migration d’une copie réelle RC11.7.
