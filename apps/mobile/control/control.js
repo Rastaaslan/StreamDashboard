@@ -2,7 +2,7 @@ import {createPeerRequest, fingerprint} from './peer-request.js';
 import { createDevicePermissionsUI } from './device-permissions-ui.js';
 import { createActionRouter } from './action-routing.js';
 import { createActionRoutingUI } from './action-routing-ui.js';
-import { resolveCapability } from '../shared/installation.js';
+import { resolveCapability, deviceRoleAvailable } from '../shared/installation.js';
 import { createInstallationUI } from './installation-ui.js';
 import { LOCAL_SCOPE, readDevice, saveDevice, newWorkspace } from './device-workspace.js';
 import { openReplica } from './autonomy-store.js';
@@ -94,8 +94,8 @@ async function openLocal(){
   autonomy=owner;
   if(!target){
    await owner.store.seed(newWorkspace(device));
-   deviceServices=createDeviceServices({store:owner.store,autonomy:owner,request:(p,b,m)=>network(p,b,m,localEndpoint,'')});
-   deviceProviders=createDeviceProviders({request:(p,b,m)=>network(p,b,m,localEndpoint,''),getCalendar:()=>owner.store.view().extras.google.calendarId});
+   deviceServices=createDeviceServices({store:owner.store,autonomy:owner,enabled:localCapabilityEnabled,request:(p,b,m)=>network(p,b,m,localEndpoint,'')});
+   deviceProviders=createDeviceProviders({enabled:localCapabilityEnabled,request:(p,b,m)=>network(p,b,m,localEndpoint,''),getCalendar:()=>owner.store.view().extras.google.calendarId});
    deviceAudio=createDeviceAudio({store:owner.store,onChange:()=>{
     if(autonomy!==owner||server||macroContextChanging)return;
     applyWorkspaceBundle(owner.store.view());
@@ -108,6 +108,7 @@ async function openLocal(){
   applyWorkspaceBundle(owner.store.view());storageError='';
  }catch(e){storageError=e.message;deviceAudio?.dispose();deviceAudio=undefined;autonomy?.store.close();autonomy=undefined;data=undefined;sounds=undefined;}
 }
+function localCapabilityEnabled(capability){const current=installationUI.current;return deviceRoleAvailable(current.devices.find(d=>d.id===current.localDeviceId),capability);}
 function commandsBlocked(){return macroContextChanging>0||Boolean(server&&autonomy?.store.record.pending.some(op=>/^(action|settings|output|youtube|sound)\//.test(op.key)));}
 async function configureMacros({synchronized=false,suspend=false,required=false}={}){
  const bridge=globalThis.streamDashboardDesktop;if(!bridge?.configureController)return;
@@ -165,6 +166,7 @@ function shell() {
 }
 function actionAvailability(action){
  const routed=actionRouter?.status(action);if(routed)return routed;
+ if(!server && action.type.startsWith('sound.') && action.type!=='sound.stop') { const current=installationUI.current;return resolveCapability(current,'audio',{[current.localDeviceId]:{connected:true}},current.localDeviceId); }
  if(!server||!(/^(mic|scene|mode|replay|live|timer|alert|sound)\./.test(action.type)))return null;
  const installation=installationUI.current;
  const target=server===localEndpoint?installation.devices.find(d=>d.id===installation.localDeviceId):installation.devices.find(d=>d.endpoint===server);
@@ -253,12 +255,12 @@ function replayDialog(){modal(`<div id="replay-dialog-root"><h2>Préparer et sau
 
 function wizebotToolbar(){return `<section class="panel replay-panel"><div class="section-heading"><div><h2>Commandes WizeBot</h2><p class="small">${data.host.chat?.connected&&data.host.chat?.canSend?'Envoi dans le chat Twitch de '+esc(data.host.chat.channel):'Connectez Twitch sur la régie sélectionnée pour autoriser l’envoi.'}</p></div><button data-task="new-wizebot">+ Ajouter</button></div><p class="small muted">Un appui envoie la commande affichée. WizeBot doit être actif et la commande autorisée sur ta chaîne. Le résultat confirme l’envoi, pas la réponse du bot.</p><button data-task="wizebot-catalog">Importer / gérer mes commandes WizeBot</button><button class="secondary" data-page="actions">Modifier mes boutons</button>${!data.host.chat?.connected||!data.host.chat?.canSend?'<button class="secondary" data-task="connect-twitch">Connecter Twitch</button>':''}</section>`;}
 function editWizebot(id){configurationDraft=structuredClone(data.configuration);const a=configurationDraft.actions.find(x=>x.id===id)||{id:'wizebot_'+uuid().slice(0,8),label:'',type:'wizebot.command',value:'!',color:'purple',shortcut:''};modal(`<h2>${id?'Modifier':'Ajouter'} une commande WizeBot</h2><form id="wizebot-form" data-id="${esc(a.id)}">${input('Nom du bouton','label',a.label,'text','required maxlength="80"')}${input('Commande à envoyer dans Twitch','value',a.value,'text','required maxlength="500" placeholder="!discord"')}<p class="small muted">Saisis exactement la commande de ta chaîne, avec ses paramètres éventuels. Exemple : !uptime. Aucune clé API WizeBot nécessaire.</p>${select('Couleur','color',[['purple','Violet'],['green','Vert'],['amber','Ambre'],['red','Rouge']],a.color)}<div class="form-actions">${id?`<button type="button" class="danger" data-remove-action="${esc(a.id)}">Supprimer</button>`:''}<button>Enregistrer le bouton</button></div></form>`);}
-function stopAudioButton(){return `<button class="danger" data-action="sound.stop" ${!online&&!deviceAudio?'disabled':''}>■ Arrêter le son</button>`;}
+function stopAudioButton(){return `<button class="danger" data-action="sound.stop" ${!online&&!deviceAudio?'disabled':''}>■ Arrêter tous les sons</button>`;}
 function soundsPage(){
  if(compact)return mobilePerformancePage('sounds');
  const catalog=sounds?.sounds||[],categories=[...new Set(catalog.map(s=>s.category))];
  const shown=catalog.filter(s=>soundCategory==='favorites'?s.favorite:!soundCategory||s.category===soundCategory);
- return `<div class="performance-head"><div><span class="eyebrow">${server?'SONS SUR L’APPAREIL SÉLECTIONNÉ':'SONS SUR CET APPAREIL'}</span><h1>Soundboard</h1></div><span class="pill">${catalog.length} sons</span></div><div class="tabs pad-tabs">${[['','Tous'],['favorites','★ Favoris'],...categories.map(c=>[c,c])].map(([id,label])=>`<button class="${soundCategory===id?'':'secondary'}" data-sound-category="${esc(id)}">${esc(label)}</button>`).join('')}</div>${soundError?`<p class="warn">${esc(soundError)}</p>`:''}<div class="sound-transport"><p aria-live="polite">${!online&&!deviceAudio?'État audio inconnu · régie déconnectée':sounds?.currentPlayback?'♫ '+esc(catalog.find(s=>s.id===sounds.currentPlayback.soundId)?.name||'Lecture en cours'):'Prêt · aucun son en cours'}</p>${stopAudioButton()}</div><div class="deck performance-deck sound-pads">${shown.map(s=>`<div class="sound-pad"><button class="green ${sounds?.currentPlayback?.soundId===s.id?'pad-active':''}" data-play-sound="${esc(s.id)}" ${(!online&&!deviceAudio)||busy||!s.enabled||!s.sourceAvailable?'disabled':''}><span>♫</span><b>${esc(s.name)}</b><small>${!online&&!deviceAudio?'Régie déconnectée':!s.enabled?'Désactivé':!s.sourceAvailable?'Fichier indisponible':sounds?.currentPlayback?.soundId===s.id?'Lecture en cours':esc(s.category)}</small></button><button class="favorite secondary" data-favorite-sound="${esc(s.id)}" aria-label="${s.favorite?'Retirer des':'Ajouter aux'} favoris" aria-pressed="${!!s.favorite}">${s.favorite?'★':'☆'}</button></div>`).join('')||'<p class="empty">Aucun son ici. Importez vos fichiers depuis Gestion → Bibliothèque audio.</p>'}</div><section class="last-feedback">${resultRows()}</section>`;
+ return `<div class="performance-head"><div><span class="eyebrow">${server?'SONS SUR L’APPAREIL SÉLECTIONNÉ':'SONS SUR CET APPAREIL'}</span><h1>Soundboard</h1></div><span class="pill">${catalog.length} sons</span></div><div class="tabs pad-tabs">${[['','Tous'],['favorites','★ Favoris'],...categories.map(c=>[c,c])].map(([id,label])=>`<button class="${soundCategory===id?'':'secondary'}" data-sound-category="${esc(id)}">${esc(label)}</button>`).join('')}</div>${soundError?`<p class="warn">${esc(soundError)}</p>`:''}<div class="sound-transport"><p aria-live="polite">${!online&&!deviceAudio?'État audio inconnu · régie déconnectée':sounds?.currentPlayback?'♫ '+(sounds.activePlaybacks?.length>1?sounds.activePlaybacks.length+' sons en cours':esc(catalog.find(s=>s.id===sounds.currentPlayback.soundId)?.name||'Lecture en cours')):'Prêt · aucun son en cours'}</p>${stopAudioButton()}</div><div class="deck performance-deck sound-pads">${shown.map(s=>`<div class="sound-pad"><button class="green ${(sounds?.activePlaybacks||[sounds?.currentPlayback]).some(p=>p?.soundId===s.id)?'pad-active':''}" data-play-sound="${esc(s.id)}" ${(!online&&!deviceAudio)||busy||!s.enabled||!s.sourceAvailable?'disabled':''}><span>♫</span><b>${esc(s.name)}</b><small>${!online&&!deviceAudio?'Régie déconnectée':!s.enabled?'Désactivé':!s.sourceAvailable?'Fichier indisponible':(sounds?.activePlaybacks||[sounds?.currentPlayback]).some(p=>p?.soundId===s.id)?'Lecture en cours':esc(s.category)}</small></button><button class="favorite secondary" data-favorite-sound="${esc(s.id)}" aria-label="${s.favorite?'Retirer des':'Ajouter aux'} favoris" aria-pressed="${!!s.favorite}">${s.favorite?'★':'☆'}</button></div>`).join('')||'<p class="empty">Aucun son ici. Importez vos fichiers depuis Gestion → Bibliothèque audio.</p>'}</div><section class="last-feedback">${resultRows()}</section>`;
 }
 function actionsPage(){return `<div class="section-heading"><div><h1>Boutons & macros</h1><p class="subtitle">Les associations sont partagées par le Deck et le clavier.</p></div><button data-task="new-action">+ Ajouter</button></div><section class="panel"><div class="table-wrap"><table><thead><tr><th>Bouton</th><th>Raccourci clavier</th><th></th></tr></thead><tbody>${data.configuration.actions.map(a=>`<tr><td>${esc(a.label)}</td><td>${esc(a.shortcut||'—')}</td><td><button class="secondary" data-edit-action="${esc(a.id)}">Modifier</button><button class="secondary" data-task="action-route" data-action-id="${esc(a.id)}">Destination</button></td></tr>`).join('')}</tbody></table></div></section>`;}
 function managePage(){return `<h1>Gestion</h1><p class="subtitle">Votre planning, vos contenus et tous les réglages de la régie.</p><div class="management-grid"><button class="secondary" data-page="planning"><span>▤</span>Planning & événements<small>Agenda, séries, publications, export</small></button><button class="secondary" data-page="actions"><span>▦</span>Boutons & macros<small>Clavier, scènes, alertes et messages</small></button><button class="secondary" data-task="sounds"><span>♫</span>Bibliothèque audio<small>Importer, renommer, volume et destinations</small></button><button class="secondary" data-page="settings"><span>⚙</span>Configuration<small>OBS, comptes, appareils et intégrations</small></button></div>`;}
@@ -289,7 +291,7 @@ function render(){
   if(!$('#live-monitor')){
    $('#content').innerHTML=livePage();
    liveMonitor?.destroy();
-   liveMonitor=createLiveMonitor($('#live-monitor'),{native,activityRoot:$('#streamlabs-feed'),request:liveChatRequest,configure:()=>{page='settings';tab='platforms';localStorage.setItem('sd2.page',page);render();}});
+   liveMonitor=undefined;
   }else{
    const template=document.createElement('template');template.innerHTML=livePage();
    // Update changing state without detaching the video or either chat iframe.
@@ -352,12 +354,20 @@ function liveChatRequest(path,body,method,sourceKey){
  return network(path,body,method,target,target===localEndpoint?'':credential);
 }
 function updateLiveMonitor(){
+ const root=$('#live-monitor');if(!root)return;
+ if(!localCapabilityEnabled('viewer')){
+  liveMonitor?.destroy();liveMonitor=undefined;
+  const activity=$('#streamlabs-feed');if(activity&&root.contains(activity))root.after(activity);
+  root.innerHTML='<p class="panel">Visionneuses et chats désactivés sur cet appareil. Réactivez ce rôle dans Mon installation.</p>';return;
+ }
+ liveMonitor??=createLiveMonitor(root,{native,activityRoot:$('#streamlabs-feed'),request:liveChatRequest,configure:()=>{page='settings';tab='platforms';localStorage.setItem('sd2.page',page);render();}});
  liveMonitor?.update(data,{online:localEndpoint?true:server?online:native,sourceKey:localEndpoint||server||LOCAL_SCOPE});
 }
 function rememberForms(){if(autonomy?.store.view()){const base=resources(autonomy.store.view());document.querySelectorAll('form').forEach(f=>{if(!formBases.has(f))formBases.set(f,base);});}}
 function modal(content){dialogBase=autonomy?.store.view()?resources(autonomy.store.view()):undefined;$('#dialog-content').innerHTML=content;if(!dialog.open)dialog.showModal();rememberForms();}
 const installationUI=await createInstallationUI({device,native,localEndpoint,modal,esc,select:selectInstallationDevice,remove:async target=>{if(server===target.endpoint)await switchWorkspace(true);if(localStorage.getItem('sd2.server')===target.endpoint)localStorage.removeItem('sd2.server');},changed:async (installation,restart)=>{
  const local=installation.devices.find(d=>d.id===installation.localDeviceId);
+ if(!local.roles.includes('audio'))deviceAudio?.stop();
  device=saveDevice({name:local.name,role:native?'mobile':local.roles.includes('obs-executor')?'stream':'control'});
  dialog.close();render();toast(restart?'Installation enregistrée. Redémarrage de l’application…':'Installation enregistrée. Les données existantes sont conservées.');
 }});
@@ -406,7 +416,7 @@ async function refresh(force=false){
    if(audio){sounds={...audio,sounds:sounds.sounds.map(s=>({...s,sourceAvailable:audio.sounds.find(x=>x.id===s.id)?.sourceAvailable===true}))};}soundError='';const reconnect=!online;online=true;shell();updateLiveMonitor();
    if(force||reconnect||(!dialog.open&&['live','activity','deck','sounds','planning'].includes(page)&&!pointerHeld&&!document.activeElement?.matches('input, textarea, select, [contenteditable]')))render();
    void configureMacros({synchronized:true});
-  }catch(e){online=false;void configureMacros({suspend:!isTemporaryControllerFailure(e)});replay={active:null,error:'Régie déconnectée'};if(sounds)sounds.currentPlayback=null;shell();updateLiveMonitor();if(!dialog.open)render();if(force)toast(e.message);}
+  }catch(e){online=false;void configureMacros({suspend:!isTemporaryControllerFailure(e)});replay={active:null,error:'Régie déconnectée'};if(sounds){sounds.currentPlayback=null;sounds.activePlaybacks=[];}shell();updateLiveMonitor();if(!dialog.open)render();if(force)toast(e.message);}
  })().finally(()=>{refreshFlight=undefined;});
  return refreshFlight;
 }
@@ -446,7 +456,7 @@ async function runAction(action,platform,soundId){
   catch(error){toast('Destination : '+error.message+' Aucun nouvel envoi automatique.');}
   finally{busy=--activeCommands>0;render();}return;
  }
- if(!server&&deviceAudio)return runLocalAction(action,type,configured,soundId);
+ if(!server&&deviceAudio){const available=actionAvailability(configured||{type,value:soundId});if(available&&available.status!=='available'){toast(available.message);return;}return runLocalAction(action,type,configured,soundId);}
  if(!online||(busy&&type!=='sound.stop'))return;
  const availability=actionAvailability(configured||{type,value:soundId});if(availability&&availability.status!=='available'){toast(availability.message);return;}
  if(type==='replay.save'&&replay?.active!==true){replayDialog();return;}
@@ -605,7 +615,7 @@ document.addEventListener('click',async event=>{const b=event.target.closest('bu
  if(b.dataset.removeAction){if(!confirm('Supprimer ce bouton et son association macro ?'))return;configurationDraft.actions=configurationDraft.actions.filter(a=>a.id!==b.dataset.removeAction);await api('/api/v2/configuration',{configuration:configurationDraft,expectedRevision:configurationDraft.revision},'PUT');dialog.close();await refresh(true);return;}
  if(b.dataset.broadcast){await chooseYouTubeBroadcast(b);return;}
  if(b.dataset.calendar){await api('/api/v1/google/target',{calendarId:b.dataset.calendar},'PUT');dialog.close();toast('Calendrier enregistré.');return;}
- if(b.dataset.sound){const s=profileDraft.sounds.find(s=>s.id===b.dataset.sound);if(server){const refreshed=await api('/api/v1/soundboard?outputs=refresh');profileDraft.outputs=refreshed.outputs||[];if(!profileDraft.outputs.some(output=>output.id===s.outputId))profileDraft.outputs.push({id:s.outputId,name:'Sortie configurée indisponible ('+s.outputId+')'});}modal(`<h2>${esc(s.name)}</h2><form id="sound-form" data-id="${esc(s.id)}">${input('Nom','name',s.name)}${input('Catégorie','category',s.category)}${input('Volume (0 à 1)','volume',s.volume,'number','min="0" max="1" step="0.05"')}${input('Délai entre lectures (ms)','cooldownMs',s.cooldownMs,'number','min="0"')}${check('Activé','enabled',s.enabled)}${check('Favori','favorite',s.favorite)}${server?select('Sortie audio','outputId',(profileDraft.outputs||[{id:'obs',name:'Mix OBS'}]).map(output=>[output.id,output.name]),s.outputId)+select('Écoute OBS','monitoringMode',[['stream','Diffusion OBS'],['monitor','Diffusion et écoute OBS']],s.monitoringMode):`<input type="hidden" name="monitoringMode" value="${esc(s.monitoringMode)}"><p class="small muted">Lecture sur la sortie audio de cet appareil.</p>`}<div class="form-actions"><button type="button" class="danger" data-delete-sound="${esc(s.id)}">Supprimer</button><button>Enregistrer</button></div></form>`);return;}
+ if(b.dataset.sound){const s=profileDraft.sounds.find(s=>s.id===b.dataset.sound);if(server){const refreshed=await api('/api/v1/soundboard?outputs=refresh');profileDraft.outputs=refreshed.outputs||[];if(!profileDraft.outputs.some(output=>output.id===s.outputId))profileDraft.outputs.push({id:s.outputId,name:'Sortie configurée indisponible ('+s.outputId+')'});}modal(`<h2>${esc(s.name)}</h2><form id="sound-form" data-id="${esc(s.id)}">${input('Nom','name',s.name)}${input('Catégorie','category',s.category)}${input('Volume (0 à 1)','volume',s.volume,'number','min="0" max="1" step="0.05"')}${input('Délai entre lectures (ms)','cooldownMs',s.cooldownMs,'number','min="0"')}${check('Activé','enabled',s.enabled)}${check('Favori','favorite',s.favorite)}${select('Lecture','playbackMode',[['replace','Remplacer les sons en cours'],['mix','Superposer aux sons en cours (sortie locale)']],s.playbackMode||'replace')}${server?select('Sortie audio','outputId',(profileDraft.outputs||[{id:'obs',name:'Mix OBS'}]).map(output=>[output.id,output.name]),s.outputId)+select('Écoute OBS','monitoringMode',[['stream','Diffusion OBS'],['monitor','Diffusion et écoute OBS']],s.monitoringMode):`<input type="hidden" name="monitoringMode" value="${esc(s.monitoringMode)}"><p class="small muted">Lecture sur la sortie audio de cet appareil.</p>`}<div class="form-actions"><button type="button" class="danger" data-delete-sound="${esc(s.id)}">Supprimer</button><button>Enregistrer</button></div></form>`);return;}
  if(b.dataset.deleteSound){if(!confirm('Supprimer ce son de la bibliothèque ?'))return;await api('/api/v1/soundboard/sounds/'+encodeURIComponent(b.dataset.deleteSound),{},'DELETE');dialog.close();await refresh(true);return;}
  if(b.dataset.automation){const all=profileDraft.items||profileDraft.automations||profileDraft;const a=all.find(a=>a.id===b.dataset.automation);modal(`<h2>Modifier la règle</h2><form id="automation-form" data-id="${esc(a.id)}"><label>Règle JSON<textarea name="value" rows="16">${esc(JSON.stringify(a,null,2))}</textarea></label><div class="form-actions"><button type="button" class="danger" data-delete-automation="${esc(a.id)}">Supprimer</button><button>Enregistrer</button></div></form>`);return;}
  if(b.dataset.deleteAutomation){if(!confirm('Supprimer cette automatisation ?'))return;await api('/api/v1/automations/'+encodeURIComponent(b.dataset.deleteAutomation),{},'DELETE');dialog.close();return;}

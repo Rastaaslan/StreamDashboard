@@ -23,7 +23,7 @@ export function registerControlRoutes(options: {
         res.status(409).json({ok:false,error:{code:'CONFIRM_REQUIRED',message:'Confirmez l’arrêt depuis le bouton du tableau de bord.',retryable:false}});
         return;
       }
-      res.json(await control.execute({...req.body,action}, action=>res.locals.checkDevicePermission?.(action)));
+      res.json(await control.execute({...req.body,action}, async action=>{res.locals.checkDevicePermission?.(action);await res.locals.checkDeviceRole?.(action);}));
     } catch(e){next(e);}
   });
   app.get('/api/v2/wizebot/catalog',(_req,res)=>res.json(options.wizebotCommands.snapshot()));

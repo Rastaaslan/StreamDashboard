@@ -86,7 +86,7 @@ export class ControlService {
       const data = { ...this.data, configuration: next }; await this.store.write(data); this.data = data; this.notify(); return this.snapshot();
     });
   }
-  execute(request: ControlRequest, authorize?: (action:string)=>void): Promise<ControlReceipt> {
+  execute(request: ControlRequest, authorize?: (action:string)=>void|Promise<void>): Promise<ControlReceipt> {
     if (this.stopped) return Promise.reject(new Error('Hôte en cours d’arrêt.'));
     if (!request || !/^[A-Za-z0-9_-]{8,100}$/.test(request.id) || typeof request.action !== 'string' || request.action.length > 100 || (request.platform !== undefined && !platforms.includes(request.platform))) return Promise.reject(new Error('Commande invalide.'));
     if (request.soundId !== undefined && (request.action !== 'sound.play' || !/^[A-Za-z0-9._:-]{1,100}$/.test(request.soundId))) return Promise.reject(new Error('Son invalide.'));
@@ -106,7 +106,7 @@ export class ControlService {
       const receipt: ControlReceipt = { id:request.id, action:request.action, fingerprint, status:'running', message:'Exécution sur le PC de stream', createdAt:new Date().toISOString() };
       this.data.receipts.push(receipt); this.data.receipts = this.data.receipts.slice(-2000); await this.save();
       try {
-        authorize?.(request.action);
+        await authorize?.(request.action);
         if (request.expectedAction !== undefined) {
           const actual = this.data.configuration.actions.find(a => a.id === request.expectedAction!.id);
           const expected = actionDefinition(request.expectedAction);

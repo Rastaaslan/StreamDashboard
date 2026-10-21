@@ -1,8 +1,9 @@
 import { callDeviceBridge } from './device-bridge.js';
 import { googleRecurrence, parseGoogleRecurrence } from '../shared/planning-engine.js';
 
-export function createDeviceProviders({bridge=globalThis.StreamDashboardProviders,request,getCalendar=()=>null}) {
+export function createDeviceProviders({bridge=globalThis.StreamDashboardProviders,request,getCalendar=()=>null,enabled=()=>true}) {
   async function call(provider,operation,payload={}) {
+    if(!enabled('planning'))throw Object.assign(new Error('Le rôle Services et planning est désactivé sur cet appareil.'),{code:'DEVICE_ROLE_STOPPED',mutationNotStarted:true});
     let value;
     if(!bridge)value=await request('/api/v2/device/providers',{provider,operation,...payload});
     else {

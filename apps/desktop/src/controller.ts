@@ -18,7 +18,7 @@ interface ControllerResult { status: string; message?: string; error?: { code?: 
 const shortcutPattern = /^Control\+Alt\+Shift\+F(?:[1-9]|1\d|2[0-4])$/;
 const actionTypes = new Set<DeckAction['type']>(['mic.toggle','scene.set','mode.set','timer.add','sound.play','sound.stop','alert.play','chat.send','wizebot.command','replay.save','replay.start','replay.stop','live.start','live.stop']);
 
-export function installControllerKeys(window: () => BrowserWindow | null, userData: string, uiOrigin: string, request:typeof fetch=fetch) {
+export function installControllerKeys(window: () => BrowserWindow | null, userData: string, uiOrigin: string, request:typeof fetch=fetch, enabled=true) {
   const secrets = new ElectronSecretStore(userData);
   let signature = '', generation = 0, disposed = false;
   let configuration: ControllerConfiguration | undefined;
@@ -78,7 +78,7 @@ export function installControllerKeys(window: () => BrowserWindow | null, userDa
         const result = await response.json() as ControllerResult;
         if (!response.ok) {
           const code = result?.error?.code || '';
-          const refused = code !== 'ACTION_UNCERTAIN' && (response.status === 401 || response.status === 403 || ['REVISION_CONFLICT','CONFIRM_REQUIRED','CHECKLIST_INCOMPLETE','REMOTE_SCOPE_DENIED'].includes(code));
+          const refused = code !== 'ACTION_UNCERTAIN' && (response.status === 401 || response.status === 403 || ['REVISION_CONFLICT','CONFIRM_REQUIRED','CHECKLIST_INCOMPLETE','REMOTE_SCOPE_DENIED','DEVICE_ROLE_STOPPED'].includes(code));
           publish({ status: refused ? 'failed' : 'uncertain', message: result?.error?.message || (refused ? 'Commande refusée par la régie.' : 'Commande non confirmée par la régie. Vérifiez son résultat.') }, currentGeneration);
           return;
         }
@@ -97,7 +97,7 @@ export function installControllerKeys(window: () => BrowserWindow | null, userDa
   const cancelRetry = () => { if (retryTimer) clearTimeout(retryTimer); retryTimer = undefined; };
   const retryUnavailable = () => {
     cancelRetry();
-    if (disposed || !configuration) return;
+    if (disposed || !enabled || !configuration) return;
     const target = configuration, currentGeneration = generation;
     for (const shortcut of [...state.unavailable]) {
       const action = target.actions.find(value => value.shortcut === shortcut);
@@ -141,7 +141,7 @@ export function installControllerKeys(window: () => BrowserWindow | null, userDa
     generation++;
     pending?.controller.abort(); pending = undefined; cooldownUntil = 0;
     cancelRetry(); globalShortcut.unregisterAll(); signature = nextSignature; configuration = target;
-    state = { registered: [], unavailable: actions.map(action => action.shortcut) };
+    state = { registered: [], unavailable: actions.map(action => action.shortcut), ...(!enabled?{lastResult:{status:'failed',message:'Le rôle Pilotage est désactivé sur cet appareil.'}}:{}) };
     retryUnavailable();
     return state;
   };
@@ -177,7 +177,7 @@ export function installControllerKeys(window: () => BrowserWindow | null, userDa
   // A cold headless start arms only mappings confirmed by the current executor.
   // No persisted command is replayed and no stale mapping is silently activated.
   const restore = async () => {
-    if (disposed || userConfigured) return;
+    if (disposed || !enabled || userConfigured) return;
     try {
       const saved = await secrets.getControllerBindings();
       if (!saved || disposed || userConfigured) return;
@@ -207,7 +207,7 @@ export function installControllerKeys(window: () => BrowserWindow | null, userDa
           return current.some(item=>actionDefinition(item)===actionDefinition(definition))?action:null;
         } catch { retry=true;return null; }
       }))).filter((action):action is DeckAction=>action!==null);
-      if (disposed || userConfigured) return;
+      if (disposed || !enabled || userConfigured) return;
       configure({ ...saved, actions: confirmed });
       if (confirmed.length !== saved.actions.length) publish({ status: 'failed', message: 'Certaines macros sont indisponibles ou ont changé. Les autres appareils restent utilisables.' });
       if(retry){restoreTimer=setTimeout(()=>{void restore();},5_000);restoreTimer.unref();}

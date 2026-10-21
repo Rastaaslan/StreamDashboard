@@ -1,5 +1,5 @@
-import { AudioDestinations } from './audio-destinations.js';
-import { publicInstallationDevice, type InstallationDevice } from '../../mobile/shared/installation.js';
+import { AudioDestinations, RoleAudioPlayback } from './audio-destinations.js';
+import { publicInstallationDevice, deviceRoleAvailable, type InstallationDevice } from '../../mobile/shared/installation.js';
 import { WizeBotService } from './wizebot-service.js';
 import { measureSync, syncBatch, syncDiagnostics } from '../../../packages/core/src/sync-performance.js';
 import { bulkDeleteSelection } from '../../../packages/core/src/planning-bulk-delete.js';
@@ -419,6 +419,12 @@ function lanUrls(port: number, protocol='http') {
 }
 
 export async function startDashboardServer(options: DashboardServerOptions = {}): Promise<DashboardServerHandle> {
+  const runtimeDevice = options.deviceDescriptor ? await options.deviceDescriptor() : undefined;
+  const capabilityEnabled = (capability: string) => !runtimeDevice || deviceRoleAvailable(runtimeDevice, capability);
+  const assertRole = async (capability: string) => {
+    const current = options.deviceDescriptor ? await options.deviceDescriptor() : undefined;
+    if (!capabilityEnabled(capability) || (current && !deviceRoleAvailable(current, capability))) throw Object.assign(new Error('Le rôle nécessaire à cette fonction est arrêté sur cet appareil.'), { name: 'DEVICE_ROLE_STOPPED' });
+  };
   const startupSignal = options.startupSignal;
   startupSignal?.throwIfAborted();
   const runtimeAbort = new AbortController();
@@ -733,7 +739,7 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
   const eventCore = new EventCore(250);
   local.sounds = local.sounds.map(sound => ({ ...sound, outputId: sound.outputId==='device-default'||sound.outputId?.startsWith('device:')?sound.outputId:'obs', monitoringMode: sound.monitoringMode ?? 'stream' }));
   const obsSoundboardSetup = new ObsSoundboardSetup(obs);
-  const soundboard = new SoundboardRuntime(local.sounds, options.deviceAudio?new AudioDestinations(new ObsSoundboardPlayback(obs),options.deviceAudio):new ObsSoundboardPlayback(obs), () => Date.now(), event => {
+  const soundboard = new SoundboardRuntime(local.sounds, new RoleAudioPlayback(options.deviceAudio?new AudioDestinations(new ObsSoundboardPlayback(obs),options.deviceAudio):new ObsSoundboardPlayback(obs),()=>capabilityEnabled('audio')), () => Date.now(), event => {
     eventCore.publish({ type: event.type, source: 'soundboard', correlationId: event.correlationId, payload: event.payload });
   });
   let executeAutomationCommand: (command: DashboardCommand) => Promise<void> = async () => { throw new Error('Runtime de commandes indisponible.'); };
@@ -1150,6 +1156,7 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
   let platformObservation: Promise<void> | undefined;
   let platformObservedAt = 0;
   const observePlatforms = () => {
+    if (!capabilityEnabled('cloud')) return Promise.resolve();
     void observeOutputs().catch(logError);
     if (platformObservation) return platformObservation;
     if (Date.now() - platformObservedAt < 15_000) return Promise.resolve();
@@ -1450,6 +1457,8 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
     }
     const commandBody = Object.fromEntries(Object.entries(envelope).filter(([key]) => key !== 'commandId' && key !== 'correlationId'));
     const command = remote ? parseRemoteCommand(commandBody, snapshot()) : parseCommand(commandBody);
+    if (command.type === 'session.prepare') await assertRole('cloud');
+    else if (/^(obs|session|mode|scene)\./.test(command.type)) await assertRole('obs');
     if (command.type === 'session.start' || command.type === 'session.stop' || command.type === 'obs.stream') {
       const start = command.type === 'session.start' || (command.type === 'obs.stream' && command.start);
       const receipt = await control.execute({ id: typeof commandId === 'string' ? commandId : randomUUID(), issuedAt: new Date().toISOString(), action: start ? 'live.start' : 'live.stop' });
@@ -1503,6 +1512,7 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
     twitchEventSub.stop();
   };
   const reconcileTwitchEventSub = () => {
+    if (!capabilityEnabled('chat')) { twitchEventSub.stop(); return; }
     const capabilities = twitch.controlCapabilities();
     const key = twitch.state.connected && (capabilities.chatRead || capabilities.redemptions)
       ? JSON.stringify([twitch.publicIdentity().broadcasterId, capabilities.chatRead, capabilities.redemptions]) : '';
@@ -1513,6 +1523,7 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
     if (key) twitchEventSub.start();
   };
   const validateTwitch = async () => {
+    if (!capabilityEnabled('cloud') && !capabilityEnabled('chat')) return;
     if (!twitch.state.connected) { resetTwitchRuntime(); broadcast(); return; }
     const previous = JSON.stringify(twitch.controlCapabilities());
     try {
@@ -1537,6 +1548,7 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
   };
   let twitchLiveRefresh: Promise<void> | undefined;
   const refreshTwitchLive = () => {
+    if (!capabilityEnabled('cloud')) return Promise.resolve();
     if (twitchLiveRefresh) return twitchLiveRefresh;
     twitchLiveRefresh = (async () => {
       if (backgroundStopped) return;
@@ -1568,7 +1580,7 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
   let twitchInitialization: Promise<void> | undefined;
   let googleInitialization: Promise<void> | undefined;
   const initializeTwitch = () => twitchInitialization ??= validateTwitch().catch(logError);
-  const initializeGoogle = () => googleInitialization ??= refreshGoogleCalendars().catch(logError).finally(broadcast);
+  const initializeGoogle = () => !capabilityEnabled('planning') ? Promise.resolve() : googleInitialization ??= refreshGoogleCalendars().catch(logError).finally(broadcast);
 
   let trackedUnplannedLiveId = findUnplannedDraft(local.planning)?.id ?? null;
   let observedObsStreaming = false;
@@ -1835,6 +1847,18 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
       return;
     }
     next();
+  });
+  app.use('/api', (req,res,next) => {
+    const verify = async (action?:string) => {
+      const actions=control?.snapshot().configuration.actions||[];
+      const type=actions.find(value=>value.id===(action||req.body?.action))?.type || action || req.body?.action;
+      if ((req.path==='/v2/actions' && type==='sound.stop') || req.path==='/v1/soundboard/stop') return;
+      if (/^\/v[12]\/(?:soundboard|sounds)(?:\/|$)/.test(req.path) && !['/v1/soundboard/play','/v1/soundboard/volume','/v1/soundboard/obs/setup'].includes(req.path)) return;
+      const required=requiredDevicePermissions(req.method,req.path,action?{...req.body,action}:req.body,actions);
+      for(const capability of required) await assertRole(capability);
+    };
+    res.locals.checkDeviceRole=verify;
+    void verify().then(()=>next(),error=>res.status(409).json({error:{code:'DEVICE_ROLE_STOPPED',message:error.message,retryable:false}}));
   });
   // Serialize management mutations with offline reconciliation. Execution commands are separate.
   app.use('/api', (req, res, next) => {
@@ -3149,7 +3173,7 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
     // Yield the global planning queue between series so an explicit edit/retry
     // waits for at most the current series, not the complete rolling inventory.
     for (const item of [...local.planning]) {
-      if (backgroundStopped) return;
+      if (backgroundStopped || !capabilityEnabled('planning')) return;
       await plan(() => planning().refreshTwitch(Date.now(), [item.id]));
       await new Promise<void>(resolve => setImmediate(resolve));
     }
@@ -3169,9 +3193,11 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
     providerStartupWork = (async () => {
       await Promise.all([
         initializeTwitch(), initializeGoogle(),
-        initializeStreamlabs().catch(logError), streamlabsHistory.start().catch(logError), wizebot.refresh().catch(logError),
+        ...(capabilityEnabled('cloud') ? [initializeStreamlabs().catch(logError), streamlabsHistory.start().catch(logError)] : []),
+        ...(capabilityEnabled('chat') ? [wizebot.refresh().catch(logError)] : []),
       ]);
       if (backgroundStopped) return;
+      if (!capabilityEnabled('planning')) return;
       await plan(() => drainCompanionProviders(local.planning, local.companion, providerAdapters(), save));
       if (!backgroundStopped) await maintainProjections();
     })().catch(logError).finally(finishProviderStartup);

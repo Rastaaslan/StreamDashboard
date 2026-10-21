@@ -2,7 +2,7 @@
 export const fields = {
  planning:['title','description','startAtUtc','endAtUtc','category','allDay','twitchCategoryId','twitchCategoryName','tags','tagPreferences','desiredPublication','recurrence'],
  settings:['streamerName','accent','confirmStop','obsUrl','launchObs','obsExecutablePath','modeScenes','chattingScene','startMode','timerBrowserSource','primaryMicInput','requireTimerOverlayOnStart','remoteEnabled','streamerPingRewardIds','tagPreferences'],
- sound:['name','favorite','volume','enabled','cooldownMs','category','monitoringMode','outputId'],
+ sound:['name','favorite','volume','enabled','cooldownMs','category','monitoringMode','outputId','playbackMode'],
  automation:['name','enabled','trigger','conditions','actions','cooldownMs'],
  template:['title','description','twitchCategoryId','twitchCategoryName','desiredPublication','tags','tagPreferences'],
 };

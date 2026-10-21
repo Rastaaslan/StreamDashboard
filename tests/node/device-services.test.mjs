@@ -80,3 +80,15 @@ test('desktop local lost response is never replayed; unavailable storage prevent
  assert.equal((await s.open().route('/api/v2/wizebot/command',chatCommand,'POST')).status,'uncertain');assert.equal(s.sent.length,1);
  const denied=desktopCommandSetup();denied.failStore();await assert.rejects(denied.open().route('/api/v2/wizebot/command',chatCommand,'POST'),/Disk unavailable/);assert.equal(denied.sent.length,0);
 });
+
+test('a disabled chat role rejects WizeBot before creating a receipt or invoking the native bridge',async()=>{
+ const s=setup();const service=createDeviceServices({store:s.store,autonomy:{},bridge:{},enabled:()=>false});
+ await assert.rejects(service.route('/api/v2/wizebot/command',{commandId:'stopped_role',channel:'test_channel',command:'!bonjour'},'POST'),{code:'DEVICE_ROLE_STOPPED'});
+ assert.equal(s.store.record.drafts.wizebotCommands,undefined);
+});
+test('a disabled planning role never calls the native provider and reports a non-started mutation',async()=>{
+ const {createDeviceProviders}=await import('../../apps/mobile/control/device-providers.js');
+ let calls=0;const providers=createDeviceProviders({enabled:()=>false,request:async()=>{calls++;}});
+ await assert.rejects(providers.call('google','create',{}),{code:'DEVICE_ROLE_STOPPED',mutationNotStarted:true});
+ assert.equal(calls,0);
+});

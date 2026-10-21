@@ -125,7 +125,7 @@ function boot(): Promise<void> {
       log('Electron ready; creating visible startup window');
       const preview = process.argv.includes('--ui-preview=desktop-v2');
       const legacy = process.argv.includes('--ui-legacy=desktop-v1');
-      installation = await installations.read();
+      installation = await installations.recover(async current => { configureLoginStartup(app, Boolean(current.startAtLogin)); });
       // The original runtime directory and origin never change with roles.
       // This preserves RC11.7 accounts, caches, data and browser sessions.
       const client = installation.runtimeProfile === 'device-runtime';
@@ -136,7 +136,7 @@ function boot(): Promise<void> {
       const targetUrl = new URL(route, uiOrigin).toString();
       ensureTray();
       if (!runtime && startupAgent) {
-        stopControllerKeys = installControllerKeys(() => window, app.getPath('userData'), uiOrigin,peers.fetch);
+        stopControllerKeys = installControllerKeys(() => window, app.getPath('userData'), uiOrigin,peers.fetch,installation.devices.find(d=>d.id===installation.localDeviceId)!.roles.includes('controller'));
         void stopControllerKeys.restore?.();
         if (client) controllerServer = await startControllerAssets(path.join(app.getAppPath(), 'apps', 'mobile'));
         runtimePromise = startDesktopRuntime(logger, startup.signal, client, obsEnabled, deviceDescriptor);
@@ -166,7 +166,7 @@ function boot(): Promise<void> {
       await loadWindow('data:text/html;charset=utf-8,' + encodeURIComponent(
         '<!doctype html><meta charset="utf-8"><meta http-equiv="Content-Security-Policy" content="default-src \'none\'; style-src \'unsafe-inline\'"><title>StreamDashboard — Démarrage…</title><body style="background:#080a10;color:#fff;font:20px system-ui;padding:48px"><h1>StreamDashboard</h1><p>Démarrage en cours…</p><p>Vous pouvez fermer cette fenêtre pour annuler.</p></body>'));
       if (quitting) return;
-      stopControllerKeys = installControllerKeys(() => window, app.getPath('userData'), uiOrigin,peers.fetch);
+      stopControllerKeys = installControllerKeys(() => window, app.getPath('userData'), uiOrigin,peers.fetch,installation.devices.find(d=>d.id===installation.localDeviceId)!.roles.includes('controller'));
       void stopControllerKeys.restore?.();
       if (client) {
         controllerServer = await startControllerAssets(path.join(app.getAppPath(), 'apps', 'mobile'));
@@ -210,10 +210,13 @@ function committedInstallation(plan: InstallationPlan) {
 let installationChange: Promise<unknown> = Promise.resolve();
 function applyInstallation(operation: () => Promise<InstallationPlan>) {
   const pending = installationChange.then(async () => {
-    try { return committedInstallation(await operation()); }
+    try {
+      await installations.recover(async current => { configureLoginStartup(app, Boolean(current.startAtLogin)); });
+      return committedInstallation(await operation());
+    }
     catch (error) {
       // A disk failure must not leave a different Windows startup setting active.
-      try { configureLoginStartup(app, Boolean((await installations.read()).startAtLogin)); }
+      try { installation = await installations.recover(async current => { configureLoginStartup(app, Boolean(current.startAtLogin)); }); }
       catch { throw new Error('Configuration non appliquée. Vérifiez le démarrage automatique dans les paramètres Windows avant de réessayer.'); }
       throw error;
     }

@@ -39,7 +39,7 @@ test('several controllers never choose another executor silently, including disa
   assert.equal(value.devices.find(d=>d.id==='second').endpoint,'https://example.test');
 });
 test('agent stopped leaves autonomous services available; unsupported Android roles fail',()=>{
-  const base=create();const {next,restart}=planInstallationChange(base,{roles:['services','controller']},0);
+  const base=create();const {next,restart}=planInstallationChange(base,{roles:['services','controller','display','audio']},0);
   assert.equal(restart,true);assert.equal(resolveCapability(next,'obs').reason,'no-target');
   assert.equal(resolveCapability(next,'chat',{'device-1':{connected:true}}).status,'available');
   assert.throws(()=>planInstallationChange(create('android','mobile'),{roles:['obs-executor']},0),/OBS/);
@@ -72,4 +72,26 @@ test('authenticated device identity survives address changes without copying pri
  assert.equal(state.devices.length,2);assert.equal(state.routes.obs,'physical-peer');
  assert.equal(state.devices[1].endpoint,'https://second.test');assert.equal(state.devices[1].privateNote,undefined);
  assert.throws(()=>associateInstallationDevice(state,'https://second.test',{...peer,id:state.localDeviceId}),/local/);
+});
+
+test('Android recovery preserves the prior backup after an interrupted change and checks restored identity',async()=>{
+ const storage=memory(),base=create('android','mobile'),store=createInstallationStore(storage,()=>base,work=>work());
+ await store.change({name:'Before crash'},0);
+ const saved=storage.setItem;let failOnce=true;
+ storage.setItem=(key,value)=>{if(key==='sd2.installation.v2'&&failOnce){failOnce=false;throw Error('disk full');}saved(key,value);};
+ await assert.rejects(store.change({name:'Never committed'},1),/disk full/);
+ assert.equal(store.read().devices[0].name,'Before crash');
+ assert.deepEqual(JSON.parse(storage.getItem('sd2.installation.v2.backup')),base);
+ assert.equal((await store.restore(1)).devices[0].name,base.devices[0].name);
+ const other=create('android','mobile');other.localDeviceId='other';other.devices[0].id='other';other.routes={};
+ saved('sd2.installation.v2.backup',JSON.stringify(other));
+ await assert.rejects(store.restore(2),/autre appareil/);
+});
+for(const platform of ['windows','android'])test(platform+': removed roles disable only their capabilities and a fresh peer observation wins',()=>{
+ const base=create(platform,platform==='android'?'mobile':'stream');
+ const {next}=planInstallationChange(base,{roles:['controller','services']},0);
+ const observed={[base.localDeviceId]:{connected:true}};
+ for(const capability of ['audio','viewer','chat'])assert.equal(resolveCapability(next,capability,observed).reason,'role-stopped');
+ assert.equal(resolveCapability(next,'planning',observed).status,'available');
+ assert.equal(resolveCapability(base,'audio',{[base.localDeviceId]:{connected:true,roles:['services']}}).reason,'role-stopped');
 });

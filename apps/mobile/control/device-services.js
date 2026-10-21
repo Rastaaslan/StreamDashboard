@@ -4,10 +4,12 @@ import {parseWizeBotCatalog} from '../shared/planning-engine.js';
 
 // Non-live integrations are addressed on this device. Credentials never enter
 // the replica, transfer journal, exports or HTML.
-export function createDeviceServices({store,autonomy,request,bridge=globalThis.StreamDashboardProviders}) {
+export function createDeviceServices({store,autonomy,request,bridge=globalThis.StreamDashboardProviders,enabled=()=>true}) {
  let tail=Promise.resolve();
  const serial=work=>{const task=()=>globalThis.navigator?.locks?navigator.locks.request('sd-services:'+store.record.workspace,work):work();const result=tail.then(task);tail=result.catch(()=>{});return result;};
+ const requireRole=capability=>{if(!enabled(capability))throw Object.assign(new Error('Le rôle requis par ce service est désactivé sur cet appareil.'),{code:'DEVICE_ROLE_STOPPED',mutationNotStarted:true});};
  async function call(payload){
+  if(payload.operation!=='configure')requireRole(payload.provider==='wizebot'?'chat':'cloud');
   if(typeof bridge?.deviceService!=='function')throw new Error('Mettez à jour cette application pour configurer ce service local.');
   const result=await callDeviceBridge(bridge,'deviceService',payload);
   if(result.ok===false)throw Object.assign(new Error(result.message||'Service indisponible.'),{code:result.code});return result;
@@ -25,6 +27,7 @@ export function createDeviceServices({store,autonomy,request,bridge=globalThis.S
   await store.draft('wizebotCatalog',result);return result;
  }
  async function route(path,body,method){
+  if(/\/wizebot\/(?:command|edit|refresh|context)$/.test(path))requireRole('chat');
   if(streamlabs){const value=await streamlabs.route(path,body,method);if(value!==undefined)return value;}
   if(configPaths[path])return bridge?call({provider:configPaths[path],operation:'configure',value:body}):request(path,body,method);
   if(path==='/api/v1/google/oauth/config'&&!bridge)return request(path,body,method);

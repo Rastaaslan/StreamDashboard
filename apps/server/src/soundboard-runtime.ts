@@ -13,7 +13,7 @@ export interface SoundboardRuntimeEvent {
 
 export interface AudioPlayback {
   outputs(refresh?: boolean): Promise<AudioOutput[]>;
-  play(input: { file: string; volume: number; outputId: string; monitoringMode?: 'stream' | 'monitor' }): Promise<PlaybackSession>;
+  play(input: { file: string; volume: number; outputId: string; monitoringMode?: 'stream' | 'monitor'; playbackMode?: 'replace' | 'mix' }): Promise<PlaybackSession>;
   stop(): Promise<void>;
   setVolume?(volume: number): Promise<void>;
   readonly available: boolean;
@@ -83,8 +83,13 @@ export class SystemAudioPlayback implements AudioPlayback {
 export class SoundboardRuntime {
   private readonly actions = new ActionCore();
   private readonly cooldowns = new Map<string, number>();
-  private currentPlayback: SoundboardSnapshot['currentPlayback'] = null;
+  private readonly active = new Map<string, NonNullable<SoundboardSnapshot['currentPlayback']>>();
+  private tail: Promise<unknown> = Promise.resolve();
+  private generation = 0;
   private lastError: SoundboardSnapshot['error'] = null;
+  private serialized<T>(work: () => Promise<T>): Promise<T> {
+    const result = this.tail.then(work); this.tail = result.catch(() => undefined); return result;
+  }
 
   constructor(
     private sounds: Sound[],
@@ -104,7 +109,8 @@ export class SoundboardRuntime {
     return {
       sounds: publicSounds,
       outputs,
-      currentPlayback: this.currentPlayback,
+      currentPlayback: [...this.active.values()].at(-1) ?? null,
+      activePlaybacks: [...this.active.values()],
       available: this.audio.available,
       supportedFormats: [...this.audio.supportedFormats],
       supportsVolume: this.audio.supportsVolume,
@@ -115,7 +121,10 @@ export class SoundboardRuntime {
   }
 
   play(command: ActionCommand<{ soundId: string; volume?: number }>): Promise<CommandAcknowledgement> {
-    return this.actions.execute(command, async correlated => {
+    const generation = this.generation;
+    const check = () => { if (generation !== this.generation) throw runtimeError('SOUND_CANCELED', 'Lecture annulée par la commande d’arrêt.', false); };
+    return this.actions.execute(command, correlated => this.serialized(async () => {
+      check();
       const sound = this.sounds.find(value => value.id === correlated.payload.soundId);
       if (!sound) throw runtimeError('SOUND_NOT_FOUND', 'Son introuvable.', false);
       if (!sound.enabled) throw runtimeError('SOUND_DISABLED', 'Ce son est désactivé.', false);
@@ -125,38 +134,50 @@ export class SoundboardRuntime {
       try { await access(file); } catch { throw runtimeError('SOUND_FILE_MISSING', 'Le fichier audio est introuvable sur le PC.', false); }
       const outputs = await this.audio.outputs(true);
       if (!outputs.some(output => output.id === sound.outputId && output.selectable)) throw runtimeError('AUDIO_OUTPUT_UNAVAILABLE', 'La sortie audio configurée est absente.', true);
+      if (sound.playbackMode === 'mix' && !outputs.find(output => output.id === sound.outputId)?.supportsMixing) throw runtimeError('AUDIO_MIX_UNSUPPORTED', 'Cette sortie ne permet pas la lecture simultanée. Choisissez une sortie locale ou le remplacement du son.', false);
+      if (sound.playbackMode === 'mix' && this.active.size >= 8) throw runtimeError('AUDIO_PLAYBACK_LIMIT', 'Huit sons sont déjà en lecture. Arrêtez-les avant d’en ajouter.', false);
       const remaining = (this.cooldowns.get(sound.id) ?? 0) - this.now();
       if (remaining > 0) throw runtimeError('SOUND_COOLDOWN_ACTIVE', `Cooldown actif (${Math.ceil(remaining / 1_000)} s).`, true);
       const volume = correlated.payload.volume ?? sound.volume;
       if (!Number.isFinite(volume) || volume < 0 || volume > 1) throw runtimeError('SOUND_VOLUME_INVALID', 'Volume invalide.', false);
       if (!this.audio.supportsVolume && Math.abs(volume - 1) > 0.0001) throw runtimeError('AUDIO_VOLUME_UNSUPPORTED', 'Le backend audio actif ne permet pas de régler le volume.', false);
 
-      if (this.currentPlayback) await this.stop();
+      check();
+      if (sound.playbackMode !== 'mix' && this.active.size) await this.stopActive();
+      check();
       this.lastError = null;
-      const session = await this.audio.play({ file, volume, outputId: sound.outputId, monitoringMode: sound.monitoringMode });
+      const session = await this.audio.play({ file, volume, outputId: sound.outputId, monitoringMode: sound.monitoringMode, playbackMode: sound.playbackMode });
       const playback = { soundId: sound.id, commandId: correlated.commandId, startedAt: new Date(this.now()).toISOString() };
-      this.currentPlayback = playback;
+      this.active.set(correlated.commandId, playback);
       this.cooldowns.set(sound.id, this.now() + sound.cooldownMs);
       this.publish({ type: 'playback.started', correlationId: correlated.correlationId, payload: playback });
 
-      void session.finished.then(() => {
-        if (this.currentPlayback?.commandId !== correlated.commandId) return;
-        this.currentPlayback = null;
+      void session.finished.then(() => this.serialized(async () => {
+        if (this.active.get(correlated.commandId) !== playback) return;
+        this.active.delete(correlated.commandId);
         this.publish({ type: 'playback.finished', correlationId: correlated.correlationId, payload: { ...playback, finishedAt: new Date(this.now()).toISOString() } });
-      }).catch(error => {
-        if (this.currentPlayback?.commandId !== correlated.commandId) return;
-        this.currentPlayback = null;
+      }), error => this.serialized(async () => {
+        if (this.active.get(correlated.commandId) !== playback) return;
+        this.active.delete(correlated.commandId);
         this.lastError = structured(error);
         this.publish({ type: 'playback.failed', correlationId: correlated.correlationId, payload: { ...playback, error: this.lastError } });
-      });
-    });
+      })).catch(() => undefined);
+      check();
+    }));
   }
 
-  async stop() {
-    const playback = this.currentPlayback;
+  stop() {
+    // Cancel requests still reading files or waiting for another controller.
+    this.generation++;
+    return this.serialized(() => this.stopActive());
+  }
+  private async stopActive() {
+    const playbacks = [...this.active.values()];
     await this.audio.stop();
-    if (this.currentPlayback === playback) this.currentPlayback = null;
-    if (playback) this.publish({ type: 'playback.stopped', payload: { ...playback, stoppedAt: new Date(this.now()).toISOString() } });
+    for (const playback of playbacks) {
+      if (this.active.get(playback.commandId) === playback) this.active.delete(playback.commandId);
+      this.publish({ type: 'playback.stopped', payload: { ...playback, stoppedAt: new Date(this.now()).toISOString() } });
+    }
   }
 
   async setVolume(volume: number) {
@@ -172,6 +193,7 @@ export function validateSound(value: Sound): Sound {
   if (!value.source.trim() || value.source.length > 1_000 || !value.outputId.trim() || value.outputId.length > 200) throw new Error('Source ou sortie invalide.');
   if (!Number.isFinite(value.volume) || value.volume < 0 || value.volume > 1 || !Number.isInteger(value.cooldownMs) || value.cooldownMs < 0 || value.cooldownMs > 3_600_000) throw new Error('Volume ou cooldown invalide.');
   if (value.monitoringMode !== undefined && !['stream', 'monitor'].includes(value.monitoringMode)) throw new Error('Mode écoute invalide.');
+  if (value.playbackMode !== undefined && !['replace', 'mix'].includes(value.playbackMode)) throw new Error('Mode de lecture invalide.');
   return { ...value, name: value.name.trim(), category: value.category.trim(), source: value.source.trim(), monitoringMode: value.monitoringMode ?? 'stream' };
 }
 

@@ -34,7 +34,7 @@ export function createActionRouter({ installation, workspace, localEndpoint, cre
         const data = await request('/api/v2/state',undefined,'GET',origin,token);
         if (!Array.isArray(data.configuration?.actions)) throw new Error('État de l’appareil illisible.');
         if (installation().revision !== topology.revision || endpoint(device(id) || {}) !== origin) throw new Error('Installation modifiée pendant la vérification.');
-        const value = { endpoint:origin, token, at:now(), data, observation:{connected:true, permissions:descriptor.observed?.permissions, obsConnected:data.host?.state?.obs?.connected === true} };
+        const value = { endpoint:origin, token, at:now(), data, observation:{connected:true, roles:descriptor.device.roles, permissions:descriptor.observed?.permissions, obsConnected:data.host?.state?.obs?.connected === true} };
         states.set(id,value);return value;
       } catch (error) {
         states.set(id,{endpoint:origin,at:now(),observation:{connected:false}});throw error;

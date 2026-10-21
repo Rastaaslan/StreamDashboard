@@ -140,8 +140,8 @@ describe('global controller macros without foreground dependency', () => {
     expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 
-  it('reports an explicit HTTP refusal as failed instead of an uncertain dispatch', async () => {
-    fetchMock.mockResolvedValueOnce(response({ error: { message: 'Appareil révoqué.' } }, 403));
+  it.each([{status:403,code:'REMOTE_SCOPE_DENIED'},{status:409,code:'DEVICE_ROLE_STOPPED'}])('reports an explicit HTTP refusal as failed instead of an uncertain dispatch ($code)', async ({status:statusCode,code}) => {
+    fetchMock.mockResolvedValueOnce(response({ error: { code, message: 'Appareil révoqué.' } }, statusCode));
     configure(); native.callbacks.get(shortcut)!(); await drain();
     expect(status().lastResult).toEqual({ status: 'failed', message: 'Appareil révoqué.' });
   });
@@ -266,4 +266,11 @@ it('headless restoration keeps a reachable destination while another executor is
  fetchMock.mockImplementation(async input=>{if(String(input).includes('one.local'))throw Error('offline');return String(input).endsWith('/device')?response({device:{id:'two'}}):response({configuration:{actions:[second]}});});
  await (stop as any).restore();expect(status().registered).toEqual([second.shortcut]);
  expect(fetchMock.mock.calls.every(([url])=>!String(url).endsWith('/actions'))).toBe(true);
+});
+
+it('a disabled Pilotage role keeps definitions but never registers global shortcuts',async()=>{
+ stop?.();stop=installControllerKeys(()=>owner,'/unused',origin,fetchMock,false);
+ configure();expect(native.register).not.toHaveBeenCalled();expect(status().registered).toEqual([]);
+ expect(status().lastResult?.message).toContain('désactivé');
+ await (stop as any).restore();expect(fetchMock).not.toHaveBeenCalled();
 });
