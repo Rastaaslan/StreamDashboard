@@ -1197,7 +1197,8 @@
         "tests/node/configuration-transfer.test.mjs",
         "docs/qa/2026-10-21-setup-migration.md",
         "tests/node/setup-migration.test.mjs",
-        "tests/setup-migration-ui.spec.ts"
+        "tests/setup-migration-ui.spec.ts",
+        "docs/qa/2026-10-21-setup-migration-hardware.json"
       ]
     },
     {
@@ -1220,7 +1221,8 @@
         "tests/node/configuration-transfer.test.mjs",
         "docs/qa/2026-10-21-setup-migration.md",
         "tests/node/setup-migration.test.mjs",
-        "tests/setup-migration-ui.spec.ts"
+        "tests/setup-migration-ui.spec.ts",
+        "docs/qa/2026-10-21-setup-migration-hardware.json"
       ]
     },
     {
@@ -1322,7 +1324,8 @@
         "tests/node/planning-handoff.test.mjs",
         "docs/qa/2026-10-21-setup-migration.md",
         "tests/node/setup-migration.test.mjs",
-        "tests/setup-migration-ui.spec.ts"
+        "tests/setup-migration-ui.spec.ts",
+        "docs/qa/2026-10-21-setup-migration-hardware.json"
       ]
     },
     {
@@ -1346,7 +1349,8 @@
         "tests/node/configuration-transfer.test.mjs",
         "docs/qa/2026-10-21-setup-migration.md",
         "tests/node/setup-migration.test.mjs",
-        "tests/setup-migration-ui.spec.ts"
+        "tests/setup-migration-ui.spec.ts",
+        "docs/qa/2026-10-21-setup-migration-hardware.json"
       ]
     },
     {

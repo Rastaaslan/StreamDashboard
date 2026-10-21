@@ -1,14 +1,14 @@
 {
   "date": "2026-10-21",
   "candidate": "2.1.0-alpha.1",
-  "codeCommit": "8be0d5c388772486c81a2328617db2c79d46e835",
+  "codeCommit": "763da840e8dfc4bb92a9b6164a8e244ec6512445",
   "branch": "work/streamdashboard-next21-universal",
   "universalQualificationComplete": false,
   "openQualificationCells": 75,
   "validation": {
     "vitest": 1456,
-    "node": 335,
-    "browser": 106,
+    "node": 348,
+    "browser": 108,
     "androidJvm": 47,
     "electronAndPreview": 8,
     "realElectron": 5,
@@ -17,31 +17,32 @@
     "security": "passed",
     "shippedJavaScript": "passed",
     "windowsPackageIntegrity": "passed",
-    "windowsConfigurationCopy": "passed-fixe-to-laptop",
-    "windowsReverseConnection": "blocked"
+    "windowsConfigurationCopy": "passed-bidirectional",
+    "windowsReverseConnection": "passed-tls-lan-tailscale",
+    "windowsCoordinatedMigration": "passed-three-cycles-two-controllers",
+    "totalTests": 1967
   },
   "artifacts": [
     {
       "name": "StreamDashboard-Next-2.1-universal-candidate-win32-x64.zip",
-      "bytes": 153060792,
-      "sha256": "5c5c4536984a249e940d35d49b8a2ec9c13f8f3df9e4dd7c87e48b46de2253d0"
+      "bytes": 153067023,
+      "sha256": "a61a412b3850b12f09c48c6f24dbfc189d954e4853383ffb3937172165dc7616"
     },
     {
       "name": "StreamDashboard-Next-2.1-universal-candidate-android-debug.apk",
-      "bytes": 3824173,
-      "sha256": "cc15f278c1b39daaf11a6a2fe40cfd59b6182e75a084b74fa32819641936237a"
+      "bytes": 3824348,
+      "sha256": "659b0bf152f69bd16a72497d1473fe658311a23eb0cdbfd7393ee9a7f437260d"
     }
   ],
-  "artifactDirectory": "/home/damien/StreamDashboard-Next-universal-qa-20261021/configuration-copy-candidate",
+  "artifactDirectory": "/home/damien/StreamDashboard-Next-universal-qa-20261021/setup-migration-candidate",
   "logs": [
-    "configuration-copy-check.log",
-    "configuration-copy-final.log",
-    "configuration-copy-final-results.json",
-    "configuration-copy-universal-gate.log"
+    "setup-migration-check.log",
+    "setup-migration-final.log",
+    "setup-migration-final-results.json",
+    "setup-migration-universal-gate.log"
   ],
   "remaining": [
-    "Combined workflow for planning, files, configurations and coordinated device responsibilities",
-    "Physical Android and all six setup transitions; reverse connectivity to FIXE",
+    "Physical Android and all six setup transitions, sleep and network changes",
     "Authenticated web sessions and full live chat cycle on real hardware",
     "Complete real RC11.7 migration and rollback, including browser sessions and encrypted account access"
   ],
@@ -50,6 +51,5 @@
     "obsProcesses": true,
     "mainBranch": true,
     "noRealLiveOrChatEffect": true
-  },
-  "draftRelease": "https://github.com/Rastaaslan/StreamDashboard/releases/tag/untagged-685035fcda2f9567641f"
+  }
 }

@@ -1,0 +1,173 @@
+{
+  "date": "2026-10-21",
+  "sourceCommit": "763da840e8dfc4bb92a9b6164a8e244ec6512445",
+  "status": "passed-with-scope-limits",
+  "releaseQualificationComplete": false,
+  "artifact": {
+    "bytes": 153067023,
+    "sha256": "a61a412b3850b12f09c48c6f24dbfc189d954e4853383ffb3937172165dc7616"
+  },
+  "devices": {
+    "fixe": {
+      "deviceId": "b5db7551-143d-410a-8b84-157070125122",
+      "root": "C:\\Users\\damie\\AppData\\Local\\Temp\\streamdashboard-qa-30cce7057319488e8ca396232c808a8a",
+      "physicalId": "qa-75609edd70c64324be83e6eed0a775ea",
+      "pid": 8916,
+      "fingerprint": "d0f950db248bc275e62711ae21c475b6959ea0a0664626309f17b1f493eac412"
+    },
+    "laptop": {
+      "deviceId": "b9d58a49-3cc5-454f-9a64-db0e0b22db48",
+      "root": "C:\\Users\\damie\\AppData\\Local\\Temp\\streamdashboard-qa-db21db32e9ad45c2bfbcf0b93bbf152b",
+      "physicalId": "qa-1f45509d56374c1b8a7404066a2e9d34",
+      "pid": 21076,
+      "fingerprint": "81aeff6b3a68ef8fb8d6890745d83f023a6f30af5f9f641aa381f8642145c3ed"
+    }
+  },
+  "restartPids": {
+    "fixe": [
+      8916,
+      25444,
+      38944,
+      40596
+    ],
+    "laptop": [
+      21076,
+      39488,
+      42312,
+      40432
+    ]
+  },
+  "connectivity": {
+    "fixeToLaptop": {
+      "tls": true,
+      "wrongPinRejected": true
+    },
+    "laptopToFixe": {
+      "tailscaleTcp": true,
+      "lanTcp": true,
+      "tls": true,
+      "wrongPinRejected": true
+    },
+    "firewallRulesChanged": false,
+    "oldBlockedExecutable": "previous configuration-copy candidate only"
+  },
+  "runs": [
+    {
+      "controller": "FIXE",
+      "direction": "FIXE -> Laptop",
+      "jobId": "939c0544-b2ad-4f5d-8a07-b5043d0993a7",
+      "prepare": {
+        "audioCopied": true,
+        "configurationCopied": true,
+        "activationReplyLost": true,
+        "routingNotCommitted": true,
+        "noPlaybackOrPublication": true
+      },
+      "resume": {
+        "status": "completed",
+        "singlePlanningOwner": true,
+        "audioPreservedOnBoth": true
+      },
+      "undo": {
+        "status": "rolled-back",
+        "singlePlanningOwner": true,
+        "audioPreservedOnBoth": true,
+        "latestPlanningPreserved": true
+      },
+      "restartIdentityPreserved": true
+    },
+    {
+      "controller": "FIXE",
+      "direction": "Laptop -> FIXE",
+      "jobId": "50b7aa6c-bbdb-4db4-b1db-0fe956a133c2",
+      "prepare": {
+        "audioCopied": true,
+        "configurationCopied": true,
+        "activationReplyLost": true,
+        "routingNotCommitted": true,
+        "noPlaybackOrPublication": true
+      },
+      "resume": {
+        "status": "completed",
+        "singlePlanningOwner": true,
+        "audioPreservedOnBoth": true
+      },
+      "undo": {
+        "status": "rolled-back",
+        "singlePlanningOwner": true,
+        "audioPreservedOnBoth": true,
+        "latestPlanningPreserved": true
+      },
+      "restartIdentityPreserved": true
+    },
+    {
+      "controller": "Laptop",
+      "direction": "Laptop -> FIXE",
+      "jobId": "32fbc9dd-8f9d-4e0c-83c5-76d43c4673ae",
+      "prepare": {
+        "audioCopied": true,
+        "configurationCopied": true,
+        "activationReplyLost": true,
+        "routingNotCommitted": true,
+        "noPlaybackOrPublication": true
+      },
+      "resume": {
+        "status": "completed",
+        "singlePlanningOwner": true,
+        "audioPreservedOnBoth": true
+      },
+      "undo": {
+        "status": "rolled-back",
+        "singlePlanningOwner": true,
+        "audioPreservedOnBoth": true,
+        "latestPlanningPreserved": true
+      },
+      "restartIdentityPreserved": true,
+      "windowClosedRuntimeAvailable": true
+    }
+  ],
+  "finalStops": [
+    {
+      "root": "C:\\Users\\damie\\AppData\\Local\\Temp\\streamdashboard-qa-30cce7057319488e8ca396232c808a8a",
+      "stopped": true,
+      "portsReleased": true,
+      "stableProcessesPreserved": true
+    },
+    {
+      "root": "C:\\Users\\damie\\AppData\\Local\\Temp\\streamdashboard-qa-db21db32e9ad45c2bfbcf0b93bbf152b",
+      "stopped": true,
+      "portsReleased": true,
+      "stableProcessesPreserved": true
+    }
+  ],
+  "cleanup": [
+    {
+      "profileAndReportsPreserved": true,
+      "packageRemoved": true
+    },
+    {
+      "profileAndReportsPreserved": true,
+      "packageRemoved": true
+    }
+  ],
+  "artifactServerStopped": true,
+  "androidAdbDevices": [],
+  "effects": {
+    "obsCommands": false,
+    "playback": false,
+    "platformPublications": false,
+    "chatMessages": false,
+    "stableProfileChanges": false,
+    "firewallRuleChanges": false
+  },
+  "limits": [
+    "Isolated Windows profiles only; no real OBS executor command",
+    "Android hardware, sleep/resume and network-switch qualification remain open",
+    "Authenticated Twitch/YouTube player and live chat lifecycle remain unqualified",
+    "Full RC11.7 browser-session and encrypted-account migration remains unqualified"
+  ],
+  "harnessDiagnostics": [
+    "Secondary Electron launch logs a DevTools bind conflict, then exits as expected; the owned first instance retains the loopback debugger",
+    "FS Stats deprecation warning does not affect assertions"
+  ]
+}
