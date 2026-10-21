@@ -1,14 +1,14 @@
 {
   "date": "2026-10-21",
   "candidate": "2.1.0-alpha.1",
-  "codeCommit": "970a8d180fec78a46722eb6443421b9b8411e0a2",
+  "codeCommit": "34613731afdf56c1a5b4d9581bf7b1b25805dc08",
   "branch": "work/streamdashboard-next21-universal",
   "universalQualificationComplete": false,
   "openQualificationCells": 75,
   "validation": {
-    "vitest": 1454,
-    "node": 323,
-    "browser": 99,
+    "vitest": 1455,
+    "node": 329,
+    "browser": 102,
     "androidJvm": 47,
     "electronAndPreview": 8,
     "realElectron": 5,
@@ -17,32 +17,36 @@
     "security": "passed",
     "shippedJavaScript": "passed",
     "windowsPackageIntegrity": "passed",
-    "vitestFullSuite": 1453,
-    "vitestAdditionalRegression": 1,
-    "vitestTargetedRun": 14
+    "vitestFullSuite": 1455,
+    "vitestTargetedRun": 85,
+    "nodeFullSuite": 328,
+    "nodeAdditionalRegression": 1,
+    "nodeTargetedRun": 6,
+    "browserTargetedRun": 8
   },
   "artifacts": [
     {
       "name": "StreamDashboard-Next-2.1-universal-candidate-win32-x64.zip",
-      "bytes": 153048585,
-      "sha256": "1356efc0b292bda8efc53237ceea6089addf545081b052342b6a0221e3c20c16"
+      "bytes": 153054684,
+      "sha256": "218765e5645743f16824612c1ac5766a4ab18dc24c4d1aed8375ae1ce18982d3"
     },
     {
       "name": "StreamDashboard-Next-2.1-universal-candidate-android-debug.apk",
-      "bytes": 3823457,
-      "sha256": "e6d82eb39817ccdb96a159d6822bdbeeaff30c48de8f0e12aad386c4223b316e"
+      "bytes": 3823891,
+      "sha256": "9677cefdb2db4f719d58096ce24f656c1dc6a59b3a5531c2dd9a0ac93842448b"
     }
   ],
-  "artifactDirectory": "/home/damien/StreamDashboard-Next-universal-qa-20261021/handoff-candidate",
+  "artifactDirectory": "/home/damien/StreamDashboard-Next-universal-qa-20261021/audio-library-candidate",
   "logs": [
-    "handoff-universal.log",
-    "handoff-release.log",
-    "handoff-release-results.json",
-    "handoff-package.log",
-    "handoff-package-result.json"
+    "audio-library-check2.log",
+    "audio-library-final.log",
+    "audio-library-release.log",
+    "audio-library-packagecheck.log",
+    "audio-library-package.log",
+    "audio-library-package-result.json"
   ],
   "remaining": [
-    "Aggregate transfer of audio libraries, global configurations and combined responsibilities, including reverse transfers from server-owned workspaces",
+    "Aggregate transfer of global configurations, macros and combined responsibilities; reconciliation of legacy un-hashed audio assets on reverse copies",
     "Physical Android and all six setup transitions",
     "Authenticated web session persistence and full live chat cycle on real hardware",
     "Complete real RC11.7 migration and rollback, including browser sessions and encrypted account access"
