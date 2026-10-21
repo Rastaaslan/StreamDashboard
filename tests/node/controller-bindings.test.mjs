@@ -60,3 +60,11 @@ test('native configuration errors are readable and redact the current credential
   assert.match(message, /\[masqué\]/);
   assert.equal(message.includes(context.credential), false);
 });
+
+test('an autonomous agent keeps verified mappings through a failed read, but never across a replaced workspace',()=>{
+ const configure=createControllerBindings(),local={server:'',credential:'',localWorkspace:'local:one',actions};
+ const initial=configure({...local,synchronized:true});
+ assert.deepEqual(configure({...local,actions:[]}),initial);
+ assert.deepEqual(configure({...local,localWorkspace:'local:replacement'}).actions,[]);
+ assert.deepEqual(configure(local).actions,[]);
+});

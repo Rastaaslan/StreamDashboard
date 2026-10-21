@@ -139,7 +139,9 @@
             "docs/qa/2026-10-21-transversal-modules.md",
             "docs/qa/2026-10-21-tls-and-viewers.md",
             "docs/qa/2026-10-21-execution-recovery.md",
-            "docs/qa/2026-10-21-workspace-identity.md"
+            "docs/qa/2026-10-21-workspace-identity.md",
+            "docs/qa/2026-10-21-native-autonomous-executor.md",
+            "tests/node/local-executor.test.mjs"
           ]
         },
         {
@@ -156,7 +158,9 @@
             "docs/qa/2026-10-21-transversal-modules.md",
             "docs/qa/2026-10-21-tls-and-viewers.md",
             "docs/qa/2026-10-21-execution-recovery.md",
-            "docs/qa/2026-10-21-workspace-identity.md"
+            "docs/qa/2026-10-21-workspace-identity.md",
+            "docs/qa/2026-10-21-native-autonomous-executor.md",
+            "tests/node/local-executor.test.mjs"
           ]
         },
         {
@@ -173,7 +177,9 @@
             "docs/qa/2026-10-21-transversal-modules.md",
             "docs/qa/2026-10-21-tls-and-viewers.md",
             "docs/qa/2026-10-21-execution-recovery.md",
-            "docs/qa/2026-10-21-workspace-identity.md"
+            "docs/qa/2026-10-21-workspace-identity.md",
+            "docs/qa/2026-10-21-native-autonomous-executor.md",
+            "tests/node/local-executor.test.mjs"
           ]
         },
         {
@@ -190,7 +196,9 @@
             "docs/qa/2026-10-21-transversal-modules.md",
             "docs/qa/2026-10-21-tls-and-viewers.md",
             "docs/qa/2026-10-21-execution-recovery.md",
-            "docs/qa/2026-10-21-workspace-identity.md"
+            "docs/qa/2026-10-21-workspace-identity.md",
+            "docs/qa/2026-10-21-native-autonomous-executor.md",
+            "tests/node/local-executor.test.mjs"
           ]
         },
         {
@@ -224,7 +232,9 @@
             "docs/qa/2026-10-21-transversal-modules.md",
             "docs/qa/2026-10-21-tls-and-viewers.md",
             "docs/qa/2026-10-21-execution-recovery.md",
-            "docs/qa/2026-10-21-workspace-identity.md"
+            "docs/qa/2026-10-21-workspace-identity.md",
+            "docs/qa/2026-10-21-native-autonomous-executor.md",
+            "tests/node/local-executor.test.mjs"
           ]
         }
       ]
@@ -863,7 +873,9 @@
             "docs/qa/2026-10-21-transversal-modules.md",
             "docs/qa/2026-10-21-tls-and-viewers.md",
             "docs/qa/2026-10-21-execution-recovery.md",
-            "docs/qa/2026-10-21-workspace-identity.md"
+            "docs/qa/2026-10-21-workspace-identity.md",
+            "docs/qa/2026-10-21-native-autonomous-executor.md",
+            "tests/node/local-executor.test.mjs"
           ]
         },
         {
@@ -880,7 +892,9 @@
             "docs/qa/2026-10-21-transversal-modules.md",
             "docs/qa/2026-10-21-tls-and-viewers.md",
             "docs/qa/2026-10-21-execution-recovery.md",
-            "docs/qa/2026-10-21-workspace-identity.md"
+            "docs/qa/2026-10-21-workspace-identity.md",
+            "docs/qa/2026-10-21-native-autonomous-executor.md",
+            "tests/node/local-executor.test.mjs"
           ]
         },
         {
@@ -897,7 +911,9 @@
             "docs/qa/2026-10-21-transversal-modules.md",
             "docs/qa/2026-10-21-tls-and-viewers.md",
             "docs/qa/2026-10-21-execution-recovery.md",
-            "docs/qa/2026-10-21-workspace-identity.md"
+            "docs/qa/2026-10-21-workspace-identity.md",
+            "docs/qa/2026-10-21-native-autonomous-executor.md",
+            "tests/node/local-executor.test.mjs"
           ]
         },
         {
@@ -914,7 +930,9 @@
             "docs/qa/2026-10-21-transversal-modules.md",
             "docs/qa/2026-10-21-tls-and-viewers.md",
             "docs/qa/2026-10-21-execution-recovery.md",
-            "docs/qa/2026-10-21-workspace-identity.md"
+            "docs/qa/2026-10-21-workspace-identity.md",
+            "docs/qa/2026-10-21-native-autonomous-executor.md",
+            "tests/node/local-executor.test.mjs"
           ]
         },
         {
@@ -947,7 +965,9 @@
             "docs/qa/2026-10-21-transversal-modules.md",
             "docs/qa/2026-10-21-tls-and-viewers.md",
             "docs/qa/2026-10-21-execution-recovery.md",
-            "docs/qa/2026-10-21-workspace-identity.md"
+            "docs/qa/2026-10-21-workspace-identity.md",
+            "docs/qa/2026-10-21-native-autonomous-executor.md",
+            "tests/node/local-executor.test.mjs"
           ]
         }
       ]
@@ -1124,7 +1144,8 @@
         "tests/installation-ui.spec.ts",
         "tests/installation-store.test.ts",
         "docs/qa/2026-10-21-transversal-modules.md",
-        "docs/qa/2026-10-21-execution-recovery.md"
+        "docs/qa/2026-10-21-execution-recovery.md",
+        "tests/desktop-lifecycle.test.ts"
       ]
     },
     {
@@ -1137,7 +1158,8 @@
         "tests/installation-store.test.ts",
         "docs/qa/2026-10-21-transversal-modules.md",
         "docs/qa/2026-10-21-execution-recovery.md",
-        "docs/qa/2026-10-21-workspace-identity.md"
+        "docs/qa/2026-10-21-workspace-identity.md",
+        "tests/desktop-lifecycle.test.ts"
       ]
     },
     {

@@ -1,10 +1,10 @@
 /** Keep only host-confirmed mappings. UI/network availability must not own global keys. */
 export function createControllerBindings() {
   let confirmed;
-  return ({ server, credential, actions = [], synchronized = false, suspended = false }) => {
-    if (suspended || !server || (confirmed && (confirmed.server !== server || confirmed.credential !== credential))) confirmed = undefined;
-    if (!suspended && server && synchronized) confirmed = { server, credential, actions: structuredClone(actions) };
-    return { server, credential, actions: structuredClone(confirmed?.actions || []) };
+  return ({ server, credential, localWorkspace, actions = [], synchronized = false, suspended = false }) => {
+    if (suspended || (!server&&!localWorkspace) || (confirmed && (confirmed.server !== server || confirmed.credential !== credential || confirmed.localWorkspace!==localWorkspace))) confirmed = undefined;
+    if (!suspended && (server||localWorkspace) && synchronized) confirmed = { server, credential, localWorkspace, actions: structuredClone(actions) };
+    return { server, credential, ...(localWorkspace?{localWorkspace}:{}),actions: structuredClone(confirmed?.actions || []) };
   };
 }
 

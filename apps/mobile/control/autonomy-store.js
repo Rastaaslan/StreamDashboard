@@ -54,6 +54,7 @@ export async function openReplica(scope, factory=globalThis.indexedDB){
    if(keep&&!equal(base,value))record.pending.push({id:newId(),key,base,value,createdAt:new Date().toISOString()});
   });},
   async draft(key,value){await change(record=>{record.drafts[key]=clone(value);});},
+  async updateDraft(key,update){await change(record=>{record.drafts[key]=clone(update(clone(record.drafts[key])));});},
   async addSound(file,name){
    if(!current.workspace?.startsWith('local:'))throw new Error('Espace autonome requis.');
    if(!name?.trim()||!file?.size||file.size>100*1024*1024||!/^.*\.(wav|mp3|ogg|aac|m4a|flac)$/i.test(file.name))throw new Error('Nom et fichier audio requis (100 Mo maximum).');

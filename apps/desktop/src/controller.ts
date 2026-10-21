@@ -18,11 +18,12 @@ interface ControllerResult { status: string; message?: string; error?: { code?: 
 const shortcutPattern = /^Control\+Alt\+Shift\+F(?:[1-9]|1\d|2[0-4])$/;
 const actionTypes = new Set<DeckAction['type']>(['mic.toggle','scene.set','mode.set','timer.add','sound.play','sound.stop','alert.play','chat.send','wizebot.command','replay.save','replay.start','replay.stop','live.start','live.stop']);
 
-export function installControllerKeys(window: () => BrowserWindow | null, userData: string, uiOrigin: string, request:typeof fetch=fetch, enabled=true) {
+export function installControllerKeys(window: () => BrowserWindow | null, userData: string, uiOrigin: string, request:typeof fetch=fetch, enabled=true, autonomous?:{request(operation:'state'|'command',body?:unknown):Promise<any>}) {
   const secrets = new ElectronSecretStore(userData);
   let signature = '', generation = 0, disposed = false;
   let configuration: ControllerConfiguration | undefined;
   let pending: { generation: number; controller: AbortController } | undefined;
+  const flights=new Set<{generation:number;controller:AbortController}>();
   let cooldownUntil = 0;
   let retryTimer: NodeJS.Timeout | undefined;
   let restoreTimer: NodeJS.Timeout | undefined;
@@ -54,14 +55,19 @@ export function installControllerKeys(window: () => BrowserWindow | null, userDa
       publish({ status: 'failed', message: 'Confirmez l’arrêt depuis le bouton du tableau de bord.' });
       return;
     }
-    if (pending || Date.now() < cooldownUntil) {
+    const stopping=definition.type==='sound.stop';
+    if (!stopping&&(pending || Date.now() < cooldownUntil)) {
       publish({ status: 'failed', message: 'Une macro est déjà en cours. Cet appui est ignoré et ne sera pas exécuté plus tard.' });
       return;
     }
     const flight = { generation: currentGeneration, controller: new AbortController() };
-    pending = flight;
+    flights.add(flight);if(!stopping)pending = flight;
     void (async () => {
       try {
+        if(target.localWorkspace&&!destination){
+          const result=await autonomous!.request('command',{id:randomUUID(),issuedAt:new Date().toISOString(),workspace:target.localWorkspace,action:definition.id,expectedAction:definition});
+          publish(result,currentGeneration);return;
+        }
         if (destination) {
           const observed = await request(`${server}/api/v2/device`, {headers:credential?{Authorization:`Device ${credential}`}:{},signal:AbortSignal.any([flight.controller.signal,AbortSignal.timeout(8_000)])});
           const descriptor = await observed.json() as {device?:{id?:string}};
@@ -87,6 +93,7 @@ export function installControllerKeys(window: () => BrowserWindow | null, userDa
       } catch (error) {
         publish({ status: 'uncertain', message: error instanceof Error ? error.message : 'Hôte indisponible. Aucune commande conservée pour la reconnexion.' }, currentGeneration);
       } finally {
+        flights.delete(flight);
         if (pending === flight) {
           pending = undefined;
           cooldownUntil = Date.now() + 250;
@@ -118,6 +125,7 @@ export function installControllerKeys(window: () => BrowserWindow | null, userDa
   const configure = (value: ControllerConfiguration) => {
     if (!value || typeof value.server !== 'string' || value.server.length > 2048 || !Array.isArray(value.actions) || value.actions.length > 100 || typeof value.credential !== 'string' || value.credential.length > 256) throw new Error('Configuration de raccourcis invalide.');
     const ids = new Set<string>(), shortcuts = new Set<string>();
+    if(value.localWorkspace!==undefined&&(!autonomous||typeof value.localWorkspace!=='string'||!/^local:[A-Za-z0-9_-]{1,100}$/.test(value.localWorkspace)||value.server||value.credential))throw new Error('Espace de macros autonomes invalide.');
     // Validate the entire replacement before touching the working registrations.
     for (const action of value.actions) {
       if (!action || typeof action.id !== 'string' || !/^[A-Za-z0-9_-]{1,64}$/.test(action.id) || ids.has(action.id) || !actionTypes.has(action.type) || typeof action.shortcut !== 'string' || (action.shortcut && (!shortcutPattern.test(action.shortcut) || shortcuts.has(action.shortcut)))) throw new Error('Association de raccourci invalide.');
@@ -128,18 +136,19 @@ export function installControllerKeys(window: () => BrowserWindow | null, userDa
     if (value.destinations !== undefined && (!value.destinations || typeof value.destinations !== 'object' || Array.isArray(value.destinations))) throw new Error('Destinations invalides.');
     for (const action of actions) {
       const destination = value.destinations?.[action.id];
+      if(!destination&&value.localWorkspace&&!['sound.play','sound.stop','wizebot.command'].includes(action.type))throw new Error('Macro incompatible avec l’espace autonome.');
       if (!destination) continue;
       if (typeof destination.credential !== 'string' || destination.credential.length > 256 || !/^[A-Za-z0-9_-]{1,100}$/.test(destination.deviceId) || !actionDefinition(destination.definition) || !actionTypes.has(destination.definition.type)) throw new Error('Destination de macro invalide.');
       destinations[action.id] = {...structuredClone(destination), server:normalizeServer(destination.server)};
     }
     // Clearing the workspace must work without an address. Previously normalization
     // threw first, silently leaving the previous host's global shortcuts active.
-    const server = actions.some(a=>!destinations[a.id]) ? normalizeServer(value.server) : '';
-    const target = actions.length ? { server, credential: value.credential, actions, ...(Object.keys(destinations).length?{destinations}:{}) } : undefined;
-    const nextSignature = target ? JSON.stringify([server, target.credential, actions, target.destinations]) : '';
+    const server = !value.localWorkspace&&actions.some(a=>!destinations[a.id]) ? normalizeServer(value.server) : '';
+    const target = actions.length ? { server, credential: value.credential, actions, ...(Object.keys(destinations).length?{destinations}:{}),...(value.localWorkspace?{localWorkspace:value.localWorkspace}:{}) } : undefined;
+    const nextSignature = target ? JSON.stringify([server, target.credential, actions, target.destinations,target.localWorkspace]) : '';
     if (nextSignature === signature) { retryUnavailable(); return state; }
     generation++;
-    pending?.controller.abort(); pending = undefined; cooldownUntil = 0;
+    for(const flight of flights)flight.controller.abort();flights.clear();pending = undefined; cooldownUntil = 0;
     cancelRetry(); globalShortcut.unregisterAll(); signature = nextSignature; configuration = target;
     state = { registered: [], unavailable: actions.map(action => action.shortcut), ...(!enabled?{lastResult:{status:'failed',message:'Le rôle Pilotage est désactivé sur cet appareil.'}}:{}) };
     retryUnavailable();
@@ -170,7 +179,7 @@ export function installControllerKeys(window: () => BrowserWindow | null, userDa
   });
   const stop = () => {
     disposed = true; generation++;
-    pending?.controller.abort(); pending = undefined;
+    for(const flight of flights)flight.controller.abort();flights.clear();pending = undefined;
     clearTimeout(restoreTimer); cancelRetry(); globalShortcut.unregisterAll();
     for (const name of ['controller:configure','controller:status','controller:credential:get','controller:credential:set','controller:device-credential:get','controller:device-credential:set']) ipcMain.removeHandler(name);
   };
@@ -203,6 +212,11 @@ export function installControllerKeys(window: () => BrowserWindow | null, userDa
       const confirmed=(await Promise.all(saved.actions.map(async action=>{
         const target=saved.destinations?.[action.id], definition=target?.definition||action;
         try {
+          if(saved.localWorkspace&&!target){
+            const current=await autonomous?.request('state');
+            if(!current||current.workspace!==saved.localWorkspace)throw new Error('Autonomous workspace unavailable');
+            return current.actions.some((item:DeckAction)=>actionDefinition(item)===actionDefinition(definition))?action:null;
+          }
           const current=await read(normalizeServer(target?.server||saved.server),target?.credential??saved.credential,target?.deviceId);
           return current.some(item=>actionDefinition(item)===actionDefinition(definition))?action:null;
         } catch { retry=true;return null; }

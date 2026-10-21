@@ -274,3 +274,35 @@ it('a disabled Pilotage role keeps definitions but never registers global shortc
  expect(status().lastResult?.message).toContain('désactivé');
  await (stop as any).restore();expect(fetchMock).not.toHaveBeenCalled();
 });
+
+it('restores autonomous contents without a visible window, a remote agent or a replayed command',async()=>{
+ stop?.();owner=null;
+ const sound=action({id:'local-sound',type:'sound.play',value:'asset'});
+ const autonomous={request:vi.fn(async(operation:string)=>operation==='state'?{workspace:'local:fixture',actions:[sound]}:{status:'succeeded'})};
+ native.getBindings.mockResolvedValue({server:'',credential:'',localWorkspace:'local:fixture',actions:[sound]});
+ const keys=installControllerKeys(()=>null,'/unused',origin,fetchMock,true,autonomous);stop=keys;
+ await keys.restore();expect(native.callbacks.has(shortcut)).toBe(true);
+ expect(autonomous.request).toHaveBeenCalledExactlyOnceWith('state');expect(fetchMock).not.toHaveBeenCalled();
+ native.callbacks.get(shortcut)!();await drain();
+ expect(autonomous.request).toHaveBeenLastCalledWith('command',expect.objectContaining({workspace:'local:fixture',action:sound.id,expectedAction:sound}));
+});
+it('a replaced autonomous workspace or unsupported local command never arms a persisted macro',async()=>{
+ stop?.();const sound=action({id:'local-sound',type:'sound.play',value:'asset'});
+ const autonomous={request:vi.fn(async()=>({workspace:'local:replacement',actions:[sound]}))};
+ native.getBindings.mockResolvedValue({server:'',credential:'',localWorkspace:'local:fixture',actions:[sound]});
+ const keys=installControllerKeys(()=>owner,'/unused',origin,fetchMock,true,autonomous);stop=keys;
+ await keys.restore();expect(native.callbacks.size).toBe(0);
+ expect(()=>invoke('controller:configure',{server:'',credential:'',localWorkspace:'local:fixture',actions:[action()]})).toThrow('incompatible');
+ expect(()=>invoke('controller:configure',{server:'https://foreign.example',credential:'token',localWorkspace:'local:fixture',actions:[sound]})).toThrow('invalide');
+ expect(fetchMock).not.toHaveBeenCalled();
+});
+it('a Stop shortcut bypasses a pending autonomous sound without queuing another Play',async()=>{
+ stop?.();let finish!:(value:unknown)=>void;
+ const play=action({id:'play',type:'sound.play',value:'sound'}),stopAction=action({id:'stop',type:'sound.stop',shortcut:'Control+Alt+Shift+F2'});
+ const autonomous={request:vi.fn((_operation:string,body:any)=>body.action==='play'?new Promise(resolve=>{finish=resolve;}):Promise.resolve({status:'succeeded'}))};
+ stop=installControllerKeys(()=>owner,'/unused',origin,fetchMock,true,autonomous);
+ invoke('controller:configure',{server:'',credential:'',localWorkspace:'local:fixture',actions:[play,stopAction]});
+ native.callbacks.get(shortcut)!();native.callbacks.get(shortcut)!();native.callbacks.get(stopAction.shortcut)!();await drain();
+ expect(autonomous.request).toHaveBeenCalledTimes(2);expect(autonomous.request).toHaveBeenLastCalledWith('command',expect.objectContaining({action:'stop'}));
+ finish({status:'failed'});await drain();
+});

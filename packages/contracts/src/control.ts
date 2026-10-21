@@ -38,4 +38,4 @@ export const defaultControlData = (): ControlData => ({
 });
 
 export interface ControllerDestination { server:string; credential:string; deviceId:string; definition:DeckAction }
-export interface ControllerConfiguration { server:string; credential:string; actions:DeckAction[]; destinations?:Record<string,ControllerDestination> }
+export interface ControllerConfiguration { server:string; credential:string; actions:DeckAction[]; destinations?:Record<string,ControllerDestination>; localWorkspace?:string }

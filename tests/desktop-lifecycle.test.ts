@@ -1,13 +1,13 @@
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import path from 'node:path';
 
-const state = vi.hoisted(() => ({ info: vi.fn(), background: false, primary: true, ready: undefined as (() => void) | undefined, start: vi.fn(), stop: vi.fn(), installKeys: vi.fn(), stopKeys: vi.fn(), assets: vi.fn(), paths: { appData: '/unused', userData: '/unused/old-profile' } as Record<string,string>, windows: [] as any[], displays: [{ workArea: { x: 0, y: 0, width: 1920, height: 1080 } }] }));
+const state = vi.hoisted(() => ({ configuration:undefined as any,change:vi.fn(),recoveries:0,info: vi.fn(), background: false, primary: true, ready: undefined as (() => void) | undefined, start: vi.fn(), stop: vi.fn(), installKeys: vi.fn(), stopKeys: vi.fn(), assets: vi.fn(), paths: { appData: '/unused', userData: '/unused/old-profile' } as Record<string,string>, windows: [] as any[], displays: [{ workArea: { x: 0, y: 0, width: 1920, height: 1080 } }] }));
 vi.mock('electron', async () => {
   const { EventEmitter } = await import('node:events');
   const app = Object.assign(new EventEmitter(), {
     setName: vi.fn(), setPath: vi.fn((name:string,value:string)=>{state.paths[name]=value;}), setAppUserModelId: vi.fn(), requestSingleInstanceLock: () => state.primary,
     getPath: (name:string) => state.paths[name] || '/unused', getAppPath: () => '/unused/app', isReady: () => true, whenReady: () => new Promise<void>(resolve => { state.ready = resolve; }),
-    quit: vi.fn(), exit: vi.fn(), getVersion: () => '1',
+    quit: vi.fn(), exit: vi.fn(), relaunch:vi.fn(),getVersion: () => '1',
   });
   class Window extends EventEmitter {
     webContents = Object.assign(new EventEmitter(), { setWindowOpenHandler: vi.fn(), setAudioMuted: vi.fn(), send: vi.fn(), session: {}, mainFrame: { url: 'about:blank' } });
@@ -25,8 +25,9 @@ vi.mock('electron', async () => {
     dialog: { showErrorBox: vi.fn() }, ipcMain: { handle: vi.fn(), on: vi.fn() }, shell: {} };
 });
 vi.mock('../apps/desktop/src/installation-store.js', () => ({ InstallationStore: class {
-  async recover() { return this.read(); }
-  async read() { return {version:2,revision:0,localDeviceId:'test-device',preset:'single-pc',runtimeProfile:'root',configured:false,background:state.background,routes:{obs:'test-device'},devices:[{id:'test-device',name:'Test',platform:'windows',enabled:true,roles:['controller','obs-executor','services'],capabilities:['obs','cloud']}]}; }
+  async recover() { state.recoveries++;return this.read(); }
+  async read() { return state.configuration||{version:2,revision:0,localDeviceId:'test-device',preset:'single-pc',runtimeProfile:'root',configured:false,background:state.background,routes:{obs:'test-device'},devices:[{id:'test-device',name:'Test',platform:'windows',enabled:true,roles:['controller','obs-executor','services'],capabilities:['obs','cloud']}]}; }
+  change=state.change;
 } }));
 vi.mock('../apps/desktop/src/lifecycle.js', () => ({ startDesktopRuntime: state.start }));
 vi.mock('../apps/desktop/src/controller.js', () => ({ installControllerKeys: state.installKeys, startControllerAssets: state.assets }));
@@ -42,6 +43,7 @@ beforeEach(async () => {
   const { app } = await import('electron');
   app.removeAllListeners();
   vi.resetModules(); vi.clearAllMocks(); state.start.mockReset(); state.stop.mockReset(); state.primary = true; state.background = false; state.windows = [];
+  state.configuration=undefined;state.change.mockReset();state.recoveries=0;
   state.paths = { appData: '/unused', userData: '/unused/old-profile' };
   state.installKeys.mockReturnValue(state.stopKeys);
   state.info.mockResolvedValue(undefined);
@@ -74,7 +76,7 @@ it.each(['crash', 'server', 'load', 'secondary'] as const)('presents during star
       return;
     }
     await vi.waitFor(() => expect(state.start).toHaveBeenCalledTimes(1));
-    expect(state.installKeys).toHaveBeenCalledExactlyOnceWith(expect.any(Function),path.join('/unused','StreamDashboard-Next'),'http://127.0.0.1:48133',expect.any(Function),true);
+    expect(state.installKeys).toHaveBeenCalledExactlyOnceWith(expect.any(Function),path.join('/unused','StreamDashboard-Next'),'http://127.0.0.1:48133',expect.any(Function),true,expect.objectContaining({request:expect.any(Function)}));
     expect(state.assets).not.toHaveBeenCalled();
     const window = state.windows[0];
     expect(window.options.show).toBe(true);
@@ -251,4 +253,31 @@ it('keeps one runtime and native macros while closing and reopening the dashboar
  expect(state.start).toHaveBeenCalledTimes(1);expect(state.installKeys).toHaveBeenCalledTimes(1);
  app.emit('before-quit',{preventDefault:vi.fn()});
  await vi.waitFor(()=>expect(state.stop).toHaveBeenCalledTimes(1));
+});
+
+it('legacy role changes join the installation queue and recover after a failed commit',async()=>{
+ const {app,ipcMain}=await import('electron');
+ state.configuration={version:2,revision:0,localDeviceId:'test-device',preset:'single-pc',runtimeProfile:'root',configured:true,background:false,routes:{},devices:[{id:'test-device',name:'Before',platform:'windows',enabled:true,roles:['controller','services'],capabilities:['obs','cloud']}]};
+ state.start.mockResolvedValue({dashboard:{url:'http://127.0.0.1:48133'},stop:state.stop});
+ await import('../apps/desktop/src/main.js');state.ready!();await vi.waitFor(()=>expect(state.windows[0]?.loadURL).toHaveBeenCalledTimes(2));
+ const owner=state.windows[0],event={sender:owner.webContents,senderFrame:owner.webContents.mainFrame};
+ const handler=(channel:string)=>(ipcMain.handle as any).mock.calls.find(([name]:[string])=>name===channel)[1];
+ const gate=deferred<void>();
+ state.change.mockImplementation(async(changes:any,revision:number,before:any)=>{
+  if(changes.name==='Modern')await gate.promise;
+  expect(revision).toBe(state.configuration.revision);
+  if(changes.name==='Broken')throw new Error('disk write failed');
+  const next=structuredClone(state.configuration);next.revision++;next.devices[0].name=changes.name;if(changes.roles)next.devices[0].roles=changes.roles;
+  const plan={next,restart:false,summary:[]};await before(plan);state.configuration=next;return plan;
+ });
+ const first=handler('installation:change')(event,{name:'Modern'},0);
+ const legacy=handler('app:set-device-role')(event,'control','Legacy');
+ await vi.waitFor(()=>expect(state.change).toHaveBeenCalledTimes(1));
+ gate.resolve();await first;await legacy;
+ expect(state.configuration.revision).toBe(2);expect(state.configuration.devices[0].name).toBe('Legacy');
+ expect(state.change.mock.calls[1][1]).toBe(1);
+ const recoveries=state.recoveries;
+ await expect(handler('app:set-device-role')(event,'control','Broken')).rejects.toThrow('disk write failed');
+ expect(state.recoveries).toBe(recoveries+2);expect(state.configuration.devices[0].name).toBe('Legacy');
+ app.emit('before-quit',{preventDefault:vi.fn()});await vi.waitFor(()=>expect(app.exit).toHaveBeenCalledWith(0));
 });

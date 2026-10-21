@@ -20,7 +20,8 @@ import {PeerTransport} from './peer-transport.js';
 import {ElectronSecretStore} from './secrets.js';
 import {createAgentCertificate} from './agent-certificate.js';
 import {X509Certificate} from 'node:crypto';
-import type { Installation, InstallationChanges, InstallationPlan, DeviceRole } from '../../mobile/shared/installation.js';
+import {AutonomousExecutor} from './autonomous-executor.js';
+import type { Installation, InstallationChanges, InstallationPlan, InstallationDevice, DeviceRole } from '../../mobile/shared/installation.js';
 
 protocol.registerSchemesAsPrivileged([{scheme:'streamdashboard-audio',privileges:{standard:true,secure:true,supportFetchAPI:true,stream:true}}]);
 const squirrelHandled = handleSquirrelStartup();
@@ -52,11 +53,17 @@ let roleChangePending = false;
 const roleFile = path.join(app.getPath('userData'), 'device-role.json');
 const installations = new InstallationStore(app.getPath('userData'), process.argv.includes('--role=client')?'control':'stream');
 let installation: Installation;
+let activeDevice:InstallationDevice;
 const deviceDescriptor = async () => { const value = await installations.read(); return value.devices.find(d => d.id === value.localDeviceId)!; };
 let tray: Tray | undefined;
 const agentRequested = process.argv.includes('--agent');
 let startupAgent = agentRequested;
 const backgroundEnabled = () => installation?.background === true || agentRequested;
+const autonomous=new AutonomousExecutor(()=>`http://127.0.0.1:${controllerRole?48134:48133}`,async()=>{
+  await runtimePromise;
+  if(quitting||!runtime)throw new Error('Agent local indisponible.');
+  return {endpoint:`http://127.0.0.1:${controllerRole?48135:48133}`,device:activeDevice};
+});
 
 function ensureTray() {
   if (tray || !backgroundEnabled()) return;
@@ -87,6 +94,7 @@ function cleanupRuntime(): Promise<void> {
     tray?.destroy(); tray = undefined;
     stopControllerKeys();
     await stopControllerKeys.flush?.();
+    await autonomous.dispose();
     for(const request of peerRequests.values())request.abort();
     await peers.close();
     if (controllerServer) await new Promise<void>((resolve,reject) => {
@@ -126,6 +134,7 @@ function boot(): Promise<void> {
       const preview = process.argv.includes('--ui-preview=desktop-v2');
       const legacy = process.argv.includes('--ui-legacy=desktop-v1');
       installation = await installations.recover(async current => { configureLoginStartup(app, Boolean(current.startAtLogin)); });
+      if(!runtime)activeDevice=structuredClone(installation.devices.find(d=>d.id===installation.localDeviceId)!);
       // The original runtime directory and origin never change with roles.
       // This preserves RC11.7 accounts, caches, data and browser sessions.
       const client = installation.runtimeProfile === 'device-runtime';
@@ -136,7 +145,7 @@ function boot(): Promise<void> {
       const targetUrl = new URL(route, uiOrigin).toString();
       ensureTray();
       if (!runtime && startupAgent) {
-        stopControllerKeys = installControllerKeys(() => window, app.getPath('userData'), uiOrigin,peers.fetch,installation.devices.find(d=>d.id===installation.localDeviceId)!.roles.includes('controller'));
+        stopControllerKeys = installControllerKeys(() => window, app.getPath('userData'), uiOrigin,peers.fetch,installation.devices.find(d=>d.id===installation.localDeviceId)!.roles.includes('controller'),autonomous);
         void stopControllerKeys.restore?.();
         if (client) controllerServer = await startControllerAssets(path.join(app.getAppPath(), 'apps', 'mobile'));
         runtimePromise = startDesktopRuntime(logger, startup.signal, client, obsEnabled, deviceDescriptor);
@@ -166,7 +175,7 @@ function boot(): Promise<void> {
       await loadWindow('data:text/html;charset=utf-8,' + encodeURIComponent(
         '<!doctype html><meta charset="utf-8"><meta http-equiv="Content-Security-Policy" content="default-src \'none\'; style-src \'unsafe-inline\'"><title>StreamDashboard — Démarrage…</title><body style="background:#080a10;color:#fff;font:20px system-ui;padding:48px"><h1>StreamDashboard</h1><p>Démarrage en cours…</p><p>Vous pouvez fermer cette fenêtre pour annuler.</p></body>'));
       if (quitting) return;
-      stopControllerKeys = installControllerKeys(() => window, app.getPath('userData'), uiOrigin,peers.fetch,installation.devices.find(d=>d.id===installation.localDeviceId)!.roles.includes('controller'));
+      stopControllerKeys = installControllerKeys(() => window, app.getPath('userData'), uiOrigin,peers.fetch,installation.devices.find(d=>d.id===installation.localDeviceId)!.roles.includes('controller'),autonomous);
       void stopControllerKeys.restore?.();
       if (client) {
         controllerServer = await startControllerAssets(path.join(app.getAppPath(), 'apps', 'mobile'));
@@ -194,20 +203,22 @@ function requireInstallationSender(event: Electron.IpcMainInvokeEvent) {
   if (!window || window.isDestroyed() || event.sender !== window.webContents || event.senderFrame !== window.webContents.mainFrame || !isSameOrigin(event.senderFrame?.url || '', origin)) throw new Error('Interface non autorisée.');
 }
 async function beforeInstallationCommit(plan: InstallationPlan) {
-  if (quitting || !runtime) throw new Error('Application en cours de démarrage ou d’arrêt.');
+  if (quitting || installationRestartPending || !runtime) throw new Error('Application en cours de démarrage ou d’arrêt.');
   if (plan.restart) await requireDesktopRestartSafety(() => runtime!.dashboard.assessRestartSafety());
   if (Boolean(plan.next.startAtLogin) !== Boolean(installation.startAtLogin)) configureLoginStartup(app, Boolean(plan.next.startAtLogin));
 }
 function committedInstallation(plan: InstallationPlan) {
   installation = plan.next;
   if (plan.restart) {
-    app.relaunch({ args: process.argv.slice(1).filter(value => !value.startsWith('--role=')) });
+    installationRestartPending=true;
+    try{app.relaunch({ args: process.argv.slice(1).filter(value => !value.startsWith('--role=')) });}catch(error){installationRestartPending=false;throw error;}
     setImmediate(() => app.quit());
   } else if (backgroundEnabled()) ensureTray();
   else { tray?.destroy(); tray = undefined; }
   return plan;
 }
 let installationChange: Promise<unknown> = Promise.resolve();
+let installationRestartPending=false;
 function applyInstallation(operation: () => Promise<InstallationPlan>) {
   const pending = installationChange.then(async () => {
     try {
@@ -225,6 +236,7 @@ function applyInstallation(operation: () => Promise<InstallationPlan>) {
   return pending;
 }
 ipcMain.handle('installation:get', async event => { requireInstallationSender(event); return installations.read(); });
+ipcMain.handle('autonomous:request',async(event,operation:'state'|'command',body?:unknown)=>{requireInstallationSender(event);return autonomous.request(operation,body);});
 const agentIdentityStore=new ElectronSecretStore(app.getPath('userData'));
 ipcMain.handle('peer:identity',async event=>{
   requireInstallationSender(event);const saved=await agentIdentityStore.getAgentCertificate();
@@ -288,12 +300,13 @@ ipcMain.handle('app:set-device-role', async (event, role: unknown, name: unknown
   if (roleChangePending || quitting) throw new Error('Un changement de rôle ou un arrêt est déjà en cours.');
   roleChangePending = true;
   try {
-    const current = await installations.read();
-    const local = current.devices.find(d => d.id === current.localDeviceId)!;
-    const roles: DeviceRole[] = local.roles.filter(value => value !== 'obs-executor');
-    if (role === 'stream') roles.push('obs-executor');
-    const plan = await installations.change({name:name.trim(),roles},current.revision,beforeInstallationCommit);
-    committedInstallation(plan);
+    const plan = await applyInstallation(async()=>{
+      const current = await installations.read();
+      const local = current.devices.find(d => d.id === current.localDeviceId)!;
+      const roles: DeviceRole[] = local.roles.filter(value => value !== 'obs-executor');
+      if (role === 'stream') roles.push('obs-executor');
+      return installations.change({name:name.trim(),roles},current.revision,beforeInstallationCommit);
+    });
     return {restart:plan.restart};
   } finally { roleChangePending = false; }
 });

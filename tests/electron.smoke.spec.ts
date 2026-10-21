@@ -184,8 +184,8 @@ test('agent sans fenêtre : services autonomes disponibles et fenêtre refermabl
   const window=await application.firstWindow();
   await expect(window).toHaveURL('http://127.0.0.1:48134/mobile/control/?role=client');
   await expect(window.locator('#installation-form')).toBeVisible();
-  await application.evaluate(({BrowserWindow})=>{BrowserWindow.getAllWindows()[0].close();});
-  await expect.poll(()=>application!.evaluate(({BrowserWindow})=>BrowserWindow.getAllWindows().length)).toBe(0);
+  await application.evaluate(({BrowserWindow})=>{BrowserWindow.getAllWindows().find(w=>w.webContents.getURL().includes('/mobile/control/?role=client'))!.close();});
+  await expect.poll(()=>application!.evaluate(({BrowserWindow})=>BrowserWindow.getAllWindows().filter(w=>w.isVisible()).length)).toBe(0);
   expect((await fetch('http://127.0.0.1:48135/api/v1/health')).status).toBe(200);
   // A silent file verifies the real Chromium decoder and hidden agent player.
   // No OBS instance, real account, or physical audio change is required.
@@ -239,4 +239,52 @@ test('TLS réel : une empreinte erronée ne reçoit aucun identifiant et la conf
     await application.close();application=await launch(profile);if(process.platform==='linux')await application.evaluate(({safeStorage})=>safeStorage.setUsePlainTextEncryption(true));const restarted=await application.firstWindow();await expectRuntimeReady(restarted);
     expect(await restarted.evaluate(origin=>(globalThis as any).streamDashboardDesktop.getPeerFingerprint(origin),origin)).toBe(pin);
   }finally{await application?.close();await new Promise<void>(resolve=>{endpoint.close(()=>resolve());endpoint.closeAllConnections();});await rm(profile,{recursive:true,force:true});}
+});
+
+test('contenus autonomes : sons sans fenêtre, macros restaurées et aucune commande rejouée',async()=>{
+ test.setTimeout(60000);
+ const profile=await mkdtemp(path.join(os.tmpdir(),'streamdashboard-qa-'));
+ let application:ElectronApplication|undefined;
+ try{
+  application=await launch(profile,['--role=client','--agent']);
+  // Synthetic profile only: the Linux test runner has no OS keyring.
+  if(process.platform==='linux')await application.evaluate(({safeStorage})=>safeStorage.setUsePlainTextEncryption(true));
+  await expect.poll(async()=>{try{return (await fetch('http://127.0.0.1:48135/api/v1/health')).status;}catch{return 0;}}).toBe(200);
+  await application.evaluate(({app})=>app.emit('activate'));
+  const window=await application.firstWindow();await expect(window.locator('#installation-form')).toBeVisible();
+  const prepared=await window.evaluate(async()=>{
+   const {openReplica}=await import('/mobile/control/autonomy-store.js' as string),{LOCAL_SCOPE}=await import('/mobile/control/device-workspace.js' as string);
+   const store=await openReplica(LOCAL_SCOPE);
+   const size=8000*30*2,wav=new Uint8Array(44+size),view=new DataView(wav.buffer),write=(offset:number,text:string)=>wav.set(new TextEncoder().encode(text),offset);
+   write(0,'RIFF');view.setUint32(4,wav.length-8,true);write(8,'WAVEfmt ');view.setUint32(16,16,true);view.setUint16(20,1,true);view.setUint16(22,1,true);view.setUint32(24,8000,true);view.setUint32(28,16000,true);view.setUint16(32,2,true);view.setUint16(34,16,true);write(36,'data');view.setUint32(40,size,true);
+   const soundId=await store.addSound(new File([wav],'silent.wav',{type:'audio/wav'}),'Silence autonome');
+   const sound=store.view().sounds.sounds.find((item:any)=>item.id===soundId);
+   const action={id:'autonomous-sound',label:'Silence autonome',type:'sound.play',value:soundId,color:'green',shortcut:'Control+Alt+Shift+F24'};
+   await store.stage({['sound/'+soundId]:{...sound,volume:0,playbackMode:'mix'},['action/'+action.id]:action});
+   const workspace=store.record.workspace;store.close();
+   const installation=await (window as any).streamDashboardDesktop.getInstallation();
+   return {workspace,action,context:{endpoint:'http://127.0.0.1:48135',device:installation.devices.find((d:any)=>d.id===installation.localDeviceId)}};
+  });
+  await window.reload();await expect(window.locator('#installation-form')).toBeVisible();
+  await expect.poll(()=>window.evaluate(async()=>await (window as any).streamDashboardDesktop.controllerStatus())).toMatchObject({registered:['Control+Alt+Shift+F24']});
+  for(const id of ['autonomous-play-one','autonomous-play-two']){
+   const result=await window.evaluate(async({prepared,id})=>(window as any).streamDashboardDesktop.autonomousRequest('command',{id,issuedAt:new Date().toISOString(),workspace:prepared.workspace,action:prepared.action.id,expectedAction:prepared.action}),{prepared,id});
+   expect(result,result.message).toMatchObject({status:'succeeded'});
+  }
+  await application.evaluate(({BrowserWindow})=>{BrowserWindow.getAllWindows().find(w=>w.webContents.getURL().includes('/mobile/control/?role=client'))!.close();});
+  await expect.poll(()=>application!.evaluate(({BrowserWindow})=>BrowserWindow.getAllWindows().filter(w=>w.isVisible()).length)).toBe(0);
+  const inspect=()=>application!.evaluate(async({BrowserWindow},context)=>{
+   const worker=BrowserWindow.getAllWindows().find(w=>w.webContents.getURL().endsWith('/native-executor.html'));
+   return worker?.webContents.executeJavaScript(`sdLocalExecutor.request('state',null,${JSON.stringify(context)})`);
+  },prepared.context);
+  expect((await inspect()).sounds.activePlaybacks).toHaveLength(2);
+  await application.close();application=undefined;await expectEndpointClosed('http://127.0.0.1:48135');
+  application=await launch(profile,['--agent']);
+  if(process.platform==='linux')await application.evaluate(({safeStorage})=>safeStorage.setUsePlainTextEncryption(true));
+  await expect.poll(()=>application!.evaluate(({globalShortcut})=>globalShortcut.isRegistered('Control+Alt+Shift+F24')),{timeout:20000}).toBe(true);
+  expect((await inspect()).workspace).toBe(prepared.workspace);
+  expect((await inspect()).sounds.activePlaybacks).toHaveLength(0);
+  expect(await application.evaluate(({BrowserWindow})=>BrowserWindow.getAllWindows().every(w=>!w.isVisible()))).toBe(true);
+  await application.close();application=undefined;await expectEndpointClosed('http://127.0.0.1:48135');
+ }finally{if(application)await application.close().catch(()=>{});await rm(profile,{recursive:true,force:true});}
 });

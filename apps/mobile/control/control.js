@@ -9,6 +9,7 @@ import { openReplica } from './autonomy-store.js';
 import { linkReplicaEndpoint } from './replica-identity.js';
 import { createDeviceServices } from './device-services.js';
 import { createDeviceAudio } from './device-audio.js';
+import { createNativeDeviceAudio } from './native-device-audio.js';
 import { createDeviceProviders } from './device-providers.js';
 import { createLocalPlanning } from './local-planning.js';
 import { createDeviceAccounts } from './device-accounts.js';
@@ -97,11 +98,13 @@ async function openLocal(){
    await owner.store.seed(newWorkspace(device));
    deviceServices=createDeviceServices({store:owner.store,autonomy:owner,enabled:localCapabilityEnabled,request:(p,b,m)=>network(p,b,m,localEndpoint,'')});
    deviceProviders=createDeviceProviders({enabled:localCapabilityEnabled,request:(p,b,m)=>network(p,b,m,localEndpoint,''),getCalendar:()=>owner.store.view().extras.google.calendarId});
-   deviceAudio=createDeviceAudio({store:owner.store,onChange:()=>{
+   const audioOptions={store:owner.store,onChange:()=>{
     if(autonomy!==owner||server||macroContextChanging)return;
     applyWorkspaceBundle(owner.store.view());
     if(!dialog.open)render();else shell();
-   },onError:message=>{if(autonomy===owner&&!server)toast(message);}});
+   },onError:message=>{if(autonomy===owner&&!server)toast(message);}};
+   deviceAudio=globalThis.streamDashboardDesktop?.autonomousRequest?createNativeDeviceAudio({...audioOptions,bridge:globalThis.streamDashboardDesktop}):createDeviceAudio(audioOptions);
+   await deviceAudio.refresh?.();
    localPlanning=createLocalPlanning({store:owner.store,providers:deviceProviders,onChange:()=>{
     if(autonomy===owner){applyWorkspaceBundle(owner.store.view());shell();}
    }});
@@ -113,8 +116,18 @@ function localCapabilityEnabled(capability){const current=installationUI.current
 function commandsBlocked(){return macroContextChanging>0||Boolean(server&&autonomy?.store.record.pending.some(op=>/^(action|settings|output|youtube|sound)\//.test(op.key)));}
 async function configureMacros({synchronized=false,suspend=false,required=false}={}){
  const bridge=globalThis.streamDashboardDesktop;if(!bridge?.configureController)return;
- const configuration=controllerBindings({server,credential,actions:autonomy?.store.record.bundle?.data.configuration.actions||[],synchronized,suspended:suspend||commandsBlocked()});
  const generation=++macroConfigurationGeneration;
+ const localWorkspace=!server&&bridge.autonomousRequest?autonomy?.store.record.workspace:undefined;
+ let localFailure,identityChanged=false,actions=autonomy?.store.record.bundle?.data.configuration.actions||[];
+ if(localWorkspace&&!suspend&&!commandsBlocked()){
+  try{
+   const confirmed=await bridge.autonomousRequest('state');
+   if(confirmed.workspace!==localWorkspace){identityChanged=true;throw new Error('Identité de l’espace autonome différente.');}
+   actions=confirmed.actions;synchronized=true;
+  }catch(error){localFailure=error;synchronized=false;}
+ }
+ if(generation!==macroConfigurationGeneration)return;
+ const configuration=controllerBindings({server,credential:localWorkspace?'':credential,localWorkspace,actions,synchronized,suspended:suspend||commandsBlocked()||identityChanged});
  // Explicit destinations survive loss of the active workspace. Tokens remain
  // in the native encrypted binding store and never enter installation JSON.
  configuration.actions=configuration.actions.filter(a=>!actionRouter.binding(a));
@@ -131,7 +144,7 @@ async function configureMacros({synchronized=false,suspend=false,required=false}
   }
  }
  if(generation!==macroConfigurationGeneration)return;
- try{const result=await bridge.configureController(configuration);if(generation===macroConfigurationGeneration){const previous=macroConfigurationError;macroConfigurationError='';if(previous&&$('#shortcut-status'))$('#shortcut-status').textContent='Configuration des raccourcis rétablie.';}return result;}
+ try{const result=await bridge.configureController(configuration);if(localFailure)throw localFailure;if(generation===macroConfigurationGeneration){const previous=macroConfigurationError;macroConfigurationError='';if(previous&&$('#shortcut-status'))$('#shortcut-status').textContent='Configuration des raccourcis rétablie.';}return result;}
  catch(error){if(generation===macroConfigurationGeneration){const message=controllerConfigurationError(error,configuration.credential),changed=message!==macroConfigurationError;macroConfigurationError=message;if($('#shortcut-status'))$('#shortcut-status').textContent=message;if(changed)toast(message);}if(required)throw new Error(controllerConfigurationError(error,configuration.credential));return undefined;}
 }
 async function api(path,body,method=body===undefined?'GET':'POST'){
@@ -368,7 +381,7 @@ function rememberForms(){if(autonomy?.store.view()){const base=resources(autonom
 function modal(content){dialogBase=autonomy?.store.view()?resources(autonomy.store.view()):undefined;$('#dialog-content').innerHTML=content;if(!dialog.open)dialog.showModal();rememberForms();}
 const installationUI=await createInstallationUI({device,native,localEndpoint,modal,esc,select:selectInstallationDevice,remove:async target=>{if(server===target.endpoint)await switchWorkspace(true);if(localStorage.getItem('sd2.server')===target.endpoint)localStorage.removeItem('sd2.server');},changed:async (installation,restart)=>{
  const local=installation.devices.find(d=>d.id===installation.localDeviceId);
- if(!local.roles.includes('audio'))deviceAudio?.stop();
+ if(!local.roles.includes('audio'))await deviceAudio?.stop();
  device=saveDevice({name:local.name,role:native?'mobile':local.roles.includes('obs-executor')?'stream':'control'});
  dialog.close();render();toast(restart?'Installation enregistrée. Redémarrage de l’application…':'Installation enregistrée. Les données existantes sont conservées.');
 }});
@@ -409,7 +422,7 @@ function editAction(id){if(data.configuration.actions.find(a=>a.id===id)?.type==
 async function refresh(force=false){
  if(macroContextChanging)return;
  if(force&&server&&!online&&data){render();if(!refreshFlight)void refresh().catch(()=>{});return;}
- if(!server){void configureMacros();const owner=autonomy;await owner?.store.reload();if(owner!==autonomy||server)return;applyWorkspaceBundle(owner?.store.view());render();return;}
+ if(!server){const owner=autonomy;await owner?.store.reload();try{await deviceAudio?.refresh?.();soundError='';}catch(error){soundError=error.message;}if(owner!==autonomy||server)return;applyWorkspaceBundle(owner?.store.view());void configureMacros();render();return;}
  if(refreshFlight){await refreshFlight;if(force)return refresh(true);return;}
  refreshFlight=(async()=>{
   try{
@@ -431,6 +444,11 @@ async function runLocalAction(action,type,configured,soundId){
  activeCommands++;busy=true;
  try{
   render();let result;
+  if(globalThis.streamDashboardDesktop?.autonomousRequest){
+   const receipt=await globalThis.streamDashboardDesktop.autonomousRequest('command',{id:uuid(),issuedAt:new Date().toISOString(),workspace:owner.store.record.workspace,action,expectedAction:configured,soundId});
+   if(owner===autonomy&&!server)toast((labels[receipt.status]||'À vérifier')+' · '+receipt.message);
+   return;
+  }
   if(type==='sound.play')result=await player.play(soundId||configured?.value);
   else if(type==='sound.stop')result=player.stop();
   else{

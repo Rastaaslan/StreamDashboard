@@ -8,6 +8,7 @@ contextBridge.exposeInMainWorld('streamDashboardDesktop', {
   requestPeer:(value:unknown)=>ipcRenderer.invoke('peer:request',value),
   cancelPeerRequest:(id:string)=>ipcRenderer.invoke('peer:cancel',id),
   configureController: (value: unknown) => ipcRenderer.invoke('controller:configure', value),
+  autonomousRequest: (operation:string,body?:unknown) => ipcRenderer.invoke('autonomous:request',operation,body),
   controllerStatus: () => ipcRenderer.invoke('controller:status'),
   getControllerCredential: () => ipcRenderer.invoke('controller:credential:get'),
   setControllerCredential: (value: string) => ipcRenderer.invoke('controller:credential:set', value),

@@ -1,4 +1,4 @@
-const CACHE = 'streamdashboard-mobile-v29-workspace-identity';
+const CACHE = 'streamdashboard-mobile-v30-native-executor';
 const PATHS = new Set([
   '/mobile/',
   '/mobile/index.html',
@@ -50,6 +50,10 @@ const PATHS = new Set([
   '/mobile/control/action-routing-ui.js',
   '/mobile/control/device-accounts.js',
   '/mobile/control/device-audio.js',
+  '/mobile/control/native-device-audio.js',
+  '/mobile/control/local-executor.js',
+  '/mobile/control/native-executor.js',
+  '/mobile/control/native-executor.html',
   '/mobile/control/device-bridge.js',
   '/mobile/control/device-providers.js',
   '/mobile/control/device-services.js',
@@ -120,6 +124,10 @@ const ASSETS = [
   'control/device-permissions-ui.js',
   'control/device-accounts.js',
   'control/device-audio.js',
+  'control/native-device-audio.js',
+  'control/local-executor.js',
+  'control/native-executor.js',
+  'control/native-executor.html',
   'control/device-bridge.js',
   'control/device-providers.js',
   'control/device-services.js',
