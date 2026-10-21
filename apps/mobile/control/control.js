@@ -1,5 +1,6 @@
 import {createDeviceExecutor, createExecutorBridge} from './device-executor.js';
 import {uploadSound} from './sound-transfer.js';
+import {createDiscoveryUI} from './discovery-ui.js';
 import {createPeerRequest, fingerprint} from './peer-request.js';
 import { createDevicePermissionsUI } from './device-permissions-ui.js';
 import { createActionRouter } from './action-routing.js';
@@ -424,12 +425,13 @@ async function selectInstallationDevice(target,commit){
 let deviceExecutor;
 try{deviceExecutor=await createDeviceExecutor({bridge:createExecutorBridge(),installation:()=>installationUI.current,runtime:getLocalRuntime,openViewers:value=>globalThis.StreamDashboardNative?.openViewers?.(JSON.stringify(value))});}catch(error){toast(error.message||'Partage Android indisponible.');}
 const devicePermissionsUI=createDevicePermissionsUI({nativeExecutor:Boolean(deviceExecutor),request:(p,b,m)=>deviceExecutor?deviceExecutor.localRequest(p,b,m):network(p,b,m,localEndpoint||server,localEndpoint?'':credential),modal,esc});
+const discoveryUI=createDiscoveryUI({scan:()=>deviceExecutor?deviceExecutor.localRequest('/api/v1/remote/discover'):network('/api/v1/remote/discover',undefined,'GET',localEndpoint,''),modal,esc,localId:()=>installationUI.current.localDeviceId,choose:endpoint=>connectionDialog(endpoint)});
 const actionRouter=createActionRouter({installation:()=>installationUI.current,workspace:()=>autonomy?.store.scope||server||LOCAL_SCOPE,localEndpoint,credential:origin=>credentials.get(origin),request:network});
 const actionRoutingUI=createActionRoutingUI({installationUI,router:actionRouter,workspace:()=>autonomy?.store.scope||server||LOCAL_SCOPE,actions:()=>data?.configuration.actions||[],localEndpoint,modal,esc,changed:async()=>{await configureMacros({synchronized:online});dialog.close();render();}});
 function deviceSetup(){installationUI.open();}
 
 const deviceAccounts=createDeviceAccounts({modal,esc,toast,request:(p,b,m)=>{if(!localEndpoint)throw new Error('Les comptes propres à cet appareil nécessitent l’application Android ou Windows.');return network(p,b,m,localEndpoint,'');},openExternal:url=>globalThis.streamDashboardDesktop?.openExternalAuth?.(url)});
-function connectionDialog(){modal(`<h2>Associer une régie</h2><p>La régie exécute les commandes OBS et les sons. Vos comptes locaux restent accessibles indépendamment.</p><form id="connection-form">${input('Adresse de la régie','server',server||'','url','placeholder="https://nom-du-pc:48136"')}<p class="small muted">Sur la régie : Configuration → Appareils → Créer un code de gestion complète. Collez le lien obtenu ici.</p>${input('Lien d’association (ou laisser vide si déjà associé)','link')}<div class="form-grid">${input('Identifiant d’association','pair')}${input('Code temporaire','code')}</div>${input('Empreinte SHA-256 affichée par l’agent (incluse dans le lien)','fingerprint')}<p class="small muted">Vérifiez le lien sur l’appareil à associer. Une nouvelle empreinte remplace son identité de confiance.</p>${input('Nom de cet appareil','name',device.name)}<div class="form-actions"><button>Se connecter</button><button type="button" class="secondary" data-task="device-accounts">Mes comptes sur cet appareil</button></div></form>`);}
+function connectionDialog(endpoint=server){modal(`<h2>Associer un appareil</h2><p>Choisissez un ordinateur ou un Android compatible. Vos comptes locaux restent accessibles indépendamment.</p>${localEndpoint||deviceExecutor?'<button type="button" class="secondary" data-task="discover-devices">Rechercher sur le réseau local</button>':''}<form id="connection-form">${input('Adresse de la régie','server',endpoint||'','url','placeholder="https://nom-du-pc:48136"')}<p class="small muted">Sur la régie : Configuration → Appareils → Créer un code de gestion complète. Collez le lien obtenu ici.</p>${input('Lien d’association (ou laisser vide si déjà associé)','link')}<div class="form-grid">${input('Identifiant d’association','pair')}${input('Code temporaire','code')}</div>${input('Empreinte SHA-256 affichée par l’agent (incluse dans le lien)','fingerprint')}<p class="small muted">Vérifiez le lien sur l’appareil à associer. Une nouvelle empreinte remplace son identité de confiance.</p>${input('Nom de cet appareil','name',device.name)}<div class="form-actions"><button>Se connecter</button><button type="button" class="secondary" data-task="device-accounts">Mes comptes sur cet appareil</button></div></form>`);}
 async function switchWorkspace(local){
  if(local&&page==='live')page='deck';
  // Invalidate immediately; a previous poll must not rearm keys while the source changes.
@@ -571,6 +573,7 @@ async function chooseYouTubeBroadcast(button){
 async function task(name,b){
  if(name==='close-dialog'){dialog.close();return;}
  if(name==='connection'){connectionDialog();return;}
+ if(await discoveryUI.task(name,b))return;
  if(await devicePermissionsUI.task(name,b))return;
  if(await actionRoutingUI.task(name,b))return;
  if(await installationUI.task(name,b))return;

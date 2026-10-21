@@ -18,6 +18,8 @@ import { createServer as createHttpsServer } from 'node:https';
 import { createSecureContext, type TLSSocket } from 'node:tls';
 import type { Duplex } from 'node:stream';
 import { prepareHttpShutdown } from './http-shutdown.js';
+import {listenForPeers,discoverPeers} from './peer-discovery.js';
+import {validateDevicePermissions} from '../../mobile/shared/device-permissions.js';
 import { mkdir, readFile, stat, unlink, writeFile } from 'node:fs/promises';
 import { hostname, networkInterfaces } from 'node:os';
 // Restricted development containers may not expose network interface enumeration.
@@ -436,6 +438,7 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
   const host = options.remoteTls ? '127.0.0.1' : options.host ?? '127.0.0.1';
   let remoteRuntimeEnabled = options.remoteEnabled === true;
   let remoteFailure=options.remoteError;
+  let discovery:Awaited<ReturnType<typeof listenForPeers>>|undefined,discoveryError='';
   let tlsFingerprint='';
   if(options.remoteTls){
     if(!remoteRuntimeEnabled)throw new Error('Le partage réseau est désactivé.');
@@ -599,6 +602,7 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
         ...(typeof device.revokedAt === 'string' ? { revokedAt: device.revokedAt } : {}),
         credentialHash: String(device.credentialHash),
         management: device.management === true,
+        ...(Object.hasOwn(device,'permissions')?{permissions:validateDevicePermissions(device.permissions)}:{}),
       }))
     : [];
 
@@ -1802,8 +1806,9 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
   });
   app.get('/api/v1/remote/info', (req, res) => {
     if (!requireLocal(req, res)) return;
-    res.json({ transport:tlsServer?'tls':'legacy-http',fingerprint:tlsFingerprint||null,error:remoteFailure||null,enabled: remoteRuntimeEnabled, configured: local.settings.remoteEnabled === true, restartRequired: remoteRuntimeEnabled !== (local.settings.remoteEnabled === true), urls: remoteUrls() });
+    res.json({ transport:tlsServer?'tls':'legacy-http',fingerprint:tlsFingerprint||null,error:remoteFailure||null,discoveryError,enabled: remoteRuntimeEnabled, configured: local.settings.remoteEnabled === true, restartRequired: remoteRuntimeEnabled !== (local.settings.remoteEnabled === true), urls: remoteUrls() });
   });
+  app.get('/api/v1/remote/discover',async(req,res,next)=>{try{if(!requireLocal(req,res))return;res.json({devices:await discoverPeers(),trusted:false});}catch(error){next(error);}});
   app.delete('/api/v1/remote/devices/:id', async (req, res, next) => {
     try {
       if (!requireLocal(req, res)) return;
@@ -3209,6 +3214,7 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
   let stopPromise: Promise<void> | undefined;
   scheduleTimerExpiry();
   const stop = () => stopPromise ??= (async () => {
+    discovery?.close();
     unsubscribeObs();
     clearTimeout(googleOAuthTimeout);
     clearInterval(validator);
@@ -3255,6 +3261,10 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
         remoteFailure='Le port HTTPS de cet agent est indisponible. Fermez l’autre instance qui l’utilise, puis redémarrez cet agent.';
         void Promise.resolve(logger.warn(remoteFailure)).catch(()=>undefined);
       }
+    }
+    if(tlsPort&&runtimeDevice?.platform==='windows'){
+      try{discovery=await listenForPeers(()=>remoteRuntimeEnabled&&local.settings.remoteEnabled?{id:runtimeDevice.id,name:runtimeDevice.name,platform:'windows',port:tlsPort!}:undefined);}
+      catch{discoveryError='Découverte locale indisponible. L’association par adresse et code reste disponible.';}
     }
     startupSignal?.throwIfAborted();
   } catch (error) {

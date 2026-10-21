@@ -18,11 +18,11 @@ export class RemoteAuth {
     for (const value of pending) {
       if (!value || typeof value.digest !== 'string') continue;
       const digest = Buffer.from(value.digest, 'base64');
-      if (digest.length === 32 && value.expiresAt > this.now()) this.pairing.set(value.id, { digest, expiresAt: value.expiresAt, used: false, management: value.management === true, ...(value.permissions?{permissions:validateDevicePermissions(value.permissions)}:{}) });
+      if (digest.length === 32 && value.expiresAt > this.now()) this.pairing.set(value.id, { digest, expiresAt: value.expiresAt, used: false, management: value.management === true, ...(Object.hasOwn(value,'permissions')?{permissions:validateDevicePermissions(value.permissions)}:{}) });
     }
     for (const device of initial) {
       const credentialHash = Buffer.from(device.credentialHash, 'base64');
-      if (credentialHash.length === 32) this.devices.set(device.id, { ...device, credentialHash, ...(device.permissions?{permissions:validateDevicePermissions(device.permissions)}:{}) });
+      if (credentialHash.length === 32) this.devices.set(device.id, { ...device, credentialHash, ...(Object.hasOwn(device,'permissions')?{permissions:validateDevicePermissions(device.permissions)}:{}) });
     }
   }
 

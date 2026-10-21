@@ -15,6 +15,8 @@ final class ExecutorBridge implements AutoCloseable {
   private final ConcurrentHashMap<String,CompletableFuture<ExecutorHttpServer.Reply>> replies=new ConcurrentHashMap<>();
   private ExecutorIdentity identity;
   private ExecutorHttpServer server;
+  private PeerDiscovery discovery;
+  private String discoveryError="";
   private volatile boolean closed;
   ExecutorBridge(Context context,BiConsumer<String,String> callback){secrets=new SecureCredentialStore(context);dispatch=callback;}
   void receive(String raw){
@@ -35,8 +37,11 @@ final class ExecutorBridge implements AutoCloseable {
           switch(operation){
             case "load":String stored=secrets.get("executor.settings.v1");answer=stored.isEmpty()?JSONObject.NULL:new JSONObject(stored);break;
             case "save":String data=value.getJSONObject("value").toString();if(data.length()>65536)throw new IllegalArgumentException();secrets.put("executor.settings.v1",data);answer=true;break;
-            case "start":if(server==null){if(identity==null)identity=new ExecutorIdentity();server=new ExecutorHttpServer(identity.context,48136,this::request);}answer=info();break;
-            case "stop":if(server!=null){server.close();server=null;}answer=info();break;
+            case "start":if(server==null){if(identity==null)identity=new ExecutorIdentity();server=new ExecutorHttpServer(identity.context,48136,this::request);}
+              if(discovery!=null){discovery.close();discovery=null;}discoveryError="";
+              try{JSONObject device=new JSONObject(value.getJSONObject("device").toString()).put("port",server.port());discovery=new PeerDiscovery(device);}catch(Exception error){discoveryError="Découverte locale indisponible. Utilisez l’adresse et le code.";}answer=info();break;
+            case "stop":if(discovery!=null){discovery.close();discovery=null;}if(server!=null){server.close();server=null;}answer=info();break;
+            case "scan":answer=new JSONObject().put("devices",PeerDiscovery.scan()).put("trusted",false);break;
             case "info":answer=info();break;
             default:throw new IllegalArgumentException();
           }
@@ -64,9 +69,9 @@ final class ExecutorBridge implements AutoCloseable {
         if(address instanceof Inet4Address&&!address.isLoopbackAddress())urls.put("https://"+address.getHostAddress()+":"+server.port());
       }
     }}
-    return new JSONObject().put("enabled",server!=null).put("fingerprint",identity==null?"":identity.fingerprint).put("urls",urls).put("requiresOpenApplication",true);
+    return new JSONObject().put("enabled",server!=null).put("fingerprint",identity==null?"":identity.fingerprint).put("urls",urls).put("discoveryError",discoveryError).put("requiresOpenApplication",true);
   }
-  public void close(){closed=true;if(server!=null)server.close();for(CompletableFuture<ExecutorHttpServer.Reply> future:replies.values())future.complete(unavailable());replies.clear();worker.shutdownNow();}
+  public void close(){closed=true;if(discovery!=null)discovery.close();if(server!=null)server.close();for(CompletableFuture<ExecutorHttpServer.Reply> future:replies.values())future.complete(unavailable());replies.clear();worker.shutdownNow();}
   private static final class JSONObjectWrapper {
     final String id,result;JSONObjectWrapper(String i,String r){id=i;result=r;}
     String json(){try{return new JSONObject().put("id",id).put("result",result).toString();}catch(JSONException error){throw new IllegalStateException(error);}}

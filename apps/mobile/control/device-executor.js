@@ -92,12 +92,13 @@ export async function createDeviceExecutor({bridge,installation,runtime,now=Date
   return type==='sound.stop'?execute():executeSerial(execute);
  }
  async function localRequest(path,body,method=body===undefined?'GET':'POST'){
+  if(path==='/api/v1/remote/discover'&&method==='GET')return bridge.call('scan');
   if(path==='/api/v1/remote/info'){info=await bridge.call('info');return {...info,configured:config.enabled,error:info.enabled?'':'Partage désactivé. Gardez l’application ouverte pour recevoir les commandes.'};}
   if(path==='/api/v2/state')return {host:{settingsRevision:String(config.revision)}};
   if(path==='/api/v2/settings'&&method==='PUT')return serial(async()=>{
    if(String(config.revision)!==String(body.expectedRevision))throw fault('REVISION_CONFLICT','Réglages modifiés ailleurs.');
    await persist({...config,revision:config.revision+1,enabled:body.remoteEnabled===true});
-   pairs.clear();info=await bridge.call(config.enabled?'start':'stop');return {saved:true};
+   pairs.clear();info=await bridge.call(config.enabled?'start':'stop',{device:publicInstallationDevice(own())});return {saved:true};
   });
   if(path==='/api/v1/remote/devices')return publicDevices();
   if(path==='/api/v1/remote/pairing'&&method==='POST'){
@@ -159,6 +160,6 @@ export async function createDeviceExecutor({bridge,installation,runtime,now=Date
   }catch(error){return {status:error.status||400,body:{error:{code:error.code||'INVALID_REQUEST',message:error.message||'Requête invalide.',retryable:false}}};}
  }
  bridge.listen(handle);
- if(config.enabled)try{info=await bridge.call('start');}catch(error){info.error=error.message;}
+ if(config.enabled)try{info=await bridge.call('start',{device:publicInstallationDevice(own())});}catch(error){info.error=error.message;}
  return {localRequest,handle,command,info:()=>({...info,configured:config.enabled})};
 }

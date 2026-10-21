@@ -26,6 +26,25 @@ it('requires action-specific grants and prevents indirect configuration and lega
  expect(requiredDevicePermissions('POST','/v2/autonomy/sync',{})).toEqual(['configuration']);
  expect(requiredDevicePermissions('GET','/v2/youtube/chat',{})).toEqual(['chat']);
 });
+it('retains restricted and empty permissions through an actual server shutdown and disk reload',async()=>{
+ const directory=await mkdtemp(path.join(tmpdir(),'sd-permission-restart-')),model=migrateInstallation({id:'persisted-agent',platform:'windows'});
+ const start=()=>startDashboardServer({port:0,host:'0.0.0.0',remoteEnabled:true,obsEnabled:false,dataDir:directory,deviceDescriptor:async()=>model.devices[0],logger:{info(){},warn(){},error(){}}});
+ let server=await start();const address=Object.values(networkInterfaces()).flat().find(value=>value?.family==='IPv4'&&!value.internal)!.address,json={'content-type':'application/json'};
+ try{
+  const pairs=[];
+  for(const permissions of [['observe'],[]]){
+   const code=await (await fetch(server.url+'/api/v1/remote/pairing',{method:'POST',headers:json,body:JSON.stringify({management:true,permissions})})).json() as any;
+   pairs.push(await (await fetch(`http://${address}:${server.port}/api/v1/remote/pair`,{method:'POST',headers:json,body:JSON.stringify({...code,name:'Restricted'})})).json() as any);
+  }
+  await server.stop();server=await start();
+  const devices=await (await fetch(server.url+'/api/v1/remote/devices')).json() as any[];
+  expect(devices.map(device=>device.permissions)).toEqual([['observe'],[]]);
+  for(const paired of pairs){
+   const response=await fetch(`http://${address}:${server.port}/api/v2/actions`,{method:'POST',headers:{...json,authorization:'Device '+paired.credential},body:JSON.stringify({id:'no_restart_effect',action:'micro',issuedAt:new Date().toISOString()})});
+   expect(response.status).toBe(403);expect(await response.json()).toMatchObject({error:{code:'DEVICE_PERMISSION_DENIED'}});
+  }
+ }finally{await server.stop();await rm(directory,{recursive:true,force:true});}
+});
 it('enforces restricted permissions over LAN, reports granted capabilities and rejects remote administration',async()=>{
  const directory=await mkdtemp(path.join(tmpdir(),'sd-permissions-'));
  const model=migrateInstallation({id:'physical-device',platform:'windows'});

@@ -38,6 +38,20 @@ for(const preset of ['single-pc','single-pc-deck','dual-pc','dual-pc-deck','andr
   expect(await page.evaluate(()=>(window as any).saved.devices[0].name)).toBe('Before');
  });
 }
+test('discovered names are escaped and selecting a LAN hint only fills an address without granting trust',async({page})=>{
+ await page.goto(origin);
+ await page.evaluate(async()=>{
+  const {createDiscoveryUI}=await import('/mobile/control/discovery-ui.js' as string),win=window as any;
+  const esc=(text:string)=>String(text).replaceAll('&','&amp;').replaceAll('<','&lt;').replaceAll('"','&quot;');
+  const base={id:'phone',platform:'android',port:48136};
+  win.discovery=createDiscoveryUI({scan:async()=>({devices:[{...base,name:'<img src=x onerror=alert(1)>',endpoint:'https://192.168.1.7:48136',credential:'not-trusted'},{...base,name:'Spoof',endpoint:'https://10.attacker.test:48136'}]}),modal:(html:string)=>document.querySelector('#root')!.innerHTML=html,esc,choose:(endpoint:string)=>{win.chosen=endpoint;},localId:()=> 'pc'});
+  document.addEventListener('click',event=>{const button=(event.target as HTMLElement).closest('[data-task]') as HTMLElement;if(button)void win.discovery.task(button.dataset.task,button);});
+  await win.discovery.task('discover-devices');
+ });
+ await expect(page.locator('img')).toHaveCount(0);await expect(page.getByRole('button',{name:'Associer cet appareil'})).toHaveCount(1);
+ await expect(page.locator('#root')).toContainText('ne prouvent pas');await expect(page.locator('#root')).not.toContainText('not-trusted');
+ await page.getByRole('button',{name:'Associer cet appareil'}).click();expect(await page.evaluate(()=>(window as any).chosen)).toBe('https://192.168.1.7:48136');
+});
 test('Android uses the same monitor with independent Twitch and YouTube targets without a PC',async({page})=>{
  await page.setViewportSize({width:390,height:844});
  await page.route('https://**/*',route=>route.abort());await page.goto(origin);
