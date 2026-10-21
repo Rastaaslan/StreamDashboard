@@ -1,3 +1,4 @@
+import type { BroadcastPreparation, PreparationReceipt } from './preparation.js';
 import { createYouTubeChatReader, type ChatBroadcast, type ChatPage } from '../../../apps/mobile/shared/youtube-chat.js';
 import { createHash, randomBytes, timingSafeEqual } from 'node:crypto';
 import type { SecretStore } from '../../../apps/server/src/storage.js';
@@ -191,8 +192,8 @@ export class YouTubeClient {
     this.assertSelection(selected);
     return value;
   }
-  private async pages<T>(resource:string,parameters:Record<string,string>):Promise<T[]> {
-    const selected=this.selection(),items:T[]=[],seen=new Set<string>();let pageToken='';
+  private async pages<T>(resource:string,parameters:Record<string,string>,selected=this.selection()):Promise<T[]> {
+    const items:T[]=[],seen=new Set<string>();let pageToken='';
     for(let page=0;page<100;page++){
       const query=new URLSearchParams({...parameters,maxResults:'50',...(pageToken?{pageToken}:{})});
       const result=await this.api<{items?:T[];nextPageToken?:string}>(resource+'?'+query,{},selected);
@@ -208,6 +209,41 @@ export class YouTubeClient {
     const items=await this.pages<Broadcast>('liveBroadcasts',{part:'id,snippet,status,contentDetails',mine:'true',broadcastType:'all'});
     return [...new Map(items.filter(v=>v.status.lifeCycleStatus!=='complete'&&v.status.lifeCycleStatus!=='revoked').map(v=>[v.id,v])).values()]
       .map(v=>({id:v.id,title:v.snippet.title,channelId:v.snippet.channelId,status:v.status.lifeCycleStatus,bound:Boolean(v.contentDetails.boundStreamId),scheduledStartTime:v.snippet.scheduledStartTime||null}));
+  }
+  /** Deliberately excludes cdn: neither ingestion addresses nor stream keys leave the API. */
+  async streams() {
+    const selected=this.selection();
+    const items=await this.pages<{id:string;snippet:{title:string;channelId:string};status:{streamStatus:string};contentDetails?:{isReusable?:boolean}}>('liveStreams',{part:'id,snippet,status,contentDetails',mine:'true'},selected);
+    return items.filter(item=>item.contentDetails?.isReusable===true).map(item=>({id:item.id,title:item.snippet.title,channelId:item.snippet.channelId,status:item.status.streamStatus}));
+  }
+  async prepareBroadcast(value: BroadcastPreparation, checkpoint: (phase: PreparationReceipt['phase'], id?:string)=>Promise<void>, guard:()=>Promise<void>) {
+    const selected=this.selection();
+    const channels=await this.authorizedChannels();this.assertSelection(selected);
+    // An insert uses the OAuth channel, not an arbitrary snippet.channelId.
+    if(channels.length!==1||channels[0].id!==value.channelId)throw new Error('La chaîne choisie ne correspond pas au compte YouTube connecté.');
+    const streams=await this.streams();this.assertSelection(selected);
+    if(!streams.some(stream=>stream.id===value.streamId&&stream.channelId===value.channelId))throw new Error('Choisissez un flux réutilisable de la chaîne connectée.');
+    await guard();this.assertSelection(selected);
+    await checkpoint('creating');
+    const created=await this.api<Broadcast>('liveBroadcasts?part=id,snippet,status,contentDetails',{method:'POST',body:JSON.stringify({
+      snippet:{title:value.metadata.title,description:value.metadata.description,scheduledStartTime:value.scheduledStartTime},
+      status:{privacyStatus:value.privacyStatus,selfDeclaredMadeForKids:value.madeForKids},
+      contentDetails:{enableAutoStart:false,enableAutoStop:false,monitorStream:{enableMonitorStream:false}},
+    })},selected);
+    if(!created?.id||!/^[A-Za-z0-9_-]{11}$/.test(created.id)||created.snippet?.channelId!==value.channelId)throw new YouTubeApiError(200,'invalidResponse');
+    await checkpoint('binding',created.id);
+    await guard();this.assertSelection(selected);
+    await this.api('liveBroadcasts/bind?'+new URLSearchParams({part:'id,contentDetails',id:created.id,streamId:value.streamId}),{method:'POST'},selected);
+    await checkpoint('metadata',created.id);
+    await guard();this.assertSelection(selected);
+    await this.api('videos?part=snippet',{method:'PUT',body:JSON.stringify({id:created.id,snippet:{title:value.metadata.title,description:value.metadata.description,categoryId:value.metadata.youtubeCategoryId,tags:value.metadata.tags}})},selected);
+    const videos=await this.api<{items:Array<{id:string;snippet:VideoSnippet}>}>('videos?part=snippet&id='+encodeURIComponent(created.id),{},selected);
+    const actual=videos.items?.find(item=>item.id===created.id&&item.snippet?.channelId===value.channelId)?.snippet;
+    const differences=metadataDifferences(actual,value.metadata);if(differences.length)throw new YouTubeMetadataVerificationError(differences);
+    const checked=await this.api<{items:Array<Broadcast & {status:{privacyStatus:string;selfDeclaredMadeForKids:boolean};contentDetails:{enableAutoStart:boolean;enableAutoStop:boolean}}>}>('liveBroadcasts?part=id,snippet,status,contentDetails&id='+encodeURIComponent(created.id),{},selected);
+    const result=checked.items?.find(item=>item.id===created.id&&item.snippet?.channelId===value.channelId);
+    if(!result||result.contentDetails?.boundStreamId!==value.streamId||result.contentDetails.enableAutoStart!==false||result.contentDetails.enableAutoStop!==false||result.status.privacyStatus!==value.privacyStatus||result.status.selfDeclaredMadeForKids!==value.madeForKids)throw new Error('YouTube n’a pas confirmé le flux, la visibilité ou les réglages de lancement. Vérifiez la diffusion créée.');
+    await checkpoint('verified',created.id);
   }
   async authorizedChannels():Promise<YouTubeChannelIdentity[]> {
     const items=await this.pages<{id:string;snippet:{title:string;customUrl?:string}}>('channels',{part:'id,snippet',mine:'true'});

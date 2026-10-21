@@ -1,3 +1,4 @@
+import { YouTubePreparationService } from '../../../integrations/youtube/src/preparation.js';
 import { AudioDestinations, RoleAudioPlayback } from './audio-destinations.js';
 import {createServerSoundLibrary} from './sound-library-export.js';
 import {portableSound,sameSound,soundIdentity} from '../../mobile/shared/sound-library.js';
@@ -2616,7 +2617,7 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
     if (req.path.startsWith('/api/v2/') && req.body.expectedRevision !== planningFingerprint(id)) throw Object.assign(new Error('Événement modifié sur un autre appareil. Rechargez avant d’enregistrer.'), { name: 'REVISION_CONFLICT' });
   };
   const controlHostState = () => ({ hostname: hostname(), chat: { connected: twitch.state.connected, canSend: twitch.controlCapabilities().chatWrite, channel: twitch.publicIdentity().userName || '' }, replayAutoStartError, monitor: { twitchLogin: twitch.publicIdentity().userName || '' }, state: toRemoteDashboardState(snapshot()), settings: publicSettings(), settingsRevision: settingsFingerprint(), planning: structuredClone(local.planning), occurrences: expandEditableRecurringItems(local.planning, { from: Date.now() - DAY_MS, to: Date.now() + 90 * DAY_MS }), planningRevisions: Object.fromEntries(local.planning.map(item => [item.id, planningFingerprint(item.id)])), platforms: structuredClone(platformLive), outputStatus: structuredClone(outputStatus), local: true });
-  registerControlRoutes({ app, control, youtube, obs, wizebotCommands, timerSource: () => local.settings.timerBrowserSource, settings: settingsUpdate, planningCreate, planningUpdate, planningDelete, recurrence: recurrenceException, isLocal: isLocalRequest, port: () => runtimePort, observe: observePlatforms, state: controlHostState });
+  registerControlRoutes({ app, control, youtube, youtubePreparation: YouTubePreparationService.open(path.join(dataDir, 'youtube-preparations.json'), youtube), obs, wizebotCommands, timerSource: () => local.settings.timerBrowserSource, settings: settingsUpdate, planningCreate, planningUpdate, planningDelete, recurrence: recurrenceException, isLocal: isLocalRequest, port: () => runtimePort, observe: observePlatforms, state: controlHostState });
   // Device-owned clients call their loopback runtime, never a paired PC. The
   // narrow adapter reuses provider credentials and all existing remote guards.
   app.post('/api/v2/device/providers', async (req, res) => {

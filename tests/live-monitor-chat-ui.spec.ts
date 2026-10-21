@@ -206,6 +206,7 @@ test('monitor keeps public video frames stable and exposes creator tools alongsi
       identity: { broadcasterId: '123', userName: 'creator_test', displayName: 'Créateur test' }, accountConnected: true,
       capabilities: { chatRead: true, chatWrite: true }, chat: { connected: true, messages: [] },
     }) });
+    (document.querySelector('[data-youtube-web]') as HTMLDetailsElement).open = true;
     win.monitor.update(win.data, { online: true, sourceKey: 'regie' });
     win.videoFrame = document.querySelector('[data-monitor-slot="video"] iframe');
   });
@@ -245,6 +246,7 @@ async function setupViewerSession(page: Page) {
       identity: { broadcasterId: '123', userName: 'creator_test', displayName: 'Créateur test' }, accountConnected: true,
       capabilities: { chatRead: true, chatWrite: true }, chat: { connected: true, messages: [] },
     }) });
+    (document.querySelector('[data-youtube-web]') as HTMLDetailsElement).open = true;
     win.monitor.update(win.data, { online: true, sourceKey: 'regie' });
     win.videoFrame = document.querySelector('[data-monitor-slot="video"] iframe');
     win.youtubeFrame = document.querySelector('[data-monitor-slot="youtube"] iframe');
@@ -448,4 +450,52 @@ test('Android opens both chats and video in isolated native viewers without expo
  expect(await page.evaluate(()=>(window as any).viewerRequests)).toEqual([{twitch:'creator_test',youtube:'Abc_1234-XY',source:'twitch'}]);
  await expect(page.locator('[data-monitor-viewer-status]')).toContainText('sessions web propres');
  await page.evaluate(()=>(window as any).monitor.destroy());
+});
+
+test('YouTube API chat remains visible without loading the failing web panel; reload refreshes the API',async({page})=>{
+ await page.evaluate(async()=>{
+  const win=window as any;win.youtubeReads=0;win.data={host:{monitor:{twitchLogin:'test'}},configuration:{youtube:{broadcastId:'Abc_1234-XY'}}};
+  const module=await import('/mobile/control/live-monitor.js' as string);
+  win.monitor=module.createLiveMonitor(document.querySelector('#monitor'),{request:async(url:string)=>{
+   if(!url.includes('/youtube/chat'))return {};
+   win.youtubeReads++;return {account:'Chaîne test',channelId:'channel-test',status:'connected',message:'Chat connecté.',phaseMessage:'Diffusion en direct.',messages:win.youtubeReads===1?[]:[{author:'Spectateur',text:'Message après actualisation'}],nextPollAt:Date.now()+60000};
+  }});win.monitor.update(win.data,{online:true,sourceKey:'regie'});
+ });
+ await expect(page.locator('[data-youtube-account]')).toContainText('Chaîne test');
+ await expect(page.locator('.youtube-api-messages')).toContainText('aucun message reçu');
+ await expect(page.locator('[data-monitor-slot="youtube"] iframe')).toHaveCount(0);
+ await page.locator('[data-monitor-reload="youtube"]').click();
+ await expect(page.locator('.youtube-api-messages')).toContainText('Message après actualisation');
+ await page.locator('[data-youtube-web] summary').click();
+ await expect(page.locator('[data-monitor-slot="youtube"] iframe')).toHaveCount(1);
+ await expect(page.locator('[data-youtube-account]')).toBeVisible();
+ await page.locator('[data-youtube-web] summary').click();
+ await expect(page.locator('[data-monitor-slot="youtube"] iframe')).toHaveCount(0);
+ await expect(page.locator('.youtube-api-messages')).toContainText('Message après actualisation');
+});
+
+test('YouTube preparation keeps an ambiguous request ID, requires an audience choice and selects only on explicit click',async({page})=>{
+ await page.evaluate(async()=>{
+  const win=window as any;win.creations=[];win.selected=[];win.saved=[];win.documentSubmits=0;
+  document.addEventListener('submit',()=>win.documentSubmits++);
+  const module=await import('/mobile/control/youtube-preparation-ui.js' as string);
+  await module.openYouTubePreparation(document.querySelector('#chat'),{metadata:{title:'Préparation test',description:'Description',tags:['Test'],youtubeCategoryId:'20',twitchGameId:''},expectedRevision:7,isCurrent:()=>true,remember:async(value:unknown)=>win.saved.push(structuredClone(value)),select:async(value:unknown)=>win.selected.push(value),request:async(url:string,body:unknown)=>{
+   if(url.endsWith('/channels'))return {items:[{id:'channel-test',title:'Chaîne test'}]};
+   if(url.endsWith('/streams'))return {items:[{id:'stream-test',title:'OBS',channelId:'channel-test'}]};
+   win.creations.push(structuredClone(body));if(win.creations.length===1)throw Error('Réponse perdue');return {status:'succeeded',broadcastId:'newLive1234',channelId:'channel-test',message:'Diffusion prête.'};
+  }});
+ });
+ await page.getByLabel('Flux configuré dans OBS').selectOption('stream-test');
+ await page.getByRole('button',{name:'Créer et préparer la diffusion'}).click();
+ expect(await page.evaluate(()=>(window as any).creations.length)).toBe(0);
+ await page.getByLabel('Public de la diffusion',{exact:true}).selectOption('false');
+ await page.getByRole('button',{name:'Créer et préparer la diffusion'}).click();
+ await expect(page.locator('[data-prepare-result]')).toContainText('Résultat non confirmé');
+ await expect(page.getByLabel('Titre YouTube')).toBeDisabled();
+ await page.getByRole('button',{name:'Vérifier le résultat',exact:true}).click();
+ await expect(page.locator('[data-prepare-result]')).toContainText('Diffusion prête');
+ const values=await page.evaluate(()=>({creations:(window as any).creations,selected:(window as any).selected,submits:(window as any).documentSubmits}));
+ expect(values.creations).toHaveLength(2);expect(values.creations[0]).toEqual(values.creations[1]);expect(values.selected).toHaveLength(0);expect(values.submits).toBe(0);
+ await page.getByRole('button',{name:'Utiliser pour le prochain lancement'}).click();
+ expect(await page.evaluate(()=>(window as any).selected.length)).toBe(1);
 });

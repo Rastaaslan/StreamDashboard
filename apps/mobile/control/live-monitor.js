@@ -11,8 +11,8 @@ export function createLiveMonitor(root, { native = false, configure = () => {}, 
     + '<div class="monitor-grid" data-monitor-body>'
     + '<section class="panel monitor-video"><div class="monitor-heading"><h3>Retour plateforme</h3><div class="monitor-tabs" role="group" aria-label="Plateforme du retour vidéo"><button type="button" data-monitor-source="twitch">Twitch</button><button type="button" data-monitor-source="youtube">YouTube</button></div></div><div class="monitor-slot video-slot" data-monitor-slot="video"></div><div class="monitor-footer"><a data-monitor-link="video" target="_blank" rel="noopener noreferrer">Ouvrir le live ↗</a><button type="button" class="secondary" data-monitor-connect="twitch" title="Connecter le lecteur Twitch sur cet appareil">Connexion visionneuse</button><button type="button" class="secondary" data-monitor-reload="video">Recharger la vidéo</button></div></section>'
     + '<section class="panel monitor-chat monitor-native-twitch"><div class="monitor-heading"><h3><span class="chat-dot twitch-dot"></span>Chat Twitch connecté</h3></div><div data-twitch-native></div><div class="monitor-footer monitor-creator-links"><a data-monitor-link="twitch" target="_blank" rel="noopener noreferrer">Chat dans le navigateur ↗</a><a data-monitor-link="twitch-creator" target="_blank" rel="noopener noreferrer">Régie Twitch ↗</a></div></section>'
-    + '<section class="panel monitor-chat"><div class="monitor-heading"><h3><span class="chat-dot youtube-dot"></span>Chat YouTube</h3><button type="button" class="secondary" data-monitor-reload="youtube">↻<span class="sr-only"> Recharger le chat YouTube</span></button></div><details class="youtube-api-chat" open><summary>Lecture API sur cet appareil</summary><div data-youtube-api></div></details><div class="monitor-slot" data-monitor-slot="youtube"></div><div class="monitor-footer monitor-creator-links"><a data-monitor-link="youtube" target="_blank" rel="noopener noreferrer">Chat dans le navigateur ↗</a><a data-monitor-link="youtube-creator" target="_blank" rel="noopener noreferrer">YouTube Studio ↗</a></div></section>'
-    + '</div><p class="small muted" data-monitor-note><span data-monitor-viewer-status role="status"></span> Le chat Twitch utilise le compte affiché ici. Le chat YouTube intégré a sa propre connexion ; YouTube Studio donne accès aux outils de votre chaîne dans votre navigateur.</p>';
+    + '<section class="panel monitor-chat"><div class="monitor-heading"><h3><span class="chat-dot youtube-dot"></span>Chat YouTube</h3><button type="button" class="secondary" data-monitor-reload="youtube">↻<span class="sr-only"> Recharger le chat YouTube</span></button></div><div class="youtube-api-chat"><div data-youtube-api></div></div><details data-youtube-web><summary>Chat web YouTube (facultatif)</summary><p class="small muted">Si YouTube affiche « Something went wrong », refermez ce panneau : la lecture des messages ci-dessus reste indépendante. Pour écrire ou modérer, utilisez le lien vers le navigateur.</p><div class="monitor-slot" data-monitor-slot="youtube"></div></details><div class="monitor-footer monitor-creator-links"><a data-monitor-link="youtube" target="_blank" rel="noopener noreferrer">Chat dans le navigateur ↗</a><a data-monitor-link="youtube-creator" target="_blank" rel="noopener noreferrer">YouTube Studio ↗</a></div></section>'
+    + '</div><p class="small muted" data-monitor-note><span data-monitor-viewer-status role="status"></span> Le chat Twitch utilise le compte affiché ici. Le chat YouTube lit les messages avec le compte API affiché ; le panneau web facultatif a sa propre connexion. YouTube Studio donne accès aux outils de votre chaîne dans votre navigateur.</p>';
   root.insertAdjacentHTML('beforeend','<details class="monitor-targets"><summary>Choisir les chaînes et la diffusion sur cet appareil</summary><form data-monitor-targets><label>Chaîne Twitch (nom)<input name="channel" maxlength="25"></label><label>Identifiant de la diffusion YouTube<input name="video" maxlength="11"></label><p class="small muted">Laissez vide pour suivre la diffusion sélectionnée dans votre espace. Ces choix ne changent ni vos comptes ni le live.</p><button>Enregistrer ces retours</button><p data-monitor-targets-status role="status"></p></form></details>');
   const get = selector => root.querySelector(selector);
   get('[name="channel"]').value=localStorage.getItem('sd2.monitor-channel')||'';
@@ -37,6 +37,8 @@ export function createLiveMonitor(root, { native = false, configure = () => {}, 
     get('.monitor-native-twitch h3').textContent='Chat Twitch · session web';
   }
 
+
+  get('[data-youtube-web]').addEventListener('toggle', () => draw());
 
   function mount(key, url, title, missing) {
     const slot = slots[key], identity = url || missing;
@@ -142,7 +144,8 @@ export function createLiveMonitor(root, { native = false, configure = () => {}, 
       : video && 'https://www.youtube.com/embed/' + video + '?autoplay=1&mute=1&playsinline=1&origin=' + encodeURIComponent(location.origin);
     mount('video', videoUrl, 'Retour plateforme ' + (source === 'twitch' ? 'Twitch' : 'YouTube'), source === 'twitch' ? twitchMissing : youtubeMissing);
     if(native)mount('twitch',login&&'https://www.twitch.tv/embed/'+login+'/chat?parent='+parent,'Chat Twitch','Choisissez votre chaîne Twitch. Si le chat intégré est restreint, utilisez le navigateur externe.');
-    mount('youtube', video && 'https://www.youtube.com/live_chat?v=' + video + '&embed_domain=' + parent, 'Chat YouTube', youtubeMissing);
+    if (get('[data-youtube-web]').open) mount('youtube', video && 'https://www.youtube.com/live_chat?v=' + video + '&embed_domain=' + parent, 'Chat YouTube', youtubeMissing);
+    else { slots.youtube.replaceChildren(); delete slots.youtube.dataset.identity; }
     link('video', source === 'twitch' ? login && 'https://www.twitch.tv/' + login : video && 'https://www.youtube.com/watch?v=' + video);
     link('twitch', login && 'https://www.twitch.tv/popout/' + login + '/chat?popout=');
     link('twitch-creator', login && 'https://dashboard.twitch.tv/u/' + login + '/stream-manager');
@@ -159,6 +162,7 @@ export function createLiveMonitor(root, { native = false, configure = () => {}, 
     if (button.hasAttribute('data-monitor-toggle')) { viewerRevision++; enabled = !enabled; localStorage.setItem('sd2.monitor-enabled', String(enabled)); draw(); }
     if (['twitch', 'youtube'].includes(button.dataset.monitorSource)) { if (source !== button.dataset.monitorSource) { viewerRevision++; viewerMessage = ''; } source = button.dataset.monitorSource; localStorage.setItem('sd2.monitor-source', source); draw(); }
     if (button.dataset.monitorConnect === 'twitch') void connectViewer();
+    if (button.dataset.monitorReload === 'youtube') youtubeChat.refresh();
     if (slots[button.dataset.monitorReload]) { delete slots[button.dataset.monitorReload].dataset.identity; draw(); }
   });
   const stopViewerSession = globalThis.streamDashboardDesktop?.onTwitchViewerSessionClosed?.(() => {

@@ -189,6 +189,8 @@ for (const viewport of [{ width: 1366, height: 768 }, { width: 1920, height: 108
 test('refresh preserves both platform frames and the Twitch draft inside the combined layout', async ({ page }) => {
   await page.setViewportSize({ width: 1366, height: 768 });
   await setup(page);
+  await page.locator('[data-youtube-web] summary').click();
+  await expect(page.locator('[data-monitor-slot="youtube"] iframe')).toHaveCount(1);
   const draft = page.getByLabel('Message Twitch', { exact: true });
   await draft.fill('Brouillon à garder pendant les actualisations');
   const reads = await page.evaluate(() => {

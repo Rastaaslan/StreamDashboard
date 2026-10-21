@@ -27,6 +27,7 @@ export function createYouTubeChat(root,{request,native=false,bridge=globalThis.S
     const log=get('.youtube-api-messages'),atBottom=log.scrollHeight-log.scrollTop-log.clientHeight<40;
     const fragment=document.createDocumentFragment();
     for(const message of value.messages||[]){const line=document.createElement('p'),name=document.createElement('b');name.textContent=message.author+' : ';line.append(name,document.createTextNode(message.text));fragment.append(line);}
+    if (!value.messages?.length && value.status === 'connected') { const empty=document.createElement('p');empty.className='small muted';empty.textContent='Chat connecté · aucun message reçu pour le moment.';fragment.append(empty); }
     log.replaceChildren(fragment);if(atBottom)log.scrollTop=log.scrollHeight;
   }
   async function poll() {
@@ -47,6 +48,7 @@ export function createYouTubeChat(root,{request,native=false,bridge=globalThis.S
       if(!value.enabled){clearTimeout(timer);timer=undefined;return;}
       if(!timer||!wasEnabled)void poll();
     },
+    refresh(){clearTimeout(timer);timer=undefined;void poll();},
     destroy(){disposed=true;generation++;clearTimeout(timer);},
   };
 }

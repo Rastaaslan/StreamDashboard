@@ -127,3 +127,13 @@ header{height:auto;min-height:98px;gap:18px}header>div:first-child{min-width:0;o
 .youtube-api-chat { padding: .75rem; border-bottom: 1px solid var(--border, #343448); }
 .youtube-api-messages { max-height: 220px; overflow-y: auto; overflow-wrap: anywhere; }
 .youtube-api-messages p { margin: .4rem 0; font-size: .85rem; }
+/* YouTube's API log is the primary chat; the independent web session is opt-in. */
+.monitor-chat:has([data-youtube-api]){display:flex;flex-direction:column}
+.monitor-chat .youtube-api-chat{display:flex;flex-direction:column;flex:1;min-height:260px;padding:0;border:0}
+[data-youtube-api]{display:flex;flex-direction:column;flex:1;min-height:0}
+[data-youtube-api] .youtube-api-messages{flex:1;min-height:180px;max-height:none;overflow-y:auto;background:#0e0c14;border:1px solid var(--line);border-radius:9px;padding:10px}
+[data-youtube-web]{margin-top:10px;font-size:12px}
+[data-youtube-web] summary{cursor:pointer;color:var(--muted)}
+[data-youtube-web][open] .monitor-slot{height:280px!important;min-height:280px!important;flex:none!important}
+[data-prepare-result]{margin-top:16px}
+[data-prepare-result] button{display:block;margin-top:12px}

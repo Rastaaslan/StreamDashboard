@@ -1,3 +1,4 @@
+import type { YouTubePreparationService } from '../../../integrations/youtube/src/preparation.js';
 import type { WizeBotService } from './wizebot-service.js';
 import type express from 'express';
 import type { ControlService } from './control-service.js';
@@ -5,7 +6,7 @@ import type { YouTubeClient } from '../../../integrations/youtube/src/client.js'
 import type { ObsClient } from '../../../integrations/obs/src/client.js';
 
 export function registerControlRoutes(options: {
-  app: express.Application; control: ControlService; wizebotCommands: WizeBotService; youtube: YouTubeClient; obs: ObsClient;
+  app: express.Application; control: ControlService; wizebotCommands: WizeBotService; youtube: YouTubeClient; youtubePreparation?: YouTubePreparationService; obs: ObsClient;
   timerSource(): string | undefined; state(): unknown; settings: express.RequestHandler; planningCreate: express.RequestHandler; planningUpdate: express.RequestHandler; planningDelete: express.RequestHandler; recurrence: express.RequestHandler;
   observe(): Promise<void>;
   isLocal(req: express.Request): boolean; port(): number;
@@ -54,6 +55,15 @@ export function registerControlRoutes(options: {
   app.get('/api/v2/youtube',async(_req,res,next)=>{try{res.json(await youtube.status());}catch(e){next(e);}});
   app.get('/api/v2/youtube/chat',async(req,res,next)=>{try{res.json(await youtube.readChat(typeof req.query.broadcastId==='string'?req.query.broadcastId:undefined));}catch(e){next(e);}});
   app.get('/api/v2/youtube/broadcasts',async(_req,res,next)=>{try{res.json({items:await youtube.broadcasts()});}catch(e){next(e);}});
+  app.get('/api/v2/youtube/streams',async(_req,res,next)=>{try{res.json({items:await youtube.streams()});}catch(e){next(e);}});
+  app.post('/api/v2/youtube/prepare',async(req,res,next)=>{try{
+    if(!options.youtubePreparation)throw new Error('Préparation YouTube indisponible sur cet hôte.');
+    const guard=async()=>{
+      res.locals.checkDevicePermission?.('metadata.apply');await res.locals.checkDeviceRole?.('metadata.apply');
+      if(req.body.expectedRevision!==control.snapshot().configuration.revision)throw new Error('La configuration a changé. Actualisez avant de préparer une diffusion.');
+    };
+    res.json(await options.youtubePreparation.prepare(req.body,guard));
+  }catch(e){next(e);}});
   app.get('/api/v2/youtube/channels',async(_req,res,next)=>{try{res.json({items:await youtube.authorizedChannels()});}catch(e){next(e);}});
   app.get('/api/v2/youtube/metadata',async(_req,res,next)=>{try{res.json(await youtube.readMetadata());}catch(e){next(e);}});
   app.post('/api/v2/youtube/connect',(_req,res,next)=>{try{res.json(youtube.authorize(`http://127.0.0.1:${options.port()}/api/v2/youtube/callback`));}catch(e){next(e);}});
