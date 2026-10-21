@@ -25,4 +25,6 @@ Cette preuve concerne une version de travail Next 2.1. Elle ne ferme aucune qual
 
 La création du certificat par le moteur Windows et sa réimportation PFX en mémoire ont réussi sur FIXE après correction de la construction de la clé RSA : `2026-10-21-windows-certificate.json`. Aucun certificat racine, profil stable, processus OBS ou installation stable n’a été modifié.
 
-Restent à vérifier matériellement : association Windows ↔ Windows et Android ↔ Windows, refus d’un certificat remplacé sur les appareils, interruption d’un transfert audio, sessions web sur téléphone, veille/reprise et changement de réseau. Le test JVM Android et la compilation APK ne remplacent pas un essai sur téléphone.
+L’association TLS a ensuite réussi dans les deux sens entre FIXE et Laptop-damien avec les vrais clients empaquetés, refus préalable d’une mauvaise empreinte, fermeture de fenêtre, interruption d’un agent puis redémarrage des deux candidats. Les empreintes, identités et associations sont conservées ; les lectures authentifiées reprennent. Les deux processus stables sont préservés et les ports temporaires libérés. Voir `2026-10-21-two-pc-tls.json`.
+
+Restent à vérifier matériellement : association Android ↔ Windows, rotation réelle du certificat d’un agent, interruption d’un transfert audio, sessions web sur téléphone, veille/reprise et changement de réseau. Le test JVM Android et la compilation APK ne remplacent pas un essai sur téléphone.

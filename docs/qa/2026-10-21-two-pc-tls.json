@@ -1,0 +1,38 @@
+{
+  "date": "2026-10-21",
+  "commit": "10ce5f3282e9aa4a1d3d542a7b5db35d74d7efee",
+  "windowsPackageSha256": "37448707a6c4e7b4ba38334b5faf29216e5688217410697f7aedb681ca5badfe",
+  "devices": ["FIXE", "Laptop-damien"],
+  "environment": "Two real Windows PCs, isolated temporary profiles, Tailscale network, real packaged Electron clients and native secure storage",
+  "passed": true,
+  "checks": {
+    "certificateGeneratedAndStoredOnBothPcs": true,
+    "wrongFingerprintRejectedBothDirections": true,
+    "oneTimePairingBothDirections": true,
+    "authenticatedPhysicalIdentityBothDirections": true,
+    "executorWindowCloseKeepsHttpsAvailable": true,
+    "executorInterruptionReportedUnavailable": true,
+    "executorRestartKeepsFingerprintAndAssociation": true,
+    "controllerRestartKeepsFingerprintAndCredential": true,
+    "authenticatedReadsResumeBothDirections": true,
+    "candidatePortsReleasedBothPcs": true,
+    "stableProcessesPreservedBothPcs": true
+  },
+  "constraints": {
+    "obsRoleDisabled": true,
+    "candidateGlobalShortcutsClearedBeforeOpeningWindows": true,
+    "noObsProcessStopped": true,
+    "noLiveOrChatMessageTriggered": true,
+    "noFirewallRuleChanged": true,
+    "noRootCertificateInstalled": true,
+    "temporaryPairingFilesDeleted": true,
+    "transferServerStopped": true
+  },
+  "harness": "scripts/qa-tls-agent.ps1",
+  "limits": [
+    "Android hardware pairing remains untested",
+    "This checks device interruption, not a physical Wi-Fi or Ethernet outage",
+    "It does not qualify all setup transitions, remote audio playback, real-account sessions or final distribution",
+    "Candidate interruption is deliberate; graceful shutdown is covered separately by Electron tests"
+  ]
+}

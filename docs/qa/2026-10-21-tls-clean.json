@@ -1,0 +1,18 @@
+{
+  "commit": "10ce5f3282e9aa4a1d3d542a7b5db35d74d7efee",
+  "qualification": "Automated checks on an isolated checkout; universal hardware qualification remains open",
+  "passed": true,
+  "vitest": 1430,
+  "node": 275,
+  "browser": 80,
+  "androidJvm": 42,
+  "electron": 4,
+  "typescript": true,
+  "androidLintAndDebugBuild": true,
+  "windowsX64Package": true,
+  "security": true,
+  "shippedJavascript": true,
+  "windowsZipSha256": "37448707a6c4e7b4ba38334b5faf29216e5688217410697f7aedb681ca5badfe",
+  "androidDebugApkSha256": "6a9650c0c45ef43027b9f41ac3b0983a0007076b2ac8d36cfa1b94cbb8f7eeec",
+  "logs": "/home/damien/StreamDashboard-Next-universal-qa-20261021/tls-clean.log"
+}
