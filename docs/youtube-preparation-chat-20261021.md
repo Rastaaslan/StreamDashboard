@@ -14,7 +14,7 @@ Les routes `/api/v2/youtube/streams` (GET) et `/api/v2/youtube/prepare` (POST) u
 
 ## Chat YouTube
 
-Diagnostic de l’installation en cours, en lecture seule : diffusion active et API connectée ; le panneau web YouTube séparé affichait « Something went wrong ». L’origine exacte du refus à l’intérieur de la page YouTube n’a pas été déterminée.
+Diagnostic de l’installation en cours, en lecture seule : diffusion active et API connectée ; le panneau web YouTube séparé affichait « Something went wrong ». L’utilisateur a ensuite confirmé que le live était privé par défaut : cette visibilité était la cause du problème du panneau web dans ce cas.
 
 La lecture API est maintenant l’affichage principal et indique explicitement l’absence de messages. Le chat web devient un panneau facultatif, fermé et non chargé au départ. Le bouton d’actualisation relit aussi l’API en respectant la temporisation du lecteur. Les liens vers le navigateur restent disponibles pour écrire et modérer.
 

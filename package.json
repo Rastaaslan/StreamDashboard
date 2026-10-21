@@ -1,7 +1,7 @@
 {
   "name": "stream-dashboard",
   "productName": "StreamDashboard Next",
-  "version": "2.1.0-alpha.1",
+  "version": "2.1.0-alpha.2",
   "description": "Cockpit desktop Windows pour OBS, Twitch, Google Calendar et télécommande LAN",
   "author": "Rastaaslan",
   "repository": "https://github.com/Rastaaslan/StreamDashboard",
