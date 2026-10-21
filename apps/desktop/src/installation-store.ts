@@ -1,6 +1,7 @@
 import { mkdir, open, readFile, rename, unlink } from 'node:fs/promises';
 import path from 'node:path';
 import { randomUUID } from 'node:crypto';
+import {ensureRc117Backup} from './migration-backup.js';
 import { migrateInstallation, planInstallationChange, installationRequiresRestart, validateInstallation, type Installation, type InstallationChanges, type InstallationPlan } from '../../mobile/shared/installation.js';
 
 type Transition = { version: 1; before: Installation; next: Installation; backupBefore: Installation | null };
@@ -34,6 +35,7 @@ export class InstallationStore {
     let legacy: {name?:string;role?:string;configured?:boolean} = {role:this.initialRole};
     const previous = await this.optional(path.join(this.directory, 'device-role.json'));
     if (previous !== undefined) legacy = { ...previous as typeof legacy, configured: true };
+    await ensureRc117Backup(this.directory);
     const value = migrateInstallation({ id: randomUUID(), platform: 'windows', legacy });
     await this.atomic(this.file, value);
     return value;

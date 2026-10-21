@@ -1,5 +1,6 @@
-import { SETUPS, ROLES, associateInstallationDevice, migrateInstallation, createInstallationStore, planInstallationChange } from '../shared/installation.js';
+import { SETUPS, ROLES, associateInstallationDevice, migrateInstallation, createInstallationStore, planInstallationChange,installationBackup } from '../shared/installation.js';
 import { randomUuid } from '../shared/planning-engine.js';
+import {exportJSON} from './export-json.js';
 
 export async function createInstallationUI({ device, native, localEndpoint = '', desktop = globalThis.streamDashboardDesktop, storage = localStorage, modal, esc, changed, select, remove, viewers }) {
   let id = storage.getItem('sd2.installation.device-id');
@@ -27,7 +28,8 @@ export async function createInstallationUI({ device, native, localEndpoint = '',
       <h3>Appareils connus</h3>${current.devices.map(d=>`<section><p><b>${esc(d.name)}</b> · ${esc(d.platform)} · ${d.enabled?'actif dans la configuration':'retiré'}<br><small>${esc(d.roles.map(r=>ROLES[r]).join(', '))}${d.endpoint?' · '+esc(d.endpoint):''}</small></p>${d.id===current.localDeviceId&&localEndpoint?`<button type="button" class="secondary" data-task="installation-select" data-device-id="${esc(d.id)}">Ouvrir cet appareil</button>`:''}${d.endpoint&&d.platform==='android'&&d.enabled&&viewers?`<button type="button" class="secondary" data-task="installation-viewers" data-device-id="${esc(d.id)}">Ouvrir ses écrans</button>`:''}${d.endpoint?`<button type="button" class="secondary" data-task="installation-select" data-device-id="${esc(d.id)}" ${!d.enabled?'disabled':''}>Ouvrir cet appareil</button><button type="button" class="secondary" data-task="installation-toggle" data-device-id="${esc(d.id)}">${d.enabled?'Retirer':'Réactiver'}</button>`:''}</section>`).join('')}
       <button type="button" class="secondary" data-task="connection">Associer un autre appareil</button>
       <p class="small muted">La liste décrit la configuration ; elle ne certifie pas qu’un appareil est actuellement connecté.</p>
-      <button type="button" class="secondary" data-task="installation-restore">Restaurer la configuration précédente</button>`);
+      <button type="button" class="secondary" data-task="installation-restore">Restaurer la configuration précédente</button>
+      <h3>Sauvegarde de l’installation</h3><p>Rôles, appareils et destinations. Vos contenus et connexions restent dans leurs espaces existants.</p><button type="button" class="secondary" data-task="installation-export">Exporter l’installation en JSON</button><form id="installation-import"><label>Sauvegarde de cet appareil<input name="backup" type="file" accept="application/json,.json" required></label><button>Prévisualiser la restauration du fichier</button></form>`);
   }
   function setupChanged(event) {
     if(event.target?.matches?.('#installation-form [name="preset"]') && own().platform==='windows' && ['single-pc','single-pc-deck'].includes(event.target.value)) {
@@ -36,6 +38,13 @@ export async function createInstallationUI({ device, native, localEndpoint = '',
   }
   document.addEventListener('change',setupChanged);
   async function submit(form) {
+    if(form.id==='installation-import'){
+      const file=form.elements.backup.files[0];if(!file||file.size>1024*1024)throw new Error('Fichier JSON requis, 1 Mo maximum.');
+      const document=JSON.parse(await file.text());await reload();
+      const changes={restore:document},revision=current.revision,plan=planInstallationChange(current,changes,revision);
+      pending={changes,revision};
+      modal(`<h2>Restaurer cette installation ?</h2><ul>${plan.summary.map(line=>`<li>${esc(line)}</li>`).join('')}</ul><p>Les appareils absents de la sauvegarde restent connus et sont désactivés. La configuration actuelle sera conservée pour revenir en arrière.</p><button data-task="installation-apply">Appliquer</button><button class="secondary" data-task="device-setup">Annuler</button>`);return true;
+    }
     if (form.id !== 'installation-form') return false;
     const values = Object.fromEntries(new FormData(form));
     const changes = { name:values.name, preset:values.preset, roles:Object.keys(ROLES).filter(r=>values['role-'+r]), background:desktop?Boolean(values.background):false, startAtLogin:desktop?Boolean(values.startAtLogin):false };
@@ -45,6 +54,9 @@ export async function createInstallationUI({ device, native, localEndpoint = '',
     return true;
   }
   async function task(name,button) {
+    if(name==='installation-export'){
+      await reload();await exportJSON(installationBackup(current),'StreamDashboard-installation.json');return true;
+    }
     if(name==='installation-viewers'){await reload();const target=current.devices.find(d=>d.id===button?.dataset.deviceId);if(!target?.enabled||target.platform!=='android'||!target.endpoint||!viewers)throw new Error('Android associé indisponible.');await viewers(target);return true;}
     if (['installation-select','installation-toggle'].includes(name)) {
       await reload();

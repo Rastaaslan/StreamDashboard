@@ -1,0 +1,54 @@
+{
+  "date": "2026-10-21",
+  "scope": "isolated copies of real Windows RC11.7 configurations",
+  "stableProcessesPreserved": true,
+  "results": [
+    {
+      "date": "2026-10-21T14:11:39.425Z",
+      "machine": "FIXE",
+      "scope": "configuration-copy-and-topology-migration",
+      "directory": "C:\\Users\\damie\\AppData\\Local\\Temp\\streamdashboard-rc117-audit-5xYq7R",
+      "files": 12,
+      "bytes": 601949,
+      "runtimeProfile": "root",
+      "identityPersistent": true,
+      "rolesRoundTrip": true,
+      "originalsUnchanged": false,
+      "copyUnchanged": true,
+      "backupExact": true,
+      "passed": false,
+      "externalEffects": false,
+      "limits": [
+        "No Electron/browser database migration or authenticated provider startup",
+        "No live, OBS command or real chat effect",
+        "No complete hardware topology qualification"
+      ]
+    },
+    {
+      "date": "2026-10-21T14:11:43.142Z",
+      "machine": "Laptop-damien",
+      "scope": "configuration-copy-and-topology-migration",
+      "directory": "C:\\Users\\damie\\AppData\\Local\\Temp\\streamdashboard-rc117-audit-kBC2qK",
+      "files": 9,
+      "bytes": 7282,
+      "runtimeProfile": "device-runtime",
+      "identityPersistent": true,
+      "rolesRoundTrip": true,
+      "originalsUnchanged": true,
+      "copyUnchanged": true,
+      "backupExact": true,
+      "passed": true,
+      "externalEffects": false,
+      "limits": [
+        "No Electron/browser database migration or authenticated provider startup",
+        "No live, OBS command or real chat effect",
+        "No complete hardware topology qualification"
+      ]
+    }
+  ],
+  "interpretation": {
+    "FIXE": "Partial: source profile changed while the existing application was running. The audit only reads the source; migration and backup checks passed on the isolated copy. No consistent live snapshot is claimed.",
+    "Laptop": "Passed for byte-preserving configuration checkpoint and topology role roundtrip on the isolated copy.",
+    "hardwareQualificationComplete": false
+  }
+}

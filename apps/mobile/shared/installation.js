@@ -94,6 +94,13 @@ export function planInstallationChange(current, changes, expectedRevision) {
   const before = validateInstallation(current);
   if (expectedRevision !== before.revision) fail('Installation modifiée ailleurs. Actualisez avant de réessayer.');
   const next = copy(before), local = next.devices.find(d => d.id === next.localDeviceId);
+  if(changes.restore){
+    if(Object.keys(changes).length!==1)fail('Prévisualisez la restauration séparément des autres changements.');
+    const saved=readInstallationBackup(changes.restore,before);
+    Object.assign(next,{preset:saved.preset,background:saved.background,startAtLogin:saved.startAtLogin||false,routes:copy(saved.routes),actionRoutes:copy(saved.actionRoutes||[])});
+    // Devices learned since the backup remain recorded, disabled and reversible.
+    next.devices=[...saved.devices.map(device=>({...before.devices.find(old=>old.id===device.id),...copy(device)})),...before.devices.filter(device=>!saved.devices.some(old=>old.id===device.id)).map(device=>({...device,enabled:false}))];
+  }
   if (changes.preset !== undefined) next.preset = changes.preset;
   if (changes.name !== undefined) local.name = String(changes.name).trim();
   if (changes.roles !== undefined) local.roles = copy(changes.roles);
@@ -123,11 +130,31 @@ export function planInstallationChange(current, changes, expectedRevision) {
   const restart = installationRequiresRestart(before, next);
   return { next: validateInstallation(next), restart, summary: [
     `Installation : ${SETUPS[next.preset]}`,
-    `Cet appareil : ${local.name} · ${local.roles.map(r => ROLES[r]).join(', ') || 'aucun rôle'}`,
+    `Cet appareil : ${next.devices.find(d=>d.id===next.localDeviceId).name} · ${next.devices.find(d=>d.id===next.localDeviceId).roles.map(r => ROLES[r]).join(', ') || 'aucun rôle'}`,
     restart ? 'Redémarrage de l’application nécessaire après vérification d’OBS.' : 'Application des réglages sans redémarrage.',
     next.startAtLogin ? 'L’agent démarrera sans fenêtre à l’ouverture de votre session Windows.' : 'Démarrage automatique désactivé.',
     'Les données, comptes et associations existants sont conservés.',
+    ...Object.entries(next.routes).flatMap(([capability,id])=>{const target=next.devices.find(d=>d.id===id);return target&&(!target.enabled||!deviceRoleAvailable(target,capability))?[`${capability} indisponible : ${target.name} ou son rôle est désactivé.`]:[];}),
   ] };
+}
+
+/** Portable topology document, intentionally excluding tokens, pins, cookies
+ * and runtime state. Restoring it still goes through the normal revision gate. */
+export function installationBackup(current,now=()=>new Date().toISOString()){
+ const value=validateInstallation(current);
+ const actionRoutes=(value.actionRoutes||[]).map(route=>{const action=route.definition;return {workspace:route.workspace,actionId:route.actionId,deviceId:route.deviceId,definition:{id:action.id,type:action.type,value:action.value,label:String(action.label||''),color:String(action.color||''),shortcut:String(action.shortcut||''),...(action.wizebot?{wizebot:{channel:action.wizebot.channel||'',id:action.wizebot.id||''}}:{})}};});
+ const installation={version:2,revision:value.revision,localDeviceId:value.localDeviceId,preset:value.preset,runtimeProfile:value.runtimeProfile,configured:value.configured,background:value.background,startAtLogin:value.startAtLogin||false,routes:copy(value.routes),actionRoutes,devices:value.devices.map(device=>({...publicInstallationDevice({...device,enabled:true}),enabled:device.enabled,...(device.endpoint?{endpoint:device.endpoint}:{})}))};
+ return {format:'StreamDashboard-installation',version:1,savedAt:now(),installation};
+}
+export function readInstallationBackup(document,current){
+ if(document?.format!=='StreamDashboard-installation'||document.version!==1)fail('Fichier de sauvegarde d’installation incompatible.');
+ const saved=validateInstallation(document.installation);
+ if(saved.localDeviceId!==current.localDeviceId||saved.runtimeProfile!==current.runtimeProfile)fail('Cette sauvegarde appartient à un autre appareil. Associez cet appareil pour transférer les responsabilités.');
+ const own=saved.devices.find(device=>device.id===saved.localDeviceId),actual=current.devices.find(device=>device.id===current.localDeviceId);
+ if(own.platform!==actual.platform||JSON.stringify([...own.capabilities].sort())!==JSON.stringify([...actual.capabilities].sort()))fail('Les capacités locales de cette sauvegarde ne correspondent pas à cet appareil.');
+ // Recreate from the public topology shape, ignoring private or future fields
+ // supplied by a file. Existing local extension fields remain in current.
+ return installationBackup(saved).installation;
 }
 export function resolveCapability(installation, capability, observations = {}, targetId) {
   const selected = targetId || installation.routes[capability];

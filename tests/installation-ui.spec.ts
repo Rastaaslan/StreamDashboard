@@ -2,6 +2,7 @@ import {test,expect} from '@playwright/test';
 import express from 'express';
 import path from 'node:path';
 import type {Server} from 'node:http';
+import {readFile} from 'node:fs/promises';
 let server:Server,origin:string;
 test.beforeAll(async()=>{
  const app=express();app.use('/mobile',express.static(path.resolve('apps/mobile')));
@@ -36,6 +37,15 @@ for(const preset of ['single-pc','single-pc-deck','dual-pc','dual-pc-deck','andr
   await page.getByRole('button',{name:'Restaurer la configuration précédente'}).click();
   await expect.poll(()=>page.evaluate(()=>(window as any).saved?.revision)).toBe(2);
   expect(await page.evaluate(()=>(window as any).saved.devices[0].name)).toBe('Before');
+  await page.evaluate(()=>(window as any).ui.open());
+  const downloaded=page.waitForEvent('download');await page.getByRole('button',{name:'Exporter l’installation en JSON'}).click();
+  const file=await downloaded,backup=JSON.parse(await readFile((await file.path())!,'utf8'));
+  expect(backup.format).toBe('StreamDashboard-installation');backup.installation.devices.find((d:any)=>d.id===backup.installation.localDeviceId).name='From file';
+  await page.locator('#installation-import input').setInputFiles({name:'installation.json',mimeType:'application/json',buffer:Buffer.from(JSON.stringify(backup))});
+  await page.getByRole('button',{name:'Prévisualiser la restauration du fichier'}).click();
+  expect(await page.evaluate(()=>(window as any).saved.devices[0].name)).toBe('Before');
+  await expect(page.locator('#root')).toContainText('From file');await page.getByRole('button',{name:'Appliquer',exact:true}).click();
+  await expect.poll(()=>page.evaluate(()=>(window as any).saved.devices[0].name)).toBe('From file');
  });
 }
 test('discovered names are escaped and selecting a LAN hint only fills an address without granting trust',async({page})=>{

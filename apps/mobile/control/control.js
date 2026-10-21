@@ -1,6 +1,7 @@
 import {createDeviceExecutor, createExecutorBridge} from './device-executor.js';
 import {uploadSound} from './sound-transfer.js';
 import {createDiscoveryUI} from './discovery-ui.js';
+import {exportJSON} from './export-json.js';
 import {createPeerRequest, fingerprint} from './peer-request.js';
 import { createDevicePermissionsUI } from './device-permissions-ui.js';
 import { createActionRouter } from './action-routing.js';
@@ -594,7 +595,7 @@ async function task(name,b){
 
  if(name==='sync-status'){syncDialog();return;}
  if(name==='sync-now'){await refresh();syncDialog();return;}
- if(name==='sync-export'){const blob=new Blob([JSON.stringify(autonomy?.store.record,null,2)],{type:'application/json'}),url=URL.createObjectURL(blob),link=document.createElement('a');link.href=url;link.download='StreamDashboard-copie-locale.json';link.click();setTimeout(()=>URL.revokeObjectURL(url),1000);return;}
+ if(name==='sync-export'){await exportJSON(autonomy?.store.record,'StreamDashboard-copie-locale.json');return;}
  if(!data)throw new Error('Connectez la régie.');
  if(name==='metadata'){metadataDialog();return;}
  if(name==='refresh-live'){await refresh(true);return;}

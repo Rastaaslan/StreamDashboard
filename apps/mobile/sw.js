@@ -1,4 +1,4 @@
-const CACHE = 'streamdashboard-mobile-v34-lan-discovery';
+const CACHE = 'streamdashboard-mobile-v35-installation-backup';
 const PATHS = new Set([
   '/mobile/',
   '/mobile/index.html',
@@ -42,6 +42,7 @@ const PATHS = new Set([
   '/mobile/control/device-executor.js',
   '/mobile/control/sound-transfer.js',
   '/mobile/control/discovery-ui.js',
+  '/mobile/control/export-json.js',
   '/mobile/control/sound-transfer-store.js','/mobile/control/executor-sync.js',
   '/mobile/control/installation-ui.js',
   '/mobile/shared/installation.js',
@@ -120,6 +121,7 @@ const ASSETS = [
   'control/device-executor.js',
   'control/sound-transfer.js',
   'control/discovery-ui.js',
+  'control/export-json.js',
   'control/sound-transfer-store.js','control/executor-sync.js',
   'control/installation-ui.js',
   'shared/installation.js',

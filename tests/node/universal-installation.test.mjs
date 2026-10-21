@@ -1,9 +1,26 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { SETUPS, migrateInstallation, validateInstallation, planInstallationChange, resolveCapability, createInstallationStore } from '../../apps/mobile/shared/installation.js';
+import { SETUPS, migrateInstallation, validateInstallation, planInstallationChange, resolveCapability, createInstallationStore,installationBackup } from '../../apps/mobile/shared/installation.js';
 
 const create = (platform='windows',role='stream',pairedEndpoint='') => migrateInstallation({id:'device-1',platform,legacy:{name:'Test',role,configured:true},pairedEndpoint});
 const memory = () => { const map = new Map(); return {getItem:key=>map.get(key)??null,setItem:(key,value)=>map.set(key,value),map}; };
+test('versioned installation backups restore roles with revision checks and retain devices added later',async()=>{
+ const initial=create('windows','control'),saved=installationBackup(initial);initial.future={retained:true};
+ const storage=memory(),store=createInstallationStore(storage,()=>initial,work=>work());
+ let next=(await store.change({roles:['controller','obs-executor'],device:{id:'phone',name:'Phone',platform:'android',roles:['audio'],capabilities:['audio'],enabled:true,endpoint:'https://192.168.1.3:48136'}},0)).next;
+ const plan=await store.change({restore:saved},next.revision);next=plan.next;
+ assert.equal(plan.restart,true);assert.equal(next.devices[0].roles.includes('obs-executor'),false);assert.equal(next.devices[1].id,'phone');assert.equal(next.devices[1].enabled,false);assert.deepEqual(next.future,{retained:true});
+ assert.equal((await store.restore(next.revision)).devices[1].enabled,true);
+ await assert.rejects(store.change({restore:saved},0),/modifiée ailleurs/);
+ const foreign=structuredClone(saved);foreign.installation.localDeviceId='phone';assert.throws(()=>planInstallationChange(next,{restore:foreign},next.revision));
+ assert.throws(()=>planInstallationChange(next,{restore:saved,name:'mixed'},next.revision),/séparément/);
+});
+test('installation export omits private extension fields and prevents hardware identity replacement',()=>{
+ const initial=create();initial.privateCredential='not-exported';initial.devices[0].futureToken='not-exported';
+ initial.actionRoutes=[{workspace:'local:test',actionId:'a',deviceId:initial.localDeviceId,definition:{id:'sound',type:'sound.stop',value:'',secret:'not-exported'}}];
+ const saved=installationBackup(initial);assert.equal(JSON.stringify(saved).includes('not-exported'),false);
+ saved.installation.devices[0].capabilities=['obs'];assert.throws(()=>planInstallationChange(initial,{restore:saved},0),/capacités|capacité/);
+});
 for (const preset of Object.keys(SETUPS)) {
   test(`${preset}: common model, services, OBS absence and reconnect`, () => {
     const android=preset==='android-only', base=create(android?'android':'windows',android?'mobile':'stream');

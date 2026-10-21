@@ -5,6 +5,12 @@ import org.junit.Test;
 
 public class FileSelectionPolicyTest {
   private final String app="com.rastaaslan.streamdashboard.remote.next";
+  @Test public void distinguishesAudioImportsFromJsonBackups(){
+    assertEquals("audio/*",FileSelectionPolicy.mimeType(new String[]{"audio/wav,audio/mpeg"}));
+    assertEquals("application/json",FileSelectionPolicy.mimeType(new String[]{"application/json,.json"}));
+    assertEquals("application/json",FileSelectionPolicy.mimeType(new String[]{".json"}));
+    assertEquals("audio/*",FileSelectionPolicy.mimeType(null));
+  }
   @Test public void allowsDocumentProviders(){
     assertTrue(FileSelectionPolicy.accepts("content://com.android.providers.media.documents/document/audio%3A42",app));
     assertTrue(FileSelectionPolicy.accepts("content://com.android.externalstorage.documents/document/primary%3ADownload%2Fsound.mp3",app));

@@ -1177,7 +1177,8 @@
         "tests/installation-store.test.ts",
         "docs/qa/2026-10-21-transversal-modules.md",
         "docs/qa/2026-10-21-execution-recovery.md",
-        "docs/qa/2026-10-21-workspace-identity.md"
+        "docs/qa/2026-10-21-workspace-identity.md",
+        "docs/qa/2026-10-21-lan-discovery.md"
       ]
     },
     {
@@ -1203,7 +1204,8 @@
         "tests/installation-store.test.ts",
         "docs/qa/2026-10-21-transversal-modules.md",
         "docs/qa/2026-10-21-execution-recovery.md",
-        "docs/qa/2026-10-21-workspace-identity.md"
+        "docs/qa/2026-10-21-workspace-identity.md",
+        "docs/qa/2026-10-21-lan-discovery.md"
       ]
     },
     {
@@ -1229,7 +1231,10 @@
         "tests/installation-store.test.ts",
         "docs/qa/2026-10-21-transversal-modules.md",
         "docs/qa/2026-10-21-execution-recovery.md",
-        "tests/desktop-lifecycle.test.ts"
+        "tests/desktop-lifecycle.test.ts",
+        "docs/qa/2026-10-21-installation-backups.md",
+        "tests/migration-backup.test.ts",
+        "docs/qa/2026-10-21-rc117-copies.json"
       ]
     },
     {
@@ -1243,7 +1248,10 @@
         "docs/qa/2026-10-21-transversal-modules.md",
         "docs/qa/2026-10-21-execution-recovery.md",
         "docs/qa/2026-10-21-workspace-identity.md",
-        "tests/desktop-lifecycle.test.ts"
+        "tests/desktop-lifecycle.test.ts",
+        "docs/qa/2026-10-21-installation-backups.md",
+        "tests/migration-backup.test.ts",
+        "docs/qa/2026-10-21-rc117-copies.json"
       ]
     },
     {
@@ -1256,7 +1264,10 @@
         "tests/installation-store.test.ts",
         "docs/qa/2026-10-21-transversal-modules.md",
         "docs/qa/2026-10-21-execution-recovery.md",
-        "docs/qa/2026-10-21-workspace-identity.md"
+        "docs/qa/2026-10-21-workspace-identity.md",
+        "docs/qa/2026-10-21-installation-backups.md",
+        "tests/migration-backup.test.ts",
+        "docs/qa/2026-10-21-rc117-copies.json"
       ]
     }
   ]

@@ -3,7 +3,7 @@ export interface ActionRoute { workspace:string; actionId:string; deviceId:strin
 export type DeviceRole = 'controller' | 'obs-executor' | 'display' | 'services' | 'audio';
 export interface InstallationDevice { id: string; name: string; platform: 'windows'|'android'|'browser'; roles: DeviceRole[]; capabilities: string[]; enabled: boolean; endpoint?: string }
 export interface Installation { version: 2; revision: number; localDeviceId: string; preset: string; runtimeProfile: 'root'|'device-runtime'|'native'|'browser'; configured: boolean; background: boolean; startAtLogin?: boolean; devices: InstallationDevice[]; actionRoutes?: ActionRoute[]; routes: Record<string,string>; [key:string]: unknown }
-export interface InstallationChanges { preset?: string; name?: string; roles?: DeviceRole[]; background?: boolean; startAtLogin?: boolean; routes?: Record<string,string>; actionRoutes?: ActionRoute[]; device?: InstallationDevice; disableDeviceId?: string }
+export interface InstallationChanges { restore?: unknown; preset?: string; name?: string; roles?: DeviceRole[]; background?: boolean; startAtLogin?: boolean; routes?: Record<string,string>; actionRoutes?: ActionRoute[]; device?: InstallationDevice; disableDeviceId?: string }
 export interface InstallationPlan { next: Installation; restart: boolean; summary: string[] }
 export const SETUPS: Readonly<Record<string,string>>;
 export const ROLES: Readonly<Record<DeviceRole,string>>;
@@ -19,3 +19,5 @@ export function resolveCapability(installation: Installation, capability: string
 
 export function publicInstallationDevice(device: InstallationDevice): InstallationDevice;
 export function associateInstallationDevice(current: Installation, endpoint: string, advertised?: InstallationDevice): InstallationChanges;
+export function installationBackup(current:Installation,now?:()=>string):{format:string;version:number;savedAt:string;installation:Installation};
+export function readInstallationBackup(document:unknown,current:Installation):Installation;

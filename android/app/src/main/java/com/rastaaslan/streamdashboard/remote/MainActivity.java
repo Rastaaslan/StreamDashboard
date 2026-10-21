@@ -108,7 +108,7 @@ public class MainActivity extends Activity {
         if(fileSelection!=null)fileSelection.onReceiveValue(null);
         fileSelection=callback;
         try{
-          Intent choose=new Intent(Intent.ACTION_OPEN_DOCUMENT).addCategory(Intent.CATEGORY_OPENABLE).setType("audio/*").putExtra(Intent.EXTRA_ALLOW_MULTIPLE,false);
+          Intent choose=new Intent(Intent.ACTION_OPEN_DOCUMENT).addCategory(Intent.CATEGORY_OPENABLE).setType(FileSelectionPolicy.mimeType(params.getAcceptTypes())).putExtra(Intent.EXTRA_ALLOW_MULTIPLE,false);
           startActivityForResult(choose,AUDIO_FILE_REQUEST);
         }catch(Exception error){fileSelection=null;callback.onReceiveValue(null);}
         return true;
@@ -349,6 +349,22 @@ public class MainActivity extends Activity {
         .setContentIntent(pending);
       NotificationManager manager = (NotificationManager)getSystemService(NOTIFICATION_SERVICE);
       if (manager != null) manager.notify(safeId.hashCode() & 0x7fffffff, notification.build());
+    }
+    @JavascriptInterface public String shareDocument(String text,String requestedName){
+      if(text==null||text.length()>8*1024*1024||requestedName==null||!requestedName.matches("[A-Za-z0-9_-]{1,80}\\.json"))return "Sauvegarde JSON invalide ou trop volumineuse.";
+      try{
+        new org.json.JSONObject(text);
+        File directory=new File(getCacheDir(),"shared/documents");if(!directory.exists()&&!directory.mkdirs())return "Cache de partage indisponible.";
+        File[] previous=directory.listFiles();if(previous!=null){java.util.Arrays.sort(previous,java.util.Comparator.comparingLong(File::lastModified));for(int index=0;index<previous.length;index++)if(previous[index].isFile()&&(index<previous.length-19||System.currentTimeMillis()-previous[index].lastModified()>86400000))previous[index].delete();}
+        File file=new File(directory,java.util.UUID.randomUUID().toString()+"-"+requestedName);
+        try(FileOutputStream output=new FileOutputStream(file)){output.write(text.getBytes(java.nio.charset.StandardCharsets.UTF_8));output.getFD().sync();}
+        Uri uri=FileProvider.getUriForFile(MainActivity.this,getPackageName()+".fileprovider",file);
+        Intent send=new Intent(Intent.ACTION_SEND).setType("application/json").putExtra(Intent.EXTRA_STREAM,uri).addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
+        send.setClipData(ClipData.newRawUri("Sauvegarde StreamDashboard",uri));
+        AtomicReference<String> error=new AtomicReference<>("");CountDownLatch launched=new CountDownLatch(1);
+        runOnUiThread(()->{try{startActivity(Intent.createChooser(send,"Enregistrer ou partager la sauvegarde"));}catch(Exception failure){error.set("Impossible d’ouvrir le partage Android.");}finally{launched.countDown();}});
+        return launched.await(3,TimeUnit.SECONDS)?error.get():"Impossible d’ouvrir le partage Android.";
+      }catch(Exception error){return "Impossible d’exporter la sauvegarde JSON.";}
     }
     @JavascriptInterface public String shareImage(String encodedPng, String requestedName, String mimeType) {
       if (!"image/png".equals(mimeType)) return "Type d’image refusé.";

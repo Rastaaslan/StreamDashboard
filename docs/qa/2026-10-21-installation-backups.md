@@ -1,0 +1,13 @@
+# Sauvegardes d’installation et checkpoint RC11.7
+
+« Mon installation » permet d’exporter un JSON versionné et de prévisualiser sa restauration. Les rôles, appareils et destinations sont rétablis via le même contrôle de révision et le même journal que les autres changements. Un changement de rôle Windows conserve le contrôle préalable d’OBS et le redémarrage nécessaire. Les appareils ajoutés depuis la sauvegarde restent connus, désactivés et réactivables. La configuration remplacée devient la sauvegarde précédente.
+
+Le document d’installation exclut les secrets, cookies et empreintes de confiance. Il restaure uniquement le même appareil et le même profil de stockage ; une copie ne peut pas remplacer l’identité matérielle locale. Les extensions locales compatibles sont conservées. Les contenus restent dans leurs espaces existants. Ce document n’est donc pas une archive complète des fichiers audio et des comptes.
+
+Sur Android, l’export utilise désormais le partage natif d’un document JSON. Le sélecteur de fichiers distingue les imports audio des sauvegardes JSON. L’application ne prétend pas que le fichier a été enregistré après une simple ouverture de la feuille de partage. Les copies JSON restent dans un cache de partage borné ; l’utilisateur choisit leur destination. L’export de la copie de synchronisation utilise également ce chemin natif.
+
+Avant la création du premier modèle universel Windows, les configurations existantes RC11.7 et les identités chiffrées sont copiées à l’identique dans `backups/rc117-before-next21`. Un manifeste contient leurs chemins, tailles et empreintes. La sauvegarde est validée comme un ensemble avant son renommage final. Une modification concurrente, un lien inattendu, un échec disque ou une sauvegarde altérée bloque la migration. Le contenu d’une sauvegarde complète n’est jamais remplacé au lancement suivant.
+
+Les bases du navigateur, sessions web et fichiers audio restent dans leurs chemins originaux : cette migration ne les déplace pas. Les secrets chiffrés ne sont pas déchiffrés lors du checkpoint et restent propres à leur compte Windows. Les fichiers incomplets de sauvegarde restent disponibles pour diagnostic.
+
+Validation automatisée : export puis import prévisualisé sur les six préréglages, conservation des appareils ajoutés, refus d’une autre identité, contrôle de révision, restauration précédente, copie exacte de champs inconnus et d’octets chiffrés, refus de corruption et de liens. Les essais sur copies des profils RC11.7 réels et la restauration matérielle complète sont suivis séparément ; une compilation ne vaut pas qualification matérielle.
