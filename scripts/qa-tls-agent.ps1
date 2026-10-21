@@ -1,5 +1,5 @@
 param(
- [Parameter(Mandatory=$true)][ValidateSet('Start','Restart','Pairing','Pair','Read','CloseWindow','Stop','Clean')][string]$Mode,
+ [Parameter(Mandatory=$true)][ValidateSet('Start','Restart','Pairing','Pair','Read','CloseWindow','Stop','Clean','ConfigurationPrepare','ConfigurationResume','ConfigurationUndo')][string]$Mode,
  [string]$Root,
  [ValidateSet('root','device-runtime')][string]$RuntimeProfile='device-runtime',
  [string]$PackageUri,
@@ -56,6 +56,10 @@ if($Mode -eq 'Start'){
  $archive=Join-Path $Root 'candidate.zip';Invoke-WebRequest -UseBasicParsing -Uri $PackageUri -OutFile $archive -TimeoutSec 120
  if((Get-FileHash -Algorithm SHA256 $archive).Hash.ToLowerInvariant() -ne $Sha256){throw 'Package checksum mismatch'}
  $package=Join-Path $Root 'package';Expand-Archive -Path $archive -DestinationPath $package
+ if(!(Test-Path (Join-Path $package 'StreamDashboard.exe'))){
+  $directories=@(Get-ChildItem -LiteralPath $package -Directory);if($directories.Count -ne 1 -or !(Test-Path (Join-Path $directories[0].FullName 'StreamDashboard.exe'))){throw 'Unexpected candidate archive layout'}
+  Get-ChildItem -LiteralPath $directories[0].FullName -Force|Move-Item -Destination $package;Remove-Item -LiteralPath $directories[0].FullName
+ }
  $profile=Join-Path $Root 'StreamDashboard-Next';$config=Join-Path $profile 'config';if($RuntimeProfile -eq 'device-runtime'){$config=Join-Path $profile 'device-runtime\config'}
  New-Item -ItemType Directory -Path $config -Force|Out-Null
  $id='qa-'+[guid]::NewGuid().ToString('N');$roles=@('controller','display','services','audio');$capabilities=@('cloud','planning','chat','viewer','audio','storage','obs','clips','global-keys');$routes=@{};foreach($name in @('cloud','planning','chat','viewer','audio','storage','global-keys')){$routes[$name]=$id}
@@ -73,7 +77,7 @@ if($Mode -in 'Start','Restart'){
  $installation=Get-Content -Raw (Join-Path $Root 'StreamDashboard-Next\installation-v2.json')|ConvertFrom-Json
  if(($installation.devices|Where-Object id -eq $installation.localDeviceId).roles -contains 'obs-executor'){throw 'OBS role is forbidden in this hardware fixture'}
  $start=[Diagnostics.ProcessStartInfo]::new();$start.FileName=$owner.executable;$start.Arguments='--qa-profile="'+$Root+'" --agent --remote-debugging-port=49139 --remote-debugging-address=127.0.0.1';$start.UseShellExecute=$false;$start.EnvironmentVariables['NODE_ENV']='test';$start.WorkingDirectory=Split-Path $owner.executable
- $candidate=[Diagnostics.Process]::Start($start);$record=Get-CimInstance Win32_Process -Filter "ProcessId=$($candidate.Id)"
+ $candidate=[Diagnostics.Process]::Start($start);$candidate.ProcessorAffinity=[IntPtr]1;$candidate.PriorityClass='BelowNormal';$record=Get-CimInstance Win32_Process -Filter "ProcessId=$($candidate.Id)"
  if($Mode -eq 'Start'){$owner.pid=$candidate.Id;$owner.created=$record.CreationDate.ToUniversalTime().ToString('o')}else{$owner.pid=$candidate.Id;$owner.created=$record.CreationDate.ToUniversalTime().ToString('o')}
  $owner|ConvertTo-Json -Depth 12|Set-Content -Encoding UTF8 (Join-Path $Root 'qa-owner.json')
  Wait-Condition {Get-NetTCPConnection -State Listen -LocalPort $owner.runtimePort -ErrorAction SilentlyContinue}
@@ -107,6 +111,42 @@ return {wrongPinRejected:true,paired:true,status:state.status,deviceId:JSON.pars
 '@
   Evaluate $expression|ConvertTo-Json -Depth 8 -Compress
  }finally{Remove-Item -LiteralPath $file -ErrorAction SilentlyContinue}
+}elseif($Mode -in 'ConfigurationPrepare','ConfigurationResume','ConfigurationUndo'){
+ $parameters=@{mode=$Mode;origin=$PeerOrigin;local=('http://127.0.0.1:'+$owner.runtimePort)}|ConvertTo-Json -Compress
+ $expression='(async()=>{const parameters='+$parameters+';'+@'
+const {openReplica}=await import('/mobile/control/autonomy-store.js');
+const {planConfigurationCopy,runConfigurationCopy}=await import('/mobile/shared/configuration-transfer.js');
+const bridge=globalThis.streamDashboardDesktop,store=await openReplica('hardware-configuration-qa');
+const request=async(origin,body)=>{
+ const route='/api/v2/autonomy'+(body?'/sync':'');
+ if(origin===parameters.local){const response=await fetch(origin+route,{method:body?'POST':'GET',headers:{'content-type':'application/json'},body:body?JSON.stringify(body):undefined});if(!response.ok)throw Error('Local candidate request failed');return response.json();}
+ const response=await bridge.requestPeer({id:crypto.randomUUID(),url:origin+route,method:body?'POST':'GET',credential:await bridge.getDeviceCredential(origin),...(body?{body:JSON.stringify(body)}:{}),timeoutMs:8000});
+ if(!response.ok||response.status!==200)throw Error('Authenticated peer request failed');return JSON.parse(response.body);
+};
+let job=store.record.drafts.hardwareConfiguration;
+const save=async next=>{await store.draft('hardwareConfiguration',next);job=next;};
+const options={snapshot:request,apply:request,save};
+if(parameters.mode==='ConfigurationPrepare'){
+ if(job)throw Error('Existing hardware job must be preserved');
+ const a=await request(parameters.local),b=await request(parameters.origin);
+ const button={id:'qa-config-'+crypto.randomUUID(),label:'QA configuration inert',type:'sound.stop',value:'',color:'red',shortcut:''};
+ const seeded=await request(parameters.local,{workspace:a.workspace,edit:{id:crypto.randomUUID(),key:'action/'+button.id,base:null,value:button,strict:true}});
+ if(seeded.receipt.status!=='applied')throw Error('Candidate fixture creation refused');
+ job={id:crypto.randomUUID(),source:parameters.local,target:parameters.origin,...planConfigurationCopy(await request(parameters.local),b),status:'pending'};
+ job.items=job.items.filter(item=>item.key==='actionSet/root');if(job.items.length!==1)throw Error('Expected one atomic button collection');
+ await save(job);let interrupted=false;
+ try{await runConfigurationCopy(job,{...options,apply:async(origin,body)=>{await request(origin,body);throw Error('QA lost acknowledgement');}});}catch(error){if(error.message!=='QA lost acknowledgement')throw error;interrupted=true;}
+ if(!interrupted||!job.items[0].attempted||job.items[0].complete)throw Error('Interruption not retained');
+ return {interrupted:true,receiptNotYetConfirmed:true,jobId:job.id};
+}
+if(!job||job.target!==parameters.origin)throw Error('Retained QA job missing');
+const undo=parameters.mode==='ConfigurationUndo';await runConfigurationCopy(job,options,undo);
+const after=await request(parameters.origin),expected=undo?job.items[0].base.items:job.items[0].after.items;
+if(JSON.stringify(after.bundle.data.configuration.actions)!==JSON.stringify(expected))throw Error('Destination configuration mismatch');
+return {status:job.status,jobId:job.id,physicalPeerConfirmed:true,exactConfiguration:true,noActionExecuted:true};
+})()
+'@
+ Evaluate $expression|ConvertTo-Json -Depth 8 -Compress
 }elseif($Mode -eq 'Read'){
  $encoded=$PeerOrigin|ConvertTo-Json -Compress
  $expression='(async()=>{const origin='+$encoded+';const bridge=globalThis.streamDashboardDesktop;const response=await bridge.requestPeer({id:crypto.randomUUID(),url:origin+"/api/v2/device",method:"GET",credential:await bridge.getDeviceCredential(origin),timeoutMs:5000});return {connected:response.ok&&response.status===200,status:response.status||null,deviceId:response.ok&&response.status===200?JSON.parse(response.body).device.id:null};})()'

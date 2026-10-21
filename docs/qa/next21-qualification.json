@@ -1190,7 +1190,11 @@
         "docs/qa/2026-10-21-workspace-identity.md",
         "docs/qa/2026-10-21-planning-ownership.md",
         "tests/planning-handoff.test.ts",
-        "tests/node/planning-handoff.test.mjs"
+        "tests/node/planning-handoff.test.mjs",
+        "docs/qa/2026-10-21-configuration-copy.md",
+        "tests/configuration-transfer.test.ts",
+        "tests/configuration-transfer-ui.spec.ts",
+        "tests/node/configuration-transfer.test.mjs"
       ]
     },
     {
@@ -1206,7 +1210,11 @@
         "docs/qa/2026-10-21-workspace-identity.md",
         "docs/qa/2026-10-21-planning-ownership.md",
         "tests/planning-handoff.test.ts",
-        "tests/node/planning-handoff.test.mjs"
+        "tests/node/planning-handoff.test.mjs",
+        "docs/qa/2026-10-21-configuration-copy.md",
+        "tests/configuration-transfer.test.ts",
+        "tests/configuration-transfer-ui.spec.ts",
+        "tests/node/configuration-transfer.test.mjs"
       ]
     },
     {
@@ -1250,7 +1258,11 @@
         "docs/qa/2026-10-21-lan-discovery.md",
         "docs/qa/2026-10-21-planning-ownership.md",
         "tests/planning-handoff.test.ts",
-        "tests/node/planning-handoff.test.mjs"
+        "tests/node/planning-handoff.test.mjs",
+        "docs/qa/2026-10-21-configuration-copy.md",
+        "tests/configuration-transfer.test.ts",
+        "tests/configuration-transfer-ui.spec.ts",
+        "tests/node/configuration-transfer.test.mjs"
       ]
     },
     {
@@ -1266,7 +1278,11 @@
         "docs/qa/2026-10-21-workspace-identity.md",
         "docs/qa/2026-10-21-planning-ownership.md",
         "tests/planning-handoff.test.ts",
-        "tests/node/planning-handoff.test.mjs"
+        "tests/node/planning-handoff.test.mjs",
+        "docs/qa/2026-10-21-configuration-copy.md",
+        "tests/configuration-transfer.test.ts",
+        "tests/configuration-transfer-ui.spec.ts",
+        "tests/node/configuration-transfer.test.mjs"
       ]
     },
     {
@@ -1302,7 +1318,11 @@
         "tests/desktop-lifecycle.test.ts",
         "docs/qa/2026-10-21-installation-backups.md",
         "tests/migration-backup.test.ts",
-        "docs/qa/2026-10-21-rc117-copies.json"
+        "docs/qa/2026-10-21-rc117-copies.json",
+        "docs/qa/2026-10-21-configuration-copy.md",
+        "tests/configuration-transfer.test.ts",
+        "tests/configuration-transfer-ui.spec.ts",
+        "tests/node/configuration-transfer.test.mjs"
       ]
     },
     {

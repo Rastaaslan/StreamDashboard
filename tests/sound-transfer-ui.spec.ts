@@ -157,3 +157,18 @@ test('library copy interface previews metadata, persists interruption and resume
  await page.getByRole('button',{name:'Reprendre',exact:true}).click();await expect(page.getByText('1 / 1 fichiers confirmés · Terminé')).toBeVisible();
  const saved=await page.evaluate(async()=>{const store=(window as any).fixture.store;await store.reload();return Object.values(store.record.drafts.soundLibraryJobs);});expect(saved).toHaveLength(1);
 });
+
+test('legacy audio acquires a verified fingerprint and can return to its original Android without replacement',async({page})=>{
+ const result=await page.evaluate(async()=>{
+  const f=(window as any).fixture,{uploadLocalSound}=await import('/mobile/control/local-sound-library.js' as string);
+  const id=await f.store.addSound(f.file,'Ancien');
+  // Reproduce the pre-fingerprint metadata, retaining the original Blob.
+  const db=await new Promise<IDBDatabase>((resolve,reject)=>{const request=indexedDB.open('streamdashboard-autonomy-v1',2);request.onsuccess=()=>resolve(request.result);request.onerror=()=>reject(request.error);});
+  await new Promise<void>((resolve,reject)=>{const tx=db.transaction('replicas','readwrite'),table=tx.objectStore('replicas'),request=table.get(f.scope);request.onsuccess=()=>{const value=request.result;delete value.localAssets[id].sha256;table.put(value,f.scope);};tx.oncomplete=()=>resolve();tx.onabort=()=>reject(tx.error);});db.close();
+  const receipt=await uploadLocalSound(f.store,{file:f.file,name:'Ancien',soundId:id,transferId:'legacy_return_fixture',expectedWorkspace:f.store.record.workspace},{id:'phone',platform:'android'},f.store.record.workspace);
+  await f.store.reload();const hash=f.store.record.localAssets[id].sha256;
+  let replacement=false;try{await uploadLocalSound(f.store,{file:new File(['different'],'other.wav'),name:'Ancien',soundId:id,transferId:'legacy_conflict_fixture',expectedWorkspace:f.store.record.workspace},{id:'phone',platform:'android'},f.store.record.workspace);}catch{replacement=true;}
+  return {receipt,hash,expected:f.spec.sha256,replacement,sounds:f.store.view().sounds.sounds,actual:await f.transfers.hashSound(await f.store.soundAsset(id))};
+ });
+ expect(result.receipt.id).toBe(result.sounds[0].id);expect(result.hash).toBe(result.expected);expect(result.actual).toBe(result.expected);expect(result.replacement).toBe(true);expect(result.sounds).toHaveLength(1);
+});

@@ -1,3 +1,4 @@
+import {configurationTransferSupport} from '../shared/configuration-transfer.js';
 import {createExecutorSync} from './executor-sync.js';
 import {openSoundTransferStore,SOUND_TRANSFER} from './sound-transfer-store.js';
 import {createLocalSoundLibrary} from './local-sound-library.js';
@@ -121,7 +122,7 @@ export async function createDeviceExecutor({bridge,installation,runtime,now=Date
  }
  const synchronize=createExecutorSync({runtime,workspace:()=> 'device:'+own().id,authorize,requireRole});
  const audioSnapshot=owner=>{const value=owner.audio.snapshot();return {...value,available:value.available!==false&&deviceRoleAvailable(own(),'audio'),executorDeviceId:own().id,outputs:[{id:'device-default',name:'Cet Android · sortie système'}],sounds:value.sounds.map(sound=>({...sound,outputId:'device-default'}))};};
- async function snapshot(){const owner=await runtime();const data=await state(false);const bundle=structuredClone(owner.owner.store.view());bundle.data=data;bundle.sounds=audioSnapshot(owner);bundle.savedAt=now();return {workspace:'device:'+own().id,bundle};}
+ async function snapshot(){const owner=await runtime();const data=await state(false);const bundle=structuredClone(owner.owner.store.view());bundle.data=data;bundle.sounds=audioSnapshot(owner);bundle.savedAt=now();return {workspace:'device:'+own().id,bundle,configurationTransfer:configurationTransferSupport('android')};}
  async function handle(request){
   try{
    const body=request.body?JSON.parse(request.body):{},path=request.path.split('?')[0];
@@ -153,7 +154,7 @@ export async function createDeviceExecutor({bridge,installation,runtime,now=Date
     const guard=()=>{if(authorize(request,'configuration').id!==caller.id)throw fault('UNAUTHORIZED','Association modifiée.',401);if(body.expectedWorkspace&&body.expectedWorkspace!=='device:'+own().id)throw fault('WORKSPACE_CHANGED','Identité de l’espace différente.');};
     try{
      const operation=path.slice('/api/v2/sounds/transfer/'.length);let receipt;
-     if(operation==='begin')receipt=await store.begin(body,caller.id,guard);
+     if(operation==='begin'){await owner.owner.store.indexSoundAsset(body.soundId,guard);receipt=await store.begin(body,caller.id,guard);}
      else if(operation==='chunk')receipt=await store.append(body.id,body.offset,body.chunk,caller.id,guard);
      else if(operation==='finish')receipt=await store.finish(body.id,caller.id,guard);
      else if(operation==='cancel')receipt=await store.cancel(body.id,caller.id,guard);

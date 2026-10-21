@@ -1,7 +1,7 @@
 import { randomUUID, createHash } from 'node:crypto';
 import { AtomicJsonStore } from './storage.js';
 import { equal, merge, safeJSON } from '../../mobile/shared/autonomy.js';
-export interface Edit { id:string; key:string; base:unknown; value:unknown }
+export interface Edit { id:string; key:string; base:unknown; value:unknown; strict?:boolean }
 interface Receipt { signature:string; status:'running'|'applied'|'conflict'|'rejected'|'uncertain'; current?:unknown; fields?:string[]; message?:string }
 interface Journal { version:1; workspace:string; receipts:Record<string,Receipt> }
 /** Durable receipts: an interrupted write is reconciled, never blindly executed again. */
@@ -11,9 +11,9 @@ export class AutonomyService {
  static async open(file:string){const store=new AtomicJsonStore<Journal>(file);const journal=await store.read({version:1,workspace:randomUUID(),receipts:{}});await store.write(journal);return new AutonomyService(store,journal);}
  get workspace(){return this.journal.workspace;}
  serial<T>(run:()=>Promise<T>):Promise<T>{const result=this.tail.then(run);this.tail=result.catch(()=>{});return result;}
- async apply(workspace:unknown,edit:Edit,read:()=>unknown,write:(value:any)=>Promise<void>){
+ async apply(workspace:unknown,edit:Edit,read:()=>unknown,write:(value:any)=>Promise<void>,statusOnly=false){
   if(workspace!==this.workspace)throw new Error('Cette régie a une identité différente. Vos modifications locales sont conservées.');
-  if(!edit||!/^[-\w]{8,100}$/.test(edit.id)||!/^\w+\/[A-Za-z0-9._:-]{1,160}$/.test(edit.key)||!safeJSON(edit.base)||!safeJSON(edit.value)||JSON.stringify(edit).length>256_000)throw new Error('Modification locale invalide.');
+  if(!edit||!/^[-\w]{8,100}$/.test(edit.id)||!/^\w+\/[A-Za-z0-9._:-]{1,160}$/.test(edit.key)||!safeJSON(edit.base)||!safeJSON(edit.value)||JSON.stringify(edit).length>256_000||(edit.strict!==undefined&&typeof edit.strict!=='boolean'))throw new Error('Modification locale invalide.');
   const signature=createHash('sha256').update(JSON.stringify(edit)).digest('hex');
   let receipt=this.journal.receipts[edit.id];
   if(receipt&&receipt.signature!==signature)throw new Error('Identifiant de modification réutilisé.');
@@ -24,7 +24,8 @@ export class AutonomyService {
    }
    return receipt;
   }
-  const current=read(),result=merge(edit.base,edit.value,current);
+  if(statusOnly)return {status:'absent' as const};
+  const current=read(),result=edit.strict&&!equal(edit.base,current)?{value:current,conflicts:['élément']}:merge(edit.base,edit.value,current);
   if(result.conflicts.length){receipt={signature,status:'conflict',current,fields:result.conflicts,message:'Modifications concurrentes.'};await this.save(edit.id,receipt);return receipt;}
   // An unchanged resource needs no execution, including deletes already applied.
   if(equal(current,result.value)){receipt={signature,status:'applied',current};await this.save(edit.id,receipt);return receipt;}

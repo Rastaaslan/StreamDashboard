@@ -65,6 +65,26 @@ export async function openReplica(scope, factory=globalThis.indexedDB){
    record.localPlanning=clone(items);
    for(const item of record.localPlanning){const link=item.providers?.twitch;if(link?.projections){const ids=[...new Set(Object.values(link.projections).map(x=>x.accountId).filter(Boolean))];if(ids.length===1)link.accountId=ids[0];}}
   });},
+  // Strict configuration edits and receipts commit together. A retry after a
+  // crash never needs to infer whether a native side effect was executed.
+  async configurationEdit(edit,signature,guard=()=>{},statusOnly=false){
+   let receipt;
+   await change(record=>{
+    guard();if(!record.workspace?.startsWith('local:'))throw new Error('Espace autonome requis.');
+    const saved=record.drafts.executorEdits||{},previous=saved[edit.id];
+    if(previous){if(previous.signature!==signature)throw new Error('Identifiant de modification réutilisé.');receipt=previous;return;}
+    if(statusOnly){receipt={status:'absent'};return;}
+    if(Object.keys(saved).length>=4096)throw new Error('Journal de configuration plein.');
+    if(containsSecret(edit))throw new Error('Les secrets restent propres à chaque appareil.');
+    const current=resources(recordView(record))[edit.key]??null;
+    if(!equal(edit.base,current))receipt={signature,status:'conflict',current,fields:['élément'],message:'Modification concurrente. Relisez la destination.'};
+    else{
+     if(!equal(current,edit.value))record.pending.push({id:newId(),key:edit.key,base:clone(current),value:clone(edit.value),createdAt:new Date().toISOString()});
+     receipt={signature,status:'applied',current:clone(edit.value)};
+    }
+    record.drafts.executorEdits={...saved,[edit.id]:clone(receipt)};
+   });return clone(receipt);
+  },
   async stage(changes,bases,requireUnchanged=false){await change(record=>{
    if(Object.values(changes).some(value=>containsSecret(value)))throw new Error('Les secrets nécessitent une connexion sécurisée à la régie ; ils ne sont pas conservés dans la copie locale.');
    if(!record.bundle)throw new Error('Une première connexion est nécessaire pour récupérer les données de cette régie.');
@@ -94,6 +114,20 @@ export async function openReplica(scope, factory=globalThis.indexedDB){
     r.onsuccess=()=>{const record=r.result;record.pending.push({id:newId(),key:'sound/'+id,base:null,value,createdAt:new Date().toISOString()});record.localAssets||={};record.localAssets[id]={name:file.name,type:file.type,size:file.size,sha256};tx.objectStore('assets').put(file,scope+'/'+id);table.put(record,scope);};
     tx.oncomplete=resolve;tx.onerror=()=>reject(tx.error);tx.onabort=()=>reject(tx.error||new Error('Import audio annulé.'));
    });current=await transact();return id;
+  },
+  // Old imports predate stored fingerprints. Their Blobs are immutable through
+  // the public catalogue APIs (deleting an entry keeps the original Blob).
+  // Index the retained bytes without replacing the file or restoring its entry.
+  async indexSoundAsset(id,guard=()=>{}){
+   await this.reload();guard();const metadata=current.localAssets?.[id],workspace=current.workspace;
+   if(!metadata||metadata.sha256)return;
+   if(!workspace?.startsWith('local:')||!recordView(current).sounds.sounds.some(sound=>sound.id===id))throw new Error('Restaurez le catalogue audio avant de vérifier son fichier.');
+   const blob=await this.soundAsset(id);if(!blob?.size||blob.size!==metadata.size||blob.size>100*1024*1024)throw new Error('Fichier audio ancien absent ou incomplet.');
+   const hash=createBinaryHash();for(let offset=0;offset<blob.size;offset+=65536){guard();hash.update(new Uint8Array(await blob.slice(offset,offset+65536).arrayBuffer()));}const sha256=hash.digest();
+   await change(record=>{
+    guard();if(record.workspace!==workspace||!equal(record.localAssets?.[id],metadata)||!recordView(record).sounds.sounds.some(sound=>sound.id===id))throw new Error('Le catalogue a changé pendant la vérification audio.');
+    record.localAssets[id]={...metadata,sha256};
+   });
   },
   async soundAsset(id){return new Promise((resolve,reject)=>{const r=db.transaction('assets').objectStore('assets').get(scope+'/'+id);r.onsuccess=()=>resolve(r.result);r.onerror=()=>reject(r.error);});},
   // Move the outbox atomically; the original local workspace remains readable.

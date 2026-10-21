@@ -4,15 +4,27 @@ import {validateProductProfile,createIdentityHash} from '../shared/planning-engi
 
 const fail=message=>{throw new Error(message);};
 const secrets=value=>value&&typeof value==='object'&&Object.entries(value).some(([key,item])=>/(?:token|secret|password|credential|authorization)/i.test(key)||secrets(item));
-const editable=new Set(['action','template','sound','profile','preferences','planning','planningTransfer']);
+const editable=new Set(['actionSet','settings','action','template','sound','profile','preferences','planning','planningTransfer']);
 export function validateExecutorEdit(edit){
- if(!edit||!/^[-\w]{8,100}$/.test(edit.id)||!/^\w+\/[A-Za-z0-9._:-]{1,160}$/.test(edit.key)||!safeJSON(edit.base)||!safeJSON(edit.value)||JSON.stringify(edit).length>256000||secrets(edit))fail('Modification invalide ou contenant un secret.');
+ if(!edit||!/^[-\w]{8,100}$/.test(edit.id)||!/^\w+\/[A-Za-z0-9._:-]{1,160}$/.test(edit.key)||!safeJSON(edit.base)||!safeJSON(edit.value)||JSON.stringify(edit).length>256000||secrets(edit)||(edit.strict!==undefined&&typeof edit.strict!=='boolean'))fail('Modification invalide ou contenant un secret.');
  const [kind,id]=edit.key.split('/');
- if(!editable.has(kind)||(['profile','preferences'].includes(kind)&&id!=='root'))fail('Configurez ce réglage directement sur Android.');
+ if(!editable.has(kind)||(['actionSet','settings','profile','preferences'].includes(kind)&&id!=='root'))fail('Configurez ce réglage directement sur Android.');
  const value=edit.value;
  if(value===null){if(!['action','template','sound','planning'].includes(kind))fail('Cette configuration ne peut pas être supprimée.');return;}
  if(!value||typeof value!=='object'||Array.isArray(value))fail('Objet attendu.');
  if(fields[kind]&&Object.keys(value).some(key=>!fields[kind].includes(key)))fail('Champ non synchronisable.');
+ if(kind==='actionSet'){
+  if(Object.keys(value).some(key=>key!=='items')||!Array.isArray(value.items)||value.items.length>1000)fail('Liste de boutons invalide.');
+  const ids=new Set(),shortcuts=new Set();
+  for(const action of value.items){
+   validateExecutorEdit({...edit,key:'action/'+action.id,value:action});
+   if(ids.has(action.id)||action.shortcut&&(!/^Control\+Alt\+Shift\+F(?:[1-9]|1\d|2[0-4])$/.test(action.shortcut)||shortcuts.has(action.shortcut)))fail('Identité ou raccourci de bouton déjà utilisé ou invalide.');
+   ids.add(action.id);if(action.shortcut)shortcuts.add(action.shortcut);
+  }
+ }
+ if(kind==='settings'){
+  if(typeof value.streamerName!=='string'||value.streamerName.length>140||typeof value.confirmStop!=='boolean'||typeof value.accent!=='string'||value.accent.length>100)fail('Réglages de présentation invalides.');
+ }
  if(kind==='action'){
   if(!actionDefinition(value)||value.id!==id||typeof value.label!=='string'||!value.label.trim()||value.label.length>100||typeof value.shortcut!=='string'||value.shortcut.length>100||Object.keys(value).some(key=>!['id','type','value','label','color','shortcut','wizebot'].includes(key)))fail('Bouton invalide.');
  }
@@ -37,6 +49,9 @@ export function createExecutorSync({runtime,workspace,authorize,requireRole}){
   const edit=body.edit,[kind,id]=edit.key.split('/'),owner=await runtime(),store=owner.owner.store;
   await store.reload();
   const signature=createIdentityHash('sha256').update(JSON.stringify(edit)).digest('hex');
+  if(edit.strict&&!['actionSet','settings','action','template','profile','preferences'].includes(kind))fail('Copie stricte indisponible pour cette ressource.');
+  if(edit.strict)return store.configurationEdit(edit,signature,()=>{authorize(request,'configuration');validateExecutorEdit(edit);},body.statusOnly===true);
+  if(body.statusOnly===true)throw new Error('La lecture d’un reçu nécessite une modification de configuration stricte.');
   if(kind==='planningTransfer')return owner.planning.adopt(edit,signature,()=>{authorize(request,'configuration');requireRole('planning');});
   const read=()=>resources(store.view())[edit.key]??null;
   let previous;

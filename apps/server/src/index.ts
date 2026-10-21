@@ -2716,9 +2716,12 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
       await invokeManagement(handler, req, '/api/v2/planning/' + id, { ...value, recurrence: value?.recurrence ?? null, expectedRevision: planningFingerprint(id), confirmRecurring: true }, value === null ? 'DELETE' : current ? 'PUT' : 'POST', id);
     } else if (kind === 'settings') {
       await invokeManagement(settingsUpdate, req, '/api/v2/settings', { ...value, expectedRevision: settingsFingerprint() }, 'PUT');
-    } else if (['action','output','youtube','preferences'].includes(kind)) {
+    } else if (['actionSet','action','output','youtube','preferences'].includes(kind)) {
       const configuration = control.snapshot().configuration;
-      if (kind === 'action') {
+      if (kind === 'actionSet') {
+        if(!value||Object.keys(value).some(key=>key!=='items')||!Array.isArray(value.items))throw new Error('Liste de boutons invalide.');
+        configuration.actions=value.items;
+      } else if (kind === 'action') {
         const index = configuration.actions.findIndex(action => action.id === id);
         if (value === null) configuration.actions = configuration.actions.filter(action => action.id !== id);
         else { if (value.id !== id) throw new Error('Identifiant de bouton invalide.'); if (index >= 0) configuration.actions[index] = value; else configuration.actions.push(value); }

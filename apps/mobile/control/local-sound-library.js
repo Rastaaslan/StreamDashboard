@@ -16,7 +16,7 @@ export async function uploadLocalSound(store,input,device,workspace,guard=()=>{}
   return await uploadSound({...input,expectedDeviceId:device.id,transport:async(path,body)=>{
    guard();if(input.expectedWorkspace!==workspace)throw new Error('Identité de l’espace local différente.');
    if(path==='/api/v2/device')return {device,observed:{soundTransfer:SOUND_TRANSFER,soundLibrary:{version:1}}};
-   if(path.endsWith('/begin'))return transfer.begin(body,'local',guard);
+   if(path.endsWith('/begin')){await store.indexSoundAsset(body.soundId,guard);return transfer.begin(body,'local',guard);}
    if(path.endsWith('/chunk'))return transfer.append(body.id,body.offset,body.chunk,'local',guard);
    if(path.endsWith('/finish'))return transfer.finish(body.id,'local',guard);
    throw new Error('Opération audio inconnue.');

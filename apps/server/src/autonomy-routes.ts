@@ -1,24 +1,25 @@
 import type express from 'express';
 import type { AutonomyService } from './autonomy-service.js';
 import { fields, resources } from '../../mobile/shared/autonomy.js';
+import {configurationTransferSupport} from '../../mobile/shared/configuration-transfer.js';
 
 export function registerAutonomyRoutes(app:express.Application, service:AutonomyService, options:{
  bundle(req:express.Request):any;
  observe():Promise<void>;
  apply(key:string,value:any,req:express.Request):Promise<void>;
 }){
- const allowed=new Set(['settings','planning','planningTransfer','action','output','youtube','preferences','profile','template','sound','automation','discord','google']);
- app.get('/api/v2/autonomy', (req,res)=>{void options.observe().catch(()=>{});res.json({workspace:service.workspace,bundle:options.bundle(req)});});
+ const allowed=new Set(['actionSet','settings','planning','planningTransfer','action','output','youtube','preferences','profile','template','sound','automation','discord','google']);
+ app.get('/api/v2/autonomy', (req,res)=>{void options.observe().catch(()=>{});res.json({workspace:service.workspace,bundle:options.bundle(req),configurationTransfer:configurationTransferSupport('windows')});});
  app.post('/api/v2/autonomy/sync',async(req,res,next)=>{
   try{
    const edit=req.body?.edit, [kind,id]=String(edit?.key||'').split('/');
-   if(!allowed.has(kind)||(['settings','youtube','preferences','profile','discord','google'].includes(kind)&&id!=='root')||(kind==='output'&&!['twitch','youtube'].includes(id)))throw new Error('Ressource non synchronisable.');
+   if(!allowed.has(kind)||(['actionSet','settings','youtube','preferences','profile','discord','google'].includes(kind)&&id!=='root')||(kind==='output'&&!['twitch','youtube'].includes(id)))throw new Error('Ressource non synchronisable.');
    if(edit.value!==null&&(!edit.value||typeof edit.value!=='object'||Array.isArray(edit.value)))throw new Error('Objet attendu.');
    if(fields[kind]&&edit.value!==null&&Object.keys(edit.value).some(k=>!fields[kind].includes(k)))throw new Error('Champ non synchronisable.');
    if(edit.value===null&&!['planning','action','template','sound','automation'].includes(kind))throw new Error('Cette configuration ne peut pas être supprimée.');
    const read=()=>kind==='planningTransfer'?options.bundle(req).data.host.planning.find((item:any)=>item.id===id)??null:resources(options.bundle(req))[edit.key]??null;
-   const receipt=await service.apply(req.body.workspace,edit,read,value=>options.apply(edit.key,value,req));
-   res.json({receipt,workspace:service.workspace,bundle:options.bundle(req)});
+   const receipt=await service.apply(req.body.workspace,edit,read,value=>options.apply(edit.key,value,req),req.body.statusOnly===true);
+   res.json({receipt,workspace:service.workspace,bundle:options.bundle(req),configurationTransfer:configurationTransferSupport('windows')});
   }catch(e){next(e);}
  });
 }

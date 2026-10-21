@@ -1,4 +1,4 @@
-const CACHE = 'streamdashboard-mobile-v37-sound-library';
+const CACHE = 'streamdashboard-mobile-v38-configuration-copy';
 const PATHS = new Set([
   '/mobile/',
   '/mobile/index.html',
@@ -45,6 +45,8 @@ const PATHS = new Set([
   '/mobile/control/sound-library-copy.js',
   '/mobile/control/sound-library-ui.js',
   '/mobile/shared/sound-library.js',
+  '/mobile/shared/configuration-transfer.js',
+  '/mobile/control/configuration-transfer-ui.js',
   '/mobile/control/discovery-ui.js',
   '/mobile/control/export-json.js',
   '/mobile/control/sound-transfer-store.js','/mobile/control/executor-sync.js',
@@ -131,6 +133,8 @@ const ASSETS = [
   'control/sound-library-copy.js',
   'control/sound-library-ui.js',
   'shared/sound-library.js',
+  'shared/configuration-transfer.js',
+  'control/configuration-transfer-ui.js',
   'control/discovery-ui.js',
   'control/export-json.js',
   'control/sound-transfer-store.js','control/executor-sync.js',
