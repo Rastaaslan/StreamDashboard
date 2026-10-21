@@ -1,7 +1,7 @@
 import { SETUPS, ROLES, associateInstallationDevice, migrateInstallation, createInstallationStore, planInstallationChange } from '../shared/installation.js';
 import { randomUuid } from '../shared/planning-engine.js';
 
-export async function createInstallationUI({ device, native, localEndpoint = '', desktop = globalThis.streamDashboardDesktop, storage = localStorage, modal, esc, changed, select, remove }) {
+export async function createInstallationUI({ device, native, localEndpoint = '', desktop = globalThis.streamDashboardDesktop, storage = localStorage, modal, esc, changed, select, remove, viewers }) {
   let id = storage.getItem('sd2.installation.device-id');
   if (!id) { id = randomUuid(); storage.setItem('sd2.installation.device-id', id); }
   const platform = native ? 'android' : desktop ? 'windows' : 'browser';
@@ -24,7 +24,7 @@ export async function createInstallationUI({ device, native, localEndpoint = '',
       ${desktop?`<label class="check"><input type="checkbox" name="background" ${current.background?'checked':''}> Garder l’agent et les macros actifs lorsque la fenêtre est fermée</label><label class="check"><input type="checkbox" name="startAtLogin" ${current.startAtLogin?'checked':''}> Démarrer l’agent sans fenêtre à l’ouverture de ma session Windows</label>`:''}
       <p class="small muted">OBS et ses clips nécessitent un ordinateur associé. Les comptes, chats, sons locaux et plannings restent propres à chaque appareil.</p>
       <button>Prévisualiser le changement</button></form>
-      <h3>Appareils connus</h3>${current.devices.map(d=>`<section><p><b>${esc(d.name)}</b> · ${esc(d.platform)} · ${d.enabled?'actif dans la configuration':'retiré'}<br><small>${esc(d.roles.map(r=>ROLES[r]).join(', '))}${d.endpoint?' · '+esc(d.endpoint):''}</small></p>${d.id===current.localDeviceId&&localEndpoint?`<button type="button" class="secondary" data-task="installation-select" data-device-id="${esc(d.id)}">Ouvrir cet appareil</button>`:''}${d.endpoint?`<button type="button" class="secondary" data-task="installation-select" data-device-id="${esc(d.id)}" ${!d.enabled?'disabled':''}>Ouvrir cet appareil</button><button type="button" class="secondary" data-task="installation-toggle" data-device-id="${esc(d.id)}">${d.enabled?'Retirer':'Réactiver'}</button>`:''}</section>`).join('')}
+      <h3>Appareils connus</h3>${current.devices.map(d=>`<section><p><b>${esc(d.name)}</b> · ${esc(d.platform)} · ${d.enabled?'actif dans la configuration':'retiré'}<br><small>${esc(d.roles.map(r=>ROLES[r]).join(', '))}${d.endpoint?' · '+esc(d.endpoint):''}</small></p>${d.id===current.localDeviceId&&localEndpoint?`<button type="button" class="secondary" data-task="installation-select" data-device-id="${esc(d.id)}">Ouvrir cet appareil</button>`:''}${d.endpoint&&d.platform==='android'&&d.enabled&&viewers?`<button type="button" class="secondary" data-task="installation-viewers" data-device-id="${esc(d.id)}">Ouvrir ses écrans</button>`:''}${d.endpoint?`<button type="button" class="secondary" data-task="installation-select" data-device-id="${esc(d.id)}" ${!d.enabled?'disabled':''}>Ouvrir cet appareil</button><button type="button" class="secondary" data-task="installation-toggle" data-device-id="${esc(d.id)}">${d.enabled?'Retirer':'Réactiver'}</button>`:''}</section>`).join('')}
       <button type="button" class="secondary" data-task="connection">Associer un autre appareil</button>
       <p class="small muted">La liste décrit la configuration ; elle ne certifie pas qu’un appareil est actuellement connecté.</p>
       <button type="button" class="secondary" data-task="installation-restore">Restaurer la configuration précédente</button>`);
@@ -45,6 +45,7 @@ export async function createInstallationUI({ device, native, localEndpoint = '',
     return true;
   }
   async function task(name,button) {
+    if(name==='installation-viewers'){await reload();const target=current.devices.find(d=>d.id===button?.dataset.deviceId);if(!target?.enabled||target.platform!=='android'||!target.endpoint||!viewers)throw new Error('Android associé indisponible.');await viewers(target);return true;}
     if (['installation-select','installation-toggle'].includes(name)) {
       await reload();
       const target=current.devices.find(d=>d.id===button?.dataset.deviceId);

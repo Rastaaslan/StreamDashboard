@@ -60,6 +60,7 @@ public class MainActivity extends Activity {
   private WebView webView;
   private ProviderBridge providerBridge;
   private PeerBridge peerBridge;
+  private ExecutorBridge executorBridge;
   private WebViewAssetLoader assetLoader;
   private Uri pendingDeepLink;
   private boolean pageReady = false;
@@ -71,6 +72,7 @@ public class MainActivity extends Activity {
     WebSettings settings = webView.getSettings();
     settings.setJavaScriptEnabled(true);
     settings.setDomStorageEnabled(true);
+    settings.setMediaPlaybackRequiresUserGesture(false);
     settings.setAllowFileAccess(false);
     settings.setAllowContentAccess(false);
     settings.setMixedContentMode(WebSettings.MIXED_CONTENT_NEVER_ALLOW);
@@ -87,6 +89,12 @@ public class MainActivity extends Activity {
       }));
       androidx.webkit.WebViewCompat.addWebMessageListener(webView,"StreamDashboardPeer",Collections.singleton(ORIGIN),(view,message,sourceOrigin,isMainFrame,replyProxy)->{
         if(isMainFrame && ORIGIN.equals(sourceOrigin.toString()))peerBridge.receive(message.getData());
+      });
+      executorBridge=new ExecutorBridge(this,(event,payload)->runOnUiThread(()->{
+        if(webView!=null&&!isFinishing()&&!isDestroyed())webView.evaluateJavascript("window.dispatchEvent(new CustomEvent("+org.json.JSONObject.quote(event)+",{detail:"+payload+"}))",null);
+      }));
+      androidx.webkit.WebViewCompat.addWebMessageListener(webView,"StreamDashboardExecutor",Collections.singleton(ORIGIN),(view,message,sourceOrigin,isMainFrame,replyProxy)->{
+        if(isMainFrame&&ORIGIN.equals(sourceOrigin.toString()))executorBridge.receive(message.getData());
       });
     }
     if (!BuildConfig.PREVIEW_MODE) {
@@ -176,6 +184,7 @@ public class MainActivity extends Activity {
     if(fileSelection!=null){fileSelection.onReceiveValue(null);fileSelection=null;}
     if(providerBridge!=null)providerBridge.close();
     if(peerBridge!=null)peerBridge.close();
+    if(executorBridge!=null)executorBridge.close();
     if(webView!=null)webView.destroy();
     super.onDestroy();
   }

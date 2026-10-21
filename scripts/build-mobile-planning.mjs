@@ -7,6 +7,7 @@ const licenses=await Promise.all(['crypto-js','entities'].map(async name=>'Third
 // reconciliation and identity rules. No second mobile planning implementation.
 await build({
   stdin: { contents: `export { PlanningOrchestrator } from './packages/core/src/planning.ts';
+    export { createHash as createIdentityHash } from './scripts/mobile-hash-shim.js';
     export { randomUuid } from './packages/core/src/uuid.ts';
     export { defaultProductProfile, validateProductProfile } from './packages/core/src/product-profile.ts';
     export { parseWizeBotCatalog } from './integrations/wizebot/src/catalog.ts';

@@ -1,0 +1,38 @@
+{
+  "date": "2026-10-21",
+  "candidate": "2.1.0-alpha.1",
+  "sourceCommit": "109f3958a0d7b92420d02df597228dd064b55cee",
+  "universalQualificationComplete": false,
+  "validation": {
+    "fullVitestPassed": 1441,
+    "fullNodePassedBeforeLastIdentityGuard": 291,
+    "fullBrowserPassedBeforeLastIdentityGuard": 85,
+    "finalTargetedNodePassed": 9,
+    "finalTargetedBrowserPassed": 11,
+    "electronLinuxPassed": 4,
+    "androidJvm": {
+      "tests": 42,
+      "failures": 0,
+      "errors": 0
+    },
+    "androidLintAndBuild": "passed",
+    "windowsPackageIntegrity": "passed",
+    "security": "passed",
+    "shippedJavaScript": "passed"
+  },
+  "artifacts": {
+    "StreamDashboard-Next21-109f395-Windows-x64.zip": {
+      "bytes": 153014562,
+      "sha256": "b843d0a3677209b7a1f3e5a83b74efbe6299beffaa6c65d4403b7e066bb9a12a"
+    },
+    "StreamDashboard-Next21-109f395-Android-debug.apk": {
+      "bytes": 3674330,
+      "sha256": "1562f9f04b8fd8a12be866a47e05369a3632000d78e7617b74726e1227f3c10c"
+    }
+  },
+  "limits": [
+    "The final identity guard was rechecked with targeted suites after the complete integration suites.",
+    "Two-PC hardware TLS evidence applies to source 10ce5f3, not this entire integrated candidate.",
+    "No Android hardware qualification or universal delivery is claimed."
+  ]
+}
