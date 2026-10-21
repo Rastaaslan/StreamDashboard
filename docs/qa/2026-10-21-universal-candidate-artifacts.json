@@ -1,0 +1,50 @@
+{
+  "date": "2026-10-21",
+  "candidate": "2.1.0-alpha.1",
+  "codeCommit": "226aa6863ebc87cd92af968e5eeb5855cf44e92c",
+  "branch": "work/streamdashboard-next21-universal",
+  "universalQualificationComplete": false,
+  "openQualificationCells": 75,
+  "validation": {
+    "vitest": 1451,
+    "node": 312,
+    "browser": 97,
+    "androidJvm": 47,
+    "electronAndPreview": 8,
+    "realElectron": 5,
+    "typeScriptBuild": "passed",
+    "androidLint": "passed",
+    "security": "passed",
+    "shippedJavaScript": "passed",
+    "windowsPackageIntegrity": "passed"
+  },
+  "artifacts": [
+    {
+      "name": "StreamDashboard-Next-2.1-universal-candidate-win32-x64.zip",
+      "bytes": 153037380,
+      "sha256": "d784414b3d025259d71f25e7fda62e7111dd7c4ab3cb4d982dda7b027d83b062"
+    },
+    {
+      "name": "StreamDashboard-Next-2.1-universal-candidate-android-debug.apk",
+      "bytes": 3907336,
+      "sha256": "23f1e9834bae57dac87bc49c2f49e96d20a74f95c3d8c0bff2c048cdfb5f0e05"
+    }
+  ],
+  "artifactDirectory": "/home/damien/StreamDashboard-Next-universal-qa-20261021/universal-candidate",
+  "logs": [
+    "universal-final.log",
+    "universal-candidate-results.json"
+  ],
+  "remaining": [
+    "Complete distributed responsibility transfers and reverse transfers from server-owned workspaces",
+    "Physical Android and all six setup transitions",
+    "Authenticated web session persistence and full live chat cycle on real hardware",
+    "Complete real RC11.7 migration and rollback, including browser sessions and encrypted account access"
+  ],
+  "preserved": {
+    "stableRC117": true,
+    "obsProcesses": true,
+    "mainBranch": true,
+    "noRealLiveOrChatEffect": true
+  }
+}
