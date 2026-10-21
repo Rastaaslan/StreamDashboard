@@ -1,4 +1,5 @@
 import {createDeviceExecutor, createExecutorBridge} from './device-executor.js';
+import {uploadSound} from './sound-transfer.js';
 import {createPeerRequest, fingerprint} from './peer-request.js';
 import { createDevicePermissionsUI } from './device-permissions-ui.js';
 import { createActionRouter } from './action-routing.js';
@@ -65,6 +66,7 @@ let credential=await credentials.initialize();
 const dialog=$('#dialog');
 function toast(message) { $('#notice').textContent=message; $('#notice').style.display='block'; clearTimeout(noticeTimer);noticeTimer=setTimeout(()=>{$('#notice').style.display='none';},7000); }
 function normalizeServer(value) { const url=new URL(value);if(!['http:','https:'].includes(url.protocol)||url.username||url.password)throw new Error('Adresse HTTP du PC de stream attendue.'); return url.origin; }
+function soundDestinationId(){const current=installationUI.current,id=server===localEndpoint?current.localDeviceId:current.devices.find(value=>value.endpoint===server)?.id;return id?.startsWith('legacy-')?undefined:id;}
 async function network(path, body, method=body===undefined?'GET':'POST',target=server,token=target===localEndpoint?'':credential) {
   if(!target)throw new Error('Renseignez l’adresse du PC de stream.');
   let response;
@@ -582,8 +584,7 @@ async function task(name,b){
    const initial=source.record.pending.find(op=>op.key==='sound/'+id&&op.base===null&&op.value);
    if(!initial||!source.view().sounds.sounds.some(x=>x.id===id))continue;
    const file=await source.soundAsset(id);if(!file)throw new Error('Fichier audio local manquant : '+asset.name);
-   const response=await peers.request(server+'/api/v2/sounds/upload?id='+encodeURIComponent(id)+'&name='+encodeURIComponent(initial.value.name)+'&extension='+encodeURIComponent(asset.name.split('.').pop()),{method:'POST',token:server===localEndpoint?'':credential,body:file,timeoutMs:120000});
-   if(!response.ok){const failure=await response.json().catch(()=>({}));throw new Error('Transfert audio refusé : '+asset.name+' · '+(failure.error?.message||failure.error||response.status)+'. Les données locales sont conservées.');}
+   await uploadSound({peers,origin:server,token:server===localEndpoint?'':credential,file,filename:asset.name,name:initial.value.name,soundId:id,expectedDeviceId:soundDestinationId()});
   }}finally{source.close();}
   await autonomy.store.importLocal(LOCAL_SCOPE);dialog.close();await refresh(true);return;
  }
@@ -710,7 +711,7 @@ document.addEventListener('submit',async event=>{const f=event.target;submitting
  if(f.id==='integration-form'){await api((f.dataset.provider==='wizebot'?'/api/v1/wizebot/config':'/api/v1/supports/streamlabs/config'),v,'PUT');}
  if(f.id==='discord-form'){if(v.token)await api('/api/v1/discord/token',{token:v.token},'PUT');await api('/api/v1/discord/settings',{guildId:v.guildId,channelId:v.channelId,defaultMessage:v.defaultMessage},'PUT');}
  if(f.id==='sound-form'){await api('/api/v1/soundboard/sounds/'+encodeURIComponent(f.dataset.id),{...v,volume:Number(v.volume),cooldownMs:Number(v.cooldownMs),enabled:!!v.enabled,favorite:!!v.favorite},'PUT');}
- if(f.id==='sound-import'){const file=f.elements.file.files[0];if(!file||file.size>100*1024*1024)throw new Error('Fichier audio requis, maximum 100 Mo.');if(!server){await autonomy.store.addSound(file,v.name);}else{const result=await peers.request(server+'/api/v2/sounds/upload?name='+encodeURIComponent(v.name)+'&extension='+encodeURIComponent(file.name.split('.').pop()),{method:'POST',token:server===localEndpoint?'':credential,body:file,timeoutMs:120000});if(!result.ok){const r=await result.json();throw new Error(r.error?.message||'Import impossible.');}}}
+ if(f.id==='sound-import'){const file=f.elements.file.files[0];if(!file||file.size>100*1024*1024)throw new Error('Fichier audio requis, maximum 100 Mo.');if(!server){await autonomy.store.addSound(file,v.name);}else{f.dataset.soundId||=uuid();await uploadSound({peers,origin:server,token:server===localEndpoint?'':credential,file,name:v.name,soundId:f.dataset.soundId,expectedDeviceId:soundDestinationId()});}}
  if(f.id==='automation-form'){await api('/api/v1/automations'+(f.dataset.id?'/'+encodeURIComponent(f.dataset.id):''),JSON.parse(v.value),f.dataset.id?'PUT':'POST');}
  if(dialog.open)dialog.close();await refresh(true);toast(localSaveMessage());
 }catch(e){toast(e.message);}finally{submittingBase=undefined;if(submit)submit.disabled=f.dataset.completed==='true';}});

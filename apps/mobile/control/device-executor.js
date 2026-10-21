@@ -1,4 +1,5 @@
 import {createExecutorSync} from './executor-sync.js';
+import {openSoundTransferStore,SOUND_TRANSFER} from './sound-transfer-store.js';
 import {actionDefinition,actionCapability} from '../shared/action-definition.js';
 import {deviceRoleAvailable,publicInstallationDevice} from '../shared/installation.js';
 import {validateDevicePermissions} from '../shared/device-permissions.js';
@@ -134,9 +135,22 @@ export async function createDeviceExecutor({bridge,installation,runtime,now=Date
    })};
    if(path==='/api/v2/actions'&&request.method==='POST')return {status:200,body:await command(request,body)};
    if(path==='/api/v2/autonomy/sync'&&request.method==='POST'){const receipt=await synchronize(request,body);return {status:200,body:{...await snapshot(),receipt}};}
+   if(path.startsWith('/api/v2/sounds/transfer/')&&request.method==='POST'){
+    const caller=authorize(request,'configuration'),owner=await runtime(),store=await openSoundTransferStore(owner.owner.store.scope);
+    const guard=()=>{if(authorize(request,'configuration').id!==caller.id)throw fault('UNAUTHORIZED','Association modifiée.',401);};
+    try{
+     const operation=path.slice('/api/v2/sounds/transfer/'.length);let receipt;
+     if(operation==='begin')receipt=await store.begin(body,caller.id,guard);
+     else if(operation==='chunk')receipt=await store.append(body.id,body.offset,body.chunk,caller.id,guard);
+     else if(operation==='finish')receipt=await store.finish(body.id,caller.id,guard);
+     else if(operation==='cancel')receipt=await store.cancel(body.id,caller.id,guard);
+     else throw fault('NOT_FOUND','Opération audio inconnue.',404);
+     return {status:200,body:receipt};
+    }finally{store.close();}
+   }
    const caller=authorize(request,'observe');
    if(request.method!=='GET')throw fault('REMOTE_SCOPE_DENIED','Cette fonction doit être configurée sur l’appareil.',403);
-   if(path==='/api/v2/device')return {status:200,body:{version:1,device:publicInstallationDevice(own()),observed:{permissions:caller.permissions}}};
+   if(path==='/api/v2/device')return {status:200,body:{version:1,device:publicInstallationDevice(own()),observed:{permissions:caller.permissions,soundTransfer:SOUND_TRANSFER}}};
    if(path==='/api/v2/state')return {status:200,body:await state()};
    if(path==='/api/v2/autonomy')return {status:200,body:await snapshot()};
    if(path==='/api/v2/replay')return {status:200,body:{active:false,available:false,enabled:false,seconds:0,error:'OBS nécessite un ordinateur associé.'}};

@@ -4,6 +4,7 @@ import { openReplicaDatabase, locateReplica } from './replica-identity.js';
 export { randomUuid as newId } from '../shared/planning-engine.js';
 const containsSecret=value=>Boolean(value&&typeof value==='object'&&Object.entries(value).some(([key,v])=>/(?:token|secret|password|credential|authorization)/i.test(key)||containsSecret(v)));
 const empty = () => ({version:1,workspace:null,bundle:null,pending:[],lastSync:null,drafts:{}});
+const recordView=record=>{if(!record.bundle)return null;let bundle=clone(record.bundle);for(const op of record.pending)bundle=overlay(bundle,{[op.key]:merge(op.base,op.value,resources(bundle)[op.key]??null).value});if(record.localPlanning)bundle.data.host.planning=clone(record.localPlanning);return bundle;};
 /** Each transaction reads the newest record: multiple windows cannot overwrite each other's outbox. */
 export async function openReplica(scope, factory=globalThis.indexedDB){
  const db=await openReplicaDatabase(factory);let actualScope=scope;
@@ -22,7 +23,26 @@ export async function openReplica(scope, factory=globalThis.indexedDB){
   get record(){return clone(current);},
   async seed(response){await change(record=>{if(!record.bundle){record.workspace=response.workspace;record.bundle=clone(response.bundle);}});},
   async reload(){current=await transact();return current;},
-  view(){if(!current.bundle)return null;let bundle=clone(current.bundle);for(const op of current.pending){const remote=resources(bundle)[op.key]??null;bundle=overlay(bundle,{[op.key]:merge(op.base,op.value,remote).value});}if(current.localPlanning)bundle.data.host.planning=clone(current.localPlanning);return bundle;},
+  view(){return recordView(current);},
+  // Adopting a journal is data-only. The event and its receipt commit together;
+  // a controller crash or a lost response cannot create a second publisher.
+  async adoptPlanning(edit,signature,guard=()=>{}){
+   let receipt;
+   await change(record=>{
+    guard();if(!record.workspace?.startsWith('local:'))throw new Error('Espace autonome requis.');
+    const receipts=record.drafts.executorEdits||{},previous=receipts[edit.id];
+    if(previous){if(previous.signature!==signature)throw new Error('Identifiant de modification réutilisé.');receipt=previous;return;}
+    if(Object.keys(receipts).length>=4096)throw new Error('Journal Android plein. Exportez les données avant de poursuivre.');
+    const items=recordView(record).data.host.planning,existing=items.find(item=>item.id===edit.value.id);
+    if(existing)receipt={signature,status:'conflict',current:clone(existing),fields:['identity'],message:'Un événement de même identité existe déjà. Comparez les versions.'};
+    else{
+     const item=clone(edit.value);items.push(item);record.localPlanning=items;
+     record.pending.push({id:newId(),key:'planning/'+item.id,base:null,value:pick(item,fields.planning),createdAt:new Date().toISOString()});
+     receipt={signature,status:'applied',current:item};
+    }
+    record.drafts.executorEdits={...receipts,[edit.id]:clone(receipt)};
+   });return clone(receipt);
+  },
   // The native planner persists its journal before provider I/O, including
   // uncertain creates and pending deletions. Never reduce it to editable fields.
   async commitPlanning(items){await change(record=>{

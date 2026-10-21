@@ -819,7 +819,9 @@
             "docs/qa/2026-10-21-execution-recovery.md",
             "docs/qa/2026-10-21-workspace-identity.md",
             "docs/qa/2026-10-21-android-executor.md",
-            "tests/node/device-executor.test.mjs"
+            "tests/node/device-executor.test.mjs",
+            "tests/planning-transfer-ui.spec.ts",
+            "docs/qa/2026-10-21-planning-handoff.md"
           ]
         },
         {
@@ -835,7 +837,9 @@
             "docs/qa/2026-10-21-execution-recovery.md",
             "docs/qa/2026-10-21-workspace-identity.md",
             "docs/qa/2026-10-21-android-executor.md",
-            "tests/node/device-executor.test.mjs"
+            "tests/node/device-executor.test.mjs",
+            "tests/planning-transfer-ui.spec.ts",
+            "docs/qa/2026-10-21-planning-handoff.md"
           ]
         },
         {
@@ -851,7 +855,9 @@
             "docs/qa/2026-10-21-execution-recovery.md",
             "docs/qa/2026-10-21-workspace-identity.md",
             "docs/qa/2026-10-21-android-executor.md",
-            "tests/node/device-executor.test.mjs"
+            "tests/node/device-executor.test.mjs",
+            "tests/planning-transfer-ui.spec.ts",
+            "docs/qa/2026-10-21-planning-handoff.md"
           ]
         },
         {
@@ -867,7 +873,9 @@
             "docs/qa/2026-10-21-execution-recovery.md",
             "docs/qa/2026-10-21-workspace-identity.md",
             "docs/qa/2026-10-21-android-executor.md",
-            "tests/node/device-executor.test.mjs"
+            "tests/node/device-executor.test.mjs",
+            "tests/planning-transfer-ui.spec.ts",
+            "docs/qa/2026-10-21-planning-handoff.md"
           ]
         },
         {
@@ -883,7 +891,9 @@
             "docs/qa/2026-10-21-execution-recovery.md",
             "docs/qa/2026-10-21-workspace-identity.md",
             "docs/qa/2026-10-21-android-executor.md",
-            "tests/node/device-executor.test.mjs"
+            "tests/node/device-executor.test.mjs",
+            "tests/planning-transfer-ui.spec.ts",
+            "docs/qa/2026-10-21-planning-handoff.md"
           ]
         },
         {
@@ -899,7 +909,9 @@
             "docs/qa/2026-10-21-execution-recovery.md",
             "docs/qa/2026-10-21-workspace-identity.md",
             "docs/qa/2026-10-21-android-executor.md",
-            "tests/node/device-executor.test.mjs"
+            "tests/node/device-executor.test.mjs",
+            "tests/planning-transfer-ui.spec.ts",
+            "docs/qa/2026-10-21-planning-handoff.md"
           ]
         }
       ]
@@ -925,7 +937,9 @@
             "docs/qa/2026-10-21-android-executor.md",
             "tests/node/device-executor.test.mjs",
             "docs/qa/2026-10-21-native-autonomous-executor.md",
-            "tests/node/local-executor.test.mjs"
+            "tests/node/local-executor.test.mjs",
+            "tests/sound-transfer-ui.spec.ts",
+            "docs/qa/2026-10-21-android-sound-transfer.md"
           ]
         },
         {
@@ -946,7 +960,9 @@
             "docs/qa/2026-10-21-android-executor.md",
             "tests/node/device-executor.test.mjs",
             "docs/qa/2026-10-21-native-autonomous-executor.md",
-            "tests/node/local-executor.test.mjs"
+            "tests/node/local-executor.test.mjs",
+            "tests/sound-transfer-ui.spec.ts",
+            "docs/qa/2026-10-21-android-sound-transfer.md"
           ]
         },
         {
@@ -967,7 +983,9 @@
             "docs/qa/2026-10-21-android-executor.md",
             "tests/node/device-executor.test.mjs",
             "docs/qa/2026-10-21-native-autonomous-executor.md",
-            "tests/node/local-executor.test.mjs"
+            "tests/node/local-executor.test.mjs",
+            "tests/sound-transfer-ui.spec.ts",
+            "docs/qa/2026-10-21-android-sound-transfer.md"
           ]
         },
         {
@@ -988,7 +1006,9 @@
             "docs/qa/2026-10-21-android-executor.md",
             "tests/node/device-executor.test.mjs",
             "docs/qa/2026-10-21-native-autonomous-executor.md",
-            "tests/node/local-executor.test.mjs"
+            "tests/node/local-executor.test.mjs",
+            "tests/sound-transfer-ui.spec.ts",
+            "docs/qa/2026-10-21-android-sound-transfer.md"
           ]
         },
         {
@@ -1006,7 +1026,9 @@
             "docs/qa/2026-10-21-execution-recovery.md",
             "docs/qa/2026-10-21-workspace-identity.md",
             "docs/qa/2026-10-21-android-executor.md",
-            "tests/node/device-executor.test.mjs"
+            "tests/node/device-executor.test.mjs",
+            "tests/sound-transfer-ui.spec.ts",
+            "docs/qa/2026-10-21-android-sound-transfer.md"
           ]
         },
         {
@@ -1027,7 +1049,9 @@
             "docs/qa/2026-10-21-android-executor.md",
             "tests/node/device-executor.test.mjs",
             "docs/qa/2026-10-21-native-autonomous-executor.md",
-            "tests/node/local-executor.test.mjs"
+            "tests/node/local-executor.test.mjs",
+            "tests/sound-transfer-ui.spec.ts",
+            "docs/qa/2026-10-21-android-sound-transfer.md"
           ]
         }
       ]

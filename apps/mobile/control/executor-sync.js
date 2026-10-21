@@ -4,7 +4,7 @@ import {validateProductProfile,createIdentityHash} from '../shared/planning-engi
 
 const fail=message=>{throw new Error(message);};
 const secrets=value=>value&&typeof value==='object'&&Object.entries(value).some(([key,item])=>/(?:token|secret|password|credential|authorization)/i.test(key)||secrets(item));
-const editable=new Set(['action','template','sound','profile','preferences','planning']);
+const editable=new Set(['action','template','sound','profile','preferences','planning','planningTransfer']);
 export function validateExecutorEdit(edit){
  if(!edit||!/^[-\w]{8,100}$/.test(edit.id)||!/^\w+\/[A-Za-z0-9._:-]{1,160}$/.test(edit.key)||!safeJSON(edit.base)||!safeJSON(edit.value)||JSON.stringify(edit).length>256000||secrets(edit))fail('Modification invalide ou contenant un secret.');
  const [kind,id]=edit.key.split('/');
@@ -22,6 +22,7 @@ export function validateExecutorEdit(edit){
  if(kind==='template'&&(typeof value.title!=='string'||!value.title.trim()||value.title.length>140))fail('Titre de modèle invalide.');
  if(kind==='profile')validateProductProfile(value);
  if(kind==='preferences'&&(Object.keys(value).some(key=>key!=='replayAutoStart')||typeof value.replayAutoStart!=='boolean'))fail('Préférences invalides.');
+ if(kind==='planningTransfer'&&(edit.base!==null||value.id!==id||value.transferredTo||value.editable===false||value.ownership==='EXTERNAL'))fail('Transfert de responsabilité invalide.');
 }
 
 /** Durable receipts precede native planning I/O. Other resource edits compare
@@ -36,6 +37,7 @@ export function createExecutorSync({runtime,workspace,authorize,requireRole}){
   const edit=body.edit,[kind,id]=edit.key.split('/'),owner=await runtime(),store=owner.owner.store;
   await store.reload();
   const signature=createIdentityHash('sha256').update(JSON.stringify(edit)).digest('hex');
+  if(kind==='planningTransfer')return owner.planning.adopt(edit,signature,()=>{authorize(request,'configuration');requireRole('planning');});
   const read=()=>resources(store.view())[edit.key]??null;
   let previous;
   await store.updateDraft('executorEdits',saved=>{

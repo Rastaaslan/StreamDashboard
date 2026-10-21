@@ -89,5 +89,15 @@ export function createLocalPlanning({store,providers,onChange=()=>{},locks=globa
    return {deleted,failed,savedLocally:true};
   });
  }
- return {route,wait:()=>tail};
+ async function adopt(edit,signature,guard){
+  return serial(async()=>{
+   const item=edit.value;validate(item);
+   if(item.id!==edit.key.slice('planningTransfer/'.length)||item.transferredTo||item.editable===false||item.ownership==='EXTERNAL')throw new Error('Cet événement ne peut pas être repris par cet appareil.');
+   if(Object.values(item.providers||{}).some(link=>link.uncertainCreate||Object.values(link.projections||{}).some(entry=>entry.uncertainCreate)))throw new Error('Réconciliez les publications incertaines avant le transfert.');
+   // The source has already durably relinquished ownership. Preserve every
+   // provider ID, account binding, recurrence exception and deletion journal.
+   const receipt=await store.adoptPlanning(edit,signature,guard);onChange();return receipt;
+  });
+ }
+ return {route,adopt,wait:()=>tail};
 }

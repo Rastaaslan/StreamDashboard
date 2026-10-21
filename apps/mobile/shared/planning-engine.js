@@ -88,7 +88,7 @@ var require_core = __commonJS({
         root.CryptoJS = factory();
       }
     })(exports, function() {
-      var CryptoJS = CryptoJS || (function(Math2, undefined2) {
+      var CryptoJS2 = CryptoJS2 || (function(Math2, undefined2) {
         var crypto;
         if (typeof window !== "undefined" && window.crypto) {
           crypto = window.crypto;
@@ -679,7 +679,7 @@ var require_core = __commonJS({
         var C_algo = C.algo = {};
         return C;
       })(Math);
-      return CryptoJS;
+      return CryptoJS2;
     });
   }
 });
@@ -695,9 +695,9 @@ var require_sha256 = __commonJS({
       } else {
         factory(root.CryptoJS);
       }
-    })(exports, function(CryptoJS) {
+    })(exports, function(CryptoJS2) {
       (function(Math2) {
-        var C = CryptoJS;
+        var C = CryptoJS2;
         var C_lib = C.lib;
         var WordArray = C_lib.WordArray;
         var Hasher = C_lib.Hasher;
@@ -800,7 +800,7 @@ var require_sha256 = __commonJS({
         C.SHA256 = Hasher._createHelper(SHA2562);
         C.HmacSHA256 = Hasher._createHmacHelper(SHA2562);
       })(Math);
-      return CryptoJS.SHA256;
+      return CryptoJS2.SHA256;
     });
   }
 });
@@ -1123,6 +1123,20 @@ async function deleteSeriesProjections(item, providers, save, retry = false) {
 
 // scripts/mobile-hash-shim.js
 var import_sha256 = __toESM(require_sha256(), 1);
+var import_core = __toESM(require_core(), 1);
+function createBinaryHash() {
+  const hash = import_core.default.algo.SHA256.create();
+  let result;
+  return { update(bytes) {
+    if (result !== void 0 || !(bytes instanceof Uint8Array)) throw new Error("Invalid binary hash input");
+    const words2 = [];
+    for (let index = 0; index < bytes.length; index++) words2[index >>> 2] = (words2[index >>> 2] || 0) | bytes[index] << 24 - index % 4 * 8;
+    hash.update(import_core.default.lib.WordArray.create(words2, bytes.length));
+    return this;
+  }, digest() {
+    return result ??= hash.finalize().toString();
+  } };
+}
 function createHash(algorithm) {
   if (algorithm !== "sha256") throw new Error("Unsupported identity hash");
   let value = "";
@@ -3113,6 +3127,7 @@ function generateTwitchTags(input = {}) {
 }
 export {
   PlanningOrchestrator,
+  createBinaryHash,
   createHash as createIdentityHash,
   defaultProductProfile,
   generateTwitchTags,
