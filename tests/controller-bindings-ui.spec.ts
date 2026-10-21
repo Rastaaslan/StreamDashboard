@@ -75,6 +75,7 @@ async function setup(page: Page, rejectNative = false) {
       else if (url.pathname === '/api/v2/device') json = {version:1,device:{id:url.origin===REGIE||backend.sameDevice?'first-pc':'second-pc',name:'Fixture PC',platform:'windows',roles:['obs-executor'],capabilities:['obs','clips','audio'],enabled:true}};
       else if (url.pathname === '/api/v2/replay') json = { active: false, available: true, enabled: true, seconds: 20 };
       else if (url.pathname === '/api/v2/autonomy/sync') json = { ...snapshot, receipt: { status: backend.conflict ? 'conflict' : 'applied', fields: ['label'], message: 'Réglage modifié sur la régie' } };
+      else if (url.pathname === '/api/v2/actions') json = {id:'stop-receipt',action:'sound.stop',status:'succeeded',message:'Tous les sons sont arrêtés.'};
       else if (url.pathname === '/api/v1/remote/pair') { if (backend.pairGate) await backend.pairGate; json = { credential: 'new-synthetic-credential' }; }
       else { await route.fulfill({ status: 501, headers, json: { error: { message: 'Unexpected test request' } } }); return; }
       await route.fulfill({ headers, json }); return;
@@ -227,4 +228,15 @@ test('native registration rejection is visible in diagnostics without exposing i
   await page.locator('[data-task="shortcut-status"]').click();
   await expect(page.locator('#shortcut-status')).toContainText('Configuration des macros impossible');
   expect(errors).toEqual([]);
+});
+
+test('Stop remains executable while an unrelated offline action edit has a conflict',async({page})=>{
+ const {backend,errors}=await setup(page);backend.conflict=true;
+ await page.evaluate(async()=>{
+  const modulePath='/mobile/control/autonomy-store.js', {openReplica}=await import(modulePath);const scope=localStorage.getItem('sd2.server');const replica=await openReplica(scope);const value=replica.view().data.configuration.actions[0];await replica.stage({['action/'+value.id]:{...value,label:'Local pending edit'}});replica.close();
+ });
+ await pollRenderer(page);await page.locator('[data-page="deck"]').first().click();
+ await page.locator('[data-action="sound.stop"]').first().click();
+ await expect.poll(()=>backend.calls.some(value=>value.startsWith('POST ')&&value.endsWith('/api/v2/actions'))).toBe(true);
+ expect(errors).toEqual([]);
 });

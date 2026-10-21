@@ -1,0 +1,66 @@
+{
+  "date": "2026-10-21",
+  "candidate": "2.1.0-alpha.1",
+  "branch": "work/streamdashboard-next21-completion",
+  "codeCommit": "5dc0b0860b634759e693ac64901f9adbf387e36a",
+  "integratedBases": [
+    "d1743f0",
+    "ea26952f17b4958e1e5f149958fcbdcb29f20b4d"
+  ],
+  "universalQualificationComplete": false,
+  "openQualificationCells": 75,
+  "validation": {
+    "vitest": {
+      "passed": 1441,
+      "files": 160
+    },
+    "node": {
+      "covered": 300,
+      "passedAfterCorrection": 300,
+      "detail": "299 cases passed in the full integrated run. The remaining performance regression was updated for the intentionally available Stop control and passed in the final targeted run, alongside 16 executor/identity cases."
+    },
+    "browser": {
+      "passed": 88
+    },
+    "androidJvm": {
+      "passed": 44,
+      "failures": 0,
+      "errors": 0
+    },
+    "androidLint": "passed",
+    "desktopSmoke": {
+      "passed": 7,
+      "realElectron": 4,
+      "browserPreviews": 3,
+      "startupCycles": 20
+    },
+    "typeScriptBuild": "passed",
+    "securityCheck": "passed",
+    "shippedJavaScriptCheck": "passed",
+    "windowsPackageIntegrity": "passed",
+    "androidHardware": "blocked-no-adb-device"
+  },
+  "artifacts": {
+    "StreamDashboard-Next-2.1-completion-win32-x64.zip": {
+      "bytes": 154704545,
+      "sha256": "8126f2a53b37dda29adb65189d0a37726e66a17e2cad89a8321bdc9df9c1701b"
+    },
+    "StreamDashboard-Next-2.1-completion-android-debug.apk": {
+      "bytes": 3829232,
+      "sha256": "2ba3ec2ed17577f82e570f879c350da62b94c1cee817d68952bb0924cdb2ed5a"
+    }
+  },
+  "artifactDirectory": "/home/damien/StreamDashboard-Next-universal-qa-20261021/completion-candidate",
+  "sourceHashManifest": "/home/damien/StreamDashboard-Next-universal-qa-20261021/completion-final-sources.json",
+  "logs": [
+    "completion-integrated.log",
+    "completion-delivery.log"
+  ],
+  "constraints": {
+    "stableInstallationReplaced": false,
+    "obsStopped": false,
+    "realLiveOrChatEffect": false,
+    "mainBranchChanged": false,
+    "universalReleasePublished": false
+  }
+}

@@ -1,4 +1,4 @@
-const CACHE = 'streamdashboard-mobile-v30-native-executor';
+const CACHE = 'streamdashboard-mobile-v32-unified-executors';
 const PATHS = new Set([
   '/mobile/',
   '/mobile/index.html',
@@ -39,6 +39,7 @@ const PATHS = new Set([
   '/mobile/control/controller-bindings.js',
   '/mobile/control/device-credentials.js',
   '/mobile/control/peer-request.js',
+  '/mobile/control/device-executor.js','/mobile/control/executor-sync.js',
   '/mobile/control/installation-ui.js',
   '/mobile/shared/installation.js',
   '/mobile/shared/device-permissions.js',
@@ -113,6 +114,7 @@ const ASSETS = [
   'control/controller-bindings.js',
   'control/device-credentials.js',
   'control/peer-request.js',
+  'control/device-executor.js','control/executor-sync.js',
   'control/installation-ui.js',
   'shared/installation.js',
   'shared/action-definition.js',

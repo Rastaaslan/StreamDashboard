@@ -1122,7 +1122,7 @@ async function deleteSeriesProjections(item, providers, save, retry = false) {
 }
 
 // scripts/mobile-hash-shim.js
-var import_sha256 = __toESM(require_sha256());
+var import_sha256 = __toESM(require_sha256(), 1);
 function createHash(algorithm) {
   if (algorithm !== "sha256") throw new Error("Unsupported identity hash");
   let value = "";
@@ -3113,6 +3113,7 @@ function generateTwitchTags(input = {}) {
 }
 export {
   PlanningOrchestrator,
+  createHash as createIdentityHash,
   defaultProductProfile,
   generateTwitchTags,
   googleRecurrence,

@@ -60,7 +60,10 @@ assert(!html.includes('<img'));
 assert(html.includes('Micro &lt;script&gt;bad()&lt;/script&gt;'));
 for (const patch of [{ online: false }, { blocked: true }]) {
   const buttons = executableButtons(renderPerformancePage({ ...base, ...patch }));
-  assert(buttons.length > 0 && buttons.every(disabled));
+  assert(buttons.length > 0);
+  const ordinary=buttons.filter(tag=>!tag.includes('data-action="sound.stop"'));
+  assert(ordinary.every(disabled));
+  assert.equal(disabled(buttons.find(tag=>tag.includes('data-action="sound.stop"'))),patch.online===false,'Stop stays available during configuration conflicts, but not with an unknown offline state');
 }
 const edit = renderPerformancePage({ ...base, editing: true });
 assert(!/data-action=|data-play-sound=/.test(edit));
@@ -84,7 +87,9 @@ const startingButtons = executableButtons(renderPerformancePage({ ...base, onlin
   sounds: { ...sounds, currentPlayback: { soundId: 'custom-sound', status: 'starting' } } }));
 assert(!disabled(startingButtons.find(tag => tag.includes('data-action="sound.stop"'))));
 assert(startingButtons.filter(tag => !tag.includes('data-action="sound.stop"')).every(disabled));
-assert(executableButtons(renderPerformancePage({ ...base, online: false, local: true, blocked: true })).every(disabled));
+const blockedLocal=executableButtons(renderPerformancePage({ ...base, online: false, local: true, blocked: true }));
+assert(!disabled(blockedLocal.find(tag=>tag.includes('data-action="sound.stop"'))));
+assert(blockedLocal.filter(tag=>!tag.includes('data-action="sound.stop"')).every(disabled));
 console.log('PASS module: scoped storage, malformed storage, empty favorites, custom IDs, escaped HTML, no live pads, offline, blocked, safe edit, sound stop, replay, WizeBot');
 
 const listeners = new Map();
@@ -93,7 +98,7 @@ let blocked = false;
 let pending = new Map();
 let sent = [];
 const scope = vm.createContext({
-  online: false, busy: false, activeCommands: 0, compact: true, autonomy: undefined,
+  online: false, busy: false, activeCommands: 0, compact: true, autonomy: undefined, macroContextChanging: 0,
   data: { configuration: { actions: [] } }, sounds: { sounds: [] },
   page: 'deck', server: 'regie-A', localEndpoint:'regie-A', resolveCapability,
   installationUI:{current:migrateInstallation({id:'fixture-host',platform:'windows'})}, deviceAudio: undefined, LOCAL_SCOPE: 'device-workspace-v1',
@@ -196,6 +201,7 @@ console.log('PASS concurrency: micro/stop resolving in both orders; timer/stop o
 sent = []; pending = new Map();
 scope.online = false; await scope.runAction('custom-micro'); assert.equal(sent.length, 0);
 scope.online = true; blocked = true; await scope.runAction('custom-micro'); assert.equal(sent.length, 0);
+const conflictStop=scope.runAction('sound.stop');assert.equal(sent[0].action,'sound.stop');resolve('sound.stop');await conflictStop;sent=[];
 blocked = false;
 const custom = scope.runAction('custom-micro');
 assert.equal(sent[0].action, 'custom-micro'); resolve('custom-micro'); await custom;

@@ -28,6 +28,19 @@ L’éditeur d’installation conserve une configuration précédente et compare
 
 Les exports et imports doivent être contrôlés sur une copie des données avant une migration réelle. Les secrets et cookies ne sont pas copiés entre appareils ; une authentification propre à l’appareil reste nécessaire.
 
+## Android comme exécuteur
+
+1. Sur Android, importer les sons dans **Mon espace**, puis ouvrir **Configuration → Appareils → Connexion sécurisée** et activer le partage réseau.
+2. Créer un code d’association et choisir les permissions. Copier le lien avec son empreinte dans **Connexions** sur l’autre application Windows ou Android. La permission Audio autorise les sons ; Chat autorise l’ouverture des écrans ; l’administration complète autorise les modifications synchronisées.
+3. Choisir cet Android dans **Mon installation → Ouvrir cet appareil**, ou associer un bouton dans **Destination**. L’exécuteur figure sur le bouton et dans le reçu. Le son doit déjà être importé sur Android ; aucun autre appareil ne le remplace automatiquement.
+4. Pour afficher les retours, utiliser **Mon installation → Ouvrir ses écrans**, puis renseigner la chaîne Twitch et l’identifiant YouTube. Les sessions web restent celles du téléphone.
+5. Garder l’application Android ouverte. L’arrêt de l’application ferme le récepteur ; après une coupure, vérifier le résultat d’une commande avant de la demander de nouveau. Les commandes ne sont jamais rejouées à la reconnexion.
+6. Les appareils autorisés peuvent être limités ou révoqués depuis Android. La révocation n’est pas bloquée par un son en préparation.
+
 ## Limites de cette version d’essai
 
-Le transport LAN historique utilise encore HTTP. Le transport chiffré, certains déplacements de responsabilités, Android comme exécuteur distant et la lecture audio multiple restent à compléter dans le chantier 2.1. Les paquets compilés ne constituent pas une qualification matérielle. Voir le [rapport de vérification](qa/2026-10-21-transversal-modules.md) et la [matrice](qa/next21-qualification.json).
+Les associations Next 2.1 utilisent HTTPS avec vérification d’empreinte. Les anciennes adresses HTTP restent conservées mais doivent être associées de nouveau en HTTPS. La lecture audio multiple locale est disponible sur Windows et Android.
+
+La découverte automatique, le transfert transactionnel complet des responsabilités, toutes les macros natives des contenus locaux Windows et le transfert de fichiers vers le récepteur Android restent à compléter. Les réglages de comptes et de partage Android se font sur Android. Les reçus d’écriture interrompue restent à vérifier ; aucun succès n’est déduit d’une simple reconnexion.
+
+La qualification complète des six installations, la migration d’une copie réelle RC11.7, les sessions de comptes réels, la mise à jour et le retour arrière restent ouverts. Aucun téléphone n’était connecté à ADB lors de cette vérification. Les paquets compilés sont des candidats d’essai ; ils ne remplacent pas RC11.7. Voir le [bilan Android](qa/2026-10-21-android-executor.md) et la [matrice](qa/next21-qualification.json).

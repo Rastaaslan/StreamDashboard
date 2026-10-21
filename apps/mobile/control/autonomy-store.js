@@ -36,10 +36,11 @@ export async function openReplica(scope, factory=globalThis.indexedDB){
    record.localPlanning=clone(items);
    for(const item of record.localPlanning){const link=item.providers?.twitch;if(link?.projections){const ids=[...new Set(Object.values(link.projections).map(x=>x.accountId).filter(Boolean))];if(ids.length===1)link.accountId=ids[0];}}
   });},
-  async stage(changes,bases){await change(record=>{
+  async stage(changes,bases,requireUnchanged=false){await change(record=>{
    if(Object.values(changes).some(value=>containsSecret(value)))throw new Error('Les secrets nécessitent une connexion sécurisée à la régie ; ils ne sont pas conservés dans la copie locale.');
    if(!record.bundle)throw new Error('Une première connexion est nécessaire pour récupérer les données de cette régie.');
    let bundle=clone(record.bundle);for(const op of record.pending)bundle=overlay(bundle,{[op.key]:merge(op.base,op.value,resources(bundle)[op.key]??null).value});
+   if(requireUnchanged)for(const key of Object.keys(changes))if(!equal(resources(bundle)[key]??null,bases?.[key]??null))throw new Error('Modification concurrente sur cet appareil.');
    for(const [key,value] of Object.entries(changes)){const base=(bases||resources(bundle))[key]??null;if(equal(base,value))continue;record.pending.push({id:newId(),key,base,value:clone(value),createdAt:new Date().toISOString()});bundle=overlay(bundle,{[key]:value});}
   });},
   async accept(response,opId){await change(record=>{

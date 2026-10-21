@@ -1,3 +1,4 @@
+import {createDeviceExecutor, createExecutorBridge} from './device-executor.js';
 import {createPeerRequest, fingerprint} from './peer-request.js';
 import { createDevicePermissionsUI } from './device-permissions-ui.js';
 import { createActionRouter } from './action-routing.js';
@@ -82,35 +83,39 @@ function applyWorkspaceBundle(bundle){
   host:{...bundle.data.host,chat:record?.drafts.deviceChat||bundle.data.host.chat}}:bundle.data;
  sounds=local&&deviceAudio?deviceAudio.snapshot(bundle.sounds):bundle.sounds;
 }
+let localRuntime,localRuntimeFlight;
+async function getLocalRuntime(){
+ if(localRuntime)return localRuntime;
+ if(localRuntimeFlight)return localRuntimeFlight;
+ localRuntimeFlight=(async()=>{
+  const owner=await createAutonomy(LOCAL_SCOPE,()=>{throw new Error('Espace propre à cet appareil.');},bundle=>{if(autonomy===owner&&bundle)applyWorkspaceBundle(bundle);});
+  await owner.store.seed(newWorkspace(device));
+  const services=createDeviceServices({store:owner.store,autonomy:owner,enabled:localCapabilityEnabled,request:(p,b,m)=>network(p,b,m,localEndpoint,'')});
+  const providers=createDeviceProviders({enabled:localCapabilityEnabled,request:(p,b,m)=>network(p,b,m,localEndpoint,''),getCalendar:()=>owner.store.view().extras.google.calendarId});
+  const audioOptions={store:owner.store,onChange:()=>{if(autonomy!==owner||server||macroContextChanging)return;applyWorkspaceBundle(owner.store.view());if(!dialog.open)render();else shell();},onError:message=>{if(autonomy===owner&&!server)toast(message);}};
+  const audio=globalThis.streamDashboardDesktop?.autonomousRequest?createNativeDeviceAudio({...audioOptions,bridge:globalThis.streamDashboardDesktop}):createDeviceAudio(audioOptions);
+  try{await audio.refresh?.();}catch(error){owner.store.close();throw error;}
+  const planning=createLocalPlanning({store:owner.store,providers,onChange:()=>{if(autonomy===owner){applyWorkspaceBundle(owner.store.view());shell();}}});
+  return localRuntime={owner,services,providers,audio,planning};
+ })().finally(()=>{localRuntimeFlight=undefined;});
+ return localRuntimeFlight;
+}
 async function openLocal(){
- deviceAudio?.dispose();deviceAudio=undefined;
+ try{await deviceAudio?.stop();}catch(error){toast('Arrêt du son non confirmé : '+error.message);}
  const target=server,token=target===localEndpoint?'':credential;
  await Promise.all([localPlanning?.wait(),deviceServices?.wait()]);
- localPlanning=undefined;deviceServices=undefined;deviceProviders=undefined;autonomy?.store.close();
+ if(autonomy&&autonomy!==localRuntime?.owner)autonomy.store.close();
+ localPlanning=undefined;deviceServices=undefined;deviceProviders=undefined;deviceAudio=undefined;
  autonomy=undefined;data=undefined;sounds=undefined;replay=undefined;
  try{
-  let owner;
-  owner=await createAutonomy(target||LOCAL_SCOPE,(p,b,m)=>network(p,b,m,target,token),bundle=>{
-   if(owner&&autonomy===owner&&bundle)applyWorkspaceBundle(bundle);
-  });
-  autonomy=owner;
   if(!target){
-   await owner.store.seed(newWorkspace(device));
-   deviceServices=createDeviceServices({store:owner.store,autonomy:owner,enabled:localCapabilityEnabled,request:(p,b,m)=>network(p,b,m,localEndpoint,'')});
-   deviceProviders=createDeviceProviders({enabled:localCapabilityEnabled,request:(p,b,m)=>network(p,b,m,localEndpoint,''),getCalendar:()=>owner.store.view().extras.google.calendarId});
-   const audioOptions={store:owner.store,onChange:()=>{
-    if(autonomy!==owner||server||macroContextChanging)return;
-    applyWorkspaceBundle(owner.store.view());
-    if(!dialog.open)render();else shell();
-   },onError:message=>{if(autonomy===owner&&!server)toast(message);}};
-   deviceAudio=globalThis.streamDashboardDesktop?.autonomousRequest?createNativeDeviceAudio({...audioOptions,bridge:globalThis.streamDashboardDesktop}):createDeviceAudio(audioOptions);
-   await deviceAudio.refresh?.();
-   localPlanning=createLocalPlanning({store:owner.store,providers:deviceProviders,onChange:()=>{
-    if(autonomy===owner){applyWorkspaceBundle(owner.store.view());shell();}
-   }});
+   const runtime=await getLocalRuntime();autonomy=runtime.owner;deviceServices=runtime.services;deviceProviders=runtime.providers;deviceAudio=runtime.audio;localPlanning=runtime.planning;
+   await autonomy.store.reload();await deviceAudio.refresh?.();
+  }else{
+   let owner;owner=await createAutonomy(target,(p,b,m)=>network(p,b,m,target,token),bundle=>{if(owner&&autonomy===owner&&bundle)applyWorkspaceBundle(bundle);});autonomy=owner;
   }
-  applyWorkspaceBundle(owner.store.view());storageError='';
- }catch(e){storageError=e.message;deviceAudio?.dispose();deviceAudio=undefined;autonomy?.store.close();autonomy=undefined;data=undefined;sounds=undefined;}
+  applyWorkspaceBundle(autonomy.store.view());storageError='';
+ }catch(e){storageError=e.message;if(autonomy&&autonomy!==localRuntime?.owner)autonomy.store.close();autonomy=undefined;data=undefined;sounds=undefined;}
 }
 function localCapabilityEnabled(capability){const current=installationUI.current;return deviceRoleAvailable(current.devices.find(d=>d.id===current.localDeviceId),capability);}
 function commandsBlocked(){return macroContextChanging>0||Boolean(server&&autonomy?.store.record.pending.some(op=>/^(action|settings|output|youtube|sound)\//.test(op.key)));}
@@ -148,7 +153,7 @@ async function configureMacros({synchronized=false,suspend=false,required=false}
  catch(error){if(generation===macroConfigurationGeneration){const message=controllerConfigurationError(error,configuration.credential),changed=message!==macroConfigurationError;macroConfigurationError=message;if($('#shortcut-status'))$('#shortcut-status').textContent=message;if(changed)toast(message);}if(required)throw new Error(controllerConfigurationError(error,configuration.credential));return undefined;}
 }
 async function api(path,body,method=body===undefined?'GET':'POST'){
- if(commandsBlocked()&&['/api/v2/actions','/api/v1/commands'].includes(path))throw new Error('Synchronisez ou résolvez les réglages en attente avant de déclencher une commande.');
+ if(commandsBlocked()&&!(path==='/api/v2/actions'&&body?.action==='sound.stop'&&!macroContextChanging)&&['/api/v2/actions','/api/v1/commands'].includes(path))throw new Error('Synchronisez ou résolvez les réglages en attente avant de déclencher une commande.');
  if(path==='/api/v2/settings'&&(body?.obsPassword||body?.clearObsPassword)&&online){if(autonomy?.store.record.pending.length)throw new Error('Synchronisez les modifications en attente avant de changer le mot de passe OBS.');return network(path,body,method);}
  if(deviceServices){const result=await deviceServices.route(path,body,method);if(result!==undefined)return result;}
  if(localPlanning){const result=await localPlanning.route(path,body,method,submittingBase||(dialog.open?dialogBase:undefined));if(result!==undefined)return result;}
@@ -169,7 +174,7 @@ function shell() {
   document.body.classList.toggle('live-page',Boolean(data&&page==='live'));
   document.body.classList.toggle('activity-page',Boolean(data&&page==='activity'));
   const toggle=$('#workspace-toggle');toggle.textContent=server?'Mon espace':localStorage.getItem('sd2.server')?'Ma régie':'Appareil autonome';toggle.dataset.task=server?'use-local':localStorage.getItem('sd2.server')?'use-paired':'device-setup';
-  $('.aside-foot small').textContent=server?'Exécution sur le PC de stream':'Comptes et données sur cet appareil';
+  $('.aside-foot small').textContent=server?'Exécution sur '+(data?.host.hostname||'l’appareil associé'):'Comptes et données sur cet appareil';
   $('nav').querySelectorAll('button').forEach(button=>button.classList.toggle('active',button.dataset.page===page||(button.dataset.page==='manage'&&['planning','settings','actions'].includes(page))));
   $('#host-dot').classList.toggle('online',online);$('#host-name').textContent=data?.host.hostname || 'PC de stream';
   $('#role').textContent=({stream:'RÉGIE DE STREAM',control:'PILOTAGE',mobile:'STREAM DECK'})[device.role]+' · '+device.name;
@@ -186,7 +191,7 @@ function actionAvailability(action){
  const target=server===localEndpoint?installation.devices.find(d=>d.id===installation.localDeviceId):installation.devices.find(d=>d.endpoint===server);
  if(!target)return null; // An RC11.7 association is still checked by the executor until its registry migration.
  const sound=action.type.startsWith('sound.')?sounds?.sounds?.find(s=>s.id===(action.value||sounds?.currentPlayback?.soundId)):undefined;
- const localAudio=sound?.outputId==='device-default'||sound?.outputId?.startsWith('device:');
+ const localAudio=target.platform==='android'||sounds?.localPlayback===true||sound?.outputId==='device-default'||sound?.outputId?.startsWith('device:');
  return resolveCapability(installation,action.type.startsWith('replay.')?'clips':localAudio?'audio':'obs',{[target.id]:{connected:online,obsConnected:data?.host.state.obs.connected===true}},target.id);
 }
 function actionState(action) {
@@ -292,7 +297,7 @@ function settingsPage(){
  if(tab==='platforms')content=`<h2>Twitch et YouTube</h2><p class="small muted">Twitch : ${!online?'état actuel inconnu':data.host.state.twitch.connected?'connecté':'à connecter'}. Les comptes et clés de diffusion restent sur le PC de stream.</p><div class="inline"><button class="secondary" data-task="connect-twitch">Connecter Twitch</button><button class="secondary" data-task="connect-youtube">Connecter YouTube</button></div><form id="platform-form" data-revision="${c.revision}" class="spacer">${input('Client ID Google Desktop pour YouTube','clientId',c.youtube.clientId)}<p class="small muted">La connexion Google s’ouvre sur le PC de stream. Utilisez le même projet que celui du Client Secret Google enregistré.</p><div class="form-grid">${input('Diffusion YouTube sélectionnée','broadcastId',c.youtube.broadcastId)}${input('Chaîne YouTube sélectionnée','channelId',c.youtube.channelId)}</div><p id="youtube-selection-state" class="small ${c.youtube.broadcastId?'succeeded':'warn'}" role="status">${c.youtube.broadcastId?'Choix enregistré : '+esc(c.youtube.broadcastId):'Aucune diffusion YouTube sélectionnée. Choisissez celle que vous avez créée dans YouTube Studio.'}</p><button type="button" class="secondary" data-task="youtube-broadcasts">Choisir une diffusion YouTube</button><h3 class="spacer">Sorties de multidiffusion OBS</h3><p class="small muted">Choisissez les sorties réellement utilisées. Une sortie principale partagée arrête les deux destinations lorsqu’elle est arrêtée.</p>${['twitch','youtube'].map(p=>`<div class="form-grid">${select(`Sortie ${p}`,`${p}-kind`,[['unconfigured','À configurer'],['main','Sortie principale OBS'],['output','Sortie nommée OBS'],['aitum-suite','Aitum Stream Suite']],c.outputs[p].kind)}${input(`Nom exact de la sortie ${p}`,`${p}-name`,c.outputs[p].name)}</div>`).join('')}<button type="button" class="secondary" data-task="outputs">Détecter les sorties OBS</button><div id="output-list" class="small muted"></div><div class="form-actions"><button>Enregistrer les réglages de diffusion</button></div></form>`;
  if(tab==='profile')content=`<h2>Profil et préférences</h2><form id="profile-settings" data-revision="${esc(data.host.settingsRevision)}">${input('Nom affiché','streamerName',settings.streamerName)}${select('Accent','accent',['violet','cyan','rose'].map(x=>[x,x]),settings.accent)}${check('Confirmer l’arrêt du live','confirmStop',settings.confirmStop)}${input('Récompenses Twitch Streamer Ping (IDs séparés par une virgule)','streamerPingRewardIds',(settings.streamerPingRewardIds||[]).join(','))}<label>Préférences de tags (JSON)<textarea name="tagPreferences">${esc(JSON.stringify(settings.tagPreferences||{},null,2))}</textarea></label><div class="form-actions"><button>Enregistrer</button></div></form><details><summary>Profil complet, modules, apparence et paramètres avancés</summary><button class="secondary" data-task="profile-json">Ouvrir l’éditeur du profil</button></details>`;
  if(tab==='integrations')content=`<h2>Connexions et interactions</h2><p class="small muted">${server?'Les réglages s’appliquent à la régie sélectionnée.':'Vos données et comptes restent sur cet appareil. Google et Twitch fonctionnent directement par Internet.'}</p><div class="grid form-grid"><section><h3>Google Calendar</h3><button class="secondary" data-task="google-connect">Connecter Google</button><button class="secondary spacer" data-task="google-calendars">Choisir le calendrier</button><button class="secondary spacer" data-task="google-secret">Configurer le Client Secret Google</button></section><section><h3>Bibliothèque de sons</h3><button class="secondary" data-task="sounds">Gérer les sons ${server?'OBS':'de cet appareil'}</button>${server?'<button class="secondary spacer" data-task="sound-setup">Préparer les sources audio OBS</button>':''}</section><section><h3>Discord</h3><button class="secondary" data-task="discord">Configurer le bot et le salon</button></section><section><h3>Streamlabs et WizeBot</h3><button class="secondary" data-task="streamlabs">Configurer Streamlabs</button><button class="secondary spacer" data-task="wizebot-catalog">Commandes WizeBot</button></section><section><h3>Automatisations</h3><button class="secondary" data-task="automations">Gérer les règles</button></section></div>`;
- if(tab==='devices')content=`<h2>Appareils et comptes</h2><div class="table-wrap"><table><tr><th>Appareil</th><th>Usage</th></tr><tr><td>${esc(device.name)}</td><td>${esc({stream:'Régie de stream',control:'Pilotage',mobile:'Stream Deck'}[device.role])}</td></tr><tr><td>${esc(server||'Aucune régie associée')}</td><td>${!server?'Espace autonome':online?'Régie connectée':'Copie locale disponible'}</td></tr></table></div><div class="form-actions"><button data-task="device-setup">Mon installation</button><button data-task="device-accounts">Mes comptes sur cet appareil</button><button class="secondary" data-task="connection">Associer une régie</button>${localEndpoint||data.host.local?'<button data-task="pairing">Créer un code d’association</button><button class="secondary" data-task="local-permissions">Permissions des appareils</button><button class="secondary" data-task="transport">Connexion sécurisée de cet agent</button>':''}</div><div class="form-actions"><button class="secondary" data-task="use-local">Ouvrir mon espace local</button>${localStorage.getItem('sd2.server')?'<button class="secondary" data-task="use-paired">Retrouver ma régie</button>':''}${server?'<button class="secondary" data-task="import-local">Transférer mes créations locales</button>':''}</div><h3 class="spacer">Macros clavier</h3><p class="small muted">Affectez les touches de votre clavier aux raccourcis affichés dans Boutons & macros. Activez le fonctionnement en arrière-plan dans Mon installation pour conserver les macros sans fenêtre sur l’appareil qui reçoit ces touches. Pour un BlackWidow V4 X : utilisez Synapse pour associer M1 à M6 à Ctrl + Alt + Maj + F1 à F6, une pression simple.</p><button class="secondary" data-task="shortcut-status">Vérifier les raccourcis sur ce PC</button><p id="shortcut-status" class="small muted" role="status">${esc(macroConfigurationError)}</p>`;
+ if(tab==='devices')content=`<h2>Appareils et comptes</h2><div class="table-wrap"><table><tr><th>Appareil</th><th>Usage</th></tr><tr><td>${esc(device.name)}</td><td>${esc({stream:'Régie de stream',control:'Pilotage',mobile:'Stream Deck'}[device.role])}</td></tr><tr><td>${esc(server||'Aucune régie associée')}</td><td>${!server?'Espace autonome':online?'Régie connectée':'Copie locale disponible'}</td></tr></table></div><div class="form-actions"><button data-task="device-setup">Mon installation</button><button data-task="device-accounts">Mes comptes sur cet appareil</button><button class="secondary" data-task="connection">Associer une régie</button>${localEndpoint||data.host.local||deviceExecutor?'<button data-task="pairing">Créer un code d’association</button><button class="secondary" data-task="local-permissions">Permissions des appareils</button><button class="secondary" data-task="transport">Connexion sécurisée de cet agent</button>':''}</div><div class="form-actions"><button class="secondary" data-task="use-local">Ouvrir mon espace local</button>${localStorage.getItem('sd2.server')?'<button class="secondary" data-task="use-paired">Retrouver ma régie</button>':''}${server?'<button class="secondary" data-task="import-local">Transférer mes créations locales</button>':''}</div><h3 class="spacer">Macros clavier</h3><p class="small muted">Affectez les touches de votre clavier aux raccourcis affichés dans Boutons & macros. Activez le fonctionnement en arrière-plan dans Mon installation pour conserver les macros sans fenêtre sur l’appareil qui reçoit ces touches. Pour un BlackWidow V4 X : utilisez Synapse pour associer M1 à M6 à Ctrl + Alt + Maj + F1 à F6, une pression simple.</p><button class="secondary" data-task="shortcut-status">Vérifier les raccourcis sur ce PC</button><p id="shortcut-status" class="small muted" role="status">${esc(macroConfigurationError)}</p>`;
  return `<h1>Configuration</h1><p class="subtitle">Vos réglages sont sauvegardés sur cet appareil, puis synchronisés avec la régie.</p><div class="tabs">${[['obs','OBS et scènes'],['platforms','Diffusion'],['profile','Profil'],['integrations','Intégrations'],['devices','Appareils & macros']].map(([id,label])=>`<button class="${id===tab?'':'secondary'}" data-tab="${id}">${label}</button>`).join('')}</div><section class="panel config-panel">${content}</section>`;
 }
 function render(){
@@ -325,7 +330,7 @@ function render(){
   liveMonitor?.destroy();liveMonitor=undefined;streamlabsFeed?.destroy();streamlabsFeed=undefined;streamlabsFeedRoot=undefined;
   $('#content').innerHTML=page==='deck'?deckPage():page==='sounds'?soundsPage():page==='planning'?planning.page():page==='actions'?actionsPage():page==='manage'?managePage():settingsPage();
  }
- if(commandsBlocked())document.querySelectorAll('[data-action], [data-play-sound], [data-command]').forEach(button=>{button.disabled=true;button.title='Synchronisez les réglages en attente avant de déclencher une commande.';});
+ if(commandsBlocked())document.querySelectorAll('[data-action], [data-play-sound], [data-command]').forEach(button=>{if(button.dataset.action==='sound.stop'&&!macroContextChanging)return;button.disabled=true;button.title='Synchronisez les réglages en attente avant de déclencher une commande.';});
  $('#content').dataset.renderedPage=page;
  if(samePerformance){const banks=$('.deck-banks');if(banks)banks.scrollLeft=bankScroll;window.scrollTo(0,scroll);}
  rememberForms();
@@ -379,12 +384,24 @@ function updateLiveMonitor(){
 }
 function rememberForms(){if(autonomy?.store.view()){const base=resources(autonomy.store.view());document.querySelectorAll('form').forEach(f=>{if(!formBases.has(f))formBases.set(f,base);});}}
 function modal(content){dialogBase=autonomy?.store.view()?resources(autonomy.store.view()):undefined;$('#dialog-content').innerHTML=content;if(!dialog.open)dialog.showModal();rememberForms();}
-const installationUI=await createInstallationUI({device,native,localEndpoint,modal,esc,select:selectInstallationDevice,remove:async target=>{if(server===target.endpoint)await switchWorkspace(true);if(localStorage.getItem('sd2.server')===target.endpoint)localStorage.removeItem('sd2.server');},changed:async (installation,restart)=>{
+const installationUI=await createInstallationUI({device,native,localEndpoint,modal,esc,viewers:openRemoteViewers,select:selectInstallationDevice,remove:async target=>{if(server===target.endpoint)await switchWorkspace(true);if(localStorage.getItem('sd2.server')===target.endpoint)localStorage.removeItem('sd2.server');},changed:async (installation,restart)=>{
  const local=installation.devices.find(d=>d.id===installation.localDeviceId);
- if(!local.roles.includes('audio'))await deviceAudio?.stop();
+ if(!local.roles.includes('audio'))await localRuntime?.audio.stop();
  device=saveDevice({name:local.name,role:native?'mobile':local.roles.includes('obs-executor')?'stream':'control'});
  dialog.close();render();toast(restart?'Installation enregistrée. Redémarrage de l’application…':'Installation enregistrée. Les données existantes sont conservées.');
 }});
+function openRemoteViewers(target){
+ modal(`<h2>Écrans · ${esc(target.name)}</h2><p>La vidéo et les chats s’ouvriront sur cet Android avec ses propres sessions web.</p><form id="remote-viewers-form" data-device-id="${esc(target.id)}">${input('Chaîne Twitch','twitch',localStorage.getItem('sd2.monitor-channel')||data?.host.monitor?.twitchLogin||'')}${input('Identifiant de diffusion YouTube','youtube',localStorage.getItem('sd2.monitor-video')||data?.configuration.youtube.broadcastId||'')}${select('Vidéo affichée','source',[['twitch','Twitch'],['youtube','YouTube']],localStorage.getItem('sd2.monitor-source')||'twitch')}<button>Ouvrir sur ${esc(target.name)}</button></form>`);
+}
+async function sendRemoteViewers(form,value){
+ await installationUI.reload();const target=installationUI.current.devices.find(d=>d.id===form.dataset.deviceId);
+ if(!target?.enabled||!target.endpoint||target.platform!=='android')throw new Error('Android associé indisponible.');
+ const token=await credentials.get(target.endpoint),descriptor=await network('/api/v2/device',undefined,'GET',target.endpoint,token);
+ if(descriptor.device?.id!==target.id)throw new Error('Identité Android différente. Vérifiez son association.');
+ if(!deviceRoleAvailable(descriptor.device,'viewer')||!descriptor.observed?.permissions?.includes('chat'))throw new Error('Le rôle Visionneuses et la permission Chat sont nécessaires sur cet Android.');
+ const result=await network('/api/v2/actions',{id:uuid(),issuedAt:new Date().toISOString(),action:'viewer.open',viewer:{twitch:value.twitch.trim(),youtube:value.youtube.trim(),source:value.source}},'POST',target.endpoint,token);
+ dialog.close();toast(`${labels[result.status]||'À vérifier'} · ${result.message}`);
+}
 async function selectInstallationDevice(target,commit){
  const endpoint=target.id===installationUI.current.localDeviceId?localEndpoint:target.endpoint;const token=endpoint===localEndpoint?'':await credentials.get(endpoint);
  if(!token&&endpoint!==localEndpoint)throw new Error('Associez cet appareil pour obtenir son autorisation.');
@@ -402,7 +419,9 @@ async function selectInstallationDevice(target,commit){
   await openLocal();dialog.close();
  }finally{macroContextChanging--;await refresh();render();}
 }
-const devicePermissionsUI=createDevicePermissionsUI({request:(p,b,m)=>network(p,b,m,localEndpoint||server,localEndpoint?'':credential),modal,esc});
+let deviceExecutor;
+try{deviceExecutor=await createDeviceExecutor({bridge:createExecutorBridge(),installation:()=>installationUI.current,runtime:getLocalRuntime,openViewers:value=>globalThis.StreamDashboardNative?.openViewers?.(JSON.stringify(value))});}catch(error){toast(error.message||'Partage Android indisponible.');}
+const devicePermissionsUI=createDevicePermissionsUI({nativeExecutor:Boolean(deviceExecutor),request:(p,b,m)=>deviceExecutor?deviceExecutor.localRequest(p,b,m):network(p,b,m,localEndpoint||server,localEndpoint?'':credential),modal,esc});
 const actionRouter=createActionRouter({installation:()=>installationUI.current,workspace:()=>autonomy?.store.scope||server||LOCAL_SCOPE,localEndpoint,credential:origin=>credentials.get(origin),request:network});
 const actionRoutingUI=createActionRoutingUI({installationUI,router:actionRouter,workspace:()=>autonomy?.store.scope||server||LOCAL_SCOPE,actions:()=>data?.configuration.actions||[],localEndpoint,modal,esc,changed:async()=>{await configureMacros({synchronized:online});dialog.close();render();}});
 function deviceSetup(){installationUI.open();}
@@ -468,7 +487,7 @@ async function runLocalAction(action,type,configured,soundId){
 }
 async function runAction(action,platform,soundId){
  const configured=data?.configuration.actions.find(value=>value.id===action),type=configured?.type||action;
- if(commandsBlocked()){toast('Synchronisez les réglages en attente avant de déclencher une commande.');return;}
+ if(commandsBlocked()&&!(action==='sound.stop'&&!macroContextChanging)){toast('Synchronisez les réglages en attente avant de déclencher une commande.');return;}
  if(configured&&actionRouter.binding(configured)){
   const bound=actionRouter.binding(configured);
   if(busy&&bound.definition.type!=='sound.stop')return;
@@ -480,7 +499,7 @@ async function runAction(action,platform,soundId){
  }
  if(!server&&deviceAudio){const available=actionAvailability(configured||{type,value:soundId});if(available&&available.status!=='available'){toast(available.message);return;}return runLocalAction(action,type,configured,soundId);}
  if(!online||(busy&&type!=='sound.stop'))return;
- const availability=actionAvailability(configured||{type,value:soundId});if(availability&&availability.status!=='available'){toast(availability.message);return;}
+ const availability=type==='sound.stop'?null:actionAvailability(configured||{type,value:soundId});if(availability&&availability.status!=='available'){toast(availability.message);return;}
  if(type==='replay.save'&&replay?.active!==true){replayDialog();return;}
  if(type==='live.start'){
   const current=liveControlState(data,online);
@@ -649,6 +668,7 @@ document.addEventListener('submit',async event=>{const f=event.target;submitting
  if(await installationUI.submit(f))return;
  if(await planning.submit(f))return;
  if(await wizebotManagement.submit(f))return;
+ if(f.id==='remote-viewers-form'){await sendRemoteViewers(f,v);return;}
  if(f.id==='timer-form'){await api('/api/v1/commands',{type:'timer.start',seconds:Math.round(Number(v.minutes)*60),commandId:uuid()});dialog.close();await refresh(true);toast(timerStatus(data.host.state.timer));return;}
  if(f.id==='connection-form'){
   let target=v.server;

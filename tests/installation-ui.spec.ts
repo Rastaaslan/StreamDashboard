@@ -95,3 +95,31 @@ test('Android reads the owner chat independently of OBS and renders message text
  await expect(page.locator('img')).toHaveCount(0);
  const calls=await page.evaluate(()=>(window as any).chatCalls);expect(calls).toEqual([{broadcastId:'ABCDEFGHIJK'},{liveChatId:'chat-for-selected-video',pageToken:''}]);
 });
+
+test('Android executor synchronizes with durable receipts and preserves concurrent local edits in real IndexedDB',async({page})=>{
+ await page.goto(origin);
+ const result=await page.evaluate(async()=>{
+  const {openReplica}=await import('/mobile/control/autonomy-store.js' as string),{newWorkspace}=await import('/mobile/control/device-workspace.js' as string),{createDeviceExecutor}=await import('/mobile/control/device-executor.js' as string),{migrateInstallation}=await import('/mobile/shared/installation.js' as string),{DEVICE_PERMISSIONS}=await import('/mobile/shared/device-permissions.js' as string);
+  let config:any,enabled=false,store=await openReplica('executor-test');await store.seed(newWorkspace({name:'Phone'}));
+  // Android serves trusted assets over its historical HTTP origin: SubtleCrypto is not available.
+  Object.defineProperty(crypto,'subtle',{value:undefined,configurable:true});
+  const installation=migrateInstallation({id:'phone',platform:'android'}),bridge={listen(){},async call(op:string,value:any){if(op==='load')return config;if(op==='save'){config=value.value;return true;}if(op==='start')enabled=true;if(op==='stop')enabled=false;return {enabled,urls:['https://phone.local:48136'],fingerprint:'a'.repeat(64)};}};
+  const runtime=()=>Promise.resolve({owner:{store},audio:{snapshot:()=>({sounds:[],available:true})}});
+  let executor=await createDeviceExecutor({bridge,installation:()=>installation,runtime});await executor.localRequest('/api/v2/settings',{expectedRevision:'0',remoteEnabled:true},'PUT');
+  const pair=await executor.localRequest('/api/v1/remote/pairing',{permissions:Object.keys(DEVICE_PERMISSIONS)},'POST');
+  const paired=await executor.handle({path:'/api/v1/remote/pair',method:'POST',body:JSON.stringify({id:pair.id,code:pair.code,name:'PC'}),remote:'test'});
+  const invoke=(edit:any)=>executor.handle({path:'/api/v2/autonomy/sync',method:'POST',authorization:'Device '+paired.body.credential,body:JSON.stringify({workspace:'device:phone',edit}),remote:'test'});
+  const action={id:'jingle',type:'sound.play',value:'audio',label:'First',color:'green',shortcut:''},edit={id:'edit_000001',key:'action/jingle',base:null,value:action};
+  const first=await invoke(edit);const pending=store.record.pending.length;
+  store.close();store=await openReplica('executor-test');executor=await createDeviceExecutor({bridge,installation:()=>installation,runtime});
+  const replay=await invoke(edit),replayedPending=store.record.pending.length;
+  const other=await openReplica('executor-test');await other.stage({'action/jingle':{...action,label:'Changed on Android'}});
+  const conflict=await invoke({...edit,id:'edit_000002',base:action,value:{...action,label:'Changed on PC'}});
+  let guarded=false;try{await store.stage({'action/jingle':{...action,label:'Overwrite'}},{'action/jingle':action},true);}catch{guarded=true;}
+  await store.reload();const label=store.view().data.configuration.actions.find((a:any)=>a.id==='jingle').label;
+  const secret=await invoke({...edit,id:'edit_000003',value:{...action,credential:'must-not-save'}});
+  const reused=await invoke({...edit,value:{...action,label:'Reused'}});
+  other.close();store.close();return {first:first.body.receipt.status,replay:replay.body.receipt.status,pending,replayedPending,conflict:conflict.body.receipt.status,guarded,label,secret:secret.status,reused:reused.status};
+ });
+ expect(result).toEqual({first:'applied',replay:'applied',pending:1,replayedPending:1,conflict:'conflict',guarded:true,label:'Changed on Android',secret:400,reused:400});
+});
