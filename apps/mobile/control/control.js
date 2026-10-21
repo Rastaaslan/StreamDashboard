@@ -6,6 +6,7 @@ import { resolveCapability, deviceRoleAvailable } from '../shared/installation.j
 import { createInstallationUI } from './installation-ui.js';
 import { LOCAL_SCOPE, readDevice, saveDevice, newWorkspace } from './device-workspace.js';
 import { openReplica } from './autonomy-store.js';
+import { linkReplicaEndpoint } from './replica-identity.js';
 import { createDeviceServices } from './device-services.js';
 import { createDeviceAudio } from './device-audio.js';
 import { createDeviceProviders } from './device-providers.js';
@@ -228,7 +229,7 @@ function liveDestinationControls(state){
  }).join('')}</div>`;
 }
 function ensureDeckPreferences(){
- const scope=server||LOCAL_SCOPE;
+ const scope=autonomy?.store.scope||server||LOCAL_SCOPE;
  if(deckScope!==scope){deckScope=scope;deckPreferences=readDeckPreferences(localStorage,scope);deckEditing=false;}
  if(!deckPreferences&&data){const initial={version:1,bank:'favorites',soundCategory:'',favorites:defaultDeckFavorites(data,sounds)};if(online||initial.favorites.length){deckPreferences=initial;saveDeckPreferences(localStorage,scope,initial);}return initial;}
  return deckPreferences;
@@ -374,10 +375,13 @@ const installationUI=await createInstallationUI({device,native,localEndpoint,mod
 async function selectInstallationDevice(target,commit){
  const endpoint=target.id===installationUI.current.localDeviceId?localEndpoint:target.endpoint;const token=endpoint===localEndpoint?'':await credentials.get(endpoint);
  if(!token&&endpoint!==localEndpoint)throw new Error('Associez cet appareil pour obtenir son autorisation.');
- await network('/api/v2/autonomy',undefined,'GET',endpoint,token);
+ const replica=await network('/api/v2/autonomy',undefined,'GET',endpoint,token);
+ let descriptor;
+ try{descriptor=(await network('/api/v2/device',undefined,'GET',endpoint,token)).device;if(descriptor?.id!==target.id)throw new Error('L’identité de cet appareil a changé. Renouvelez son association.');}catch(error){if(error.status!==404||!target.id.startsWith('legacy-'))throw error;}
  macroContextChanging++;
  try{
   await configureMacros({suspend:true,required:true});if(refreshFlight)await refreshFlight;
+  await linkReplicaEndpoint(endpoint,replica,descriptor?.id,installationUI.current.devices);
   if(endpoint!==localEndpoint)await credentials.set(token,endpoint);
   await commit();
   server=endpoint;credential=token;online=false;
@@ -386,8 +390,8 @@ async function selectInstallationDevice(target,commit){
  }finally{macroContextChanging--;await refresh();render();}
 }
 const devicePermissionsUI=createDevicePermissionsUI({request:(p,b,m)=>network(p,b,m,localEndpoint||server,localEndpoint?'':credential),modal,esc});
-const actionRouter=createActionRouter({installation:()=>installationUI.current,workspace:()=>server||LOCAL_SCOPE,localEndpoint,credential:origin=>credentials.get(origin),request:network});
-const actionRoutingUI=createActionRoutingUI({installationUI,router:actionRouter,workspace:()=>server||LOCAL_SCOPE,actions:()=>data?.configuration.actions||[],localEndpoint,modal,esc,changed:async()=>{await configureMacros({synchronized:online});dialog.close();render();}});
+const actionRouter=createActionRouter({installation:()=>installationUI.current,workspace:()=>autonomy?.store.scope||server||LOCAL_SCOPE,localEndpoint,credential:origin=>credentials.get(origin),request:network});
+const actionRoutingUI=createActionRoutingUI({installationUI,router:actionRouter,workspace:()=>autonomy?.store.scope||server||LOCAL_SCOPE,actions:()=>data?.configuration.actions||[],localEndpoint,modal,esc,changed:async()=>{await configureMacros({synchronized:online});dialog.close();render();}});
 function deviceSetup(){installationUI.open();}
 
 const deviceAccounts=createDeviceAccounts({modal,esc,toast,request:(p,b,m)=>{if(!localEndpoint)throw new Error('Les comptes propres à cet appareil nécessitent l’application Android ou Windows.');return network(p,b,m,localEndpoint,'');},openExternal:url=>globalThis.streamDashboardDesktop?.openExternalAuth?.(url)});
@@ -644,9 +648,11 @@ document.addEventListener('submit',async event=>{const f=event.target;submitting
    // Validate pairing before replacing the working address or its credential.
    let nextCredential=await credentials.get(nextServer);
    if(v.pair&&v.code){const paired=await network('/api/v1/remote/pair',{id:v.pair,code:v.code,name:v.name},'POST',nextServer,'');nextCredential=paired.credential;}
-   await network('/api/v2/autonomy',undefined,'GET',nextServer,nextCredential);
+   const replica=await network('/api/v2/autonomy',undefined,'GET',nextServer,nextCredential);
    let descriptor;
    try{const value=await network('/api/v2/device',undefined,'GET',nextServer,nextCredential);if(value.version!==1||!value.device)throw new Error('Identité de cet appareil invalide.');descriptor=value.device;}catch(error){if(error.status!==404)throw error;}
+   await installationUI.reload();
+   await linkReplicaEndpoint(nextServer,replica,descriptor?.id,installationUI.current.devices);
    await installationUI.remember(nextServer,descriptor);
    await credentials.set(nextCredential,nextServer);associationSaved=true;
    credential=nextCredential;server=nextServer;online=false;

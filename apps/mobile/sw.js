@@ -1,4 +1,4 @@
-const CACHE = 'streamdashboard-mobile-v28-execution-recovery';
+const CACHE = 'streamdashboard-mobile-v29-workspace-identity';
 const PATHS = new Set([
   '/mobile/',
   '/mobile/index.html',
@@ -32,6 +32,7 @@ const PATHS = new Set([
   '/mobile/control/index.html',
   '/mobile/control-fonts.css',
   '/mobile/control/autonomy-store.js',
+  '/mobile/control/replica-identity.js',
   '/mobile/control/autonomy.js',
   '/mobile/control/control.css',
   '/mobile/control/control.js',
@@ -101,6 +102,7 @@ const ASSETS = [
   'control/index.html',
   'control-fonts.css',
   'control/autonomy-store.js',
+  'control/replica-identity.js',
   'control/autonomy.js',
   'control/control.css',
   'control/control.js',

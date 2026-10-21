@@ -93,7 +93,7 @@ let blocked = false;
 let pending = new Map();
 let sent = [];
 const scope = vm.createContext({
-  online: false, busy: false, activeCommands: 0, compact: true,
+  online: false, busy: false, activeCommands: 0, compact: true, autonomy: undefined,
   data: { configuration: { actions: [] } }, sounds: { sounds: [] },
   page: 'deck', server: 'regie-A', localEndpoint:'regie-A', resolveCapability,
   installationUI:{current:migrateInstallation({id:'fixture-host',platform:'windows'})}, deviceAudio: undefined, LOCAL_SCOPE: 'device-workspace-v1',
@@ -136,6 +136,10 @@ assert(scope.ensureDeckPreferences().favorites.length > 0);
 scope.updateDeckPreferences({ favorites: [], bank: 'scenes' });
 assert.equal(scope.ensureDeckPreferences().favorites.length, 0);
 assert.equal(readDeckPreferences(localStorage, 'regie-A').favorites.length, 0);
+scope.autonomy = {store:{scope:'regie-A'}};scope.server = 'regie-new-address';
+assert.equal(scope.ensureDeckPreferences().bank, 'scenes', 'The same workspace retains its deck after an address change');
+assert.equal(readDeckPreferences(localStorage, 'regie-new-address'), null, 'No second deck is silently initialized');
+scope.autonomy = undefined;scope.server = 'regie-A';
 await click({ deckEdit: '' });
 assert.equal(scope.deckEditing, true);
 assert.equal(scope.mobilePerformancePage('deck').bank, 'all');

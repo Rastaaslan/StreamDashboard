@@ -1,20 +1,24 @@
 import { randomUuid as newId } from '../shared/planning-engine.js';
 import { clone, equal, merge, overlay, resources, fields, pick } from '../shared/autonomy.js';
+import { openReplicaDatabase, locateReplica } from './replica-identity.js';
 export { randomUuid as newId } from '../shared/planning-engine.js';
 const containsSecret=value=>Boolean(value&&typeof value==='object'&&Object.entries(value).some(([key,v])=>/(?:token|secret|password|credential|authorization)/i.test(key)||containsSecret(v)));
 const empty = () => ({version:1,workspace:null,bundle:null,pending:[],lastSync:null,drafts:{}});
 /** Each transaction reads the newest record: multiple windows cannot overwrite each other's outbox. */
 export async function openReplica(scope, factory=globalThis.indexedDB){
- if(!factory)throw new Error('Le stockage local est indisponible. Aucun enregistrement hors ligne ne sera annoncé.');
- const db=await new Promise((resolve,reject)=>{const request=factory.open('streamdashboard-autonomy-v1',2);request.onupgradeneeded=()=>{for(const name of ['replicas','assets'])if(!request.result.objectStoreNames.contains(name))request.result.createObjectStore(name);};request.onsuccess=()=>resolve(request.result);request.onerror=()=>reject(request.error);});
+ const db=await openReplicaDatabase(factory);let actualScope=scope;
  const transact=update=>new Promise((resolve,reject)=>{
-  const tx=db.transaction('replicas',update?'readwrite':'readonly'),table=tx.objectStore('replicas'),request=table.get(scope);let value;
-  request.onsuccess=()=>{try{value=request.result||empty();if(update){value=update(value)||value;table.put(value,scope);}}catch(e){tx.abort();reject(e);}};
+  const tx=db.transaction('replicas',update?'readwrite':'readonly'),table=tx.objectStore('replicas');let value;
+  locateReplica(table,scope,location=>{
+   actualScope=location.scope;const request=table.get(actualScope);
+   request.onsuccess=()=>{try{value=request.result||empty();if(location.workspace&&value.workspace!==location.workspace)throw new Error('Identité de copie locale incohérente. Les données sont conservées.');if(update){value=update(value)||value;table.put(value,actualScope);}}catch(e){tx.abort();reject(e);}};
+  },error=>{tx.abort();reject(error);});
   tx.oncomplete=()=>resolve(clone(value));tx.onerror=()=>reject(tx.error||new Error('Sauvegarde locale impossible.'));tx.onabort=()=>reject(tx.error||new Error('Sauvegarde locale annulée.'));
  });
- let current=await transact();
+ let current;try{current=await transact();}catch(error){db.close();throw error;}
  const change=async update=>{current=await transact(update);return current;};
  return {
+  get scope(){return actualScope;},
   get record(){return clone(current);},
   async seed(response){await change(record=>{if(!record.bundle){record.workspace=response.workspace;record.bundle=clone(response.bundle);}});},
   async reload(){current=await transact();return current;},
@@ -67,7 +71,7 @@ export async function openReplica(scope, factory=globalThis.indexedDB){
    const source=await openReplica(sourceScope,factory);const workspace=source.record.workspace;source.close();
    const transfer=()=>new Promise((resolve,reject)=>{
     const tx=db.transaction('replicas','readwrite'),table=tx.objectStore('replicas');
-    const sourceRequest=table.get(sourceScope),targetRequest=table.get(scope);let ready=0;
+    const sourceRequest=table.get(sourceScope);let targetRequest,targetScope,ready=0;
     const apply=()=>{if(++ready!==2)return;try{
      const source=sourceRequest.result,target=targetRequest.result;
      if(!source?.workspace?.startsWith('local:')||!target?.bundle||target.workspace.startsWith('local:'))throw new Error('Connectez d’abord la régie de destination.');
@@ -84,9 +88,10 @@ export async function openReplica(scope, factory=globalThis.indexedDB){
       target.pending.push({id:newId(),key:'planningTransfer/'+id,base:null,value:clone(item),createdAt:new Date().toISOString()});
       item.transferredTo=target.workspace;item.editable=false;
      }
-     source.bundle=bundle;source.pending=[];table.put(source,sourceScope);table.put(target,scope);
+     source.bundle=bundle;source.pending=[];table.put(source,sourceScope);table.put(target,targetScope);
     }catch(e){tx.abort();reject(e);}};
-    sourceRequest.onsuccess=apply;targetRequest.onsuccess=apply;
+    sourceRequest.onsuccess=apply;
+    locateReplica(table,scope,location=>{targetScope=location.scope;targetRequest=table.get(targetScope);targetRequest.onsuccess=()=>{if(location.workspace&&targetRequest.result?.workspace!==location.workspace){tx.abort();reject(new Error('Identité de la destination modifiée. Le transfert est annulé.'));return;}apply();};},error=>{tx.abort();reject(error);});
     tx.oncomplete=resolve;tx.onerror=()=>reject(tx.error);tx.onabort=()=>reject(tx.error||new Error('Import annulé.'));
    });if(globalThis.navigator?.locks)await navigator.locks.request('sd-planning:'+workspace,transfer);else await transfer();current=await transact();
   },

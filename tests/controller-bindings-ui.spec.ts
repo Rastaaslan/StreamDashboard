@@ -19,7 +19,7 @@ test.afterAll(async () => { await new Promise<void>((resolve, reject) => server.
 async function setup(page: Page, rejectNative = false) {
   const errors: string[] = [];
   page.on('pageerror', error => errors.push(error.message));
-  const backend = { snapshot: null as any, failure: 0, offline: false, conflict: false, calls: [] as string[], pairGate: undefined as Promise<void> | undefined };
+  const backend = { snapshot: null as any, failure: 0, offline: false, conflict: false, sameDevice: false, calls: [] as string[], pairGate: undefined as Promise<void> | undefined };
   await page.addInitScript(({ regie, credential, rejectNative }) => {
     const win = window as any;
     localStorage.setItem('sd2.server', regie);
@@ -69,11 +69,12 @@ async function setup(page: Page, rejectNative = false) {
       if (url.pathname === '/api/v2/autonomy' && backend.offline) { await route.abort(); return; }
       if (url.pathname === '/api/v2/autonomy' && backend.failure) { await route.fulfill({ status: backend.failure, headers, json: { error: { message: 'Échec synthétique' } } }); return; }
       let json: unknown;
-      if (url.pathname === '/api/v2/autonomy') json = backend.snapshot;
+      const snapshot = url.origin === OTHER_REGIE && !backend.sameDevice ? {...backend.snapshot,workspace:'confirmed-second-workspace'} : backend.snapshot;
+      if (url.pathname === '/api/v2/autonomy') json = snapshot;
       else if (url.pathname === '/api/v1/soundboard') json = backend.snapshot.bundle.sounds;
-      else if (url.pathname === '/api/v2/device') json = {version:1,device:{id:url.origin===REGIE?'first-pc':'second-pc',name:'Fixture PC',platform:'windows',roles:['obs-executor'],capabilities:['obs','clips','audio'],enabled:true}};
+      else if (url.pathname === '/api/v2/device') json = {version:1,device:{id:url.origin===REGIE||backend.sameDevice?'first-pc':'second-pc',name:'Fixture PC',platform:'windows',roles:['obs-executor'],capabilities:['obs','clips','audio'],enabled:true}};
       else if (url.pathname === '/api/v2/replay') json = { active: false, available: true, enabled: true, seconds: 20 };
-      else if (url.pathname === '/api/v2/autonomy/sync') json = { ...backend.snapshot, receipt: { status: backend.conflict ? 'conflict' : 'applied', fields: ['label'], message: 'Réglage modifié sur la régie' } };
+      else if (url.pathname === '/api/v2/autonomy/sync') json = { ...snapshot, receipt: { status: backend.conflict ? 'conflict' : 'applied', fields: ['label'], message: 'Réglage modifié sur la régie' } };
       else if (url.pathname === '/api/v1/remote/pair') { if (backend.pairGate) await backend.pairGate; json = { credential: 'new-synthetic-credential' }; }
       else { await route.fulfill({ status: 501, headers, json: { error: { message: 'Unexpected test request' } } }); return; }
       await route.fulfill({ headers, json }); return;
@@ -167,6 +168,40 @@ test('new pairing suspends old macros before waiting and arms only the new ident
   expect(current.credential).toBe('new-synthetic-credential');
   expect(current.actions).toHaveLength(6);
   expect(errors).toEqual([]);
+});
+
+test('the pairing form keeps drafts, pending edits and button destinations when the same PC changes address', async ({ page }) => {
+  const {backend,errors}=await setup(page);backend.sameDevice=true;backend.conflict=true;
+  await page.evaluate(async origin=>{
+    const storeModule=await import('/mobile/control/autonomy-store.js' as string),model=await import('/mobile/shared/installation.js' as string);
+    const store=await storeModule.openReplica(origin),action=store.record.bundle.data.configuration.actions[0];
+    await store.draft('metadata',{title:'Brouillon antérieur au changement'});
+    await store.stage({['action/'+action.id]:{...action,label:'Nom modifié hors ligne'}});store.close();
+    const local=model.migrateInstallation({id:localStorage.getItem('sd2.installation.device-id'),platform:'windows',legacy:{role:'control',configured:true}});
+    const device={id:'first-pc',name:'Premier PC',platform:'windows',roles:['obs-executor'],capabilities:['obs','clips','audio'],enabled:true};
+    const associated=model.planInstallationChange(local,model.associateInstallationDevice(local,origin,device),local.revision).next;
+    associated.actionRoutes=[{workspace:origin,actionId:action.id,deviceId:device.id,definition:action}];
+    localStorage.setItem('sd2.installation.v2',JSON.stringify(associated));
+  },REGIE);
+  await page.locator('header [data-task="connection"]').click();
+  await page.locator('#connection-form [name="server"]').fill(OTHER_REGIE);
+  await page.locator('#connection-form [name="pair"]').fill('test-pair');
+  await page.locator('#connection-form [name="code"]').fill('123456');
+  await page.locator('#connection-form [name="fingerprint"]').fill('ab'.repeat(32));
+  await page.locator('#connection-form button').filter({hasText:'Se connecter'}).click();
+  await expect.poll(()=>page.evaluate(()=>localStorage.getItem('sd2.server'))).toBe(OTHER_REGIE);
+  await expect(page.locator('#connection')).toContainText('Régie connectée');
+  const result=await page.evaluate(async origin=>{
+    const m=await import('/mobile/control/autonomy-store.js' as string),store=await m.openReplica(origin),record=store.record;store.close();
+    return {record,installation:JSON.parse(localStorage.getItem('sd2.installation.v2')!),credentials:(window as any).deviceCredentials};
+  },OTHER_REGIE);
+  expect(result.record.workspace).toBe('confirmed-controller-workspace');
+  expect(result.record.drafts.metadata.title).toBe('Brouillon antérieur au changement');
+  expect(result.record.pending).toHaveLength(1);expect(result.record.pending[0].value.label).toBe('Nom modifié hors ligne');
+  expect(result.installation.actionRoutes[0].workspace).toBe(REGIE);
+  expect(result.installation.devices.find((device:any)=>device.id==='first-pc').endpoint).toBe(OTHER_REGIE);
+  expect(result.credentials[REGIE]).toBe(CREDENTIAL);expect(result.credentials[OTHER_REGIE]).toBe('new-synthetic-credential');
+  expect((await nativeConfiguration(page)).actions).toEqual([]);expect(errors).toEqual([]);
 });
 
 test('pending and conflicted action edits never arm the locally modified mapping', async ({ page }) => {
