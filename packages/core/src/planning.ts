@@ -49,11 +49,11 @@ export class PlanningOrchestrator {
 
   refreshTwitch(now = Date.now(), ids?: string[]) {
     return this.serial(async () => {
-      for (const item of this.items.filter(item => item.deletionPending && (!ids || ids.includes(item.id)))) {
+      for (const item of this.items.filter(item => !item.transferredTo && !item.transferId && item.deletionPending && (!ids || ids.includes(item.id)))) {
         await recoverSeriesDeletionIdentities(item, this.providers, () => this.persist(this.items));
       }
       for (const item of this.items.filter(item => !ids || ids.includes(item.id))) {
-        if (item.deletionPending) continue;
+        if (item.deletionPending || item.transferredTo || item.transferId) continue;
         const transitioning = (item.providers?.twitch?.projectionMode === 'materialized' || Boolean(item.providers?.twitch?.nativeReplacementRequested)) && !needsTwitchMaterialization(item);
         const handled = await reconcileTwitchProjection(item, this.providers.twitch, () => this.persist(this.items), { now });
         if (!handled && transitioning && item.ownership === 'LOCAL' && item.desiredPublication?.twitch
@@ -62,7 +62,7 @@ export class PlanningOrchestrator {
         }
       }
       for (const item of this.items.filter(item => !ids || ids.includes(item.id))) {
-        if (item.deletionPending) continue;
+        if (item.deletionPending || item.transferredTo || item.transferId) continue;
         const transitioning = item.providers?.google?.projectionMode === 'materialized' && !needsGoogleMaterialization(item);
         const handled = await reconcileGoogleProjection(item, this.providers.google, () => this.persist(this.items), { now });
         if (!handled && transitioning && item.ownership === 'LOCAL' && item.desiredPublication?.google && !this.remoteId(item, 'google')) await this.publishOne(item, 'google');
@@ -76,6 +76,7 @@ export class PlanningOrchestrator {
   create(input: Omit<CalendarItem, 'id'> & { id?: string }) {
     return this.serial(async () => {
       const id = input.id ?? randomUuid();
+      if (this.items.some(item => item.id === id)) throw new Error('Un événement de même identité existe déjà.');
       const item: CalendarItem = {
         ...input,
         recurrence: recurrenceForNewSeries(input.recurrence, input.localId ?? id),
@@ -128,6 +129,7 @@ export class PlanningOrchestrator {
     return this.serial(async () => {
       const item = this.items.find(value => value.id === id);
       if (!item) return this.all();
+      this.assertOwned(item);
       if (destinations.local && (item.recurrence || item.deletionPending)) {
         if (item.twitchRecurring && !destinations.confirmRecurring && !item.deletionPending) throw new Error('Suppression explicite de la série Twitch récurrente requise.');
         const retry = item.deletionPending === true;
@@ -609,7 +611,12 @@ export class PlanningOrchestrator {
   private required(id: string) {
     const item = this.items.find(value => value.id === id);
     if (!item) throw new Error('Événement introuvable.');
+    this.assertOwned(item);
     return item;
+  }
+
+  private assertOwned(item: CalendarItem) {
+    if (item.transferredTo || item.transferId) throw new Error('Événement transféré : gérez-le sur son appareil propriétaire.');
   }
 
   private serial<T>(fn: () => Promise<T>) {

@@ -67,6 +67,7 @@ export function createLocalPlanning({store,providers,onChange=()=>{},locks=globa
     for(const incoming of result.items){
      const linked=items.find(x=>x.providers?.google?.remoteId===incoming.remoteId&&x.providers.google.calendarId===result.calendarId);
      if(linked&&linked.ownership!=='EXTERNAL'){
+      if(linked.transferredTo||linked.transferId)continue;
       if(linked.providers.google.remoteRevision&&linked.providers.google.remoteRevision!==incoming.revision){linked.providers.google.status='conflict';linked.providers.google.lastError='Événement modifié dans Google. Choisissez la version à conserver.';}
       continue;
      }
@@ -99,5 +100,6 @@ export function createLocalPlanning({store,providers,onChange=()=>{},locks=globa
    const receipt=await store.adoptPlanning(edit,signature,guard);onChange();return receipt;
   });
  }
- return {route,adopt,wait:()=>tail};
+ async function handoff(own,operation,ticket,proof,guard){return serial(async()=>{validate(ticket.item);const receipt=await store.handoff(own,operation,ticket,proof,guard);onChange();return receipt;});}
+ return {route,adopt,handoff,wait:()=>tail};
 }

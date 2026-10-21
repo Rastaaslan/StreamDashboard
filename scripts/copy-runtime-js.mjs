@@ -4,6 +4,7 @@ import path from 'node:path';
 const runtimeFiles = [
   'apps/mobile/runtime.js',
   'apps/mobile/shared/autonomy.js',
+  'apps/mobile/shared/planning-handoff.js',
   'apps/mobile/shared/installation.js',
   'apps/mobile/shared/device-permissions.js',
   'apps/mobile/shared/action-definition.js',

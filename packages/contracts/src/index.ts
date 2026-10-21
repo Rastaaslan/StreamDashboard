@@ -176,6 +176,9 @@ export interface CalendarItem {
   source?: 'DAMPLANNER' | 'GOOGLE' | 'TWITCH';
   ownership?: 'LOCAL' | 'EXTERNAL';
   editable?: boolean;
+  /** Durable ownership hold: this copy must never publish while transferred. */
+  transferredTo?: string;
+  transferId?: string;
   kind?: 'LIVE' | 'PERSONAL';
   draft?: boolean;
   twitchSegmentId?: string;

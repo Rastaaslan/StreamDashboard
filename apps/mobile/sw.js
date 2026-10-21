@@ -1,4 +1,4 @@
-const CACHE = 'streamdashboard-mobile-v35-installation-backup';
+const CACHE = 'streamdashboard-mobile-v36-planning-handoff';
 const PATHS = new Set([
   '/mobile/',
   '/mobile/index.html',
@@ -77,6 +77,9 @@ const PATHS = new Set([
   '/mobile/control/wizebot.js',
   '/mobile/control/youtube-picker.js',
   '/mobile/shared/autonomy.js',
+  '/mobile/shared/planning-handoff.js',
+  '/mobile/control/planning-handoff.js',
+  '/mobile/control/planning-handoff-ui.js',
   '/mobile/shared/planning-engine.js',
 ]);
 const ASSETS = [
@@ -156,6 +159,9 @@ const ASSETS = [
   'control/wizebot.js',
   'control/youtube-picker.js',
   'shared/autonomy.js',
+  'shared/planning-handoff.js',
+  'control/planning-handoff.js',
+  'control/planning-handoff-ui.js',
   'shared/planning-engine.js',
 ];
 

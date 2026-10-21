@@ -512,6 +512,7 @@ export class TwitchClient {
   private async performSync(items: CalendarItem[], persist: (items: CalendarItem[]) => Promise<void>) {
     if (!this.state.connected) throw new Error('Connectez Twitch avant de synchroniser le planning.');
     for (const item of items) {
+      if(item.transferredTo||item.transferId)continue;
       if (item.desiredPublication?.twitch && !needsTwitchMaterialization(item) && !item.providers?.twitch?.projections) this.validateTwitchRecurrence(item);
     }
     const generation = this.generation;
@@ -534,6 +535,7 @@ export class TwitchClient {
       const missingLocalIds = new Set<string>();
 
       for (const item of merged) {
+        if(item.transferredTo||item.transferId)continue;
         const uncertain = item.providers?.twitch;
         if (uncertain?.uncertainCreate && !item.deletionPending) {
           uncertain.status = 'error';
@@ -567,10 +569,10 @@ export class TwitchClient {
         // turn its candidate into a duplicate imported row, including before
         // deletion is requested. Other confirmed identities still synchronize.
         if (!existingById && uncertainRequests.some(request => this.sameContent(request, segment))) continue;
-        if (existingById?.deletionPending) continue;
+        if (existingById?.deletionPending || existingById?.transferredTo || existingById?.transferId) continue;
         if (existingById && (needsTwitchMaterialization(existingById) || existingById.providers?.twitch?.projections)) continue;
         const recoveredLocal = existingById ?? merged.find(item =>
-          item.ownership !== 'EXTERNAL'
+          !item.transferredTo && !item.transferId && item.ownership !== 'EXTERNAL'
           && !needsTwitchMaterialization(item) && !item.providers?.twitch?.projections
           && !item.deletionPending
           && item.desiredPublication?.twitch === true
@@ -639,7 +641,7 @@ export class TwitchClient {
 
       for (const item of merged.filter(item =>
         (item.category === 'live' || item.kind === 'LIVE')
-        && !item.deletionPending
+        && !item.deletionPending && !item.transferredTo && !item.transferId
         && item.desiredPublication?.twitch === true
         && !needsTwitchMaterialization(item) && !item.providers?.twitch?.projections
         && !item.twitchSegmentId

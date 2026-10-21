@@ -148,3 +148,16 @@ it.each([false, true])('persists withdrawal without remote identity before retry
   await client.sync(afterWithdrawal.all());
   expect(fetcher.mock.calls.filter(([, init]) => init?.method === 'POST')).toHaveLength(1);
 });
+
+it('keeps transferred published and unpublished events frozen during provider synchronization',async()=>{
+ const {client,fetcher,provider}=await setup();
+ const planner=new PlanningOrchestrator([],{twitch:provider},async()=>{});
+ const created=await planner.create(event());
+ const held={...created,editable:false,transferredTo:'device:phone',transferId:'transfer_twitch'};
+ const unpublished={...event(),id:'unpublished',ownership:'LOCAL' as const,editable:false,transferredTo:'device:phone',transferId:'transfer_unpublished'};
+ fetcher.mockClear();expect(await client.sync([structuredClone(held),structuredClone(unpublished)])).toEqual([held,unpublished]);
+ expect(fetcher.mock.calls.filter(([,init])=>['POST','PATCH','DELETE'].includes(init?.method||''))).toHaveLength(0);
+ await provider.delete(created.providers!.twitch!.remoteId!);fetcher.mockClear();
+ expect(await client.sync([structuredClone(held),structuredClone(unpublished)])).toEqual([held,unpublished]);
+ expect(fetcher.mock.calls.filter(([,init])=>['POST','PATCH','DELETE'].includes(init?.method||''))).toHaveLength(0);
+});

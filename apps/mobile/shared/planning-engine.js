@@ -1843,11 +1843,11 @@ var PlanningOrchestrator = class {
   queue = Promise.resolve();
   refreshTwitch(now = Date.now(), ids) {
     return this.serial(async () => {
-      for (const item of this.items.filter((item2) => item2.deletionPending && (!ids || ids.includes(item2.id)))) {
+      for (const item of this.items.filter((item2) => !item2.transferredTo && !item2.transferId && item2.deletionPending && (!ids || ids.includes(item2.id)))) {
         await recoverSeriesDeletionIdentities(item, this.providers, () => this.persist(this.items));
       }
       for (const item of this.items.filter((item2) => !ids || ids.includes(item2.id))) {
-        if (item.deletionPending) continue;
+        if (item.deletionPending || item.transferredTo || item.transferId) continue;
         const transitioning = (item.providers?.twitch?.projectionMode === "materialized" || Boolean(item.providers?.twitch?.nativeReplacementRequested)) && !needsTwitchMaterialization(item);
         const handled = await reconcileTwitchProjection(item, this.providers.twitch, () => this.persist(this.items), { now });
         if (!handled && transitioning && item.ownership === "LOCAL" && item.desiredPublication?.twitch && !this.remoteId(item, "twitch") && item.conflict?.provider !== "twitch") {
@@ -1855,7 +1855,7 @@ var PlanningOrchestrator = class {
         }
       }
       for (const item of this.items.filter((item2) => !ids || ids.includes(item2.id))) {
-        if (item.deletionPending) continue;
+        if (item.deletionPending || item.transferredTo || item.transferId) continue;
         const transitioning = item.providers?.google?.projectionMode === "materialized" && !needsGoogleMaterialization(item);
         const handled = await reconcileGoogleProjection(item, this.providers.google, () => this.persist(this.items), { now });
         if (!handled && transitioning && item.ownership === "LOCAL" && item.desiredPublication?.google && !this.remoteId(item, "google")) await this.publishOne(item, "google");
@@ -1869,6 +1869,7 @@ var PlanningOrchestrator = class {
   create(input) {
     return this.serial(async () => {
       const id = input.id ?? randomUuid();
+      if (this.items.some((item2) => item2.id === id)) throw new Error("Un \xE9v\xE9nement de m\xEAme identit\xE9 existe d\xE9j\xE0.");
       const item = {
         ...input,
         recurrence: recurrenceForNewSeries(input.recurrence, input.localId ?? id),
@@ -1912,6 +1913,7 @@ var PlanningOrchestrator = class {
     return this.serial(async () => {
       const item = this.items.find((value) => value.id === id);
       if (!item) return this.all();
+      this.assertOwned(item);
       if (destinations.local && (item.recurrence || item.deletionPending)) {
         if (item.twitchRecurring && !destinations.confirmRecurring && !item.deletionPending) throw new Error("Suppression explicite de la s\xE9rie Twitch r\xE9currente requise.");
         const retry = item.deletionPending === true;
@@ -2366,7 +2368,11 @@ var PlanningOrchestrator = class {
   required(id) {
     const item = this.items.find((value) => value.id === id);
     if (!item) throw new Error("\xC9v\xE9nement introuvable.");
+    this.assertOwned(item);
     return item;
+  }
+  assertOwned(item) {
+    if (item.transferredTo || item.transferId) throw new Error("\xC9v\xE9nement transf\xE9r\xE9 : g\xE9rez-le sur son appareil propri\xE9taire.");
   }
   serial(fn) {
     const result = this.queue.then(fn);

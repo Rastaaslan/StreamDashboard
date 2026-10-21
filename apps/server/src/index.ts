@@ -92,6 +92,7 @@ import { WizeBotAdapter } from '../../../integrations/wizebot/src/adapter.js';
 import type { WizeBotTransport } from '../../../integrations/wizebot/src/adapter.js';
 import { WizeBotHttpTransport } from '../../../integrations/wizebot/src/http-transport.js';
 import { AutonomyService } from './autonomy-service.js';
+import {transitionPlanningHandoff,type HandoffReceipt} from '../../mobile/shared/planning-handoff.js';
 import { registerAutonomyRoutes, invokeManagement } from './autonomy-routes.js';
 import { pick, fields } from '../../mobile/shared/autonomy.js';
 import { registerLiveControlRoutes, automationInput } from './live-control-routes.js';
@@ -120,6 +121,7 @@ interface TwitchIdentity {
 }
 interface GoogleLocalState { targetCalendarId: string | null; lastSyncedAt: string | null }
 interface LocalData {
+  planningHandoffs?: Record<string,HandoffReceipt>;
   commandReceipts?: Record<string, string>;
   commandReceiptOrder?: string[];
   schemaVersion: number;
@@ -312,6 +314,8 @@ function sanitizeCalendarItem(value: unknown): CalendarItem | null {
   if (['LOCAL', 'EXTERNAL'].includes(String(value.ownership))) item.ownership = value.ownership as CalendarItem['ownership'];
   if (['LIVE', 'PERSONAL'].includes(String(value.kind))) item.kind = value.kind as CalendarItem['kind'];
   if (typeof value.editable === 'boolean') item.editable = value.editable;
+  if (typeof value.transferredTo === 'string') {item.transferredTo=value.transferredTo;item.editable=false;}
+  if (typeof value.transferId === 'string') {item.transferId=value.transferId;item.editable=false;}
   if (typeof value.draft === 'boolean') item.draft = value.draft;
   if (typeof value.external === 'boolean') item.external = value.external;
   if (typeof value.twitchSegmentId === 'string' && value.twitchSegmentId) item.twitchSegmentId = value.twitchSegmentId;
@@ -839,6 +843,7 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
   app.use('/api/v1/discord/planning', express.json({ limit: '14mb' }));
   app.use('/api/v2/device/providers', express.json({ limit: '256kb' }));
   app.use('/api/v2/autonomy/sync', express.json({ limit: '512kb' }));
+  app.use('/api/v2/planning/handoff', express.json({ limit: '512kb' }));
   app.use(express.json({ limit: '32kb' }));
   app.use((req, res, next) => {
     const origin = req.headers.origin;
@@ -936,7 +941,7 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
   let stateRevision = 0;
   const temporalPlanning = (from = Date.now() - DAY_MS, to = Date.now() + 730 * DAY_MS) => expandRecurringItems(local.planning, { from, to });
   const nextLive = () => temporalPlanning()
-    .filter(item => !item.deletionPending && !item.allDay && (item.category === 'live' || item.kind === 'LIVE') && Date.parse(item.endAtUtc) > Date.now())
+    .filter(item => !item.transferredTo && !item.transferId && !item.deletionPending && !item.allDay && (item.category === 'live' || item.kind === 'LIVE') && Date.parse(item.endAtUtc) > Date.now())
     .sort((left, right) => Date.parse(left.startAtUtc) - Date.parse(right.startAtUtc))[0] ?? null;
   const snapshot = (): DashboardState => {
     const currentRemaining = remaining();
@@ -1593,14 +1598,15 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
   let unplannedMetadataQueue: Promise<void> = Promise.resolve();
   let unplannedGoogleQueue: Promise<void> = Promise.resolve();
 
-  const findTrackedDraft = () => findUnplannedDraft(local.planning, trackedUnplannedLiveId);
+  const unplannedPending=new Map<string,number>();
+  const findTrackedDraft = () => findUnplannedDraft(local.planning.filter(item=>!item.transferredTo&&!item.transferId), trackedUnplannedLiveId);
   const shouldPublishUnplannedToGoogle = () => google.connected && Boolean(local.google.targetCalendarId);
 
   const recordUnplannedGoogleFailure = async (id: string, error: unknown) => {
     const message = error instanceof Error ? error.message : String(error);
     await plan(async () => {
       const current = local.planning.find(item => item.id === id);
-      if (!current || current.desiredPublication?.google !== true) return;
+      if (!current || current.transferredTo || current.transferId || current.desiredPublication?.google !== true) return;
       current.providers ??= {};
       const link = current.providers.google ??= { status: 'error' };
       link.status = 'error';
@@ -1614,7 +1620,7 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
 
   const syncUnplannedGoogleNow = async (id: string) => {
     const snapshotItem = local.planning.find(item => item.id === id);
-    if (!snapshotItem || snapshotItem.desiredPublication?.google !== true) return;
+    if (!snapshotItem || snapshotItem.transferredTo || snapshotItem.transferId || snapshotItem.desiredPublication?.google !== true) return;
     const item = structuredClone(snapshotItem);
     const calendarId = item.providers?.google?.calendarId ?? local.google.targetCalendarId;
     if (!google.connected || !calendarId) {
@@ -1666,7 +1672,8 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
   };
 
   const queueUnplannedGoogleSync = (id: string) => {
-    const operation = unplannedGoogleQueue.then(() => syncUnplannedGoogleNow(id));
+    unplannedPending.set(id,(unplannedPending.get(id)||0)+1);
+    const operation = unplannedGoogleQueue.then(() => syncUnplannedGoogleNow(id)).finally(()=>{const remaining=(unplannedPending.get(id)||1)-1;if(remaining)unplannedPending.set(id,remaining);else unplannedPending.delete(id);});
     unplannedGoogleQueue = operation.catch(logError);
   };
 
@@ -1678,7 +1685,7 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
       let shouldResyncGoogle = false;
       await plan(async () => {
         const current = local.planning.find(item => item.id === id);
-        if (!current) return;
+        if (!current || current.transferredTo || current.transferId) return;
         if (current.title === 'Live non programmé' && metadata.title.trim()) {
           current.title = metadata.title.trim().slice(0, 140);
           changedMetadata = true;
@@ -2654,6 +2661,31 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
   });
 
   let autonomySnapshotTime = 0;
+  app.post('/api/v2/planning/handoff',async(req,res,next)=>{
+    try{
+      if(req.body.workspace!==autonomy.workspace)throw new Error('Identité de l’espace modifiée.');
+      const receipt=await plan(async()=>{
+        if(res.locals.remoteDeviceId&&(!remoteRuntimeEnabled||!remoteAuth.permits(res.locals.remoteDeviceId,['configuration','planning'])||remoteAuth.authenticate(req.headers.authorization?.match(/^Device (\S+)$/)?.[1]||'')!==res.locals.remoteDeviceId))throw new Error('Autorisation retirée avant le transfert.');
+        await assertRole('planning');
+        const {operation,ticket,proof}=req.body;
+        if(!sanitizeCalendarItem(ticket?.item))throw new Error('Événement à transférer invalide.');
+        if(operation==='prepare'&&(ticket.item.draft||unplannedPending.has(ticket.item.id)))throw new Error('Terminez le suivi du live et ses publications avant le transfert.');
+        if(operation==='prepare'&&Object.values(local.companion.providerWork).some(work=>work.item.id===ticket.item.id))throw new Error('Terminez ou réconciliez les publications en attente avant le transfert.');
+        const result=transitionPlanningHandoff({items:local.planning,journal:local.planningHandoffs||{}},autonomy.workspace,operation,ticket,proof);
+        if(operation!=='status'){
+          const companion=structuredClone(local.companion),id=ticket.item.id;
+          companion.eventRevisions[id]=(companion.eventRevisions[id]||0)+1;companion.serverRevision++;
+          const value=result.state.items.find(item=>item.id===id);
+          if(value)companion.eventHistory[id]=structuredClone(value) as unknown as Record<string,unknown>;
+          const previous={planning:local.planning,planningHandoffs:local.planningHandoffs,companion:local.companion};
+          local.planning=result.state.items;local.planningHandoffs=result.state.journal;local.companion=companion;
+          try{await save();}catch(error){if(local.planning===result.state.items)Object.assign(local,previous);throw error;}
+          invalidatePreflight();broadcast();
+        }
+        return result.receipt;
+      });res.json({receipt});
+    }catch(error){next(error);}
+  });
   const autonomyBundle = (req: express.Request) => ({
     savedAt: autonomySnapshotTime = Math.max(Date.now(), autonomySnapshotTime + 1),
     data: { ...control.snapshot(), host: { ...controlHostState(), local: isLocalRequest(req) } },
@@ -2916,7 +2948,7 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
         const timeMax = new Date(Date.now() + 730 * DAY_MS).toISOString();
         const remote = await google.events(calendarId, { timeMin, timeMax });
         for (const item of local.planning) {
-          if (item.deletionPending) continue;
+          if (item.deletionPending || item.transferredTo || item.transferId) continue;
           const link = item.providers?.google;
           if (!item.recurrence || !link?.remoteId || (link.calendarId && link.calendarId !== calendarId) || remote.some(event => event.id === link.remoteId)) continue;
           try { remote.push(await google.event(calendarId, link.remoteId)); }
@@ -2937,7 +2969,7 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
         });
 
         for (const item of local.planning) {
-          if (item.deletionPending) continue;
+          if (item.deletionPending || item.transferredTo || item.transferId) continue;
           const link = item.providers?.google;
           if (!link?.remoteId || (link.calendarId && link.calendarId !== calendarId) || (!item.recurrence && !overlapsWindow(item, timeMin, timeMax))) continue;
           const event = remoteById.get(link.remoteId);
@@ -2981,7 +3013,7 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
           })) continue;
           const managedLocal = event.managed ? localById.get(event.localId) : undefined;
           if (managedLocal) {
-            if (managedLocal.deletionPending) continue;
+            if (managedLocal.deletionPending || managedLocal.transferredTo || managedLocal.transferId) continue;
             managedLocal.providers ??= {};
             const existingLink = managedLocal.providers.google;
             if (managedLocal.conflict?.provider === 'google') continue;

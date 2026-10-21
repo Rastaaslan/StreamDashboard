@@ -821,7 +821,10 @@
             "docs/qa/2026-10-21-android-executor.md",
             "tests/node/device-executor.test.mjs",
             "tests/planning-transfer-ui.spec.ts",
-            "docs/qa/2026-10-21-planning-handoff.md"
+            "docs/qa/2026-10-21-planning-handoff.md",
+            "docs/qa/2026-10-21-planning-ownership.md",
+            "tests/planning-handoff.test.ts",
+            "tests/node/planning-handoff.test.mjs"
           ]
         },
         {
@@ -839,7 +842,10 @@
             "docs/qa/2026-10-21-android-executor.md",
             "tests/node/device-executor.test.mjs",
             "tests/planning-transfer-ui.spec.ts",
-            "docs/qa/2026-10-21-planning-handoff.md"
+            "docs/qa/2026-10-21-planning-handoff.md",
+            "docs/qa/2026-10-21-planning-ownership.md",
+            "tests/planning-handoff.test.ts",
+            "tests/node/planning-handoff.test.mjs"
           ]
         },
         {
@@ -857,7 +863,10 @@
             "docs/qa/2026-10-21-android-executor.md",
             "tests/node/device-executor.test.mjs",
             "tests/planning-transfer-ui.spec.ts",
-            "docs/qa/2026-10-21-planning-handoff.md"
+            "docs/qa/2026-10-21-planning-handoff.md",
+            "docs/qa/2026-10-21-planning-ownership.md",
+            "tests/planning-handoff.test.ts",
+            "tests/node/planning-handoff.test.mjs"
           ]
         },
         {
@@ -875,7 +884,10 @@
             "docs/qa/2026-10-21-android-executor.md",
             "tests/node/device-executor.test.mjs",
             "tests/planning-transfer-ui.spec.ts",
-            "docs/qa/2026-10-21-planning-handoff.md"
+            "docs/qa/2026-10-21-planning-handoff.md",
+            "docs/qa/2026-10-21-planning-ownership.md",
+            "tests/planning-handoff.test.ts",
+            "tests/node/planning-handoff.test.mjs"
           ]
         },
         {
@@ -893,7 +905,10 @@
             "docs/qa/2026-10-21-android-executor.md",
             "tests/node/device-executor.test.mjs",
             "tests/planning-transfer-ui.spec.ts",
-            "docs/qa/2026-10-21-planning-handoff.md"
+            "docs/qa/2026-10-21-planning-handoff.md",
+            "docs/qa/2026-10-21-planning-ownership.md",
+            "tests/planning-handoff.test.ts",
+            "tests/node/planning-handoff.test.mjs"
           ]
         },
         {
@@ -911,7 +926,10 @@
             "docs/qa/2026-10-21-android-executor.md",
             "tests/node/device-executor.test.mjs",
             "tests/planning-transfer-ui.spec.ts",
-            "docs/qa/2026-10-21-planning-handoff.md"
+            "docs/qa/2026-10-21-planning-handoff.md",
+            "docs/qa/2026-10-21-planning-ownership.md",
+            "tests/planning-handoff.test.ts",
+            "tests/node/planning-handoff.test.mjs"
           ]
         }
       ]
@@ -1151,7 +1169,10 @@
         "tests/installation-store.test.ts",
         "docs/qa/2026-10-21-transversal-modules.md",
         "docs/qa/2026-10-21-execution-recovery.md",
-        "docs/qa/2026-10-21-workspace-identity.md"
+        "docs/qa/2026-10-21-workspace-identity.md",
+        "docs/qa/2026-10-21-planning-ownership.md",
+        "tests/planning-handoff.test.ts",
+        "tests/node/planning-handoff.test.mjs"
       ]
     },
     {
@@ -1164,7 +1185,10 @@
         "tests/installation-store.test.ts",
         "docs/qa/2026-10-21-transversal-modules.md",
         "docs/qa/2026-10-21-execution-recovery.md",
-        "docs/qa/2026-10-21-workspace-identity.md"
+        "docs/qa/2026-10-21-workspace-identity.md",
+        "docs/qa/2026-10-21-planning-ownership.md",
+        "tests/planning-handoff.test.ts",
+        "tests/node/planning-handoff.test.mjs"
       ]
     },
     {
@@ -1205,7 +1229,10 @@
         "docs/qa/2026-10-21-transversal-modules.md",
         "docs/qa/2026-10-21-execution-recovery.md",
         "docs/qa/2026-10-21-workspace-identity.md",
-        "docs/qa/2026-10-21-lan-discovery.md"
+        "docs/qa/2026-10-21-lan-discovery.md",
+        "docs/qa/2026-10-21-planning-ownership.md",
+        "tests/planning-handoff.test.ts",
+        "tests/node/planning-handoff.test.mjs"
       ]
     },
     {
@@ -1218,7 +1245,10 @@
         "tests/installation-store.test.ts",
         "docs/qa/2026-10-21-transversal-modules.md",
         "docs/qa/2026-10-21-execution-recovery.md",
-        "docs/qa/2026-10-21-workspace-identity.md"
+        "docs/qa/2026-10-21-workspace-identity.md",
+        "docs/qa/2026-10-21-planning-ownership.md",
+        "tests/planning-handoff.test.ts",
+        "tests/node/planning-handoff.test.mjs"
       ]
     },
     {
@@ -1234,7 +1264,10 @@
         "tests/desktop-lifecycle.test.ts",
         "docs/qa/2026-10-21-installation-backups.md",
         "tests/migration-backup.test.ts",
-        "docs/qa/2026-10-21-rc117-copies.json"
+        "docs/qa/2026-10-21-rc117-copies.json",
+        "docs/qa/2026-10-21-planning-ownership.md",
+        "tests/planning-handoff.test.ts",
+        "tests/node/planning-handoff.test.mjs"
       ]
     },
     {

@@ -1,6 +1,7 @@
 import { randomUuid as newId } from '../shared/planning-engine.js';
 import { clone, equal, merge, overlay, resources, fields, pick } from '../shared/autonomy.js';
 import { openReplicaDatabase, locateReplica } from './replica-identity.js';
+import {transitionPlanningHandoff} from '../shared/planning-handoff.js';
 export { randomUuid as newId } from '../shared/planning-engine.js';
 const containsSecret=value=>Boolean(value&&typeof value==='object'&&Object.entries(value).some(([key,v])=>/(?:token|secret|password|credential|authorization)/i.test(key)||containsSecret(v)));
 const empty = () => ({version:1,workspace:null,bundle:null,pending:[],lastSync:null,drafts:{}});
@@ -24,6 +25,14 @@ export async function openReplica(scope, factory=globalThis.indexedDB){
   async seed(response){await change(record=>{if(!record.bundle){record.workspace=response.workspace;record.bundle=clone(response.bundle);}});},
   async reload(){current=await transact();return current;},
   view(){return recordView(current);},
+  async handoff(own,operation,ticket,proof,guard=()=>{}){
+   let receipt;
+   await change(record=>{
+    guard();if(!record.workspace?.startsWith('local:'))throw new Error('Espace autonome requis.');
+    const result=transitionPlanningHandoff({items:recordView(record).data.host.planning,journal:record.drafts.planningHandoffs||{}},own,operation,ticket,proof);
+    record.localPlanning=result.state.items;record.drafts.planningHandoffs=result.state.journal;receipt=result.receipt;
+   });return clone(receipt);
+  },
   // Adopting a journal is data-only. The event and its receipt commit together;
   // a controller crash or a lost response cannot create a second publisher.
   async adoptPlanning(edit,signature,guard=()=>{}){
@@ -48,7 +57,7 @@ export async function openReplica(scope, factory=globalThis.indexedDB){
   async commitPlanning(items){await change(record=>{
    if(!record.workspace?.startsWith('local:'))throw new Error('Espace autonome requis.');
    const previous=record.localPlanning||this.view().data.host.planning;
-   for(const item of items){const old=previous.find(x=>x.id===item.id);if(old?.transferredTo&&!equal(old,item))throw new Error('Événement transféré : gérez-le dans l’espace de destination.');}
+   for(const old of previous)if((old.transferredTo||old.transferId)&&!equal(old,items.find(item=>item.id===old.id)))throw new Error('Événement transféré : gérez-le dans l’espace de destination.');
    for(const id of new Set([...previous,...items].map(x=>x.id))){
     const old=previous.find(x=>x.id===id),next=items.find(x=>x.id===id),base=old?pick(old,fields.planning):null,value=next?pick(next,fields.planning):null;
     if(!equal(base,value))record.pending.push({id:newId(),key:'planning/'+id,base,value,createdAt:new Date().toISOString()});

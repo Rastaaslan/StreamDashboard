@@ -61,7 +61,7 @@ final class ExecutorHttpServer implements AutoCloseable {
     }
     if(!headers.containsKey("host")||headers.containsKey("transfer-encoding")||headers.containsKey("origin")||headers.containsKey("cookie"))throw new IOException("Unsupported origin or framing");
     String length=headers.getOrDefault("content-length","0");if(!length.matches("[0-9]{1,7}"))throw new IOException("Length");
-    int size=Integer.parseInt(length);if(size>262144||(first[0].equals("GET")&&size!=0))throw new IOException("Body limit");
+    int size=Integer.parseInt(length);if(size>(path.equals("/api/v2/planning/handoff")?524288:262144)||(first[0].equals("GET")&&size!=0))throw new IOException("Body limit");
     if(size>0&&!headers.getOrDefault("content-type","").split(";",2)[0].trim().equals("application/json"))throw new IOException("JSON required");
     byte[] bytes=new byte[size];int at=0;while(at<size){int count=input.read(bytes,at,size-at);if(count<0)throw new EOFException();at+=count;}
     return new Request(first[0],path,headers.getOrDefault("authorization",""),new String(bytes,StandardCharsets.UTF_8),remote);

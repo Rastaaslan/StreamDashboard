@@ -135,6 +135,12 @@ export async function createDeviceExecutor({bridge,installation,runtime,now=Date
     pairs.delete(pair.id);await persist({...config,revision:config.revision+1,devices:[...config.devices.filter(d=>!d.revokedAt),device]});return {credential:device.credential,deviceId:device.id};
    })};
    if(path==='/api/v2/actions'&&request.method==='POST')return {status:200,body:await command(request,body)};
+   if(path==='/api/v2/planning/handoff'&&request.method==='POST'){
+    const caller=authorize(request,'configuration'),owner=await runtime(),workspace='device:'+own().id;
+    if(body.workspace!==workspace)throw fault('WORKSPACE_CHANGED','Identité de destination différente.');
+    const guard=()=>{if(authorize(request,'configuration').id!==caller.id)throw fault('UNAUTHORIZED','Association modifiée.',401);authorize(request,'planning');requireRole('planning');};
+    guard();return {status:200,body:{receipt:await owner.planning.handoff(workspace,body.operation,body.ticket,body.proof,guard)}};
+   }
    if(path==='/api/v2/autonomy/sync'&&request.method==='POST'){const receipt=await synchronize(request,body);return {status:200,body:{...await snapshot(),receipt}};}
    if(path.startsWith('/api/v2/sounds/transfer/')&&request.method==='POST'){
     const caller=authorize(request,'configuration'),owner=await runtime(),store=await openSoundTransferStore(owner.owner.store.scope);
