@@ -1,4 +1,4 @@
-const CACHE = 'streamdashboard-mobile-v36-planning-handoff';
+const CACHE = 'streamdashboard-mobile-v37-sound-library';
 const PATHS = new Set([
   '/mobile/',
   '/mobile/index.html',
@@ -41,6 +41,10 @@ const PATHS = new Set([
   '/mobile/control/peer-request.js',
   '/mobile/control/device-executor.js',
   '/mobile/control/sound-transfer.js',
+  '/mobile/control/local-sound-library.js',
+  '/mobile/control/sound-library-copy.js',
+  '/mobile/control/sound-library-ui.js',
+  '/mobile/shared/sound-library.js',
   '/mobile/control/discovery-ui.js',
   '/mobile/control/export-json.js',
   '/mobile/control/sound-transfer-store.js','/mobile/control/executor-sync.js',
@@ -123,6 +127,10 @@ const ASSETS = [
   'control/peer-request.js',
   'control/device-executor.js',
   'control/sound-transfer.js',
+  'control/local-sound-library.js',
+  'control/sound-library-copy.js',
+  'control/sound-library-ui.js',
+  'shared/sound-library.js',
   'control/discovery-ui.js',
   'control/export-json.js',
   'control/sound-transfer-store.js','control/executor-sync.js',

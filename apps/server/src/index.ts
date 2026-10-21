@@ -1,4 +1,6 @@
 import { AudioDestinations, RoleAudioPlayback } from './audio-destinations.js';
+import {createServerSoundLibrary} from './sound-library-export.js';
+import {portableSound,sameSound,soundIdentity} from '../../mobile/shared/sound-library.js';
 import { publicInstallationDevice, deviceRoleAvailable, type InstallationDevice } from '../../mobile/shared/installation.js';
 import { WizeBotService } from './wizebot-service.js';
 import { measureSync, syncBatch, syncDiagnostics } from '../../../packages/core/src/sync-performance.js';
@@ -121,6 +123,7 @@ interface TwitchIdentity {
 }
 interface GoogleLocalState { targetCalendarId: string | null; lastSyncedAt: string | null }
 interface LocalData {
+  soundLibraryReceipts?: Record<string,string>;
   planningHandoffs?: Record<string,HandoffReceipt>;
   commandReceipts?: Record<string, string>;
   commandReceiptOrder?: string[];
@@ -1901,7 +1904,7 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
   app.get('/api/v2/device', async (_req,res,next) => {
     try {
       if(!options.deviceDescriptor){res.status(404).json({error:{message:'Identité universelle indisponible sur cet agent.'}});return;}
-      res.json({version:1,device:publicInstallationDevice(await options.deviceDescriptor()),observed:{permissions:res.locals.remoteDeviceId?remoteAuth.permissions(res.locals.remoteDeviceId):undefined,obsConnected:obs.state.connected,observedAt:new Date().toISOString()}});
+      res.json({version:1,device:publicInstallationDevice(await options.deviceDescriptor()),observed:{permissions:res.locals.remoteDeviceId?remoteAuth.permissions(res.locals.remoteDeviceId):undefined,soundLibrary:{version:1},obsConnected:obs.state.connected,observedAt:new Date().toISOString()}});
     } catch(error){next(error);}
   });
   app.get('/api/v1/state', (req, res) => res.json(isRemoteRequest(req) ? toRemoteDashboardState(snapshot()) : snapshot()));
@@ -2749,24 +2752,48 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
     } else throw new Error('Ressource non synchronisable.');
     broadcast();
   } });
+  const exportSoundLibrary=createServerSoundLibrary(()=>local.sounds);
+  const requireSoundTransferPermission=(req:express.Request,res:express.Response)=>{
+    if(res.locals.remoteDeviceId&&(!remoteRuntimeEnabled||!remoteAuth.permits(res.locals.remoteDeviceId,['configuration','audio'])||remoteAuth.authenticate(req.headers.authorization?.match(/^Device (\S+)$/)?.[1]||'')!==res.locals.remoteDeviceId))throw new Error('Autorisation retirée avant le transfert audio.');
+  };
+  app.post('/api/v2/sounds/export',async(req,res,next)=>{
+    try{
+      const guard=()=>{requireSoundTransferPermission(req,res);if(req.body.workspace!==autonomy.workspace)throw new Error('Identité de l’espace différente.');};
+      res.json(await exportSoundLibrary(req.body,res.locals.remoteDeviceId||'local',guard));
+    }catch(error){next(error);}
+  });
   app.post('/api/v2/sounds/upload', express.raw({ type: 'application/octet-stream', limit: '100mb' }), async (req, res, next) => {
     let destination: string | undefined;
     try {
       const extension = String(req.query.extension ?? '').toLowerCase();
+      const portable=req.query.settings===undefined?undefined:portableSound(JSON.parse(String(req.query.settings)));
+      if(portable)requireSoundTransferPermission(req,res);
+      if(req.query.workspace!==undefined&&req.query.workspace!==autonomy.workspace)throw new Error('Identité de l’espace différente.');
       if (!['wav','mp3','ogg','aac','m4a','flac'].includes(extension) || !Buffer.isBuffer(req.body) || !req.body.length) throw new Error('Fichier audio invalide.');
       const suppliedId = req.query.id === undefined ? undefined : String(req.query.id);
-      if (suppliedId && !/^[a-zA-Z0-9_-]{8,100}$/.test(suppliedId)) throw new Error('Identité audio invalide.');
+      if (suppliedId && !soundIdentity(suppliedId)) throw new Error('Identité audio invalide.');
       const existing = suppliedId ? local.sounds.find(sound => sound.id === suppliedId) : undefined;
+      const transfer=portable?String(req.query.transfer||''):'';
+      if(portable&&(!/^[-\w]{8,100}$/.test(transfer)||!suppliedId||req.query.workspace!==autonomy.workspace))throw new Error('Identité de copie et espace de destination requis.');
+      const signature=portable?JSON.stringify([res.locals.remoteDeviceId||'local',autonomy.workspace,suppliedId,createHash('sha256').update(req.body).digest('hex'),portable]):'';
+      const previousReceipt=Object.hasOwn(local.soundLibraryReceipts||{},transfer)?local.soundLibraryReceipts![transfer]:undefined;
+      if(previousReceipt!==undefined&&(previousReceipt!==signature||!existing))throw new Error('Cette copie a déjà été enregistrée avec un autre contenu ou le son a été retiré. Aucune restauration automatique.');
+      if(portable&&previousReceipt===undefined&&Object.keys(local.soundLibraryReceipts||{}).length>=4096)throw new Error('Journal audio plein. Exportez les données avant de poursuivre.');
+      const receipts=portable?{...local.soundLibraryReceipts,[transfer]:signature}:local.soundLibraryReceipts;
       if (existing) {
+        if(portable&&!sameSound(existing,portable))throw new Error('Les réglages de ce son existent déjà et diffèrent. Aucune donnée remplacée.');
         const previous = await readFile(existing.source);
         if (createHash('sha256').update(previous).digest('hex') !== createHash('sha256').update(req.body).digest('hex')) throw new Error('Un fichier différent porte déjà cette identité.');
+        if(portable)requireSoundTransferPermission(req,res);
+        if(portable&&previousReceipt===undefined){await store.write({...local,soundLibraryReceipts:receipts});local.soundLibraryReceipts=receipts;}
         res.json({ id: existing.id, name: existing.name }); return;
       }
-      const sound = validateSound({ id: suppliedId || randomUUID(), name: String(req.query.name ?? '').trim(), source: path.join(soundLibraryDir, `${randomUUID()}.${extension}`), outputId: 'obs', volume: 1, enabled: true, favorite: false, cooldownMs: 0, category: 'Général', monitoringMode: 'stream' });
+      const sound = validateSound({ id: suppliedId || randomUUID(), name: String(req.query.name ?? '').trim(), source: path.join(soundLibraryDir, `${randomUUID()}.${extension}`), volume: 1, enabled: true, favorite: false, cooldownMs: 0, category: 'Général', monitoringMode: 'stream',...portable,outputId:portable?'device-default':'obs' });
       await mkdir(soundLibraryDir, { recursive: true }); destination = sound.source;
       await writeFile(destination, req.body, { flag: 'wx', mode: 0o600 });
+      if(portable)requireSoundTransferPermission(req,res);
       const sounds = [...local.sounds, sound];
-      await store.write({ ...local, sounds }); local.sounds = sounds; soundboard.replace(sounds); broadcast();
+      await store.write({ ...local, sounds, soundLibraryReceipts:receipts }); local.sounds = sounds; local.soundLibraryReceipts=receipts; soundboard.replace(sounds); broadcast();
       res.status(201).json({ id: sound.id, name: sound.name });
     } catch (error) { if (destination) await unlink(destination).catch(() => {}); next(error); }
   });

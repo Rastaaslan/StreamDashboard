@@ -1,4 +1,4 @@
-import { randomUuid as newId } from '../shared/planning-engine.js';
+import { createBinaryHash, randomUuid as newId } from '../shared/planning-engine.js';
 import { clone, equal, merge, overlay, resources, fields, pick } from '../shared/autonomy.js';
 import { openReplicaDatabase, locateReplica } from './replica-identity.js';
 import {transitionPlanningHandoff} from '../shared/planning-handoff.js';
@@ -88,9 +88,10 @@ export async function openReplica(scope, factory=globalThis.indexedDB){
   async addSound(file,name){
    if(!current.workspace?.startsWith('local:'))throw new Error('Espace autonome requis.');
    if(!name?.trim()||!file?.size||file.size>100*1024*1024||!/^.*\.(wav|mp3|ogg|aac|m4a|flac)$/i.test(file.name))throw new Error('Nom et fichier audio requis (100 Mo maximum).');
+   const hash=createBinaryHash();for(let offset=0;offset<file.size;offset+=65536)hash.update(new Uint8Array(await file.slice(offset,offset+65536).arrayBuffer()));const sha256=hash.digest();
    const id=newId(),value={name:name.trim(),favorite:false,volume:1,enabled:true,cooldownMs:0,category:'Général',monitoringMode:'stream'};
    await new Promise((resolve,reject)=>{const tx=db.transaction(['replicas','assets'],'readwrite'),table=tx.objectStore('replicas'),r=table.get(scope);
-    r.onsuccess=()=>{const record=r.result;record.pending.push({id:newId(),key:'sound/'+id,base:null,value,createdAt:new Date().toISOString()});record.localAssets||={};record.localAssets[id]={name:file.name,type:file.type,size:file.size};tx.objectStore('assets').put(file,scope+'/'+id);table.put(record,scope);};
+    r.onsuccess=()=>{const record=r.result;record.pending.push({id:newId(),key:'sound/'+id,base:null,value,createdAt:new Date().toISOString()});record.localAssets||={};record.localAssets[id]={name:file.name,type:file.type,size:file.size,sha256};tx.objectStore('assets').put(file,scope+'/'+id);table.put(record,scope);};
     tx.oncomplete=resolve;tx.onerror=()=>reject(tx.error);tx.onabort=()=>reject(tx.error||new Error('Import audio annulé.'));
    });current=await transact();return id;
   },

@@ -10,6 +10,7 @@ const GET_EXACT = new Set([
 
 /** Full configuration is granted only by a new, explicit host pairing; legacy credentials stay limited. */
 export function isManagementApiAllowed(method: string, path: string) {
+  if(method==='POST'&&path==='/v2/sounds/export')return true;
   if(method==='POST'&&path==='/v2/planning/handoff')return true;
   if ((method === 'GET' && path === '/v2/autonomy') || (method === 'POST' && path === '/v2/autonomy/sync')) return true;
   if (path.startsWith('/v2/')) return isRemoteApiAllowed(method, path);
@@ -75,6 +76,7 @@ export const remoteApiPolicySnapshot = {
 
 /** Explicit permissions supplement the existing legacy/management allowlists. */
 export function requiredDevicePermissions(method:string,path:string,body:unknown,actions:DeckAction[]=[]):DevicePermission[] {
+  if(path==='/v2/sounds/export')return ['configuration','audio'];
   if(path==='/v2/planning/handoff')return ['configuration','planning'];
   const value=body as {action?:string;type?:string}|undefined;
   if(path==='/v2/actions') {

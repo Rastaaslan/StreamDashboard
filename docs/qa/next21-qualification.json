@@ -957,7 +957,10 @@
             "docs/qa/2026-10-21-native-autonomous-executor.md",
             "tests/node/local-executor.test.mjs",
             "tests/sound-transfer-ui.spec.ts",
-            "docs/qa/2026-10-21-android-sound-transfer.md"
+            "docs/qa/2026-10-21-android-sound-transfer.md",
+            "tests/sound-library.test.ts",
+            "tests/node/sound-library.test.mjs",
+            "docs/qa/2026-10-21-audio-library.md"
           ]
         },
         {
@@ -980,7 +983,10 @@
             "docs/qa/2026-10-21-native-autonomous-executor.md",
             "tests/node/local-executor.test.mjs",
             "tests/sound-transfer-ui.spec.ts",
-            "docs/qa/2026-10-21-android-sound-transfer.md"
+            "docs/qa/2026-10-21-android-sound-transfer.md",
+            "tests/sound-library.test.ts",
+            "tests/node/sound-library.test.mjs",
+            "docs/qa/2026-10-21-audio-library.md"
           ]
         },
         {
@@ -1003,7 +1009,10 @@
             "docs/qa/2026-10-21-native-autonomous-executor.md",
             "tests/node/local-executor.test.mjs",
             "tests/sound-transfer-ui.spec.ts",
-            "docs/qa/2026-10-21-android-sound-transfer.md"
+            "docs/qa/2026-10-21-android-sound-transfer.md",
+            "tests/sound-library.test.ts",
+            "tests/node/sound-library.test.mjs",
+            "docs/qa/2026-10-21-audio-library.md"
           ]
         },
         {
@@ -1026,7 +1035,10 @@
             "docs/qa/2026-10-21-native-autonomous-executor.md",
             "tests/node/local-executor.test.mjs",
             "tests/sound-transfer-ui.spec.ts",
-            "docs/qa/2026-10-21-android-sound-transfer.md"
+            "docs/qa/2026-10-21-android-sound-transfer.md",
+            "tests/sound-library.test.ts",
+            "tests/node/sound-library.test.mjs",
+            "docs/qa/2026-10-21-audio-library.md"
           ]
         },
         {
@@ -1046,7 +1058,10 @@
             "docs/qa/2026-10-21-android-executor.md",
             "tests/node/device-executor.test.mjs",
             "tests/sound-transfer-ui.spec.ts",
-            "docs/qa/2026-10-21-android-sound-transfer.md"
+            "docs/qa/2026-10-21-android-sound-transfer.md",
+            "tests/sound-library.test.ts",
+            "tests/node/sound-library.test.mjs",
+            "docs/qa/2026-10-21-audio-library.md"
           ]
         },
         {
@@ -1069,7 +1084,10 @@
             "docs/qa/2026-10-21-native-autonomous-executor.md",
             "tests/node/local-executor.test.mjs",
             "tests/sound-transfer-ui.spec.ts",
-            "docs/qa/2026-10-21-android-sound-transfer.md"
+            "docs/qa/2026-10-21-android-sound-transfer.md",
+            "tests/sound-library.test.ts",
+            "tests/node/sound-library.test.mjs",
+            "docs/qa/2026-10-21-audio-library.md"
           ]
         }
       ]

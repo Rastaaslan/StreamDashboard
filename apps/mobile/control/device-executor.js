@@ -1,5 +1,6 @@
 import {createExecutorSync} from './executor-sync.js';
 import {openSoundTransferStore,SOUND_TRANSFER} from './sound-transfer-store.js';
+import {createLocalSoundLibrary} from './local-sound-library.js';
 import {actionDefinition,actionCapability} from '../shared/action-definition.js';
 import {deviceRoleAvailable,publicInstallationDevice} from '../shared/installation.js';
 import {validateDevicePermissions} from '../shared/device-permissions.js';
@@ -26,7 +27,7 @@ export async function createDeviceExecutor({bridge,installation,runtime,now=Date
  if(!bridge)return null;
  let config=await bridge.call('load')||{version:1,revision:0,enabled:false,devices:[]};
  if(config.version!==1||!Array.isArray(config.devices))throw new Error('Configuration de partage Android incompatible.');
- let info={enabled:false,urls:[],fingerprint:''},tail=Promise.resolve();
+ let info={enabled:false,urls:[],fingerprint:''},tail=Promise.resolve(),audioExport;
  const pairs=new Map(),attempts=new Map();
  const serial=work=>{const result=tail.then(work);tail=result.catch(()=>{});return result;};
  let commands=Promise.resolve(),executing=false;
@@ -142,9 +143,14 @@ export async function createDeviceExecutor({bridge,installation,runtime,now=Date
     guard();return {status:200,body:{receipt:await owner.planning.handoff(workspace,body.operation,body.ticket,body.proof,guard)}};
    }
    if(path==='/api/v2/autonomy/sync'&&request.method==='POST'){const receipt=await synchronize(request,body);return {status:200,body:{...await snapshot(),receipt}};}
+   if(path==='/api/v2/sounds/export'&&request.method==='POST'){
+    const caller=authorize(request,'configuration'),owner=await runtime();
+    const guard=()=>{if(authorize(request,'configuration').id!==caller.id)throw fault('UNAUTHORIZED','Association modifiée.',401);if(body.workspace!=='device:'+own().id)throw fault('WORKSPACE_CHANGED','Identité de l’espace différente.');};
+    audioExport||=createLocalSoundLibrary(owner.owner.store);guard();return {status:200,body:await audioExport(body,caller.id,guard)};
+   }
    if(path.startsWith('/api/v2/sounds/transfer/')&&request.method==='POST'){
     const caller=authorize(request,'configuration'),owner=await runtime(),store=await openSoundTransferStore(owner.owner.store.scope);
-    const guard=()=>{if(authorize(request,'configuration').id!==caller.id)throw fault('UNAUTHORIZED','Association modifiée.',401);};
+    const guard=()=>{if(authorize(request,'configuration').id!==caller.id)throw fault('UNAUTHORIZED','Association modifiée.',401);if(body.expectedWorkspace&&body.expectedWorkspace!=='device:'+own().id)throw fault('WORKSPACE_CHANGED','Identité de l’espace différente.');};
     try{
      const operation=path.slice('/api/v2/sounds/transfer/'.length);let receipt;
      if(operation==='begin')receipt=await store.begin(body,caller.id,guard);
@@ -157,7 +163,7 @@ export async function createDeviceExecutor({bridge,installation,runtime,now=Date
    }
    const caller=authorize(request,'observe');
    if(request.method!=='GET')throw fault('REMOTE_SCOPE_DENIED','Cette fonction doit être configurée sur l’appareil.',403);
-   if(path==='/api/v2/device')return {status:200,body:{version:1,device:publicInstallationDevice(own()),observed:{permissions:caller.permissions,soundTransfer:SOUND_TRANSFER}}};
+   if(path==='/api/v2/device')return {status:200,body:{version:1,device:publicInstallationDevice(own()),observed:{permissions:caller.permissions,soundTransfer:SOUND_TRANSFER,soundLibrary:{version:1}}}};
    if(path==='/api/v2/state')return {status:200,body:await state()};
    if(path==='/api/v2/autonomy')return {status:200,body:await snapshot()};
    if(path==='/api/v2/replay')return {status:200,body:{active:false,available:false,enabled:false,seconds:0,error:'OBS nécessite un ordinateur associé.'}};

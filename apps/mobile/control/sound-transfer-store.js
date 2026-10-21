@@ -1,6 +1,7 @@
 import {openReplicaDatabase} from './replica-identity.js';
 import {overlay,resources,merge} from '../shared/autonomy.js';
 import {createBinaryHash,randomUuid} from '../shared/planning-engine.js';
+import {soundIdentity,portableSound,sameSound} from '../shared/sound-library.js';
 
 export const SOUND_TRANSFER={version:1,chunkBytes:65536,maxBytes:100*1024*1024};
 const prefix='sound-transfer:',chunkKey=(id,index)=>'sound-transfer-chunk:'+id+':'+String(index).padStart(5,'0');
@@ -8,8 +9,8 @@ const fault=message=>{throw new Error(message);};
 const request=value=>new Promise((resolve,reject)=>{value.onsuccess=()=>resolve(value.result);value.onerror=()=>reject(value.error);});
 export async function hashSound(blob){const hash=createBinaryHash();for(let offset=0;offset<blob.size;offset+=SOUND_TRANSFER.chunkBytes)hash.update(new Uint8Array(await blob.slice(offset,offset+SOUND_TRANSFER.chunkBytes).arrayBuffer()));return hash.digest();}
 function validate(spec){
- if(!spec||!/^[-\w]{8,100}$/.test(spec.id)||!/^[-\w]{8,100}$/.test(spec.soundId)||typeof spec.name!=='string'||!spec.name.trim()||spec.name.length>140||typeof spec.filename!=='string'||spec.filename.length>200||/[/\\\x00-\x1f]/.test(spec.filename)||!/\.(wav|mp3|ogg|aac|m4a|flac)$/i.test(spec.filename)||!Number.isSafeInteger(spec.size)||spec.size<1||spec.size>SOUND_TRANSFER.maxBytes||!/^[a-f0-9]{64}$/.test(spec.sha256))fault('Nom, fichier ou empreinte audio invalide (100 Mo maximum).');
- return {id:spec.id,soundId:spec.soundId,name:spec.name.trim(),filename:spec.filename,size:spec.size,sha256:spec.sha256};
+ if(!spec||!/^[-\w]{8,100}$/.test(spec.id)||!soundIdentity(spec.soundId)||typeof spec.name!=='string'||!spec.name.trim()||spec.name.length>140||typeof spec.filename!=='string'||spec.filename.length>200||/[/\\\x00-\x1f]/.test(spec.filename)||!/\.(wav|mp3|ogg|aac|m4a|flac)$/i.test(spec.filename)||!Number.isSafeInteger(spec.size)||spec.size<1||spec.size>SOUND_TRANSFER.maxBytes||!/^[a-f0-9]{64}$/.test(spec.sha256))fault('Nom, fichier ou empreinte audio invalide (100 Mo maximum).');
+ return {id:spec.id,soundId:spec.soundId,name:spec.name.trim(),filename:spec.filename,size:spec.size,sha256:spec.sha256,...(spec.settings?{settings:portableSound(spec.settings)}:{})};
 }
 
 /** Staging chunks and final files share one IndexedDB database. Publishing the
@@ -26,19 +27,27 @@ export async function openSoundTransferStore(scope,{factory=globalThis.indexedDB
  const result=record=>({id:record.spec.id,offset:record.offset,status:record.status,soundId:record.spec.soundId});
  return {
   async begin(spec,owner,guard=()=>{}){
+   const expectedWorkspace=spec?.expectedWorkspace;
    spec=validate(spec);
    return run(['assets','replicas'],'readwrite',async tx=>{
     guard();const assets=tx.objectStore('assets'),replicas=tx.objectStore('replicas'),source=await request(replicas.get(scope));
     if(!source?.workspace?.startsWith('local:'))fault('Espace autonome indisponible.');
+    if(typeof expectedWorkspace==='string'&&expectedWorkspace.startsWith('local:')&&expectedWorkspace!==source.workspace)fault('Identité de l’espace autonome différente.');
     const records=await request(assets.getAll(IDBKeyRange.bound(prefix,prefix+'\uffff')));
     guard();for(const record of records)if(record.expires<now()){
      assets.delete(prefix+record.spec.id);for(let n=0;n<Math.ceil(record.offset/SOUND_TRANSFER.chunkBytes);n++)assets.delete(chunkKey(record.spec.id,n));
     }
-    const existing=records.find(record=>record.spec.id===spec.id&&record.expires>=now());
-    if(existing){own(existing,owner);if(JSON.stringify(existing.spec)!==JSON.stringify(spec)||existing.workspace!==source.workspace)fault('Identifiant de transfert réutilisé pour un autre fichier.');return result(existing);}
-    if(records.filter(record=>record.expires>=now()&&record.status==='receiving').length>=4)fault('Quatre fichiers sont déjà en transfert. Terminez-les ou annulez-les.');
+    const sound=view(source).sounds.sounds.find(sound=>sound.id===spec.soundId);
+    if(spec.settings&&sound&&!sameSound(sound,spec.settings))fault('Les réglages de ce son existent déjà et diffèrent. Aucune donnée remplacée.');
     const asset=source.localAssets?.[spec.soundId];
+    if(asset&&!sound)fault('Le fichier existe sans entrée active. Restaurez son catalogue avant de le copier.');
     if(asset&&(asset.sha256!==spec.sha256||asset.size!==spec.size))fault('Un autre fichier porte déjà cette identité. Aucune donnée remplacée.');
+    const existing=records.find(record=>record.spec.id===spec.id&&record.expires>=now());
+    if(existing){own(existing,owner);if(JSON.stringify(existing.spec)!==JSON.stringify(spec)||existing.workspace!==source.workspace)fault('Identifiant de transfert réutilisé pour un autre fichier.');
+     if(existing.status==='complete'&&(!asset||!sound||!(await request(assets.get(scope+'/'+spec.soundId)))?.size))fault('Le son a été retiré après sa copie. Aucune restauration automatique.');
+     return result(existing);
+    }
+    if(records.filter(record=>record.expires>=now()&&record.status==='receiving').length>=4)fault('Quatre fichiers sont déjà en transfert. Terminez-les ou annulez-les.');
     const record={spec,owner,workspace:source.workspace,status:asset?'complete':'receiving',offset:asset?spec.size:0,expires:now()+3600000};
     assets.put(record,prefix+spec.id);return result(record);
    });
@@ -72,9 +81,9 @@ export async function openSoundTransferStore(scope,{factory=globalThis.indexedDB
     if(record.status==='complete')return result(record);
     if(source?.workspace!==record.workspace||record.workspace!==staged.record.workspace||JSON.stringify(record.spec)!==JSON.stringify(staged.record.spec))fault('Espace ou transfert modifié. Aucune donnée remplacée.');
     guard();const soundId=record.spec.soundId,current=view(source).sounds.sounds.find(sound=>sound.id===soundId),asset=source.localAssets?.[soundId];
-    if(current||asset){if(asset?.sha256!==record.spec.sha256)fault('Cette identité audio existe déjà. Aucune donnée remplacée.');}
+    if(current||asset){if(asset?.sha256!==record.spec.sha256||record.spec.settings&&(!current||!sameSound(current,record.spec.settings)))fault('Cette identité audio existe déjà. Aucune donnée remplacée.');}
     else{
-     const value={name:record.spec.name,favorite:false,volume:1,enabled:true,cooldownMs:0,category:'Général',monitoringMode:'stream',outputId:'device-default'};
+     const value={name:record.spec.name,favorite:false,volume:1,enabled:true,cooldownMs:0,category:'Général',monitoringMode:'stream',...record.spec.settings,outputId:'device-default'};
      source.pending.push({id:randomUuid(),key:'sound/'+soundId,base:null,value,createdAt:new Date(now()).toISOString()});
      source.localAssets||={};source.localAssets[soundId]={name:record.spec.filename,size:record.spec.size,type:'application/octet-stream',sha256:record.spec.sha256};
      assets.put(staged.blob,scope+'/'+soundId);table.put(source,scope);
