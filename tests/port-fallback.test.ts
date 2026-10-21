@@ -5,11 +5,17 @@ import path from 'node:path';
 import { startDashboardServer, type DashboardServerHandle } from '../apps/server/src/index.js';
 import { startDesktopRuntime, type DesktopRuntime } from '../apps/desktop/src/lifecycle.js';
 
-const desktop = vi.hoisted(() => ({ userData: '' }));
+const desktop = vi.hoisted(() => ({ userData: '',certificateUnavailable:false }));
 vi.mock('electron', () => ({ app: { getPath: () => desktop.userData, getAppPath: () => process.cwd(), getVersion: () => '1.1.0' } }));
 vi.mock('../apps/desktop/src/secrets.js', async () => {
   const { MemorySecretStore } = await import('../apps/server/src/storage.js');
-  return { ElectronSecretStore: MemorySecretStore };
+  const {readFile}=await import('node:fs/promises');
+  return { ElectronSecretStore: class extends MemorySecretStore {
+    async getAgentCertificate(){
+      if(desktop.certificateUnavailable)throw new Error('Certificat inaccessible');
+      return {pfx:(await readFile(new URL('./fixtures/tls/agent.p12',import.meta.url))).toString('base64'),passphrase:'test-only',certificate:await readFile(new URL('./fixtures/tls/agent.pem',import.meta.url),'utf8')};
+    }
+  } };
 });
 
 let directory = '';
@@ -28,7 +34,7 @@ function failListen(code: string, everyPort = false) {
 afterEach(async () => {
   await runtime?.stop();
   await dashboard?.stop();
-  runtime = undefined; dashboard = undefined;
+  runtime = undefined; dashboard = undefined;desktop.certificateUnavailable=false;
   vi.restoreAllMocks(); vi.clearAllMocks();
   if (directory) await rm(directory, { recursive: true, force: true });
 });
@@ -71,7 +77,7 @@ it('preserves pairing and credentials across fixed-port Desktop restarts', async
   await writeFile(path.join(directory, 'config', 'dashboard.json'), JSON.stringify({ settings: { remoteEnabled: true } }));
   runtime = await startDesktopRuntime();
   const pairing = await fetch(`${runtime.dashboard.url}/api/v1/remote/pairing`, { method: 'POST' }).then(r => r.json());
-  for (const url of pairing.urls) expect(new URL(url).port).toBe(String(runtime.dashboard.port));
+  for (const url of pairing.urls) {expect(new URL(url).protocol).toBe('https:');expect(new URL(url).port).toBe(String(runtime.dashboard.remotePort));}
   await runtime.stop(); runtime = await startDesktopRuntime();
   const response = await fetch(`${runtime.dashboard.url}/api/v1/remote/pair`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(pairing) });
   expect(response.status).toBe(201);
@@ -90,4 +96,15 @@ it('reports corrupt Desktop configuration without silently replacing it or leaki
   await expect(startDesktopRuntime()).rejects.toThrow('Configuration utilisateur Desktop illisible');
   const { readFile } = await import('node:fs/promises');
   expect(await readFile(path.join(directory, 'config', 'dashboard.json'), 'utf8')).toContain('PRIVATE');
+});
+
+it('preserves local services and diagnoses remote sharing when certificate storage is unavailable',async()=>{
+  await options();desktop.userData=directory;desktop.certificateUnavailable=true;
+  await mkdir(path.join(directory,'config'));
+  await writeFile(path.join(directory,'config','dashboard.json'),JSON.stringify({settings:{remoteEnabled:true}}));
+  runtime=await startDesktopRuntime();
+  const info=await fetch(runtime.dashboard.url+'/api/v1/remote/info').then(r=>r.json());
+  expect(info).toMatchObject({enabled:false,configured:true,error:'Certificat inaccessible'});
+  expect((await fetch(runtime.dashboard.url+'/api/v2/autonomy')).status).toBe(200);
+  expect((await fetch(runtime.dashboard.url+'/api/v1/remote/pairing',{method:'POST'})).status).toBe(409);
 });

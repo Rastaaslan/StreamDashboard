@@ -48,6 +48,10 @@ export function createLiveMonitor(root, { native = false, configure = () => {}, 
       button.textContent = 'Configurer la diffusion'; button.addEventListener('click', configure);
       slot.append(message, button); return;
     }
+    if(native){
+      const message=document.createElement('p');message.textContent='Ouvrez les écrans de cet Android pour afficher la vidéo et les deux chats avec leurs sessions web.';
+      const button=document.createElement('button');button.type='button';button.className='secondary';button.textContent='Ouvrir vidéo et chats';button.addEventListener('click',openNativeViewers);slot.append(message,button);return;
+    }
     const frame = document.createElement('iframe'); frame.title = title;
     frame.referrerPolicy = 'strict-origin-when-cross-origin';
     frame.allow = 'autoplay; encrypted-media; picture-in-picture; fullscreen';
@@ -62,7 +66,14 @@ export function createLiveMonitor(root, { native = false, configure = () => {}, 
     const login = localStorage.getItem('sd2.monitor-channel') || state?.host?.monitor?.twitchLogin || '';
     return /^[a-zA-Z0-9_]{1,25}$/.test(login) ? login.toLowerCase() : '';
   }
+  function openNativeViewers(){
+    const youtube=localStorage.getItem('sd2.monitor-video')||state?.configuration?.youtube?.broadcastId||'';
+    const opened=globalThis.StreamDashboardNative?.openViewers?.(JSON.stringify({twitch:twitchLogin(),youtube:/^[a-zA-Z0-9_-]{11}$/.test(youtube)?youtube:'',source}));
+    viewerMessage=opened?'Les écrans Android utilisent leurs sessions web propres. Le compte API et Google Calendar restent séparés.':'Les écrans intégrés sont indisponibles dans cette version. Utilisez les liens vers votre navigateur.';
+    draw();
+  }
   async function connectViewer() {
+    if(native&&source==='twitch'&&globalThis.StreamDashboardNative?.openViewers){openNativeViewers();return;}
     if (source === 'youtube') {
       const video=localStorage.getItem('sd2.monitor-video') || state?.configuration?.youtube?.broadcastId || '';
       const url=/^[a-zA-Z0-9_-]{11}$/.test(video)?'https://www.youtube.com/watch?v='+video:'https://studio.youtube.com/';

@@ -1,4 +1,4 @@
-const CACHE = 'streamdashboard-mobile-v26-universal-routing';
+const CACHE = 'streamdashboard-mobile-v27-pinned-transport';
 const PATHS = new Set([
   '/mobile/',
   '/mobile/index.html',
@@ -37,6 +37,7 @@ const PATHS = new Set([
   '/mobile/control/control.js',
   '/mobile/control/controller-bindings.js',
   '/mobile/control/device-credentials.js',
+  '/mobile/control/peer-request.js',
   '/mobile/control/installation-ui.js',
   '/mobile/shared/installation.js',
   '/mobile/shared/device-permissions.js',
@@ -105,6 +106,7 @@ const ASSETS = [
   'control/control.js',
   'control/controller-bindings.js',
   'control/device-credentials.js',
+  'control/peer-request.js',
   'control/installation-ui.js',
   'shared/installation.js',
   'shared/action-definition.js',

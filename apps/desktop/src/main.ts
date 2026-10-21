@@ -16,6 +16,10 @@ import type { Server } from 'node:http';
 import { configureLoginStartup } from './login-startup.js';
 import { InstallationStore } from './installation-store.js';
 import { desktopUserData } from './qa-profile.js';
+import {PeerTransport} from './peer-transport.js';
+import {ElectronSecretStore} from './secrets.js';
+import {createAgentCertificate} from './agent-certificate.js';
+import {X509Certificate} from 'node:crypto';
 import type { Installation, InstallationChanges, InstallationPlan, DeviceRole } from '../../mobile/shared/installation.js';
 
 protocol.registerSchemesAsPrivileged([{scheme:'streamdashboard-audio',privileges:{standard:true,secure:true,supportFetchAPI:true,stream:true}}]);
@@ -24,6 +28,8 @@ app.setName('StreamDashboard Next');
 app.setPath('userData', desktopUserData(path.join(app.getPath('appData'), 'StreamDashboard-Next')));
 if (process.platform === 'win32') app.setAppUserModelId('com.rastaaslan.StreamDashboard.Next');
 const logger = new DesktopLogger(path.join(app.getPath('userData'), 'logs'));
+const peers=new PeerTransport(new ElectronSecretStore(app.getPath('userData')));
+const peerRequests=new Map<string,AbortController>();
 const log = (event: string) => { void logger.info(event, { pid: process.pid }).catch(() => undefined); };
 const primary = !squirrelHandled && app.requestSingleInstanceLock();
 if (!primary) app.quit();
@@ -81,6 +87,8 @@ function cleanupRuntime(): Promise<void> {
     tray?.destroy(); tray = undefined;
     stopControllerKeys();
     await stopControllerKeys.flush?.();
+    for(const request of peerRequests.values())request.abort();
+    await peers.close();
     if (controllerServer) await new Promise<void>((resolve,reject) => {
       controllerServer!.close(error => error ? reject(error) : resolve());
       // Chromium can keep speculative HTTP connections open after embedded views
@@ -128,7 +136,7 @@ function boot(): Promise<void> {
       const targetUrl = new URL(route, uiOrigin).toString();
       ensureTray();
       if (!runtime && startupAgent) {
-        stopControllerKeys = installControllerKeys(() => window, app.getPath('userData'), uiOrigin);
+        stopControllerKeys = installControllerKeys(() => window, app.getPath('userData'), uiOrigin,peers.fetch);
         void stopControllerKeys.restore?.();
         if (client) controllerServer = await startControllerAssets(path.join(app.getAppPath(), 'apps', 'mobile'));
         runtimePromise = startDesktopRuntime(logger, startup.signal, client, obsEnabled, deviceDescriptor);
@@ -158,7 +166,7 @@ function boot(): Promise<void> {
       await loadWindow('data:text/html;charset=utf-8,' + encodeURIComponent(
         '<!doctype html><meta charset="utf-8"><meta http-equiv="Content-Security-Policy" content="default-src \'none\'; style-src \'unsafe-inline\'"><title>StreamDashboard — Démarrage…</title><body style="background:#080a10;color:#fff;font:20px system-ui;padding:48px"><h1>StreamDashboard</h1><p>Démarrage en cours…</p><p>Vous pouvez fermer cette fenêtre pour annuler.</p></body>'));
       if (quitting) return;
-      stopControllerKeys = installControllerKeys(() => window, app.getPath('userData'), uiOrigin);
+      stopControllerKeys = installControllerKeys(() => window, app.getPath('userData'), uiOrigin,peers.fetch);
       void stopControllerKeys.restore?.();
       if (client) {
         controllerServer = await startControllerAssets(path.join(app.getAppPath(), 'apps', 'mobile'));
@@ -214,6 +222,46 @@ function applyInstallation(operation: () => Promise<InstallationPlan>) {
   return pending;
 }
 ipcMain.handle('installation:get', async event => { requireInstallationSender(event); return installations.read(); });
+const agentIdentityStore=new ElectronSecretStore(app.getPath('userData'));
+ipcMain.handle('peer:identity',async event=>{
+  requireInstallationSender(event);const saved=await agentIdentityStore.getAgentCertificate();
+  if(!saved)return {fingerprint:'',expires:''};
+  const certificate=new X509Certificate(saved.certificate);
+  return {fingerprint:certificate.fingerprint256.replaceAll(':','').toLowerCase(),expires:new Date(certificate.validTo).toISOString()};
+});
+ipcMain.handle('peer:renew',async(event,expected:string)=>{
+  requireInstallationSender(event);
+  const operation=installationChange.then(async()=>{
+    if(!runtime)throw new Error('Attendez la fin du démarrage de l’agent.');
+    await requireDesktopRestartSafety(()=>runtime!.dashboard.assessRestartSafety());
+    const saved=await agentIdentityStore.getAgentCertificate();
+    const fingerprint=saved?new X509Certificate(saved.certificate).fingerprint256.replaceAll(':','').toLowerCase():'';
+    if(expected!==fingerprint)throw new Error('Certificat modifié ailleurs. Actualisez les informations de cet agent.');
+    const replacement=await createAgentCertificate();
+    await requireDesktopRestartSafety(()=>runtime!.dashboard.assessRestartSafety());
+    await agentIdentityStore.replaceAgentCertificate(replacement,saved?.certificate||'');
+    try{app.relaunch();}catch(error){await agentIdentityStore.replaceAgentCertificate(saved,replacement.certificate);throw error;}
+    setImmediate(()=>app.quit());
+    return {restart:true};
+  });
+  installationChange=operation.catch(()=>undefined);return operation;
+});
+ipcMain.handle('peer:fingerprint',async(event,origin:string)=>{requireInstallationSender(event);return peers.fingerprint(origin);});
+ipcMain.handle('peer:trust',async(event,origin:string,fingerprint:string,expected:string)=>{requireInstallationSender(event);await peers.trust(origin,fingerprint,expected);});
+ipcMain.handle('peer:cancel',async(event,id:string)=>{requireInstallationSender(event);peerRequests.get(id)?.abort();});
+ipcMain.handle('peer:request',async(event,value:{id:string;url:string;method:string;credential:string;body?:string|Uint8Array;contentType?:string;timeoutMs:number})=>{
+  requireInstallationSender(event);
+  if(!value||!/^[-\w]{8,100}$/.test(value.id)||peerRequests.has(value.id)||peerRequests.size>=32||typeof value.url!=='string'||value.url.length>4096||typeof value.credential!=='string'||value.credential.length>256||!['GET','POST','PUT','DELETE'].includes(value.method)||!Number.isFinite(value.timeoutMs)||value.timeoutMs<1000||value.timeoutMs>120000)throw new Error('Requête d’agent invalide ou service occupé.');
+  if(value.body!==undefined&&!(typeof value.body==='string'?value.body.length<=16*1024*1024:value.body instanceof Uint8Array&&value.body.byteLength<=100*1024*1024))throw new Error('Corps de requête invalide.');
+  const controller=new AbortController();peerRequests.set(value.id,controller);
+  try {
+    const response=await peers.fetch(value.url,{method:value.method,headers:{...(value.credential?{Authorization:'Device '+value.credential}:{}),...(value.body!==undefined?{'Content-Type':value.contentType==='application/octet-stream'?'application/octet-stream':'application/json'}:{})},body:value.body===undefined?undefined:typeof value.body==='string'?value.body:Buffer.from(value.body),signal:AbortSignal.any([controller.signal,AbortSignal.timeout(value.timeoutMs)])});
+    const reader=response.body?.getReader();let size=0;const chunks:Uint8Array[]=[];
+    if(reader)while(true){const part=await reader.read();if(part.done)break;size+=part.value.byteLength;if(size>32*1024*1024){await reader.cancel();throw new Error('Réponse d’agent trop volumineuse.');}chunks.push(part.value);}
+    return {ok:true,status:response.status,body:Buffer.concat(chunks).toString('utf8')};
+  }catch{return {ok:false,error:{code:'PEER_TRANSPORT_FAILED',message:'Connexion sécurisée non confirmée. Vérifiez l’empreinte de l’agent et son réseau ; aucune commande ne sera répétée.'}};}
+  finally {peerRequests.delete(value.id);}
+});
 ipcMain.handle('installation:change', async (event, changes: InstallationChanges, revision: number) => {
   requireInstallationSender(event);
   if (!changes || typeof changes !== 'object' || Array.isArray(changes)) throw new Error('Modification invalide.');

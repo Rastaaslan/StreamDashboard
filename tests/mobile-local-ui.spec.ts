@@ -3,7 +3,7 @@ import express from 'express';
 import type { Server } from 'node:http';
 import path from 'node:path';
 
-const REGIE = 'http://local-ui-regie.test:48133';
+const REGIE = 'https://local-ui-regie.local:48136';
 const CREDENTIAL = 'fake-local-ui-device-credential';
 const SOUND = 'Jingle de cet appareil';
 const FOLLOWER = 'Follower reçu pendant la fermeture';
@@ -80,6 +80,15 @@ async function setupLocal(page: Page, { instrumentAudio = true } = {}) {
       localStorage.setItem('sd2.live-deck-intro', '1');
       localStorage.setItem('test.local-credential', credential);
     }
+    // Synthetic native replies exercise correlation and the real renderer;
+    // the Java TLS integration test verifies certificates separately.
+    win.StreamDashboardPeer={postMessage:async(raw:string)=>{
+      const value=JSON.parse(raw);if(value.operation==='cancel')return;
+      let result;
+      try{const response=await fetch(value.url,{method:value.method,headers:{...(value.credential?{Authorization:'Device '+value.credential}:{}),...(value.body?{'Content-Type':'application/json'}:{})},body:value.body});result={ok:true,status:response.status,body:await response.text()};}
+      catch{result={ok:false,error:{message:'synthetic transport unavailable'}};}
+      win.dispatchEvent(new CustomEvent('peer-result',{detail:{id:value.id,result:JSON.stringify(result)}}));
+    }};
     win.StreamDashboardNative = {
       isAndroid: () => true,
       getCredential: () => localStorage.getItem('test.local-credential') || '',

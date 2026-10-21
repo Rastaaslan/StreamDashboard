@@ -73,7 +73,7 @@ it.each(['crash', 'server', 'load', 'secondary'] as const)('presents during star
       return;
     }
     await vi.waitFor(() => expect(state.start).toHaveBeenCalledTimes(1));
-    expect(state.installKeys).toHaveBeenCalledExactlyOnceWith(expect.any(Function),path.join('/unused','StreamDashboard-Next'),'http://127.0.0.1:48133');
+    expect(state.installKeys).toHaveBeenCalledExactlyOnceWith(expect.any(Function),path.join('/unused','StreamDashboard-Next'),'http://127.0.0.1:48133',expect.any(Function));
     expect(state.assets).not.toHaveBeenCalled();
     const window = state.windows[0];
     expect(window.options.show).toBe(true);

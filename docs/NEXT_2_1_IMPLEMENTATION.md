@@ -25,13 +25,15 @@ Les exigences P0 de [NEXT_2_1_REQUIREMENTS.md](NEXT_2_1_REQUIREMENTS.md) font au
 - **Démarrage Windows facultatif** : entrée de démarrage par utilisateur, agent sans fenêtre et contrôle du résultat renvoyé par Windows. La modification est sérialisée avec la configuration de l’installation ; un échec d’écriture tente de rétablir le réglage précédent.
 - **Arrêt de l’agent** : les requêtes HTTP acceptées sont drainées avant sauvegarde ; les connexions TCP spéculatives sans requête sont fermées. Les vingt démarrages/arrêts réels du test Electron passent.
 
+- **Transport TLS commun** : écoute HTTPS distincte de l’accès local, identité d’agent persistante entre rôles et empreinte SHA-256 à vérifier depuis son lien d’association. Windows utilise une session réseau dédiée par agent ; Android utilise un pont natif limité à l’origine locale et à la fenêtre principale. Aucun certificat racine n’est installé. Les transferts audio Android passent par des blocs temporaires bornés ; les requêtes expirées ne sont pas répétées. Un port HTTPS occupé ou une identité indisponible laisse le runtime local accessible. Le renouvellement explicite conserve les données et vérifie la sécurité du redémarrage.
+
 ## Frontières actuelles
 
 Ce code est une version d’essai, pas la version finale universelle. Aucune cellule n’est déclarée entièrement qualifiée.
 
 Restent à implémenter ou à compléter dans **ce même chantier 2.1** :
 
-- Transport chiffré distant avec vérification de l’identité serveur ; le transport LAN historique utilise encore HTTP. La découverte réseau automatique facultative reste absente.
+- Qualification matérielle complète du nouveau transport TLS et de ses associations sur Windows et Android. Les anciennes adresses HTTP sont conservées mais demandent une nouvelle association HTTPS avant de transmettre un identifiant. La découverte réseau automatique facultative reste absente.
 - Cycle de vie effectif de tous les rôles audio/services/affichage et déplacement transactionnel de leurs responsabilités. Les rôles autres qu’OBS sont encore partiellement descriptifs.
 - Android comme exécuteur audio/affichage commandé depuis un autre appareil ; l’audio Android local et le contrôle d’agents Windows existent. Lecture audio multiple configurable et macros natives de tous les contenus locaux restent à compléter.
 - Restauration après interruption couvrant l’ensemble des magasins et effets externes, pas seulement le fichier d’installation ; qualification complète des transitions et migration d’une copie réelle RC11.7.

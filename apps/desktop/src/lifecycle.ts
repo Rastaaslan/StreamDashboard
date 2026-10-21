@@ -1,4 +1,5 @@
 import { DesktopAudioPlayback } from './audio-player.js';
+import {createAgentCertificate,certificateFingerprint,type AgentCertificate} from './agent-certificate.js';
 import type { InstallationDevice } from '../../mobile/shared/installation.js';
 import { app } from 'electron';
 import { readFile } from 'node:fs/promises';
@@ -26,6 +27,20 @@ export async function startDesktopRuntime(logger = new DesktopLogger(path.join(a
   await logger.info(obsResult.detail).catch(() => undefined);
   signal?.throwIfAborted();
   const secretStore = new ElectronSecretStore(userData);
+  const identityStore = new ElectronSecretStore(app.getPath('userData'));
+  let certificate:AgentCertificate|undefined,remoteError:string|undefined;
+  if(remoteEnabled){
+    try {
+      const saved=await identityStore.getAgentCertificate();
+      certificate=saved??await createAgentCertificate();
+      certificateFingerprint(certificate.certificate);
+      if(!saved)await identityStore.setAgentCertificate(certificate);
+    } catch(error) {
+      certificate=undefined;
+      remoteError=error instanceof Error?error.message:'Identité TLS indisponible.';
+      await logger.warn('Partage distant indisponible : '+remoteError);
+    }
+  }
   const deviceAudio=new DesktopAudioPlayback();
   const dashboard = await startDashboardServer({
     deviceAudio,
@@ -33,8 +48,10 @@ export async function startDesktopRuntime(logger = new DesktopLogger(path.join(a
     deviceDescriptor,
     // Fixed endpoint for OBS, OAuth and phones; binding failures must be explicit.
     port: controller ? 48135 : 48133,
-    host: remoteEnabled ? '0.0.0.0' : '127.0.0.1',
-    remoteEnabled,
+    host: '127.0.0.1',
+    remoteEnabled:remoteEnabled&&Boolean(certificate),
+    remoteError,
+    remoteTls:certificate?{pfx:Buffer.from(certificate.pfx,'base64'),passphrase:certificate.passphrase,certificate:certificate.certificate}:undefined,
     obsEnabled,
     dataDir: path.join(userData, 'config'),
     soundLibraryDir: path.join(userData, 'soundboard'),

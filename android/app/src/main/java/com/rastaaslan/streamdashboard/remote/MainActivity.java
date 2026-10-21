@@ -59,6 +59,7 @@ public class MainActivity extends Activity {
   private ValueCallback<Uri[]> fileSelection;
   private WebView webView;
   private ProviderBridge providerBridge;
+  private PeerBridge peerBridge;
   private WebViewAssetLoader assetLoader;
   private Uri pendingDeepLink;
   private boolean pageReady = false;
@@ -80,6 +81,14 @@ public class MainActivity extends Activity {
       .addPathHandler("/mobile/", this::localAsset)
       .build();
     webView.addJavascriptInterface(new NativeBridge(), "StreamDashboardNative");
+    if (!BuildConfig.PREVIEW_MODE && androidx.webkit.WebViewFeature.isFeatureSupported(androidx.webkit.WebViewFeature.WEB_MESSAGE_LISTENER)) {
+      peerBridge=new PeerBridge(this,(id,result)->runOnUiThread(()->{
+        if(pageReady&&webView!=null)webView.evaluateJavascript("window.dispatchEvent(new CustomEvent('peer-result',{detail:{id:"+org.json.JSONObject.quote(id)+",result:"+org.json.JSONObject.quote(result)+"}}))",null);
+      }));
+      androidx.webkit.WebViewCompat.addWebMessageListener(webView,"StreamDashboardPeer",Collections.singleton(ORIGIN),(view,message,sourceOrigin,isMainFrame,replyProxy)->{
+        if(isMainFrame && ORIGIN.equals(sourceOrigin.toString()))peerBridge.receive(message.getData());
+      });
+    }
     if (!BuildConfig.PREVIEW_MODE) {
       providerBridge = new ProviderBridge(this);
       webView.addJavascriptInterface(providerBridge, "StreamDashboardProviders");
@@ -166,6 +175,7 @@ public class MainActivity extends Activity {
     pageReady=false;
     if(fileSelection!=null){fileSelection.onReceiveValue(null);fileSelection=null;}
     if(providerBridge!=null)providerBridge.close();
+    if(peerBridge!=null)peerBridge.close();
     if(webView!=null)webView.destroy();
     super.onDestroy();
   }
@@ -187,6 +197,7 @@ public class MainActivity extends Activity {
       InputStream stream = getAssets().open(asset);
       String mime = URLConnection.guessContentTypeFromName(asset);
       if (mime == null) mime = asset.endsWith(".js") ? "application/javascript" : "text/plain";
+      if("text/html".equals(mime))return new WebResourceResponse(mime,"UTF-8",200,"OK",Collections.singletonMap("Content-Security-Policy","frame-src 'none'"),stream);
       return new WebResourceResponse(mime, "UTF-8", stream);
     } catch (Exception ignored) {
       return new WebResourceResponse("text/plain", "UTF-8", 404, "Not Found", Collections.emptyMap(), new ByteArrayInputStream(new byte[0]));
@@ -283,6 +294,15 @@ public class MainActivity extends Activity {
     @JavascriptInterface public void haptic(String strength) {
       Vibrator vibrator = (Vibrator)getSystemService(VIBRATOR_SERVICE);
       if (vibrator != null) vibrator.vibrate(VibrationEffect.createOneShot("strong".equals(strength) ? 45 : 18, VibrationEffect.DEFAULT_AMPLITUDE));
+    }
+    @JavascriptInterface public boolean openViewers(String value) {
+      if(BuildConfig.PREVIEW_MODE||value==null||value.length()>1000)return false;
+      try {
+        org.json.JSONObject input=new org.json.JSONObject(value);
+        ViewerTargets targets=new ViewerTargets(input.optString("twitch",""),input.optString("youtube",""),input.optString("source","twitch"));
+        runOnUiThread(()->startActivity(new Intent(MainActivity.this,ViewerActivity.class).putExtra("twitch",targets.twitch).putExtra("youtube",targets.youtube).putExtra("source",targets.source)));
+        return true;
+      }catch(Exception error){return false;}
     }
     @JavascriptInterface public void openExternal(String value) {
       try {

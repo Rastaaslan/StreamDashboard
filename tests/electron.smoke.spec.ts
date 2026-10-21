@@ -202,3 +202,38 @@ test('agent sans fenêtre : services autonomes disponibles et fenêtre refermabl
   await expectEndpointClosed('http://127.0.0.1:48135');
  }finally{if(application)await application.close().catch(()=>{});await rm(profile,{recursive:true,force:true});}
 });
+
+test('TLS réel : une empreinte erronée ne reçoit aucun identifiant et la confiance reste limitée à cet agent', async () => {
+  const {createServer}=await import('node:https');
+  const {X509Certificate}=await import('node:crypto');
+  const certificate=await readFile(path.resolve('tests/fixtures/tls/agent.pem'),'utf8');
+  const key=await readFile(path.resolve('tests/fixtures/tls/agent.key'),'utf8');
+  const pin=new X509Certificate(certificate).fingerprint256.replaceAll(':','').toLowerCase();
+  const requests:string[]=[];
+  const endpoint=createServer({cert:certificate,key},(request,response)=>{requests.push(request.headers.authorization||'');request.resume();response.setHeader('Content-Type','application/json');response.end('{"ok":true}');});
+  await new Promise<void>(resolve=>endpoint.listen(0,'127.0.0.1',resolve));
+  const origin='https://127.0.0.1:'+(endpoint.address() as {port:number}).port;
+  const profile=await mkdtemp(path.join(os.tmpdir(),'streamdashboard-qa-'));
+  let application:ElectronApplication|undefined;
+  try {
+    application=await launch(profile);
+    // The isolated Linux runner has no keyring. Only this test's dummy pin and
+    // TEST_SECRET use Electron's explicit basic backend; production is unchanged.
+    if(process.platform==='linux')await application.evaluate(({safeStorage})=>safeStorage.setUsePlainTextEncryption(true));
+    const window=await application.firstWindow();await expectRuntimeReady(window);
+    const result=await window.evaluate(async({origin,pin})=>{
+      const bridge=(globalThis as any).streamDashboardDesktop;
+      const send=()=>bridge.requestPeer({id:crypto.randomUUID(),url:origin+'/api/v2/actions',method:'POST',credential:'TEST_SECRET',body:'{"id":"only-once"}',timeoutMs:5000});
+      await bridge.trustPeer(origin,'00'.repeat(32),'');const wrong=await send();
+      await bridge.trustPeer(origin,pin,'00'.repeat(32));const correct=await send();
+      const ordinary=await fetch(origin+'/api/v2/state').then(()=>true,()=>false);
+      await bridge.trustPeer(origin,'00'.repeat(32),pin);const changed=await send();
+      await bridge.trustPeer(origin,pin,'00'.repeat(32));
+      return {wrong,correct,ordinary,changed,pin:await bridge.getPeerFingerprint(origin)};
+    },{origin,pin});
+    expect(result.wrong.ok).toBe(false);expect(result.correct).toMatchObject({ok:true,status:200});expect(result.changed.ok).toBe(false);
+    expect(result.ordinary).toBe(false);expect(result.pin).toBe(pin);expect(requests).toEqual(['Device TEST_SECRET']);
+    await application.close();application=await launch(profile);if(process.platform==='linux')await application.evaluate(({safeStorage})=>safeStorage.setUsePlainTextEncryption(true));const restarted=await application.firstWindow();await expectRuntimeReady(restarted);
+    expect(await restarted.evaluate(origin=>(globalThis as any).streamDashboardDesktop.getPeerFingerprint(origin),origin)).toBe(pin);
+  }finally{await application?.close();await new Promise<void>(resolve=>{endpoint.close(()=>resolve());endpoint.closeAllConnections();});await rm(profile,{recursive:true,force:true});}
+});

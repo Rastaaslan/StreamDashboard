@@ -3,8 +3,8 @@ import express from 'express';
 import type { Server } from 'node:http';
 import path from 'node:path';
 
-const REGIE = 'http://100.126.186.44:48133';
-const OTHER_REGIE = 'http://192.168.1.9:48133';
+const REGIE = 'https://100.126.186.44:48136';
+const OTHER_REGIE = 'https://192.168.1.9:48136';
 const CREDENTIAL = 'synthetic-controller-credential';
 let server: Server, origin: string;
 test.beforeAll(async () => {
@@ -35,7 +35,16 @@ async function setup(page: Page, rejectNative = false) {
     win.intervals = [];
     win.setInterval = (callback: () => void, ms: number) => { win.intervals.push({ callback, ms }); return win.intervals.length; };
     win.clearInterval = () => {};
+    win.peerPins = {[regie]:'ab'.repeat(32)};
     win.streamDashboardDesktop = {
+      getPeerFingerprint:async(origin:string)=>win.peerPins[origin]||'',
+      trustPeer:async(origin:string,pin:string,expected:string)=>{if((win.peerPins[origin]||'')!==expected)throw Error('pin changed');win.peerPins[origin]=pin;},
+      // UI orchestration only; actual TLS verification is covered by the real Electron test.
+      requestPeer:async(value:any)=>{
+        if(!win.peerPins[new URL(value.url).origin])throw Error('untrusted peer');
+        try{const response=await fetch(value.url,{method:value.method,headers:{Authorization:'Device '+value.credential,...(value.body?{'Content-Type':'application/json'}:{})},body:value.body});return {ok:true,status:response.status,body:await response.text()};}
+        catch{return {ok:false,error:{message:'synthetic transport unavailable'}};}
+      },
       getDeviceProfile: async () => ({ configured: true, name: 'PC jeu de test', role: 'control' }),
       getControllerCredential: async () => win.credential,
       getDeviceCredential: async (server:string) => win.deviceCredentials[server]||'',
@@ -147,6 +156,7 @@ test('new pairing suspends old macros before waiting and arms only the new ident
   await page.locator('#connection-form [name="server"]').fill(OTHER_REGIE);
   await page.locator('#connection-form [name="pair"]').fill('test-pair');
   await page.locator('#connection-form [name="code"]').fill('123456');
+  await page.locator('#connection-form [name="fingerprint"]').fill('ab'.repeat(32));
   await page.locator('#connection-form button').filter({ hasText: 'Se connecter' }).click();
   await expect.poll(() => backend.calls.some(call => call.startsWith('POST ' + OTHER_REGIE + '/api/v1/remote/pair'))).toBe(true);
   expect((await nativeConfiguration(page)).actions).toEqual([]);

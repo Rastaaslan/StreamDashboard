@@ -433,3 +433,19 @@ test('late Streamlabs replies never overwrite the selected source or its history
   await expect(page.locator('.streamlabs-event')).toContainText('local événement 0');
   expect(await page.evaluate(() => localStorage.getItem('sd2.streamlabs.history:local'))).not.toContain('Réponse ancienne régie');
 });
+
+test('Android opens both chats and video in isolated native viewers without exposing controller bridges to frames',async({page})=>{
+ await page.setViewportSize({width:900,height:1000});
+ await page.evaluate(async()=>{
+  const win=window as any;win.viewerRequests=[];
+  win.StreamDashboardNative={openViewers:(value:string)=>{win.viewerRequests.push(JSON.parse(value));return true;}};
+  const modulePath='/mobile/control/live-monitor.js',module=await import(modulePath);
+  win.monitor=module.createLiveMonitor(document.querySelector('#monitor'),{native:true});
+  win.monitor.update({host:{monitor:{twitchLogin:'creator_test'}},configuration:{youtube:{broadcastId:'Abc_1234-XY'}}},{online:false,sourceKey:'device-local'});
+ });
+ await expect(page.locator('#monitor iframe')).toHaveCount(0);
+ await page.getByRole('button',{name:'Ouvrir vidéo et chats'}).first().click();
+ expect(await page.evaluate(()=>(window as any).viewerRequests)).toEqual([{twitch:'creator_test',youtube:'Abc_1234-XY',source:'twitch'}]);
+ await expect(page.locator('[data-monitor-viewer-status]')).toContainText('sessions web propres');
+ await page.evaluate(()=>(window as any).monitor.destroy());
+});

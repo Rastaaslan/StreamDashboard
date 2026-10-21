@@ -18,7 +18,7 @@ interface ControllerResult { status: string; message?: string; error?: { code?: 
 const shortcutPattern = /^Control\+Alt\+Shift\+F(?:[1-9]|1\d|2[0-4])$/;
 const actionTypes = new Set<DeckAction['type']>(['mic.toggle','scene.set','mode.set','timer.add','sound.play','sound.stop','alert.play','chat.send','wizebot.command','replay.save','replay.start','replay.stop','live.start','live.stop']);
 
-export function installControllerKeys(window: () => BrowserWindow | null, userData: string, uiOrigin: string) {
+export function installControllerKeys(window: () => BrowserWindow | null, userData: string, uiOrigin: string, request:typeof fetch=fetch) {
   const secrets = new ElectronSecretStore(userData);
   let signature = '', generation = 0, disposed = false;
   let configuration: ControllerConfiguration | undefined;
@@ -63,11 +63,11 @@ export function installControllerKeys(window: () => BrowserWindow | null, userDa
     void (async () => {
       try {
         if (destination) {
-          const observed = await fetch(`${server}/api/v2/device`, {headers:credential?{Authorization:`Device ${credential}`}:{},signal:AbortSignal.any([flight.controller.signal,AbortSignal.timeout(8_000)])});
+          const observed = await request(`${server}/api/v2/device`, {headers:credential?{Authorization:`Device ${credential}`}:{},signal:AbortSignal.any([flight.controller.signal,AbortSignal.timeout(8_000)])});
           const descriptor = await observed.json() as {device?:{id?:string}};
           if (!observed.ok || descriptor.device?.id !== destination.deviceId) throw new Error('Identité de la destination non confirmée. Renouvelez son association.');
         }
-        const response = await fetch(`${server}/api/v2/actions`, {
+        const response = await request(`${server}/api/v2/actions`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json', ...(credential ? { Authorization: `Device ${credential}` } : {}) },
           body: JSON.stringify({ id: randomUUID(), issuedAt: new Date().toISOString(), action: definition.id, expectedAction: definition, trigger: 'keyboard' }),
@@ -187,11 +187,11 @@ export function installControllerKeys(window: () => BrowserWindow | null, userDa
         if (!observations.has(key)) observations.set(key,(async()=>{
           const headers: Record<string,string> = credential ? { Authorization: `Device ${credential}` } : {};
           if (deviceId) {
-            const response=await fetch(`${server}/api/v2/device`,{headers,signal:AbortSignal.timeout(8_000)});
+            const response=await request(`${server}/api/v2/device`,{headers,signal:AbortSignal.timeout(8_000)});
             const value=await response.json() as {device?:{id?:string}};
             if(!response.ok||value.device?.id!==deviceId)throw new Error('Device changed');
           }
-          const response=await fetch(`${server}/api/v2/state`,{headers,signal:AbortSignal.timeout(8_000)});
+          const response=await request(`${server}/api/v2/state`,{headers,signal:AbortSignal.timeout(8_000)});
           if(!response.ok)throw new Error('Executor unavailable');
           const value=await response.json() as {configuration?:{actions?:DeckAction[]}};
           if(!Array.isArray(value.configuration?.actions))throw new Error('Invalid executor state');

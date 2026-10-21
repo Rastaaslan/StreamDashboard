@@ -13,7 +13,10 @@ import { registerControlRoutes } from './control-routes.js';
 import { registerTwitchChatRoutes } from './twitch-chat-routes.js';
 import { sameTwitchTags } from '../../../integrations/twitch/src/metadata.js';
 import { YouTubeClient, YouTubeApiError } from '../../../integrations/youtube/src/client.js';
-import { createServer, type Server } from 'node:http';
+import { createServer, type Server, type IncomingMessage } from 'node:http';
+import { createServer as createHttpsServer } from 'node:https';
+import { createSecureContext, type TLSSocket } from 'node:tls';
+import type { Duplex } from 'node:stream';
 import { prepareHttpShutdown } from './http-shutdown.js';
 import { mkdir, readFile, stat, unlink, writeFile } from 'node:fs/promises';
 import { hostname, networkInterfaces } from 'node:os';
@@ -21,7 +24,7 @@ import { hostname, networkInterfaces } from 'node:os';
 // Keep loopback usable; never broaden the Host allowlist when discovery fails.
 const visibleNetworkInterfaces: typeof networkInterfaces = () => { try { return networkInterfaces(); } catch { return {}; } };
 import path from 'node:path';
-import { createHash, randomUUID } from 'node:crypto';
+import { createHash, randomUUID, X509Certificate } from 'node:crypto';
 import { WebSocketServer, type WebSocket } from 'ws';
 import { ObsClient } from '../../../integrations/obs/src/client.js';
 import { TwitchClient, TwitchHttpError } from '../../../integrations/twitch/src/client.js';
@@ -146,6 +149,8 @@ export interface DashboardServerOptions {
   port?: number;
   host?: string;
   remoteEnabled?: boolean;
+  remoteTls?: {pfx:Buffer;passphrase:string;certificate:string;port?:number};
+  remoteError?:string;
   dataDir?: string;
   profileFile?: string;
   soundLibraryDir?: string;
@@ -168,6 +173,7 @@ export interface DashboardServerOptions {
   wizebotTransport?: WizeBotTransport;
 }
 export interface DashboardServerHandle {
+  remotePort?:number;
   port: number;
   url: string;
   state(): DashboardState;
@@ -401,12 +407,12 @@ function overlapsWindow(item: CalendarItem, timeMin: string, timeMax: string) {
   return Date.parse(item.endAtUtc) > Date.parse(timeMin) && Date.parse(item.startAtUtc) < Date.parse(timeMax);
 }
 
-function lanUrls(port: number) {
+function lanUrls(port: number, protocol='http') {
   if (!port) return [];
   const result = new Set<string>();
   for (const addresses of Object.values(visibleNetworkInterfaces())) {
     for (const address of addresses ?? []) {
-      if (address.family === 'IPv4' && !address.internal) result.add(`http://${address.address}:${port}/mobile/`);
+      if (address.family === 'IPv4' && !address.internal) result.add(`${protocol}://${address.address}:${port}/mobile/`);
     }
   }
   return [...result];
@@ -421,8 +427,19 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
     signal: AbortSignal.any([runtimeAbort.signal, ...(init?.signal ? [init.signal] : [])]),
   });
   const requestedPort = options.port ?? Number(process.env.PORT ?? 48132);
-  const host = options.host ?? '127.0.0.1';
-  const remoteRuntimeEnabled = options.remoteEnabled === true;
+  const host = options.remoteTls ? '127.0.0.1' : options.host ?? '127.0.0.1';
+  let remoteRuntimeEnabled = options.remoteEnabled === true;
+  let remoteFailure=options.remoteError;
+  let tlsFingerprint='';
+  if(options.remoteTls){
+    if(!remoteRuntimeEnabled)throw new Error('Le partage réseau est désactivé.');
+    createSecureContext({pfx:options.remoteTls.pfx,passphrase:options.remoteTls.passphrase,minVersion:'TLSv1.2'});
+    const certificate=new X509Certificate(options.remoteTls.certificate),now=Date.now();
+    if(Date.parse(certificate.validFrom)>now||Date.parse(certificate.validTo)<=now)throw new Error('Certificat de l’agent expiré ou pas encore valide.');
+    tlsFingerprint=certificate.fingerprint256.replaceAll(':','').toLowerCase();
+    const port=options.remoteTls.port??48136;
+    if(!Number.isInteger(port)||port<0||port>65535)throw new Error('Port TLS invalide.');
+  }
   if (!LOOPBACK_HOSTS.has(host) && !remoteRuntimeEnabled) {
     throw new Error('Le mode remote-LAN est désactivé tant que le pairing authentifié n’est pas configuré.');
   }
@@ -709,6 +726,8 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
   const remoteAuth = new RemoteAuth(Date.now, local.remoteDevices, Array.isArray(local.remotePairings) ? local.remotePairings : []);
   const server = createServer(app);
   const stopHttp = prepareHttpShutdown(server);
+  const tlsServer=options.remoteTls?createHttpsServer({pfx:options.remoteTls.pfx,passphrase:options.remoteTls.passphrase,minVersion:'TLSv1.2',handshakeTimeout:10_000},app):undefined;
+  const stopTls=tlsServer?prepareHttpShutdown(tlsServer,true):undefined;
   const sockets = new WebSocketServer({ noServer: true });
   const socketDevices = new Map<WebSocket, string>();
   const eventCore = new EventCore(250);
@@ -749,7 +768,7 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
   const wizebot = new WizeBotAdapter(storedWizeBot ?? environmentWizeBot, options.wizebotTransport ?? new WizeBotHttpTransport(runtimeFetch()), logger);
 
   const isLocalAddress = (address: string | undefined | null) => LOCAL_ADDRESSES.has(address ?? '');
-  const isLocalRequest = (req: express.Request) => isLocalAddress(req.socket.remoteAddress);
+  const isLocalRequest = (req: express.Request) => !(req.socket as TLSSocket).encrypted && isLocalAddress(req.socket.remoteAddress);
   const isRemoteRequest = (req: express.Request) => !isLocalRequest(req);
   const requireLocal = (req: express.Request, res: express.Response) => {
     if (isLocalRequest(req) || res.locals.management === true) return true;
@@ -759,18 +778,18 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
 
   // Validate the authority independently of Origin to prevent DNS rebinding.
   // Re-read interfaces on each request so Wi-Fi/Ethernet changes need no restart.
-  const acceptedHost = (authority: string | undefined) => {
+  const acceptedHost = (authority: string | undefined,port=runtimePort,secure=false) => {
     if (!authority) return false;
     try {
-      const url = new URL(`http://${authority}`);
+      const url = new URL(`${secure?'https':'http'}://${authority}`);
       const addresses = Object.values(visibleNetworkInterfaces()).flatMap(values => (values ?? []).map(value => value.address));
       return !url.username && !url.password && url.host === authority.toLowerCase()
-        && Number(url.port || 80) === runtimePort
+        && Number(url.port || (secure?443:80)) === port
         && ['localhost', '127.0.0.1', '[::1]', hostname().toLowerCase(), `${hostname().toLowerCase()}.local`, ...addresses].includes(url.hostname);
     } catch { return false; }
   };
 
-  server.on('upgrade', (request, socket, head) => {
+  const upgrade = (request:IncomingMessage, socket:Duplex, head:Buffer) => {
     const requestUrl = new URL(request.url ?? '/', 'http://local');
     const pathname = requestUrl.pathname;
     const origin = request.headers.origin;
@@ -780,9 +799,9 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
       try { return ANDROID_NATIVE_ORIGINS.has(origin) || (Boolean(requestHost) && new URL(origin).host === requestHost); }
       catch { return false; }
     })();
-    const remoteRequest = !isLocalAddress(request.socket.remoteAddress);
+    const remoteRequest = Boolean((request.socket as TLSSocket).encrypted) || !isLocalAddress(request.socket.remoteAddress);
     const deviceId = remoteRequest ? remoteAuth.consumeWsTicket(requestUrl.searchParams.get('ticket') ?? '') : null;
-    if (!acceptedHost(requestHost) || (pathname !== '/ws' && pathname !== '/ws/v1') || !acceptedOrigin || (remoteRequest && (!remoteRuntimeEnabled || !deviceId))) {
+    if (!acceptedHost(requestHost,request.socket.localPort,Boolean((request.socket as TLSSocket).encrypted)) || (pathname !== '/ws' && pathname !== '/ws/v1') || !acceptedOrigin || (remoteRequest && (!remoteRuntimeEnabled || !deviceId))) {
       socket.write('HTTP/1.1 403 Forbidden\r\n\r\n');
       socket.destroy();
       return;
@@ -791,10 +810,12 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
       if (deviceId) socketDevices.set(ws, deviceId);
       sockets.emit('connection', ws, request);
     });
-  });
+  };
+  server.on('upgrade',upgrade);
+  tlsServer?.on('upgrade',upgrade);
 
   app.use((req, res, next) => {
-    if (!acceptedHost(req.headers.host)) { res.status(403).json({ ok: false, error: { code: 'HOST_REJECTED', message: 'Adresse du PC non autorisée. Utilisez une adresse LAN affichée sur le PC.' } }); return; }
+    if (!acceptedHost(req.headers.host,req.socket.localPort,Boolean((req.socket as TLSSocket).encrypted))) { res.status(403).json({ ok: false, error: { code: 'HOST_REJECTED', message: 'Adresse du PC non autorisée. Utilisez une adresse LAN affichée sur le PC.' } }); return; }
     res.set('Cache-Control', 'no-store');
     res.set({
       'Content-Security-Policy': "default-src 'self'; media-src 'self' blob:; connect-src 'self' " + (req.path.startsWith('/mobile/control/') ? 'http: https: ' : 'https://static-cdn.jtvnw.net ') + "ws://127.0.0.1:* ws://localhost:* ws://[::1]:* ws: wss:; script-src 'self'; style-src 'self' 'unsafe-inline'; frame-src https://player.twitch.tv https://www.twitch.tv https://www.youtube.com; img-src 'self' data: blob: https://static-cdn.jtvnw.net https://clips-media-assets2.twitch.tv https://clips-media-assets.twitch.tv; object-src 'none'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'",
@@ -899,6 +920,8 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
     accessMode: remoteRuntimeEnabled ? 'remote-LAN' : 'desktop-local',
   };
   let runtimePort = requestedPort;
+  let tlsPort=0;
+  const remoteUrls=()=>remoteRuntimeEnabled?lanUrls(tlsServer?tlsPort:runtimePort,tlsServer?'https':'http'):[];
   const serverInstanceId = randomUUID();
   let stateRevision = 0;
   const temporalPlanning = (from = Date.now() - DAY_MS, to = Date.now() + 730 * DAY_MS) => expandRecurringItems(local.planning, { from, to });
@@ -965,7 +988,7 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
         supported: true,
         enabled: remoteRuntimeEnabled,
         devices: remoteAuth.list(),
-        urls: remoteRuntimeEnabled ? lanUrls(runtimePort) : [],
+        urls: remoteUrls(),
       },
       streamerPings: local.streamerPings.filter(ping => !ping.acknowledgedAt).slice(-20),
       controlHub,
@@ -1724,14 +1747,15 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
       }
       const pairing = remoteAuth.createPairing(undefined, req.body?.management === true, req.body?.permissions);
       await save();
-      const urls = lanUrls(runtimePort);
+      const urls = remoteUrls();
       res.status(201).json({
         ...pairing,
+        ...(tlsFingerprint?{fingerprint:tlsFingerprint}:{}),
         urls,
-        links: urls.map(url => `${url}?pair=${encodeURIComponent(pairing.id)}&code=${encodeURIComponent(pairing.code)}`),
+        links: urls.map(url => `${url}?pair=${encodeURIComponent(pairing.id)}&code=${encodeURIComponent(pairing.code)}${tlsFingerprint?'&fingerprint='+tlsFingerprint:''}`),
         androidLinks: urls.map(url => {
           const serverUrl = new URL(url);
-          return `streamdashboard://pair?v=1&server=${encodeURIComponent(serverUrl.origin)}&id=${encodeURIComponent(pairing.id)}&code=${encodeURIComponent(pairing.code)}`;
+          return `${tlsFingerprint?'streamdashboard-next':'streamdashboard'}://pair?v=${tlsFingerprint?'2':'1'}&server=${encodeURIComponent(serverUrl.origin)}&id=${encodeURIComponent(pairing.id)}&code=${encodeURIComponent(pairing.code)}${tlsFingerprint?'&fingerprint='+tlsFingerprint:''}`;
         }),
       });
     } catch (error) { next(error); }
@@ -1766,7 +1790,7 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
   });
   app.get('/api/v1/remote/info', (req, res) => {
     if (!requireLocal(req, res)) return;
-    res.json({ enabled: remoteRuntimeEnabled, configured: local.settings.remoteEnabled === true, restartRequired: remoteRuntimeEnabled !== (local.settings.remoteEnabled === true), urls: remoteRuntimeEnabled ? lanUrls(runtimePort) : [] });
+    res.json({ transport:tlsServer?'tls':'legacy-http',fingerprint:tlsFingerprint||null,error:remoteFailure||null,enabled: remoteRuntimeEnabled, configured: local.settings.remoteEnabled === true, restartRequired: remoteRuntimeEnabled !== (local.settings.remoteEnabled === true), urls: remoteUrls() });
   });
   app.delete('/api/v1/remote/devices/:id', async (req, res, next) => {
     try {
@@ -3176,7 +3200,7 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
     // state before releasing the runtime. Startup must not outlive shutdown.
     for (const ws of sockets.clients) ws.terminate();
     sockets.close();
-    await stopHttp();
+    await Promise.all([stopHttp(),tlsServer?.listening?stopTls!():Promise.resolve()]);
     await wizebotCommands.stop();
     await control.stop();
     await commands.stop();
@@ -3196,13 +3220,23 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
     await save();
   })();
   try {
+    if(tlsServer){
+      try {
+        await new Promise<void>((resolve,reject)=>{tlsServer.once('error',reject);tlsServer.listen(options.remoteTls!.port??48136,'0.0.0.0',()=>{tlsServer.off('error',reject);resolve();});});
+        tlsPort=(tlsServer.address() as {port:number}).port;
+      }catch {
+        remoteRuntimeEnabled=false;capabilities.accessMode='desktop-local';
+        remoteFailure='Le port HTTPS de cet agent est indisponible. Fermez l’autre instance qui l’utilise, puis redémarrez cet agent.';
+        void Promise.resolve(logger.warn(remoteFailure)).catch(()=>undefined);
+      }
+    }
     startupSignal?.throwIfAborted();
   } catch (error) {
     await stop();
     throw startupSignal?.aborted ? startupSignal.reason : error;
   }
   const urlHost = host === '0.0.0.0' ? '127.0.0.1' : host === '::1' ? '[::1]' : host;
-  return { port: actualPort, url: `http://${urlHost}:${actualPort}`, state: snapshot, providersReady, server, stop,
+  return { remotePort:tlsPort||undefined,port: actualPort, url: `http://${urlHost}:${actualPort}`, state: snapshot, providersReady, server, stop,
     assessRestartSafety: () => assessRestartSafety({ obsEnabled: options.obsEnabled !== false, stopped: () => Boolean(stopPromise),
       pending: () => control.hasPendingActions || commands.hasPendingCommands,
       revision: () => JSON.stringify([commands.activityRevision, control.snapshot().receipts.map(receipt => [receipt.id, receipt.status])]),

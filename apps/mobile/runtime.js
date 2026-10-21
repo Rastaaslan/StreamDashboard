@@ -29,8 +29,7 @@ export function normalizeServer(value) {
   const loopback = host === '127.0.0.1';
   const localHostname = host === 'localhost' || host.endsWith('.local') || (!host.includes('.') && /^[a-z0-9-]+$/i.test(host));
   if (!isLocalOrTailnetIpv4(host) && !loopback && !localHostname) throw new Error('Seule une adresse du réseau local ou Tailscale est autorisée.');
-  if (url.protocol === 'https:' && host !== 'localhost') throw new Error('Le serveur StreamDashboard LAN utilise HTTP.');
-  const port = url.port || String(DEFAULT_PORT);
+  const port = url.port || (url.protocol === 'https:' ? '443' : String(DEFAULT_PORT));
   return `${url.protocol}//${host}:${port}`;
 }
 

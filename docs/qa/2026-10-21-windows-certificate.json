@@ -1,0 +1,12 @@
+{
+  "date": "2026-10-21",
+  "device": "FIXE",
+  "scope": "In-memory Windows certificate generation and PFX import using the Next 2.1 generator script",
+  "passed": true,
+  "initialFailure": "RSA.Create().KeySize assignment rejected by Windows PowerShell",
+  "correction": "Construct RSACng(2048) directly",
+  "privateKeyImported": true,
+  "certificateStoreModified": false,
+  "stableInstallationModified": false,
+  "qualificationLimit": "This verifies the Windows certificate primitive; it does not qualify the complete Windows-to-Android TLS pairing flow."
+}

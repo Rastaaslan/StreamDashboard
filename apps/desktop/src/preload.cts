@@ -1,6 +1,12 @@
 const { contextBridge, ipcRenderer } = require('electron') as typeof import('electron');
 
 contextBridge.exposeInMainWorld('streamDashboardDesktop', {
+  getAgentIdentity:()=>ipcRenderer.invoke('peer:identity'),
+  renewAgentIdentity:(expected:string)=>ipcRenderer.invoke('peer:renew',expected),
+  getPeerFingerprint:(origin:string)=>ipcRenderer.invoke('peer:fingerprint',origin),
+  trustPeer:(origin:string,fingerprint:string,expected:string)=>ipcRenderer.invoke('peer:trust',origin,fingerprint,expected),
+  requestPeer:(value:unknown)=>ipcRenderer.invoke('peer:request',value),
+  cancelPeerRequest:(id:string)=>ipcRenderer.invoke('peer:cancel',id),
   configureController: (value: unknown) => ipcRenderer.invoke('controller:configure', value),
   controllerStatus: () => ipcRenderer.invoke('controller:status'),
   getControllerCredential: () => ipcRenderer.invoke('controller:credential:get'),

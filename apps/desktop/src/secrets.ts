@@ -5,6 +5,8 @@ import path from 'node:path';
 import type { SecretStore } from '../../server/src/storage.js';
 
 interface SecurePayload {
+  agentCertificate?: import('./agent-certificate.js').AgentCertificate;
+  peerFingerprints?: Record<string,string>;
   controller?: { credential: string };
   controllerDevices?: Record<string, string>;
   controllerBindings?: import('../../../packages/contracts/src/control.js').ControllerConfiguration;
@@ -81,6 +83,22 @@ export class ElectronSecretStore implements SecretStore {
   }
 
   async getTwitchTokens() { return (await this.read()).twitch ?? null; }
+  async getAgentCertificate() { return (await this.read()).agentCertificate ?? null; }
+  async setAgentCertificate(certificate:import('./agent-certificate.js').AgentCertificate) { await this.update(value=>{value.agentCertificate={...certificate};}); }
+  async replaceAgentCertificate(certificate:import('./agent-certificate.js').AgentCertificate|null,expected:string) {
+    await this.update(value=>{
+      if((value.agentCertificate?.certificate||'')!==expected)throw new Error('Certificat modifié ailleurs. Actualisez les informations de cet agent.');
+      if(certificate)value.agentCertificate={...certificate};else delete value.agentCertificate;
+    });
+  }
+  async getPeerFingerprints() { return {...(await this.read()).peerFingerprints}; }
+  async setPeerFingerprint(origin:string,fingerprint:string,expected:string) {
+    await this.update(value=>{
+      if((value.peerFingerprints?.[origin]||'')!==expected)throw new Error('Identité de l’agent modifiée ailleurs. Actualisez l’association.');
+      value.peerFingerprints={...value.peerFingerprints};
+      if(fingerprint)value.peerFingerprints[origin]=fingerprint;else delete value.peerFingerprints[origin];
+    });
+  }
   async getController() { return (await this.read()).controller ?? null; }
   async getControllerDevice(server: string) { return (await this.read()).controllerDevices?.[server] || ''; }
   async setControllerDevice(server: string, credential: string) { await this.update(value => { value.controllerDevices = { ...value.controllerDevices, [server]:credential }; }); }

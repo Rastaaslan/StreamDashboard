@@ -43,6 +43,7 @@ test('Android uses the same monitor with independent Twitch and YouTube targets 
  await page.route('https://**/*',route=>route.abort());await page.goto(origin);
  await page.evaluate(async()=>{
   localStorage.setItem('sd2.monitor-enabled','true');
+  (window as any).nativeScreens=[];(window as any).StreamDashboardNative={openViewers:(value:string)=>{(window as any).nativeScreens.push(JSON.parse(value));return true;}};
   const modulePath='/mobile/control/live-monitor.js';const {createLiveMonitor}=await import(modulePath);
   const monitor=createLiveMonitor(document.querySelector('#root'),{native:true});
   monitor.update({configuration:{youtube:{}},host:{}},{online:true,sourceKey:'device'});
@@ -50,8 +51,9 @@ test('Android uses the same monitor with independent Twitch and YouTube targets 
  await page.locator('.monitor-targets summary').click();
  await page.locator('[name=channel]').fill('test_channel');await page.locator('[name=video]').fill('Abc_1234-XY');
  await page.getByRole('button',{name:'Enregistrer ces retours'}).click();
- await expect(page.locator('iframe[title="Chat Twitch"]')).toHaveAttribute('src',/test_channel/);
- await expect(page.locator('iframe[title="Chat YouTube"]')).toHaveAttribute('src',/Abc_1234-XY/);
+ await expect(page.locator('iframe')).toHaveCount(0);
+ await page.getByRole('button',{name:'Ouvrir vidéo et chats'}).first().click();
+ expect(await page.evaluate(()=>(window as any).nativeScreens)).toEqual([{twitch:'test_channel',youtube:'Abc_1234-XY',source:'twitch'}]);
  await page.getByRole('button',{name:'YouTube',exact:true}).click();
  await expect(page.locator('[data-monitor-viewer-status]')).toContainText('non vérifiable');
  await expect(page.locator('[data-monitor-link="youtube"]')).toHaveAttribute('href',/Abc_1234-XY/);

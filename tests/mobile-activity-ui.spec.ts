@@ -3,7 +3,7 @@ import express from 'express';
 import type { Server } from 'node:http';
 import path from 'node:path';
 
-const REGIE = 'http://regie.test:48133';
+const REGIE = 'https://regie.local:48136';
 const DEVICE_CREDENTIAL = 'fake-mobile-activity-device-credential';
 const FAVORITES = { version: 1, bank: 'favorites', soundCategory: 'Rires', favorites: ['action:scene-pause', 'action:micro'] };
 const FAVORITES_KEY = 'sd2.performance-deck.v1:' + encodeURIComponent(REGIE);
@@ -56,6 +56,15 @@ async function setupMobileActivity(page: Page) {
       localStorage.setItem(favoritesKey, JSON.stringify(favorites));
     }
     win.keepAwakeCalls = [];
+    // Synthetic native replies exercise correlation and the real renderer;
+    // the Java TLS integration test verifies certificates separately.
+    win.StreamDashboardPeer={postMessage:async(raw:string)=>{
+      const value=JSON.parse(raw);if(value.operation==='cancel')return;
+      let result;
+      try{const response=await fetch(value.url,{method:value.method,headers:{...(value.credential?{Authorization:'Device '+value.credential}:{}),...(value.body?{'Content-Type':'application/json'}:{})},body:value.body});result={ok:true,status:response.status,body:await response.text()};}
+      catch{result={ok:false,error:{message:'synthetic transport unavailable'}};}
+      win.dispatchEvent(new CustomEvent('peer-result',{detail:{id:value.id,result:JSON.stringify(result)}}));
+    }};
     win.StreamDashboardNative = {
       isAndroid: () => true,
       getCredential: () => localStorage.getItem('test.native-credential') || '',

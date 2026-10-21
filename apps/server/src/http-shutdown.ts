@@ -3,11 +3,11 @@ import type { Socket } from 'node:net';
 
 /** Drain accepted requests, including writes, but never wait for a browser's
  * speculative TCP connection which has not submitted an HTTP request. */
-export function prepareHttpShutdown(server: Server): () => Promise<void> {
+export function prepareHttpShutdown(server: Server, secure = false): () => Promise<void> {
   const pending = new Map<Socket, number>();
   let closing = false;
   let stopping: Promise<void> | undefined;
-  server.on('connection', socket => {
+  server.on(secure ? 'secureConnection' : 'connection', (socket:Socket) => {
     if (closing) { socket.destroy(); return; }
     pending.set(socket, 0);
     socket.once('close', () => pending.delete(socket));
