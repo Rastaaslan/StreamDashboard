@@ -50,5 +50,6 @@
     "obsProcesses": true,
     "mainBranch": true,
     "noRealLiveOrChatEffect": true
-  }
+  },
+  "draftRelease": "https://github.com/Rastaaslan/StreamDashboard/releases/tag/untagged-685035fcda2f9567641f"
 }
