@@ -12,7 +12,7 @@ export interface SoundboardRuntimeEvent {
 }
 
 export interface AudioPlayback {
-  outputs(): Promise<AudioOutput[]>;
+  outputs(refresh?: boolean): Promise<AudioOutput[]>;
   play(input: { file: string; volume: number; outputId: string; monitoringMode?: 'stream' | 'monitor' }): Promise<PlaybackSession>;
   stop(): Promise<void>;
   setVolume?(volume: number): Promise<void>;
@@ -98,8 +98,8 @@ export class SoundboardRuntime {
   catalog() { return this.sounds.map(sound => ({ ...sound })); }
   replace(sounds: Sound[]) { this.sounds = sounds.map(validateSound); }
 
-  async snapshot(): Promise<SoundboardSnapshot> {
-    const outputs = await this.audio.outputs().catch(() => []);
+  async snapshot(refreshOutputs = false): Promise<SoundboardSnapshot> {
+    const outputs = await this.audio.outputs(refreshOutputs).catch(() => []);
     const publicSounds = await Promise.all(this.sounds.map(async ({ source, ...sound }) => ({ ...sound, sourceAvailable: await access(resolve(source)).then(() => true, () => false) })));
     return {
       sounds: publicSounds,
@@ -123,7 +123,7 @@ export class SoundboardRuntime {
       const extension = extname(file).toLowerCase().replace(/^\./, '');
       if (!this.audio.supportedFormats.includes(extension)) throw runtimeError('SOUND_FORMAT_UNSUPPORTED', `Format audio .${extension || '?'} non supporté par ce moteur.`, false);
       try { await access(file); } catch { throw runtimeError('SOUND_FILE_MISSING', 'Le fichier audio est introuvable sur le PC.', false); }
-      const outputs = await this.audio.outputs();
+      const outputs = await this.audio.outputs(true);
       if (!outputs.some(output => output.id === sound.outputId && output.selectable)) throw runtimeError('AUDIO_OUTPUT_UNAVAILABLE', 'La sortie audio configurée est absente.', true);
       const remaining = (this.cooldowns.get(sound.id) ?? 0) - this.now();
       if (remaining > 0) throw runtimeError('SOUND_COOLDOWN_ACTIVE', `Cooldown actif (${Math.ceil(remaining / 1_000)} s).`, true);

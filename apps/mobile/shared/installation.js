@@ -1,3 +1,4 @@
+import { actionDefinition, actionCapability } from './action-definition.js';
 // One installation contract for Windows, Android and browser controllers.
 // This document contains topology only. Tokens, cookies and user content stay
 // in their existing device stores; changing roles never moves or deletes them.
@@ -41,11 +42,26 @@ export function validateInstallation(input) {
   if (!local || !local.enabled) fail('L’appareil courant doit rester présent et actif.');
   if (!['root', 'device-runtime', 'native', 'browser'].includes(input.runtimeProfile)) fail('Profil local invalide.');
   if (typeof input.background !== 'boolean' || typeof input.configured !== 'boolean') fail('Options d’installation invalides.');
+  if (input.startAtLogin !== undefined && typeof input.startAtLogin !== 'boolean') fail('Option de démarrage invalide.');
+  if (input.startAtLogin && local.platform !== 'windows') fail('Le démarrage automatique concerne Windows.');
   if (!input.routes || typeof input.routes !== 'object' || Array.isArray(input.routes)) fail('Destinations invalides.');
   for (const [capability, id] of Object.entries(input.routes)) {
     if (![...common, 'obs', 'clips', 'global-keys'].includes(capability) || !ids.has(id)) fail('Destination inconnue.');
     const target = input.devices.find(d => d.id === id);
     if (!target.capabilities.includes(capability)) fail('La destination ne possède pas la capacité requise.');
+  }
+  if (input.actionRoutes !== undefined) {
+    if (!Array.isArray(input.actionRoutes) || input.actionRoutes.length > 1000) fail('Associations de boutons invalides.');
+    const keys = new Set();
+    for (const route of input.actionRoutes) {
+      if (!route || typeof route.workspace !== 'string' || !route.workspace || route.workspace.length > 2048 || !idPattern.test(route.actionId) || !ids.has(route.deviceId) || !actionDefinition(route.definition)) fail('Destination de bouton invalide.');
+      const key = JSON.stringify([route.workspace, route.actionId]);
+      if (keys.has(key)) fail('Destination de bouton dupliquée.');
+      keys.add(key);
+      const target = input.devices.find(d => d.id === route.deviceId);
+      if (!target.capabilities.includes(actionCapability(route.definition.type))) fail('Bouton incompatible avec la destination.');
+      if (JSON.stringify(route.definition).length > 4000) fail('Définition de bouton trop longue.');
+    }
   }
   return copy(input);
 }
@@ -74,7 +90,9 @@ export function planInstallationChange(current, changes, expectedRevision) {
   if (changes.name !== undefined) local.name = String(changes.name).trim();
   if (changes.roles !== undefined) local.roles = copy(changes.roles);
   if (changes.background !== undefined) next.background = changes.background;
+  if (changes.startAtLogin !== undefined) next.startAtLogin = changes.startAtLogin;
   if (changes.routes !== undefined) next.routes = copy(changes.routes);
+  if (changes.actionRoutes !== undefined) next.actionRoutes = copy(changes.actionRoutes);
   // A preset is a description of the installation, never fabricated hardware.
   if (next.preset === 'android-only' && local.platform !== 'android') fail('Le mode Android autonome se choisit sur un appareil Android.');
   if (changes.device) {
@@ -100,6 +118,7 @@ export function planInstallationChange(current, changes, expectedRevision) {
     `Installation : ${SETUPS[next.preset]}`,
     `Cet appareil : ${local.name} · ${local.roles.map(r => ROLES[r]).join(', ') || 'aucun rôle'}`,
     restart ? 'Redémarrage de l’application nécessaire après vérification d’OBS.' : 'Application des réglages sans redémarrage.',
+    next.startAtLogin ? 'L’agent démarrera sans fenêtre à l’ouverture de votre session Windows.' : 'Démarrage automatique désactivé.',
     'Les données, comptes et associations existants sont conservés.',
   ] };
 }
@@ -153,6 +172,7 @@ export function associateInstallationDevice(current, endpoint, advertised) {
   const origin=installationEndpoint(endpoint),previous=current.devices.find(d=>d.endpoint===origin);
   const device=advertised?publicInstallationDevice(advertised):{id:previous?.id||'legacy-'+Array.from(globalThis.crypto.getRandomValues(new Uint8Array(16)),n=>n.toString(16).padStart(2,'0')).join(''),name:previous?.name||'Appareil associé RC11.7',platform:'windows',roles:['obs-executor'],capabilities:['obs','clips','audio'],enabled:true};
   if(device.id===current.localDeviceId)fail('Cet appareil est déjà votre appareil local.');
-  if(!device.capabilities.includes('obs')||!device.roles.includes('obs-executor'))fail('Le rôle OBS n’est pas actif sur cet appareil.');
-  return {device:{...device,endpoint:origin},...(previous&&previous.id!==device.id?{disableDeviceId:previous.id}:{}),routes:{...current.routes,obs:device.id,clips:device.id}};
+  const routes={...current.routes};
+  if(device.capabilities.includes('obs')&&device.roles.includes('obs-executor')){routes.obs=device.id;if(device.capabilities.includes('clips'))routes.clips=device.id;}
+  return {device:{...device,endpoint:origin},...(previous&&previous.id!==device.id?{disableDeviceId:previous.id}:{}),routes};
 }

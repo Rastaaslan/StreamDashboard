@@ -1,3 +1,4 @@
+import { actionDefinition } from '../../mobile/shared/action-definition.js';
 import { copyFile, constants, stat } from 'node:fs/promises';
 import { createHash } from 'node:crypto';
 import { AtomicJsonStore } from './storage.js';
@@ -85,11 +86,11 @@ export class ControlService {
       const data = { ...this.data, configuration: next }; await this.store.write(data); this.data = data; this.notify(); return this.snapshot();
     });
   }
-  execute(request: ControlRequest): Promise<ControlReceipt> {
+  execute(request: ControlRequest, authorize?: (action:string)=>void): Promise<ControlReceipt> {
     if (this.stopped) return Promise.reject(new Error('Hôte en cours d’arrêt.'));
     if (!request || !/^[A-Za-z0-9_-]{8,100}$/.test(request.id) || typeof request.action !== 'string' || request.action.length > 100 || (request.platform !== undefined && !platforms.includes(request.platform))) return Promise.reject(new Error('Commande invalide.'));
     if (request.soundId !== undefined && (request.action !== 'sound.play' || !/^[A-Za-z0-9._:-]{1,100}$/.test(request.soundId))) return Promise.reject(new Error('Son invalide.'));
-    const fingerprint = createHash('sha256').update(JSON.stringify({action:request.action, platform:request.platform, metadata:request.metadata, soundId:request.soundId, expectedRevision:request.expectedRevision})).digest('hex');
+    const fingerprint = createHash('sha256').update(JSON.stringify({action:request.action, platform:request.platform, metadata:request.metadata, soundId:request.soundId, expectedRevision:request.expectedRevision, expectedAction:request.expectedAction})).digest('hex');
     const previous = this.data.receipts.find(r => r.id === request.id);
     if (previous && previous.fingerprint !== fingerprint) return Promise.reject(new Error('Identifiant déjà utilisé pour une autre commande.'));
     const active = this.inFlight.get(request.id); if (active) return active;
@@ -97,7 +98,7 @@ export class ControlService {
     const timestamp = Date.parse(request.issuedAt);
     if (!Number.isFinite(timestamp) || Date.now() - timestamp > 30_000 || timestamp - Date.now() > 5_000) return Promise.reject(new Error('Commande expirée. Vérifiez l’horloge et recommencez.'));
     // A second press with a different ID while the same action is pending joins its result.
-    const actionKey = `${request.action}:${request.soundId ?? ''}:${request.platform ?? 'both'}`;
+    const actionKey = `${request.action}:${request.soundId ?? ''}:${request.platform ?? 'both'}:${request.expectedAction ? actionDefinition(request.expectedAction) : ''}`;
     const pending = this.pendingActions.get(actionKey);
     if (pending && request.action !== 'metadata.apply') return pending;
     const operation = this.serialize(async () => {
@@ -105,6 +106,13 @@ export class ControlService {
       const receipt: ControlReceipt = { id:request.id, action:request.action, fingerprint, status:'running', message:'Exécution sur le PC de stream', createdAt:new Date().toISOString() };
       this.data.receipts.push(receipt); this.data.receipts = this.data.receipts.slice(-2000); await this.save();
       try {
+        authorize?.(request.action);
+        if (request.expectedAction !== undefined) {
+          const actual = this.data.configuration.actions.find(a => a.id === request.expectedAction!.id);
+          const expected = actionDefinition(request.expectedAction);
+          if (!expected || actionDefinition(actual) !== expected || (request.action !== actual!.id && !(['live.start','live.stop'].includes(actual!.type) && request.action === actual!.type)))
+            fail('Ce bouton a changé sur cet appareil. Vérifiez son association avant de réessayer.', 'REVISION_CONFLICT');
+        }
         if (request.action === 'metadata.apply') {
           if (request.expectedRevision !== this.data.configuration.revision) fail('Informations modifiées sur un autre appareil.', 'REVISION_CONFLICT');
           const metadata = validateMetadata(request.metadata!);

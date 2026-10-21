@@ -1,4 +1,4 @@
-const CACHE = 'streamdashboard-mobile-v23-universal-setups';
+const CACHE = 'streamdashboard-mobile-v26-universal-routing';
 const PATHS = new Set([
   '/mobile/',
   '/mobile/index.html',
@@ -39,6 +39,13 @@ const PATHS = new Set([
   '/mobile/control/device-credentials.js',
   '/mobile/control/installation-ui.js',
   '/mobile/shared/installation.js',
+  '/mobile/shared/device-permissions.js',
+  '/mobile/control/device-permissions-ui.js',
+  '/mobile/shared/action-definition.js',
+  '/mobile/shared/youtube-chat.js',
+  '/mobile/control/youtube-chat.js',
+  '/mobile/control/action-routing.js',
+  '/mobile/control/action-routing-ui.js',
   '/mobile/control/device-accounts.js',
   '/mobile/control/device-audio.js',
   '/mobile/control/device-bridge.js',
@@ -100,6 +107,13 @@ const ASSETS = [
   'control/device-credentials.js',
   'control/installation-ui.js',
   'shared/installation.js',
+  'shared/action-definition.js',
+  'shared/youtube-chat.js',
+  'shared/device-permissions.js',
+  'control/action-routing.js',
+  'control/action-routing-ui.js',
+  'control/youtube-chat.js',
+  'control/device-permissions-ui.js',
   'control/device-accounts.js',
   'control/device-audio.js',
   'control/device-bridge.js',

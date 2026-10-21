@@ -7,7 +7,7 @@ import type { SecretStore } from '../../server/src/storage.js';
 interface SecurePayload {
   controller?: { credential: string };
   controllerDevices?: Record<string, string>;
-  controllerBindings?: { server: string; credential: string; actions: import('../../../packages/contracts/src/control.js').DeckAction[] };
+  controllerBindings?: import('../../../packages/contracts/src/control.js').ControllerConfiguration;
   youtube?: Record<string, string>;
   twitch?: Record<string, string>;
   google?: Record<string, string>;

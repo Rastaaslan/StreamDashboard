@@ -1,3 +1,4 @@
+import { createYouTubeChat } from './youtube-chat.js';
 import { createTwitchChat } from './twitch-chat.js';
 
 // Keep platform frames mounted. Authenticated chat uses the runtime API separately.
@@ -10,7 +11,7 @@ export function createLiveMonitor(root, { native = false, configure = () => {}, 
     + '<div class="monitor-grid" data-monitor-body>'
     + '<section class="panel monitor-video"><div class="monitor-heading"><h3>Retour plateforme</h3><div class="monitor-tabs" role="group" aria-label="Plateforme du retour vidéo"><button type="button" data-monitor-source="twitch">Twitch</button><button type="button" data-monitor-source="youtube">YouTube</button></div></div><div class="monitor-slot video-slot" data-monitor-slot="video"></div><div class="monitor-footer"><a data-monitor-link="video" target="_blank" rel="noopener noreferrer">Ouvrir le live ↗</a><button type="button" class="secondary" data-monitor-connect="twitch" title="Connecter le lecteur Twitch sur cet appareil">Connexion visionneuse</button><button type="button" class="secondary" data-monitor-reload="video">Recharger la vidéo</button></div></section>'
     + '<section class="panel monitor-chat monitor-native-twitch"><div class="monitor-heading"><h3><span class="chat-dot twitch-dot"></span>Chat Twitch connecté</h3></div><div data-twitch-native></div><div class="monitor-footer monitor-creator-links"><a data-monitor-link="twitch" target="_blank" rel="noopener noreferrer">Chat dans le navigateur ↗</a><a data-monitor-link="twitch-creator" target="_blank" rel="noopener noreferrer">Régie Twitch ↗</a></div></section>'
-    + '<section class="panel monitor-chat"><div class="monitor-heading"><h3><span class="chat-dot youtube-dot"></span>Chat YouTube</h3><button type="button" class="secondary" data-monitor-reload="youtube">↻<span class="sr-only"> Recharger le chat YouTube</span></button></div><div class="monitor-slot" data-monitor-slot="youtube"></div><div class="monitor-footer monitor-creator-links"><a data-monitor-link="youtube" target="_blank" rel="noopener noreferrer">Chat dans le navigateur ↗</a><a data-monitor-link="youtube-creator" target="_blank" rel="noopener noreferrer">YouTube Studio ↗</a></div></section>'
+    + '<section class="panel monitor-chat"><div class="monitor-heading"><h3><span class="chat-dot youtube-dot"></span>Chat YouTube</h3><button type="button" class="secondary" data-monitor-reload="youtube">↻<span class="sr-only"> Recharger le chat YouTube</span></button></div><details class="youtube-api-chat" open><summary>Lecture API sur cet appareil</summary><div data-youtube-api></div></details><div class="monitor-slot" data-monitor-slot="youtube"></div><div class="monitor-footer monitor-creator-links"><a data-monitor-link="youtube" target="_blank" rel="noopener noreferrer">Chat dans le navigateur ↗</a><a data-monitor-link="youtube-creator" target="_blank" rel="noopener noreferrer">YouTube Studio ↗</a></div></section>'
     + '</div><p class="small muted" data-monitor-note><span data-monitor-viewer-status role="status"></span> Le chat Twitch utilise le compte affiché ici. Le chat YouTube intégré a sa propre connexion ; YouTube Studio donne accès aux outils de votre chaîne dans votre navigateur.</p>';
   root.insertAdjacentHTML('beforeend','<details class="monitor-targets"><summary>Choisir les chaînes et la diffusion sur cet appareil</summary><form data-monitor-targets><label>Chaîne Twitch (nom)<input name="channel" maxlength="25"></label><label>Identifiant de la diffusion YouTube<input name="video" maxlength="11"></label><p class="small muted">Laissez vide pour suivre la diffusion sélectionnée dans votre espace. Ces choix ne changent ni vos comptes ni le live.</p><button>Enregistrer ces retours</button><p data-monitor-targets-status role="status"></p></form></details>');
   const get = selector => root.querySelector(selector);
@@ -29,6 +30,7 @@ export function createLiveMonitor(root, { native = false, configure = () => {}, 
     get('[data-monitor-body]').append(activityRoot);
   }
   const slots = Object.fromEntries(['video', 'youtube'].map(key => [key, get('[data-monitor-slot="' + key + '"]')]));
+  const youtubeChat=createYouTubeChat(get('[data-youtube-api]'),{request,native});
   const twitchChat = native ? { update() {}, destroy() {} } : createTwitchChat(get('[data-twitch-native]'), { request, configure });
   if (native) {
     const holder=get('[data-twitch-native]');holder.className='monitor-slot';slots.twitch=holder;
@@ -112,6 +114,8 @@ export function createLiveMonitor(root, { native = false, configure = () => {}, 
     connect.hidden = false; connect.disabled = Boolean(viewerFlight) || (source==='twitch'&&!twitchLogin());
     connect.textContent = viewerFlight ? 'Connexion ouverte…' : source==='youtube'?'Connexion YouTube dans le navigateur':'Connexion visionneuse';
     twitchChat.update({ ...context, online: context.online === true && enabled, sourceLabel: state?.host?.hostname || '' });
+    const selectedVideo=localStorage.getItem('sd2.monitor-video')||state?.configuration?.youtube?.broadcastId||'';
+    youtubeChat.update({enabled,sourceKey:context.sourceKey,broadcastId:/^[a-zA-Z0-9_-]{11}$/.test(selectedVideo)?selectedVideo:''});
     if (!enabled) {
       for (const slot of Object.values(slots)) { slot.replaceChildren(); delete slot.dataset.identity; }
       return;
@@ -154,6 +158,6 @@ export function createLiveMonitor(root, { native = false, configure = () => {}, 
   });
   return {
     update(value, options = {}) { if (disposed) return; if (context.sourceKey !== options.sourceKey || state?.host?.monitor?.twitchLogin !== value?.host?.monitor?.twitchLogin) { viewerRevision++; viewerMessage = ''; } state = value; context = options; draw(); },
-    destroy() { disposed = true; viewerRevision++; if (typeof stopViewerSession === 'function') stopViewerSession(); twitchChat.destroy(); for (const slot of Object.values(slots)) slot.replaceChildren(); },
+    destroy() { disposed = true; viewerRevision++; if (typeof stopViewerSession === 'function') stopViewerSession(); twitchChat.destroy(); youtubeChat.destroy(); for (const slot of Object.values(slots)) slot.replaceChildren(); },
   };
 }

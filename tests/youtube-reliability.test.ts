@@ -494,3 +494,18 @@ describe('YouTube transitions and durable command confirmation',()=>{
     expect(adapter.settle).not.toHaveBeenCalled();
   });
 });
+
+it('reads only the selected owner chat and shares polling across controllers without OBS',async()=>{
+ const id='ABCDEFGHIJK';
+ const f=fixture(url=>{
+  if(url.pathname.endsWith('/liveBroadcasts'))return json({items:[{...broadcast('live',id),snippet:{title:'Live',channelId:'channel-test',liveChatId:'verified-chat'}}]});
+  if(url.pathname.endsWith('/channels'))return json({items:[{id:'channel-test',snippet:{title:'Owner'}}]});
+  if(url.pathname.endsWith('/liveStreams'))return json({items:[{status:{streamStatus:'active'}}]});
+  if(url.pathname.endsWith('/liveChat/messages')){expect(url.searchParams.get('liveChatId')).toBe('verified-chat');return json({items:[{id:'message',snippet:{displayMessage:'hello'},authorDetails:{displayName:'Viewer'}}],pollingIntervalMillis:15000,nextPageToken:'next'});}
+  throw Error('Unexpected API');
+ });
+ const [first,second]=await Promise.all([f.client.readChat(id),f.client.readChat(id)]);
+ expect(first).toEqual(second);expect(first).toMatchObject({status:'connected',account:'Owner',channelId:'channel-test'});
+ await f.client.readChat(id);expect(f.calls.filter(call=>call.url.pathname.endsWith('/liveChat/messages'))).toHaveLength(1);
+ expect(JSON.stringify(first)).not.toContain('TEST_ACCESS_TOKEN_PRIVATE');
+});

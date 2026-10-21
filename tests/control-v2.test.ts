@@ -107,3 +107,19 @@ describe('Real HTTP persistence and cross-client conflict handling',()=>{
   expect((await call('/api/v2/planning/'+item.id,{expectedRevision:state.host.planningRevisions[item.id]},'DELETE')).status).toBe(200);expect((await call('/api/v2/state')).body.host.planning).toHaveLength(0);
  },20000);
 });
+
+it('rejects a stale action definition inside the serialized executor before any effect',async()=>{
+ const a=adapter(),control=await ControlService.open(path.join(await temporary(),'control.json'),a);
+ const original=control.snapshot().configuration.actions[0], config=control.snapshot().configuration;
+ config.actions[0].value='new-microphone';await control.configure(config,config.revision);
+ const result=await control.execute({...request(original.id,'stale_binding_1'),expectedAction:original});
+ expect(result.status).toBe('failed');expect(a.action).not.toHaveBeenCalled();
+ const confirmed=await control.execute({...request(original.id,'valid_binding_1'),expectedAction:config.actions[0]});
+ expect(confirmed.status).toBe('succeeded');expect(a.action).toHaveBeenCalledTimes(1);
+});
+
+it('rechecks an executor permission inside the command queue, before an action effect',async()=>{
+ const a=adapter(),control=await ControlService.open(path.join(await temporary(),'control.json'),a);
+ const result=await control.execute(request('micro','permission_queue'),()=>{throw Error('Permission revoked');});
+ expect(result.status).toBe('failed');expect(result.message).toContain('Permission revoked');expect(a.action).not.toHaveBeenCalled();
+});

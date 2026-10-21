@@ -11,7 +11,7 @@ export interface ControlConfiguration {
   metadata: LiveMetadata;
   replayAutoStart?: boolean;
 }
-export interface ControlRequest { id: string; issuedAt: string; action: string; platform?: Platform; expectedRevision?: number; metadata?: LiveMetadata; soundId?: string }
+export interface ControlRequest { id: string; issuedAt: string; action: string; platform?: Platform; expectedRevision?: number; metadata?: LiveMetadata; soundId?: string; expectedAction?: DeckAction }
 export interface ActionResult { message: string; replayPath?: string; messageId?: string }
 export interface ControlReceipt { id: string; action: string; fingerprint: string; status: Outcome; message: string; createdAt: string; finishedAt?: string; result?: ActionResult; platforms?: Partial<Record<Platform, PlatformResult>> }
 // Documented global commands. Custom commands can be added without an API key.
@@ -36,3 +36,6 @@ export const defaultControlData = (): ControlData => ({
     ],
   }, receipts: [], metadataResults: {},
 });
+
+export interface ControllerDestination { server:string; credential:string; deviceId:string; definition:DeckAction }
+export interface ControllerConfiguration { server:string; credential:string; actions:DeckAction[]; destinations?:Record<string,ControllerDestination> }

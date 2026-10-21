@@ -31,7 +31,13 @@
           "implementation": "partial",
           "automated": "partial",
           "hardware": "pending",
-          "evidence": []
+          "evidence": [
+            "tests/node/universal-installation.test.mjs",
+            "tests/installation-ui.spec.ts",
+            "tests/control-v2.test.ts",
+            "tests/device-permissions.test.ts",
+            "docs/qa/2026-10-21-transversal-modules.md"
+          ]
         },
         {
           "setup": "single-pc-deck",
@@ -39,7 +45,13 @@
           "implementation": "partial",
           "automated": "partial",
           "hardware": "pending",
-          "evidence": []
+          "evidence": [
+            "tests/node/universal-installation.test.mjs",
+            "tests/installation-ui.spec.ts",
+            "tests/control-v2.test.ts",
+            "tests/device-permissions.test.ts",
+            "docs/qa/2026-10-21-transversal-modules.md"
+          ]
         },
         {
           "setup": "dual-pc",
@@ -47,7 +59,13 @@
           "implementation": "partial",
           "automated": "partial",
           "hardware": "pending",
-          "evidence": []
+          "evidence": [
+            "tests/node/universal-installation.test.mjs",
+            "tests/installation-ui.spec.ts",
+            "tests/control-v2.test.ts",
+            "tests/device-permissions.test.ts",
+            "docs/qa/2026-10-21-transversal-modules.md"
+          ]
         },
         {
           "setup": "dual-pc-deck",
@@ -55,7 +73,13 @@
           "implementation": "partial",
           "automated": "partial",
           "hardware": "pending",
-          "evidence": []
+          "evidence": [
+            "tests/node/universal-installation.test.mjs",
+            "tests/installation-ui.spec.ts",
+            "tests/control-v2.test.ts",
+            "tests/device-permissions.test.ts",
+            "docs/qa/2026-10-21-transversal-modules.md"
+          ]
         },
         {
           "setup": "android-only",
@@ -63,7 +87,13 @@
           "implementation": "partial",
           "automated": "partial",
           "hardware": "pending",
-          "evidence": []
+          "evidence": [
+            "tests/node/universal-installation.test.mjs",
+            "tests/installation-ui.spec.ts",
+            "tests/control-v2.test.ts",
+            "tests/device-permissions.test.ts",
+            "docs/qa/2026-10-21-transversal-modules.md"
+          ]
         },
         {
           "setup": "custom",
@@ -71,7 +101,13 @@
           "implementation": "partial",
           "automated": "partial",
           "hardware": "pending",
-          "evidence": []
+          "evidence": [
+            "tests/node/universal-installation.test.mjs",
+            "tests/installation-ui.spec.ts",
+            "tests/control-v2.test.ts",
+            "tests/device-permissions.test.ts",
+            "docs/qa/2026-10-21-transversal-modules.md"
+          ]
         }
       ]
     },
@@ -84,7 +120,13 @@
           "implementation": "partial",
           "automated": "partial",
           "hardware": "pending",
-          "evidence": []
+          "evidence": [
+            "tests/node/universal-installation.test.mjs",
+            "tests/installation-ui.spec.ts",
+            "tests/node/action-routing.test.mjs",
+            "tests/desktop-controller.test.ts",
+            "docs/qa/2026-10-21-transversal-modules.md"
+          ]
         },
         {
           "setup": "single-pc-deck",
@@ -92,7 +134,13 @@
           "implementation": "partial",
           "automated": "partial",
           "hardware": "pending",
-          "evidence": []
+          "evidence": [
+            "tests/node/universal-installation.test.mjs",
+            "tests/installation-ui.spec.ts",
+            "tests/node/action-routing.test.mjs",
+            "tests/desktop-controller.test.ts",
+            "docs/qa/2026-10-21-transversal-modules.md"
+          ]
         },
         {
           "setup": "dual-pc",
@@ -100,7 +148,13 @@
           "implementation": "partial",
           "automated": "partial",
           "hardware": "pending",
-          "evidence": []
+          "evidence": [
+            "tests/node/universal-installation.test.mjs",
+            "tests/installation-ui.spec.ts",
+            "tests/node/action-routing.test.mjs",
+            "tests/desktop-controller.test.ts",
+            "docs/qa/2026-10-21-transversal-modules.md"
+          ]
         },
         {
           "setup": "dual-pc-deck",
@@ -108,7 +162,13 @@
           "implementation": "partial",
           "automated": "partial",
           "hardware": "pending",
-          "evidence": []
+          "evidence": [
+            "tests/node/universal-installation.test.mjs",
+            "tests/installation-ui.spec.ts",
+            "tests/node/action-routing.test.mjs",
+            "tests/desktop-controller.test.ts",
+            "docs/qa/2026-10-21-transversal-modules.md"
+          ]
         },
         {
           "setup": "android-only",
@@ -116,7 +176,13 @@
           "implementation": "partial",
           "automated": "partial",
           "hardware": "pending",
-          "evidence": []
+          "evidence": [
+            "tests/node/universal-installation.test.mjs",
+            "tests/installation-ui.spec.ts",
+            "tests/node/action-routing.test.mjs",
+            "tests/desktop-controller.test.ts",
+            "docs/qa/2026-10-21-transversal-modules.md"
+          ]
         },
         {
           "setup": "custom",
@@ -124,7 +190,13 @@
           "implementation": "partial",
           "automated": "partial",
           "hardware": "pending",
-          "evidence": []
+          "evidence": [
+            "tests/node/universal-installation.test.mjs",
+            "tests/installation-ui.spec.ts",
+            "tests/node/action-routing.test.mjs",
+            "tests/desktop-controller.test.ts",
+            "docs/qa/2026-10-21-transversal-modules.md"
+          ]
         }
       ]
     },
@@ -137,7 +209,11 @@
           "implementation": "partial",
           "automated": "partial",
           "hardware": "pending",
-          "evidence": []
+          "evidence": [
+            "tests/node/universal-installation.test.mjs",
+            "tests/installation-ui.spec.ts",
+            "docs/qa/2026-10-21-transversal-modules.md"
+          ]
         },
         {
           "setup": "single-pc-deck",
@@ -145,7 +221,11 @@
           "implementation": "partial",
           "automated": "partial",
           "hardware": "pending",
-          "evidence": []
+          "evidence": [
+            "tests/node/universal-installation.test.mjs",
+            "tests/installation-ui.spec.ts",
+            "docs/qa/2026-10-21-transversal-modules.md"
+          ]
         },
         {
           "setup": "dual-pc",
@@ -153,7 +233,11 @@
           "implementation": "partial",
           "automated": "partial",
           "hardware": "pending",
-          "evidence": []
+          "evidence": [
+            "tests/node/universal-installation.test.mjs",
+            "tests/installation-ui.spec.ts",
+            "docs/qa/2026-10-21-transversal-modules.md"
+          ]
         },
         {
           "setup": "dual-pc-deck",
@@ -161,7 +245,11 @@
           "implementation": "partial",
           "automated": "partial",
           "hardware": "pending",
-          "evidence": []
+          "evidence": [
+            "tests/node/universal-installation.test.mjs",
+            "tests/installation-ui.spec.ts",
+            "docs/qa/2026-10-21-transversal-modules.md"
+          ]
         },
         {
           "setup": "android-only",
@@ -169,7 +257,11 @@
           "implementation": "partial",
           "automated": "partial",
           "hardware": "pending",
-          "evidence": []
+          "evidence": [
+            "tests/node/universal-installation.test.mjs",
+            "tests/installation-ui.spec.ts",
+            "docs/qa/2026-10-21-transversal-modules.md"
+          ]
         },
         {
           "setup": "custom",
@@ -177,7 +269,11 @@
           "implementation": "partial",
           "automated": "partial",
           "hardware": "pending",
-          "evidence": []
+          "evidence": [
+            "tests/node/universal-installation.test.mjs",
+            "tests/installation-ui.spec.ts",
+            "docs/qa/2026-10-21-transversal-modules.md"
+          ]
         }
       ]
     },
@@ -190,7 +286,13 @@
           "implementation": "partial",
           "automated": "partial",
           "hardware": "pending",
-          "evidence": []
+          "evidence": [
+            "tests/node/universal-installation.test.mjs",
+            "tests/installation-ui.spec.ts",
+            "tests/node/youtube-chat.test.mjs",
+            "tests/youtube-reliability.test.ts",
+            "docs/qa/2026-10-21-transversal-modules.md"
+          ]
         },
         {
           "setup": "single-pc-deck",
@@ -198,7 +300,13 @@
           "implementation": "partial",
           "automated": "partial",
           "hardware": "pending",
-          "evidence": []
+          "evidence": [
+            "tests/node/universal-installation.test.mjs",
+            "tests/installation-ui.spec.ts",
+            "tests/node/youtube-chat.test.mjs",
+            "tests/youtube-reliability.test.ts",
+            "docs/qa/2026-10-21-transversal-modules.md"
+          ]
         },
         {
           "setup": "dual-pc",
@@ -206,7 +314,13 @@
           "implementation": "partial",
           "automated": "partial",
           "hardware": "pending",
-          "evidence": []
+          "evidence": [
+            "tests/node/universal-installation.test.mjs",
+            "tests/installation-ui.spec.ts",
+            "tests/node/youtube-chat.test.mjs",
+            "tests/youtube-reliability.test.ts",
+            "docs/qa/2026-10-21-transversal-modules.md"
+          ]
         },
         {
           "setup": "dual-pc-deck",
@@ -214,7 +328,13 @@
           "implementation": "partial",
           "automated": "partial",
           "hardware": "pending",
-          "evidence": []
+          "evidence": [
+            "tests/node/universal-installation.test.mjs",
+            "tests/installation-ui.spec.ts",
+            "tests/node/youtube-chat.test.mjs",
+            "tests/youtube-reliability.test.ts",
+            "docs/qa/2026-10-21-transversal-modules.md"
+          ]
         },
         {
           "setup": "android-only",
@@ -222,7 +342,13 @@
           "implementation": "partial",
           "automated": "partial",
           "hardware": "pending",
-          "evidence": []
+          "evidence": [
+            "tests/node/universal-installation.test.mjs",
+            "tests/installation-ui.spec.ts",
+            "tests/node/youtube-chat.test.mjs",
+            "tests/youtube-reliability.test.ts",
+            "docs/qa/2026-10-21-transversal-modules.md"
+          ]
         },
         {
           "setup": "custom",
@@ -230,7 +356,13 @@
           "implementation": "partial",
           "automated": "partial",
           "hardware": "pending",
-          "evidence": []
+          "evidence": [
+            "tests/node/universal-installation.test.mjs",
+            "tests/installation-ui.spec.ts",
+            "tests/node/youtube-chat.test.mjs",
+            "tests/youtube-reliability.test.ts",
+            "docs/qa/2026-10-21-transversal-modules.md"
+          ]
         }
       ]
     },
@@ -243,7 +375,11 @@
           "implementation": "partial",
           "automated": "partial",
           "hardware": "pending",
-          "evidence": []
+          "evidence": [
+            "tests/node/universal-installation.test.mjs",
+            "tests/installation-ui.spec.ts",
+            "docs/qa/2026-10-21-transversal-modules.md"
+          ]
         },
         {
           "setup": "single-pc-deck",
@@ -251,7 +387,11 @@
           "implementation": "partial",
           "automated": "partial",
           "hardware": "pending",
-          "evidence": []
+          "evidence": [
+            "tests/node/universal-installation.test.mjs",
+            "tests/installation-ui.spec.ts",
+            "docs/qa/2026-10-21-transversal-modules.md"
+          ]
         },
         {
           "setup": "dual-pc",
@@ -259,7 +399,11 @@
           "implementation": "partial",
           "automated": "partial",
           "hardware": "pending",
-          "evidence": []
+          "evidence": [
+            "tests/node/universal-installation.test.mjs",
+            "tests/installation-ui.spec.ts",
+            "docs/qa/2026-10-21-transversal-modules.md"
+          ]
         },
         {
           "setup": "dual-pc-deck",
@@ -267,7 +411,11 @@
           "implementation": "partial",
           "automated": "partial",
           "hardware": "pending",
-          "evidence": []
+          "evidence": [
+            "tests/node/universal-installation.test.mjs",
+            "tests/installation-ui.spec.ts",
+            "docs/qa/2026-10-21-transversal-modules.md"
+          ]
         },
         {
           "setup": "android-only",
@@ -275,7 +423,11 @@
           "implementation": "partial",
           "automated": "partial",
           "hardware": "pending",
-          "evidence": []
+          "evidence": [
+            "tests/node/universal-installation.test.mjs",
+            "tests/installation-ui.spec.ts",
+            "docs/qa/2026-10-21-transversal-modules.md"
+          ]
         },
         {
           "setup": "custom",
@@ -283,7 +435,11 @@
           "implementation": "partial",
           "automated": "partial",
           "hardware": "pending",
-          "evidence": []
+          "evidence": [
+            "tests/node/universal-installation.test.mjs",
+            "tests/installation-ui.spec.ts",
+            "docs/qa/2026-10-21-transversal-modules.md"
+          ]
         }
       ]
     },
@@ -296,7 +452,12 @@
           "implementation": "partial",
           "automated": "partial",
           "hardware": "pending",
-          "evidence": []
+          "evidence": [
+            "tests/node/universal-installation.test.mjs",
+            "tests/installation-ui.spec.ts",
+            "tests/node/youtube-chat.test.mjs",
+            "docs/qa/2026-10-21-transversal-modules.md"
+          ]
         },
         {
           "setup": "single-pc-deck",
@@ -304,7 +465,12 @@
           "implementation": "partial",
           "automated": "partial",
           "hardware": "pending",
-          "evidence": []
+          "evidence": [
+            "tests/node/universal-installation.test.mjs",
+            "tests/installation-ui.spec.ts",
+            "tests/node/youtube-chat.test.mjs",
+            "docs/qa/2026-10-21-transversal-modules.md"
+          ]
         },
         {
           "setup": "dual-pc",
@@ -312,7 +478,12 @@
           "implementation": "partial",
           "automated": "partial",
           "hardware": "pending",
-          "evidence": []
+          "evidence": [
+            "tests/node/universal-installation.test.mjs",
+            "tests/installation-ui.spec.ts",
+            "tests/node/youtube-chat.test.mjs",
+            "docs/qa/2026-10-21-transversal-modules.md"
+          ]
         },
         {
           "setup": "dual-pc-deck",
@@ -320,7 +491,12 @@
           "implementation": "partial",
           "automated": "partial",
           "hardware": "pending",
-          "evidence": []
+          "evidence": [
+            "tests/node/universal-installation.test.mjs",
+            "tests/installation-ui.spec.ts",
+            "tests/node/youtube-chat.test.mjs",
+            "docs/qa/2026-10-21-transversal-modules.md"
+          ]
         },
         {
           "setup": "android-only",
@@ -328,7 +504,12 @@
           "implementation": "partial",
           "automated": "partial",
           "hardware": "pending",
-          "evidence": []
+          "evidence": [
+            "tests/node/universal-installation.test.mjs",
+            "tests/installation-ui.spec.ts",
+            "tests/node/youtube-chat.test.mjs",
+            "docs/qa/2026-10-21-transversal-modules.md"
+          ]
         },
         {
           "setup": "custom",
@@ -336,7 +517,12 @@
           "implementation": "partial",
           "automated": "partial",
           "hardware": "pending",
-          "evidence": []
+          "evidence": [
+            "tests/node/universal-installation.test.mjs",
+            "tests/installation-ui.spec.ts",
+            "tests/node/youtube-chat.test.mjs",
+            "docs/qa/2026-10-21-transversal-modules.md"
+          ]
         }
       ]
     },
@@ -349,7 +535,11 @@
           "implementation": "partial",
           "automated": "partial",
           "hardware": "pending",
-          "evidence": []
+          "evidence": [
+            "tests/node/universal-installation.test.mjs",
+            "tests/installation-ui.spec.ts",
+            "docs/qa/2026-10-21-transversal-modules.md"
+          ]
         },
         {
           "setup": "single-pc-deck",
@@ -357,7 +547,11 @@
           "implementation": "partial",
           "automated": "partial",
           "hardware": "pending",
-          "evidence": []
+          "evidence": [
+            "tests/node/universal-installation.test.mjs",
+            "tests/installation-ui.spec.ts",
+            "docs/qa/2026-10-21-transversal-modules.md"
+          ]
         },
         {
           "setup": "dual-pc",
@@ -365,7 +559,11 @@
           "implementation": "partial",
           "automated": "partial",
           "hardware": "pending",
-          "evidence": []
+          "evidence": [
+            "tests/node/universal-installation.test.mjs",
+            "tests/installation-ui.spec.ts",
+            "docs/qa/2026-10-21-transversal-modules.md"
+          ]
         },
         {
           "setup": "dual-pc-deck",
@@ -373,7 +571,11 @@
           "implementation": "partial",
           "automated": "partial",
           "hardware": "pending",
-          "evidence": []
+          "evidence": [
+            "tests/node/universal-installation.test.mjs",
+            "tests/installation-ui.spec.ts",
+            "docs/qa/2026-10-21-transversal-modules.md"
+          ]
         },
         {
           "setup": "android-only",
@@ -381,7 +583,11 @@
           "implementation": "partial",
           "automated": "partial",
           "hardware": "pending",
-          "evidence": []
+          "evidence": [
+            "tests/node/universal-installation.test.mjs",
+            "tests/installation-ui.spec.ts",
+            "docs/qa/2026-10-21-transversal-modules.md"
+          ]
         },
         {
           "setup": "custom",
@@ -389,7 +595,11 @@
           "implementation": "partial",
           "automated": "partial",
           "hardware": "pending",
-          "evidence": []
+          "evidence": [
+            "tests/node/universal-installation.test.mjs",
+            "tests/installation-ui.spec.ts",
+            "docs/qa/2026-10-21-transversal-modules.md"
+          ]
         }
       ]
     },
@@ -402,7 +612,11 @@
           "implementation": "partial",
           "automated": "partial",
           "hardware": "pending",
-          "evidence": []
+          "evidence": [
+            "tests/node/universal-installation.test.mjs",
+            "tests/installation-ui.spec.ts",
+            "docs/qa/2026-10-21-transversal-modules.md"
+          ]
         },
         {
           "setup": "single-pc-deck",
@@ -410,7 +624,11 @@
           "implementation": "partial",
           "automated": "partial",
           "hardware": "pending",
-          "evidence": []
+          "evidence": [
+            "tests/node/universal-installation.test.mjs",
+            "tests/installation-ui.spec.ts",
+            "docs/qa/2026-10-21-transversal-modules.md"
+          ]
         },
         {
           "setup": "dual-pc",
@@ -418,7 +636,11 @@
           "implementation": "partial",
           "automated": "partial",
           "hardware": "pending",
-          "evidence": []
+          "evidence": [
+            "tests/node/universal-installation.test.mjs",
+            "tests/installation-ui.spec.ts",
+            "docs/qa/2026-10-21-transversal-modules.md"
+          ]
         },
         {
           "setup": "dual-pc-deck",
@@ -426,7 +648,11 @@
           "implementation": "partial",
           "automated": "partial",
           "hardware": "pending",
-          "evidence": []
+          "evidence": [
+            "tests/node/universal-installation.test.mjs",
+            "tests/installation-ui.spec.ts",
+            "docs/qa/2026-10-21-transversal-modules.md"
+          ]
         },
         {
           "setup": "android-only",
@@ -434,7 +660,11 @@
           "implementation": "partial",
           "automated": "partial",
           "hardware": "pending",
-          "evidence": []
+          "evidence": [
+            "tests/node/universal-installation.test.mjs",
+            "tests/installation-ui.spec.ts",
+            "docs/qa/2026-10-21-transversal-modules.md"
+          ]
         },
         {
           "setup": "custom",
@@ -442,7 +672,11 @@
           "implementation": "partial",
           "automated": "partial",
           "hardware": "pending",
-          "evidence": []
+          "evidence": [
+            "tests/node/universal-installation.test.mjs",
+            "tests/installation-ui.spec.ts",
+            "docs/qa/2026-10-21-transversal-modules.md"
+          ]
         }
       ]
     },
@@ -455,7 +689,11 @@
           "implementation": "partial",
           "automated": "partial",
           "hardware": "pending",
-          "evidence": []
+          "evidence": [
+            "tests/node/universal-installation.test.mjs",
+            "tests/installation-ui.spec.ts",
+            "docs/qa/2026-10-21-transversal-modules.md"
+          ]
         },
         {
           "setup": "single-pc-deck",
@@ -463,7 +701,11 @@
           "implementation": "partial",
           "automated": "partial",
           "hardware": "pending",
-          "evidence": []
+          "evidence": [
+            "tests/node/universal-installation.test.mjs",
+            "tests/installation-ui.spec.ts",
+            "docs/qa/2026-10-21-transversal-modules.md"
+          ]
         },
         {
           "setup": "dual-pc",
@@ -471,7 +713,11 @@
           "implementation": "partial",
           "automated": "partial",
           "hardware": "pending",
-          "evidence": []
+          "evidence": [
+            "tests/node/universal-installation.test.mjs",
+            "tests/installation-ui.spec.ts",
+            "docs/qa/2026-10-21-transversal-modules.md"
+          ]
         },
         {
           "setup": "dual-pc-deck",
@@ -479,7 +725,11 @@
           "implementation": "partial",
           "automated": "partial",
           "hardware": "pending",
-          "evidence": []
+          "evidence": [
+            "tests/node/universal-installation.test.mjs",
+            "tests/installation-ui.spec.ts",
+            "docs/qa/2026-10-21-transversal-modules.md"
+          ]
         },
         {
           "setup": "android-only",
@@ -487,7 +737,11 @@
           "implementation": "partial",
           "automated": "partial",
           "hardware": "pending",
-          "evidence": []
+          "evidence": [
+            "tests/node/universal-installation.test.mjs",
+            "tests/installation-ui.spec.ts",
+            "docs/qa/2026-10-21-transversal-modules.md"
+          ]
         },
         {
           "setup": "custom",
@@ -495,7 +749,11 @@
           "implementation": "partial",
           "automated": "partial",
           "hardware": "pending",
-          "evidence": []
+          "evidence": [
+            "tests/node/universal-installation.test.mjs",
+            "tests/installation-ui.spec.ts",
+            "docs/qa/2026-10-21-transversal-modules.md"
+          ]
         }
       ]
     },
@@ -508,7 +766,13 @@
           "implementation": "partial",
           "automated": "partial",
           "hardware": "pending",
-          "evidence": []
+          "evidence": [
+            "tests/node/universal-installation.test.mjs",
+            "tests/installation-ui.spec.ts",
+            "tests/audio-destinations.test.ts",
+            "tests/soundboard-runtime.test.ts",
+            "docs/qa/2026-10-21-transversal-modules.md"
+          ]
         },
         {
           "setup": "single-pc-deck",
@@ -516,7 +780,13 @@
           "implementation": "partial",
           "automated": "partial",
           "hardware": "pending",
-          "evidence": []
+          "evidence": [
+            "tests/node/universal-installation.test.mjs",
+            "tests/installation-ui.spec.ts",
+            "tests/audio-destinations.test.ts",
+            "tests/soundboard-runtime.test.ts",
+            "docs/qa/2026-10-21-transversal-modules.md"
+          ]
         },
         {
           "setup": "dual-pc",
@@ -524,7 +794,13 @@
           "implementation": "partial",
           "automated": "partial",
           "hardware": "pending",
-          "evidence": []
+          "evidence": [
+            "tests/node/universal-installation.test.mjs",
+            "tests/installation-ui.spec.ts",
+            "tests/audio-destinations.test.ts",
+            "tests/soundboard-runtime.test.ts",
+            "docs/qa/2026-10-21-transversal-modules.md"
+          ]
         },
         {
           "setup": "dual-pc-deck",
@@ -532,7 +808,13 @@
           "implementation": "partial",
           "automated": "partial",
           "hardware": "pending",
-          "evidence": []
+          "evidence": [
+            "tests/node/universal-installation.test.mjs",
+            "tests/installation-ui.spec.ts",
+            "tests/audio-destinations.test.ts",
+            "tests/soundboard-runtime.test.ts",
+            "docs/qa/2026-10-21-transversal-modules.md"
+          ]
         },
         {
           "setup": "android-only",
@@ -540,7 +822,12 @@
           "implementation": "partial",
           "automated": "partial",
           "hardware": "pending",
-          "evidence": []
+          "evidence": [
+            "tests/node/universal-installation.test.mjs",
+            "tests/installation-ui.spec.ts",
+            "tests/mobile-planning-audio.test.ts",
+            "docs/qa/2026-10-21-transversal-modules.md"
+          ]
         },
         {
           "setup": "custom",
@@ -548,7 +835,13 @@
           "implementation": "partial",
           "automated": "partial",
           "hardware": "pending",
-          "evidence": []
+          "evidence": [
+            "tests/node/universal-installation.test.mjs",
+            "tests/installation-ui.spec.ts",
+            "tests/audio-destinations.test.ts",
+            "tests/soundboard-runtime.test.ts",
+            "docs/qa/2026-10-21-transversal-modules.md"
+          ]
         }
       ]
     },
@@ -561,7 +854,11 @@
           "implementation": "partial",
           "automated": "partial",
           "hardware": "pending",
-          "evidence": []
+          "evidence": [
+            "tests/node/universal-installation.test.mjs",
+            "tests/installation-ui.spec.ts",
+            "docs/qa/2026-10-21-transversal-modules.md"
+          ]
         },
         {
           "setup": "single-pc-deck",
@@ -569,7 +866,11 @@
           "implementation": "partial",
           "automated": "partial",
           "hardware": "pending",
-          "evidence": []
+          "evidence": [
+            "tests/node/universal-installation.test.mjs",
+            "tests/installation-ui.spec.ts",
+            "docs/qa/2026-10-21-transversal-modules.md"
+          ]
         },
         {
           "setup": "dual-pc",
@@ -577,7 +878,11 @@
           "implementation": "partial",
           "automated": "partial",
           "hardware": "pending",
-          "evidence": []
+          "evidence": [
+            "tests/node/universal-installation.test.mjs",
+            "tests/installation-ui.spec.ts",
+            "docs/qa/2026-10-21-transversal-modules.md"
+          ]
         },
         {
           "setup": "dual-pc-deck",
@@ -585,7 +890,11 @@
           "implementation": "partial",
           "automated": "partial",
           "hardware": "pending",
-          "evidence": []
+          "evidence": [
+            "tests/node/universal-installation.test.mjs",
+            "tests/installation-ui.spec.ts",
+            "docs/qa/2026-10-21-transversal-modules.md"
+          ]
         },
         {
           "setup": "android-only",
@@ -593,7 +902,11 @@
           "implementation": "partial",
           "automated": "partial",
           "hardware": "pending",
-          "evidence": []
+          "evidence": [
+            "tests/node/universal-installation.test.mjs",
+            "tests/installation-ui.spec.ts",
+            "docs/qa/2026-10-21-transversal-modules.md"
+          ]
         },
         {
           "setup": "custom",
@@ -601,7 +914,11 @@
           "implementation": "partial",
           "automated": "partial",
           "hardware": "pending",
-          "evidence": []
+          "evidence": [
+            "tests/node/universal-installation.test.mjs",
+            "tests/installation-ui.spec.ts",
+            "docs/qa/2026-10-21-transversal-modules.md"
+          ]
         }
       ]
     }
@@ -611,55 +928,100 @@
       "id": "single-to-dual",
       "automated": "partial",
       "hardware": "pending",
-      "evidence": []
+      "evidence": [
+        "tests/node/universal-installation.test.mjs",
+        "tests/installation-ui.spec.ts",
+        "tests/installation-store.test.ts",
+        "docs/qa/2026-10-21-transversal-modules.md"
+      ]
     },
     {
       "id": "dual-to-single",
       "automated": "partial",
       "hardware": "pending",
-      "evidence": []
+      "evidence": [
+        "tests/node/universal-installation.test.mjs",
+        "tests/installation-ui.spec.ts",
+        "tests/installation-store.test.ts",
+        "docs/qa/2026-10-21-transversal-modules.md"
+      ]
     },
     {
       "id": "add-device",
       "automated": "partial",
       "hardware": "pending",
-      "evidence": []
+      "evidence": [
+        "tests/node/universal-installation.test.mjs",
+        "tests/installation-ui.spec.ts",
+        "tests/installation-store.test.ts",
+        "docs/qa/2026-10-21-transversal-modules.md"
+      ]
     },
     {
       "id": "remove-device",
       "automated": "partial",
       "hardware": "pending",
-      "evidence": []
+      "evidence": [
+        "tests/node/universal-installation.test.mjs",
+        "tests/installation-ui.spec.ts",
+        "tests/installation-store.test.ts",
+        "docs/qa/2026-10-21-transversal-modules.md"
+      ]
     },
     {
       "id": "add-android",
       "automated": "partial",
       "hardware": "pending",
-      "evidence": []
+      "evidence": [
+        "tests/node/universal-installation.test.mjs",
+        "tests/installation-ui.spec.ts",
+        "tests/installation-store.test.ts",
+        "docs/qa/2026-10-21-transversal-modules.md"
+      ]
     },
     {
       "id": "remove-android",
       "automated": "partial",
       "hardware": "pending",
-      "evidence": []
+      "evidence": [
+        "tests/node/universal-installation.test.mjs",
+        "tests/installation-ui.spec.ts",
+        "tests/installation-store.test.ts",
+        "docs/qa/2026-10-21-transversal-modules.md"
+      ]
     },
     {
       "id": "move-roles",
       "automated": "partial",
       "hardware": "pending",
-      "evidence": []
+      "evidence": [
+        "tests/node/universal-installation.test.mjs",
+        "tests/installation-ui.spec.ts",
+        "tests/installation-store.test.ts",
+        "docs/qa/2026-10-21-transversal-modules.md"
+      ]
     },
     {
       "id": "restore-configuration",
       "automated": "partial",
       "hardware": "pending",
-      "evidence": []
+      "evidence": [
+        "tests/node/universal-installation.test.mjs",
+        "tests/installation-ui.spec.ts",
+        "tests/installation-store.test.ts",
+        "docs/qa/2026-10-21-transversal-modules.md"
+      ]
     },
     {
       "id": "migrate-rc117",
       "automated": "partial",
       "hardware": "pending",
-      "evidence": []
+      "evidence": [
+        "tests/node/universal-installation.test.mjs",
+        "tests/installation-ui.spec.ts",
+        "tests/installation-store.test.ts",
+        "docs/qa/2026-10-21-transversal-modules.md"
+      ]
     }
   ]
 }

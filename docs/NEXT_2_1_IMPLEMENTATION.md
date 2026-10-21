@@ -15,15 +15,29 @@ Les exigences P0 de [NEXT_2_1_REQUIREMENTS.md](NEXT_2_1_REQUIREMENTS.md) font au
 - Module de visionneuse commun : cibles Twitch et YouTube propres à l’appareil, deux chats présents, utilisation Android autonome, ouverture externe et diagnostic explicite quand la session web intégrée ne peut pas être vérifiée. Le chat API Twitch Windows utilise le runtime local indépendamment de l’agent OBS distant.
 - Cache hors réseau mis à jour pour inclure tous les nouveaux modules.
 
+## Modules transversaux ajoutés
+
+- **Destinations par action** : chaque bouton ou macro peut viser un exécuteur associé distinct. L’identité physique, la permission et la définition d’action sont vérifiées avant l’effet. Le retrait, le changement de définition ou la perte d’un exécuteur n’entraîne ni repli vers un autre appareil ni répétition automatique. Les autres destinations restent utilisables.
+- **Macros sans fenêtre** : les destinations et définitions sont conservées dans le coffre Windows, vérifiées séparément au redémarrage et réarmées après reconnexion sans rejouer les commandes. Les raccourcis de la fenêtre et les touches globales utilisent les mêmes définitions.
+- **Permissions par appareil** : observation, OBS, clips, audio, chat, cloud, planning et administration ; choix à l’association et modification avec comparaison de la version précédente. Un changement invalide les tickets WebSocket et ferme les sessions existantes. Les commandes en attente revérifient leurs permissions avant exécution.
+- **Chat YouTube API commun** : identité de chaîne/broadcast vérifiée, états avant live/ingestion/live/fin, changement de chat, réponses tardives écartées, messages conservés pendant les coupures, coalescence et respect des intervalles/quota. Windows et Android utilisent le même moteur d’état, avec leurs autorisations propres. Calendar reste séparé. Le chat web et Twitch restent visibles indépendamment.
+- **Audio local Windows sans OBS** : lecteur isolé appartenant à l’agent, sortie système ou sortie disponible explicitement choisie, volume et arrêt. Une sortie absente ne redirige pas le son vers OBS. La bibliothèque, la synchronisation et l’éditeur conservent cette destination. L’énumération des sorties est actualisée avant lecture et à l’ouverture de l’éditeur.
+- **Démarrage Windows facultatif** : entrée de démarrage par utilisateur, agent sans fenêtre et contrôle du résultat renvoyé par Windows. La modification est sérialisée avec la configuration de l’installation ; un échec d’écriture tente de rétablir le réglage précédent.
+- **Arrêt de l’agent** : les requêtes HTTP acceptées sont drainées avant sauvegarde ; les connexions TCP spéculatives sans requête sont fermées. Les vingt démarrages/arrêts réels du test Electron passent.
+
 ## Frontières actuelles
 
-Ce jalon livre le socle et une première intégration. Il ne qualifie aucun module comme universellement terminé.
+Ce code est une version d’essai, pas la version finale universelle. Aucune cellule n’est déclarée entièrement qualifiée.
 
-La destination OBS est désormais explicite. Le routage simultané de chaque action vers plusieurs exécuteurs, le déplacement complet des responsabilités audio/services/affichage, la découverte automatique sur le réseau et les permissions granulaires restent à compléter. Les rôles autres qu’OBS décrivent la configuration mais ne pilotent pas encore tous les cycles de vie des modules.
+Restent à implémenter ou à compléter dans **ce même chantier 2.1** :
 
-Les services autonomes existants restent utilisables. La récupération et le suivi du chat YouTube par identité API, ses changements de diffusion et états avant/après live, ainsi que les diagnostics de session sur les appareils réels doivent encore être qualifiés. Le navigateur externe possède sa propre session ; son ouverture ne prouve jamais une connexion du lecteur intégré.
+- Transport chiffré distant avec vérification de l’identité serveur ; le transport LAN historique utilise encore HTTP. La découverte réseau automatique facultative reste absente.
+- Cycle de vie effectif de tous les rôles audio/services/affichage et déplacement transactionnel de leurs responsabilités. Les rôles autres qu’OBS sont encore partiellement descriptifs.
+- Android comme exécuteur audio/affichage commandé depuis un autre appareil ; l’audio Android local et le contrôle d’agents Windows existent. Lecture audio multiple configurable et macros natives de tous les contenus locaux restent à compléter.
+- Restauration après interruption couvrant l’ensemble des magasins et effets externes, pas seulement le fichier d’installation ; qualification complète des transitions et migration d’une copie réelle RC11.7.
+- Qualification matérielle Windows/Android, des sessions web et des comptes séparés ; chat YouTube pendant une diffusion expressément autorisée ; installation extérieure, mise à jour et retour arrière.
 
-Le démarrage automatique de l’agent à l’ouverture de session Windows reste à réaliser. `--agent` démarre actuellement l’agent explicitement. Les essais matériels croisés Windows/Android et la migration d’une copie des données réelles RC11.7 restent ouverts.
+Le téléphone n’était pas présent dans la liste ADB lors du contrôle du 21 octobre. Les applications stables de FIXE et du laptop sont restées actives ; aucun OBS n’a été arrêté et aucun live/message de chat n’a été déclenché. L’ouverture externe d’un lecteur ne prouve jamais la connexion de sa session intégrée.
 
 ## Qualification et livraison
 

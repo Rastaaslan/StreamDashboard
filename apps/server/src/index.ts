@@ -1,3 +1,4 @@
+import { AudioDestinations } from './audio-destinations.js';
 import { publicInstallationDevice, type InstallationDevice } from '../../mobile/shared/installation.js';
 import { WizeBotService } from './wizebot-service.js';
 import { measureSync, syncBatch, syncDiagnostics } from '../../../packages/core/src/sync-performance.js';
@@ -13,6 +14,7 @@ import { registerTwitchChatRoutes } from './twitch-chat-routes.js';
 import { sameTwitchTags } from '../../../integrations/twitch/src/metadata.js';
 import { YouTubeClient, YouTubeApiError } from '../../../integrations/youtube/src/client.js';
 import { createServer, type Server } from 'node:http';
+import { prepareHttpShutdown } from './http-shutdown.js';
 import { mkdir, readFile, stat, unlink, writeFile } from 'node:fs/promises';
 import { hostname, networkInterfaces } from 'node:os';
 // Restricted development containers may not expose network interface enumeration.
@@ -68,8 +70,8 @@ import { drainCompanionProviders, resolveCompanionDeletion } from './companion-p
 import { companionSnapshot, emptyCompanionState, reconcileCompanionBatch, resolveCompanionConflict, type CompanionState, type SyncOperation } from './companion-sync.js';
 import { RemoteAuth, type PersistedRemoteDevice, type PersistedPairing } from './remote-auth.js';
 import { parseRemoteCommand, toRemoteDashboardState } from './remote-policy.js';
-import { isRemoteApiAllowed, isManagementApiAllowed } from './remote-api-policy.js';
-import { SoundboardRuntime, validateSound } from './soundboard-runtime.js';
+import { isRemoteApiAllowed, isManagementApiAllowed, requiredDevicePermissions } from './remote-api-policy.js';
+import { SoundboardRuntime, validateSound, type AudioPlayback } from './soundboard-runtime.js';
 import { ObsSoundboardPlayback, ObsSoundboardSetup } from './obs-soundboard.js';
 import { AutomationRuntime } from './automation-runtime.js';
 import type { Automation, Support } from '../../../packages/core/src/live-control-domains.js';
@@ -134,6 +136,7 @@ interface LocalData {
   streamerPings: StreamerPing[];
 }
 export interface DashboardServerOptions {
+  deviceAudio?: AudioPlayback;
   deviceDescriptor?: () => Promise<InstallationDevice>;
   /** A control-only desktop owns its accounts but must never connect to OBS. */
   obsEnabled?: boolean;
@@ -705,12 +708,13 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
   const app = express();
   const remoteAuth = new RemoteAuth(Date.now, local.remoteDevices, Array.isArray(local.remotePairings) ? local.remotePairings : []);
   const server = createServer(app);
+  const stopHttp = prepareHttpShutdown(server);
   const sockets = new WebSocketServer({ noServer: true });
   const socketDevices = new Map<WebSocket, string>();
   const eventCore = new EventCore(250);
-  local.sounds = local.sounds.map(sound => ({ ...sound, outputId: 'obs', monitoringMode: sound.monitoringMode ?? 'stream' }));
+  local.sounds = local.sounds.map(sound => ({ ...sound, outputId: sound.outputId==='device-default'||sound.outputId?.startsWith('device:')?sound.outputId:'obs', monitoringMode: sound.monitoringMode ?? 'stream' }));
   const obsSoundboardSetup = new ObsSoundboardSetup(obs);
-  const soundboard = new SoundboardRuntime(local.sounds, new ObsSoundboardPlayback(obs), () => Date.now(), event => {
+  const soundboard = new SoundboardRuntime(local.sounds, options.deviceAudio?new AudioDestinations(new ObsSoundboardPlayback(obs),options.deviceAudio):new ObsSoundboardPlayback(obs), () => Date.now(), event => {
     eventCore.publish({ type: event.type, source: 'soundboard', correlationId: event.correlationId, payload: event.payload });
   });
   let executeAutomationCommand: (command: DashboardCommand) => Promise<void> = async () => { throw new Error('Runtime de commandes indisponible.'); };
@@ -1718,7 +1722,7 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
         res.status(409).json({ ok: false, error: { code: 'REMOTE_RESTART_REQUIRED', message: 'Activez la télécommande LAN puis redémarrez StreamDashboard avant le pairing.' } });
         return;
       }
-      const pairing = remoteAuth.createPairing(undefined, req.body?.management === true);
+      const pairing = remoteAuth.createPairing(undefined, req.body?.management === true, req.body?.permissions);
       await save();
       const urls = lanUrls(runtimePort);
       res.status(201).json({
@@ -1746,6 +1750,19 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
   app.get('/api/v1/remote/devices', (req, res) => {
     if (!requireLocal(req, res)) return;
     res.json(remoteAuth.list());
+  });
+  app.put('/api/v1/remote/devices/:id/permissions',async(req,res,next)=>{
+    try {
+      if(!requireLocal(req,res))return;
+      const id=String(req.params.id),previous=remoteAuth.permissions(id);
+      if(!Array.isArray(req.body?.expectedPermissions)||JSON.stringify([...req.body.expectedPermissions].sort())!==JSON.stringify([...previous].sort())){
+        res.status(409).json({error:{code:'REVISION_CONFLICT',message:'Permissions modifiées ailleurs. Actualisez la liste.'}});return;
+      }
+      remoteAuth.setPermissions(id,req.body.permissions);
+      try { await save(); } catch(error) { remoteAuth.setPermissions(id,previous);throw error; }
+      for(const [ws,deviceId] of socketDevices)if(deviceId===id)ws.terminate();
+      res.json({id,permissions:remoteAuth.permissions(id)});
+    }catch(error){next(error);}
   });
   app.get('/api/v1/remote/info', (req, res) => {
     if (!requireLocal(req, res)) return;
@@ -1777,6 +1794,15 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
       res.status(401).json({ ok: false, error: { code: 'DEVICE_AUTH_REQUIRED', message: 'Télécommande non autorisée.' } });
       return;
     }
+    res.locals.remoteDeviceId=deviceId;
+    const required=requiredDevicePermissions(req.method,pathName,req.body,control?.snapshot().configuration.actions||[]);
+    if(!remoteAuth.permits(deviceId,required)){
+      res.status(403).json({error:{code:'DEVICE_PERMISSION_DENIED',message:'Permission manquante sur cet appareil : '+required.join(', '),retryable:false}});return;
+    }
+    res.locals.checkDevicePermission=(action:string)=>{
+      const current=requiredDevicePermissions(req.method,pathName,{...req.body,action},control.snapshot().configuration.actions);
+      if(!remoteAuth.permits(deviceId,current))throw Object.assign(new Error('Permission retirée avant l’exécution. Aucune commande envoyée.'),{name:'DEVICE_PERMISSION_DENIED'});
+    };
     scheduleRemoteActivitySave();
     if (remoteAuth.canManage(deviceId) && isManagementApiAllowed(req.method, pathName)) { res.locals.management = true; next(); return; }
     if (pathName.startsWith('/v2/')) { res.status(403).json({ error: { message: 'Associez cet appareil avec un code de gestion complète depuis le PC de stream.' } }); return; }
@@ -1815,7 +1841,7 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
   app.get('/api/v2/device', async (_req,res,next) => {
     try {
       if(!options.deviceDescriptor){res.status(404).json({error:{message:'Identité universelle indisponible sur cet agent.'}});return;}
-      res.json({version:1,device:publicInstallationDevice(await options.deviceDescriptor()),observed:{obsConnected:obs.state.connected,observedAt:new Date().toISOString()}});
+      res.json({version:1,device:publicInstallationDevice(await options.deviceDescriptor()),observed:{permissions:res.locals.remoteDeviceId?remoteAuth.permissions(res.locals.remoteDeviceId):undefined,obsConnected:obs.state.connected,observedAt:new Date().toISOString()}});
     } catch(error){next(error);}
   });
   app.get('/api/v1/state', (req, res) => res.json(isRemoteRequest(req) ? toRemoteDashboardState(snapshot()) : snapshot()));
@@ -3150,7 +3176,7 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
     // state before releasing the runtime. Startup must not outlive shutdown.
     for (const ws of sockets.clients) ws.terminate();
     sockets.close();
-    await new Promise<void>((resolve, reject) => server.close(error => error ? reject(error) : resolve()));
+    await stopHttp();
     await wizebotCommands.stop();
     await control.stop();
     await commands.stop();

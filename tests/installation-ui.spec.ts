@@ -56,3 +56,39 @@ test('Android uses the same monitor with independent Twitch and YouTube targets 
  await expect(page.locator('[data-monitor-viewer-status]')).toContainText('non vérifiable');
  await expect(page.locator('[data-monitor-link="youtube"]')).toHaveAttribute('href',/Abc_1234-XY/);
 });
+
+test('a destination selected on the phone stays executable when its active workspace is offline',async({page})=>{
+ await page.goto(origin);
+ await page.evaluate(async()=>{
+  const win=window as any,model=await import('/mobile/shared/installation.js' as string),ui=await import('/mobile/control/action-routing-ui.js' as string),routing=await import('/mobile/control/action-routing.js' as string),performance=await import('/mobile/control/performance-ui.js' as string);
+  let installation=model.migrateInstallation({id:'phone',platform:'android'});
+  installation.devices.push({id:'executor',name:'Atelier',platform:'windows',enabled:true,roles:['obs-executor'],capabilities:['obs'],endpoint:'http://executor.local:48133'});
+  const action={id:'local-button',label:'Ma scène',type:'scene.set',value:'intro',color:'purple',shortcut:''},definition={...action,id:'remote-button'};
+  const router=routing.createActionRouter({installation:()=>installation,workspace:()=> 'phone',localEndpoint:'',credential:async()=> 'synthetic-token',request:async(path:string)=>path.endsWith('/device')?{device:{id:'executor'}}:{configuration:{actions:[definition]},host:{state:{obs:{connected:true}}}}});
+  const installationUI={get current(){return installation;},reload:async()=>installation,apply:async(changes:any)=>{installation=model.planInstallationChange(installation,changes,installation.revision).next;}};
+  win.routeUI=ui.createActionRoutingUI({installationUI,router,workspace:()=> 'phone',actions:()=>[action],localEndpoint:'',modal:(html:string)=>document.querySelector('#root')!.innerHTML=html,esc:String,changed:()=>{win.bound=installation.actionRoutes;document.querySelector('#root')!.innerHTML=performance.renderPerformancePage({data:{configuration:{actions:[action]},host:{state:{obs:{connected:false}}}},online:false,local:true,routedStatus:(a:any)=>router.status(a),favorites:['action:local-button'],mode:'deck',bank:'favorites',esc:String});}});
+  document.addEventListener('submit',event=>{event.preventDefault();void win.routeUI.submit(event.target);});
+  await win.routeUI.task('action-route',{dataset:{actionId:action.id}});
+ });
+ await page.getByRole('button',{name:'Lire les boutons de cet appareil'}).click();
+ await page.getByRole('button',{name:'Enregistrer cette destination'}).click();
+ await expect(page.locator('[data-action="local-button"]').first()).toBeEnabled();
+ await expect(page.locator('[data-action="local-button"]').first()).toContainText('Atelier');
+ expect(await page.evaluate(()=>(window as any).bound[0].definition.id)).toBe('remote-button');
+});
+
+test('Android reads the owner chat independently of OBS and renders message text safely',async({page})=>{
+ await page.goto(origin);
+ await page.evaluate(async()=>{
+  const path='/mobile/control/youtube-chat.js',module=await import(path),win=window as any;
+  win.chatCalls=[];
+  const bridge={youtubeStatus:()=>JSON.stringify({ok:true,connected:true,account:'phone-account'}),youtubeChatBroadcast:(raw:string)=>{win.chatCalls.push(JSON.parse(raw));return JSON.stringify({ok:true,id:'ABCDEFGHIJK',channelId:'owner-channel',account:'My channel',broadcastState:'ready',liveChatId:'chat-for-selected-video'});},youtubeChatMessages:(raw:string)=>{win.chatCalls.push(JSON.parse(raw));return JSON.stringify({ok:true,items:[{id:'one',snippet:{displayMessage:'<img src=x onerror=alert(1)>'},authorDetails:{displayName:'Viewer'}}],pollingIntervalMillis:20000,nextPageToken:'next'});}};
+  win.chat=module.createYouTubeChat(document.querySelector('#root'),{native:true,bridge});
+  win.chat.update({enabled:true,broadcastId:'ABCDEFGHIJK',sourceKey:'phone'});
+ });
+ await expect(page.getByRole('status')).toContainText('Diffusion préparée. Chat connecté.');
+ await expect(page.locator('[data-youtube-account]')).toContainText('My channel');
+ await expect(page.getByRole('log')).toContainText('<img src=x onerror=alert(1)>');
+ await expect(page.locator('img')).toHaveCount(0);
+ const calls=await page.evaluate(()=>(window as any).chatCalls);expect(calls).toEqual([{broadcastId:'ABCDEFGHIJK'},{liveChatId:'chat-for-selected-video',pageToken:''}]);
+});

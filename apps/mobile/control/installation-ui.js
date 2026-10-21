@@ -21,10 +21,10 @@ export async function createInstallationUI({ device, native, localEndpoint = '',
       <label>Installation<select name="preset">${Object.entries(SETUPS).map(([id,label])=>`<option value="${id}" ${id===current.preset?'selected':''}>${esc(label)}</option>`).join('')}</select></label>
       <label>Nom de cet appareil<input name="name" value="${esc(device.name)}" required maxlength="80"></label>
       <fieldset><legend>Responsabilités sur cet appareil</legend>${Object.entries(ROLES).map(([id,label])=>`<label class="check"><input type="checkbox" name="role-${id}" ${device.roles.includes(id)?'checked':''} ${id==='obs-executor'&&!device.capabilities.includes('obs')?'disabled':''}> ${esc(label)}</label>`).join('')}</fieldset>
-      ${desktop?`<label class="check"><input type="checkbox" name="background" ${current.background?'checked':''}> Garder l’agent et les macros actifs lorsque la fenêtre est fermée</label>`:''}
+      ${desktop?`<label class="check"><input type="checkbox" name="background" ${current.background?'checked':''}> Garder l’agent et les macros actifs lorsque la fenêtre est fermée</label><label class="check"><input type="checkbox" name="startAtLogin" ${current.startAtLogin?'checked':''}> Démarrer l’agent sans fenêtre à l’ouverture de ma session Windows</label>`:''}
       <p class="small muted">OBS et ses clips nécessitent un ordinateur associé. Les comptes, chats, sons locaux et plannings restent propres à chaque appareil.</p>
       <button>Prévisualiser le changement</button></form>
-      <h3>Appareils connus</h3>${current.devices.map(d=>`<section><p><b>${esc(d.name)}</b> · ${esc(d.platform)} · ${d.enabled?'actif dans la configuration':'retiré'}<br><small>${esc(d.roles.map(r=>ROLES[r]).join(', '))}${d.endpoint?' · '+esc(d.endpoint):''}</small></p>${d.id===current.localDeviceId&&localEndpoint&&d.roles.includes('obs-executor')?`<button type="button" class="secondary" data-task="installation-select" data-device-id="${esc(d.id)}">Piloter OBS sur cet appareil</button>`:''}${d.endpoint?`<button type="button" class="secondary" data-task="installation-select" data-device-id="${esc(d.id)}" ${!d.enabled?'disabled':''}>Piloter cet appareil</button><button type="button" class="secondary" data-task="installation-toggle" data-device-id="${esc(d.id)}">${d.enabled?'Retirer':'Réactiver'}</button>`:''}</section>`).join('')}
+      <h3>Appareils connus</h3>${current.devices.map(d=>`<section><p><b>${esc(d.name)}</b> · ${esc(d.platform)} · ${d.enabled?'actif dans la configuration':'retiré'}<br><small>${esc(d.roles.map(r=>ROLES[r]).join(', '))}${d.endpoint?' · '+esc(d.endpoint):''}</small></p>${d.id===current.localDeviceId&&localEndpoint?`<button type="button" class="secondary" data-task="installation-select" data-device-id="${esc(d.id)}">Ouvrir cet appareil</button>`:''}${d.endpoint?`<button type="button" class="secondary" data-task="installation-select" data-device-id="${esc(d.id)}" ${!d.enabled?'disabled':''}>Ouvrir cet appareil</button><button type="button" class="secondary" data-task="installation-toggle" data-device-id="${esc(d.id)}">${d.enabled?'Retirer':'Réactiver'}</button>`:''}</section>`).join('')}
       <button type="button" class="secondary" data-task="connection">Associer un autre appareil</button>
       <p class="small muted">La liste décrit la configuration ; elle ne certifie pas qu’un appareil est actuellement connecté.</p>
       <button type="button" class="secondary" data-task="installation-restore">Restaurer la configuration précédente</button>`);
@@ -38,7 +38,7 @@ export async function createInstallationUI({ device, native, localEndpoint = '',
   async function submit(form) {
     if (form.id !== 'installation-form') return false;
     const values = Object.fromEntries(new FormData(form));
-    const changes = { name:values.name, preset:values.preset, roles:Object.keys(ROLES).filter(r=>values['role-'+r]), background:desktop?Boolean(values.background):false };
+    const changes = { name:values.name, preset:values.preset, roles:Object.keys(ROLES).filter(r=>values['role-'+r]), background:desktop?Boolean(values.background):false, startAtLogin:desktop?Boolean(values.startAtLogin):false };
     pending = { changes, revision:Number(form.dataset.revision) };
     const plan = planInstallationChange(current,changes,pending.revision);
     modal(`<h2>Vérifier le changement</h2><ul>${plan.summary.map(line=>`<li>${esc(line)}</li>`).join('')}</ul><p>Une sauvegarde de l’installation actuelle sera conservée.</p><button data-task="installation-apply">Appliquer</button><button class="secondary" data-task="device-setup">Revenir aux réglages</button>`);
@@ -51,7 +51,7 @@ export async function createInstallationUI({ device, native, localEndpoint = '',
       if(!target || (target.id===current.localDeviceId?(!localEndpoint||name!=='installation-select'):!target.endpoint))throw new Error('Appareil inconnu.');
       if(name==='installation-select') {
         if(!target.enabled)throw new Error('Réactivez cet appareil avant de le sélectionner.');
-        await select(target,()=>apply({routes:{...current.routes,obs:target.id,clips:target.id}}));
+        await select(target,()=>apply(target.roles.includes('obs-executor')?{routes:{...current.routes,obs:target.id,...(target.capabilities.includes('clips')?{clips:target.id}:{})}}:{}));
       } else {
         if(target.enabled)await remove?.(target);
         await apply({device:{...target,enabled:!target.enabled}});open();
@@ -80,5 +80,5 @@ export async function createInstallationUI({ device, native, localEndpoint = '',
   // in the encrypted store and the old address remains available for rollback.
   const pairedEndpoint=storage.getItem('sd2.server');
   if(desktop?.changeInstallation&&current.revision===0&&pairedEndpoint&&pairedEndpoint!==localEndpoint&&!current.devices.some(d=>d.endpoint===pairedEndpoint))await remember(pairedEndpoint);
-  return { open, submit, task, remember, get current(){return current;} };
+  return { open, submit, task, remember, apply, reload, get current(){return current;} };
 }

@@ -1,3 +1,4 @@
+import { DesktopAudioPlayback } from './audio-player.js';
 import type { InstallationDevice } from '../../mobile/shared/installation.js';
 import { app } from 'electron';
 import { readFile } from 'node:fs/promises';
@@ -25,13 +26,15 @@ export async function startDesktopRuntime(logger = new DesktopLogger(path.join(a
   await logger.info(obsResult.detail).catch(() => undefined);
   signal?.throwIfAborted();
   const secretStore = new ElectronSecretStore(userData);
+  const deviceAudio=new DesktopAudioPlayback();
   const dashboard = await startDashboardServer({
+    deviceAudio,
     startupSignal: signal,
     deviceDescriptor,
     // Fixed endpoint for OBS, OAuth and phones; binding failures must be explicit.
     port: controller ? 48135 : 48133,
-    host: obsEnabled && remoteEnabled ? '0.0.0.0' : '127.0.0.1',
-    remoteEnabled: obsEnabled && remoteEnabled,
+    host: remoteEnabled ? '0.0.0.0' : '127.0.0.1',
+    remoteEnabled,
     obsEnabled,
     dataDir: path.join(userData, 'config'),
     soundLibraryDir: path.join(userData, 'soundboard'),
@@ -52,7 +55,7 @@ export async function startDesktopRuntime(logger = new DesktopLogger(path.join(a
     logger,
     ensureObsRunning: () => launchObsIfRequested(obsEnabled, dashboard.state().settings.obsExecutablePath),
     stop: () => stopPromise ??= (async () => {
-      await dashboard.stop();
+      try { await dashboard.stop(); } finally { await deviceAudio.dispose(); }
       await logger.info('Arrêt propre terminé').catch(() => undefined);
     })(),
   };

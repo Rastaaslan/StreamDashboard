@@ -1,4 +1,4 @@
-import { app, BrowserWindow, dialog, ipcMain, shell, Menu, Tray, nativeImage, type OpenDialogOptions } from 'electron';
+import { app, BrowserWindow, dialog, ipcMain, shell, Menu, Tray, nativeImage, protocol, type OpenDialogOptions } from 'electron';
 import path from 'node:path';
 import { copyFile, mkdir, readFile, rename, stat, unlink } from 'node:fs/promises';
 import { randomUUID } from 'node:crypto';
@@ -13,9 +13,11 @@ import { installControllerKeys, startControllerAssets } from './controller.js';
 import { requireDesktopRestartSafety } from './restart-safety.js';
 import { isSameOrigin } from './security.js';
 import type { Server } from 'node:http';
+import { configureLoginStartup } from './login-startup.js';
 import { InstallationStore } from './installation-store.js';
 import type { Installation, InstallationChanges, InstallationPlan, DeviceRole } from '../../mobile/shared/installation.js';
 
+protocol.registerSchemesAsPrivileged([{scheme:'streamdashboard-audio',privileges:{standard:true,secure:true,supportFetchAPI:true,stream:true}}]);
 const squirrelHandled = handleSquirrelStartup();
 app.setName('StreamDashboard Next');
 app.setPath('userData', path.join(app.getPath('appData'), 'StreamDashboard-Next'));
@@ -131,7 +133,7 @@ function boot(): Promise<void> {
         return;
       }
       window = createDashboardWindow(targetUrl, path.join(import.meta.dirname, 'preload.cjs'), 'StreamDashboard — Démarrage…');
-      window.on('closed', () => { window = null; bootPromise = undefined; });
+      window.on('closed', () => { window = null; bootPromise = undefined; if(!backgroundEnabled())app.quit(); });
       window.webContents.on('render-process-gone', (_event, details) => { void fail(new Error(`Renderer stopped: ${details.reason}`)); });
       window.webContents.on('did-fail-load', (_event, code, description, _url, isMainFrame) => {
         if (isMainFrame && code !== -3) void fail(new Error(`Renderer load failed (${code}): ${description}`));
@@ -174,6 +176,7 @@ function requireInstallationSender(event: Electron.IpcMainInvokeEvent) {
 async function beforeInstallationCommit(plan: InstallationPlan) {
   if (quitting || !runtime) throw new Error('Application en cours de démarrage ou d’arrêt.');
   if (plan.restart) await requireDesktopRestartSafety(() => runtime!.dashboard.assessRestartSafety());
+  if (Boolean(plan.next.startAtLogin) !== Boolean(installation.startAtLogin)) configureLoginStartup(app, Boolean(plan.next.startAtLogin));
 }
 function committedInstallation(plan: InstallationPlan) {
   installation = plan.next;
@@ -184,15 +187,29 @@ function committedInstallation(plan: InstallationPlan) {
   else { tray?.destroy(); tray = undefined; }
   return plan;
 }
+let installationChange: Promise<unknown> = Promise.resolve();
+function applyInstallation(operation: () => Promise<InstallationPlan>) {
+  const pending = installationChange.then(async () => {
+    try { return committedInstallation(await operation()); }
+    catch (error) {
+      // A disk failure must not leave a different Windows startup setting active.
+      try { configureLoginStartup(app, Boolean((await installations.read()).startAtLogin)); }
+      catch { throw new Error('Configuration non appliquée. Vérifiez le démarrage automatique dans les paramètres Windows avant de réessayer.'); }
+      throw error;
+    }
+  });
+  installationChange = pending.catch(() => undefined);
+  return pending;
+}
 ipcMain.handle('installation:get', async event => { requireInstallationSender(event); return installations.read(); });
 ipcMain.handle('installation:change', async (event, changes: InstallationChanges, revision: number) => {
   requireInstallationSender(event);
   if (!changes || typeof changes !== 'object' || Array.isArray(changes)) throw new Error('Modification invalide.');
-  return committedInstallation(await installations.change(changes, revision, beforeInstallationCommit));
+  return applyInstallation(() => installations.change(changes, revision, beforeInstallationCommit));
 });
 ipcMain.handle('installation:restore', async (event, revision: number) => {
   requireInstallationSender(event);
-  return committedInstallation(await installations.restore(revision, beforeInstallationCommit));
+  return applyInstallation(() => installations.restore(revision, beforeInstallationCommit));
 });
 ipcMain.handle('app:get-version', () => app.getVersion());
 ipcMain.handle('app:device-profile', async () => {

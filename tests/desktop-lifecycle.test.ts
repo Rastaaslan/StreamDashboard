@@ -21,7 +21,7 @@ vi.mock('electron', async () => {
     close = vi.fn(()=>this.destroy());
     getBounds() { return this.bounds; } setBounds(value: any) { this.bounds = value; }
   }
-  return { app, BrowserWindow: Window, Tray: class extends EventEmitter {setToolTip(){} setContextMenu(){} destroy(){}}, Menu:{buildFromTemplate:(value:unknown)=>value},nativeImage:{createFromPath:()=>({})}, screen: { getAllDisplays: () => state.displays, getPrimaryDisplay: () => state.displays[0] },
+  return { app, protocol:{registerSchemesAsPrivileged:vi.fn()}, BrowserWindow: Window, Tray: class extends EventEmitter {setToolTip(){} setContextMenu(){} destroy(){}}, Menu:{buildFromTemplate:(value:unknown)=>value},nativeImage:{createFromPath:()=>({})}, screen: { getAllDisplays: () => state.displays, getPrimaryDisplay: () => state.displays[0] },
     dialog: { showErrorBox: vi.fn() }, ipcMain: { handle: vi.fn(), on: vi.fn() }, shell: {} };
 });
 vi.mock('../apps/desktop/src/installation-store.js', () => ({ InstallationStore: class {

@@ -23,7 +23,7 @@ export function registerControlRoutes(options: {
         res.status(409).json({ok:false,error:{code:'CONFIRM_REQUIRED',message:'Confirmez l’arrêt depuis le bouton du tableau de bord.',retryable:false}});
         return;
       }
-      res.json(await control.execute({...req.body,action}));
+      res.json(await control.execute({...req.body,action}, action=>res.locals.checkDevicePermission?.(action)));
     } catch(e){next(e);}
   });
   app.get('/api/v2/wizebot/catalog',(_req,res)=>res.json(options.wizebotCommands.snapshot()));
@@ -52,6 +52,7 @@ export function registerControlRoutes(options: {
     } catch(e){next(e);}
   });
   app.get('/api/v2/youtube',async(_req,res,next)=>{try{res.json(await youtube.status());}catch(e){next(e);}});
+  app.get('/api/v2/youtube/chat',async(req,res,next)=>{try{res.json(await youtube.readChat(typeof req.query.broadcastId==='string'?req.query.broadcastId:undefined));}catch(e){next(e);}});
   app.get('/api/v2/youtube/broadcasts',async(_req,res,next)=>{try{res.json({items:await youtube.broadcasts()});}catch(e){next(e);}});
   app.get('/api/v2/youtube/channels',async(_req,res,next)=>{try{res.json({items:await youtube.authorizedChannels()});}catch(e){next(e);}});
   app.get('/api/v2/youtube/metadata',async(_req,res,next)=>{try{res.json(await youtube.readMetadata());}catch(e){next(e);}});

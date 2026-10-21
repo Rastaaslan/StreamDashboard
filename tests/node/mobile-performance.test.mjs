@@ -1,3 +1,4 @@
+import { createActionRouter } from '../../apps/mobile/control/action-routing.js';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -112,6 +113,7 @@ const scope = vm.createContext({
     return new Promise(resolve => pending.set(key, resolve));
   },
 });
+scope.actionRouter=createActionRouter({installation:()=>scope.installationUI.current,workspace:()=>scope.server,localEndpoint:scope.localEndpoint,credential:async()=>'',request:async()=>{throw Error('Unexpected routed request');}});
 function sourceBetween(start, end) {
   const begin = source.indexOf(start);
   const finish = source.indexOf(end, begin);

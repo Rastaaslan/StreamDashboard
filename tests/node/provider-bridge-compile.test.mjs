@@ -25,6 +25,7 @@ test('ProviderBridge compiles and enforces provider isolation, deletion and Stre
       public JSONObject put(String k,Object v) throws JSONException { values.put(k,v); return this; }
       public String getString(String k) throws JSONException { return (String)values.get(k); } public Object opt(String k) { return values.get(k); }
       public String optString(String k) { return optString(k, ""); } public String optString(String k,String d) { return (String)values.getOrDefault(k,d); }
+      public long getLong(String k) throws JSONException { Object value=values.get(k); if(!(value instanceof Number))throw new JSONException(); return ((Number)value).longValue(); }
       public long optLong(String k) { return 0; } public long optLong(String k,long d) { return d; }
       public boolean optBoolean(String k) { return java.lang.Boolean.TRUE.equals(values.get(k)); } public boolean has(String k) { return values.containsKey(k); }
       public JSONObject getJSONObject(String k) throws JSONException { return (JSONObject)values.get(k); }

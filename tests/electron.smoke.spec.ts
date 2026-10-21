@@ -187,6 +187,17 @@ test('agent sans fenêtre : services autonomes disponibles et fenêtre refermabl
   await application.evaluate(({BrowserWindow})=>{BrowserWindow.getAllWindows()[0].close();});
   await expect.poll(()=>application!.evaluate(({BrowserWindow})=>BrowserWindow.getAllWindows().length)).toBe(0);
   expect((await fetch('http://127.0.0.1:48135/api/v1/health')).status).toBe(200);
+  // A silent file verifies the real Chromium decoder and hidden agent player.
+  // No OBS instance, real account, or physical audio change is required.
+  const samples=8000*10,wav=Buffer.alloc(44+samples*2);wav.write('RIFF',0);wav.writeUInt32LE(wav.length-8,4);wav.write('WAVEfmt ',8);wav.writeUInt32LE(16,16);wav.writeUInt16LE(1,20);wav.writeUInt16LE(1,22);wav.writeUInt32LE(8000,24);wav.writeUInt32LE(16000,28);wav.writeUInt16LE(2,32);wav.writeUInt16LE(16,34);wav.write('data',36);wav.writeUInt32LE(samples*2,40);
+  const origin='http://127.0.0.1:48135';
+  const upload=await fetch(origin+'/api/v2/sounds/upload?name=Silent-test&extension=wav',{method:'POST',headers:{'content-type':'application/octet-stream'},body:wav});
+  expect(upload.status).toBe(201);const sound=await upload.json() as {id:string};
+  const edit=await fetch(origin+'/api/v1/soundboard/sounds/'+sound.id,{method:'PUT',headers:{'content-type':'application/json'},body:JSON.stringify({outputId:'device-default',volume:0})});expect(edit.status).toBe(200);
+  const send=async(action:string,id:string)=>{const response=await fetch(origin+'/api/v2/actions',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({id,issuedAt:new Date().toISOString(),action,...(action==='sound.play'?{soundId:sound.id}:{})})});return response.json() as Promise<{status:string;message:string}>;};
+  const played=await send('sound.play','silent_audio_play');expect(played,played.message).toMatchObject({status:'succeeded'});
+  expect(await application.evaluate(({BrowserWindow})=>BrowserWindow.getAllWindows().every(w=>!w.isVisible()))).toBe(true);
+  expect(await send('sound.stop','silent_audio_stop')).toMatchObject({status:'succeeded'});
   await application.close();application=undefined;
   await expectEndpointClosed('http://127.0.0.1:48135');
  }finally{if(application)await application.close().catch(()=>{});await rm(profile,{recursive:true,force:true});}

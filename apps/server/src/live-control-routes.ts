@@ -55,14 +55,14 @@ export function registerLiveControlRoutes(options: Options) {
     };
   };
   app.get('/api/v1/events', (req, res) => { const string = (value: unknown, max: number) => typeof value === 'string' && value.length <= max ? value : undefined; res.json({ items: eventCore.recent({ type: string(req.query.type, 120), source: string(req.query.source, 80), correlationId: string(req.query.correlationId, 128), limit: Number(req.query.limit) || 100 }) }); });
-  app.get('/api/v1/soundboard', async (_req, res, next) => { try { res.json(await soundboard.snapshot()); } catch (error) { next(error); } });
+  app.get('/api/v1/soundboard', async (req, res, next) => { try { res.json(await soundboard.snapshot(req.query.outputs === 'refresh')); } catch (error) { next(error); } });
   app.get('/api/v1/soundboard/obs/status', async (req, res, next) => { try { if (!options.requireLocal(req, res)) return; res.json(await options.soundboardObsStatus()); } catch (error) { next(error); } });
   app.post('/api/v1/soundboard/obs/setup', async (req, res, next) => { try { if (!options.requireLocal(req, res)) return; res.json(await options.setupSoundboardObs()); } catch (error) { next(error); } });
   app.put('/api/v1/soundboard/catalog', async (req, res, next) => { try { if (!options.requireLocal(req, res)) return; if (!Array.isArray(req.body?.sounds) || req.body.sounds.length > 500) throw new Error('Catalogue soundboard invalide.'); const sounds = req.body.sounds.map(validateSound); soundboard.replace(sounds); options.setSounds(sounds); await options.save(); res.json(await soundboard.snapshot()); } catch (error) { next(error); } });
   app.post('/api/v1/soundboard/sounds', async (req, res, next) => {
     try {
       if (!options.requireLocal(req, res)) return;
-      if (!object(req.body) || Object.keys(req.body).some(key => !['libraryId','name','favorite','volume','enabled','cooldownMs','category','monitoringMode'].includes(key))) throw new Error('Nouveau son invalide.');
+      if (!object(req.body) || Object.keys(req.body).some(key => !['libraryId','name','favorite','volume','enabled','cooldownMs','category','monitoringMode','outputId'].includes(key))) throw new Error('Nouveau son invalide.');
       const source = await options.resolveSoundLibraryFile(String(req.body.libraryId ?? ''));
       const sound = validateSound({
         id: randomUUID(), source, outputId: 'obs', name: String(req.body.name ?? ''), category: String(req.body.category ?? ''),
@@ -78,11 +78,11 @@ export function registerLiveControlRoutes(options: Options) {
     try {
       const sounds = options.sounds(); const sound = sounds.find(value => value.id === req.params.id);
       if (!sound) { res.status(404).json({ ok: false, error: { code: 'SOUND_NOT_FOUND', message: 'Son introuvable.' } }); return; }
-      if (!object(req.body) || Object.keys(req.body).some(key => !['libraryId','name','favorite','volume','enabled','cooldownMs','category','monitoringMode'].includes(key))) throw new Error('Modification soundboard invalide.');
+      if (!object(req.body) || Object.keys(req.body).some(key => !['libraryId','name','favorite','volume','enabled','cooldownMs','category','monitoringMode','outputId'].includes(key))) throw new Error('Modification soundboard invalide.');
       const previousSource = sound.source;
       const source = req.body.libraryId === undefined ? previousSource : await options.resolveSoundLibraryFile(String(req.body.libraryId));
       const { libraryId: _libraryId, ...patch } = req.body;
-      Object.assign(sound, validateSound({ ...sound, ...patch, source, outputId: 'obs' }));
+      Object.assign(sound, validateSound({ ...sound, ...patch, source }));
       soundboard.replace(sounds); options.setSounds(sounds); await options.save();
       if (source !== previousSource) await options.removeSoundLibraryFile(previousSource);
       res.json(await soundboard.snapshot());

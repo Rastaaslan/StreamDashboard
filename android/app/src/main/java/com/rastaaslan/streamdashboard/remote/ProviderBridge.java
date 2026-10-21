@@ -70,7 +70,7 @@ public final class ProviderBridge {
     try {
       if(raw==null||raw.length()>14_100_000)throw new IllegalArgumentException();
       JSONObject input=new JSONObject(raw);String id=input.getString("id"),method=input.getString("method");
-      Set<String> allowed=Set.of("twitchTest","googleTest","youtubeTest","youtubeStatus","twitchStatus","googleStatus","twitchAuthorize","googleAuthorize","youtubeAuthorize","twitchPoll","twitchLogout","googleLogout","youtubeLogout","twitchSearchCategories","twitchCreatePlanning","twitchUpdatePlanning","twitchDeletePlanning","googleCreatePlanning","googleUpdatePlanning","googleDeletePlanning","twitchReconcilePlanning","googleReconcilePlanning","googleCalendars","googleEvents","googleReadPlanning","twitchReadPlanning","deviceService","wizebotSendEdit","wizebotSendCommand");
+      Set<String> allowed=Set.of("twitchTest","googleTest","youtubeTest","youtubeStatus","youtubeChatBroadcast","youtubeChatMessages","twitchStatus","googleStatus","twitchAuthorize","googleAuthorize","youtubeAuthorize","twitchPoll","twitchLogout","googleLogout","youtubeLogout","twitchSearchCategories","twitchCreatePlanning","twitchUpdatePlanning","twitchDeletePlanning","googleCreatePlanning","googleUpdatePlanning","googleDeletePlanning","twitchReconcilePlanning","googleReconcilePlanning","googleCalendars","googleEvents","googleReadPlanning","twitchReadPlanning","deviceService","wizebotSendEdit","wizebotSendCommand");
       if(!id.matches("[a-zA-Z0-9_-]{8,100}")||!allowed.contains(method))throw new IllegalArgumentException();
       String payload=input.getJSONObject("payload").toString();
       operations.execute(() -> {
@@ -87,6 +87,41 @@ public final class ProviderBridge {
   @JavascriptInterface public String googleTest(String ignored) { return testProvider("google"); }
   @JavascriptInterface public String twitchStatus(String ignored) { return status("twitch", BuildConfig.TWITCH_ANDROID_CLIENT_ID); }
   @JavascriptInterface public String googleStatus(String ignored) { return googleProviderStatus("google"); }
+  private final Map<String, JSONObject> youtubeChatTargets = new java.util.concurrent.ConcurrentHashMap<>();
+  @JavascriptInterface public String youtubeChatBroadcast(String raw) { return guarded(() -> {
+    String id=body(raw).optString("broadcastId"), account=youtubeAuth.account();
+    if(!id.matches("[A-Za-z0-9_-]{11}"))throw new ProviderException("INVALID","Diffusion invalide.");
+    JSONObject response=googleRequest("youtube","GET","https://www.googleapis.com/youtube/v3/liveBroadcasts?part=id,snippet,status,contentDetails&id="+enc(id),null,null);
+    JSONArray items=response.optJSONArray("items");JSONObject target=null;
+    if(items!=null)for(int i=0;i<items.length();i++)if(id.equals(items.getJSONObject(i).optString("id")))target=items.getJSONObject(i);
+    if(target==null)throw new ProviderException("liveChatNotFound","Diffusion absente sur ce compte.");
+    JSONObject snippet=target.getJSONObject("snippet"), status=target.getJSONObject("status");
+    String channelId=snippet.getString("channelId"), owner="";
+    JSONArray channels=googleRequest("youtube","GET","https://www.googleapis.com/youtube/v3/channels?part=snippet&mine=true",null,null).getJSONArray("items");
+    for(int i=0;i<channels.length();i++)if(channelId.equals(channels.getJSONObject(i).optString("id")))owner=channels.getJSONObject(i).getJSONObject("snippet").optString("title",channelId);
+    if(owner.isEmpty())throw new ProviderException("CHANNEL_MISMATCH","Chaîne non autorisée sur cet appareil.");
+    String stream=target.optJSONObject("contentDetails")==null?"":target.getJSONObject("contentDetails").optString("boundStreamId"),ingestion="";
+    if(!stream.isEmpty()) {
+      JSONArray streams=googleRequest("youtube","GET","https://www.googleapis.com/youtube/v3/liveStreams?part=status&id="+enc(stream),null,null).optJSONArray("items");
+      if(streams!=null&&streams.length()>0)ingestion=streams.getJSONObject(0).getJSONObject("status").optString("streamStatus");
+    }
+    if(!youtubeAuth.connected()||!account.equals(youtubeAuth.account()))throw new ProviderException("REAUTH_REQUIRED","Compte YouTube modifié.");
+    String chat=snippet.optString("liveChatId");
+    if(!chat.isEmpty()) {
+      if(youtubeChatTargets.size()>8)youtubeChatTargets.clear();
+      youtubeChatTargets.put(chat,new JSONObject().put("account",account).put("expiresAt",System.currentTimeMillis()+120000));
+    }
+    return new JSONObject().put("id",id).put("channelId",channelId).put("account",owner).put("broadcastState",status.getString("lifeCycleStatus")).put("liveChatId",chat).put("chatDisabled",status.optBoolean("madeForKids")).put("ingestionStatus",ingestion);
+  }); }
+  @JavascriptInterface public String youtubeChatMessages(String raw) { return guarded(() -> {
+    JSONObject input=body(raw);String id=input.optString("liveChatId"),page=input.optString("pageToken"),account=youtubeAuth.account();
+    JSONObject target=youtubeChatTargets.get(id);
+    if(target==null||target.optLong("expiresAt")<System.currentTimeMillis()||!account.equals(target.optString("account")))throw new ProviderException("liveChatNotFound","Actualisez la diffusion avant son chat.");
+    if(page.length()>4000)throw new ProviderException("INVALID","Pagination invalide.");
+    JSONObject response=googleRequest("youtube","GET","https://www.googleapis.com/youtube/v3/liveChat/messages?part=id,snippet,authorDetails&maxResults=200&liveChatId="+enc(id)+(page.isEmpty()?"":"&pageToken="+enc(page)),null,null);
+    if(!youtubeAuth.connected()||!account.equals(youtubeAuth.account()))throw new ProviderException("REAUTH_REQUIRED","Compte YouTube modifié.");
+    return new JSONObject().put("items",response.getJSONArray("items")).put("pollingIntervalMillis",response.getLong("pollingIntervalMillis")).put("nextPageToken",response.optString("nextPageToken")).put("offlineAt",response.optString("offlineAt"));
+  }); }
   @JavascriptInterface public String youtubeStatus(String ignored) { return googleProviderStatus("youtube"); }
   private String googleProviderStatus(String provider) {
     if (GoogleApiAvailability.getInstance().isGooglePlayServicesAvailable(activity) != ConnectionResult.SUCCESS)
@@ -102,7 +137,7 @@ public final class ProviderBridge {
   @JavascriptInterface public String googleLogout(String ignored) { return logoutGoogleAccount("google"); }
   @JavascriptInterface public String youtubeLogout(String ignored) { return logoutGoogleAccount("youtube"); }
   private String logoutGoogleAccount(String provider) { return guarded(() -> {
-    googleFlow(provider).logout(); diagnostics.remove(provider); credentials.clear(provider + "_account_grant");
+    googleFlow(provider).logout(); if(provider.equals("youtube"))youtubeChatTargets.clear(); diagnostics.remove(provider); credentials.clear(provider + "_account_grant");
     if (provider.equals("google")) { credentials.clear("google"); credentials.clear("google_grants"); }
     return ok();
   }); }
@@ -655,6 +690,13 @@ public final class ProviderBridge {
     if(outgoing!=null){c.setDoOutput(true);c.setRequestProperty("Content-Type",json!=null?"application/json":"application/x-www-form-urlencoded");try(OutputStream o=c.getOutputStream()){o.write(outgoing.getBytes(StandardCharsets.UTF_8));}}
     int status=c.getResponseCode(); InputStream stream=status>=400?c.getErrorStream():c.getInputStream(); String value=stream==null?"":readStream(stream);
     if(status==401)throw new ProviderException("REAUTH_REQUIRED","Session provider expirée."); if(status==409||status==412)throw new ProviderException("CONFLICT","Le provider a changé ailleurs."); if(status>=400) {
+      if(address.startsWith("https://www.googleapis.com/youtube/v3/")) {
+        try {
+          JSONArray errors=new JSONObject(value).getJSONObject("error").optJSONArray("errors");
+          String reason=errors!=null&&errors.length()>0?errors.getJSONObject(0).optString("reason"):"";
+          if(Set.of("liveChatDisabled","liveChatEnded","liveChatNotFound","quotaExceeded","dailyLimitExceeded","rateLimitExceeded","insufficientPermissions").contains(reason))throw new ProviderException(reason,"Lecture YouTube indisponible : "+reason);
+        } catch(JSONException ignored) { }
+      }
       String message = "Le provider a refusé l’opération.";
       try { JSONObject response = new JSONObject(value); message = response.optString("message", message); JSONObject detail = response.optJSONObject("error"); if (detail != null) message = detail.optString("message", message); } catch (JSONException ignored) { }
       throw new ProviderException("HTTP_"+status, safeProviderMessage(message, headers));

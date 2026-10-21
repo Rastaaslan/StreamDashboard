@@ -157,6 +157,8 @@ function soundState(sound, context) {
 }
 
 function actionStatus(action, context) {
+  const routed=context.routedStatus?.(action);
+  if(routed)return {disabled:context.blocked||(context.busy&&routed.route.definition.type!=='sound.stop')||(routed.status==='unavailable'&&routed.reason!=='offline'),active:false,text:routed.status==='available'?'Sur '+routed.name:routed.status==='unknown'?'Vérifier · '+routed.name:routed.message+' · '+routed.name};
   if (action.type === 'sound.play') {
     const sound = context.catalog.find(item => item.id === action.value);
     return sound ? soundState(sound, context) : { disabled: true, text: 'Son à configurer', active: false };

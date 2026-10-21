@@ -249,3 +249,21 @@ it('persists changed action parameters once without rewriting identical mappings
  expect(native.setBindings).toHaveBeenCalledTimes(2);
  expect(native.setBindings.mock.calls.at(-1)?.[0].actions[0].value).toBe('Second mic');
 });
+
+it('dispatches separate physical destinations without a workspace and refuses a replaced device',async()=>{
+ const second=action({id:'second',shortcut:'Control+Alt+Shift+F2'}),definition=action({id:'remote-mic',value:'Mic B'});
+ fetchMock.mockImplementation(async input=>String(input).endsWith('/device')?response({device:{id:String(input).includes('two.local')?'two':'wrong'}}):response());
+ invoke('controller:configure',{server:'',credential:'',actions:[action(),second],destinations:{micro:{server:'http://one.local:48133',credential:'one-secret',deviceId:'one',definition},second:{server:'http://two.local:48133',credential:'two-secret',deviceId:'two',definition}}});
+ native.callbacks.get(shortcut)!();await drain();expect(fetchMock.mock.calls.some(([url])=>String(url).endsWith('/actions'))).toBe(false);
+ await vi.advanceTimersByTimeAsync(300);native.callbacks.get(second.shortcut)!();await drain();
+ const post=fetchMock.mock.calls.find(([url])=>String(url).endsWith('/actions'))!;
+ expect(post[0]).toBe('http://two.local:48133/api/v2/actions');expect(JSON.parse(post[1]!.body as string)).toMatchObject({action:'remote-mic',expectedAction:definition});
+ expect(post[1]!.headers).toMatchObject({Authorization:'Device two-secret'});
+});
+it('headless restoration keeps a reachable destination while another executor is offline',async()=>{
+ const second=action({id:'second',shortcut:'Control+Alt+Shift+F2'});
+ native.getBindings.mockResolvedValue({server:'',credential:'',actions:[action(),second],destinations:{micro:{server:'http://one.local:48133',credential:'one-secret',deviceId:'one',definition:action()},second:{server:'http://two.local:48133',credential:'two-secret',deviceId:'two',definition:second}}});
+ fetchMock.mockImplementation(async input=>{if(String(input).includes('one.local'))throw Error('offline');return String(input).endsWith('/device')?response({device:{id:'two'}}):response({configuration:{actions:[second]}});});
+ await (stop as any).restore();expect(status().registered).toEqual([second.shortcut]);
+ expect(fetchMock.mock.calls.every(([url])=>!String(url).endsWith('/actions'))).toBe(true);
+});

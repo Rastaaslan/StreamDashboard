@@ -1,3 +1,6 @@
+import type { DeckAction } from '../../../packages/contracts/src/control.js';
+import { actionCapability } from '../../mobile/shared/action-definition.js';
+import type { DevicePermission } from '../../mobile/shared/device-permissions.js';
 const GET_EXACT = new Set([
   '/v1/state','/v1/profile','/v1/connections','/v1/control-hub','/v1/events','/v1/soundboard',
   '/v1/automations','/v1/automations/capabilities','/v1/streamlabs/events','/v1/supports','/v1/twitch/categories',
@@ -34,7 +37,7 @@ const POST_EXACT = new Set([
 export function isRemoteApiAllowed(method: string, pathName: string) {
   const verb = method.toUpperCase();
   // Paired clients own the shared control surface. OAuth secrets remain on the host.
-  if (verb === 'GET' && ['/v2/device','/v2/wizebot/catalog','/v2/state','/v2/replay','/v2/outputs','/v2/youtube','/v2/youtube/broadcasts','/v2/youtube/channels','/v2/youtube/metadata'].includes(pathName)) return true;
+  if (verb === 'GET' && ['/v2/device','/v2/wizebot/catalog','/v2/state','/v2/replay','/v2/outputs','/v2/youtube','/v2/youtube/chat','/v2/youtube/broadcasts','/v2/youtube/channels','/v2/youtube/metadata'].includes(pathName)) return true;
   if (verb === 'PUT' && ['/v2/configuration','/v2/settings'].includes(pathName)) return true;
   if (verb === 'POST' && ['/v2/wizebot/refresh','/v2/wizebot/import','/v2/wizebot/edit','/v2/actions','/v2/planning','/v2/sounds/upload','/v2/youtube/connect','/v2/youtube/disconnect'].includes(pathName)) return true;
   if (['PUT','DELETE'].includes(verb) && /^\/v2\/planning\/[^/]+(?:\/occurrence)?$/.test(pathName)) return true;
@@ -68,3 +71,24 @@ export const remoteApiPolicySnapshot = {
   put: [...PUT_EXACT],
   post: [...POST_EXACT],
 } as const;
+
+/** Explicit permissions supplement the existing legacy/management allowlists. */
+export function requiredDevicePermissions(method:string,path:string,body:unknown,actions:DeckAction[]=[]):DevicePermission[] {
+  const value=body as {action?:string;type?:string}|undefined;
+  if(path==='/v2/actions') {
+    const type=actions.find(a=>a.id===value?.action)?.type||value?.action||'';
+    if(type.startsWith('live.'))return ['obs','cloud'];
+    if(type.startsWith('metadata.'))return ['cloud'];
+    return [actionCapability(type as DeckAction['type']) as DevicePermission];
+  }
+  // Legacy commands can combine several effects. Limited devices use the
+  // typed v2 actions; legacy callers retain their explicitly granted full set.
+  if(path==='/v1/commands'||path.includes('/automations')||(method!=='GET'&&/\/autonomy|\/profile|\/configuration|\/settings/.test(path)))return ['configuration'];
+  if(/\/soundboard|\/sounds/.test(path))return ['audio'];
+  if(/\/replay/.test(path))return ['clips'];
+  if(/\/obs|\/outputs/.test(path))return ['obs'];
+  if(/\/chat(?:\/|$)|\/moderation|\/wizebot/.test(path))return ['chat'];
+  if(/\/planning|\/google|\/companion/.test(path))return ['planning'];
+  if(/\/twitch|\/youtube|\/streamlabs|\/supports|\/discord/.test(path))return ['cloud'];
+  return method==='GET'||path==='/v1/remote/ws-ticket'?['observe']:['configuration'];
+}

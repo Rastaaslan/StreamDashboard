@@ -123,3 +123,7 @@ header{height:auto;min-height:98px;gap:18px}header>div:first-child{min-width:0;o
 .compact-app .activity-page .activity-page-heading h1{font-size:27px}
 .compact-app .activity-page #streamlabs-feed>.streamlabs-feed{height:calc(100dvh - var(--deck-nav-height) - env(safe-area-inset-bottom) - env(safe-area-inset-top) - 116px);min-height:260px}
 .compact-app .activity-page:has(#activity-context:not(:empty)) #streamlabs-feed>.streamlabs-feed{height:360px;min-height:260px}
+
+.youtube-api-chat { padding: .75rem; border-bottom: 1px solid var(--border, #343448); }
+.youtube-api-messages { max-height: 220px; overflow-y: auto; overflow-wrap: anywhere; }
+.youtube-api-messages p { margin: .4rem 0; font-size: .85rem; }

@@ -1,8 +1,9 @@
+import { createYouTubeChatReader, type ChatBroadcast, type ChatPage } from '../../../apps/mobile/shared/youtube-chat.js';
 import { createHash, randomBytes, timingSafeEqual } from 'node:crypto';
 import type { SecretStore } from '../../../apps/server/src/storage.js';
 import type { LiveMetadata } from '../../../packages/contracts/src/control.js';
 
-interface Broadcast { id: string; snippet: { title: string; channelId: string; liveChatId?: string; scheduledStartTime?: string }; status: { lifeCycleStatus: string }; contentDetails: { boundStreamId?: string } }
+interface Broadcast { id: string; snippet: { title: string; channelId: string; liveChatId?: string; scheduledStartTime?: string }; status: { lifeCycleStatus: string; madeForKids?:boolean }; contentDetails: { boundStreamId?: string } }
 interface YouTubeSelection { clientId: string; broadcastId: string; channelId: string }
 interface YouTubeAuthContext { clientId: string; generation: number }
 interface YouTubeRequestSelection extends YouTubeSelection, YouTubeAuthContext {}
@@ -67,6 +68,9 @@ const reasonMessages: Record<string,string> = {
   invalidResponse:'Réponse YouTube incomplète ou illisible.',
   invalidPagination:'Pagination YouTube incohérente. Rechargez la liste.',
   catalogTooLarge:'Le catalogue YouTube dépasse la limite de lecture complète.',
+  liveChatDisabled:'Le chat est désactivé pour cette diffusion.',
+  liveChatEnded:'Le chat de cette diffusion est terminé.',
+  liveChatNotFound:'Le chat de cette diffusion n’est pas encore disponible.',
   unknown:'Requête refusée. Vérifiez le compte, ses autorisations et la diffusion sélectionnée.',
 };
 /** Never expose provider bodies, token values, or arbitrary provider messages. */
@@ -95,6 +99,7 @@ export class YouTubeClient {
   private tokenWrites: Promise<void> = Promise.resolve();
   private refreshFlight?: { context: YouTubeAuthContext; refreshToken: string; promise: Promise<Record<string,string>> };
   private transitionAttempts = new Set<string>();
+  private chatReaders = new Map<string, ReturnType<typeof createYouTubeChatReader>>();
   constructor(private secrets: SecretStore, private configuration: () => YouTubeSelection, private request: typeof fetch = fetch) {}
   private selection(): YouTubeRequestSelection { return {...this.configuration(),generation:this.generation}; }
   private assertAuth(context: YouTubeAuthContext) {
@@ -239,6 +244,36 @@ export class YouTubeClient {
     }
     const broadcastState=target.status.lifeCycleStatus;
     return {id:target.id,channelId:target.snippet.channelId,broadcastState,live:broadcastState==='live',bound:Boolean(streamId),ingestionStatus,observedAt:new Date().toISOString()};
+  }
+  /** Device-owned API identity. Embedded player cookies are never consulted. */
+  async readChat(broadcastId = this.configuration().broadcastId) {
+    if (broadcastId && !/^[A-Za-z0-9_-]{11}$/.test(broadcastId)) throw new Error('Identifiant de diffusion YouTube invalide.');
+    const selected=this.selection(), key=JSON.stringify([selected,broadcastId]);
+    let reader=this.chatReaders.get(key);
+    if (!reader) {
+      reader=createYouTubeChatReader({
+        broadcast: async id => {
+          if(!(await this.status()).connected)throw new YouTubeApiError(401,'authError');
+          const value=await this.api<{items?:Broadcast[]}>(`liveBroadcasts?part=id,snippet,status,contentDetails&id=${encodeURIComponent(id)}`,{},selected);
+          const target=value.items?.find(item=>item.id===id);
+          if(!target)throw new YouTubeApiError(404,'liveBroadcastNotFound');
+          const channels=await this.authorizedChannels();this.assertSelection(selected);
+          const owner=channels.find(channel=>channel.id===target.snippet.channelId);
+          if(!owner)throw Object.assign(new Error('Chaîne différente.'),{code:'CHANNEL_MISMATCH'});
+          let ingestionStatus:string|null=null;
+          if(target.contentDetails?.boundStreamId) {
+            const streams=await this.api<{items?:Array<{status?:{streamStatus?:string}}>}>(`liveStreams?part=status&id=${encodeURIComponent(target.contentDetails.boundStreamId)}`,{},selected);
+            ingestionStatus=streams.items?.[0]?.status?.streamStatus||null;
+          }
+          return {id:target.id,channelId:owner.id,account:owner.title,broadcastState:target.status.lifeCycleStatus,liveChatId:target.snippet.liveChatId,chatDisabled:target.status.madeForKids===true,ingestionStatus} satisfies ChatBroadcast;
+        },
+        messages: (id,pageToken) => this.api<ChatPage>('liveChat/messages?'+new URLSearchParams({liveChatId:id,part:'id,snippet,authorDetails',maxResults:'200',...(pageToken?{pageToken}:{})}),{},selected),
+      });
+      // Bound retained identities and caches; each active chat shares its clock.
+      if(this.chatReaders.size>=8)this.chatReaders.delete(this.chatReaders.keys().next().value!);
+      this.chatReaders.set(key,reader);
+    }
+    const result=await reader.read(broadcastId);this.assertSelection(selected);return result;
   }
   async live() { const target=await this.target(); return target.status.lifeCycleStatus==='live'; }
   /** Read only the selected broadcast's public metadata; never exposes provider bodies or tokens. */

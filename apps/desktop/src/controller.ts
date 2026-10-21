@@ -2,7 +2,7 @@ import { globalShortcut, ipcMain, type BrowserWindow } from 'electron';
 import express from 'express';
 import type { Server } from 'node:http';
 import { randomUUID } from 'node:crypto';
-import type { DeckAction } from '../../../packages/contracts/src/control.js';
+import type { DeckAction, ControllerConfiguration } from '../../../packages/contracts/src/control.js';
 import { normalizeServer } from '../../mobile/runtime.js';
 import { ElectronSecretStore } from './secrets.js';
 
@@ -13,7 +13,7 @@ export async function startControllerAssets(directory: string): Promise<Server> 
   app.use('/mobile',express.static(directory));
   return new Promise((resolve,reject)=>{const server=app.listen(48134,'127.0.0.1',()=>resolve(server));server.once('error',reject);});
 }
-interface ControllerConfiguration { server: string; credential: string; actions: DeckAction[] }
+import { actionDefinition } from '../../mobile/shared/action-definition.js';
 interface ControllerResult { status: string; message?: string; error?: { code?: string; message?: string } }
 const shortcutPattern = /^Control\+Alt\+Shift\+F(?:[1-9]|1\d|2[0-4])$/;
 const actionTypes = new Set<DeckAction['type']>(['mic.toggle','scene.set','mode.set','timer.add','sound.play','sound.stop','alert.play','chat.send','wizebot.command','replay.save','replay.start','replay.stop','live.start','live.stop']);
@@ -48,7 +48,9 @@ export function installControllerKeys(window: () => BrowserWindow | null, userDa
   };
   const dispatch = (action: DeckAction, target: ControllerConfiguration, currentGeneration: number) => {
     if (disposed || currentGeneration !== generation) return;
-    if (action.type === 'live.stop') {
+    const destination = target.destinations?.[action.id], definition = destination?.definition || action;
+    const server = destination?.server || target.server, credential = destination?.credential ?? target.credential;
+    if (definition.type === 'live.stop') {
       publish({ status: 'failed', message: 'Confirmez l’arrêt depuis le bouton du tableau de bord.' });
       return;
     }
@@ -60,10 +62,15 @@ export function installControllerKeys(window: () => BrowserWindow | null, userDa
     pending = flight;
     void (async () => {
       try {
-        const response = await fetch(`${target.server}/api/v2/actions`, {
+        if (destination) {
+          const observed = await fetch(`${server}/api/v2/device`, {headers:credential?{Authorization:`Device ${credential}`}:{},signal:AbortSignal.any([flight.controller.signal,AbortSignal.timeout(8_000)])});
+          const descriptor = await observed.json() as {device?:{id?:string}};
+          if (!observed.ok || descriptor.device?.id !== destination.deviceId) throw new Error('Identité de la destination non confirmée. Renouvelez son association.');
+        }
+        const response = await fetch(`${server}/api/v2/actions`, {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json', ...(target.credential ? { Authorization: `Device ${target.credential}` } : {}) },
-          body: JSON.stringify({ id: randomUUID(), issuedAt: new Date().toISOString(), action: action.id, trigger: 'keyboard' }),
+          headers: { 'Content-Type': 'application/json', ...(credential ? { Authorization: `Device ${credential}` } : {}) },
+          body: JSON.stringify({ id: randomUUID(), issuedAt: new Date().toISOString(), action: definition.id, expectedAction: definition, trigger: 'keyboard' }),
           // The server serializes commands and can still be confirming a slow action.
           // Timeout is never followed by a retry or a queued keyboard command.
           signal: AbortSignal.any([flight.controller.signal, AbortSignal.timeout(120_000)]),
@@ -117,11 +124,19 @@ export function installControllerKeys(window: () => BrowserWindow | null, userDa
       ids.add(action.id); if (action.shortcut) shortcuts.add(action.shortcut);
     }
     const actions = value.actions.filter(action => action.shortcut).map(action => ({ ...action }));
+    const destinations: NonNullable<ControllerConfiguration['destinations']> = {};
+    if (value.destinations !== undefined && (!value.destinations || typeof value.destinations !== 'object' || Array.isArray(value.destinations))) throw new Error('Destinations invalides.');
+    for (const action of actions) {
+      const destination = value.destinations?.[action.id];
+      if (!destination) continue;
+      if (typeof destination.credential !== 'string' || destination.credential.length > 256 || !/^[A-Za-z0-9_-]{1,100}$/.test(destination.deviceId) || !actionDefinition(destination.definition) || !actionTypes.has(destination.definition.type)) throw new Error('Destination de macro invalide.');
+      destinations[action.id] = {...structuredClone(destination), server:normalizeServer(destination.server)};
+    }
     // Clearing the workspace must work without an address. Previously normalization
     // threw first, silently leaving the previous host's global shortcuts active.
-    const server = actions.length ? normalizeServer(value.server) : '';
-    const target = actions.length ? { server, credential: value.credential, actions } : undefined;
-    const nextSignature = target ? JSON.stringify([server, target.credential, actions]) : '';
+    const server = actions.some(a=>!destinations[a.id]) ? normalizeServer(value.server) : '';
+    const target = actions.length ? { server, credential: value.credential, actions, ...(Object.keys(destinations).length?{destinations}:{}) } : undefined;
+    const nextSignature = target ? JSON.stringify([server, target.credential, actions, target.destinations]) : '';
     if (nextSignature === signature) { retryUnavailable(); return state; }
     generation++;
     pending?.controller.abort(); pending = undefined; cooldownUntil = 0;
@@ -166,18 +181,36 @@ export function installControllerKeys(window: () => BrowserWindow | null, userDa
     try {
       const saved = await secrets.getControllerBindings();
       if (!saved || disposed || userConfigured) return;
-      const server = normalizeServer(saved.server);
-      const response = await fetch(`${server}/api/v2/state`, { headers: saved.credential ? { Authorization: `Device ${saved.credential}` } : {}, signal: AbortSignal.timeout(8_000) });
-      if (!response.ok) throw new Error('Executor unavailable');
-      const value = await response.json() as { configuration?: { actions?: DeckAction[] } };
-      if (!Array.isArray(value.configuration?.actions)) throw new Error('Invalid executor state');
-      // Fetching the current action definitions keeps an old shortcut from
-      // triggering a different action after a remote configuration change.
-      const current = value.configuration.actions;
-      const confirmed = saved.actions.filter(action => current.some(item => JSON.stringify(item) === JSON.stringify(action)));
+      const observations = new Map<string, Promise<DeckAction[]>>();
+      const read = (server:string, credential:string, deviceId?:string) => {
+        const key = JSON.stringify([server,credential,deviceId]);
+        if (!observations.has(key)) observations.set(key,(async()=>{
+          const headers: Record<string,string> = credential ? { Authorization: `Device ${credential}` } : {};
+          if (deviceId) {
+            const response=await fetch(`${server}/api/v2/device`,{headers,signal:AbortSignal.timeout(8_000)});
+            const value=await response.json() as {device?:{id?:string}};
+            if(!response.ok||value.device?.id!==deviceId)throw new Error('Device changed');
+          }
+          const response=await fetch(`${server}/api/v2/state`,{headers,signal:AbortSignal.timeout(8_000)});
+          if(!response.ok)throw new Error('Executor unavailable');
+          const value=await response.json() as {configuration?:{actions?:DeckAction[]}};
+          if(!Array.isArray(value.configuration?.actions))throw new Error('Invalid executor state');
+          return value.configuration.actions;
+        })());
+        return observations.get(key)!;
+      };
+      let retry=false;
+      const confirmed=(await Promise.all(saved.actions.map(async action=>{
+        const target=saved.destinations?.[action.id], definition=target?.definition||action;
+        try {
+          const current=await read(normalizeServer(target?.server||saved.server),target?.credential??saved.credential,target?.deviceId);
+          return current.some(item=>actionDefinition(item)===actionDefinition(definition))?action:null;
+        } catch { retry=true;return null; }
+      }))).filter((action):action is DeckAction=>action!==null);
       if (disposed || userConfigured) return;
       configure({ ...saved, actions: confirmed });
-      if (confirmed.length !== saved.actions.length) publish({ status: 'failed', message: 'Certaines macros ont changé. Ouvrez le tableau de bord pour vérifier leurs associations.' });
+      if (confirmed.length !== saved.actions.length) publish({ status: 'failed', message: 'Certaines macros sont indisponibles ou ont changé. Les autres appareils restent utilisables.' });
+      if(retry){restoreTimer=setTimeout(()=>{void restore();},5_000);restoreTimer.unref();}
     } catch {
       if (!disposed && !userConfigured) { restoreTimer = setTimeout(() => { void restore(); }, 5_000); restoreTimer.unref(); }
     }
