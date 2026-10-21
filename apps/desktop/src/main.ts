@@ -15,12 +15,13 @@ import { isSameOrigin } from './security.js';
 import type { Server } from 'node:http';
 import { configureLoginStartup } from './login-startup.js';
 import { InstallationStore } from './installation-store.js';
+import { desktopUserData } from './qa-profile.js';
 import type { Installation, InstallationChanges, InstallationPlan, DeviceRole } from '../../mobile/shared/installation.js';
 
 protocol.registerSchemesAsPrivileged([{scheme:'streamdashboard-audio',privileges:{standard:true,secure:true,supportFetchAPI:true,stream:true}}]);
 const squirrelHandled = handleSquirrelStartup();
 app.setName('StreamDashboard Next');
-app.setPath('userData', path.join(app.getPath('appData'), 'StreamDashboard-Next'));
+app.setPath('userData', desktopUserData(path.join(app.getPath('appData'), 'StreamDashboard-Next')));
 if (process.platform === 'win32') app.setAppUserModelId('com.rastaaslan.StreamDashboard.Next');
 const logger = new DesktopLogger(path.join(app.getPath('userData'), 'logs'));
 const log = (event: string) => { void logger.info(event, { pid: process.pid }).catch(() => undefined); };
@@ -35,6 +36,7 @@ let stopControllerKeys: (() => void) & { restore?: () => Promise<void>; flush?: 
 let stopUpdater: () => void = () => undefined;
 let quitting = false;
 let bootPromise: Promise<void> | undefined;
+let booting = false;
 let runtimePromise: Promise<DesktopRuntime> | undefined;
 let cleanupPromise: Promise<void> | undefined;
 const startup = new AbortController();
@@ -66,6 +68,7 @@ function present() {
   if (!primary || quitting) return;
   log('Window presentation requested');
   if (window && !window.isDestroyed()) presentWindow(window);
+  else if (booting && bootPromise) { void bootPromise.then(() => { if(!quitting)present(); }); }
   else if (app.isReady()) { startupAgent = false; bootPromise = undefined; void boot(); }
   // Before readiness, boot will create and present the window unconditionally.
 }
@@ -109,6 +112,7 @@ async function fail(error: unknown): Promise<void> {
 function boot(): Promise<void> {
   if (quitting) return Promise.resolve();
   return bootPromise ??= (async () => {
+    booting = true;
     try {
       log('Electron ready; creating visible startup window');
       const preview = process.argv.includes('--ui-preview=desktop-v2');
@@ -133,17 +137,25 @@ function boot(): Promise<void> {
         return;
       }
       window = createDashboardWindow(targetUrl, path.join(import.meta.dirname, 'preload.cjs'), 'StreamDashboard — Démarrage…');
-      window.on('closed', () => { window = null; bootPromise = undefined; if(!backgroundEnabled())app.quit(); });
-      window.webContents.on('render-process-gone', (_event, details) => { void fail(new Error(`Renderer stopped: ${details.reason}`)); });
+      const owner = window;
+      let closing = false;
+      owner.on('close', () => { closing = true; });
+      owner.on('closed', () => { closing = true; if(window === owner)window = null; if(!backgroundEnabled())app.quit(); });
+      const loadWindow = async (url: string) => {
+        if(closing || owner.isDestroyed())return;
+        try { await owner.loadURL(url); }
+        catch(error) { if(!closing && !owner.isDestroyed())throw error; }
+      };
+      window.webContents.on('render-process-gone', (_event, details) => { if(!closing && window === owner)void fail(new Error(`Renderer stopped: ${details.reason}`)); });
       window.webContents.on('did-fail-load', (_event, code, description, _url, isMainFrame) => {
-        if (isMainFrame && code !== -3) void fail(new Error(`Renderer load failed (${code}): ${description}`));
+        if (!closing && window === owner && isMainFrame && code !== -3) void fail(new Error(`Renderer load failed (${code}): ${description}`));
       });
       presentWindow(window);
       if (runtime) {
-        await window.loadURL(targetUrl + (client ? '?role=client' : ''));
+        await loadWindow(targetUrl + (client ? '?role=client' : ''));
         return;
       }
-      await window.loadURL('data:text/html;charset=utf-8,' + encodeURIComponent(
+      await loadWindow('data:text/html;charset=utf-8,' + encodeURIComponent(
         '<!doctype html><meta charset="utf-8"><meta http-equiv="Content-Security-Policy" content="default-src \'none\'; style-src \'unsafe-inline\'"><title>StreamDashboard — Démarrage…</title><body style="background:#080a10;color:#fff;font:20px system-ui;padding:48px"><h1>StreamDashboard</h1><p>Démarrage en cours…</p><p>Vous pouvez fermer cette fenêtre pour annuler.</p></body>'));
       if (quitting) return;
       stopControllerKeys = installControllerKeys(() => window, app.getPath('userData'), uiOrigin);
@@ -152,7 +164,7 @@ function boot(): Promise<void> {
         controllerServer = await startControllerAssets(path.join(app.getAppPath(), 'apps', 'mobile'));
         runtimePromise = startDesktopRuntime(logger, startup.signal, true, obsEnabled, deviceDescriptor);
         runtime = await runtimePromise;
-        if (!quitting) await window!.loadURL(targetUrl + '?role=client');
+        if (!quitting) await loadWindow(targetUrl + '?role=client');
         return;
       }
       log('Startup window visible; starting local runtime');
@@ -161,11 +173,11 @@ function boot(): Promise<void> {
       if (quitting) return;
       log('Local runtime ready; loading renderer');
       // Candidate stays isolated: production updater must not replace it or the stable installation.
-      if (process.argv.includes('--enable-candidate-updater')) stopUpdater = startUpdater(window!, runtime.dashboard, logger, cleanupRuntime);
-      await window!.loadURL(targetUrl);
+      if (!closing && process.argv.includes('--enable-candidate-updater')) stopUpdater = startUpdater(owner, runtime.dashboard, logger, cleanupRuntime);
+      await loadWindow(targetUrl);
       log('Renderer loaded');
     } catch (error) { await fail(error); }
-  })();
+  })().finally(() => { booting = false; });
 }
 
 void app.whenReady().then(() => primary ? boot() : undefined).catch(fail);

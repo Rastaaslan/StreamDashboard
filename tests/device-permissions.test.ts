@@ -39,6 +39,11 @@ it('enforces restricted permissions over LAN, reports granted capabilities and r
   const descriptor=await (await fetch(remote+'/api/v2/device',{headers})).json() as any;
   expect(descriptor.observed.permissions).toEqual(['observe']);
   expect((await fetch(remote+'/api/v2/state',{headers})).status).toBe(200);
+  for(const origin of ['http://127.0.0.1:48133','http://127.0.0.1:48134']){
+   const state=await fetch(remote+'/api/v2/state',{headers:{...headers,origin}});expect(state.status).toBe(200);expect(state.headers.get('access-control-allow-origin')).toBe(origin);
+   expect((await fetch(remote+'/api/v2/state',{headers:{origin}})).status).toBe(401);
+  }
+  expect((await fetch(remote+'/api/v2/state',{headers:{...headers,origin:'https://untrusted.example'}})).status).toBe(403);
   const refused=await fetch(remote+'/api/v2/actions',{method:'POST',headers,body:JSON.stringify({id:'denied_action',action:'micro',issuedAt:new Date().toISOString()})});
   expect(refused.status).toBe(403);expect(await refused.json()).toMatchObject({error:{code:'DEVICE_PERMISSION_DENIED'}});
   const route='/api/v1/remote/devices/'+paired.deviceId+'/permissions',body=JSON.stringify({permissions:['observe','obs'],expectedPermissions:['observe']});

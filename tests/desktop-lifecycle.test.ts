@@ -114,7 +114,37 @@ function deferred<T>() {
   const promise = new Promise<T>((res, rej) => { resolve = res; reject = rej; });
   return { promise, resolve, reject };
 }
+it('keeps the background agent when closing a window aborts its pending navigation',async()=>{
+ state.background=true;
+ const acquisition=deferred<any>(),navigation=deferred<void>();
+ state.start.mockReturnValue(acquisition.promise);
+ const {app,dialog}=await import('electron');
+ await import('../apps/desktop/src/main.js');state.ready!();
+ await vi.waitFor(()=>expect(state.start).toHaveBeenCalledTimes(1));
+ const owner=state.windows[0];owner.loadURL.mockReturnValueOnce(navigation.promise);
+ acquisition.resolve({dashboard:{url:'http://127.0.0.1:48133'},stop:state.stop});
+ await vi.waitFor(()=>expect(owner.loadURL).toHaveBeenCalledTimes(2));
+ owner.close();owner.webContents.emit('did-fail-load',{},-2,'ERR_FAILED','',true);
+ navigation.reject(new Error('ERR_FAILED loading a deliberately closed window'));
+ await new Promise<void>(resolve=>setImmediate(resolve));
+ expect(dialog.showErrorBox).not.toHaveBeenCalled();expect(app.quit).not.toHaveBeenCalled();expect(state.stop).not.toHaveBeenCalled();
+ app.emit('activate');await vi.waitFor(()=>expect(state.windows).toHaveLength(2));
+ expect(state.start).toHaveBeenCalledTimes(1);
+ app.emit('before-quit',{preventDefault:vi.fn()});await vi.waitFor(()=>expect(app.exit).toHaveBeenCalledWith(0));
+});
 const drain = () => new Promise<void>(resolve => setImmediate(resolve));
+
+it('reopening a closed startup window waits for its single runtime acquisition',async()=>{
+ state.background=true;const acquisition=deferred<any>();state.start.mockReturnValue(acquisition.promise);
+ const {app,dialog}=await import('electron');await import('../apps/desktop/src/main.js');state.ready!();
+ await vi.waitFor(()=>expect(state.start).toHaveBeenCalledTimes(1));
+ state.windows[0].close();app.emit('activate');app.emit('activate');
+ await drain();expect(state.windows).toHaveLength(1);expect(state.start).toHaveBeenCalledTimes(1);
+ acquisition.resolve({dashboard:{url:'http://127.0.0.1:48133'},stop:state.stop});
+ await vi.waitFor(()=>expect(state.windows).toHaveLength(2));
+ expect(state.start).toHaveBeenCalledTimes(1);expect(state.installKeys).toHaveBeenCalledTimes(1);expect(dialog.showErrorBox).not.toHaveBeenCalled();
+ app.emit('before-quit',{preventDefault:vi.fn()});await vi.waitFor(()=>expect(app.exit).toHaveBeenCalledWith(0));
+});
 
 it.each(['before-acquire', 'acquire-during-quit', 'normal', 'stop-fails', 'cancel-pending'] as const)(
   'coordinates startup and shutdown: %s', async scenario => {

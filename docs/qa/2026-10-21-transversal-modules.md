@@ -36,13 +36,17 @@ Une relance de l’assemblage Android a échoué faute de variable `ANDROID_HOME
 - Les tests de permissions passent par des requêtes réseau, y compris l’administration, la révocation et la persistance. Le contrôle est réévalué dans la file d’exécution des actions.
 - Les sorties audio sont actualisées avant lecture et lors de l’édition. Une sortie configurée absente reste affichée et n’est pas remplacée automatiquement.
 
+Un contrôle supplémentaire de l’isolation Windows, du cycle de vie et des origines autorisées a validé **41 tests ciblés**, puis les trois scénarios Electron complets en 16,6 secondes. La fermeture pendant le chargement et plusieurs demandes de réouverture simultanées sont couvertes par des tests de régression.
+
 Les journaux complets sont conservés avec les artefacts de compilation sur la machine de développement, dans le dossier de campagne `StreamDashboard-Next-universal-qa-20261021` : `transversal-*.log`, `shutdown-electron.log`, `final-outputs.log` et `final-packages.log`.
 
 ## Matériel et critères encore ouverts
 
 Le contrôle préalable a retrouvé les applications stables actives sur FIXE et sur le laptop. OBS était actif sur FIXE. Aucune de ces applications n’a été arrêtée ou mise à jour. Aucun téléphone n’était visible dans ADB sur FIXE.
 
-La campagne Windows isolée utilise `scripts/qa-universal-agent.ps1` et son préchargement `.cjs`. Elle vérifie les ports libres, le SHA-256 du paquet, un profil temporaire, le rôle sans OBS, la fermeture du tableau de bord, l’audio silencieux et la libération des ports. Son résultat matériel est enregistré séparément ; il ne couvre pas les six topologies.
+La campagne Windows isolée utilise `scripts/qa-universal-agent.ps1` et un profil de test explicitement isolé. Elle vérifie les ports libres, le SHA-256 du paquet, un profil temporaire, le rôle sans OBS, la fermeture du tableau de bord, l’audio silencieux et la libération des ports après interruption du seul processus candidat. Le [résultat matériel sur FIXE](2026-10-21-windows-agent.json) est réussi : démarrage sans fenêtre, fermeture du tableau de bord sans arrêt du runtime et lecture/arrêt audio silencieux sans OBS. Les processus stables sont restés actifs et les ports du candidat ont été libérés. Ce résultat ne couvre pas les six topologies.
+
+Ce test a révélé une erreur de cycle de vie : la fermeture volontaire pendant une navigation pouvait être interprétée comme une panne et ouvrir une boîte d’erreur bloquante. Cette fermeture est maintenant reconnue ; les demandes de réouverture partagent également une seule création de fenêtre et de runtime. L’isolation du profil est explicitement sélectionnée avant le verrou d’instance Windows, sans dépendre de la seule variable APPDATA.
 
 Restent ouverts : transport chiffré et identité serveur, découverte automatique facultative, cycles de vie et transferts complets des rôles, exécution distante sur Android, lecture multiple, restauration après interruption entre magasins, migration réelle RC11.7, sessions réelles et qualification des six setups. Le téléphone et une diffusion explicitement autorisée seront nécessaires aux essais matériels correspondants.
 

@@ -13,8 +13,8 @@ const testArgs=process.platform==='linux'?['--disable-gpu','--password-store=bas
 async function launch(profile: string, extraArgs: string[] = []): Promise<ElectronApplication> {
   const env = { ...process.env, NODE_ENV: 'test', APPDATA: profile, XDG_CONFIG_HOME: profile };
   return electron.launch(packagedExecutable
-    ? { executablePath: path.resolve(packagedExecutable), args: [...testArgs,...extraArgs], env }
-    : { args: [path.resolve('.'),...testArgs,...extraArgs], env });
+    ? { executablePath: path.resolve(packagedExecutable), args: [...testArgs,`--qa-profile=${profile}`,...extraArgs], env }
+    : { args: [path.resolve('.'),...testArgs,`--qa-profile=${profile}`,...extraArgs], env });
 }
 
 async function expectEndpointClosed(origin: string) {
@@ -32,7 +32,7 @@ async function expectRuntimeReady(page: Page) {
 
 test('Electron réel démarre, persiste, impose une instance et arrête son backend', async () => {
   test.setTimeout(180_000);
-  const profile = await mkdtemp(path.join(os.tmpdir(), 'streamdashboard-electron-'));
+  const profile = await mkdtemp(path.join(os.tmpdir(), 'streamdashboard-qa-'));
   let application: ElectronApplication | undefined;
   try {
     await expectEndpointClosed(RUNTIME_ORIGIN);
@@ -104,7 +104,7 @@ test('Electron réel démarre, persiste, impose une instance et arrête son back
     if (packagedExecutable) {
       for (let attempt = 0; attempt < 20; attempt++) {
       await application.evaluate(({ BrowserWindow }) => { BrowserWindow.getAllWindows()[0].minimize(); });
-      const second = spawn(path.resolve(packagedExecutable), process.platform === 'linux' ? ['--no-sandbox'] : [], { env: { ...process.env, NODE_ENV: 'test', APPDATA: profile, XDG_CONFIG_HOME: profile }, stdio: 'ignore', windowsHide: true });
+      const second = spawn(path.resolve(packagedExecutable), [...(process.platform === 'linux' ? ['--no-sandbox'] : []),`--qa-profile=${profile}`], { env: { ...process.env, NODE_ENV: 'test', APPDATA: profile, XDG_CONFIG_HOME: profile }, stdio: 'ignore', windowsHide: true });
       const code = await new Promise<number | null>((resolve, reject) => {
         const timeout = setTimeout(() => { second.kill(); reject(new Error('La seconde instance ne s’est pas arrêtée.')); }, 8_000);
         second.once('error', reject);
@@ -143,7 +143,7 @@ test('Electron réel démarre, persiste, impose une instance et arrête son back
 
 test('20 démarrages réels, fermeture précoce et libération du port', async () => {
   test.setTimeout(180_000);
-  const profile = await mkdtemp(path.join(os.tmpdir(), 'streamdashboard-launch-stress-'));
+  const profile = await mkdtemp(path.join(os.tmpdir(), 'streamdashboard-qa-'));
   let application: ElectronApplication | undefined;
   try {
     await expectEndpointClosed(RUNTIME_ORIGIN);
@@ -171,7 +171,7 @@ test('20 démarrages réels, fermeture précoce et libération du port', async (
 
 
 test('agent sans fenêtre : services autonomes disponibles et fenêtre refermable sans arrêt du runtime', async () => {
- const profile=await mkdtemp(path.join(os.tmpdir(),'streamdashboard-agent-'));
+ const profile=await mkdtemp(path.join(os.tmpdir(),'streamdashboard-qa-'));
  let application: ElectronApplication | undefined;
  try {
   await expectEndpointClosed('http://127.0.0.1:48135');
