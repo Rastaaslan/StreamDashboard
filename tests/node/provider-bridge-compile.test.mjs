@@ -119,6 +119,43 @@ test('ProviderBridge compiles and enforces provider isolation, deletion and Stre
         }
       }
     }`,
+    'CloudPolicyTest.java': `package ${pkg}; import org.json.*; public class CloudPolicyTest {
+      static void check(boolean condition,String message){if(!condition)throw new AssertionError(message);}
+      static JSONObject metadata()throws Exception{return new JSONObject().put("title","Titre").put("description","").put("youtubeCategoryId","20").put("twitchGameId","").put("tags",new JSONArray());}
+      static JSONObject row(String id,String owner)throws Exception{return new JSONObject().put("id",id).put("snippet",new JSONObject().put("channelId",owner).put("title","Flux")).put("status",new JSONObject().put("streamStatus","active").put("lifeCycleStatus","ready")).put("contentDetails",new JSONObject().put("isReusable",true));}
+      static JSONObject items(JSONObject row)throws Exception{return new JSONObject().put("items",new JSONArray().put(row));}
+      public static void main(String[] args)throws Exception{
+        int[] writes={0};
+        CloudPlatforms cloud=new CloudPlatforms((provider,method,path,body)->{
+          check(provider.equals("youtube"),"Provider crossed");
+          if(!method.equals("GET")){writes[0]++;return row("video123456","owner");}
+          if(path.startsWith("channels?"))return items(row("owner","owner"));
+          if(path.startsWith("liveStreams?"))return items(row("stream","owner").put("cdn",new JSONObject().put("ingestionInfo","SECRET")));
+          return items(row("video123456","another"));
+        });
+        JSONObject streams=cloud.execute(new JSONObject().put("operation","youtube.streams"));
+        check(!streams.getJSONArray("items").getJSONObject(0).has("cdn"),"Ingestion secret escaped");
+        try{cloud.execute(new JSONObject().put("operation","youtube.bind").put("broadcastId","video123456").put("streamId","stream"));throw new AssertionError("Foreign broadcast accepted");}catch(IllegalArgumentException expected){}
+        check(writes[0]==0,"Mutation before ownership check");
+        JSONObject create=new JSONObject().put("operation","youtube.create").put("metadata",metadata()).put("streamId","stream").put("scheduledStartTime",java.time.Instant.now().plusSeconds(3600).toString()).put("privacyStatus","private");
+        try{cloud.execute(create);throw new AssertionError("Missing audience accepted");}catch(IllegalArgumentException expected){}
+        check(writes[0]==0,"Created before audience choice");
+        create.put("madeForKids",false);cloud.execute(create);check(writes[0]==1,"Creation count");
+        CloudPlatforms paginated=new CloudPlatforms((provider,method,path,body)->path.startsWith("channels?")?items(row("owner","owner")):items(row("stream","owner")).put("nextPageToken","again"));
+        try{paginated.execute(new JSONObject().put("operation","youtube.streams"));throw new AssertionError("Partial catalog accepted");}catch(IllegalStateException expected){}
+        CloudPlatforms mismatch=new CloudPlatforms((provider,method,path,body)->{
+          if(path.startsWith("channels?"))return items(row("owner","owner"));
+          return items(row("video123456","owner"));
+        });
+        try{mismatch.execute(new JSONObject().put("operation","youtube.metadata").put("broadcastId","video123456").put("metadata",metadata()));throw new AssertionError("Unconfirmed metadata accepted");}catch(IllegalStateException expected){}
+        String line="@id=m1;room-id=owner;user-id=u1;display-name=Alice;badges=moderator/1 :alice!alice@alice.tmi.twitch.tv PRIVMSG #channel :Bonjour";
+        JSONObject message=NativeTwitchChat.decode(line,"channel","owner");
+        check(message.getString("text").equals("Bonjour")&&message.has("receivedAt"),"Message lost");
+        check(message.getJSONObject("chatter").getString("login").equals("alice")&&message.getJSONObject("chatter").getJSONArray("badges").getJSONObject(0).getString("setId").equals("moderator"),"Chat schema mismatch");
+        check(NativeTwitchChat.decode(line,"other","owner")==null&&NativeTwitchChat.decode(line,"channel","another")==null,"Chat crossed accounts");
+        check(NativeTwitchChat.decode(":server NOTICE #channel :authentication failed","channel","owner")==null,"Notice rendered as chat");
+      }
+    }`,
     'MainActivity.java': `package ${pkg}; class MainActivity extends android.app.Activity { void dispatchProviderAuth(String p,boolean c) {} void dispatchProviderResult(String id,String result) {} }`,
     'DeepLinkRouter.java': `package ${pkg}; class DeepLinkRouter { enum Route { OAUTH } static Route route(String s) { return null; } }`,
   };
@@ -127,7 +164,8 @@ test('ProviderBridge compiles and enforces provider isolation, deletion and Stre
       const file = path.join(directory, name);
       mkdirSync(path.dirname(file), { recursive: true }); writeFileSync(file, source); return file;
     });
-    execFileSync('javac', ['-d', path.join(directory, 'classes'), ...files, 'android/app/src/main/java/com/rastaaslan/streamdashboard/remote/ProviderBridge.java', 'android/app/src/main/java/com/rastaaslan/streamdashboard/remote/GoogleAuthorizationFlow.java', 'android/app/src/main/java/com/rastaaslan/streamdashboard/remote/StreamlabsCloudClient.java'], { stdio: 'inherit' });
+    execFileSync('javac', ['-d', path.join(directory, 'classes'), ...files, 'android/app/src/main/java/com/rastaaslan/streamdashboard/remote/NativeTwitchChat.java', 'android/app/src/main/java/com/rastaaslan/streamdashboard/remote/CloudPlatforms.java', 'android/app/src/main/java/com/rastaaslan/streamdashboard/remote/ProviderBridge.java', 'android/app/src/main/java/com/rastaaslan/streamdashboard/remote/GoogleAuthorizationFlow.java', 'android/app/src/main/java/com/rastaaslan/streamdashboard/remote/StreamlabsCloudClient.java'], { stdio: 'inherit' });
     execFileSync('java', ['-cp', path.join(directory, 'classes'), pkg + '.DeletionPolicyTest'], { stdio: 'inherit' });
+    execFileSync('java', ['-cp', path.join(directory, 'classes'), pkg + '.CloudPolicyTest'], { stdio: 'inherit' });
   } finally { rmSync(directory, { recursive: true, force: true }); }
 });

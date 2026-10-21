@@ -1,3 +1,4 @@
+import { randomUuid } from '../shared/planning-engine.js';
 const esc=value=>String(value??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 
 /** Provider mutations always use the live connection, never the offline replay queue. */
@@ -50,7 +51,7 @@ export async function openYouTubePreparation(root,{request,metadata,expectedRevi
     event.preventDefault();event.stopPropagation();if(busy||!isCurrent())return;
     if(!attempt){
       const v=Object.fromEntries(new FormData(form));
-      attempt={id:crypto.randomUUID(),expectedRevision,channelId:channel.id,streamId:v.streamId,scheduledStartTime:new Date(v.scheduledStartTime).toISOString(),privacyStatus:v.privacyStatus,madeForKids:v.madeForKids==='true',metadata:{...metadata,title:v.title,description:v.description,youtubeCategoryId:v.youtubeCategoryId,tags:v.tags.split(',').map(t=>t.trim()).filter(Boolean)}};
+      attempt={id:randomUuid(),expectedRevision,channelId:channel.id,streamId:v.streamId,scheduledStartTime:new Date(v.scheduledStartTime).toISOString(),privacyStatus:v.privacyStatus,madeForKids:v.madeForKids==='true',metadata:{...metadata,title:v.title,description:v.description,youtubeCategoryId:v.youtubeCategoryId,tags:v.tags.split(',').map(t=>t.trim()).filter(Boolean)}};
       // Freeze the exact request for a retry after an ambiguous response.
       form.querySelectorAll('input,select,textarea').forEach(input=>{input.disabled=true;});
     }

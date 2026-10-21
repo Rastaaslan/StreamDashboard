@@ -1,3 +1,5 @@
+import {callDeviceBridge} from './device-bridge.js';
+import {randomUuid} from '../shared/planning-engine.js';
 import { createYouTubeChat } from './youtube-chat.js';
 import { createTwitchChat } from './twitch-chat.js';
 
@@ -31,11 +33,15 @@ export function createLiveMonitor(root, { native = false, configure = () => {}, 
   }
   const slots = Object.fromEntries(['video', 'youtube'].map(key => [key, get('[data-monitor-slot="' + key + '"]')]));
   const youtubeChat=createYouTubeChat(get('[data-youtube-api]'),{request,native});
-  const twitchChat = native ? { update() {}, destroy() {} } : createTwitchChat(get('[data-twitch-native]'), { request, configure });
-  if (native) {
-    const holder=get('[data-twitch-native]');holder.className='monitor-slot';slots.twitch=holder;
-    get('.monitor-native-twitch h3').textContent='Chat Twitch · session web';
-  }
+  const nativeRequest=async(path,body,method)=>{
+    const operation=path==='/api/v1/twitch/chat/state'?'twitchChatState':path==='/api/v1/twitch/chat/messages'?'twitchChatSend':'';
+    if(!operation)throw new Error('Opération chat inconnue.');
+    const result=await callDeviceBridge(globalThis.StreamDashboardProviders,operation,body?{...body,id:randomUuid()}:{});
+    if(result.ok===false)throw new Error(result.message||'Reconnectez le compte Twitch de cet appareil.');
+    return result;
+  };
+  const twitchChat = createTwitchChat(get('[data-twitch-native]'), { request:native?nativeRequest:request, configure });
+
 
 
   get('[data-youtube-web]').addEventListener('toggle', () => draw());
@@ -126,7 +132,7 @@ export function createLiveMonitor(root, { native = false, configure = () => {}, 
     const connect = get('[data-monitor-connect="twitch"]');
     connect.hidden = false; connect.disabled = Boolean(viewerFlight) || (source==='twitch'&&!twitchLogin());
     connect.textContent = viewerFlight ? 'Connexion ouverte…' : source==='youtube'?'Connexion YouTube dans le navigateur':'Connexion visionneuse';
-    twitchChat.update({ ...context, online: context.online === true && enabled, sourceLabel: state?.host?.hostname || '' });
+    twitchChat.update({ ...context, online: (native || context.online === true) && enabled, sourceLabel: state?.host?.hostname || '' });
     const selectedVideo=localStorage.getItem('sd2.monitor-video')||state?.configuration?.youtube?.broadcastId||'';
     youtubeChat.update({enabled,sourceKey:context.sourceKey,broadcastId:/^[a-zA-Z0-9_-]{11}$/.test(selectedVideo)?selectedVideo:''});
     if (!enabled) {
@@ -143,7 +149,6 @@ export function createLiveMonitor(root, { native = false, configure = () => {}, 
       ? login && 'https://player.twitch.tv/?channel=' + login + '&parent=' + parent + '&muted=true&autoplay=true'
       : video && 'https://www.youtube.com/embed/' + video + '?autoplay=1&mute=1&playsinline=1&origin=' + encodeURIComponent(location.origin);
     mount('video', videoUrl, 'Retour plateforme ' + (source === 'twitch' ? 'Twitch' : 'YouTube'), source === 'twitch' ? twitchMissing : youtubeMissing);
-    if(native)mount('twitch',login&&'https://www.twitch.tv/embed/'+login+'/chat?parent='+parent,'Chat Twitch','Choisissez votre chaîne Twitch. Si le chat intégré est restreint, utilisez le navigateur externe.');
     if (get('[data-youtube-web]').open) mount('youtube', video && 'https://www.youtube.com/live_chat?v=' + video + '&embed_domain=' + parent, 'Chat YouTube', youtubeMissing);
     else { slots.youtube.replaceChildren(); delete slots.youtube.dataset.identity; }
     link('video', source === 'twitch' ? login && 'https://www.twitch.tv/' + login : video && 'https://www.youtube.com/watch?v=' + video);

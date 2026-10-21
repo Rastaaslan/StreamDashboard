@@ -184,7 +184,8 @@ export class YouTubeClient {
     this.assertSelection(selected);
     const tokens=await this.tokens(selected);
     this.assertSelection(selected);
-    const response=await this.request('https://www.googleapis.com/youtube/v3/'+path,{...init,headers:{Authorization:'Bearer '+tokens.accessToken,'Content-Type':'application/json'},signal:AbortSignal.timeout(15_000)})
+    init.signal?.throwIfAborted();
+    const response=await this.request('https://www.googleapis.com/youtube/v3/'+path,{...init,headers:{Authorization:'Bearer '+tokens.accessToken,'Content-Type':'application/json'},signal:init.signal ? AbortSignal.any([init.signal, AbortSignal.timeout(15_000)]) : AbortSignal.timeout(15_000)})
       .catch(()=>{throw new YouTubeApiError(0,'networkError');});
     this.assertSelection(selected);
     if(!response.ok)throw await responseError(response);
@@ -323,7 +324,8 @@ export class YouTubeClient {
     if (typeof snippet.title!=='string' || typeof snippet.description!=='string' || typeof snippet.categoryId!=='string' || (snippet.tags!==undefined && (!Array.isArray(snippet.tags) || snippet.tags.some(tag=>typeof tag!=='string')))) throw new YouTubeApiError(200,'invalidResponse');
     return {broadcastId:target.id,channelId:snippet.channelId,title:snippet.title,description:snippet.description,youtubeCategoryId:snippet.categoryId,tags:[...(snippet.tags??[])]};
   }
-  async transition(start:boolean,operationId='') {
+  async transition(start:boolean,operationId='',signal?:AbortSignal) {
+    signal?.throwIfAborted();
     const selected=this.selection(),key=JSON.stringify([selected.clientId,selected.channelId,selected.broadcastId,start,operationId]);
     let target:Broadcast;
     try{target=await this.target(selected);}
@@ -344,12 +346,14 @@ export class YouTubeClient {
       this.assertSelection(selected);
       if(streams.items[0]?.status.streamStatus!=='active')return;
     }
+    // A stop may have superseded this start while a read was in flight.
+    signal?.throwIfAborted();
     // Another caller may have sent the same operation while ingestion was being read.
     if(this.transitionAttempts.has(key))return;
     this.transitionAttempts.add(key);
     if(this.transitionAttempts.size>256)this.transitionAttempts.delete(this.transitionAttempts.values().next().value!);
     try{
-      await this.api('liveBroadcasts/transition?part=id,status&id='+encodeURIComponent(target.id)+'&broadcastStatus='+(start?'live':'complete'),{method:'POST'},selected);
+      await this.api('liveBroadcasts/transition?part=id,status&id='+encodeURIComponent(target.id)+'&broadcastStatus='+(start?'live':'complete'),{method:'POST',signal},selected);
     }catch(error){
       if(error instanceof YouTubeApiError&&error.reason==='redundantTransition'){
         let observed:Broadcast;

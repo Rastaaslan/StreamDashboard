@@ -1168,14 +1168,21 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
   };
   let platformObservation: Promise<void> | undefined;
   let platformObservedAt = 0;
+  const platformRetryAt: Record<'twitch'|'youtube', number> = {twitch:0,youtube:0};
   const observePlatforms = () => {
     if (!capabilityEnabled('cloud')) return Promise.resolve();
     void observeOutputs().catch(logError);
     if (platformObservation) return platformObservation;
     if (Date.now() - platformObservedAt < 15_000) return Promise.resolve();
     platformObservation = Promise.allSettled((['twitch', 'youtube'] as const).map(async platform => {
+      if (Date.now() < platformRetryAt[platform]) return;
       try { platformLive[platform] = platform === 'youtube' ? await youtube.broadcastState() : { live: (await twitch.getLiveState()).isLive, observedAt: new Date().toISOString() }; }
-      catch (error) { platformLive[platform] = { live: null, observedAt: new Date().toISOString(), error: error instanceof Error ? error.message : 'État indisponible' }; }
+      catch (error) {
+        // This only throttles background observation; explicit local stop stays available.
+        const quota = error instanceof YouTubeApiError && ['quotaExceeded','dailyLimitExceeded','rateLimitExceeded'].includes(error.reason);
+        platformRetryAt[platform] = Date.now() + (quota ? 300_000 : 30_000);
+        platformLive[platform] = { live: null, observedAt: new Date().toISOString(), error: (error instanceof Error ? error.message : 'État indisponible') + (quota ? ' Nouvelle vérification automatique dans cinq minutes.' : '') };
+      }
     })).then(() => { platformObservedAt = Date.now(); }).finally(() => { platformObservation = undefined; });
     return platformObservation;
   };
@@ -1205,7 +1212,7 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
       outputsObservedAt = 0;
       await observeOutputs();
     },
-    settle: async (platform, start, requestId) => { if (platform === 'youtube') await youtube.transition(start, requestId); },
+    settle: async (platform, start, requestId, signal) => { if (platform === 'youtube') await youtube.transition(start, requestId, signal); },
     metadata: async (platform, value) => {
       if (platform === 'youtube') { await youtube.update(value); return; }
       await twitch.updateChannelMetadata({ title: value.title, ...(value.twitchGameId ? { gameId: value.twitchGameId } : {}), tags: value.tags });

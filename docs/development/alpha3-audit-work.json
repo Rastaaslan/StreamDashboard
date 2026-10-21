@@ -1,0 +1,21 @@
+{
+  "version": 1,
+  "scope": "StreamDashboard alpha.3 — audit A01 à A11",
+  "baseCommit": "6958e5bedc60932342566efd787df3c44b5092b8",
+  "authorization": "Damien : fait le developement en utilisant sentinel et codex de facon cost efficient",
+  "executionPolicy": {
+    "parallelCodingJobs": 1,
+    "maximumIterationsPerJob": 1,
+    "automaticProviderRetry": false,
+    "tests": "targeted-first; full integration once changes converge",
+    "deployment": "candidate packages; installed versions preserved"
+  },
+  "sentinel": {"service": "active", "campaignAdmitted": false, "blocker": "Protected administrator admission unavailable in this session; no access control changed"},
+  "codexbridge": {"jobStarted": false, "attempts": 1, "blocker": "Exact alpha.2 commit unavailable to protected CodexBridge checkout; create_job rejected before launch"},
+  "work": [
+    {"ids": ["A01","A02"], "status": "implemented-targeted-tests-passed", "tests": 74},
+    {"ids": ["A03","A04"], "status": "implemented-validation-pending"},
+    {"ids": ["A05","A06"], "status": "implementation-in-progress"},
+    {"ids": ["A07","A08","A09","A10","A11"], "status": "implementation-in-progress"}
+  ]
+}

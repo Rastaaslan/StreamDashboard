@@ -1,3 +1,4 @@
+import {createDevicePlatforms} from './device-platforms.js';
 import { callDeviceBridge } from './device-bridge.js';
 import { createDeviceStreamlabs } from './device-streamlabs.js';
 import {parseWizeBotCatalog} from '../shared/planning-engine.js';
@@ -14,6 +15,7 @@ export function createDeviceServices({store,autonomy,request,bridge=globalThis.S
   const result=await callDeviceBridge(bridge,'deviceService',payload);
   if(result.ok===false)throw Object.assign(new Error(result.message||'Service indisponible.'),{code:result.code});return result;
  }
+ const platforms=bridge?createDevicePlatforms({store,bridge,enabled}):null;
  const streamlabs=bridge?createDeviceStreamlabs({store,call}):null;
  const configPaths={'/api/v1/discord/token':'discord','/api/v1/supports/streamlabs/config':'streamlabs','/api/v1/wizebot/config':'wizebot'};
  async function catalog(refresh=false){
@@ -27,6 +29,7 @@ export function createDeviceServices({store,autonomy,request,bridge=globalThis.S
   await store.draft('wizebotCatalog',result);return result;
  }
  async function route(path,body,method){
+  if(platforms){const value=await platforms.route(path,body,method);if(value!==undefined)return value;}
   if(/\/wizebot\/(?:command|edit|refresh|context)$/.test(path))requireRole('chat');
   if(streamlabs){const value=await streamlabs.route(path,body,method);if(value!==undefined)return value;}
   if(configPaths[path])return bridge?call({provider:configPaths[path],operation:'configure',value:body}):request(path,body,method);

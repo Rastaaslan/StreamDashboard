@@ -1,4 +1,4 @@
-const CACHE = 'streamdashboard-mobile-v39-setup-migration';
+const CACHE = 'streamdashboard-mobile-v40-youtube-preparation';
 const PATHS = new Set([
   '/mobile/',
   '/mobile/index.html',
@@ -36,6 +36,7 @@ const PATHS = new Set([
   '/mobile/control/autonomy.js',
   '/mobile/control/control.css',
   '/mobile/control/control.js',
+  '/mobile/control/youtube-preparation-ui.js',
   '/mobile/control/controller-bindings.js',
   '/mobile/control/device-credentials.js',
   '/mobile/control/peer-request.js',
@@ -62,6 +63,7 @@ const PATHS = new Set([
   '/mobile/control/action-routing.js',
   '/mobile/control/action-routing-ui.js',
   '/mobile/control/device-accounts.js',
+  '/mobile/control/device-platforms.js',
   '/mobile/control/device-audio.js',
   '/mobile/control/native-device-audio.js',
   '/mobile/control/local-executor.js',

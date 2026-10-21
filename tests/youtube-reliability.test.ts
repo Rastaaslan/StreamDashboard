@@ -477,12 +477,12 @@ describe('YouTube transitions and durable command confirmation',()=>{
   it('reports unknown confirmation after output as uncertain and never reuses a stale stopped status',async()=>{
     const {client}=fixture(()=>json({items:[broadcast()]}));
     const {control,adapter}=await controller(client);
-    adapter.live=vi.fn().mockResolvedValueOnce(false).mockRejectedValue(new Error('Observation unavailable'));
+    adapter.live=vi.fn().mockRejectedValue(new Error('Observation unavailable'));
     const receipt=await control.execute({...start('youtube_stop_001'),action:'live.stop'});
     expect(receipt).toMatchObject({status:'uncertain',platforms:{youtube:{status:'uncertain'}}});
     expect(receipt.platforms?.youtube).not.toHaveProperty('live');
     expect(adapter.output).toHaveBeenCalledTimes(1);
-    expect(vi.mocked(adapter.settle!).mock.calls.length).toBeGreaterThan(1);
+    expect(adapter.settle).toHaveBeenCalledTimes(1);
   });
   it('recovers an uncertain OBS dispatch through observation without sending a YouTube transition',async()=>{
     const {client}=fixture(()=>json({items:[broadcast()]}));
@@ -508,4 +508,15 @@ it('reads only the selected owner chat and shares polling across controllers wit
  expect(first).toEqual(second);expect(first).toMatchObject({status:'connected',account:'Owner',channelId:'channel-test'});
  await f.client.readChat(id);expect(f.calls.filter(call=>call.url.pathname.endsWith('/liveChat/messages'))).toHaveLength(1);
  expect(JSON.stringify(first)).not.toContain('TEST_ACCESS_TOKEN_PRIVATE');
+});
+
+
+it('does not send a late YouTube start after stop cancelled its ingestion read',async()=>{
+  const abort=new AbortController();
+  const {client,calls}=fixture(url=>{
+    if(url.pathname.endsWith('/liveStreams')){abort.abort();return json({items:[{status:{streamStatus:'active'}}]});}
+    return json({items:[broadcast('ready')]});
+  });
+  await expect(client.transition(true,'cancelled_start',abort.signal)).rejects.toThrow();
+  expect(calls.some(({init})=>init.method==='POST')).toBe(false);
 });

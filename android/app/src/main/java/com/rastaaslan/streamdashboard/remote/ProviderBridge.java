@@ -17,7 +17,7 @@ import org.json.*;
 
 /** Narrow, local-origin-only provider API. OAuth credentials never cross this bridge. */
 public final class ProviderBridge {
-  private static final String TWITCH_SCOPES = "channel:manage:schedule user:write:chat";
+  private static final String TWITCH_SCOPES = "channel:manage:schedule channel:manage:broadcast user:write:chat chat:read chat:edit";
   private static final String GOOGLE_SCOPES = "https://www.googleapis.com/auth/calendar.events https://www.googleapis.com/auth/calendar.readonly";
   private static final String DEVICE_PENDING = "twitch_device_pending";
   private final Map<String, JSONObject> diagnostics = new java.util.concurrent.ConcurrentHashMap<>();
@@ -25,6 +25,9 @@ public final class ProviderBridge {
   private final GoogleAuthorizationAdapter googleAdapter, youtubeAdapter;
   private final Activity activity;
   private final SecureCredentialStore credentials;
+  private final NativeTwitchChat nativeChat=new NativeTwitchChat();
+  private String chatToken="";
+  private JSONObject chatUser;
 
   ProviderBridge(Activity activity) {
     this.activity = activity; credentials = new SecureCredentialStore(activity);
@@ -37,7 +40,7 @@ public final class ProviderBridge {
       restoreGoogleAccount("youtube");
     }, "provider-restore").start();
   }
-  private static final List<String> YOUTUBE_SCOPES = Collections.singletonList("https://www.googleapis.com/auth/youtube.readonly");
+  private static final List<String> YOUTUBE_SCOPES = Collections.singletonList("https://www.googleapis.com/auth/youtube.force-ssl");
   private boolean googleFamily(String provider) { return provider.equals("google") || provider.equals("youtube"); }
   private GoogleAuthorizationFlow googleFlow(String provider) { return provider.equals("youtube") ? youtubeAuth : googleAuth; }
   private void restoreGoogleAccount(String provider) {
@@ -65,12 +68,12 @@ public final class ProviderBridge {
   }
 
   private final java.util.concurrent.ExecutorService operations = new java.util.concurrent.ThreadPoolExecutor(1,1,0L,java.util.concurrent.TimeUnit.MILLISECONDS,new java.util.concurrent.ArrayBlockingQueue<Runnable>(32));
-  void close(){googleAuth.logout();youtubeAuth.logout();operations.shutdown();}
+  void close(){nativeChat.clear();googleAuth.logout();youtubeAuth.logout();operations.shutdown();}
   @JavascriptInterface public String requestAsync(String raw) {
     try {
       if(raw==null||raw.length()>14_100_000)throw new IllegalArgumentException();
       JSONObject input=new JSONObject(raw);String id=input.getString("id"),method=input.getString("method");
-      Set<String> allowed=Set.of("twitchTest","googleTest","youtubeTest","youtubeStatus","youtubeChatBroadcast","youtubeChatMessages","twitchStatus","googleStatus","twitchAuthorize","googleAuthorize","youtubeAuthorize","twitchPoll","twitchLogout","googleLogout","youtubeLogout","twitchSearchCategories","twitchCreatePlanning","twitchUpdatePlanning","twitchDeletePlanning","googleCreatePlanning","googleUpdatePlanning","googleDeletePlanning","twitchReconcilePlanning","googleReconcilePlanning","googleCalendars","googleEvents","googleReadPlanning","twitchReadPlanning","deviceService","wizebotSendEdit","wizebotSendCommand");
+      Set<String> allowed=Set.of("twitchChatState","twitchChatSend","platformService","twitchTest","googleTest","youtubeTest","youtubeStatus","youtubeChatBroadcast","youtubeChatMessages","twitchStatus","googleStatus","twitchAuthorize","googleAuthorize","youtubeAuthorize","twitchPoll","twitchLogout","googleLogout","youtubeLogout","twitchSearchCategories","twitchCreatePlanning","twitchUpdatePlanning","twitchDeletePlanning","googleCreatePlanning","googleUpdatePlanning","googleDeletePlanning","twitchReconcilePlanning","googleReconcilePlanning","googleCalendars","googleEvents","googleReadPlanning","twitchReadPlanning","deviceService","wizebotSendEdit","wizebotSendCommand");
       if(!id.matches("[a-zA-Z0-9_-]{8,100}")||!allowed.contains(method))throw new IllegalArgumentException();
       String payload=input.getJSONObject("payload").toString();
       operations.execute(() -> {
@@ -82,6 +85,46 @@ public final class ProviderBridge {
       });
       return ok().toString();
     }catch(Exception error){return failure("BUSY","Service occupé ou requête invalide. Aucune opération ajoutée.");}
+  }
+  @JavascriptInterface public synchronized String twitchChatState(String ignored){return guarded(()->{
+    JSONObject session=token("twitch");String access=session.getString("access_token");
+    if(chatUser==null||!access.equals(chatToken)){
+      chatUser=request("GET","https://api.twitch.tv/helix/users",null,null,Map.of("Authorization","Bearer "+access,"Client-Id",BuildConfig.TWITCH_ANDROID_CLIENT_ID)).getJSONArray("data").getJSONObject(0);chatToken=access;
+    }
+    String scopes=session.optJSONArray("scope")!=null?session.getJSONArray("scope").toString():session.optString("scope");
+    return nativeChat.state(chatUser.getString("id"),chatUser.getString("login"),chatUser.optString("display_name"),access,scopes.contains("chat:read"),scopes.contains("user:write:chat"));
+  });}
+  @JavascriptInterface public synchronized String twitchChatSend(String raw){return guarded(()->{
+    JSONObject input=body(raw);String id=input.optString("id"),message=input.optString("message").trim();
+    if(!id.matches("[A-Za-z0-9_-]{8,100}")||message.isEmpty()||message.length()>500||message.matches("(?s).*[\\x00-\\x1f\\x7f].*"))throw new ProviderException("INVALID_PAYLOAD","Message invalide.");
+    JSONObject session=token("twitch");String access=session.getString("access_token");Map<String,String> headers=Map.of("Authorization","Bearer "+access,"Client-Id",BuildConfig.TWITCH_ANDROID_CLIENT_ID);
+    JSONObject user=request("GET","https://api.twitch.tv/helix/users",null,null,headers).getJSONArray("data").getJSONObject(0);String owner=user.getString("id");
+    if(!owner.equals(input.optString("expectedBroadcasterId")))throw new ProviderException("REAUTH_REQUIRED","Le compte Twitch a changé.");
+    String key="chat_message_"+id,saved=credentials.get(key);if(!saved.isEmpty())return new JSONObject(saved);
+    JSONObject receipt=ok().put("status","uncertain").put("message","Message non confirmé ; vérifiez le chat avant de recommencer.");credentials.put(key,receipt.toString());
+    JSONObject response=request("POST","https://api.twitch.tv/helix/chat/messages",new JSONObject().put("broadcaster_id",owner).put("sender_id",owner).put("message",message).toString(),null,headers).getJSONArray("data").getJSONObject(0);
+    if(response.optBoolean("is_sent"))receipt.put("status","sent").put("messageId",response.getString("message_id"));else receipt.put("status","failed").put("message","Message refusé par Twitch.");
+    credentials.put(key,receipt.toString());return receipt;
+  });}
+  @JavascriptInterface public String platformService(String raw) {
+    return guarded(() -> {
+      JSONObject input=body(raw);String operation=input.optString("operation");
+      if(!Set.of("youtube.channels","youtube.broadcasts","youtube.streams","youtube.create","youtube.bind","youtube.metadata","twitch.metadata").contains(operation))throw new ProviderException("INVALID_PAYLOAD","Opération inconnue.");
+      String selectedProvider=operation.startsWith("youtube.")?"youtube":"twitch";
+      JSONObject session=token(selectedProvider);
+      String account=youtubeAuth.account(),twitchSession=credentials.get("twitch");
+      Map<String,String> headers=new HashMap<>();headers.put("Authorization","Bearer "+session.getString("access_token"));
+      if(selectedProvider.equals("twitch"))headers.put("Client-Id",BuildConfig.TWITCH_ANDROID_CLIENT_ID);
+      return new CloudPlatforms((provider,method,path,payload)->{
+        if(provider.equals("youtube")&&!account.equals(youtubeAuth.account()))throw new ProviderException("REAUTH_REQUIRED","Le compte YouTube a changé.");
+        if(provider.equals("twitch")&&!twitchSession.equals(credentials.get("twitch")))throw new ProviderException("REAUTH_REQUIRED","Le compte Twitch a changé. Actualisez avant de réessayer.");
+        if(!provider.equals(selectedProvider))throw new ProviderException("INVALID_PAYLOAD","Provider incorrect.");
+        JSONObject response=request(method,(provider.equals("youtube")?"https://www.googleapis.com/youtube/v3/":"https://api.twitch.tv/helix/")+path,payload==null?null:payload.toString(),null,headers);
+        if(provider.equals("youtube")&&!account.equals(youtubeAuth.account()))throw new ProviderException("REAUTH_REQUIRED","Le compte YouTube a changé. Résultat à vérifier.");
+        if(provider.equals("twitch")&&!twitchSession.equals(credentials.get("twitch")))throw new ProviderException("REAUTH_REQUIRED","Le compte Twitch a changé. Résultat à vérifier.");
+        return response;
+      }).execute(input);
+    });
   }
   @JavascriptInterface public String twitchTest(String ignored) { return testProvider("twitch"); }
   @JavascriptInterface public String googleTest(String ignored) { return testProvider("google"); }
@@ -133,7 +176,7 @@ public final class ProviderBridge {
   @JavascriptInterface public String youtubeAuthorize(String ignored) { return authorizeGoogle(true); }
   @JavascriptInterface public synchronized String twitchPoll(String ignored) { return guarded(() -> pollTwitchDevice()); }
   @JavascriptInterface public String youtubeTest(String ignored) { return testProvider("youtube"); }
-  @JavascriptInterface public synchronized String twitchLogout(String ignored) { diagnostics.remove("twitch"); credentials.clear("twitch"); credentials.clear(DEVICE_PENDING); return ok().toString(); }
+  @JavascriptInterface public synchronized String twitchLogout(String ignored) { nativeChat.clear();chatToken="";chatUser=null;diagnostics.remove("twitch"); credentials.clear("twitch"); credentials.clear(DEVICE_PENDING); return ok().toString(); }
   @JavascriptInterface public String googleLogout(String ignored) { return logoutGoogleAccount("google"); }
   @JavascriptInterface public String youtubeLogout(String ignored) { return logoutGoogleAccount("youtube"); }
   private String logoutGoogleAccount(String provider) { return guarded(() -> {
