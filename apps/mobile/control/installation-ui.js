@@ -11,8 +11,8 @@ export async function createInstallationUI({ device, native, localEndpoint = '',
   let pending;
   const reload = async () => { current = desktop?.getInstallation ? await desktop.getInstallation() : local.read(); return current; };
   const own = () => current.devices.find(d => d.id === current.localDeviceId);
-  const apply = async changes => {
-    const plan=desktop?.changeInstallation?await desktop.changeInstallation(changes,current.revision):await local.change(changes,current.revision);
+  const apply = async (changes,expectedRevision=current.revision) => {
+    const plan=desktop?.changeInstallation?await desktop.changeInstallation(changes,expectedRevision):await local.change(changes,expectedRevision);
     current=plan.next;return plan;
   };
   function open() {

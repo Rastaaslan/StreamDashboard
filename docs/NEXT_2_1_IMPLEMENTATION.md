@@ -1,7 +1,7 @@
 # StreamDashboard Next 2.1 — réalisation transversale
 
 Version de travail : **2.1.0-alpha.1**, non installée sur les postes stables.
-Intégration : `work/streamdashboard-next21-completion`, issue des socles intégrés `d1743f0` et `ea26952`.
+Intégration : `work/streamdashboard-next21-universal`, réunie dans le checkout `StreamDashboard-Next-integrated`.
 Les exigences P0 de [NEXT_2_1_REQUIREMENTS.md](NEXT_2_1_REQUIREMENTS.md) font autorité.
 
 ## Code intégré
@@ -34,6 +34,8 @@ Les exigences P0 de [NEXT_2_1_REQUIREMENTS.md](NEXT_2_1_REQUIREMENTS.md) font au
 - **Android comme exécuteur HTTPS** : certificat dans Android Keystore, association temporaire à usage unique, autorisations et révocation locales. Un PC peut déclencher les sons présents sur Android, arrêter toutes ses lectures et ouvrir ses écrans Twitch/YouTube depuis Mon installation. Les commandes conservent leurs reçus après redémarrage, sans répétition automatique. Le runtime local reste disponible lorsque l’interface consulte un autre appareil.
 - **Configuration Android depuis un contrôleur** : synchronisation des boutons, modèles, profil, préférences, réglages des sons déjà importés et planning avec l’orchestrateur local. Les conflits sont conservés ; une écriture interrompue reste à vérifier. Les secrets et réglages de comptes restent configurés sur leur appareil.
 
+- **Basculement coordonné** : un assistant commun réunit configurations, macros, fichiers audio, responsabilités de planning et destinations des commandes. La reprise et le retour arrière sont journalisés ; les événements reviennent avec leurs modifications récentes. Voir [le bilan dédié](qa/2026-10-21-setup-migration.md).
+
 ## Frontières actuelles
 
 La continuité des copies locales lors d’un changement d’adresse est décrite dans la [preuve de conservation des espaces](qa/2026-10-21-workspace-identity.md). Les brouillons, modifications en attente, favoris et destinations de boutons retrouvent le même espace après association de sa nouvelle adresse.
@@ -42,10 +44,10 @@ Ce code est une version d’essai, pas la version finale universelle. Aucune cel
 
 Restent à implémenter ou à compléter dans **ce même chantier 2.1** :
 
-- Qualification matérielle restante du transport TLS : Android, rotation du certificat, veille/reprise et changement de réseau. L’association Windows dans les deux sens, le refus d’une mauvaise empreinte, la fermeture de fenêtre et le redémarrage des deux PC ont été vérifiés sur FIXE et le laptop. Les anciennes adresses HTTP demandent une nouvelle association HTTPS avant de transmettre un identifiant. La découverte réseau automatique facultative reste absente.
-- Qualification matérielle du cycle de vie des rôles et déplacement transactionnel de leurs responsabilités entre appareils. Le contrôle des moteurs locaux est implémenté ; le transfert complet des responsabilités reste à réaliser.
-- Qualification sur téléphone de l’exécuteur Android audio/affichage implémenté. Il nécessite l’application ouverte et ne promet pas une exécution permanente après fermeture ou suspension par Android. L’import des fichiers audio se fait encore directement sur Android ; le transfert de fichiers vers le récepteur Android reste à compléter. Les macros Windows des contenus autonomes compatibles sont implémentées ; leur qualification matérielle reste à compléter.
-- Restauration après interruption couvrant l’ensemble des magasins et effets externes, pas seulement le fichier d’installation ; qualification complète des transitions et migration d’une copie réelle RC11.7.
+- Qualification matérielle restante du transport TLS : Android, rotation du certificat, veille/reprise et changement de réseau. L’association Windows dans les deux sens, le refus d’une mauvaise empreinte, la fermeture de fenêtre et le redémarrage des deux PC ont été vérifiés sur FIXE et le laptop. Les anciennes adresses HTTP demandent une nouvelle association HTTPS avant de transmettre un identifiant. La découverte locale Windows/Android est implémentée ; elle propose une adresse, puis exige une association authentifiée.
+- Qualification matérielle du cycle de vie des rôles et déplacement transactionnel de leurs responsabilités entre appareils. Le contrôle des moteurs locaux, les transferts de planning et le basculement coordonné des contenus et destinations sont implémentés. Les rôles physiques sont activés sur chaque appareil ; l’assistant vérifie leur état et ne redémarre pas un agent distant.
+- Qualification sur téléphone de l’exécuteur Android audio/affichage implémenté. Il nécessite l’application ouverte et ne promet pas une exécution permanente après fermeture ou suspension par Android. L’import direct et les transferts audio bidirectionnels sont implémentés, avec empreintes, reçus et reprise. Les macros Windows des contenus autonomes compatibles sont implémentées ; leur qualification matérielle reste à compléter.
+- Qualification matérielle complète de la restauration après interruption. La coordination entre configurations, fichiers, planning et destinations est implémentée avec compensation, comparaison stricte et protection des modifications ultérieures ; elle ne prétend pas annuler des effets externes. La migration complète d’une copie réelle RC11.7, avec cookies et accès aux comptes chiffrés, reste à qualifier.
 - Qualification matérielle Windows/Android, des sessions web et des comptes séparés ; chat YouTube pendant une diffusion expressément autorisée ; installation extérieure, mise à jour et retour arrière.
 
 Le téléphone n’était pas présent dans la liste ADB lors du contrôle du 21 octobre. Les applications stables de FIXE et du laptop sont restées actives ; aucun OBS n’a été arrêté et aucun live/message de chat n’a été déclenché. L’ouverture externe d’un lecteur ne prouve jamais la connexion de sa session intégrée.

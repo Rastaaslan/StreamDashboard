@@ -1,3 +1,4 @@
+import {createSetupMigrationUI} from './setup-migration-ui.js';
 import {createConfigurationTransferUI} from './configuration-transfer-ui.js';
 import {configurationTransferSupport} from '../shared/configuration-transfer.js';
 import {createExecutorSync} from './executor-sync.js';
@@ -307,7 +308,7 @@ function settingsPage(){
  if(tab==='platforms')content=`<h2>Twitch et YouTube</h2><p class="small muted">Twitch : ${!online?'état actuel inconnu':data.host.state.twitch.connected?'connecté':'à connecter'}. Les comptes et clés de diffusion restent sur le PC de stream.</p><div class="inline"><button class="secondary" data-task="connect-twitch">Connecter Twitch</button><button class="secondary" data-task="connect-youtube">Connecter YouTube</button></div><form id="platform-form" data-revision="${c.revision}" class="spacer">${input('Client ID Google Desktop pour YouTube','clientId',c.youtube.clientId)}<p class="small muted">La connexion Google s’ouvre sur le PC de stream. Utilisez le même projet que celui du Client Secret Google enregistré.</p><div class="form-grid">${input('Diffusion YouTube sélectionnée','broadcastId',c.youtube.broadcastId)}${input('Chaîne YouTube sélectionnée','channelId',c.youtube.channelId)}</div><p id="youtube-selection-state" class="small ${c.youtube.broadcastId?'succeeded':'warn'}" role="status">${c.youtube.broadcastId?'Choix enregistré : '+esc(c.youtube.broadcastId):'Aucune diffusion YouTube sélectionnée. Choisissez celle que vous avez créée dans YouTube Studio.'}</p><button type="button" class="secondary" data-task="youtube-broadcasts">Choisir une diffusion YouTube</button><h3 class="spacer">Sorties de multidiffusion OBS</h3><p class="small muted">Choisissez les sorties réellement utilisées. Une sortie principale partagée arrête les deux destinations lorsqu’elle est arrêtée.</p>${['twitch','youtube'].map(p=>`<div class="form-grid">${select(`Sortie ${p}`,`${p}-kind`,[['unconfigured','À configurer'],['main','Sortie principale OBS'],['output','Sortie nommée OBS'],['aitum-suite','Aitum Stream Suite']],c.outputs[p].kind)}${input(`Nom exact de la sortie ${p}`,`${p}-name`,c.outputs[p].name)}</div>`).join('')}<button type="button" class="secondary" data-task="outputs">Détecter les sorties OBS</button><div id="output-list" class="small muted"></div><div class="form-actions"><button>Enregistrer les réglages de diffusion</button></div></form>`;
  if(tab==='profile')content=`<h2>Profil et préférences</h2><form id="profile-settings" data-revision="${esc(data.host.settingsRevision)}">${input('Nom affiché','streamerName',settings.streamerName)}${select('Accent','accent',['violet','cyan','rose'].map(x=>[x,x]),settings.accent)}${check('Confirmer l’arrêt du live','confirmStop',settings.confirmStop)}${input('Récompenses Twitch Streamer Ping (IDs séparés par une virgule)','streamerPingRewardIds',(settings.streamerPingRewardIds||[]).join(','))}<label>Préférences de tags (JSON)<textarea name="tagPreferences">${esc(JSON.stringify(settings.tagPreferences||{},null,2))}</textarea></label><div class="form-actions"><button>Enregistrer</button></div></form><details><summary>Profil complet, modules, apparence et paramètres avancés</summary><button class="secondary" data-task="profile-json">Ouvrir l’éditeur du profil</button></details>`;
  if(tab==='integrations')content=`<h2>Connexions et interactions</h2><p class="small muted">${server?'Les réglages s’appliquent à la régie sélectionnée.':'Vos données et comptes restent sur cet appareil. Google et Twitch fonctionnent directement par Internet.'}</p><div class="grid form-grid"><section><h3>Google Calendar</h3><button class="secondary" data-task="google-connect">Connecter Google</button><button class="secondary spacer" data-task="google-calendars">Choisir le calendrier</button><button class="secondary spacer" data-task="google-secret">Configurer le Client Secret Google</button></section><section><h3>Bibliothèque de sons</h3><button class="secondary" data-task="sounds">Gérer les sons ${server?'OBS':'de cet appareil'}</button>${server?'<button class="secondary spacer" data-task="sound-setup">Préparer les sources audio OBS</button>':''}</section><section><h3>Discord</h3><button class="secondary" data-task="discord">Configurer le bot et le salon</button></section><section><h3>Streamlabs et WizeBot</h3><button class="secondary" data-task="streamlabs">Configurer Streamlabs</button><button class="secondary spacer" data-task="wizebot-catalog">Commandes WizeBot</button></section><section><h3>Automatisations</h3><button class="secondary" data-task="automations">Gérer les règles</button></section></div>`;
- if(tab==='devices')content=`<h2>Appareils et comptes</h2><div class="table-wrap"><table><tr><th>Appareil</th><th>Usage</th></tr><tr><td>${esc(device.name)}</td><td>${esc({stream:'Régie de stream',control:'Pilotage',mobile:'Stream Deck'}[device.role])}</td></tr><tr><td>${esc(server||'Aucune régie associée')}</td><td>${!server?'Espace autonome':online?'Régie connectée':'Copie locale disponible'}</td></tr></table></div><div class="form-actions"><button data-task="device-setup">Mon installation</button><button class="secondary" data-task="planning-handoff">Déplacer le planning</button><button class="secondary" data-task="configuration-copy">Copier les configurations et macros</button><button class="secondary" data-task="sound-library">Copier une bibliothèque audio</button><button data-task="device-accounts">Mes comptes sur cet appareil</button><button class="secondary" data-task="connection">Associer une régie</button>${localEndpoint||data.host.local||deviceExecutor?'<button data-task="pairing">Créer un code d’association</button><button class="secondary" data-task="local-permissions">Permissions des appareils</button><button class="secondary" data-task="transport">Connexion sécurisée de cet agent</button>':''}</div><div class="form-actions"><button class="secondary" data-task="use-local">Ouvrir mon espace local</button>${localStorage.getItem('sd2.server')?'<button class="secondary" data-task="use-paired">Retrouver ma régie</button>':''}${server?'<button class="secondary" data-task="import-local">Transférer mes créations locales</button>':''}</div><h3 class="spacer">Macros clavier</h3><p class="small muted">Affectez les touches de votre clavier aux raccourcis affichés dans Boutons & macros. Activez le fonctionnement en arrière-plan dans Mon installation pour conserver les macros sans fenêtre sur l’appareil qui reçoit ces touches. Pour un BlackWidow V4 X : utilisez Synapse pour associer M1 à M6 à Ctrl + Alt + Maj + F1 à F6, une pression simple.</p><button class="secondary" data-task="shortcut-status">Vérifier les raccourcis sur ce PC</button><p id="shortcut-status" class="small muted" role="status">${esc(macroConfigurationError)}</p>`;
+ if(tab==='devices')content=`<h2>Appareils et comptes</h2><div class="table-wrap"><table><tr><th>Appareil</th><th>Usage</th></tr><tr><td>${esc(device.name)}</td><td>${esc({stream:'Régie de stream',control:'Pilotage',mobile:'Stream Deck'}[device.role])}</td></tr><tr><td>${esc(server||'Aucune régie associée')}</td><td>${!server?'Espace autonome':online?'Régie connectée':'Copie locale disponible'}</td></tr></table></div><div class="form-actions"><button data-task="device-setup">Mon installation</button><button data-task="setup-migration">Changer d’installation</button><button class="secondary" data-task="planning-handoff">Déplacer le planning</button><button class="secondary" data-task="configuration-copy">Copier les configurations et macros</button><button class="secondary" data-task="sound-library">Copier une bibliothèque audio</button><button data-task="device-accounts">Mes comptes sur cet appareil</button><button class="secondary" data-task="connection">Associer une régie</button>${localEndpoint||data.host.local||deviceExecutor?'<button data-task="pairing">Créer un code d’association</button><button class="secondary" data-task="local-permissions">Permissions des appareils</button><button class="secondary" data-task="transport">Connexion sécurisée de cet agent</button>':''}</div><div class="form-actions"><button class="secondary" data-task="use-local">Ouvrir mon espace local</button>${localStorage.getItem('sd2.server')?'<button class="secondary" data-task="use-paired">Retrouver ma régie</button>':''}${server?'<button class="secondary" data-task="import-local">Transférer mes créations locales</button>':''}</div><h3 class="spacer">Macros clavier</h3><p class="small muted">Affectez les touches de votre clavier aux raccourcis affichés dans Boutons & macros. Activez le fonctionnement en arrière-plan dans Mon installation pour conserver les macros sans fenêtre sur l’appareil qui reçoit ces touches. Pour un BlackWidow V4 X : utilisez Synapse pour associer M1 à M6 à Ctrl + Alt + Maj + F1 à F6, une pression simple.</p><button class="secondary" data-task="shortcut-status">Vérifier les raccourcis sur ce PC</button><p id="shortcut-status" class="small muted" role="status">${esc(macroConfigurationError)}</p>`;
  return `<h1>Configuration</h1><p class="subtitle">Vos réglages sont sauvegardés sur cet appareil, puis synchronisés avec la régie.</p><div class="tabs">${[['obs','OBS et scènes'],['platforms','Diffusion'],['profile','Profil'],['integrations','Intégrations'],['devices','Appareils & macros']].map(([id,label])=>`<button class="${id===tab?'':'secondary'}" data-tab="${id}">${label}</button>`).join('')}</div><section class="panel config-panel">${content}</section>`;
 }
 function render(){
@@ -437,24 +438,23 @@ const actionRouter=createActionRouter({installation:()=>installationUI.current,w
 const actionRoutingUI=createActionRoutingUI({installationUI,router:actionRouter,workspace:()=>autonomy?.store.scope||server||LOCAL_SCOPE,actions:()=>data?.configuration.actions||[],localEndpoint,modal,esc,changed:async()=>{await configureMacros({synchronized:online});dialog.close();render();}});
 const transferContexts={
  devices:async()=>{await installationUI.reload();const model=installationUI.current;return [
-  {id:'autonomous',deviceId:model.localDeviceId,local:true,name:device.name+' · espace autonome'},
-  ...(localEndpoint?[{id:'local-agent',deviceId:model.localDeviceId,endpoint:localEndpoint,name:device.name+' · agent Windows'}]:[]),
-  ...model.devices.filter(d=>d.enabled&&d.endpoint&&d.id!==model.localDeviceId).map(d=>({id:d.id,deviceId:d.id,endpoint:d.endpoint,name:d.name})),
+  {id:'autonomous',deviceId:model.localDeviceId,local:true,scope:LOCAL_SCOPE,name:device.name+' · espace autonome'},
+  ...(localEndpoint?[{id:'local-agent',deviceId:model.localDeviceId,endpoint:localEndpoint,scope:localEndpoint,name:device.name+' · agent Windows'}]:[]),
+  ...model.devices.filter(d=>d.enabled&&d.endpoint&&d.id!==model.localDeviceId).map(d=>({id:d.id,deviceId:d.id,endpoint:d.endpoint,scope:d.endpoint,name:d.name})),
  ];},
  snapshot:async target=>{
   if(target.local){const runtime=await getLocalRuntime();await runtime.owner.store.reload();return {workspace:native?'device:'+installationUI.current.localDeviceId:runtime.owner.store.record.workspace,bundle:runtime.owner.store.view(),configurationTransfer:configurationTransferSupport('android')};}
   const {endpoint,token}=await resolveHandoffDevice(target,false);return network('/api/v2/autonomy',undefined,'GET',endpoint,token);
  },
 };
-const handoffUI=createPlanningHandoffUI({...transferContexts,modal,esc,store:async()=>(await getLocalRuntime()).owner.store,changed:()=>refresh(true),
- call:async(target,body)=>{
+const handoff=async(target,body)=>{
   if(target.local){const runtime=await getLocalRuntime(),workspace=native?'device:'+installationUI.current.localDeviceId:runtime.owner.store.record.workspace;
    const guard=()=>{if(target.deviceId!==installationUI.current.localDeviceId||body.workspace!==workspace)throw new Error('Identité locale modifiée.');if(!localCapabilityEnabled('planning'))throw new Error('Réactivez le rôle Planning avant de poursuivre.');};
    guard();return {receipt:await runtime.planning.handoff(workspace,body.operation,body.ticket,body.proof,guard)};
   }
   const {endpoint,token}=await resolveHandoffDevice(target);return network('/api/v2/planning/handoff',body,'POST',endpoint,token);
- },
-});
+};
+const handoffUI=createPlanningHandoffUI({...transferContexts,modal,esc,store:async()=>(await getLocalRuntime()).owner.store,changed:()=>refresh(true),call:handoff});
 async function resolveHandoffDevice(target,planning=true){
  await installationUI.reload();const model=installationUI.current,current=model.devices.find(d=>d.id===target.deviceId&&d.enabled);
  if(!current)throw new Error('Réactivez ou associez cet appareil pour reprendre le transfert.');
@@ -462,31 +462,47 @@ async function resolveHandoffDevice(target,planning=true){
  const token=endpoint===localEndpoint?'':await credentials.get(endpoint),descriptor=await network('/api/v2/device',undefined,'GET',endpoint,token);
  if(descriptor.device?.id!==target.deviceId)throw new Error('Identité de l’appareil différente. Transfert suspendu.');
  if(planning&&!deviceRoleAvailable(descriptor.device,'planning'))throw new Error('Réactivez le rôle Planning sur cet appareil.');
- return {endpoint,token};
+ return {endpoint,token,descriptor};
 }
 const localConfigurationSync=createExecutorSync({runtime:getLocalRuntime,workspace:()=>native?'device:'+installationUI.current.localDeviceId:localRuntime.owner.store.record.workspace,authorize:()=>{},requireRole:()=>{throw new Error('Utilisez le transfert dédié au planning.');}});
-const configurationCopyUI=createConfigurationTransferUI({...transferContexts,modal,esc,store:async()=>(await getLocalRuntime()).owner.store,changed:()=>refresh(true),
- apply:async(target,body)=>{
+const applyConfiguration=async(target,body)=>{
   if(target.local){await getLocalRuntime();if(target.deviceId!==installationUI.current.localDeviceId)throw new Error('Identité locale différente.');const receipt=await localConfigurationSync({},body);return {workspace:body.workspace,receipt};}
   const {endpoint,token}=await resolveHandoffDevice(target,false);return network('/api/v2/autonomy/sync',body,'POST',endpoint,token);
- },
-});
+};
+const configurationCopyUI=createConfigurationTransferUI({...transferContexts,modal,esc,store:async()=>(await getLocalRuntime()).owner.store,changed:()=>refresh(true),apply:applyConfiguration});
 let localSoundLibrary;
-const soundLibraryUI=createSoundLibraryUI({...transferContexts,modal,esc,store:async()=>(await getLocalRuntime()).owner.store,changed:()=>refresh(true),
- read:async(target,body)=>{
+const readSoundLibrary=async(target,body)=>{
   if(target.local){const runtime=await getLocalRuntime(),store=runtime.owner.store;
    const guard=()=>{const workspace=native?'device:'+installationUI.current.localDeviceId:store.record.workspace;if(target.deviceId!==installationUI.current.localDeviceId||body.workspace!==workspace)throw new Error('Identité locale différente.');};
    localSoundLibrary||=createLocalSoundLibrary(store);return localSoundLibrary(body,'local',guard);
   }
   const {endpoint,token}=await resolveHandoffDevice(target,false);return network('/api/v2/sounds/export',body,'POST',endpoint,token);
- },
- upload:async(target,input)=>{
+};
+const uploadLibrarySound=async(target,input)=>{
   if(target.local){const runtime=await getLocalRuntime(),store=runtime.owner.store,model=installationUI.current,own=model.devices.find(d=>d.id===model.localDeviceId),workspace=native?'device:'+own.id:store.record.workspace;
    return uploadLocalSound(store,input,own,workspace,()=>{if(target.deviceId!==installationUI.current.localDeviceId||(!native&&store.record.workspace!==workspace))throw new Error('Identité locale différente.');});
   }
   const {endpoint,token}=await resolveHandoffDevice(target,false);return uploadSound({...input,peers,origin:endpoint,token,expectedDeviceId:target.deviceId});
- },
-});
+};
+const soundLibraryUI=createSoundLibraryUI({...transferContexts,modal,esc,store:async()=>(await getLocalRuntime()).owner.store,changed:()=>refresh(true),read:readSoundLibrary,upload:uploadLibrarySound});
+const migrationDescriptor=async target=>{
+ await installationUI.reload();
+ if(target.local){if(target.deviceId!==installationUI.current.localDeviceId)throw new Error('Identité locale différente.');return {device:installationUI.current.devices.find(d=>d.id===target.deviceId)};}
+ return (await resolveHandoffDevice(target,false)).descriptor;
+};
+const migrationPreflight=async job=>{
+ for(const target of [job.source,job.target]){
+  const descriptor=await migrationDescriptor(target);
+  if(descriptor.device?.id!==target.deviceId)throw new Error('Identité de l’appareil différente.');
+  if(!target.local&&!descriptor.observed?.permissions?.includes('configuration'))throw new Error('Une association avec administration complète est nécessaire sur '+target.name+'.');
+  if(job.planning.length&&!deviceRoleAvailable(descriptor.device,'planning'))throw new Error('Activez Services et planning sur '+target.name+'.');
+  if(target.id===job.target.id){
+   if(job.audio.items.length&&!deviceRoleAvailable(descriptor.device,'audio'))throw new Error('Activez Audio local sur '+target.name+'.');
+   for(const route of job.routing.changes.actionRoutes||[])if(route.deviceId===target.deviceId&&!deviceRoleAvailable(descriptor.device,route.definition.type.startsWith('sound.')?'audio':route.definition.type.startsWith('replay.')?'clips':['chat.send','wizebot.command'].includes(route.definition.type)?'chat':'obs'))throw new Error('Un rôle nécessaire aux boutons est arrêté sur '+target.name+'.');
+  }
+ }
+};
+const setupMigrationUI=createSetupMigrationUI({...transferContexts,modal,esc,descriptor:migrationDescriptor,installation:()=>installationUI.reload(),changeInstallation:(changes,revision)=>installationUI.apply(changes,revision),preflight:migrationPreflight,apply:applyConfiguration,handoff,read:readSoundLibrary,upload:uploadLibrarySound,store:async()=>(await getLocalRuntime()).owner.store,changed:async()=>{await installationUI.reload();await configureMacros({synchronized:online});await refresh(true);}});
 function deviceSetup(){installationUI.open();}
 
 const deviceAccounts=createDeviceAccounts({modal,esc,toast,request:(p,b,m)=>{if(!localEndpoint)throw new Error('Les comptes propres à cet appareil nécessitent l’application Android ou Windows.');return network(p,b,m,localEndpoint,'');},openExternal:url=>globalThis.streamDashboardDesktop?.openExternalAuth?.(url)});
@@ -636,6 +652,7 @@ async function task(name,b){
  if(await devicePermissionsUI.task(name,b))return;
  if(await actionRoutingUI.task(name,b))return;
  if(await installationUI.task(name,b))return;
+ if(await setupMigrationUI.task(name,b))return;
  if(await handoffUI.task(name,b))return;
  if(await configurationCopyUI.task(name,b))return;
  if(await soundLibraryUI.task(name,b))return;
@@ -732,6 +749,7 @@ document.addEventListener('submit',async event=>{const f=event.target;submitting
  if(await devicePermissionsUI.submit(f))return;
  if(await actionRoutingUI.submit(f))return;
  if(await installationUI.submit(f))return;
+ if(await setupMigrationUI.submit(f))return;
  if(await handoffUI.submit(f))return;
  if(await configurationCopyUI.submit(f))return;
  if(await soundLibraryUI.submit(f))return;

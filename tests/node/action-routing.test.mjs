@@ -45,3 +45,17 @@ test('an interrupted dispatch is never replayed and the association remains rest
  await f.router.observe('a');assert.equal(f.dispatches,1);assert.equal(f.installation.actionRoutes.length,1);
  assert.throws(()=>validateInstallation({...f.installation,actionRoutes:[...f.installation.actionRoutes,...f.installation.actionRoutes]}),/dupliquée/);
 });
+test('peer role changes are re-observed after disable and enable without pairing again or replaying a command',async()=>{
+ const installation=migrateInstallation({id:'local',platform:'windows'});
+ installation.devices.push({id:'peer',name:'Peer',platform:'windows',enabled:true,roles:[],capabilities:['obs'],endpoint:'https://peer.test'});
+ installation.actionRoutes=[{workspace:'local',actionId:action.id,deviceId:'peer',definition:action}];
+ let roles=['obs-executor'],sent=0;
+ const router=createActionRouter({installation:()=>installation,workspace:()=> 'local',localEndpoint:'',credential:async()=> 'fixture',request:async path=>{
+  if(path==='/api/v2/device')return {device:{id:'peer',roles},observed:{permissions:['obs']}};
+  if(path==='/api/v2/state')return {configuration:{actions:[action]},host:{state:{obs:{connected:true}}}};
+  sent++;return {status:'succeeded'};
+ }});
+ assert.equal(router.status(action).status,'unknown');await router.execute(action,{});assert.equal(sent,1);
+ roles=[];await assert.rejects(router.execute(action,{}),/arrêté/);assert.equal(sent,1);
+ roles=['obs-executor'];await router.execute(action,{});assert.equal(sent,2);assert.deepEqual(installation.devices[1].roles,[]);
+});

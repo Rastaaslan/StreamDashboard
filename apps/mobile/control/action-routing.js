@@ -13,7 +13,9 @@ export function createActionRouter({ installation, workspace, localEndpoint, cre
     if (!route) return null;
     const target = device(route.deviceId), known = states.get(route.deviceId);
     const observed = known && known.endpoint === endpoint(target || {}) && now() - known.at < 15_000 ? {[route.deviceId]: known.observation} : {};
-    return { ...resolveCapability(installation(), actionCapability(route.definition.type), observed, route.deviceId), name:target?.name, route };
+    let availability=resolveCapability(installation(), actionCapability(route.definition.type), observed, route.deviceId);
+    if(route.deviceId!==installation().localDeviceId&&!observed[route.deviceId]&&['agent-stopped','role-stopped'].includes(availability.reason))availability={...availability,status:'unknown',reason:'not-observed',message:'Rôles actuels à vérifier sur cet appareil.'};
+    return { ...availability, name:target?.name, route };
   }
   async function observe(id, force = false) {
     const topology = installation(), target = device(id);
@@ -45,7 +47,7 @@ export function createActionRouter({ installation, workspace, localEndpoint, cre
   async function prepare(action) {
     const initial = status(action);
     if (!initial) return null;
-    if (initial.status === 'unavailable' && initial.reason !== 'offline') throw new Error(initial.message);
+    if (initial.status === 'unavailable' && ['disabled','unsupported'].includes(initial.reason)) throw new Error(initial.message);
     const revision = installation().revision, route = structuredClone(initial.route);
     const target = await observe(route.deviceId, true);
     if (installation().revision !== revision || JSON.stringify(binding(action)) !== JSON.stringify(route)) throw new Error('Destination modifiée. Vérifiez le bouton avant de réessayer.');

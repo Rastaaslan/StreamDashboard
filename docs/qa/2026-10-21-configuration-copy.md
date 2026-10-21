@@ -32,4 +32,4 @@ Le harnais a été corrigé pour sélectionner le tableau de bord visible, encod
 
 ## Limites de livraison
 
-Ces transferts ne forment pas encore un assistant unique combinant déplacement du planning, copie des fichiers, configuration et basculement coordonné des rôles de plusieurs appareils. Les rôles restent modifiables dans Mon installation. La qualification matérielle des six setups, les sessions authentifiées des plateformes et la migration complète des profils RC11.7 restent nécessaires. Aucun de ces contrôles automatisés ne remplace un essai sur téléphone.
+Ces transferts sont maintenant réunis dans l’assistant décrit dans `2026-10-21-setup-migration.md`. Les rôles physiques restent modifiables dans Mon installation ; l’assistant vérifie leur activation et bascule les destinations après confirmation des contenus. La qualification matérielle des six setups, les sessions authentifiées des plateformes et la migration complète des profils RC11.7 restent nécessaires. Aucun de ces contrôles automatisés ne remplace un essai sur téléphone.

@@ -163,9 +163,12 @@ export function resolveCapability(installation, capability, observations = {}, t
   const result = (status, reason, message) => ({ status, reason, message, deviceId: selected });
   if (!device || !device.enabled) return result('unavailable', 'disabled', 'Appareil retiré ou désactivé.');
   if (!device.capabilities.includes(capability)) return result('unavailable', 'unsupported', 'Fonction incompatible avec cet appareil.');
-  if (['obs', 'clips'].includes(capability) && !device.roles.includes('obs-executor')) return result('unavailable', 'agent-stopped', 'Le rôle d’exécution OBS est arrêté.');
-  if (!deviceRoleAvailable(device, capability)) return result('unavailable', 'role-stopped', 'Le rôle « '+ROLES[roleForCapability(capability)]+' » est désactivé sur cet appareil.');
   const observed = observations[selected];
+  // Peer roles are an association-time description, not a local override of
+  // that peer's current roles. An authenticated fresh observation supersedes it.
+  const effective = device.id !== installation.localDeviceId && observed?.roles ? {...device,roles:observed.roles} : device;
+  if (['obs', 'clips'].includes(capability) && !effective.roles.includes('obs-executor')) return result('unavailable', 'agent-stopped', 'Le rôle d’exécution OBS est arrêté.');
+  if (!deviceRoleAvailable(effective, capability)) return result('unavailable', 'role-stopped', 'Le rôle « '+ROLES[roleForCapability(capability)]+' » est désactivé sur cet appareil.');
   if (observed?.roles && !deviceRoleAvailable({...device,roles:observed.roles},capability)) return result('unavailable','role-stopped','Le rôle requis est arrêté sur l’appareil cible.');
   if (!observed) return result('unknown', 'not-observed', 'Connexion de cet appareil non vérifiée.');
   if (observed.connected !== true) return result('unavailable', 'offline', 'Appareil déconnecté. Aucune commande ne sera mise en attente.');

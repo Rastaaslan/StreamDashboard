@@ -1,10 +1,11 @@
 param(
- [Parameter(Mandatory=$true)][ValidateSet('Start','Restart','Pairing','Pair','Read','CloseWindow','Stop','Clean','ConfigurationPrepare','ConfigurationResume','ConfigurationUndo')][string]$Mode,
+ [Parameter(Mandatory=$true)][ValidateSet('Start','Restart','Pairing','Pair','Read','CloseWindow','Stop','Clean','ConfigurationPrepare','ConfigurationResume','ConfigurationUndo','MigrationPrepare','MigrationResume','MigrationUndo')][string]$Mode,
  [string]$Root,
  [ValidateSet('root','device-runtime')][string]$RuntimeProfile='device-runtime',
  [string]$PackageUri,
  [ValidatePattern('^[a-f0-9]{64}$')][string]$Sha256,
- [string]$PeerOrigin
+ [string]$PeerOrigin,
+ [switch]$Reverse
 )
 $ErrorActionPreference='Stop';$ProgressPreference='SilentlyContinue'
 function Wait-Condition([scriptblock]$Test){for($i=0;$i -lt 120;$i++){if(&$Test){return};Start-Sleep -Milliseconds 250};throw 'Candidate condition timed out'}
@@ -147,6 +148,60 @@ const undo=parameters.mode==='ConfigurationUndo';await runConfigurationCopy(job,
 const after=await request(parameters.origin),expected=undo?job.items[0].base.items:job.items[0].after.items;
 if(!equal(after.bundle.data.configuration.actions,expected))throw Error('Destination configuration mismatch');
 return {status:job.status,jobId:job.id,physicalPeerConfirmed:true,exactConfiguration:true,noActionExecuted:true};
+})()
+'@
+ Evaluate $expression|ConvertTo-Json -Depth 8 -Compress
+ }elseif($Mode -in 'MigrationPrepare','MigrationResume','MigrationUndo'){
+ $parameters=@{mode=$Mode;origin=$PeerOrigin;reverse=[bool]$Reverse;local=('http://127.0.0.1:'+$owner.runtimePort)}|ConvertTo-Json -Compress
+ $expression='(async()=>{const parameters='+$parameters+';'+@'
+const {openReplica}=await import('/mobile/control/autonomy-store.js');
+const {equal}=await import('/mobile/shared/autonomy.js');
+const {planSetupMigration,runSetupMigration}=await import('/mobile/control/setup-migration.js');
+const {associateInstallationDevice}=await import('/mobile/shared/installation.js');
+const {createPeerRequest}=await import('/mobile/control/peer-request.js');
+const {uploadSound}=await import('/mobile/control/sound-transfer.js');
+const bridge=globalThis.streamDashboardDesktop,store=await openReplica('hardware-setup-migration-qa'),peers=createPeerRequest();
+const request=async(origin,path,body,method=body===undefined?'GET':'POST')=>{
+ const response=await peers.request(origin+path,{method,body,token:origin===parameters.local?'':await bridge.getDeviceCredential(origin),timeoutMs:8000});
+ const value=await response.json();if(!response.ok)throw Error(value.error?.message||'Candidate request refused');return value;
+};
+const jobKey=parameters.reverse?'migrationReverse':'migration',recordKey=parameters.reverse?'recordReverse':'record';
+let job=store.record.drafts[jobKey],record=store.record.drafts[recordKey];
+const save=async next=>{await store.draft(jobKey,next);job=next;};
+const snapshot=target=>request(target.endpoint,'/api/v2/autonomy');
+const upload=(target,input)=>uploadSound({...input,peers,origin:target.endpoint,expectedDeviceId:target.deviceId,transport:(path,body,method)=>request(target.endpoint,path,body,method)});
+const options={snapshot,save,installation:()=>bridge.getInstallation(),changeInstallation:(changes,revision)=>bridge.changeInstallation(changes,revision),
+ preflight:async value=>{for(const side of ['source','target']){const d=await request(value[side].endpoint,'/api/v2/device');if(d.device.id!==value[side].deviceId||d.device.roles.includes('obs-executor'))throw Error('Isolated fixture identity or roles changed');}},
+ apply:(target,body)=>request(target.endpoint,'/api/v2/autonomy/sync',body),handoff:(target,body)=>request(target.endpoint,'/api/v2/planning/handoff',body),read:(target,body)=>request(target.endpoint,'/api/v2/sounds/export',body),upload};
+if(parameters.mode==='MigrationPrepare'){
+ if(job||record)throw Error('Retained migration fixture must be preserved');
+ const [own,peer]=await Promise.all([request(parameters.local,'/api/v2/device'),request(parameters.origin,'/api/v2/device')]);
+ if(own.device.roles.includes('obs-executor')||peer.device.roles.includes('obs-executor'))throw Error('OBS role forbidden for this fixture');
+ let model=await bridge.getInstallation();model=(await bridge.changeInstallation(associateInstallationDevice(model,parameters.origin,peer.device),model.revision)).next;
+ const local={id:'local-agent',deviceId:own.device.id,endpoint:parameters.local,scope:parameters.local,name:'Source QA'},remote={id:peer.device.id,deviceId:peer.device.id,endpoint:parameters.origin,scope:parameters.origin,name:'Destination QA'};
+ const source=parameters.reverse?remote:local,target=parameters.reverse?local:remote,descriptor=parameters.reverse?own:peer;
+ const first=await snapshot(source),button={id:'qa-migration-'+crypto.randomUUID(),label:'QA migration v\u00e9rifi\u00e9e',type:'sound.stop',value:'',color:'red',shortcut:''};
+ const seeded=await options.apply(source,{workspace:first.workspace,edit:{id:crypto.randomUUID(),key:'action/'+button.id,base:null,value:button,strict:true}});if(seeded.receipt.status!=='applied')throw Error('Button fixture refused');
+ const title='QA migration '+crypto.randomUUID();await request(source.endpoint,'/api/v2/planning',{id:crypto.randomUUID(),title,category:'personal',startAtUtc:'2030-11-01T18:00:00Z',endAtUtc:'2030-11-01T19:00:00Z',ownership:'LOCAL',editable:true,desiredPublication:{local:true,twitch:false,google:false}});
+ const bytes=new Uint8Array(204);const view=new DataView(bytes.buffer);for(const [offset,text] of [[0,'RIFF'],[8,'WAVE'],[12,'fmt '],[36,'data']])for(let i=0;i<text.length;i++)bytes[offset+i]=text.charCodeAt(i);view.setUint32(4,196,true);view.setUint32(16,16,true);view.setUint16(20,1,true);view.setUint16(22,1,true);view.setUint32(24,8000,true);view.setUint32(28,16000,true);view.setUint16(32,2,true);view.setUint16(34,16,true);view.setUint32(40,160,true);
+ const soundId=crypto.randomUUID();await upload(source,{file:new Blob([bytes]),filename:'qa-silence.wav',name:'QA silence',soundId,transferId:crypto.randomUUID(),expectedWorkspace:first.workspace,settings:{name:'QA silence',category:'QA',favorite:false,enabled:true,volume:0,cooldownMs:0,monitoringMode:'stream',playbackMode:'replace'}});
+ const from=await snapshot(source),to=await snapshot(target),event=from.bundle.data.host.planning.find(item=>item.title===title),sound=from.bundle.sounds.sounds.find(item=>item.id===soundId);if(!event||!sound)throw Error('Fixture not persisted');
+ job=planSetupMigration({id:crypto.randomUUID(),source,target,from,to,installation:model,descriptor,sounds:[sound],planningIds:[event.id]});
+ record={eventId:event.id,soundId,targetConfiguration:to.bundle.data.configuration,targetSettings:to.bundle.data.host.settings,buttonId:button.id};await store.draft(recordKey,record);await save(job);
+ let lost=false;try{await runSetupMigration(job,{...options,handoff:async(target,body)=>{const result=await options.handoff(target,body);if(body.operation==='activate'&&!lost){lost=true;throw Error('QA lost activation acknowledgement');}return result;}});}catch(error){if(error.message!=='QA lost activation acknowledgement')throw error;}
+ if(!lost||!job.planning[0].attempted||job.routing.attempted)throw Error('Expected interruption before routing was not retained');
+ return {jobId:job.id,audioCopied:job.audio.status==='completed',configurationCopied:job.configuration.status==='completed',activationReplyLost:true,routingNotCommitted:true,noPlaybackOrPublication:true};
+}
+if(!job||!record||(parameters.reverse?job.source:job.target).endpoint!==parameters.origin)throw Error('Retained hardware migration is missing');
+const undo=parameters.mode==='MigrationUndo';
+if(undo&&!job.rollingBack){const latest=await snapshot(job.target),event=latest.bundle.data.host.planning.find(item=>item.id===record.eventId);await request(job.target.endpoint,'/api/v2/planning/'+encodeURIComponent(event.id),{...event,title:'QA updated after transfer',expectedRevision:latest.bundle.data.host.planningRevisions[event.id],confirmRecurring:true},'PUT');}
+await runSetupMigration(job,options,undo);
+const [from,to,model]=await Promise.all([snapshot(job.source),snapshot(job.target),bridge.getInstallation()]);
+const a=from.bundle.data.host.planning.find(item=>item.id===record.eventId),b=to.bundle.data.host.planning.find(item=>item.id===record.eventId);
+if(!from.bundle.sounds.sounds.some(item=>item.id===record.soundId)||!to.bundle.sounds.sounds.some(item=>item.id===record.soundId))throw Error('Audio catalogue missing');
+if(undo){if(a.editable===false||a.title!=='QA updated after transfer'||b.editable!==false||!equal(to.bundle.data.configuration.actions,record.targetConfiguration.actions)||!equal(model.routes,job.routing.before.routes))throw Error('Rollback mismatch');}
+else if(a.editable!==false||b.editable===false||!model.actionRoutes.some(route=>route.actionId===record.buttonId&&route.deviceId===job.target.deviceId))throw Error('Migration outcome mismatch');
+return {jobId:job.id,status:job.status,singlePlanningOwner:true,audioPreservedOnBoth:true,latestPlanningPreserved:undo,noPlaybackOrPublication:true};
 })()
 '@
  Evaluate $expression|ConvertTo-Json -Depth 8 -Compress
