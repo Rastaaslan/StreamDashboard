@@ -1,14 +1,14 @@
 {
   "date": "2026-10-21",
   "candidate": "2.1.0-alpha.1",
-  "codeCommit": "226aa6863ebc87cd92af968e5eeb5855cf44e92c",
+  "codeCommit": "970a8d180fec78a46722eb6443421b9b8411e0a2",
   "branch": "work/streamdashboard-next21-universal",
   "universalQualificationComplete": false,
   "openQualificationCells": 75,
   "validation": {
-    "vitest": 1451,
-    "node": 312,
-    "browser": 97,
+    "vitest": 1454,
+    "node": 323,
+    "browser": 99,
     "androidJvm": 47,
     "electronAndPreview": 8,
     "realElectron": 5,
@@ -16,27 +16,33 @@
     "androidLint": "passed",
     "security": "passed",
     "shippedJavaScript": "passed",
-    "windowsPackageIntegrity": "passed"
+    "windowsPackageIntegrity": "passed",
+    "vitestFullSuite": 1453,
+    "vitestAdditionalRegression": 1,
+    "vitestTargetedRun": 14
   },
   "artifacts": [
     {
       "name": "StreamDashboard-Next-2.1-universal-candidate-win32-x64.zip",
-      "bytes": 153037380,
-      "sha256": "d784414b3d025259d71f25e7fda62e7111dd7c4ab3cb4d982dda7b027d83b062"
+      "bytes": 153048585,
+      "sha256": "1356efc0b292bda8efc53237ceea6089addf545081b052342b6a0221e3c20c16"
     },
     {
       "name": "StreamDashboard-Next-2.1-universal-candidate-android-debug.apk",
-      "bytes": 3907336,
-      "sha256": "23f1e9834bae57dac87bc49c2f49e96d20a74f95c3d8c0bff2c048cdfb5f0e05"
+      "bytes": 3823457,
+      "sha256": "e6d82eb39817ccdb96a159d6822bdbeeaff30c48de8f0e12aad386c4223b316e"
     }
   ],
-  "artifactDirectory": "/home/damien/StreamDashboard-Next-universal-qa-20261021/universal-candidate",
+  "artifactDirectory": "/home/damien/StreamDashboard-Next-universal-qa-20261021/handoff-candidate",
   "logs": [
-    "universal-final.log",
-    "universal-candidate-results.json"
+    "handoff-universal.log",
+    "handoff-release.log",
+    "handoff-release-results.json",
+    "handoff-package.log",
+    "handoff-package-result.json"
   ],
   "remaining": [
-    "Complete distributed responsibility transfers and reverse transfers from server-owned workspaces",
+    "Aggregate transfer of audio libraries, global configurations and combined responsibilities, including reverse transfers from server-owned workspaces",
     "Physical Android and all six setup transitions",
     "Authenticated web session persistence and full live chat cycle on real hardware",
     "Complete real RC11.7 migration and rollback, including browser sessions and encrypted account access"
@@ -46,5 +52,6 @@
     "obsProcesses": true,
     "mainBranch": true,
     "noRealLiveOrChatEffect": true
-  }
+  },
+  "draftRelease": "https://github.com/Rastaaslan/StreamDashboard/releases/tag/untagged-747964a9147610beec46"
 }

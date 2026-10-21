@@ -1,6 +1,6 @@
 # StreamDashboard Next 2.1 — candidat de qualification
 
-Ce candidat réunit les évolutions universelles sur le commit de code `226aa6863ebc87cd92af968e5eeb5855cf44e92c`. Il est intermédiaire : Next 2.1 n’est pas encore qualifié comme version finale universelle. La matrice conserve 75 cellules ouvertes.
+Ce candidat réunit les évolutions universelles sur le commit de code `970a8d180fec78a46722eb6443421b9b8411e0a2`. Il est intermédiaire : Next 2.1 n’est pas encore qualifié comme version finale universelle. La matrice conserve 75 cellules ouvertes.
 
 ## Réalisation réunie
 
@@ -9,7 +9,7 @@ Ce candidat réunit les évolutions universelles sur le commit de code `226aa686
 - Exécuteur des contenus autonomes Windows sans fenêtre : sons et raccourcis restent actifs après fermeture de l’interface ; aucune lecture n’est rejouée au redémarrage.
 - Continuité des espaces et des modifications locales après changement d’adresse d’un appareil.
 - Audio simultané, arrêt pendant une préparation, transfert audio Android reprenable avec empreinte et publication atomique.
-- Adoption du planning par Android avec conservation des identités de publication, sans appel fournisseur pendant le transfert.
+- Déplacement bidirectionnel du planning entre agents Windows et espaces autonomes Windows/Android : prévisualisation, verrouillage de la source, activation confirmée, annulation, reprise et retour sur l’appareil précédent ; conservation des identités de publication sans appel fournisseur pendant le transfert.
 - Découverte locale Windows/Android, suivie de l’association sécurisée obligatoire.
 - Conservation des permissions restreintes après redémarrage réel du serveur Windows.
 - Export/import prévisualisé de l’installation, restauration précédente et export JSON natif Android.
@@ -19,13 +19,15 @@ Ce candidat réunit les évolutions universelles sur le commit de code `226aa686
 
 | Campagne | Résultat |
 |---|---:|
-| Vitest | 1 451 réussis |
-| Node | 312 réussis |
-| Parcours navigateur | 97 réussis |
+| Vitest | 1 453 en suite complète + 1 nouvelle régression réussie |
+| Node | 323 réussis |
+| Parcours navigateur | 99 réussis |
 | Android JVM | 47 réussis |
 | Electron et aperçus | 8 réussis, dont 5 Electron réels |
 | Compilation TypeScript, lint Android, sécurité, syntaxe distribuée | Réussis |
 | Construction et intégrité du paquet Windows | Réussies |
+
+La nouvelle régression Twitch a été vérifiée dans une campagne ciblée de 14 tests, dont 13 déjà présents dans la suite complète. Le test de démarrage hors réseau a détecté l’oubli de nouveaux modules dans le cache d’installation ; la correction passe la suite Node complète. Les détails du transfert figurent dans `2026-10-21-planning-ownership.md`.
 
 Les tests automatisés isolent les fournisseurs et n’envoient aucun message public ni commande réelle de live. Les tests de fermeture et redémarrage Electron utilisent notamment une lecture audio silencieuse réelle.
 
@@ -33,7 +35,7 @@ Sur les copies de données réelles : le portable passe le checkpoint, la conser
 
 ## Travail restant avant livraison universelle
 
-1. Terminer le déplacement distribué complet des responsabilités et les transferts inverses depuis les espaces appartenant au serveur, avec reprise et restauration croisées.
+1. Terminer le déplacement global des bibliothèques audio, des configurations et des responsabilités combinées, notamment les transferts inverses depuis les espaces appartenant au serveur. Le transfert réversible du planning est implémenté et vérifié automatiquement.
 2. Qualifier les six setups et leurs transitions avec un téléphone Android réel, plusieurs contrôleurs, arrêts, veille et changements de réseau.
 3. Vérifier les sessions web authentifiées Twitch/YouTube et le cycle complet du chat pendant une diffusion autorisée.
 4. Terminer la migration et le retour arrière matériels RC11.7, y compris les sessions navigateur et les accès chiffrés aux comptes.
