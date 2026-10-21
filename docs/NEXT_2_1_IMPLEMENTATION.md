@@ -1,7 +1,7 @@
 # StreamDashboard Next 2.1 — réalisation transversale
 
 Version de travail : **2.1.0-alpha.1**, non installée sur les postes stables.
-Intégration : `work/streamdashboard-next21-completion`, issue du socle intégré `d1743f0`.
+Intégration : `work/streamdashboard-next21-completion`, issue des socles intégrés `d1743f0` et `ea26952`.
 Les exigences P0 de [NEXT_2_1_REQUIREMENTS.md](NEXT_2_1_REQUIREMENTS.md) font autorité.
 
 ## Code intégré

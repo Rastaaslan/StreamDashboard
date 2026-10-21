@@ -1,6 +1,6 @@
 # Récepteur Android et synchronisation — candidat Next 2.1
 
-Date : 21 octobre 2026. Branche : `work/streamdashboard-next21-completion`. Socle intégré : `d1743f0`, incluant la preuve TLS entre FIXE et Laptop-damien et le travail audio/rôles/récupération.
+Date : 21 octobre 2026. Branche : `work/streamdashboard-next21-completion`. Socles intégrés : `d1743f0` et `ea26952` (continuité des espaces), incluant la preuve TLS entre FIXE et Laptop-damien et le travail audio/rôles/récupération.
 
 ## Fonctionnement
 
@@ -14,7 +14,21 @@ Date : 21 octobre 2026. Branche : `work/streamdashboard-next21-completion`. Socl
 
 ## Vérification
 
-Les résultats et empreintes des paquets sont enregistrés dans `2026-10-21-completion-artifacts.json`.
+Code vérifié : `5dc0b0860b634759e693ac64901f9adbf387e36a`. Les 30 fichiers concernés ont été comparés par SHA-256 avec le checkout local après compilation et intégration.
+
+| Vérification | Résultat |
+| --- | --- |
+| Vitest | 1 441 tests, 160 fichiers, réussis |
+| Node | 300 cas couverts : 299 réussis dans la suite intégrée, puis correction de l’attente du test Stop et 17 cas ciblés réussis, dont ce dernier cas |
+| Interface Chromium | 88 tests réussis |
+| Android | 44 tests JVM réussis, lint et APK réussis |
+| Smoke desktop | 7 scénarios réussis, dont 4 Electron réels et 3 aperçus navigateur ; 20 cycles de démarrage/arrêt |
+| Compilation, sécurité et JavaScript distribué | Réussis |
+| Paquet Windows x64 et contrôle de contenu | Réussis |
+
+Le test TLS a révélé une fermeture asynchrone du port : `close()` attend désormais la fin du thread d’écoute. Le contrôle Stop a aussi été retiré du blocage général dû aux conflits de configuration ; les autres commandes restent bloquées. Le test navigateur exerce ce chemin complet.
+
+Les empreintes et emplacements des paquets sont enregistrés dans `2026-10-21-completion-artifacts.json`. ADB ne liste aucun appareil. Le contrôle universel conserve ses 75 qualifications ouvertes.
 
 - `tests/node/device-executor.test.mjs` : association, confidentialité, routage PC vers identité Android, permissions, rôles, reçus après redémarrage, stockage en échec, arrêt pendant préparation, révocation pendant lecture et ouverture des écrans.
 - `tests/installation-ui.spec.ts` : vraie base IndexedDB dans Chromium ; synchronisation, reconnexion, doublons, conflits avec une seconde instance, rejet des secrets et des identifiants réutilisés. SubtleCrypto est désactivé pour représenter l’origine Android.
