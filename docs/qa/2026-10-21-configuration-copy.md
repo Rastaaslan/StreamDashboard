@@ -24,6 +24,12 @@ Les fichiers audio issus des anciens imports locaux peuvent maintenant recevoir 
 - `tests/sound-transfer-ui.spec.ts` : ancien fichier sans empreinte, copie retour et refus d’un fichier différent.
 - `scripts/qa-tls-agent.ps1` : profils Windows temporaires, séparation des ports, association TLS, copie, interruption du contrôleur, reprise et retour arrière. OBS est désactivé dans ces profils ; les processus stables ne sont jamais arrêtés par le harnais.
 
+## Essai matériel Windows
+
+La copie FIXE → Laptop-damien a réussi avec les clients Windows empaquetés : réponse volontairement perdue, arrêt des deux candidats, redémarrage, reprise du journal et restauration exacte des boutons précédents. Les libellés accentués sont conservés. La direction inverse reste bloquée : aucune connexion TCP au port du candidat FIXE, sur Tailscale comme sur le LAN, malgré son écoute vérifiée. Aucune règle réseau n’a été modifiée. Les applications stables et OBS sont restés actifs ; les candidats ont été arrêtés et leurs paquets temporaires retirés. Voir `2026-10-21-configuration-hardware.json`.
+
+Le harnais a été corrigé pour sélectionner le tableau de bord visible, encoder les requêtes JSON PowerShell en UTF-8 et ne plus réécrire les raccourcis au redémarrage. La vérification de cohérence a détecté cette réécriture lors du premier essai. Le nouvel essai conserve son journal distinct.
+
 ## Limites de livraison
 
 Ces transferts ne forment pas encore un assistant unique combinant déplacement du planning, copie des fichiers, configuration et basculement coordonné des rôles de plusieurs appareils. Les rôles restent modifiables dans Mon installation. La qualification matérielle des six setups, les sessions authentifiées des plateformes et la migration complète des profils RC11.7 restent nécessaires. Aucun de ces contrôles automatisés ne remplace un essai sur téléphone.

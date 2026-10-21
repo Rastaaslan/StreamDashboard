@@ -1,14 +1,14 @@
 {
   "date": "2026-10-21",
   "candidate": "2.1.0-alpha.1",
-  "codeCommit": "34613731afdf56c1a5b4d9581bf7b1b25805dc08",
+  "codeCommit": "8be0d5c388772486c81a2328617db2c79d46e835",
   "branch": "work/streamdashboard-next21-universal",
   "universalQualificationComplete": false,
   "openQualificationCells": 75,
   "validation": {
-    "vitest": 1455,
-    "node": 329,
-    "browser": 102,
+    "vitest": 1456,
+    "node": 335,
+    "browser": 106,
     "androidJvm": 47,
     "electronAndPreview": 8,
     "realElectron": 5,
@@ -17,38 +17,32 @@
     "security": "passed",
     "shippedJavaScript": "passed",
     "windowsPackageIntegrity": "passed",
-    "vitestFullSuite": 1455,
-    "vitestTargetedRun": 85,
-    "nodeFullSuite": 328,
-    "nodeAdditionalRegression": 1,
-    "nodeTargetedRun": 6,
-    "browserTargetedRun": 8
+    "windowsConfigurationCopy": "passed-fixe-to-laptop",
+    "windowsReverseConnection": "blocked"
   },
   "artifacts": [
     {
       "name": "StreamDashboard-Next-2.1-universal-candidate-win32-x64.zip",
-      "bytes": 153054684,
-      "sha256": "218765e5645743f16824612c1ac5766a4ab18dc24c4d1aed8375ae1ce18982d3"
+      "bytes": 153060792,
+      "sha256": "5c5c4536984a249e940d35d49b8a2ec9c13f8f3df9e4dd7c87e48b46de2253d0"
     },
     {
       "name": "StreamDashboard-Next-2.1-universal-candidate-android-debug.apk",
-      "bytes": 3823891,
-      "sha256": "9677cefdb2db4f719d58096ce24f656c1dc6a59b3a5531c2dd9a0ac93842448b"
+      "bytes": 3824173,
+      "sha256": "cc15f278c1b39daaf11a6a2fe40cfd59b6182e75a084b74fa32819641936237a"
     }
   ],
-  "artifactDirectory": "/home/damien/StreamDashboard-Next-universal-qa-20261021/audio-library-candidate",
+  "artifactDirectory": "/home/damien/StreamDashboard-Next-universal-qa-20261021/configuration-copy-candidate",
   "logs": [
-    "audio-library-check2.log",
-    "audio-library-final.log",
-    "audio-library-release.log",
-    "audio-library-packagecheck.log",
-    "audio-library-package.log",
-    "audio-library-package-result.json"
+    "configuration-copy-check.log",
+    "configuration-copy-final.log",
+    "configuration-copy-final-results.json",
+    "configuration-copy-universal-gate.log"
   ],
   "remaining": [
-    "Aggregate transfer of global configurations, macros and combined responsibilities; reconciliation of legacy un-hashed audio assets on reverse copies",
-    "Physical Android and all six setup transitions",
-    "Authenticated web session persistence and full live chat cycle on real hardware",
+    "Combined workflow for planning, files, configurations and coordinated device responsibilities",
+    "Physical Android and all six setup transitions; reverse connectivity to FIXE",
+    "Authenticated web sessions and full live chat cycle on real hardware",
     "Complete real RC11.7 migration and rollback, including browser sessions and encrypted account access"
   ],
   "preserved": {
@@ -56,6 +50,5 @@
     "obsProcesses": true,
     "mainBranch": true,
     "noRealLiveOrChatEffect": true
-  },
-  "draftRelease": "https://github.com/Rastaaslan/StreamDashboard/releases/tag/untagged-5267d367561c9b31eada"
+  }
 }

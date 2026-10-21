@@ -1,0 +1,57 @@
+{
+  "date": "2026-10-21",
+  "codeCommit": "8be0d5c388772486c81a2328617db2c79d46e835",
+  "packageSha256": "5c5c4536984a249e940d35d49b8a2ec9c13f8f3df9e4dd7c87e48b46de2253d0",
+  "environment": "Two real Windows PCs, isolated profiles, packaged Electron, native encrypted trust and credentials, Tailscale",
+  "status": "partial",
+  "fixeToLaptop": {
+    "wrongPinRejected": true,
+    "authenticatedPairing": true,
+    "configurationCopied": true,
+    "lostAcknowledgementRetained": true,
+    "controllerProcessInterrupted": true,
+    "destinationProcessInterrupted": true,
+    "bothRestarted": true,
+    "pairingAndFingerprintPreserved": true,
+    "pendingJobRecovered": true,
+    "exactConfigurationConfirmed": true,
+    "unicodeLabelsPreserved": true,
+    "undoRestoredExactPreviousActions": true
+  },
+  "laptopToFixe": {
+    "status": "blocked",
+    "tcpViaTailscale": false,
+    "tcpViaLan": false,
+    "listenerVerified": "0.0.0.0:48136, owned candidate process",
+    "cause": "Inbound connectivity not established; no firewall or network policy was changed."
+  },
+  "preserved": {
+    "stableProcessesBothPcs": true,
+    "obs": true,
+    "productionProfiles": true,
+    "noLiveCommand": true,
+    "noChatMessage": true,
+    "noMacroExecution": true,
+    "noFirewallChange": true
+  },
+  "cleanup": {
+    "bothCandidatesStopped": true,
+    "candidatePortsReleased": true,
+    "temporaryPackagesRemoved": true,
+    "profilesAndReportsRetained": true,
+    "pairingFilesRemoved": true,
+    "artifactTransferServerStopped": true
+  },
+  "harnessCorrections": [
+    "Select the visible controller by exact URL path, excluding the hidden native executor.",
+    "Encode PowerShell JSON bodies as UTF-8 bytes.",
+    "Clear fixture shortcuts only on first start; never rewrite configuration during restart.",
+    "Compare JSON structurally, independently of property order."
+  ],
+  "limits": [
+    "The initial harness rewrote an accented label after the copy. The consistency check caught the changed destination. The corrected run used a new retained job and passed.",
+    "Only the FIXE-to-Laptop direction passed on these binaries.",
+    "No physical Android is available through ADB.",
+    "No real OBS effect, authenticated platform session, full RC11.7 migration or all-six-setup qualification was performed."
+  ]
+}
