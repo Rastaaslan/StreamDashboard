@@ -1,0 +1,52 @@
+{
+  "version": "2.1.0-alpha.3",
+  "builtFromCommit": "7772043cddb3cc207525d030c65a2b692d2084cb",
+  "deployedAt": "2026-10-22T07:53:32Z",
+  "authorization": "Damien : installe sur les pc",
+  "packageVerification": {
+    "filesVerifiedPerComputer": 75,
+    "changedFiles": [
+      "StreamDashboard.exe",
+      "resources/app.asar"
+    ],
+    "exeSha256": "bf8b14b0738f3d29624fdc3ef8c4026c26a4046df801253c709689544e4ad865",
+    "asarSha256": "50fa42811a06bcf0f2ed2c08664db468e35f51ead3b076a3cc42f3baefb0cbde"
+  },
+  "machines": [
+    {
+      "name": "FIXE",
+      "deviceId": "b5db7551-143d-410a-8b84-157070125122",
+      "role": "host",
+      "previousVersion": "2.1.0-alpha.2",
+      "installedVersion": "2.1.0-alpha.3",
+      "health": "ready",
+      "windowResponding": true,
+      "identityAndRolesPreserved": true,
+      "backup": "C:\\Users\\damie\\StreamDashboard-Backups\\before-alpha3-20261022-095244",
+      "obsConnected": true,
+      "obsPidBefore": 4748,
+      "obsPidAfter": 4748,
+      "streaming": false,
+      "twitchOutputActive": false,
+      "youtubeOutputActive": false
+    },
+    {
+      "name": "Laptop-damien",
+      "deviceId": "b9d58a49-3cc5-454f-9a64-db0e0b22db48",
+      "role": "client",
+      "previousVersion": "2.1.0-alpha.2",
+      "installedVersion": "2.1.0-alpha.3",
+      "health": "ready",
+      "windowResponding": true,
+      "identityAndRolesPreserved": true,
+      "backup": "C:\\Users\\damie\\StreamDashboard-Backups\\before-alpha3-20261022-095137"
+    }
+  ],
+  "notes": [
+    "Application files and persistent profiles backed up locally before replacement.",
+    "HTTP transfer over LAN unavailable; Tailscale transfer succeeded with pinned SHA-256 and restricted client addresses.",
+    "Temporary delivery servers stopped after transfer.",
+    "No live, OBS control action or chat message triggered; Android installation not performed.",
+    "Client-to-host interaction and real live commands were not exercised during installation."
+  ]
+}
