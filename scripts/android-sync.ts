@@ -1,7 +1,9 @@
+import {execFileSync} from 'node:child_process';
 import { cp, mkdir, rm } from 'node:fs/promises';
 import path from 'node:path';
 
-const source = path.resolve('apps/mobile');
+execFileSync(process.execPath,['scripts/build-public-assets.mjs'],{stdio:'inherit'});
+const source = path.resolve('.build/public/mobile');
 const destination = path.resolve('android/app/src/main/assets/public');
 await rm(destination, { recursive: true, force: true });
 await mkdir(destination, { recursive: true });

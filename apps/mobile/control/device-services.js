@@ -1,7 +1,7 @@
 import {createDevicePlatforms} from './device-platforms.js';
 import { callDeviceBridge } from './device-bridge.js';
 import { createDeviceStreamlabs } from './device-streamlabs.js';
-import {parseWizeBotCatalog} from '../shared/planning-engine.js';
+import {parseWizeBotCatalog} from '../shared/provider-utils.js';
 
 // Non-live integrations are addressed on this device. Credentials never enter
 // the replica, transfer journal, exports or HTML.

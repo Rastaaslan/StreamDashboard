@@ -1,5 +1,5 @@
 import { callDeviceBridge } from './device-bridge.js';
-import { googleRecurrence, parseGoogleRecurrence } from '../shared/planning-engine.js';
+import { googleRecurrence, parseGoogleRecurrence } from '../shared/provider-utils.js';
 
 export function createDeviceProviders({bridge=globalThis.StreamDashboardProviders,request,getCalendar=()=>null,enabled=()=>true}) {
   async function call(provider,operation,payload={}) {

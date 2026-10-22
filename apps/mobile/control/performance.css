@@ -176,3 +176,14 @@
 @media (prefers-reduced-motion: reduce) {
   .live-pad { transition: none; }
 }
+
+/* Four primary destinations; secondary tools remain reachable in their context. */
+.compact-app.simple-nav nav .desktop-nav { display: flex; }
+.compact-app.simple-nav nav [data-page=sounds], .compact-app.simple-nav nav [data-page=activity], .compact-app.simple-nav nav [data-page=manage] { display: none; }
+.compact-app.simple-nav nav [data-page=live] { order: 0; }
+.compact-app.simple-nav nav [data-page=deck] { order: 1; }
+.compact-app.simple-nav nav [data-page=planning] { order: 2; }
+.compact-app.simple-nav nav [data-page=settings] { order: 3; }
+.compact-app.simple-nav nav [data-page=planning] span, .compact-app.simple-nav nav [data-page=settings] span { font-size: 0; }
+.compact-app.simple-nav nav [data-page=planning] span::after { content: 'Planning'; font-size: 10px; }
+.compact-app.simple-nav nav [data-page=settings] span::after { content: 'Réglages'; font-size: 10px; }

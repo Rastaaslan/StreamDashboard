@@ -35,6 +35,7 @@ test('ProviderBridge compiles and enforces provider isolation, deletion and Stre
     }`,
     'org/json/JSONArray.java': 'package org.json; public class JSONArray { private java.util.List<Object> values=new java.util.ArrayList<>(); public JSONArray put(Object v) { values.add(v); return this; } public int length() { return values.size(); } public Object get(int i) throws JSONException { return values.get(i); } public String getString(int i) throws JSONException { return (String)values.get(i); } public JSONObject getJSONObject(int i) throws JSONException { return (JSONObject)values.get(i); } }',
     'SecureCredentialStore.java': `package ${pkg}; class SecureCredentialStore { SecureCredentialStore(android.app.Activity a) {} String get(String k) { return ""; } void put(String k,String v) {} void clear(String k) {} }`,
+    'OperationReceiptStore.java': `package ${pkg}; class OperationReceiptStore { OperationReceiptStore(android.app.Activity a,SecureCredentialStore c) {} String get(String k){return "";} void put(String k,String v){} void clear(String k){} void migrate(){} }`,
     'BuildConfig.java': `package ${pkg}; class BuildConfig { static final String TWITCH_ANDROID_CLIENT_ID="", GOOGLE_ANDROID_CLIENT_ID=""; static final boolean PREVIEW_MODE=false; }`,
     'GoogleAuthorizationAdapter.java': `package ${pkg}; class GoogleAuthorizationAdapter implements GoogleAuthorizationFlow.Adapter {
       private final String account;
@@ -164,7 +165,7 @@ test('ProviderBridge compiles and enforces provider isolation, deletion and Stre
       const file = path.join(directory, name);
       mkdirSync(path.dirname(file), { recursive: true }); writeFileSync(file, source); return file;
     });
-    execFileSync('javac', ['-d', path.join(directory, 'classes'), ...files, 'android/app/src/main/java/com/rastaaslan/streamdashboard/remote/NativeTwitchChat.java', 'android/app/src/main/java/com/rastaaslan/streamdashboard/remote/CloudPlatforms.java', 'android/app/src/main/java/com/rastaaslan/streamdashboard/remote/ProviderBridge.java', 'android/app/src/main/java/com/rastaaslan/streamdashboard/remote/GoogleAuthorizationFlow.java', 'android/app/src/main/java/com/rastaaslan/streamdashboard/remote/StreamlabsCloudClient.java'], { stdio: 'inherit' });
+    execFileSync('javac', ['-d', path.join(directory, 'classes'), ...files, 'android/app/src/main/java/com/rastaaslan/streamdashboard/remote/ProviderScheduler.java', 'android/app/src/main/java/com/rastaaslan/streamdashboard/remote/NativeTwitchChat.java', 'android/app/src/main/java/com/rastaaslan/streamdashboard/remote/CloudPlatforms.java', 'android/app/src/main/java/com/rastaaslan/streamdashboard/remote/ProviderBridge.java', 'android/app/src/main/java/com/rastaaslan/streamdashboard/remote/GoogleAuthorizationFlow.java', 'android/app/src/main/java/com/rastaaslan/streamdashboard/remote/StreamlabsCloudClient.java'], { stdio: 'inherit' });
     execFileSync('java', ['-cp', path.join(directory, 'classes'), pkg + '.DeletionPolicyTest'], { stdio: 'inherit' });
     execFileSync('java', ['-cp', path.join(directory, 'classes'), pkg + '.CloudPolicyTest'], { stdio: 'inherit' });
   } finally { rmSync(directory, { recursive: true, force: true }); }

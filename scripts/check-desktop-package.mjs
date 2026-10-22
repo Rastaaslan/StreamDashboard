@@ -30,39 +30,20 @@ for (const file of files) {
 }
 const lifecycle = readArchive('dist/apps/desktop/src/lifecycle.js').toString();
 assert.match(lifecycle, /port: controller \? 48135 : 48133/);
-for (const file of [
-  'dist/apps/desktop/src/main.js', 'dist/apps/desktop/src/lifecycle.js', 'dist/apps/desktop/src/preload.cjs',
-  'dist/apps/desktop/src/security.js', 'dist/apps/desktop/src/controller.js',
-  'dist/apps/desktop/src/restart-safety.js', 'dist/apps/desktop/src/updater.js',
-  'dist/apps/desktop/src/window.js', 'dist/apps/mobile/runtime.js',
-  'apps/mobile/runtime.js', 'apps/mobile/control/controller-bindings.js',
-  'dist/apps/desktop/src/twitch-viewer.js', 'apps/mobile/control/twitch-category-picker.js',
-  'dist/integrations/twitch/src/metadata.js', 'dist/integrations/obs/src/output-result.js',
-  'dist/apps/server/src/replay-auto-start.js',
-  'dist/apps/server/src/restart-safety.js', 'dist/apps/server/src/twitch-metadata-route.js',
-  'apps/mobile/control/device-accounts.js', 'apps/mobile/control/device-bridge.js',
-  'apps/mobile/control/device-providers.js', 'apps/mobile/control/device-services.js',
-  'apps/mobile/control/device-audio.js', 'apps/mobile/control/device-streamlabs.js',
-  'apps/mobile/control/performance-ui.js', 'apps/mobile/control/performance.css',
-  'apps/mobile/control-fonts.css', 'apps/mobile/sw.js', 'apps/mobile/storage.js',
-  'apps/mobile/control/local-planning.js', 'apps/mobile/shared/planning-engine.js',
-  'apps/mobile/control/device-workspace.js', 'apps/mobile/control/autonomy-store.js',
-  'apps/mobile/control/planning.js', 'apps/mobile/planning-export.js',
-  'apps/mobile/control/live-monitor.js', 'apps/mobile/control/live-controls.js',
-  'apps/mobile/control/youtube-picker.js', 'apps/mobile/control/twitch-chat.js',
-  'apps/mobile/control/twitch-chat.css', 'apps/mobile/control/streamlabs-feed.js',
-  'apps/mobile/control/control.js', 'apps/mobile/control/control.css', 'apps/mobile/control/index.html',
-  'apps/mobile/shared/planning-editor.js', 'apps/web/preview/preview.js',
-  'dist/apps/server/src/twitch-chat-routes.js', 'dist/apps/server/src/control-routes.js',
-  'dist/apps/server/src/control-service.js', 'dist/integrations/youtube/src/client.js',
-  'dist/apps/server/src/streamlabs-feed.js', 'dist/integrations/streamlabs/src/events.js',
-  'dist/apps/server/src/streamlabs-history.js', 'dist/integrations/streamlabs/src/history.js',
-  'dist/apps/server/src/index.js', 'dist/apps/server/src/storage.js',
-  'dist/apps/server/src/remote-api-policy.js', 'dist/apps/server/src/live-control-routes.js',
-  'dist/apps/desktop/src/secrets.js',
-  'dist/integrations/obs/src/client.js',
-]) {
-  assert.deepEqual(readArchive(file), readFileSync(file), 'Packaged asset diverges from source/build: ' + file);
+const publicAssets = JSON.parse(readFileSync('.build/public/manifest.json','utf8'));
+for (const file of publicAssets.files) {
+  const bytes=readArchive('apps/'+file.path);
+  assert.equal(createHash('sha256').update(bytes).digest('hex'),file.sha256,'Packaged public asset changed: '+file.path);
+}
+const built = JSON.parse(readFileSync('.build/build-proof.json','utf8'));
+for(const file of built.outputs.filter(file=>file.path.startsWith('dist/')&&!/^dist\/(tests|scripts)\//.test(file.path))){
+  assert.equal(createHash('sha256').update(readArchive(file.path)).digest('hex'),file.sha256,'Packaged runtime changed: '+file.path);
+}
+if(publicAssets.profile==='production') {
+  for(const file of files.filter(file=>/^\/apps\/(mobile|web)\//.test(file))) {
+    assert.ok(publicAssets.files.some(entry=>'/apps/'+entry.path===file)||!path.extname(file),'Unlisted public asset: '+file);
+    assert.ok(!file.endsWith('.d.ts'),'Declarations must not ship');
+  }
 }
 
 // Electron Packager embeds the SHA-256 of the ASAR header in the Windows PE

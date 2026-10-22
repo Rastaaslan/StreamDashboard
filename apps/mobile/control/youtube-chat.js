@@ -25,10 +25,19 @@ export function createYouTubeChat(root,{request,native=false,bridge=globalThis.S
     get('[data-youtube-account]').textContent=value.account?`YouTube API · ${value.account} · chaîne ${value.channelId}`:'YouTube API · compte de cet appareil';
     diagnostic([value.phaseMessage,value.message].filter(Boolean).join(' '));
     const log=get('.youtube-api-messages'),atBottom=log.scrollHeight-log.scrollTop-log.clientHeight<40;
-    const fragment=document.createDocumentFragment();
-    for(const message of value.messages||[]){const line=document.createElement('p'),name=document.createElement('b');name.textContent=message.author+' : ';line.append(name,document.createTextNode(message.text));fragment.append(line);}
-    if (!value.messages?.length && value.status === 'connected') { const empty=document.createElement('p');empty.className='small muted';empty.textContent='Chat connecté · aucun message reçu pour le moment.';fragment.append(empty); }
-    log.replaceChildren(fragment);if(atBottom)log.scrollTop=log.scrollHeight;
+    const existing=new Map([...log.querySelectorAll('[data-message-id]')].map(node=>[node.dataset.messageId,node]));
+    const messages=value.messages||[],wanted=new Set(messages.map(message=>message.id));
+    for(const [id,node] of existing)if(!wanted.has(id))node.remove();
+    if(messages.length||value.status!=='connected')log.querySelector('[data-chat-empty]')?.remove();
+    messages.forEach((message,index)=>{
+      let line=existing.get(message.id);
+      if(!line){line=document.createElement('p');line.dataset.messageId=message.id;line.append(document.createElement('b'),document.createTextNode(''));}
+      const name=message.author+' : ';if(line.firstChild.textContent!==name)line.firstChild.textContent=name;
+      if(line.lastChild.textContent!==message.text)line.lastChild.textContent=message.text;
+      if(log.children[index]!==line)log.insertBefore(line,log.children[index]||null);
+    });
+    if(!messages.length&&value.status==='connected'&&!log.querySelector('[data-chat-empty]')){const empty=document.createElement('p');empty.dataset.chatEmpty='';empty.className='small muted';empty.textContent='Chat connecté · aucun message reçu pour le moment.';log.append(empty);}
+    if(atBottom)log.scrollTop=log.scrollHeight;
   }
   async function poll() {
     if(disposed||!context.enabled||flight)return;

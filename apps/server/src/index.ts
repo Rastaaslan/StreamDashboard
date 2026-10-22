@@ -1,3 +1,4 @@
+import {createPlatformObserver} from './platform-observer.js';
 import { YouTubePreparationService } from '../../../integrations/youtube/src/preparation.js';
 import { AudioDestinations, RoleAudioPlayback } from './audio-destinations.js';
 import {createServerSoundLibrary} from './sound-library-export.js';
@@ -1166,26 +1167,10 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
     })().finally(() => { outputsObservedAt = Date.now(); outputsObservedGeneration = generation; outputObservation = undefined; autoStartReplay(); });
     return outputObservation;
   };
-  let platformObservation: Promise<void> | undefined;
-  let platformObservedAt = 0;
-  const platformRetryAt: Record<'twitch'|'youtube', number> = {twitch:0,youtube:0};
-  const observePlatforms = () => {
-    if (!capabilityEnabled('cloud')) return Promise.resolve();
-    void observeOutputs().catch(logError);
-    if (platformObservation) return platformObservation;
-    if (Date.now() - platformObservedAt < 15_000) return Promise.resolve();
-    platformObservation = Promise.allSettled((['twitch', 'youtube'] as const).map(async platform => {
-      if (Date.now() < platformRetryAt[platform]) return;
-      try { platformLive[platform] = platform === 'youtube' ? await youtube.broadcastState() : { live: (await twitch.getLiveState()).isLive, observedAt: new Date().toISOString() }; }
-      catch (error) {
-        // This only throttles background observation; explicit local stop stays available.
-        const quota = error instanceof YouTubeApiError && ['quotaExceeded','dailyLimitExceeded','rateLimitExceeded'].includes(error.reason);
-        platformRetryAt[platform] = Date.now() + (quota ? 300_000 : 30_000);
-        platformLive[platform] = { live: null, observedAt: new Date().toISOString(), error: (error instanceof Error ? error.message : 'État indisponible') + (quota ? ' Nouvelle vérification automatique dans cinq minutes.' : '') };
-      }
-    })).then(() => { platformObservedAt = Date.now(); }).finally(() => { platformObservation = undefined; });
-    return platformObservation;
-  };
+  const observePlatforms=createPlatformObserver({
+    enabled:()=>capabilityEnabled('cloud'),observeOutputs,logError,state:platformLive,
+    read:async platform=>platform==='youtube'?youtube.broadcastState():{live:(await twitch.getLiveState()).isLive,observedAt:new Date().toISOString()},
+  });
   control = await ControlService.open(path.join(dataDir, 'control-v2.json'), {
     live: async platform => {
       try {

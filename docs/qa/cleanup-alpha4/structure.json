@@ -1,0 +1,51 @@
+{
+  "modules": [
+    {
+      "entry": "apps/mobile/control/control.js",
+      "includeDynamic": false,
+      "files": 67,
+      "bytes": 633356
+    },
+    {
+      "entry": "apps/mobile/control/control.js",
+      "includeDynamic": true,
+      "files": 77,
+      "bytes": 768710
+    },
+    {
+      "entry": "apps/mobile/control/native-executor.js",
+      "includeDynamic": false,
+      "files": 25,
+      "bytes": 231820
+    },
+    {
+      "entry": "apps/mobile/control/native-executor.js",
+      "includeDynamic": true,
+      "files": 25,
+      "bytes": 231820
+    },
+    {
+      "entry": "apps/mobile/shared/uuid.js",
+      "includeDynamic": false,
+      "files": 4,
+      "bytes": 12697
+    },
+    {
+      "entry": "apps/mobile/shared/uuid.js",
+      "includeDynamic": true,
+      "files": 4,
+      "bytes": 12697
+    }
+  ],
+  "publicAssets": {
+    "count": 98,
+    "bytes": 969013,
+    "declarations": 0
+  },
+  "mainFiles": {
+    "apps/mobile/control/control.js": 114610,
+    "apps/mobile/control/settings-view.js": 11203,
+    "apps/server/src/index.ts": 212219,
+    "android/app/src/main/java/com/rastaaslan/streamdashboard/remote/ProviderBridge.java": 77207
+  }
+}

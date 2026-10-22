@@ -1,4 +1,4 @@
-import {normalizeStreamlabsHistory,mergeStreamlabsHistory} from '../shared/planning-engine.js';
+import {normalizeStreamlabsHistory,mergeStreamlabsHistory} from '../shared/provider-utils.js';
 
 const direct=()=>({status:'NOT_SUPPORTED',configured:false,lastError:null});
 const empty=()=>({status:'NOT_CONFIGURED',configured:false,lastSyncAt:null,lastAttemptAt:null,count:0,lastError:null});

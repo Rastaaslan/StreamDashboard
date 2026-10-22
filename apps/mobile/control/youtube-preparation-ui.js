@@ -1,4 +1,4 @@
-import { randomUuid } from '../shared/planning-engine.js';
+import { randomUuid } from '../shared/uuid.js';
 const esc=value=>String(value??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 
 /** Provider mutations always use the live connection, never the offline replay queue. */

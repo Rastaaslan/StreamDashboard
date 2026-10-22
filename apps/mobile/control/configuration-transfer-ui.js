@@ -1,4 +1,4 @@
-import {randomUuid} from '../shared/planning-engine.js';
+import {randomUuid} from '../shared/uuid.js';
 import {planConfigurationCopy,runConfigurationCopy} from '../shared/configuration-transfer.js';
 
 export function createConfigurationTransferUI({devices,snapshot,apply,store,modal,esc,changed}){

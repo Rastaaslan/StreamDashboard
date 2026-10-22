@@ -1,4 +1,4 @@
-import { validateProductProfile } from '../shared/planning-engine.js';
+import { validateProductProfile } from '../shared/device-utils.js';
 import { openReplica, newId } from './autonomy-store.js';
 import { fields, pick, resources, equal, clone } from '../shared/autonomy.js';
 import { mergeOccurrencePatch } from '../shared/recurrence.js';
@@ -73,8 +73,8 @@ export async function createAutonomy(scope,network,onChange=()=>{}){
     try{await store.reload();await store.accept(await network('/api/v2/autonomy'));
      // Keep per-resource order; a conflict must not hold back unrelated entities.
      for(let count=0;count<100;count++){
-      await store.reload();const blocked=new Set(store.record.pending.filter(x=>x.issue).map(x=>x.key));
-      const op=store.record.pending.find(x=>!x.issue&&!blocked.has(x.key));if(!op)break;
+      if(count)await store.reload();const record=store.record,blocked=new Set(record.pending.filter(x=>x.issue).map(x=>x.key));
+      const op=record.pending.find(x=>!x.issue&&!blocked.has(x.key));if(!op)break;
       const response=await network('/api/v2/autonomy/sync',{workspace:store.record.workspace,edit:pick(op,['id','key','base','value'])});await store.accept(response,op.id);
      }
      lastError='';changed();return true;

@@ -131,7 +131,7 @@ function boot(): Promise<void> {
     booting = true;
     try {
       log('Electron ready; creating visible startup window');
-      const preview = process.argv.includes('--ui-preview=desktop-v2');
+      const preview = process.argv.includes('--ui-preview=desktop-v2') && await stat(path.join(app.getAppPath(),'apps/web/preview/index.html')).then(()=>true,()=>false);
       const legacy = process.argv.includes('--ui-legacy=desktop-v1');
       installation = await installations.recover(async current => { configureLoginStartup(app, Boolean(current.startAtLogin)); });
       if(!runtime)activeDevice=structuredClone(installation.devices.find(d=>d.id===installation.localDeviceId)!);

@@ -1,5 +1,5 @@
 import { SETUPS, ROLES, associateInstallationDevice, migrateInstallation, createInstallationStore, planInstallationChange,installationBackup } from '../shared/installation.js';
-import { randomUuid } from '../shared/planning-engine.js';
+import { randomUuid } from '../shared/uuid.js';
 import {exportJSON} from './export-json.js';
 
 export async function createInstallationUI({ device, native, localEndpoint = '', desktop = globalThis.streamDashboardDesktop, storage = localStorage, modal, esc, changed, select, remove, viewers }) {

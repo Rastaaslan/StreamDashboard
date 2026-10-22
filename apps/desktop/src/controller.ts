@@ -1,3 +1,4 @@
+import {ACTION_TYPES} from '../../mobile/shared/action-registry.js';
 import { globalShortcut, ipcMain, type BrowserWindow } from 'electron';
 import express from 'express';
 import type { Server } from 'node:http';
@@ -16,7 +17,7 @@ export async function startControllerAssets(directory: string): Promise<Server> 
 import { actionDefinition } from '../../mobile/shared/action-definition.js';
 interface ControllerResult { status: string; message?: string; error?: { code?: string; message?: string } }
 const shortcutPattern = /^Control\+Alt\+Shift\+F(?:[1-9]|1\d|2[0-4])$/;
-const actionTypes = new Set<DeckAction['type']>(['mic.toggle','scene.set','mode.set','timer.add','sound.play','sound.stop','alert.play','chat.send','wizebot.command','replay.save','replay.start','replay.stop','live.start','live.stop']);
+const actionTypes = new Set<DeckAction['type']>(ACTION_TYPES);
 
 export function installControllerKeys(window: () => BrowserWindow | null, userData: string, uiOrigin: string, request:typeof fetch=fetch, enabled=true, autonomous?:{request(operation:'state'|'command',body?:unknown):Promise<any>}) {
   const secrets = new ElectronSecretStore(userData);

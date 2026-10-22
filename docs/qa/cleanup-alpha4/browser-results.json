@@ -1,0 +1,57 @@
+[
+  {
+    "mode": "Android synthetic autonomous",
+    "elapsedMs": 12510,
+    "sample": {
+      "clones": 30,
+      "idbRead": 5,
+      "idbWrite": 0,
+      "contentReplaced": 0,
+      "overflow": false
+    },
+    "requests": {},
+    "draftLoss": {
+      "before": "ABCDEFGHIJK",
+      "after": "ABCDEFGHIJK",
+      "focused": "broadcastId"
+    },
+    "profileInputs": [
+      {
+        "name": "streamerName",
+        "type": "text"
+      },
+      {
+        "name": "confirmStop",
+        "type": "checkbox"
+      },
+      {
+        "name": "streamerPingRewardIds",
+        "type": "text"
+      }
+    ],
+    "profileDraft": {
+      "name": "streamerName",
+      "before": "Audit brouillon",
+      "after": "Audit brouillon",
+      "old": "Streamer"
+    },
+    "errors": []
+  },
+  {
+    "mode": "desktop synthetic paired",
+    "elapsedMs": 12503,
+    "sample": {
+      "clones": 50,
+      "idbRead": 5,
+      "idbWrite": 0,
+      "contentReplaced": 0,
+      "overflow": false
+    },
+    "requests": {
+      "autonomy": 5,
+      "soundboard": 5,
+      "replay": 5
+    },
+    "errors": []
+  }
+]

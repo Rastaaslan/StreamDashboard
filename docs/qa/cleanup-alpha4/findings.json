@@ -1,0 +1,93 @@
+[
+  {
+    "id": "N01",
+    "status": "Corrigé",
+    "title": "Saisies conservées",
+    "change": "Le rafraîchissement passif conserve les formulaires modifiés et le focus. Deux champs et un profil vérifiés après plusieurs rafraîchissements.",
+    "evidence": "apps/mobile/control/render-policy.js ; tests/cleanup-ui.spec.ts"
+  },
+  {
+    "id": "N02",
+    "status": "Corrigé",
+    "title": "Rafraîchissements allégés",
+    "change": "Rendu inchangé conservé, vue calculée réutilisée, synchronisations identiques non réécrites, saisies enregistrées après regroupement, polling visuel suspendu en arrière-plan. Les agents restent indépendants.",
+    "evidence": "apps/mobile/control/autonomy-store.js ; control.js ; autonomy.js"
+  },
+  {
+    "id": "N03",
+    "status": "Corrigé, qualification réelle à faire",
+    "title": "File Android",
+    "change": "États locaux et lectures des deux chats séparés des mutations ordonnées. Échéance et annulation avant départ de file. Une opération déjà engagée reste potentiellement effective et ne se rejoue pas automatiquement.",
+    "evidence": "ProviderScheduler.java ; ProviderSchedulerTest.java ; device-bridge.js"
+  },
+  {
+    "id": "N04",
+    "status": "Appliqué avec limite documentée",
+    "title": "Journaux d’opérations",
+    "change": "Reçus anciens indexés dans IndexedDB et, côté natif, dans SQLite chiffré. Migration depuis les préférences conservant les preuves. Historique chaud terminal réduit à 128 entrées ; les opérations ambiguës sont conservées. Le volume total des preuves croît encore : aucune purge aveugle.",
+    "evidence": "operation-journal.js ; OperationReceiptStore.java ; tests/cleanup-ui.spec.ts"
+  },
+  {
+    "id": "N05",
+    "status": "Corrigé",
+    "title": "Stockage audio",
+    "change": "Écran de stockage local : fichiers retirés du catalogue, restauration et suppression définitive confirmée. La transaction recontrôle catalogue, identité et transferts avant de libérer les fichiers.",
+    "evidence": "audio-storage.js ; tests/cleanup-ui.spec.ts"
+  },
+  {
+    "id": "N06",
+    "status": "Partiel volontaire",
+    "title": "Contenu distribué",
+    "change": "Manifeste calculé depuis les entrées utiles. Déclarations et previews retirées des paquets standard ; ancien cockpit Windows conservé pour ses fonctions spécifiques. Sources des anciennes interfaces conservées, profil de construction de compatibilité disponible. Parité fonctionnelle exhaustive non revendiquée.",
+    "evidence": "scripts/build-public-assets.mjs ; forge.config.cjs ; scripts/android-sync.ts"
+  },
+  {
+    "id": "N07",
+    "status": "Partiel",
+    "title": "Découpage des responsabilités",
+    "change": "Extraction des réglages, du rendu, des reçus, de l’ordonnanceur Android et de l’observation des plateformes. Le contrôleur principal passe de 123 223 à 114 610 octets. Le serveur reste volumineux : la décomposition complète exige encore plusieurs étapes.",
+    "evidence": "settings-view.js ; platform-observer.ts ; ProviderScheduler.java ; OperationReceiptStore.java"
+  },
+  {
+    "id": "N08",
+    "status": "Appliqué progressivement",
+    "title": "Contrats communs",
+    "change": "Types, limites, capacités et libellés d’action centralisés pour le contrôleur, l’éditeur et le serveur. Vérification JavaScript stricte ajoutée sur trois modules ciblés ; le reste du JavaScript n’est pas entièrement typé.",
+    "evidence": "shared/action-registry.js ; tsconfig.browser-js.json"
+  },
+  {
+    "id": "N09",
+    "status": "Appliqué",
+    "title": "Navigation téléphone",
+    "change": "Quatre accès : Live, Deck, Planning, Réglages. Sons depuis le Deck, Activité depuis le Live, outils avancés dans les réglages. Navigation classique conservée en option. Réglages OBS locaux masqués sur Android autonome.",
+    "evidence": "control.js ; performance-ui.js ; performance.css ; settings-view.js"
+  },
+  {
+    "id": "N10",
+    "status": "Appliqué",
+    "title": "Chargement différé",
+    "change": "Assistants de migration/copie/transfert et moteur de planning chargés à la demande. UUID et utilitaires dissociés du moteur. Le cache hors ligne précharge les dépendances nécessaires : le gain mesuré concerne le graphe initial, pas une promesse de baisse du téléchargement total.",
+    "evidence": "lazy-features.js ; scripts/build-mobile-planning.mjs"
+  },
+  {
+    "id": "N11",
+    "status": "Appliqué",
+    "title": "Construction et contrôle des paquets",
+    "change": "Compilation du runtime séparée des vérifications ; variantes :built réutilisent les sorties. Preuve des sources et sorties requise avant empaquetage. Nettoyage préalable du dist généré. Contrôle de tous les fichiers attendus, du manifeste et de la paire EXE/ASAR.",
+    "evidence": "scripts/build-proof.mjs ; scripts/clean-runtime.mjs ; scripts/check-desktop-package.mjs"
+  },
+  {
+    "id": "N12",
+    "status": "Corrigé",
+    "title": "Chat YouTube",
+    "change": "Réutilisation des lignes identifiées. Un rafraîchissement de 1 000 messages inchangés conserve les 1 000 nœuds. Déconnexion et changement de source continuent de vider l’ancien contexte.",
+    "evidence": "youtube-chat.js ; tests/cleanup-ui.spec.ts"
+  },
+  {
+    "id": "N13",
+    "status": "Suivi conservé",
+    "title": "Qualification et déploiement",
+    "change": "Le candidat alpha.4 est construit et contrôlé. La matrice conserve ses 75 cellules de qualification ouvertes. Aucun téléphone physique connecté ; aucun déploiement sur les deux PC pendant cette intervention.",
+    "evidence": "docs/qa/next21-qualification.json ; artifacts.json"
+  }
+]

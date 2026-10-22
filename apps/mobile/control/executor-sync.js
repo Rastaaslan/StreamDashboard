@@ -1,6 +1,6 @@
 import {fields,resources,merge,equal,safeJSON} from '../shared/autonomy.js';
 import {actionDefinition} from '../shared/action-definition.js';
-import {validateProductProfile,createIdentityHash} from '../shared/planning-engine.js';
+import {validateProductProfile,createIdentityHash} from '../shared/device-utils.js';
 
 const fail=message=>{throw new Error(message);};
 const secrets=value=>value&&typeof value==='object'&&Object.entries(value).some(([key,item])=>/(?:token|secret|password|credential|authorization)/i.test(key)||secrets(item));

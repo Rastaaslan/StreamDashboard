@@ -12,17 +12,14 @@ export function createDevicePlatforms({store,bridge,enabled=()=>true}){
  async function prepare(value){
   if(!validId(value?.id)||!value.metadata?.title?.trim()||!['private','unlisted','public'].includes(value.privacyStatus)||typeof value.madeForKids!=='boolean'||!Number.isFinite(Date.parse(value.scheduledStartTime)))throw new Error('Préparation YouTube invalide.');
   const fingerprint=JSON.stringify(value);
-  const saved=store.record.drafts.youtubePreparations?.[value.id];
+  const saved=await store.journalRead('youtubePreparations',value.id);
   if(saved){if(saved.fingerprint!==fingerprint)throw new Error('Identifiant utilisé avec d’autres paramètres.');return saved.receipt.status==='running'?{...saved.receipt,status:'uncertain',message:'Préparation interrompue. Vérifiez YouTube Studio ; aucun renvoi automatique.'}:saved.receipt;}
   if(value.expectedRevision!==store.view().data.configuration.revision)throw new Error('La configuration a changé. Rouvrez le formulaire.');
   if(Date.parse(value.scheduledStartTime)<Date.now()-60000)throw new Error('Choisissez une date actuelle ou future.');
   const receipt={id:value.id,status:'running',phase:'checking',channelId:value.channelId,title:value.metadata.title,createdAt:new Date().toISOString(),message:'Vérification du compte…'};
-  await store.updateDraft('youtubePreparations',journal=>{
-   const all=journal||{};if(Object.hasOwn(all,value.id))throw new Error('Préparation déjà enregistrée. Relisez son résultat.');
-   if(Object.keys(all).length>=10000)throw new Error('Journal de préparation plein.');
-   return {...all,[value.id]:{fingerprint,receipt}};
-  });
-  const save=()=>store.updateDraft('youtubePreparations',journal=>({...journal,[value.id]:{fingerprint,receipt}}));
+  const claim=await store.journalClaim('youtubePreparations',value.id,{fingerprint,receipt});
+  if(!claim.created){if(claim.value.fingerprint!==fingerprint)throw new Error('Identifiant utilisé avec d’autres paramètres.');return {...claim.value.receipt,status:claim.value.receipt.status==='running'?'uncertain':claim.value.receipt.status};}
+  const save=()=>store.journalSave('youtubePreparations',value.id,{fingerprint,receipt});
   try{
    const channels=await call('youtube.channels');if(channels.items?.length!==1||channels.items[0].id!==value.channelId)throw new Error('Le compte YouTube a changé.');
    const streams=await call('youtube.streams');if(!streams.items?.some(s=>s.id===value.streamId&&s.channelId===value.channelId))throw new Error('Flux réutilisable absent de la chaîne.');
@@ -38,16 +35,15 @@ export function createDevicePlatforms({store,bridge,enabled=()=>true}){
   if(body.platform&&!['twitch','youtube'].includes(body.platform))throw new Error('Plateforme invalide.');
   const config=store.view().data.configuration,value=body.metadata||store.record.drafts.metadata;
   const fingerprint=JSON.stringify([body.action,body.platform||'',value]);
-  const previous=store.record.drafts.cloudMetadataReceipts?.[body.id];
+  const previous=await store.journalRead('cloudMetadataReceipts',body.id);
   if(previous){if(previous.fingerprint!==fingerprint)throw new Error('Identifiant de commande réutilisé.');return {...previous.receipt,...(previous.receipt.status==='running'?{status:'uncertain',message:'Publication interrompue. Vérifiez les plateformes avant de recommencer.'}:{})};}
   if(body.action==='metadata.apply'&&body.expectedRevision!==config.revision)throw new Error('Configuration modifiée. Rouvrez le formulaire.');
   if(!value?.title?.trim())throw new Error('Titre requis.');
   const receipt={id:body.id,action:body.action,status:'running',platforms:{},createdAt:new Date().toISOString(),message:'Publication en cours.'};
-  const save=()=>store.updateDraft('cloudMetadataReceipts',journal=>{
-   if(!Object.hasOwn(journal||{},body.id)&&Object.keys(journal||{}).length>=10000)throw new Error('Journal des publications plein.');
-   return {...journal,[body.id]:{fingerprint,receipt}};
-  });
-  await save();await store.draft('metadata',value);
+  const claim=await store.journalClaim('cloudMetadataReceipts',body.id,{fingerprint,receipt});
+  if(!claim.created){if(claim.value.fingerprint!==fingerprint)throw new Error('Identifiant de commande réutilisé.');return {...claim.value.receipt,status:claim.value.receipt.status==='running'?'uncertain':claim.value.receipt.status};}
+  const save=()=>store.journalSave('cloudMetadataReceipts',body.id,{fingerprint,receipt});
+  await store.draft('metadata',value);
   for(const platform of body.platform?[body.platform]:['twitch','youtube']){
    try{await call(platform+'.metadata',{metadata:value,...(platform==='youtube'?{broadcastId:config.youtube.broadcastId,channelId:config.youtube.channelId}:{})});receipt.platforms[platform]={status:'succeeded',message:'Informations relues et confirmées',observedAt:new Date().toISOString()};}
    catch(error){receipt.platforms[platform]={status:'uncertain',message:error.message||'Résultat non confirmé. Vérifiez la plateforme.',observedAt:new Date().toISOString()};}

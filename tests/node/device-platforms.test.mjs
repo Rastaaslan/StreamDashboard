@@ -5,6 +5,9 @@ function fixture(){
  const record={workspace:'local:test',drafts:{}},config={revision:2,youtube:{broadcastId:'broadcast01',channelId:'own_channel'}};
  const calls=[];let fail='',channel='own_channel',enabled=true;
  const store={record,reload:async()=>{},view:()=>({data:{configuration:structuredClone(config)}}),draft:async(k,v)=>{record.drafts[k]=structuredClone(v);},updateDraft:async(k,fn)=>{record.drafts[k]=structuredClone(fn(record.drafts[k]));}};
+ store.journalRead=async(name,id)=>structuredClone(record.drafts[name]?.[id]);
+ store.journalClaim=async(name,id,value)=>{const previous=record.drafts[name]?.[id];if(previous)return {created:false,value:structuredClone(previous)};(record.drafts[name]??={})[id]=structuredClone(value);return {created:true,value};};
+ store.journalSave=async(name,id,value)=>{record.drafts[name][id]=structuredClone(value);};
  const bridge={platformService:async raw=>{const value=JSON.parse(raw);calls.push(value);if(value.operation===fail)throw Error('Réponse perdue');if(value.operation==='youtube.create')assert.equal(record.drafts.youtubePreparations[value.id].receipt.phase,'creating');return JSON.stringify(value.operation==='youtube.channels'?{ok:true,items:[{id:channel}]}:value.operation==='youtube.streams'?{ok:true,items:[{id:'stream_own',channelId:channel}]}:value.operation==='youtube.create'?{ok:true,broadcastId:'broadcast01',channelId:channel}:{ok:true});}};
  return {store,config,calls,open:()=>createDeviceServices({store,bridge,enabled:()=>enabled}),fail:v=>fail=v,channel:v=>channel=v,enabled:v=>enabled=v};
 }

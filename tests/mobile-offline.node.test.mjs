@@ -6,6 +6,7 @@ import vm from 'node:vm';
 const base = 'https://dashboard.test/mobile/';
 const mobileRoot = new URL('../apps/mobile/', import.meta.url);
 const workerSource = await readFile(new URL('sw.js', mobileRoot), 'utf8');
+const controlWorkerSource = await readFile(new URL('control-sw.js', mobileRoot), 'utf8');
 const localFile = url => { const relative = new URL(url).pathname.slice('/mobile/'.length); return new URL(relative.endsWith('/') || !relative ? relative + 'index.html' : relative, mobileRoot); };
 const previousCache = 'streamdashboard-mobile-v21-live-tags';
 
@@ -45,7 +46,7 @@ async function startupStyles(entry) {
   return styles;
 }
 
-function workerHarness() {
+function workerHarness(source=workerSource) {
   const listeners = new Map();
   const stores = new Map([[previousCache, new Map()], ['unrelated-cache', new Map()]]);
   const attempts = [];
@@ -60,6 +61,7 @@ function workerHarness() {
           // Simulate successful installation using repository bytes, never HTTP.
           for (const asset of assets) store.set(key(asset), new Response(await readFile(localFile(key(asset)))));
         },
+        async match(request){return store.get(key(request))?.clone();},
         async put(request, response) { store.set(key(request), response); },
       };
     },
@@ -69,7 +71,7 @@ function workerHarness() {
       for (const store of stores.values()) if (store.has(key(request))) return store.get(key(request)).clone();
     },
   };
-  vm.runInNewContext(workerSource, {
+  vm.runInNewContext(source, {
     URL, caches,
     fetch: async request => { attempts.push(request.url); throw new TypeError('Network unavailable'); },
     self: {
@@ -144,7 +146,7 @@ test('the production control shell, local services and styles boot entirely from
   for (const file of ['control/device-audio.js', 'control/device-streamlabs.js', 'control/device-services.js', 'control/device-bridge.js', 'control/local-planning.js', 'shared/planning-engine.js', 'shared/autonomy.js', 'control/performance.css', 'control-fonts.css']) {
     assert.ok(assets.has(new URL(file, base).href), `Production dependency not exercised: ${file}`);
   }
-  const worker = workerHarness();
+  const worker = workerHarness(controlWorkerSource);
   await worker.lifecycle('install');
   await worker.lifecycle('activate');
   for (const [url, source] of assets) {

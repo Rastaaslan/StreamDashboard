@@ -1,5 +1,5 @@
 import {callDeviceBridge} from './device-bridge.js';
-import {randomUuid} from '../shared/planning-engine.js';
+import {randomUuid} from '../shared/uuid.js';
 import { createYouTubeChat } from './youtube-chat.js';
 import { createTwitchChat } from './twitch-chat.js';
 

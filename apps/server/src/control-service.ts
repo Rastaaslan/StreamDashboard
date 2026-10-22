@@ -1,3 +1,4 @@
+import {ACTION_TYPES,ACTION_LIMITS} from '../../mobile/shared/action-registry.js';
 import { actionDefinition } from '../../mobile/shared/action-definition.js';
 import { copyFile, constants, stat } from 'node:fs/promises';
 import { createHash } from 'node:crypto';
@@ -35,12 +36,11 @@ export function validateMetadata(value: LiveMetadata): LiveMetadata {
   return { title: value.title.trim(), description: value.description, twitchGameId: value.twitchGameId, youtubeCategoryId: value.youtubeCategoryId, tags: [...value.tags] };
 }
 export function validateConfiguration(value: ControlConfiguration): ControlConfiguration {
-  if (!value || value.version !== 1 || !Array.isArray(value.actions) || value.actions.length > 100) fail('Configuration du Deck invalide.');
+  if (!value || value.version !== 1 || !Array.isArray(value.actions) || value.actions.length > ACTION_LIMITS.count) fail('Configuration du Deck invalide.');
   const ids = new Set<string>(), shortcuts = new Set<string>();
-  const types = new Set(defaultControlData().configuration.actions.map(a => a.type));
-  ['timer.add','scene.set','sound.play','sound.stop','alert.play','chat.send','wizebot.command','replay.save','replay.start','replay.stop','live.start','live.stop'].forEach(t => types.add(t as DeckAction['type']));
+  const types = new Set(ACTION_TYPES);
   for (const a of value.actions) {
-    if (!a || !/^[a-zA-Z0-9_-]{1,64}$/.test(a.id) || ids.has(a.id) || typeof a.label !== 'string' || !a.label.trim() || a.label.length > 80 || !types.has(a.type) || typeof a.value !== 'string' || a.value.length > 500 || !['purple','green','amber','red'].includes(a.color)) fail('Bouton invalide ou identifiant dupliqué.');
+    if (!a || !/^[a-zA-Z0-9_-]{1,64}$/.test(a.id) || ids.has(a.id) || typeof a.label !== 'string' || !a.label.trim() || a.label.length > ACTION_LIMITS.label || !types.has(a.type) || typeof a.value !== 'string' || a.value.length > ACTION_LIMITS.value || !['purple','green','amber','red'].includes(a.color)) fail('Bouton invalide ou identifiant dupliqué.');
     if (typeof a.shortcut !== 'string' || (a.shortcut && (!/^Control\+Alt\+Shift\+F(?:[1-9]|1\d|2[0-4])$/.test(a.shortcut) || shortcuts.has(a.shortcut)))) fail('Raccourci invalide ou déjà utilisé.');
     if (a.type === 'timer.add' && (!Number.isFinite(Number(a.value)) || Math.abs(Number(a.value)) > 86400)) fail('Durée invalide.');
     if (a.type === 'wizebot.command' && (!/^![\p{L}\p{N}_-]+(?: [^\r\n]*)?$/u.test(a.value) || /[\x00-\x1f\x7f]/.test(a.value))) fail('Une commande WizeBot commence par ! et tient sur une seule ligne.');

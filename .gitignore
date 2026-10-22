@@ -25,3 +25,5 @@ android/app/src/main/res/mipmap-*/
 
 # Planning export references are generated locally on demand
 tests/fixtures/planning-export/*.png
+
+.build/

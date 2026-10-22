@@ -1,4 +1,4 @@
-import { defaultProductProfile } from '../shared/planning-engine.js';
+import { defaultProductProfile } from '../shared/device-utils.js';
 import { newId } from './autonomy-store.js';
 
 export const LOCAL_SCOPE = 'device-workspace-v1';

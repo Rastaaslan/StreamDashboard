@@ -1,33 +1,40 @@
-import { createBinaryHash, randomUuid as newId } from '../shared/planning-engine.js';
+import {createOperationJournal, archiveReceipts} from './operation-journal.js';
+import { createBinaryHash, randomUuid as newId } from '../shared/device-utils.js';
 import { clone, equal, merge, overlay, resources, fields, pick } from '../shared/autonomy.js';
 import { openReplicaDatabase, locateReplica } from './replica-identity.js';
 import {transitionPlanningHandoff} from '../shared/planning-handoff.js';
-export { randomUuid as newId } from '../shared/planning-engine.js';
+export { randomUuid as newId } from '../shared/uuid.js';
 const containsSecret=value=>Boolean(value&&typeof value==='object'&&Object.entries(value).some(([key,v])=>/(?:token|secret|password|credential|authorization)/i.test(key)||containsSecret(v)));
 const empty = () => ({version:1,workspace:null,bundle:null,pending:[],lastSync:null,drafts:{}});
 const recordView=record=>{if(!record.bundle)return null;let bundle=clone(record.bundle);for(const op of record.pending)bundle=overlay(bundle,{[op.key]:merge(op.base,op.value,resources(bundle)[op.key]??null).value});if(record.localPlanning)bundle.data.host.planning=clone(record.localPlanning);return bundle;};
 /** Each transaction reads the newest record: multiple windows cannot overwrite each other's outbox. */
 export async function openReplica(scope, factory=globalThis.indexedDB){
  const db=await openReplicaDatabase(factory);let actualScope=scope;
- const transact=update=>new Promise((resolve,reject)=>{
-  const tx=db.transaction('replicas',update?'readwrite':'readonly'),table=tx.objectStore('replicas');let value;
+ const transact=(update,receiptRef)=>new Promise((resolve,reject)=>{
+  const tx=db.transaction(['replicas','receipts'],update?'readwrite':'readonly'),table=tx.objectStore('replicas');let value;
   locateReplica(table,scope,location=>{
    actualScope=location.scope;const request=table.get(actualScope);
-   request.onsuccess=()=>{try{value=request.result||empty();if(location.workspace&&value.workspace!==location.workspace)throw new Error('Identité de copie locale incohérente. Les données sont conservées.');if(update){value=update(value)||value;table.put(value,actualScope);}}catch(e){tx.abort();reject(e);}};
+   request.onsuccess=()=>{try{
+    value=request.result||empty();if(location.workspace&&value.workspace!==location.workspace)throw new Error('Identité de copie locale incohérente. Les données sont conservées.');
+    const apply=archived=>{try{if(update){value=update(value,archived)||value;archiveReceipts(value,tx.objectStore('receipts'));table.put(value,actualScope);}}catch(e){tx.abort();reject(e);}};
+    if(receiptRef){const r=tx.objectStore('receipts').get(value.workspace+'/'+receiptRef.name+'/'+receiptRef.id);r.onsuccess=()=>apply(r.result);}else apply();
+   }catch(e){tx.abort();reject(e);}};
   },error=>{tx.abort();reject(error);});
-  tx.oncomplete=()=>resolve(clone(value));tx.onerror=()=>reject(tx.error||new Error('Sauvegarde locale impossible.'));tx.onabort=()=>reject(tx.error||new Error('Sauvegarde locale annulée.'));
+  tx.oncomplete=()=>resolve(value);tx.onerror=()=>reject(tx.error||new Error('Sauvegarde locale impossible.'));tx.onabort=()=>reject(tx.error||new Error('Sauvegarde locale annulée.'));
  });
- let current;try{current=await transact();}catch(error){db.close();throw error;}
- const change=async update=>{current=await transact(update);return current;};
+ let current,cachedView,viewRecord,lastObservedSync;try{current=await transact();}catch(error){db.close();throw error;}
+ const change=async (update,receiptRef)=>{current=await transact(update,receiptRef);return current;};
+ const journal=createOperationJournal(db,scope);
  return {
   get scope(){return actualScope;},
-  get record(){return clone(current);},
+  journalRead:journal.read,journalClaim:journal.claim,journalSave:journal.save,
+  get record(){return clone(lastObservedSync?{...current,lastSync:lastObservedSync}:current);},
   async seed(response){await change(record=>{if(!record.bundle){record.workspace=response.workspace;record.bundle=clone(response.bundle);}});},
-  async reload(){current=await transact();return current;},
-  view(){return recordView(current);},
+  async reload(){const next=await transact();if(!equal(next,current))current=next;return clone(current);},
+  view(){if(viewRecord!==current){cachedView=recordView(current);viewRecord=current;}return clone(cachedView);},
   async handoff(own,operation,ticket,proof,guard=()=>{}){
    let receipt;
-   await change(record=>{
+   await change((record,archived)=>{
     guard();if(!record.workspace?.startsWith('local:'))throw new Error('Espace autonome requis.');
     const result=transitionPlanningHandoff({items:recordView(record).data.host.planning,journal:record.drafts.planningHandoffs||{}},own,operation,ticket,proof);
     record.localPlanning=result.state.items;record.drafts.planningHandoffs=result.state.journal;receipt=result.receipt;
@@ -37,11 +44,10 @@ export async function openReplica(scope, factory=globalThis.indexedDB){
   // a controller crash or a lost response cannot create a second publisher.
   async adoptPlanning(edit,signature,guard=()=>{}){
    let receipt;
-   await change(record=>{
+   await change((record,archived)=>{
     guard();if(!record.workspace?.startsWith('local:'))throw new Error('Espace autonome requis.');
-    const receipts=record.drafts.executorEdits||{},previous=receipts[edit.id];
+    const receipts=record.drafts.executorEdits||{},previous=receipts[edit.id]||archived;
     if(previous){if(previous.signature!==signature)throw new Error('Identifiant de modification réutilisé.');receipt=previous;return;}
-    if(Object.keys(receipts).length>=4096)throw new Error('Journal Android plein. Exportez les données avant de poursuivre.');
     const items=recordView(record).data.host.planning,existing=items.find(item=>item.id===edit.value.id);
     if(existing)receipt={signature,status:'conflict',current:clone(existing),fields:['identity'],message:'Un événement de même identité existe déjà. Comparez les versions.'};
     else{
@@ -50,7 +56,7 @@ export async function openReplica(scope, factory=globalThis.indexedDB){
      receipt={signature,status:'applied',current:item};
     }
     record.drafts.executorEdits={...receipts,[edit.id]:clone(receipt)};
-   });return clone(receipt);
+   },{name:'executorEdits',id:edit.id});return clone(receipt);
   },
   // The native planner persists its journal before provider I/O, including
   // uncertain creates and pending deletions. Never reduce it to editable fields.
@@ -69,12 +75,11 @@ export async function openReplica(scope, factory=globalThis.indexedDB){
   // crash never needs to infer whether a native side effect was executed.
   async configurationEdit(edit,signature,guard=()=>{},statusOnly=false){
    let receipt;
-   await change(record=>{
+   await change((record,archived)=>{
     guard();if(!record.workspace?.startsWith('local:'))throw new Error('Espace autonome requis.');
-    const saved=record.drafts.executorEdits||{},previous=saved[edit.id];
+    const saved=record.drafts.executorEdits||{},previous=saved[edit.id]||archived;
     if(previous){if(previous.signature!==signature)throw new Error('Identifiant de modification réutilisé.');receipt=previous;return;}
     if(statusOnly){receipt={status:'absent'};return;}
-    if(Object.keys(saved).length>=4096)throw new Error('Journal de configuration plein.');
     if(containsSecret(edit))throw new Error('Les secrets restent propres à chaque appareil.');
     const current=resources(recordView(record))[edit.key]??null;
     if(!equal(edit.base,current))receipt={signature,status:'conflict',current,fields:['élément'],message:'Modification concurrente. Relisez la destination.'};
@@ -83,7 +88,7 @@ export async function openReplica(scope, factory=globalThis.indexedDB){
      receipt={signature,status:'applied',current:clone(edit.value)};
     }
     record.drafts.executorEdits={...saved,[edit.id]:clone(receipt)};
-   });return clone(receipt);
+   },{name:'executorEdits',id:edit.id});return clone(receipt);
   },
   async stage(changes,bases,requireUnchanged=false){await change(record=>{
    if(Object.values(changes).some(value=>containsSecret(value)))throw new Error('Les secrets nécessitent une connexion sécurisée à la régie ; ils ne sont pas conservés dans la copie locale.');
@@ -92,7 +97,12 @@ export async function openReplica(scope, factory=globalThis.indexedDB){
    if(requireUnchanged)for(const key of Object.keys(changes))if(!equal(resources(bundle)[key]??null,bases?.[key]??null))throw new Error('Modification concurrente sur cet appareil.');
    for(const [key,value] of Object.entries(changes)){const base=(bases||resources(bundle))[key]??null;if(equal(base,value))continue;record.pending.push({id:newId(),key,base,value:clone(value),createdAt:new Date().toISOString()});bundle=overlay(bundle,{[key]:value});}
   });},
-  async accept(response,opId){await change(record=>{
+  async accept(response,opId){
+   if(current.workspace&&current.workspace!==response.workspace)throw new Error('Identité de régie différente.');
+   lastObservedSync=new Date().toISOString();
+   const {savedAt:oldAt,...oldBundle}=current.bundle||{}, {savedAt:nextAt,...nextBundle}=response.bundle||{};
+   if(!opId&&equal(oldBundle,nextBundle)&&Date.now()-Date.parse(current.lastSync||0)<60000)return;
+   await change(record=>{
    if(record.workspace&&record.workspace!==response.workspace)throw new Error('Identité de régie différente. Les données locales sont conservées ; reconnectez la régie d’origine.');
    record.workspace=response.workspace;if(!record.bundle?.savedAt||!response.bundle.savedAt||response.bundle.savedAt>=record.bundle.savedAt)record.bundle=clone(response.bundle);record.lastSync=new Date().toISOString();
    if(opId){const op=record.pending.find(x=>x.id===opId);if(op&&response.receipt.status==='applied')record.pending=record.pending.filter(x=>x.id!==opId);else if(op)op.issue=clone(response.receipt);}

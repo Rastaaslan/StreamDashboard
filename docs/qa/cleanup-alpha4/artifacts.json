@@ -1,0 +1,22 @@
+{
+  "apk": {
+    "bytes": 3764881,
+    "sha256": "01991477f4bea157cc8acfb2ac156d090485f198827ed29f37b2f31c4fc29938",
+    "parts": 20,
+    "base64Bytes": 5019844,
+    "uiFiles": 89,
+    "declarations": 0,
+    "matchingAssets": 89
+  },
+  "exe": {
+    "bytes": 239301120,
+    "sha256": "95cebcc8ce1dec645963dab3aa07dddf848d0305760e63708a314dd78335216c"
+  },
+  "asar": {
+    "bytes": 7053741,
+    "sha256": "fe27bd159e296db5974c96637fb3877fe32e22b984f598a8170aada0c2731c7a"
+  },
+  "sourceHash": "8ecb0f4d712b0a8467339c85fd13c4ecff1db3f0f2fa103ba9bdee2ae43bb5b2",
+  "signatureVerified": true,
+  "certificate": "c09e61d51adcc0e06398e5f23bc4a88aa3afb68493dea1564f0b248fcb3403b0"
+}

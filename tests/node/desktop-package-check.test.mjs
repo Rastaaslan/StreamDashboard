@@ -91,6 +91,9 @@ function check(platform, changes = {}, options = {}) {
     readFileSync: file => {
       if (file === executable) return executableBytes;
       const normalized = file.replaceAll('\\', '/');
+      const manifest=runtimeAssets.filter(f=>f.startsWith('apps/')).map(f=>({path:f.slice(5),sha256:createHash('sha256').update(fixture[f]).digest('hex')}));
+      if(normalized==='.build/public/manifest.json')return Buffer.from(JSON.stringify({profile:'production',files:manifest}));
+      if(normalized==='.build/build-proof.json')return Buffer.from(JSON.stringify({outputs:runtimeAssets.filter(f=>f.startsWith('dist/')).map(f=>({path:f,sha256:createHash('sha256').update(fixture[f]).digest('hex')}))}));
       return Buffer.from(normalized === 'package.json' ? JSON.stringify(sourceManifest) : fixture[normalized]);
     },
     // The checker consumes these parser boundaries; its path, architecture and
@@ -124,10 +127,11 @@ for (const platform of [path.posix, path.win32]) {
     }
     assert.throws(() => check(platform, { 'resources/distribution.json': JSON.stringify({ googleClientId: 'public.apps.googleusercontent.com', twitchClientId: 'public', googleClientSecret: 'private' }) }), /googleClientSecret/);
     for (const file of runtimeAssets.filter(file => !file.endsWith('/lifecycle.js'))) {
-      assert.throws(() => check(platform, { [file]: 'stale build' }), /Packaged asset diverges/);
+      assert.throws(() => check(platform, {[file]: null}), /was not found/);
+      assert.throws(() => check(platform, { [file]: 'stale build' }), /Packaged (public asset|runtime) changed/);
     }
     // A stale lifecycle which retains valid role ports must also fail equality.
-    assert.throws(() => check(platform, { 'dist/apps/desktop/src/lifecycle.js': fixture['dist/apps/desktop/src/lifecycle.js'] + '\n// stale build' }), /Packaged asset diverges/);
+    assert.throws(() => check(platform, { 'dist/apps/desktop/src/lifecycle.js': fixture['dist/apps/desktop/src/lifecycle.js'] + '\n// stale build' }), /Packaged (public asset|runtime) changed/);
     for (const directory of ['tests','test-results','docs','scripts','data','config','logs','.dependencies','.cb52-tmp','.git']) {
       assert.throws(() => check(platform, { [`${directory}/unexpected.txt`]: 'excluded' }), /Unexpected packaged source/);
     }

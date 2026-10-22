@@ -1,6 +1,6 @@
 import {openReplicaDatabase} from './replica-identity.js';
 import {overlay,resources,merge} from '../shared/autonomy.js';
-import {createBinaryHash,randomUuid} from '../shared/planning-engine.js';
+import {createBinaryHash,randomUuid} from '../shared/device-utils.js';
 import {soundIdentity,portableSound,sameSound} from '../shared/sound-library.js';
 
 export const SOUND_TRANSFER={version:1,chunkBytes:65536,maxBytes:100*1024*1024};

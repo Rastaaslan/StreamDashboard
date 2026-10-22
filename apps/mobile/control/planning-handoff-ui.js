@@ -1,5 +1,5 @@
 import {planningOwned} from '../shared/planning-handoff.js';
-import {randomUuid} from '../shared/planning-engine.js';
+import {randomUuid} from '../shared/uuid.js';
 import {runPlanningHandoff} from './planning-handoff.js';
 
 export function createPlanningHandoffUI({devices,snapshot,call,store,modal,esc,changed}){

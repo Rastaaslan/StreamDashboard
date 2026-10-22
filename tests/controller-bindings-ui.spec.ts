@@ -240,3 +240,6 @@ test('Stop remains executable while an unrelated offline action edit has a confl
  await expect.poll(()=>backend.calls.some(value=>value.startsWith('POST ')&&value.endsWith('/api/v2/actions'))).toBe(true);
  expect(errors).toEqual([]);
 });
+
+// Retain coverage of the optional classic phone navigation. The default four-tab layout has its own cleanup regression.
+test.beforeEach(async ({page})=>{await page.addInitScript(()=>localStorage.setItem('sd2.navigation','classic'));});

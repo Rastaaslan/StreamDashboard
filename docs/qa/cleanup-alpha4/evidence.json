@@ -1,0 +1,192 @@
+{
+  "date": "2026-10-22",
+  "candidate": "2.1.0-alpha.4",
+  "sourceFilesCompared": 318,
+  "sourceFilesIdentical": 318,
+  "tests": {
+    "vitest": {
+      "passed": 1477,
+      "files": 167,
+      "failed": 0
+    },
+    "node": {
+      "uniqueTests": 354,
+      "initialPassed": 346,
+      "initialFailed": 8,
+      "targetedRecheckPassed": 13,
+      "remainingFailures": 0
+    },
+    "browser": {
+      "uniqueTestsVerified": 119,
+      "initialPassed": 115,
+      "initialFailed": 2,
+      "targetedRechecks": [
+        17,
+        10
+      ],
+      "remainingFailures": 0
+    },
+    "androidJUnit": {
+      "passed": 49,
+      "failed": 0
+    },
+    "androidLint": {
+      "errors": 0,
+      "warnings": 15
+    },
+    "typescript": "passed",
+    "incrementalCheckJs": "passed",
+    "security": "passed",
+    "javascriptSyntax": "passed",
+    "packageIntegrity": "passed"
+  },
+  "qualification": {
+    "physicalAndroidAvailable": false,
+    "hardwareCellsPending": 75,
+    "windowsInstalledThisTurn": false,
+    "electronNativeSmoke": "not qualified: no X display; headless launch did not expose a window before timeout"
+  },
+  "fixedDuringReaudit": [
+    "Deck return could reuse a stale markup cache after Activity; now checks node ownership.",
+    "Blocked IndexedDB upgrade could leave a late connection open; now closes it; regression passes."
+  ],
+  "artifacts": {
+    "apk": {
+      "bytes": 3764881,
+      "sha256": "01991477f4bea157cc8acfb2ac156d090485f198827ed29f37b2f31c4fc29938",
+      "parts": 20,
+      "base64Bytes": 5019844,
+      "uiFiles": 89,
+      "declarations": 0,
+      "matchingAssets": 89
+    },
+    "exe": {
+      "bytes": 239301120,
+      "sha256": "95cebcc8ce1dec645963dab3aa07dddf848d0305760e63708a314dd78335216c"
+    },
+    "asar": {
+      "bytes": 7053741,
+      "sha256": "fe27bd159e296db5974c96637fb3877fe32e22b984f598a8170aada0c2731c7a"
+    },
+    "sourceHash": "8ecb0f4d712b0a8467339c85fd13c4ecff1db3f0f2fa103ba9bdee2ae43bb5b2",
+    "signatureVerified": true,
+    "certificate": "c09e61d51adcc0e06398e5f23bc4a88aa3afb68493dea1564f0b248fcb3403b0"
+  },
+  "browserProbe": [
+    {
+      "mode": "Android synthetic autonomous",
+      "elapsedMs": 12510,
+      "sample": {
+        "clones": 30,
+        "idbRead": 5,
+        "idbWrite": 0,
+        "contentReplaced": 0,
+        "overflow": false
+      },
+      "requests": {},
+      "draftLoss": {
+        "before": "ABCDEFGHIJK",
+        "after": "ABCDEFGHIJK",
+        "focused": "broadcastId"
+      },
+      "profileInputs": [
+        {
+          "name": "streamerName",
+          "type": "text"
+        },
+        {
+          "name": "confirmStop",
+          "type": "checkbox"
+        },
+        {
+          "name": "streamerPingRewardIds",
+          "type": "text"
+        }
+      ],
+      "profileDraft": {
+        "name": "streamerName",
+        "before": "Audit brouillon",
+        "after": "Audit brouillon",
+        "old": "Streamer"
+      },
+      "errors": []
+    },
+    {
+      "mode": "desktop synthetic paired",
+      "elapsedMs": 12503,
+      "sample": {
+        "clones": 50,
+        "idbRead": 5,
+        "idbWrite": 0,
+        "contentReplaced": 0,
+        "overflow": false
+      },
+      "requests": {
+        "autonomy": 5,
+        "soundboard": 5,
+        "replay": 5
+      },
+      "errors": []
+    }
+  ],
+  "offlineProbe": {
+    "cachedFiles": 87,
+    "offlineReload": true,
+    "lazyPlanningOffline": true,
+    "oldAppCacheRemoved": true,
+    "otherCachePreserved": true,
+    "apiCached": false,
+    "errors": []
+  },
+  "structure": {
+    "modules": [
+      {
+        "entry": "apps/mobile/control/control.js",
+        "includeDynamic": false,
+        "files": 67,
+        "bytes": 633356
+      },
+      {
+        "entry": "apps/mobile/control/control.js",
+        "includeDynamic": true,
+        "files": 77,
+        "bytes": 768710
+      },
+      {
+        "entry": "apps/mobile/control/native-executor.js",
+        "includeDynamic": false,
+        "files": 25,
+        "bytes": 231820
+      },
+      {
+        "entry": "apps/mobile/control/native-executor.js",
+        "includeDynamic": true,
+        "files": 25,
+        "bytes": 231820
+      },
+      {
+        "entry": "apps/mobile/shared/uuid.js",
+        "includeDynamic": false,
+        "files": 4,
+        "bytes": 12697
+      },
+      {
+        "entry": "apps/mobile/shared/uuid.js",
+        "includeDynamic": true,
+        "files": 4,
+        "bytes": 12697
+      }
+    ],
+    "publicAssets": {
+      "count": 98,
+      "bytes": 969013,
+      "declarations": 0
+    },
+    "mainFiles": {
+      "apps/mobile/control/control.js": 114610,
+      "apps/mobile/control/settings-view.js": 11203,
+      "apps/server/src/index.ts": 212219,
+      "android/app/src/main/java/com/rastaaslan/streamdashboard/remote/ProviderBridge.java": 77207
+    }
+  }
+}

@@ -25,12 +25,13 @@ public final class ProviderBridge {
   private final GoogleAuthorizationAdapter googleAdapter, youtubeAdapter;
   private final Activity activity;
   private final SecureCredentialStore credentials;
+  private final OperationReceiptStore receipts;
   private final NativeTwitchChat nativeChat=new NativeTwitchChat();
-  private String chatToken="";
-  private JSONObject chatUser;
+  private volatile String chatToken="";
+  private volatile JSONObject chatUser;
 
   ProviderBridge(Activity activity) {
-    this.activity = activity; credentials = new SecureCredentialStore(activity);
+    this.activity = activity; credentials = new SecureCredentialStore(activity); receipts=new OperationReceiptStore(activity,credentials);
     googleAdapter = new GoogleAuthorizationAdapter(activity, "Compte pour Google Agenda");
     youtubeAdapter = new GoogleAuthorizationAdapter(activity, "Compte pour YouTube");
     googleAuth = new GoogleAuthorizationFlow(googleAdapter, (connected, code) -> completeGoogleAccount("google", connected, code));
@@ -38,6 +39,7 @@ public final class ProviderBridge {
     new Thread(() -> {
       restoreGoogleAccount("google");
       restoreGoogleAccount("youtube");
+      try{receipts.migrate();}catch(Exception ignored){ /* Keep the old proof readable; retry on the next receipt read. */ }
     }, "provider-restore").start();
   }
   private static final List<String> YOUTUBE_SCOPES = Collections.singletonList("https://www.googleapis.com/auth/youtube.force-ssl");
@@ -67,8 +69,10 @@ public final class ProviderBridge {
     notifyAuth(provider, connected, code);
   }
 
-  private final java.util.concurrent.ExecutorService operations = new java.util.concurrent.ThreadPoolExecutor(1,1,0L,java.util.concurrent.TimeUnit.MILLISECONDS,new java.util.concurrent.ArrayBlockingQueue<Runnable>(32));
-  void close(){nativeChat.clear();googleAuth.logout();youtubeAuth.logout();operations.shutdown();}
+  private final ProviderScheduler operations = new ProviderScheduler();
+  void close(){nativeChat.clear();googleAuth.logout();youtubeAuth.logout();operations.close();}
+  @JavascriptInterface public boolean cancelRequest(String id) { return id!=null && operations.cancel(id); }
+  private void deliver(String id,String result) { activity.runOnUiThread(() -> ((MainActivity)activity).dispatchProviderResult(id,result)); }
   @JavascriptInterface public String requestAsync(String raw) {
     try {
       if(raw==null||raw.length()>14_100_000)throw new IllegalArgumentException();
@@ -76,23 +80,32 @@ public final class ProviderBridge {
       Set<String> allowed=Set.of("twitchChatState","twitchChatSend","platformService","twitchTest","googleTest","youtubeTest","youtubeStatus","youtubeChatBroadcast","youtubeChatMessages","twitchStatus","googleStatus","twitchAuthorize","googleAuthorize","youtubeAuthorize","twitchPoll","twitchLogout","googleLogout","youtubeLogout","twitchSearchCategories","twitchCreatePlanning","twitchUpdatePlanning","twitchDeletePlanning","googleCreatePlanning","googleUpdatePlanning","googleDeletePlanning","twitchReconcilePlanning","googleReconcilePlanning","googleCalendars","googleEvents","googleReadPlanning","twitchReadPlanning","deviceService","wizebotSendEdit","wizebotSendCommand");
       if(!id.matches("[a-zA-Z0-9_-]{8,100}")||!allowed.contains(method))throw new IllegalArgumentException();
       String payload=input.getJSONObject("payload").toString();
-      operations.execute(() -> {
+      long now=System.currentTimeMillis(),deadline=input.optLong("deadlineAt",now+180000);
+      if(deadline<=now||deadline>now+180000) return failure("EXPIRED","Requête expirée ou échéance invalide. Aucune opération ajoutée.");
+      String lane=Set.of("twitchStatus","googleStatus","youtubeStatus").contains(method)?"status":
+        method.equals("twitchChatState")?"twitch-read":method.startsWith("youtubeChat")?"youtube-read":"effects";
+      operations.submit(id,lane,deadline,() -> {
         String result;
         try { result=(String)ProviderBridge.class.getMethod(method,String.class).invoke(this,payload); }
         catch(Exception error){result=failure("NETWORK","Résultat non confirmé. Vérifiez ce service avant de recommencer.");}
-        final String delivered=result;
-        activity.runOnUiThread(() -> ((MainActivity)activity).dispatchProviderResult(id,delivered));
-      });
+        deliver(id,result);
+      },() -> deliver(id,failure("EXPIRED","Opération annulée ou expirée avant exécution. Aucun effet déclenché.")));
       return ok().toString();
     }catch(Exception error){return failure("BUSY","Service occupé ou requête invalide. Aucune opération ajoutée.");}
   }
-  @JavascriptInterface public synchronized String twitchChatState(String ignored){return guarded(()->{
-    JSONObject session=token("twitch");String access=session.getString("access_token");
-    if(chatUser==null||!access.equals(chatToken)){
-      chatUser=request("GET","https://api.twitch.tv/helix/users",null,null,Map.of("Authorization","Bearer "+access,"Client-Id",BuildConfig.TWITCH_ANDROID_CLIENT_ID)).getJSONArray("data").getJSONObject(0);chatToken=access;
-    }
+  @JavascriptInterface public String twitchChatState(String ignored){return guarded(()->{
+    // A valid stored token needs no global mutation lock. Refreshes remain serialized.
+    JSONObject session=new JSONObject(credentials.get("twitch"));
+    if(System.currentTimeMillis()>=session.optLong("obtained_at")+session.optLong("expires_in")*1000-60000)session=token("twitch");
+    String access=session.getString("access_token");
+    JSONObject user=chatUser;
+    if(user==null||!access.equals(chatToken))user=request("GET","https://api.twitch.tv/helix/users",null,null,Map.of("Authorization","Bearer "+access,"Client-Id",BuildConfig.TWITCH_ANDROID_CLIENT_ID)).getJSONArray("data").getJSONObject(0);
     String scopes=session.optJSONArray("scope")!=null?session.getJSONArray("scope").toString():session.optString("scope");
-    return nativeChat.state(chatUser.getString("id"),chatUser.getString("login"),chatUser.optString("display_name"),access,scopes.contains("chat:read"),scopes.contains("user:write:chat"));
+    synchronized(nativeChat){
+      if(!access.equals(new JSONObject(credentials.get("twitch")).optString("access_token")))throw new ProviderException("REAUTH_REQUIRED","Le compte Twitch a changé.");
+      chatUser=user;chatToken=access;
+      return nativeChat.state(user.getString("id"),user.getString("login"),user.optString("display_name"),access,scopes.contains("chat:read"),scopes.contains("user:write:chat"));
+    }
   });}
   @JavascriptInterface public synchronized String twitchChatSend(String raw){return guarded(()->{
     JSONObject input=body(raw);String id=input.optString("id"),message=input.optString("message").trim();
@@ -100,11 +113,11 @@ public final class ProviderBridge {
     JSONObject session=token("twitch");String access=session.getString("access_token");Map<String,String> headers=Map.of("Authorization","Bearer "+access,"Client-Id",BuildConfig.TWITCH_ANDROID_CLIENT_ID);
     JSONObject user=request("GET","https://api.twitch.tv/helix/users",null,null,headers).getJSONArray("data").getJSONObject(0);String owner=user.getString("id");
     if(!owner.equals(input.optString("expectedBroadcasterId")))throw new ProviderException("REAUTH_REQUIRED","Le compte Twitch a changé.");
-    String key="chat_message_"+id,saved=credentials.get(key);if(!saved.isEmpty())return new JSONObject(saved);
-    JSONObject receipt=ok().put("status","uncertain").put("message","Message non confirmé ; vérifiez le chat avant de recommencer.");credentials.put(key,receipt.toString());
+    String key="chat_message_"+id,saved=receipts.get(key);if(!saved.isEmpty())return new JSONObject(saved);
+    JSONObject receipt=ok().put("status","uncertain").put("message","Message non confirmé ; vérifiez le chat avant de recommencer.");receipts.put(key,receipt.toString());
     JSONObject response=request("POST","https://api.twitch.tv/helix/chat/messages",new JSONObject().put("broadcaster_id",owner).put("sender_id",owner).put("message",message).toString(),null,headers).getJSONArray("data").getJSONObject(0);
     if(response.optBoolean("is_sent"))receipt.put("status","sent").put("messageId",response.getString("message_id"));else receipt.put("status","failed").put("message","Message refusé par Twitch.");
-    credentials.put(key,receipt.toString());return receipt;
+    receipts.put(key,receipt.toString());return receipt;
   });}
   @JavascriptInterface public String platformService(String raw) {
     return guarded(() -> {
@@ -176,7 +189,7 @@ public final class ProviderBridge {
   @JavascriptInterface public String youtubeAuthorize(String ignored) { return authorizeGoogle(true); }
   @JavascriptInterface public synchronized String twitchPoll(String ignored) { return guarded(() -> pollTwitchDevice()); }
   @JavascriptInterface public String youtubeTest(String ignored) { return testProvider("youtube"); }
-  @JavascriptInterface public synchronized String twitchLogout(String ignored) { nativeChat.clear();chatToken="";chatUser=null;diagnostics.remove("twitch"); credentials.clear("twitch"); credentials.clear(DEVICE_PENDING); return ok().toString(); }
+  @JavascriptInterface public synchronized String twitchLogout(String ignored) { synchronized(nativeChat){nativeChat.clear();chatToken="";chatUser=null;diagnostics.remove("twitch"); credentials.clear("twitch"); credentials.clear(DEVICE_PENDING); return ok().toString();} }
   @JavascriptInterface public String googleLogout(String ignored) { return logoutGoogleAccount("google"); }
   @JavascriptInterface public String youtubeLogout(String ignored) { return logoutGoogleAccount("youtube"); }
   private String logoutGoogleAccount(String provider) { return guarded(() -> {
@@ -291,14 +304,14 @@ public final class ProviderBridge {
     JSONObject test=new JSONObject(testProvider("twitch"));if(!test.optBoolean("tested")||!test.optJSONArray("capabilities").toString().contains("chat"))throw new ProviderException("REAUTH_REQUIRED","Réautorisez Twitch pour modifier WizeBot depuis cet appareil.");
     JSONObject user=twitch("GET","https://api.twitch.tv/helix/users",null).getJSONArray("data").getJSONObject(0);
     if(!input.optString("channel").equals(user.getString("login")))throw new ProviderException("INVALID_LINK","La chaîne Twitch a changé.");
-    String signature=base64(MessageDigest.getInstance("SHA-256").digest((user.getString("id")+"\n"+message).getBytes(StandardCharsets.UTF_8))),key="wizebot_edit_"+id,old=credentials.get(key);
+    String signature=base64(MessageDigest.getInstance("SHA-256").digest((user.getString("id")+"\n"+message).getBytes(StandardCharsets.UTF_8))),key="wizebot_edit_"+id,old=receipts.get(key);
     if(!old.isEmpty()){JSONObject previous=new JSONObject(old);if(!signature.equals(previous.optString("signature")))throw new ProviderException("INVALID_PAYLOAD","Identifiant réutilisé.");return previous;}
     JSONObject receipt=ok().put("signature",signature).put("status","uncertain").put("message","Envoi Twitch non confirmé. Vérifiez WizeBot avant de recommencer.");
-    credentials.put(key,receipt.toString());
+    receipts.put(key,receipt.toString());
     JSONObject result=twitch("POST","https://api.twitch.tv/helix/chat/messages",new JSONObject().put("broadcaster_id",user.getString("id")).put("sender_id",user.getString("id")).put("message",message).toString()).getJSONArray("data").getJSONObject(0);
     if(result.optBoolean("is_sent")&&!result.optString("message_id").isEmpty())receipt.put("status","sent").put("messageId",result.getString("message_id"));
     else receipt.put("status","failed").put("message","Message refusé par Twitch.");
-    credentials.put(key,receipt.toString());return receipt;
+    receipts.put(key,receipt.toString());return receipt;
   }); }
   private JSONObject wizebotContext() throws Exception {
     JSONObject tested=new JSONObject(testProvider("twitch"));JSONArray capabilities=tested.optJSONArray("capabilities");
@@ -312,14 +325,14 @@ public final class ProviderBridge {
     JSONObject tested=new JSONObject(testProvider("twitch"));JSONArray capabilities=tested.optJSONArray("capabilities");
     if(!tested.optBoolean("tested")||capabilities==null||!capabilities.toString().contains("chat"))throw new ProviderException("REAUTH_REQUIRED","Connectez Twitch et autorisez l’envoi de messages sur cet appareil.");
     if(!channel.equals(tested.optString("channel")))throw new ProviderException("INVALID_LINK","Le compte Twitch a changé. Vérifiez la chaîne avant de renvoyer.");
-    String signature=base64(MessageDigest.getInstance("SHA-256").digest((tested.getString("channelId")+"\n"+message).getBytes(StandardCharsets.UTF_8))),key="wizebot_command_"+id,old=credentials.get(key);
+    String signature=base64(MessageDigest.getInstance("SHA-256").digest((tested.getString("channelId")+"\n"+message).getBytes(StandardCharsets.UTF_8))),key="wizebot_command_"+id,old=receipts.get(key);
     if(!old.isEmpty()){JSONObject previous=new JSONObject(old);if(!signature.equals(previous.optString("signature")))throw new ProviderException("INVALID_PAYLOAD","Identifiant de commande réutilisé.");return previous;}
     JSONObject receipt=ok().put("signature",signature).put("status","uncertain").put("message","Envoi Twitch non confirmé. Aucun renvoi automatique.");
-    credentials.put(key,receipt.toString());
+    receipts.put(key,receipt.toString());
     JSONObject result=twitch("POST","https://api.twitch.tv/helix/chat/messages",new JSONObject().put("broadcaster_id",tested.getString("channelId")).put("sender_id",tested.getString("channelId")).put("message",message).toString()).getJSONArray("data").getJSONObject(0);
     if(result.optBoolean("is_sent")&&!result.optString("message_id").isEmpty())receipt.put("status","sent").put("messageId",result.getString("message_id")).put("message","Commande envoyée dans le chat Twitch.");
     else receipt.put("status","failed").put("message","Message refusé par Twitch.");
-    credentials.put(key,receipt.toString());return receipt;
+    receipts.put(key,receipt.toString());return receipt;
   }); }
   private JSONObject publicWizebot() throws Exception {
     String channel=twitch("GET","https://api.twitch.tv/helix/users",null).getJSONArray("data").getJSONObject(0).getString("login").toLowerCase(Locale.ROOT);
@@ -559,7 +572,7 @@ public final class ProviderBridge {
     if (link == null) link = new JSONObject();
     boolean isGoogle = provider.equals("google");
     if(!isGoogle&&event.has("localId")) {
-      String receipt=credentials.get(twitchReceiptKey(event));
+      String receipt=receipts.get(twitchReceiptKey(event));
       if(receipt.isEmpty())throw new ProviderException("CREATE_UNCERTAIN","Aucun reçu Twitch confirmé. Vérifiez le planning Twitch avant de résoudre cette publication.");
       JSONObject confirmed=new JSONObject(receipt);
       if(!confirmed.getString("accountId").equals(twitchUserId()))throw new ProviderException("INVALID_LINK","Reconnectez le compte Twitch d’origine.");
@@ -634,11 +647,11 @@ public final class ProviderBridge {
     JSONObject payload = twitchSchedulePayload(event, currentSegment);
     if (currentSegment != null && payload.toString().equals("{}")) return ok().put("remoteId", remoteId).put("fingerprint", twitchFingerprint(currentSegment)).put("remoteSnapshot", currentSegment);
     String url = "https://api.twitch.tv/helix/schedule/segment?broadcaster_id="+enc(broadcaster) + (action.equals("update") ? "&id="+enc(remoteId) : "");
-    if(action.equals("create")&&event.has("localId"))credentials.clear(twitchReceiptKey(event));
+    if(action.equals("create")&&event.has("localId"))receipts.clear(twitchReceiptKey(event));
     JSONObject response = twitch(action.equals("create") ? "POST" : "PATCH", url, payload.toString());
     JSONObject segment = response.getJSONObject("data").getJSONArray("segments").getJSONObject(0);
     JSONObject confirmed=ok().put("remoteId", segment.getString("id")).put("fingerprint", twitchFingerprint(segment)).put("remoteSnapshot", segment).put("accountId",broadcaster);
-    if(action.equals("create")&&event.has("localId"))credentials.put(twitchReceiptKey(event),confirmed.toString());
+    if(action.equals("create")&&event.has("localId"))receipts.put(twitchReceiptKey(event),confirmed.toString());
     return confirmed;
   }
   private static String twitchReceiptKey(JSONObject event)throws Exception {

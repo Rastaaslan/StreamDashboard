@@ -47,9 +47,11 @@ export function planReplicaLink(entries, endpoint, response, deviceId, knownDevi
 export function openReplicaDatabase(factory = globalThis.indexedDB) {
   if (!factory) return Promise.reject(new Error('Le stockage local est indisponible. Aucun enregistrement hors ligne ne sera annoncé.'));
   return new Promise((resolve, reject) => {
-    const request = factory.open('streamdashboard-autonomy-v1', 2);
-    request.onupgradeneeded = () => { for (const name of ['replicas', 'assets']) if (!request.result.objectStoreNames.contains(name)) request.result.createObjectStore(name); };
-    request.onsuccess = () => resolve(request.result);
+    let blocked=false;
+    const request = factory.open('streamdashboard-autonomy-v1', 3);
+    request.onupgradeneeded = () => { for (const name of ['replicas', 'assets', 'receipts']) if (!request.result.objectStoreNames.contains(name)) request.result.createObjectStore(name); };
+    request.onsuccess = () => { if(blocked){request.result.close();return;}request.result.onversionchange=()=>request.result.close(); resolve(request.result); };
+    request.onblocked=()=>{blocked=true;reject(new Error('Fermez les autres fenêtres de cette application pour mettre à jour le stockage.'));};
     request.onerror = () => reject(request.error);
   });
 }

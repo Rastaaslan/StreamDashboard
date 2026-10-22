@@ -10,6 +10,7 @@ const runtimeFiles = [
   'apps/mobile/shared/installation.js',
   'apps/mobile/shared/device-permissions.js',
   'apps/mobile/shared/action-definition.js',
+  'apps/mobile/shared/action-registry.js',
   'apps/mobile/shared/youtube-chat.js',
   'packages/core/src/recurrence.js',
   'apps/mobile/shared/recurrence.js',

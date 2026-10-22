@@ -1,7 +1,7 @@
 import {createSoundLibraryExport} from '../shared/sound-library.js';
 import {hashSound,openSoundTransferStore,SOUND_TRANSFER} from './sound-transfer-store.js';
 import {uploadSound} from './sound-transfer.js';
-import {randomUuid} from '../shared/planning-engine.js';
+import {randomUuid} from '../shared/uuid.js';
 
 export function createLocalSoundLibrary(store) {
  return createSoundLibraryExport({uuid:randomUuid,hash:hashSound,

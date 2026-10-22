@@ -471,3 +471,6 @@ test('alpha3 YouTube preparation works on the insecure Android asset origin',asy
  await expect(page.locator('[data-prepare-result]')).toContainText('Création simulée');
  expect(await page.evaluate(()=>(window as any).__posts[0].id)).toMatch(/^[a-f0-9-]{36}$/);expect(errors).toEqual([]);
 });
+
+// Retain coverage of the optional classic phone navigation. The default four-tab layout has its own cleanup regression.
+test.beforeEach(async ({page})=>{await page.addInitScript(()=>localStorage.setItem('sd2.navigation','classic'));});

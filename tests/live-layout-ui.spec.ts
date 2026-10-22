@@ -252,3 +252,6 @@ test('the mobile activity page keeps the feed and Deck navigation available at 3
   await expect(page.getByLabel('Source Streamlabs')).toHaveValue('regie');
   await noHorizontalOverflow(page);
 });
+
+// Retain coverage of the optional classic phone navigation. The default four-tab layout has its own cleanup regression.
+test.beforeEach(async ({page})=>{await page.addInitScript(()=>localStorage.setItem('sd2.navigation','classic'));});

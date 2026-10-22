@@ -256,3 +256,6 @@ test('Mon espace isolates native mobile Activity from the previously paired Stre
   expect(backend.externalRequests).toEqual([]);
   expect(errors).toEqual([]);
 });
+
+// Retain coverage of the optional classic phone navigation. The default four-tab layout has its own cleanup regression.
+test.beforeEach(async ({page})=>{await page.addInitScript(()=>localStorage.setItem('sd2.navigation','classic'));});

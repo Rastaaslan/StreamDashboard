@@ -1,5 +1,5 @@
 import {AUDIO_CHUNK,AUDIO_MAX,portableSound,sameSound} from '../shared/sound-library.js';
-import {createBinaryHash} from '../shared/planning-engine.js';
+import {createBinaryHash} from '../shared/device-utils.js';
 
 /** A durable batch of additive file copies. Each file commits atomically at its
  * destination; lost replies replay the same identity. Never deletes the source,
