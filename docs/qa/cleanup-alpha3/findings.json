@@ -1,0 +1,119 @@
+[
+  {
+    "id":"N01","priority":"P1","status":"Défaut reproduit","title":"Le rafraîchissement efface les formulaires autonomes","scope":"Android autonome ; chemin partagé avec les espaces locaux sans régie",
+    "observation":"Dans le navigateur utilisant le vrai code Android, saisir ABCDEFGHIJK dans la diffusion YouTube puis attendre 3 secondes remet le champ à vide et enlève le focus. Le nom de profil saisi revient également à Streamer. Aucune sauvegarde ni action cloud n’a été déclenchée.",
+    "cause":"La branche !server de refresh() appelle render() sans protéger les formulaires, le focus ou le pointeur. Les pages Configuration sont remplacées par innerHTML. La branche connectée contient des protections qui ne sont pas reprises dans la branche autonome.",
+    "change":"Conserver les nœuds des formulaires et leur état de saisie ; actualiser seulement les indicateurs. Unifier la politique de rendu autonome/connectée et conserver la base de révision jusqu’à la validation explicite.",
+    "guard":"Ne pas contourner les contrôles de modification concurrente. Conserver la sauvegarde du brouillon de métadonnées ajoutée en alpha.3.",
+    "acceptance":"Saisie et focus inchangés après plusieurs rafraîchissements dans Diffusion, Profil et Intégrations ; sauvegarde explicite et conflit concurrent vérifiés. À confirmer sur WebView et clavier Android physiques.",
+    "refs":["apps/mobile/control/control.js:319–350","apps/mobile/control/control.js:525–541","apps/mobile/control/control.js:850","docs/qa/cleanup-alpha3/evidence.json"]
+  },
+  {
+    "id":"N02","priority":"P2","status":"Surcoût mesuré en scénario synthétique","title":"Rafraîchir les changements, pas tout l’espace toutes les 2,5 secondes","scope":"Les trois usages ; priorité téléphone et contrôleur",
+    "observation":"Sur 12,5 secondes avec un petit espace au repos : Android autonome effectue 160 appels à structuredClone, 5 lectures IndexedDB et 5 remplacements du contenu. Le mode connecté effectue 205 clones, 10 lectures, 5 transactions d’écriture, 5 remplacements et 15 requêtes vers le runtime : état autonome, sons et replay. Le nombre de clones inclut aussi de petits objets et ne mesure pas des octets copiés.",
+    "cause":"sync() accepte et écrit le bundle à chaque cycle ; view(), record et rememberForms() recopient plusieurs fois les données. Chaque modification de métadonnées écrit par ailleurs le record complet dans IndexedDB. Les opérations en attente sont rejouées pour reconstruire la vue.",
+    "change":"Introduire une révision de contenu, une vue calculée une fois par révision et des mises à jour de composants. Ne récupérer audio/replay que lorsque nécessaires. Regrouper les sauvegardes de frappe avec flush à la validation et au changement de contexte. Adapter le polling à la visibilité, sans interrompre les actions de l’agent.",
+    "guard":"Les 15 requêtes mesurées sont des appels au runtime local simulé, pas 15 appels aux plateformes. Garder les délais de quota, la reprise réseau, la synchronisation multi-fenêtre et l’arrêt prioritaire.",
+    "acceptance":"Au repos et sans changement, aucun remplacement complet du Deck et aucune réécriture du bundle inchangé. Comparer lectures, écritures et octets avec les mêmes données, puis vérifier réseau coupé, reprise et saisie.",
+    "refs":["apps/mobile/control/autonomy.js:63–77","apps/mobile/control/autonomy-store.js:8–27","apps/mobile/control/control.js:401","apps/mobile/control/control.js:525–541","apps/mobile/control/control.js:781–785","apps/mobile/shared/autonomy.js:22–58"]
+  },
+  {
+    "id":"N03","priority":"P1","status":"Risque confirmé par le code ; saturation non provoquée sur compte réel","title":"La file native unique peut retarder le chat et des commandes","scope":"Android",
+    "observation":"ProviderBridge dispose d’un seul worker et d’une file de 32 tâches, commune aux états de comptes, chats, publications et autres appels. Des appels réseau ont des délais de connexion/lecture de 10/15 secondes et une opération peut en enchaîner plusieurs. Le JavaScript abandonne l’attente après 180 secondes sans retirer une tâche déjà admise dans la file native.",
+    "cause":"Les lectures rapides et les effets externes partagent la même file. L’enveloppe native ne porte pas de date limite vérifiée à la sortie de file. Une réponse tardive est ignorée par le client, alors que la tâche peut encore être exécutée.",
+    "change":"Séparer lecture d’état local et travail réseau ; regrouper les lectures identiques ; ajouter date limite et annulation avant tout premier effet. Conserver des files ordonnées par compte ou ressource pour les mutations. Signaler clairement une opération déjà engagée et encore incertaine.",
+    "guard":"Ne pas simplement augmenter le nombre de threads : cela pourrait casser l’ordre des publications, les contrôles de compte et la déduplication. Une annulation après effet externe ne prouve pas son absence.",
+    "acceptance":"Avec fournisseur ralenti simulé, état local et chat restent réactifs ; une mutation expirée en file ne démarre pas ; une mutation déjà engagée garde son reçu et ne se rejoue pas automatiquement.",
+    "refs":["android/app/src/main/java/com/rastaaslan/streamdashboard/remote/ProviderBridge.java:70–89","android/app/src/main/java/com/rastaaslan/streamdashboard/remote/ProviderBridge.java:731","apps/mobile/control/device-bridge.js:8–21"]
+  },
+  {
+    "id":"N04","priority":"P2","status":"Dette de stockage constatée","title":"Prévoir la rétention des journaux sans perdre la déduplication","scope":"Android et stockage autonome partagé",
+    "observation":"Les journaux de préparation YouTube et de métadonnées plafonnent à 10 000 entrées, celui des éditions d’exécuteur à 4 096, puis refusent de nouvelles opérations. Les reçus natifs chat_message_, wizebot_edit_ et wizebot_command_ sont des clés persistantes sans politique de rétention trouvée. Les historiques visibles bornés à 50 ou 200 lignes ne purgent pas ces reçus natifs.",
+    "cause":"Les preuves anti-doublon et l’historique affiché sont stockés de plusieurs façons. Des reçus non secrets utilisent le même magasin chiffré à commit synchrone que les comptes.",
+    "change":"Définir un journal commun avec état, compte, date, résultat et index. Séparer secrets et reçus. Compacter les opérations terminées et conserver des empreintes de déduplication selon une durée de rejeu explicite ; proposer export et résolution des incertitudes.",
+    "guard":"Ne jamais effacer aveuglément un reçu running/uncertain, un transfert ouvert ou une preuve de publication. Une simple suppression des plus vieux éléments peut recréer des diffusions en double.",
+    "acceptance":"Atteindre les seuils sur données synthétiques sans blocage définitif ; redémarrage, changement de compte et rejeu d’un ancien identifiant ne provoquent aucun second effet.",
+    "refs":["apps/mobile/control/device-platforms.js:16–21","apps/mobile/control/device-platforms.js:42–46","apps/mobile/control/autonomy-store.js:39–51","apps/mobile/control/autonomy-store.js:74–87","android/app/src/main/java/com/rastaaslan/streamdashboard/remote/ProviderBridge.java:103–107","android/app/src/main/java/com/rastaaslan/streamdashboard/remote/ProviderBridge.java:294–322","android/app/src/main/java/com/rastaaslan/streamdashboard/remote/SecureCredentialStore.java:16–18"]
+  },
+  {
+    "id":"N05","priority":"P2","status":"Comportement volontaire à compléter","title":"Les fichiers audio retirés du catalogue restent conservés","scope":"Téléphone et espaces locaux Windows",
+    "observation":"Le stockage conserve explicitement les Blobs après suppression d’une entrée du catalogue. Un fichier importé peut peser jusqu’à 100 Mio. Le nettoyage des morceaux de transfert existe déjà, mais ce n’est pas une purge des fichiers audio devenus sans référence.",
+    "cause":"Cette conservation permet restauration et transfert fiables ; elle n’est pas accompagnée d’un écran de récupération d’espace ni d’une politique globale de quota pour les fichiers conservés.",
+    "change":"Ajouter un bilan du stockage par espace et une corbeille audio avec aperçu de la taille récupérable. Ne purger que les fichiers sans référence dans catalogue, transfert, opération en attente et restauration conservée.",
+    "guard":"Ne rien supprimer automatiquement pendant cet audit. Conserver la récupération hors ligne et vérifier les empreintes avant de partager ou dédupliquer des fichiers.",
+    "acceptance":"Importer, retirer puis restaurer un son reste possible ; une purge explicitement demandée libère les octets attendus et n’affecte aucun autre espace.",
+    "refs":["apps/mobile/control/autonomy-store.js:109–133","apps/mobile/control/sound-transfer-store.js:35–51","apps/mobile/control/sound-transfer-store.js:83–96"]
+  },
+  {
+    "id":"N06","priority":"P2","status":"Candidats au retrait, pas code mort prouvé","title":"Retirer progressivement les anciennes interfaces du produit livré","scope":"Paquets Windows et Android",
+    "observation":"Cinq entrées d’interface subsistent : control, ancien mobile, aperçu mobile, ancien desktop et aperçu desktop. L’entrée par défaut Windows et Android est control. Le graphe trouve 21 modules JavaScript, 537 762 octets source, utilisés par les anciennes entrées mais absents des graphes control et native-executor. Les routes et options legacy/preview restent actives.",
+    "cause":"Le paquet Windows conserve apps/web et apps/mobile ; android-sync copie tout apps/mobile. L’APK embarque aussi 19 déclarations .d.ts sans exécution, soit 7 282 octets compressés.",
+    "change":"Établir une matrice des fonctions encore uniques, migrer celles à conserver, puis sortir les aperçus du paquet de production et maintenir un éventuel paquet de compatibilité séparé. Remplacer la copie globale Android par un manifeste d’assets validé.",
+    "guard":"Ne pas effacer les anciens écrans sur le seul critère du graphe : certains peuvent être ouverts par URL ou option. Préserver migrations, chemins de données, raccourcis et licences. Le service worker historique doit être traité avec son écran, pas supprimé isolément.",
+    "acceptance":"Toutes les fonctions conservées ont un accès dans control ; tests des anciennes données ; absence de .d.ts/fixtures/aperçus dans un paquet production inspecté ; aucun import ou asset requis manquant.",
+    "refs":["apps/desktop/src/main.ts:135–144","android/app/src/main/java/com/rastaaslan/streamdashboard/remote/MainActivity.java:121","apps/server/src/index.ts:881–883","scripts/android-sync.ts:4–9","forge.config.cjs","docs/qa/cleanup-alpha3/module-graph.json"]
+  },
+  {
+    "id":"N07","priority":"P2","status":"Concentration de responsabilités mesurée","title":"Réduire les gros points de couplage plutôt que le nombre de lignes","scope":"Serveur, interface commune, pont Android",
+    "observation":"index.ts serveur représente 213 366 octets, environ la moitié des sources serveur recensées. startDashboardServer couvre les lignes 431 à 3351. control.js pèse 123 223 octets, avec 146 lignes de plus de 200 caractères ; settingsPage concentre plus de 10 000 caractères dans 12 lignes. ProviderBridge.java fait 75 938 octets.",
+    "cause":"Assemblage des services, règles métier, routes, rendu et branchements d’interface se côtoient dans quelques fichiers. Le code est déjà très condensé visuellement : le raccourcir davantage rendrait les réparations moins sûres.",
+    "change":"Extraire progressivement composition du serveur, observation, comptes, planning et routes ; découper control en shell, état d’espace, vues et formulaires ; réduire ProviderBridge à un routage vers services spécialisés. Formater avant des extractions limitées et sans changement de comportement.",
+    "guard":"Ne pas réécrire l’application dans un nouveau framework. Le planning-engine.js généré n’est pas une seconde implémentation à réécrire manuellement : sa source reste le moteur partagé.",
+    "acceptance":"Modules avec responsabilités explicites et dépendances limitées ; tests ciblés sur les frontières extraites, puis une qualification d’intégration par lot. Aucun gain CPU n’est promis par le seul découpage.",
+    "refs":["apps/server/src/index.ts:431–3351","apps/mobile/control/control.js:307–318","android/app/src/main/java/com/rastaaslan/streamdashboard/remote/ProviderBridge.java","scripts/build-mobile-planning.mjs","docs/qa/cleanup-alpha3/structure.json"]
+  },
+  {
+    "id":"N08","priority":"P2","status":"Duplication de contrats constatée","title":"Centraliser actions, capacités et limites de validation","scope":"Les trois usages",
+    "observation":"Les types d’action sont répétés dans action-definition.js, controller.ts et control-service.ts ; les icônes, noms et statuts sont encore définis à plusieurs endroits. Exemple de divergence : actionDefinition admet un identifiant de 100 caractères et une valeur de 1 000 caractères, contre 64 et 500 dans validateConfiguration. Ces fonctions n’ont pas toutes le même rôle, mais leurs limites ne forment pas un contrat de bout en bout évident.",
+    "cause":"Les .ts sont vérifiés strictement, mais tsconfig ne vérifie pas les fichiers JavaScript de l’interface avec checkJs. Les frontières Java/JavaScript reposent sur des objets et chaînes JSON.",
+    "change":"Créer un registre partagé des actions et un schéma de configuration versionné ; séparer clairement validation de signature et validation de configuration. Générer les contrats natifs quand pertinent ; ajouter JSDoc/checkJs par module en commençant par le transport et les commandes.",
+    "guard":"Garder les implémentations réseau propres à Java et Node, le stockage natif des secrets et les limites de confiance. Mutualiser une règle ne signifie pas supprimer sa vérification côté exécuteur.",
+    "acceptance":"Le même jeu de fixtures valide les trois frontières ; toute action proposée par l’éditeur peut être sauvegardée et exécutée sur une cible capable ; mêmes erreurs aux bornes autorisées.",
+    "refs":["apps/mobile/shared/action-definition.js:1–12","apps/desktop/src/controller.ts:19","apps/desktop/src/controller.ts:131–141","apps/server/src/control-service.ts:37–48","apps/mobile/control/control.js:50–51","apps/mobile/control/control.js:524","tsconfig.json"]
+  },
+  {
+    "id":"N09","priority":"P2","status":"Proposition fonctionnelle ; aucune suppression appliquée","title":"Rassembler les parcours autour de l’usage plutôt que de la technique","scope":"Téléphone en premier, puis Windows",
+    "observation":"Le Live, le Deck, les Sons, Gestion, Boutons & macros et plusieurs parcours de configuration se recouvrent. L’onglet Appareils expose association, installation, migration, transfert de planning, copie de configuration, copie audio, permissions et transport. L’éditeur d’action propose encore des types OBS même dans un espace de téléphone autonome.",
+    "cause":"Les fonctions de récupération et de migration ont été ajoutées au même niveau que les actions quotidiennes. Les comptes locaux, comptes de régie et sessions spectateur sont distincts pour de bonnes raisons, mais leurs accès dispersés augmentent la charge de compréhension.",
+    "change":"Sur téléphone : Live, Deck, Planning, Réglages. Proposer Sons comme banque du Deck avec raccourci conservable ; intégrer Activité au Live avec ouverture dédiée si souhaitée. Un éditeur unique de boutons, favoris et raccourcis. Un panneau Appareils & comptes affichant clairement l’espace actif et l’appareil qui exécute, avec migration/transferts dans Avancé.",
+    "guard":"Conserver les identités et autorisations : Google Agenda peut avoir un autre compte que YouTube ; session vidéo et compte API restent séparés. Un téléphone seul garde préparation, planning, sons et services compatibles ; il ne remplace pas OBS pour la diffusion vidéo.",
+    "acceptance":"Un utilisateur peut trouver le compte actif, choisir la diffusion et accéder à son bouton sans traverser plusieurs écrans équivalents. Les fonctions avancées restent retrouvables ; aucune action incompatible n’est proposée sans destination ou explication.",
+    "refs":["apps/mobile/control/index.html","apps/mobile/control/control.js:299","apps/mobile/control/control.js:307–318","apps/mobile/control/control.js:524","apps/mobile/control/performance-ui.js","apps/mobile/control/live-monitor.js:7–47"]
+  },
+  {
+    "id":"N10","priority":"P3","status":"Poids initial mesuré ; latence non mesurée sur téléphone","title":"Charger les outils secondaires au moment de leur utilisation","scope":"Interface commune et Android",
+    "observation":"Le graphe statique de control charge 62 entrées source, totalisant 726 206 octets. Le moteur partagé généré fait 186 038 octets et expose aussi UUID, profil et utilitaires : des usages très légers importent donc ce même fichier. Plusieurs outils de migration et de gestion sont importés dès l’ouverture.",
+    "cause":"Tous les imports sont statiques et l’APK sert ces modules tels quels. Taille source, taille compressée et mémoire d’exécution sont des mesures différentes.",
+    "change":"Séparer les utilitaires minuscules du moteur de planning et charger à la demande les assistants de transfert, la gestion avancée et certaines vues. Générer le manifeste de ressources et les éventuelles règles de cache à partir des mêmes entrées.",
+    "guard":"Mesurer d’abord démarrage froid et navigation sur le téléphone réel. Conserver les licences et le mode hors ligne ; ne pas disperser plusieurs copies du moteur partagé.",
+    "acceptance":"Nombre d’assets et octets nécessaires au premier Deck réduits, sans requête externe ni écran cassé hors ligne ; temps de premier écran mesuré avant/après sur le même appareil.",
+    "refs":["apps/mobile/control/control.js:1–38","scripts/build-mobile-planning.mjs","docs/qa/cleanup-alpha3/module-graph.json"]
+  },
+  {
+    "id":"N11","priority":"P3","status":"Travail redondant de construction constaté","title":"Construire une fois et réutiliser le résultat pour qualifier les paquets","scope":"Développement et livraison Windows/Android",
+    "observation":"Si release:check franchit sa qualification préalable, son enchaînement déclenche au moins quatre npm run build : test:node, build explicite, desktop:smoke et desktop:package. tsconfig compile également les tests et scripts, ensuite exclus du paquet Windows. Le paquet livré est déjà correctement pruné de ses dépendances de développement.",
+    "cause":"Les commandes autonomes embarquent chacune leur préparation ; la commande globale les combine sans réutiliser un artefact identifié.",
+    "change":"Séparer préparation, compilation production, compilation tests, tests et assemblage. Dans la pipeline globale, construire une fois par commit puis vérifier et signer exactement ces octets ; garder des commandes locales autonomes pratiques.",
+    "guard":"Ne pas faire sauter la qualification finale ni les vérifications d’intégrité EXE/ASAR. Ne pas réutiliser un résultat après modification des sources ou des paramètres de construction.",
+    "acceptance":"Une compilation production par configuration ; manifeste commit/paramètres/empreintes ; temps total comparé sans suppression de tests utiles. Les gains en minutes restent à mesurer.",
+    "refs":["package.json:scripts.release:check","package.json:scripts.test:node","package.json:scripts.desktop:smoke","package.json:scripts.desktop:package","scripts/test-all.mjs","tsconfig.json","forge.config.cjs"]
+  },
+  {
+    "id":"N12","priority":"P2","status":"Travail DOM évitable constaté","title":"Réutiliser les lignes du chat YouTube comme pour Twitch","scope":"Live Windows et Android",
+    "observation":"Le lecteur partagé borne l’historique YouTube à 1 000 messages. À chaque draw(), youtube-chat.js reconstruit toutes les lignes puis remplace le contenu. Twitch possède déjà une logique de réutilisation par identifiant. Le lecteur YouTube respecte déjà la temporisation de l’API et le recul de cinq minutes sur quota.",
+    "cause":"Le transport et le rendu sont distincts, mais le rendu YouTube ne calcule pas le delta des messages. Ce surcoût est évitable sans toucher à la politique de quota.",
+    "change":"Réutiliser les nœuds par identifiant, n’ajouter ou retirer que les messages modifiés, conserver la position de lecture et éventuellement limiter la fenêtre affichée. Partager le composant d’historique et d’état sans fusionner les protocoles de chat.",
+    "guard":"Ne pas réintroduire une lecture API plus fréquente. Préserver les comptes affichés, messages textuels échappés, changement de diffusion et arrêt du lecteur lors de sa destruction.",
+    "acceptance":"Un historique identique ne recrée aucun nœud ; l’arrivée d’un message en ajoute un ; défilement et effacement lors du changement de compte/diffusion vérifiés avec 1 000 messages synthétiques.",
+    "refs":["apps/mobile/control/youtube-chat.js:24–33","apps/mobile/shared/youtube-chat.js:57–60","apps/mobile/control/twitch-chat.js:65–98"]
+  },
+  {
+    "id":"N13","priority":"P2","status":"Limite de qualification et documentation à consolider","title":"Une fiche de version doit séparer développement, déploiement et essais réels","scope":"Les trois usages",
+    "observation":"La documentation de développement décrit correctement un état antérieur au déploiement ; un fichier ultérieur confirme l’installation Windows. La matrice conserve 75 cellules de qualification ouvertes. Les deux PC sont vérifiés sur alpha.3 pendant cet audit, mais aucun téléphone n’est accessible par ADB et l’installation effective de l’APK sur le téléphone n’est pas confirmée.",
+    "cause":"Plusieurs documents historiques restent vrais à leur date, mais aucun résumé unique n’explique immédiatement quelle version est installée et ce qui a réellement été éprouvé sur matériel.",
+    "change":"Ajouter un état de livraison synthétique par version/appareil, lié aux preuves et à la matrice. Qualifier les cas critiques du téléphone avant de déclarer le nettoyage terminé : clavier, rotation, verrouillage, reprise, réseau lent et comptes séparés.",
+    "guard":"Ne pas transformer des tests de navigateur à ponts simulés en preuve matérielle ni réécrire les anciens rapports comme s’ils avaient été réalisés après l’installation.",
+    "acceptance":"Une vue indique sans ambiguïté construit/livré/installé/qualifié, avec date et preuve ; les scénarios matériels critiques ont un résultat explicite plutôt qu’un succès implicite.",
+    "refs":["docs/qa/2026-10-21-alpha3-development.md","docs/qa/2026-10-22-alpha3-windows-deployment.json","docs/qa/next21-qualification.json","docs/qa/cleanup-alpha3/evidence.json"]
+  }
+]

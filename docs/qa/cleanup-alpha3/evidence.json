@@ -1,0 +1,182 @@
+{
+  "auditDate": "2026-10-22",
+  "candidate": "2.1.0-alpha.3",
+  "scope": "Read-only cleanup, optimization and functional consolidation audit of Windows host, Windows controller, Android APK",
+  "localCommit": "9a4bd9f",
+  "canonicalCommit": "9ec3c13a638d4e9de99dd110fc0f48982847d041",
+  "sourceIdentity": {
+    "files": 258,
+    "sha256": "ae411b03c94f59eb656c5ee83cc9214ba66e8518481f16a30c050a96f52744e5",
+    "localEqualsCanonical": true
+  },
+  "apk": {
+    "bytes": 3766946,
+    "sha256": "f87905f106ef66a7a3d1418f65c2de2a2ff963811ed07c1e2dfcf7fbfdd81932",
+    "uiFiles": 113,
+    "sourceIdentical": 113,
+    "declarations": {
+      "files": 19,
+      "bytes": 17256,
+      "compressedBytes": 7282
+    },
+    "physicalDeviceAvailable": false
+  },
+  "windows": {
+    "FIXE": {
+      "timeUTC": "2026-10-22T10:58:47.8229874Z",
+      "health": {
+        "ok": true,
+        "status": "ready",
+        "protocolVersion": 1,
+        "version": "2.1.0-alpha.3"
+      },
+      "obsConnected": true,
+      "streaming": false,
+      "outputs": {
+        "twitch": {
+          "kind": "main",
+          "name": "",
+          "active": false,
+          "observedAt": "2026-10-22T10:58:26.942Z"
+        },
+        "youtube": {
+          "kind": "aitum-suite",
+          "name": "YouTube Output",
+          "active": false,
+          "observedAt": "2026-10-22T10:58:26.942Z"
+        }
+      },
+      "processCount": 6,
+      "processIds": [
+        464,
+        14832,
+        25356,
+        34764,
+        36960,
+        40260
+      ],
+      "cpuSecondsDelta": 1.46875,
+      "sampleSeconds": 20.0480719,
+      "logicalProcessors": 16,
+      "cpuPercentOneCore": 7.326140924305045,
+      "cpuPercentMachine": 0.4578838077690653,
+      "privateBytes": 808857600,
+      "workingSetBytesSum": 979202048,
+      "installBytes": 385536405,
+      "installFiles": 75,
+      "exeSHA256": "BF8B14B0738F3D29624FDC3EF8C4026C26A4046DF801253C709689544E4AD865",
+      "asarBytes": 7598774,
+      "asarSHA256": "50FA42811A06BCF0F2ED2C08664DB468E35F51EAD3B076A3CC42F3BAEFB0CBDE"
+    },
+    "Laptop": {
+      "timeUTC": "2026-10-22T10:58:52.7172386Z",
+      "health": {
+        "ok": true,
+        "status": "ready",
+        "protocolVersion": 1,
+        "version": "2.1.0-alpha.3"
+      },
+      "obsConnected": false,
+      "streaming": false,
+      "outputs": {
+        "twitch": {
+          "kind": "main",
+          "name": "",
+          "active": null,
+          "observedAt": "2026-10-22T10:58:32.247Z",
+          "error": "Connexion OBS indisponible ou remplac�e."
+        },
+        "youtube": {
+          "kind": "unconfigured",
+          "name": "",
+          "active": null,
+          "observedAt": "2026-10-22T10:58:32.247Z",
+          "error": "Connexion OBS indisponible ou remplac�e."
+        }
+      },
+      "processCount": 4,
+      "processIds": [
+        18076,
+        26572,
+        27660,
+        46636
+      ],
+      "cpuSecondsDelta": 2.28125,
+      "sampleSeconds": 20.0421437,
+      "logicalProcessors": 20,
+      "cpuPercentOneCore": 11.382265460954658,
+      "cpuPercentMachine": 0.5691132730477328,
+      "privateBytes": 652144640,
+      "workingSetBytesSum": 507326464,
+      "installBytes": 385536405,
+      "installFiles": 75,
+      "exeSHA256": "BF8B14B0738F3D29624FDC3EF8C4026C26A4046DF801253C709689544E4AD865",
+      "asarBytes": 7598774,
+      "asarSHA256": "50FA42811A06BCF0F2ED2C08664DB468E35F51EAD3B076A3CC42F3BAEFB0CBDE"
+    }
+  },
+  "browserProbe": [
+    {
+      "mode": "Android synthetic autonomous",
+      "elapsedMs": 12505,
+      "sample": {
+        "clones": 160,
+        "idbRead": 5,
+        "idbWrite": 0,
+        "contentReplaced": 5,
+        "overflow": false
+      },
+      "requests": {},
+      "draftLoss": {
+        "before": "ABCDEFGHIJK",
+        "after": "",
+        "focused": null
+      },
+      "profileInputs": [
+        {
+          "name": "streamerName",
+          "type": "text"
+        },
+        {
+          "name": "confirmStop",
+          "type": "checkbox"
+        },
+        {
+          "name": "streamerPingRewardIds",
+          "type": "text"
+        }
+      ],
+      "profileDraft": {
+        "name": "streamerName",
+        "before": "Audit brouillon",
+        "after": "Streamer",
+        "old": "Streamer"
+      },
+      "errors": []
+    },
+    {
+      "mode": "desktop synthetic paired",
+      "elapsedMs": 12504,
+      "sample": {
+        "clones": 205,
+        "idbRead": 10,
+        "idbWrite": 5,
+        "contentReplaced": 5,
+        "overflow": false
+      },
+      "requests": {
+        "autonomy": 5,
+        "soundboard": 5,
+        "replay": 5
+      },
+      "errors": []
+    }
+  ],
+  "limits": [
+    "20-second passive Windows measurement is not a live-stream load or memory-leak test.",
+    "Browser probes use real source and IndexedDB with fake native providers; not a physical Android measurement.",
+    "No cloud writes, live starts, messages or deployment were performed.",
+    "Existing alpha3 validation reports were reviewed; their full suites were not rerun in this audit.",
+    "Historical UIs remain reachable via routes/flags; absence from main import graph does not prove dead code."
+  ]
+}

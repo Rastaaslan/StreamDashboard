@@ -1,0 +1,286 @@
+{
+  "topFunctions": [
+    {
+      "path": "apps/server/src/index.ts",
+      "name": "startDashboardServer",
+      "start": 431,
+      "end": 3351,
+      "chars": 188294
+    },
+    {
+      "path": "apps/server/src/live-control-routes.ts",
+      "name": "registerLiveControlRoutes",
+      "start": 28,
+      "end": 285,
+      "chars": 21507
+    },
+    {
+      "path": "apps/mobile/control/planning.js",
+      "name": "createPlanning",
+      "start": 11,
+      "end": 132,
+      "chars": 20550
+    },
+    {
+      "path": "apps/mobile/control/live-monitor.js",
+      "name": "createLiveMonitor",
+      "start": 7,
+      "end": 183,
+      "chars": 16460
+    },
+    {
+      "path": "apps/desktop/src/controller.ts",
+      "name": "installControllerKeys",
+      "start": 21,
+      "end": 233,
+      "chars": 15845
+    },
+    {
+      "path": "apps/mobile/control/device-executor.js",
+      "name": "createDeviceExecutor",
+      "start": 27,
+      "end": 178,
+      "chars": 15825
+    },
+    {
+      "path": "apps/mobile/control/autonomy-store.js",
+      "name": "openReplica",
+      "start": 10,
+      "end": 166,
+      "chars": 13684
+    },
+    {
+      "path": "apps/web/app.js",
+      "name": "bindForms",
+      "start": 479,
+      "end": 622,
+      "chars": 13174
+    },
+    {
+      "path": "apps/server/src/companion-sync.ts",
+      "name": "reconcileCompanionBatch",
+      "start": 145,
+      "end": 290,
+      "chars": 12314
+    },
+    {
+      "path": "packages/core/src/provider-projection.ts",
+      "name": "reconcileProjection",
+      "start": 53,
+      "end": 232,
+      "chars": 11829
+    },
+    {
+      "path": "apps/mobile/control/twitch-chat.js",
+      "name": "createTwitchChat",
+      "start": 28,
+      "end": 192,
+      "chars": 11523
+    },
+    {
+      "path": "apps/mobile/transport.js",
+      "name": "createTransport",
+      "start": 15,
+      "end": 126,
+      "chars": 11287
+    },
+    {
+      "path": "apps/server/src/control-service.ts",
+      "name": "execute",
+      "start": 119,
+      "end": 246,
+      "chars": 11027
+    },
+    {
+      "path": "apps/web/preview/preview.js",
+      "name": "bindCampSections",
+      "start": 932,
+      "end": 981,
+      "chars": 10697
+    },
+    {
+      "path": "apps/web/preview/preview.js",
+      "name": "connectionsContent",
+      "start": 451,
+      "end": 478,
+      "chars": 10662
+    },
+    {
+      "path": "apps/web/preview/preview.js",
+      "name": "bindConnections",
+      "start": 1149,
+      "end": 1188,
+      "chars": 10628
+    },
+    {
+      "path": "apps/mobile/control/device-services.js",
+      "name": "createDeviceServices",
+      "start": 8,
+      "end": 113,
+      "chars": 10543
+    },
+    {
+      "path": "apps/mobile/control/control.js",
+      "name": "task",
+      "start": 679,
+      "end": 749,
+      "chars": 10387
+    },
+    {
+      "path": "apps/mobile/control/control.js",
+      "name": "settingsPage",
+      "start": 307,
+      "end": 318,
+      "chars": 10327
+    },
+    {
+      "path": "apps/mobile/control/streamlabs-feed.js",
+      "name": "createStreamlabsFeed",
+      "start": 110,
+      "end": 206,
+      "chars": 10152
+    }
+  ],
+  "dense": [
+    {
+      "path": "apps/web/app.js",
+      "bytes": 91147,
+      "lines": 942,
+      "over200": 70,
+      "maxLine": 5585
+    },
+    {
+      "path": "apps/mobile/control/planning.js",
+      "bytes": 21447,
+      "lines": 133,
+      "over200": 27,
+      "maxLine": 3363
+    },
+    {
+      "path": "apps/mobile/control/control.js",
+      "bytes": 123223,
+      "lines": 858,
+      "over200": 146,
+      "maxLine": 3226
+    },
+    {
+      "path": "apps/web/preview/preview.js",
+      "bytes": 179360,
+      "lines": 1429,
+      "over200": 220,
+      "maxLine": 2162
+    },
+    {
+      "path": "apps/mobile/control/streamlabs-feed.js",
+      "bytes": 20522,
+      "lines": 207,
+      "over200": 17,
+      "maxLine": 1915
+    },
+    {
+      "path": "apps/mobile/mobile.js",
+      "bytes": 138372,
+      "lines": 1920,
+      "over200": 96,
+      "maxLine": 1806
+    },
+    {
+      "path": "apps/mobile/control/performance-ui.js",
+      "bytes": 21367,
+      "lines": 297,
+      "over200": 11,
+      "maxLine": 1503
+    },
+    {
+      "path": "apps/server/src/live-control-routes.ts",
+      "bytes": 26768,
+      "lines": 323,
+      "over200": 23,
+      "maxLine": 1100
+    },
+    {
+      "path": "apps/server/src/index.ts",
+      "bytes": 213366,
+      "lines": 3352,
+      "over200": 88,
+      "maxLine": 774
+    },
+    {
+      "path": "apps/server/src/companion-sync.ts",
+      "bytes": 26782,
+      "lines": 360,
+      "over200": 17,
+      "maxLine": 577
+    },
+    {
+      "path": "integrations/twitch/src/client.ts",
+      "bytes": 55633,
+      "lines": 1014,
+      "over200": 31,
+      "maxLine": 495
+    },
+    {
+      "path": "apps/desktop/src/main.ts",
+      "bytes": 24036,
+      "lines": 376,
+      "over200": 9,
+      "maxLine": 472
+    },
+    {
+      "path": "apps/mobile/shared/installation.js",
+      "bytes": 20098,
+      "lines": 244,
+      "over200": 11,
+      "maxLine": 447
+    },
+    {
+      "path": "integrations/youtube/src/client.ts",
+      "bytes": 32213,
+      "lines": 391,
+      "over200": 24,
+      "maxLine": 399
+    },
+    {
+      "path": "apps/server/src/control-service.ts",
+      "bytes": 21364,
+      "lines": 248,
+      "over200": 20,
+      "maxLine": 376
+    },
+    {
+      "path": "packages/contracts/src/index.ts",
+      "bytes": 20374,
+      "lines": 441,
+      "over200": 6,
+      "maxLine": 324
+    },
+    {
+      "path": "integrations/obs/src/client.ts",
+      "bytes": 35628,
+      "lines": 636,
+      "over200": 13,
+      "maxLine": 296
+    },
+    {
+      "path": "integrations/google-calendar/src/client.ts",
+      "bytes": 29892,
+      "lines": 567,
+      "over200": 3,
+      "maxLine": 274
+    },
+    {
+      "path": "packages/core/src/planning.ts",
+      "bytes": 31521,
+      "lines": 628,
+      "over200": 2,
+      "maxLine": 236
+    },
+    {
+      "path": "apps/mobile/preview.js",
+      "bytes": 35496,
+      "lines": 760,
+      "over200": 0,
+      "maxLine": 192
+    }
+  ]
+}
