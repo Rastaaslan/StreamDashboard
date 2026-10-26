@@ -26,5 +26,3 @@ export async function runReadOnlyAgent(options: AgentReadOnlyRunnerOptions): Pro
     await options.sleep(5000,options.signal);
   }
 }
-
-[executed on device: dam-server (ee881f3f-7909-4993-a915-04a1d994f366)]
