@@ -31,5 +31,3 @@ export class AgentCommandGuard {
     this.observed.set(receipt.commandId,receipt);
   }
 }
-
-[executed on device: dam-server (ee881f3f-7909-4993-a915-04a1d994f366)]
