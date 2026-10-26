@@ -40,5 +40,3 @@ async function main() {
 if(process.argv[1]&&import.meta.url===pathToFileURL(process.argv[1]).href){
   main().catch(()=>{process.stderr.write('OBS_AGENT_CONNECT_OR_RUNTIME_FAILURE\n');process.exitCode=1});
 }
-
-[executed on device: dam-server (ee881f3f-7909-4993-a915-04a1d994f366)]
