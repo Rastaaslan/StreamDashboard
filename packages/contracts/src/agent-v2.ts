@@ -75,5 +75,3 @@ export function canAutomaticallyRetry(receipt: AgentReceipt): boolean {
   if (receipt.result === 'uncertain') return false;
   return false; // No automatic retries: require fresh state and explicit command.
 }
-
-[executed on device: dam-server (ee881f3f-7909-4993-a915-04a1d994f366)]
