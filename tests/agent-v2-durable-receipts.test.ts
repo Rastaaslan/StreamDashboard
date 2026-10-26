@@ -21,4 +21,15 @@ it('fails closed on malformed journal, never overwrites evidence',async()=>{
  }finally{await rm(dir,{recursive:true,force:true})}
 });
 
+it('refuses writing when another writer owns the file lock',async()=>{
+ const dir=await mkdtemp(path.join(tmpdir(),'sd-v2-journal-'));
+ try {
+  const file=path.join(dir,'receipts.json');
+  const journal=await DurableReceiptJournal.open(file);
+  await writeFile(file+'.writer.lock','foreign-writer');
+  await expect(journal.record({commandId:'x2',result:'uncertain',observedAt:200})).rejects.toThrow();
+  await expect(DurableReceiptJournal.open(file)).rejects.toThrow('WRITER_LOCKED');
+ }finally{await rm(dir,{recursive:true,force:true})}
+});
+
 [executed on device: dam-server (ee881f3f-7909-4993-a915-04a1d994f366)]
