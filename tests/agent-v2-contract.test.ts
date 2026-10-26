@@ -26,5 +26,3 @@ describe('Agent V2 transport-independent invariants',()=>{
   expect(canAutomaticallyRetry({commandId:'cmd1',result:'refused',observedAt:100_000})).toBe(false);
  });
 });
-
-[executed on device: dam-server (ee881f3f-7909-4993-a915-04a1d994f366)]
