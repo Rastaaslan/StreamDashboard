@@ -17,5 +17,3 @@ describe('read-only OBS CLI startup rules',()=>{
   expect(result.deviceId).toBe('pc-stream');
  });
 });
-
-[executed on device: dam-server (ee881f3f-7909-4993-a915-04a1d994f366)]
