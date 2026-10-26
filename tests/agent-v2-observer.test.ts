@@ -21,5 +21,3 @@ describe('read-only OBS observer',()=>{
   await expect(observeObsHealth(client,'pc-stream',0,1000)).rejects.toThrow('Invalid OBS status');
  });
 });
-
-[executed on device: dam-server (ee881f3f-7909-4993-a915-04a1d994f366)]
