@@ -39,5 +39,3 @@ export async function observeObsHealth(client: ObsReadOnlyClient, deviceId: stri
     renderedFrames:numberOrNull(stats.renderTotalFrames),
   }};
 }
-
-[executed on device: dam-server (ee881f3f-7909-4993-a915-04a1d994f366)]
