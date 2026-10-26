@@ -32,4 +32,27 @@ it('refuses writing when another writer owns the file lock',async()=>{
  }finally{await rm(dir,{recursive:true,force:true})}
 });
 
-[executed on device: dam-server (ee881f3f-7909-4993-a915-04a1d994f366)]
+
+it('rejects structurally corrupt receipts rather than appending to them',async()=>{
+ const dir=await mkdtemp(path.join(tmpdir(),'sd-v2-journal-'));
+ try {
+  const file=path.join(dir,'receipts.json');
+  const journal=await DurableReceiptJournal.open(file);
+  await writeFile(file,JSON.stringify([{commandId:'other',result:'not-real',observedAt:5}]));
+  await expect(journal.record({commandId:'new',result:'uncertain',observedAt:100})).rejects.toThrow('CORRUPT_JOURNAL');
+  await expect(DurableReceiptJournal.open(file)).rejects.toThrow('CORRUPT_JOURNAL');
+ }finally{await rm(dir,{recursive:true,force:true})}
+});
+it('reconciles another writer record if journal changed since this process opened it',async()=>{
+ const dir=await mkdtemp(path.join(tmpdir(),'sd-v2-journal-'));
+ try {
+  const file=path.join(dir,'receipts.json');
+  const first=await DurableReceiptJournal.open(file),second=await DurableReceiptJournal.open(file);
+  await first.record({commandId:'one',result:'uncertain',observedAt:1});
+  await second.record({commandId:'two',result:'confirmed',observedAt:2});
+  const again=await DurableReceiptJournal.open(file);
+  expect(again.find('one')?.result).toBe('uncertain');
+  expect(again.find('two')?.result).toBe('confirmed');
+  expect(second.find('one')?.result).toBe('uncertain');
+ }finally{await rm(dir,{recursive:true,force:true})}
+});
