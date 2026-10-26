@@ -20,5 +20,3 @@ it('does not pretend to offer durable deduplication',()=>{
  guard.acquireAuthority('epochB',5);
  expect(guard.inspect(command,new Set(['obs.stream.stop']),1000,true).accepted).toBe(true);
 });
-
-[executed on device: dam-server (ee881f3f-7909-4993-a915-04a1d994f366)]
