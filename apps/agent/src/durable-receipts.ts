@@ -86,8 +86,13 @@ export class DurableReceiptJournal {
         }finally{await descriptor.close()}
         try{await rename(temp,this.file)}
         catch(error){await rm(temp,{force:true});throw error}
-        const directory=await open(path.dirname(this.file),'r');
-        try{await directory.sync()}finally{await directory.close()}
+        // On Windows Node.js cannot fsync a directory handle (EPERM on real FIXE).
+        // The file itself was fsynced; rename metadata power-loss durability is NOT
+        // guaranteed on Windows. No OBS write executor is authorised by this prototype.
+        if(process.platform!=='win32') {
+          const directory=await open(path.dirname(this.file),'r');
+          try{await directory.sync()}finally{await directory.close()}
+        }
         // Only publish in memory once durable storage has acknowledged the write.
         this.receipts.clear();
         for(const [id,value] of onDisk)this.receipts.set(id,value);
