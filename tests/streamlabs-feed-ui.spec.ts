@@ -60,7 +60,7 @@ test('desktop feed filters real-shaped events, isolates sources and keeps offlin
    win.calls.push(source);if(win.fail)throw Error('Régie inaccessible');
    return {provider:{status:'CONNECTED'},items:source==='host'?[
     {id:'f',platform:'twitch',type:'follow',displayName:'<img src=x onerror=alert(1)>',message:'Bienvenue <script>alert(1)</script>',receivedAt:now},
-    {id:'yt',platform:'youtube',type:'superchat',displayName:'Luna',message:'Bon live !',amount:2,currency:'EUR',receivedAt:now},
+    {id:'don',platform:'streamlabs',type:'donation',displayName:'Luna',message:'Bon live !',amount:2,currency:'EUR',receivedAt:now},
     {id:'r',platform:'twitch',type:'raid',displayName:'Alex',count:138,receivedAt:now},
    ]:[{id:'own',platform:'streamlabs',type:'donation',displayName:'Connexion indépendante',amount:5,currency:'EUR',receivedAt:now}]};
   },configure:()=>{win.configured=true;}});
@@ -69,7 +69,7 @@ test('desktop feed filters real-shaped events, isolates sources and keeps offlin
  await expect(page.locator('.streamlabs-event')).toHaveCount(3);
  await expect(page.locator('[data-feed-events] img, [data-feed-events] script')).toHaveCount(0);
  await page.locator('[data-feed-options] > summary').click();
- await page.getByLabel('Plateforme Streamlabs').selectOption('youtube');await expect(page.locator('.streamlabs-event')).toHaveCount(1);await expect(page.locator('.streamlabs-detail')).toContainText('2,00');
+ await page.getByLabel('Plateforme Streamlabs').selectOption('streamlabs');await expect(page.locator('.streamlabs-event')).toHaveCount(1);await expect(page.locator('.streamlabs-detail')).toContainText('2,00');
  await page.getByLabel('Plateforme Streamlabs').selectOption('all');await page.getByLabel('Type d’événement Streamlabs').selectOption('raid');await expect(page.locator('.streamlabs-detail')).toHaveText('138 personnes');
  await page.getByLabel('Type d’événement Streamlabs').selectOption('all');
  await page.getByLabel('Source Streamlabs').selectOption('own');await expect(page.locator('.streamlabs-event')).toHaveCount(1);await expect(page.locator('.streamlabs-event')).toContainText('Connexion indépendante');
@@ -154,7 +154,7 @@ test('compact activity keeps filters folded and preserves source, focus and even
   win.feed=module.createStreamlabsFeed(document.querySelector('#feed'),{request:async(source:string,options:{refresh:boolean})=>{
    win.calls.push({source,refresh:options.refresh});
    return {provider:{status:'CONNECTED'},history:{status:'SYNCED',configured:true,count:2,lastSyncAt:'2026-10-20T17:00:00.000Z'},items:[
-    {id:source+'-follow',type:'follow',platform:'youtube',displayName:source==='host'?'Abonné de la régie':'Abonné du compte local',origin:'cloud',occurredAt:'2026-10-20T16:00:00.000Z',receivedAt:'2026-10-20T17:00:00.000Z'},
+    {id:source+'-follow',type:'follow',platform:'twitch',displayName:source==='host'?'Abonné de la régie':'Abonné du compte local',origin:'cloud',occurredAt:'2026-10-20T16:00:00.000Z',receivedAt:'2026-10-20T17:00:00.000Z'},
     {id:source+'-raid',type:'raid',platform:'twitch',displayName:'Raid Twitch',count:12,receivedAt:'2026-10-20T17:00:00.000Z'},
    ]};
   },configure:()=>{}});
@@ -171,7 +171,7 @@ test('compact activity keeps filters folded and preserves source, focus and even
  await expect(page.locator('.streamlabs-event').first()).toBeVisible();
  await toggle.click();
  await page.getByLabel('Source Streamlabs').selectOption('own');
- await page.getByLabel('Plateforme Streamlabs').selectOption('youtube');
+ await page.getByLabel('Plateforme Streamlabs').selectOption('twitch');
  await page.getByLabel('Type d’événement Streamlabs').selectOption('follow');
  await expect(page.locator('.streamlabs-event')).toHaveCount(1);
  await expect(page.locator('.streamlabs-event')).toContainText('Abonné du compte local');
@@ -191,7 +191,7 @@ test('compact activity keeps filters folded and preserves source, focus and even
  expect(await page.evaluate(()=>localStorage.getItem('sd2.streamlabs.source:paired-host'))).toBe('own');
  await toggle.click();
  await expect(page.getByLabel('Source Streamlabs')).toHaveValue('own');
- await expect(page.getByLabel('Plateforme Streamlabs')).toHaveValue('youtube');
+ await expect(page.getByLabel('Plateforme Streamlabs')).toHaveValue('twitch');
  await expect(page.getByLabel('Type d’événement Streamlabs')).toHaveValue('follow');
 });
 
