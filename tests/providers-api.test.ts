@@ -76,7 +76,7 @@ describe('API providers', () => {
     const callback = await call(`/api/v1/streamlabs/oauth/callback?code=oauth-code&state=${encodeURIComponent(state!)}`);
     expect(callback.status).toBe(200);
     expect(await callback.text()).toContain('Streamlabs connecté');
-    expect(transport.connect).toHaveBeenCalledWith('socket-secret', expect.any(Function), expect.any(Function));
+    expect(transport.connect).toHaveBeenCalledWith('socket-secret', expect.any(Function), expect.any(Function), expect.any(Function));
     expect(await secrets.getStreamlabsToken()).toBe('socket-secret');
     expect(await secrets.getStreamlabsOAuth()).toEqual({ clientId: 'client-id', clientSecret: 'client-secret', accessToken: 'access-secret' });
 

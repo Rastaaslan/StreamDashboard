@@ -18,13 +18,18 @@ export const credentialStorage = {
     return activeCredential;
   },
   async set(value) {
-    activeCredential = String(value || '');
-    if (isAndroidRuntime()) globalThis.StreamDashboardNative.setCredential(activeCredential);
-    else localStorage.setItem(DEVICE_KEY, activeCredential);
+    const next = String(value || '');
+    if (isAndroidRuntime()) {
+      // Older native versions return void; current versions acknowledge the
+      // durable encrypted write. Never cache a rejected pairing credential.
+      if (globalThis.StreamDashboardNative.setCredential(next) === false) throw new Error('Enregistrement sécurisé impossible. La connexion précédente est conservée.');
+    } else localStorage.setItem(DEVICE_KEY, next);
+    activeCredential = next;
   },
   async clear() {
+    if (isAndroidRuntime()) {
+      if (globalThis.StreamDashboardNative.clearCredential() === false) throw new Error('Impossible d’effacer la connexion enregistrée. Réessayez.');
+    } else localStorage.removeItem(DEVICE_KEY);
     activeCredential = '';
-    if (isAndroidRuntime()) globalThis.StreamDashboardNative.clearCredential();
-    else localStorage.removeItem(DEVICE_KEY);
   },
 };

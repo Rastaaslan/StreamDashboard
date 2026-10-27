@@ -1,0 +1,79 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import {createDeviceServices} from '../../apps/mobile/control/device-services.js';
+function fixture({creationVerified=true,quota=''}={}){
+ const record={workspace:'local:test',drafts:{}},config={revision:2,youtube:{broadcastId:'broadcast01',channelId:'own_channel'}};
+ const calls=[];let fail='',channel='own_channel',enabled=true;
+ const store={record,reload:async()=>{},view:()=>({data:{configuration:structuredClone(config)}}),draft:async(k,v)=>{record.drafts[k]=structuredClone(v);},updateDraft:async(k,fn)=>{record.drafts[k]=structuredClone(fn(record.drafts[k]));}};
+ store.journalRead=async(name,id)=>structuredClone(record.drafts[name]?.[id]);
+ store.journalClaim=async(name,id,value)=>{const previous=record.drafts[name]?.[id];if(previous)return {created:false,value:structuredClone(previous)};(record.drafts[name]??={})[id]=structuredClone(value);return {created:true,value};};
+ store.journalSave=async(name,id,value)=>{record.drafts[name][id]=structuredClone(value);};
+ const bridge={platformService:async raw=>{const value=JSON.parse(raw);calls.push(value);if(quota&&value.operation==='youtube.metadata')return JSON.stringify({ok:false,code:quota,message:'Quota'});if(value.operation===fail)throw Error('Réponse perdue');if(value.operation==='youtube.create')assert.equal(record.drafts.youtubePreparations[value.id].receipt.phase,'creating');return JSON.stringify(value.operation==='youtube.channels'?{ok:true,items:[{id:channel}]}:value.operation==='youtube.streams'?{ok:true,items:[{id:'stream_own',channelId:channel}]}:value.operation==='youtube.create'?{ok:true,broadcastId:'broadcast01',channelId:channel,creationVerified}:{ok:true});}};
+ return {store,config,calls,open:()=>createDeviceServices({store,bridge,enabled:()=>enabled}),fail:v=>fail=v,channel:v=>channel=v,enabled:v=>enabled=v};
+}
+const preparation=()=>({id:'prepare_android_001',expectedRevision:2,channelId:'own_channel',streamId:'stream_own',scheduledStartTime:new Date(Date.now()+300000).toISOString(),privacyStatus:'unlisted',madeForKids:false,metadata:{title:'Test privé',description:'',twitchGameId:'',youtubeCategoryId:'20',tags:[]}});
+test('Android prepares and verifies YouTube without a Windows endpoint, and never repeats an ID',async()=>{
+ const f=fixture(),body=preparation();const r=await f.open().route('/api/v2/youtube/prepare',body,'POST');assert.equal(r.status,'succeeded');assert.equal(r.broadcastId,'broadcast01');
+ const before=f.calls.length;assert.deepEqual(await f.open().route('/api/v2/youtube/prepare',body,'POST'),r);assert.equal(f.calls.length,before);
+ await assert.rejects(f.open().route('/api/v2/youtube/prepare',{...body,privacyStatus:'public'},'POST'),/paramètres/);
+});
+test('Android defaults embedding on without normalizing the journal request',async()=>{
+ const f=fixture(),body=preparation();const r=await f.open().route('/api/v2/youtube/prepare',body,'POST');
+ assert.equal(r.status,'succeeded');assert.equal(f.calls.find(v=>v.operation==='youtube.create').enableEmbed,true);
+ assert.equal(Object.hasOwn(body,'enableEmbed'),false);assert.equal(f.store.record.drafts.youtubePreparations[body.id].fingerprint,JSON.stringify(body));
+});
+test('Android sends an explicit disabled embedding choice and refuses changed retries',async()=>{
+ const f=fixture(),body={...preparation(),enableEmbed:false};const r=await f.open().route('/api/v2/youtube/prepare',body,'POST');
+ assert.equal(r.status,'succeeded');assert.equal(f.calls.find(v=>v.operation==='youtube.create').enableEmbed,false);
+ await assert.rejects(f.open().route('/api/v2/youtube/prepare',{...body,enableEmbed:true},'POST'),/paramètres/);
+ assert.equal(f.calls.filter(v=>v.operation==='youtube.create').length,1);
+});
+test('Android preserves existing preparation fingerprints with no embedding field',async()=>{
+ const f=fixture(),body=preparation(),receipt={id:body.id,status:'partial',phase:'metadata',broadcastId:'broadcast01',message:'Ancienne préparation.'};
+ f.store.record.drafts.youtubePreparations={[body.id]:{fingerprint:JSON.stringify(body),receipt}};
+ assert.deepEqual(await f.open().route('/api/v2/youtube/prepare',body,'POST'),receipt);assert.equal(f.calls.length,0);
+});
+test('Android keeps a known creation partial when native confirmation is missing or false',async()=>{
+ for(const creationVerified of [false,null]){
+  const f=fixture({creationVerified}),body=preparation(),result=await f.open().route('/api/v2/youtube/prepare',body,'POST');
+  assert.equal(result.status,'partial');assert.equal(result.broadcastId,'broadcast01');assert.match(result.message,/intégration/);
+  assert.ok(!f.calls.some(v=>v.operation==='youtube.bind'||v.operation==='youtube.metadata'));
+  const count=f.calls.length;assert.deepEqual(await f.open().route('/api/v2/youtube/prepare',body,'POST'),result);assert.equal(f.calls.length,count);
+ }
+});
+test('Android rejects invalid embedding options before cloud effects',async()=>{
+ for(const enableEmbed of [null,'false',0]){
+  const f=fixture();await assert.rejects(f.open().route('/api/v2/youtube/prepare',{...preparation(),enableEmbed},'POST'),/intégration/);assert.equal(f.calls.length,0);
+ }
+});
+test('a lost creation response stays uncertain after reload instead of creating another broadcast',async()=>{
+ const f=fixture(),body=preparation();f.fail('youtube.create');const r=await f.open().route('/api/v2/youtube/prepare',body,'POST');assert.equal(r.status,'uncertain');
+ f.fail('');await f.open().route('/api/v2/youtube/prepare',body,'POST');assert.equal(f.calls.filter(v=>v.operation==='youtube.create').length,1);
+});
+test('known created broadcasts keep their identity when binding fails',async()=>{
+ const f=fixture();f.fail('youtube.bind');const r=await f.open().route('/api/v2/youtube/prepare',preparation(),'POST');assert.equal(r.status,'partial');assert.equal(r.broadcastId,'broadcast01');assert.ok(!f.calls.some(v=>v.operation==='youtube.metadata'));
+});
+test('an account or revision change prevents the insertion',async()=>{
+ const f=fixture();f.channel('another_channel');assert.equal((await f.open().route('/api/v2/youtube/prepare',preparation(),'POST')).status,'failed');assert.ok(!f.calls.some(v=>v.operation==='youtube.create'));
+ await assert.rejects(f.open().route('/api/v2/youtube/prepare',{...preparation(),id:'revision_changed_1',expectedRevision:1},'POST'),/configuration/);
+});
+test('native metadata commands preserve partial results and durable deduplication',async()=>{
+ const f=fixture();f.fail('youtube.metadata');const body={id:'metadata_native_1',action:'metadata.apply',issuedAt:new Date().toISOString(),expectedRevision:2,youtubeBaseline:{...preparation().metadata,broadcastId:'broadcast01',channelId:'own_channel'},metadata:preparation().metadata};
+ const r=await f.open().route('/api/v2/actions',body,'POST');assert.equal(r.status,'partial');assert.equal(r.platforms.twitch.status,'succeeded');assert.equal(f.store.record.drafts.metadata.title,body.metadata.title);
+ const before=f.calls.length;await f.open().route('/api/v2/actions',body,'POST');assert.equal(f.calls.length,before);assert.equal(f.store.record.drafts.deviceReceipts.length,1);
+});
+test('disabled cloud role does not dispatch native platform requests',async()=>{
+ const f=fixture();f.enabled(false);await assert.rejects(f.open().route('/api/v2/youtube/channels',undefined,'GET'),/désactivé/);assert.equal(f.calls.length,0);
+});
+
+test('Android quota keeps a durable draft and requires targeted manual revalidation',async()=>{
+ for(const quota of ['quotaExceeded','dailyLimitExceeded','rateLimitExceeded']){
+  const f=fixture({quota}),metadata=preparation().metadata,baseline={...metadata,broadcastId:'broadcast01',channelId:'own_channel'};
+  const body={id:'quota_metadata_001',issuedAt:new Date().toISOString(),action:'metadata.apply',expectedRevision:2,metadata,youtubeBaseline:baseline};
+  const result=await f.open().route('/api/v2/actions',body,'POST');assert.equal(result.platforms.youtube.status,'pending');assert.deepEqual(f.store.record.drafts.metadata,metadata);
+  const before=f.calls.length;await f.open().route('/api/v2/actions',body,'POST');assert.equal(f.calls.length,before);
+  await assert.rejects(f.open().route('/api/v2/actions',{...body,id:'retry_metadata_001',action:'metadata.retry',platform:'youtube'},'POST'),/confirmez/);assert.equal(f.calls.length,before);
+  await f.open().route('/api/v2/actions',{...body,id:'retry_metadata_002',action:'metadata.retry',platform:'youtube',confirmed:true},'POST');
+  assert.equal(f.calls.length,before+1);assert.equal(f.calls.at(-1).operation,'youtube.metadata');assert.deepEqual(f.calls.at(-1).baseline,baseline);
+ }
+});

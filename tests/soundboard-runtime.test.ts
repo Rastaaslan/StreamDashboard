@@ -125,3 +125,29 @@ describe('SoundboardRuntime', () => {
     expect(events.map(event => event.type)).toEqual(['playback.started', 'playback.stopped']);
   });
 });
+
+it('mixes independent sounds and completion cannot clear another controller’s playback',async()=>{
+ const file=await fixture(),finish:Array<()=>void>=[],events:SoundboardRuntimeEvent[]=[];
+ const audio=backend({outputs:async()=>[{id:'default',name:'Local',isDefault:true,selectable:true,supportsMixing:true}],play:vi.fn(async()=>({finished:new Promise<void>(r=>finish.push(r))}))});
+ const runtime=new SoundboardRuntime([{...sound(file),cooldownMs:0,playbackMode:'mix'}],audio,()=>1000,event=>events.push(event));
+ expect((await runtime.play(command('mix-one'))).status).toBe('succeeded');expect((await runtime.play(command('mix-two'))).status).toBe('succeeded');
+ expect((await runtime.snapshot()).activePlaybacks).toHaveLength(2);expect(audio.stop).not.toHaveBeenCalled();
+ finish[0]();await vi.waitFor(async()=>expect((await runtime.snapshot()).activePlaybacks).toHaveLength(1));
+ expect((await runtime.snapshot()).currentPlayback?.commandId).toBe('mix-two');
+ await runtime.stop();finish[1]();await Promise.resolve();
+ expect((await runtime.snapshot()).activePlaybacks).toHaveLength(0);expect(events.filter(e=>e.type==='playback.stopped')).toHaveLength(1);
+});
+it('serializes controller cooldown checks and Stop cancels queued preparations',async()=>{
+ const file=await fixture();let release!:()=>void;
+ const audio=backend({outputs:()=>new Promise(r=>{release=()=>r([{id:'default',name:'Default',isDefault:true,selectable:true}]);}),play:vi.fn(async()=>({finished:new Promise<void>(()=>{})}))});
+ const runtime=new SoundboardRuntime([sound(file)],audio);
+ const first=runtime.play(command('concurrent-1')),second=runtime.play(command('concurrent-2'));
+ await vi.waitFor(()=>expect(release).toBeDefined());const stop=runtime.stop();release();
+ expect((await first).errorCode).toBe('SOUND_CANCELED');expect((await second).errorCode).toBe('SOUND_CANCELED');await stop;expect(audio.play).not.toHaveBeenCalled();
+});
+it('refuses mixing on an unsupported output without stopping the existing playback',async()=>{
+ const file=await fixture(),audio=backend({play:async()=>({finished:new Promise<void>(()=>{})})});
+ const runtime=new SoundboardRuntime([{...sound(file),cooldownMs:0}],audio);await runtime.play(command('single'));
+ runtime.replace([{...sound(file),playbackMode:'mix'}]);expect((await runtime.play(command('mixed'))).errorCode).toBe('AUDIO_MIX_UNSUPPORTED');
+ expect(audio.stop).not.toHaveBeenCalled();expect((await runtime.snapshot()).currentPlayback?.commandId).toBe('single');
+});

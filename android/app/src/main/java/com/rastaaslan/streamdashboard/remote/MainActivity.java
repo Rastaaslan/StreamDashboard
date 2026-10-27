@@ -18,6 +18,7 @@ import android.os.Vibrator;
 import android.view.WindowManager;
 import android.webkit.JavascriptInterface;
 import android.webkit.WebChromeClient;
+import android.webkit.ValueCallback;
 import android.webkit.WebResourceRequest;
 import android.webkit.WebResourceResponse;
 import android.webkit.WebSettings;
@@ -51,15 +52,15 @@ public class MainActivity extends Activity {
   private static final String ORIGIN = "http://" + APP_HOST;
   private static final String PING_CHANNEL_ID = "streamer-pings";
   private static boolean isAllowedExternalUri(Uri uri) {
-    if (uri == null || !"https".equalsIgnoreCase(uri.getScheme())) return false;
-    String host = uri.getHost();
-    if (host == null) return false;
-    host = host.toLowerCase(java.util.Locale.ROOT);
-    return host.equals("twitch.tv") || host.endsWith(".twitch.tv");
+    return uri != null && ExternalNavigationPolicy.accepts(uri.toString());
   }
   private static final int NOTIFICATION_PERMISSION_REQUEST = 7001;
+  private static final int AUDIO_FILE_REQUEST = 730; // Below the Google authorization request-code range.
+  private ValueCallback<Uri[]> fileSelection;
   private WebView webView;
   private ProviderBridge providerBridge;
+  private PeerBridge peerBridge;
+  private ExecutorBridge executorBridge;
   private WebViewAssetLoader assetLoader;
   private Uri pendingDeepLink;
   private boolean pageReady = false;
@@ -71,6 +72,7 @@ public class MainActivity extends Activity {
     WebSettings settings = webView.getSettings();
     settings.setJavaScriptEnabled(true);
     settings.setDomStorageEnabled(true);
+    settings.setMediaPlaybackRequiresUserGesture(false);
     settings.setAllowFileAccess(false);
     settings.setAllowContentAccess(false);
     settings.setMixedContentMode(WebSettings.MIXED_CONTENT_NEVER_ALLOW);
@@ -81,11 +83,37 @@ public class MainActivity extends Activity {
       .addPathHandler("/mobile/", this::localAsset)
       .build();
     webView.addJavascriptInterface(new NativeBridge(), "StreamDashboardNative");
+    if (!BuildConfig.PREVIEW_MODE && androidx.webkit.WebViewFeature.isFeatureSupported(androidx.webkit.WebViewFeature.WEB_MESSAGE_LISTENER)) {
+      peerBridge=new PeerBridge(this,(id,result)->runOnUiThread(()->{
+        if(pageReady&&webView!=null)webView.evaluateJavascript("window.dispatchEvent(new CustomEvent('peer-result',{detail:{id:"+org.json.JSONObject.quote(id)+",result:"+org.json.JSONObject.quote(result)+"}}))",null);
+      }));
+      androidx.webkit.WebViewCompat.addWebMessageListener(webView,"StreamDashboardPeer",Collections.singleton(ORIGIN),(view,message,sourceOrigin,isMainFrame,replyProxy)->{
+        if(isMainFrame && ORIGIN.equals(sourceOrigin.toString()))peerBridge.receive(message.getData());
+      });
+      executorBridge=new ExecutorBridge(this,(event,payload)->runOnUiThread(()->{
+        if(webView!=null&&!isFinishing()&&!isDestroyed())webView.evaluateJavascript("window.dispatchEvent(new CustomEvent("+org.json.JSONObject.quote(event)+",{detail:"+payload+"}))",null);
+      }));
+      androidx.webkit.WebViewCompat.addWebMessageListener(webView,"StreamDashboardExecutor",Collections.singleton(ORIGIN),(view,message,sourceOrigin,isMainFrame,replyProxy)->{
+        if(isMainFrame&&ORIGIN.equals(sourceOrigin.toString()))executorBridge.receive(message.getData());
+      });
+    }
     if (!BuildConfig.PREVIEW_MODE) {
       providerBridge = new ProviderBridge(this);
       webView.addJavascriptInterface(providerBridge, "StreamDashboardProviders");
     }
-    webView.setWebChromeClient(new WebChromeClient());
+    webView.setWebChromeClient(new WebChromeClient(){
+      @Override public boolean onShowFileChooser(WebView view,ValueCallback<Uri[]> callback,FileChooserParams params){
+        Uri origin=Uri.parse(view.getUrl()==null?"":view.getUrl());
+        if(!"http".equals(origin.getScheme())||!APP_HOST.equals(origin.getHost())||origin.getPath()==null||!origin.getPath().startsWith("/mobile/"))return false;
+        if(fileSelection!=null)fileSelection.onReceiveValue(null);
+        fileSelection=callback;
+        try{
+          Intent choose=new Intent(Intent.ACTION_OPEN_DOCUMENT).addCategory(Intent.CATEGORY_OPENABLE).setType(FileSelectionPolicy.mimeType(params.getAcceptTypes())).putExtra(Intent.EXTRA_ALLOW_MULTIPLE,false);
+          startActivityForResult(choose,AUDIO_FILE_REQUEST);
+        }catch(Exception error){fileSelection=null;callback.onReceiveValue(null);}
+        return true;
+      }
+    });
     webView.setWebViewClient(new LocalOnlyClient());
     setContentView(webView);
     ensurePingNotifications();
@@ -153,7 +181,10 @@ public class MainActivity extends Activity {
 
   @Override protected void onDestroy() {
     pageReady=false;
+    if(fileSelection!=null){fileSelection.onReceiveValue(null);fileSelection=null;}
     if(providerBridge!=null)providerBridge.close();
+    if(peerBridge!=null)peerBridge.close();
+    if(executorBridge!=null)executorBridge.close();
     if(webView!=null)webView.destroy();
     super.onDestroy();
   }
@@ -175,6 +206,7 @@ public class MainActivity extends Activity {
       InputStream stream = getAssets().open(asset);
       String mime = URLConnection.guessContentTypeFromName(asset);
       if (mime == null) mime = asset.endsWith(".js") ? "application/javascript" : "text/plain";
+      if("text/html".equals(mime))return new WebResourceResponse(mime,"UTF-8",200,"OK",Collections.singletonMap("Content-Security-Policy","frame-src 'none'"),stream);
       return new WebResourceResponse(mime, "UTF-8", stream);
     } catch (Exception ignored) {
       return new WebResourceResponse("text/plain", "UTF-8", 404, "Not Found", Collections.emptyMap(), new ByteArrayInputStream(new byte[0]));
@@ -212,6 +244,14 @@ public class MainActivity extends Activity {
 
   @Override protected void onActivityResult(int requestCode, int resultCode, Intent data) {
     super.onActivityResult(requestCode, resultCode, data);
+    if(requestCode==AUDIO_FILE_REQUEST){
+      ValueCallback<Uri[]> callback=fileSelection;fileSelection=null;
+      if(callback!=null){
+        Uri selected=resultCode==RESULT_OK&&data!=null?data.getData():null;
+        callback.onReceiveValue(selected!=null&&FileSelectionPolicy.accepts(selected.toString(),getPackageName())?new Uri[]{selected}:null);
+      }
+      return;
+    }
     if (providerBridge != null) providerBridge.acceptGoogleResult(requestCode, resultCode, data);
   }
 
@@ -226,29 +266,52 @@ public class MainActivity extends Activity {
     private static final String ALIAS = "streamdashboard.remote.credential";
     private static final String PREFS = "secure_remote";
     @JavascriptInterface public boolean isAndroid() { return true; }
-    @JavascriptInterface public String getCredential() {
+    @JavascriptInterface public String getCredential() { return readCredential("credential"); }
+    private String readCredential(String entry) {
       try {
-        String blob = getSharedPreferences(PREFS, MODE_PRIVATE).getString("credential", "");
+        String blob = getSharedPreferences(PREFS, MODE_PRIVATE).getString(entry, "");
         if (blob.isEmpty()) return "";
         String[] values = blob.split("\\.", 2);
         Cipher cipher = Cipher.getInstance("AES/GCM/NoPadding");
         cipher.init(Cipher.DECRYPT_MODE, key(), new GCMParameterSpec(128, Base64.decode(values[0], Base64.NO_WRAP)));
         return new String(cipher.doFinal(Base64.decode(values[1], Base64.NO_WRAP)), java.nio.charset.StandardCharsets.UTF_8);
-      } catch (Exception ignored) { clearCredential(); return ""; }
+      } catch (Exception ignored) { return ""; } // A transient keystore failure must not delete the saved pairing.
     }
-    @JavascriptInterface public void setCredential(String value) {
+    @JavascriptInterface public boolean setCredential(String value) { return writeCredential("credential",value); }
+    private boolean writeCredential(String entry,String value) {
       try {
         Cipher cipher = Cipher.getInstance("AES/GCM/NoPadding");
         cipher.init(Cipher.ENCRYPT_MODE, key());
         String blob = Base64.encodeToString(cipher.getIV(), Base64.NO_WRAP) + "." + Base64.encodeToString(cipher.doFinal(value.getBytes(java.nio.charset.StandardCharsets.UTF_8)), Base64.NO_WRAP);
-        getSharedPreferences(PREFS, MODE_PRIVATE).edit().putString("credential", blob).apply();
-      } catch (Exception ignored) { clearCredential(); }
+        return getSharedPreferences(PREFS, MODE_PRIVATE).edit().putString(entry, blob).commit();
+      } catch (Exception ignored) { return false; }
     }
-    @JavascriptInterface public void clearCredential() { getSharedPreferences(PREFS, MODE_PRIVATE).edit().remove("credential").apply(); }
+    private String deviceCredentialKey(String target) throws Exception {
+      java.net.URI uri=new java.net.URI(target);
+      if(target.length()>2048||!("http".equals(uri.getScheme())||"https".equals(uri.getScheme()))||uri.getHost()==null||uri.getUserInfo()!=null||uri.getQuery()!=null||uri.getFragment()!=null||!(uri.getPath()==null||uri.getPath().isEmpty()))throw new IllegalArgumentException("Invalid origin");
+      byte[] digest=java.security.MessageDigest.getInstance("SHA-256").digest(target.getBytes(java.nio.charset.StandardCharsets.UTF_8));
+      return "device."+Base64.encodeToString(digest,Base64.URL_SAFE|Base64.NO_WRAP);
+    }
+    @JavascriptInterface public String getDeviceCredential(String target) {
+      try { return readCredential(deviceCredentialKey(target)); } catch(Exception ignored) { return ""; }
+    }
+    @JavascriptInterface public boolean setDeviceCredential(String target,String value) {
+      try { return value!=null&&value.length()<=256&&writeCredential(deviceCredentialKey(target),value); } catch(Exception ignored) { return false; }
+    }
+    @JavascriptInterface public boolean clearCredential() { return getSharedPreferences(PREFS, MODE_PRIVATE).edit().remove("credential").commit(); }
     @JavascriptInterface public void setKeepAwake(boolean enabled) { runOnUiThread(() -> { if (enabled) getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON); else getWindow().clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON); }); }
     @JavascriptInterface public void haptic(String strength) {
       Vibrator vibrator = (Vibrator)getSystemService(VIBRATOR_SERVICE);
       if (vibrator != null) vibrator.vibrate(VibrationEffect.createOneShot("strong".equals(strength) ? 45 : 18, VibrationEffect.DEFAULT_AMPLITUDE));
+    }
+    @JavascriptInterface public boolean openViewers(String value) {
+      if(BuildConfig.PREVIEW_MODE||value==null||value.length()>1000)return false;
+      try {
+        org.json.JSONObject input=new org.json.JSONObject(value);
+        ViewerTargets targets=new ViewerTargets(input.optString("twitch",""),input.optString("youtube",""),input.optString("source","twitch"));
+        runOnUiThread(()->startActivity(new Intent(MainActivity.this,ViewerActivity.class).putExtra("twitch",targets.twitch).putExtra("youtube",targets.youtube).putExtra("source",targets.source)));
+        return true;
+      }catch(Exception error){return false;}
     }
     @JavascriptInterface public void openExternal(String value) {
       try {
@@ -286,6 +349,22 @@ public class MainActivity extends Activity {
         .setContentIntent(pending);
       NotificationManager manager = (NotificationManager)getSystemService(NOTIFICATION_SERVICE);
       if (manager != null) manager.notify(safeId.hashCode() & 0x7fffffff, notification.build());
+    }
+    @JavascriptInterface public String shareDocument(String text,String requestedName){
+      if(text==null||text.length()>8*1024*1024||requestedName==null||!requestedName.matches("[A-Za-z0-9_-]{1,80}\\.json"))return "Sauvegarde JSON invalide ou trop volumineuse.";
+      try{
+        new org.json.JSONObject(text);
+        File directory=new File(getCacheDir(),"shared/documents");if(!directory.exists()&&!directory.mkdirs())return "Cache de partage indisponible.";
+        File[] previous=directory.listFiles();if(previous!=null){java.util.Arrays.sort(previous,java.util.Comparator.comparingLong(File::lastModified));for(int index=0;index<previous.length;index++)if(previous[index].isFile()&&(index<previous.length-19||System.currentTimeMillis()-previous[index].lastModified()>86400000))previous[index].delete();}
+        File file=new File(directory,java.util.UUID.randomUUID().toString()+"-"+requestedName);
+        try(FileOutputStream output=new FileOutputStream(file)){output.write(text.getBytes(java.nio.charset.StandardCharsets.UTF_8));output.getFD().sync();}
+        Uri uri=FileProvider.getUriForFile(MainActivity.this,getPackageName()+".fileprovider",file);
+        Intent send=new Intent(Intent.ACTION_SEND).setType("application/json").putExtra(Intent.EXTRA_STREAM,uri).addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
+        send.setClipData(ClipData.newRawUri("Sauvegarde StreamDashboard",uri));
+        AtomicReference<String> error=new AtomicReference<>("");CountDownLatch launched=new CountDownLatch(1);
+        runOnUiThread(()->{try{startActivity(Intent.createChooser(send,"Enregistrer ou partager la sauvegarde"));}catch(Exception failure){error.set("Impossible d’ouvrir le partage Android.");}finally{launched.countDown();}});
+        return launched.await(3,TimeUnit.SECONDS)?error.get():"Impossible d’ouvrir le partage Android.";
+      }catch(Exception error){return "Impossible d’exporter la sauvegarde JSON.";}
     }
     @JavascriptInterface public String shareImage(String encodedPng, String requestedName, String mimeType) {
       if (!"image/png".equals(mimeType)) return "Type d’image refusé.";

@@ -4,7 +4,7 @@ import { mkdirSync, mkdtempSync, writeFileSync, rmSync } from 'node:fs';
 import path from 'node:path';
 
 // Android signature stubs and a map-backed JSONObject exercise payload policy, not Android/OAuth runtime.
-test('ProviderBridge compiles with javac and accepts only idempotent deletion responses', t => {
+test('ProviderBridge compiles and enforces provider isolation, deletion and Streamlabs payload policy', t => {
   try { execFileSync('javac', ['-version'], { stdio: 'inherit' }); }
   catch (error) { if (error.code !== 'ENOENT') throw error; t.skip('javac unavailable'); return; }
   mkdirSync('test-results', { recursive: true });
@@ -23,8 +23,9 @@ test('ProviderBridge compiles with javac and accepts only idempotent deletion re
       public String toString() { return values.toString(); }
       public JSONObject() {} public JSONObject(String s) throws JSONException {}
       public JSONObject put(String k,Object v) throws JSONException { values.put(k,v); return this; }
-      public String getString(String k) throws JSONException { return (String)values.get(k); }
+      public String getString(String k) throws JSONException { return (String)values.get(k); } public Object opt(String k) { return values.get(k); }
       public String optString(String k) { return optString(k, ""); } public String optString(String k,String d) { return (String)values.getOrDefault(k,d); }
+      public long getLong(String k) throws JSONException { Object value=values.get(k); if(!(value instanceof Number))throw new JSONException(); return ((Number)value).longValue(); }
       public long optLong(String k) { return 0; } public long optLong(String k,long d) { return d; }
       public boolean optBoolean(String k) { return java.lang.Boolean.TRUE.equals(values.get(k)); } public boolean has(String k) { return values.containsKey(k); }
       public JSONObject getJSONObject(String k) throws JSONException { return (JSONObject)values.get(k); }
@@ -32,8 +33,9 @@ test('ProviderBridge compiles with javac and accepts only idempotent deletion re
       public JSONArray getJSONArray(String k) throws JSONException { return (JSONArray)values.get(k); }
       public JSONArray optJSONArray(String k) { return (JSONArray)values.get(k); }
     }`,
-    'org/json/JSONArray.java': 'package org.json; public class JSONArray { private java.util.List<Object> values=new java.util.ArrayList<>(); public JSONArray put(Object v) { values.add(v); return this; } public int length() { return values.size(); } public String getString(int i) throws JSONException { return (String)values.get(i); } public JSONObject getJSONObject(int i) throws JSONException { return (JSONObject)values.get(i); } }',
+    'org/json/JSONArray.java': 'package org.json; public class JSONArray { private java.util.List<Object> values=new java.util.ArrayList<>(); public JSONArray put(Object v) { values.add(v); return this; } public int length() { return values.size(); } public Object get(int i) throws JSONException { return values.get(i); } public String getString(int i) throws JSONException { return (String)values.get(i); } public JSONObject getJSONObject(int i) throws JSONException { return (JSONObject)values.get(i); } }',
     'SecureCredentialStore.java': `package ${pkg}; class SecureCredentialStore { SecureCredentialStore(android.app.Activity a) {} String get(String k) { return ""; } void put(String k,String v) {} void clear(String k) {} }`,
+    'OperationReceiptStore.java': `package ${pkg}; class OperationReceiptStore { OperationReceiptStore(android.app.Activity a,SecureCredentialStore c) {} String get(String k){return "";} void put(String k,String v){} void clear(String k){} void migrate(){} }`,
     'BuildConfig.java': `package ${pkg}; class BuildConfig { static final String TWITCH_ANDROID_CLIENT_ID="", GOOGLE_ANDROID_CLIENT_ID=""; static final boolean PREVIEW_MODE=false; }`,
     'GoogleAuthorizationAdapter.java': `package ${pkg}; class GoogleAuthorizationAdapter implements GoogleAuthorizationFlow.Adapter {
       private final String account;
@@ -47,16 +49,19 @@ test('ProviderBridge compiles with javac and accepts only idempotent deletion re
     'DeletionPolicyTest.java': `package ${pkg}; public class DeletionPolicyTest {
       public static void main(String[] args) throws Exception {
         ProviderBridge bridge = new ProviderBridge(new android.app.Activity());
-        bridge.googleAuthorize("{}"); bridge.youtubeAuthorize("{}");
-        if(!bridge.googleStatus("{}").contains("agenda@example.test")||!bridge.youtubeStatus("{}").contains("video@example.test"))throw new AssertionError("Accounts not separated");
-        java.lang.reflect.Method providerToken=ProviderBridge.class.getDeclaredMethod("token",String.class); providerToken.setAccessible(true);
+        bridge.googleAuthorize("{}");
+        if(!bridge.googleStatus("{}").contains("agenda@example.test"))throw new AssertionError("Calendar account not authorized");
+        // Twitch-only UI must refuse any new YouTube authorization or operation.
+        if(!bridge.youtubeAuthorize("{}").contains("DISABLED"))throw new AssertionError("YouTube authorization unexpectedly available");
+        if(!bridge.youtubeStatus("{}").contains("DISABLED"))throw new AssertionError("YouTube status unexpectedly available");
+        if(!bridge.youtubeLogout("{}").contains("DISABLED"))throw new AssertionError("YouTube logout unexpectedly available");
+        if(!bridge.googleStatus("{}").contains("connected=true"))throw new AssertionError("Disabled YouTube altered Calendar account");
+        java.lang.reflect.Method providerToken=ProviderBridge.class.getDeclaredMethod("token",String.class);
+        providerToken.setAccessible(true);
         org.json.JSONObject calendarToken=(org.json.JSONObject)providerToken.invoke(bridge,"google");
-        org.json.JSONObject videoToken=(org.json.JSONObject)providerToken.invoke(bridge,"youtube");
-        if(!calendarToken.getString("access_token").equals("token-agenda@example.test")||!videoToken.getString("access_token").equals("token-video@example.test"))throw new AssertionError("Cross-provider token routing");
-        bridge.youtubeLogout("{}");
-        if(!bridge.googleStatus("{}").contains("connected=true")||!bridge.youtubeStatus("{}").contains("connected=false"))throw new AssertionError("YouTube logout disconnected Calendar");
-        bridge.youtubeAuthorize("{}"); bridge.googleLogout("{}");
-        if(!bridge.youtubeStatus("{}").contains("connected=true")||!bridge.googleStatus("{}").contains("connected=false"))throw new AssertionError("Calendar logout disconnected YouTube");
+        if(!calendarToken.getString("access_token").equals("token-agenda@example.test"))throw new AssertionError("Calendar token misrouted");
+        bridge.googleLogout("{}");
+        if(!bridge.googleStatus("{}").contains("connected=false"))throw new AssertionError("Calendar logout failed");
         bridge.close();
         String diagnostic = ProviderBridge.safeProviderMessage("Invalid duration token-secret", java.util.Map.of("Authorization", "Bearer token-secret"));
         if (!diagnostic.equals("Invalid duration [redacted]")) throw new AssertionError(diagnostic);
@@ -81,6 +86,20 @@ test('ProviderBridge compiles with javac and accepts only idempotent deletion re
         if(!ProviderBridge.wizebotResource("ajax: '"+resource+"'").equals(resource))throw new AssertionError("WizeBot list discovery");
         try{ProviderBridge.wizebotResource("ajax: 'https://example.test/steal'");throw new AssertionError("External list URL accepted");}catch(Exception expected){}
 
+        String widget="abcdefghijklmnopqrstuvwxyz123456";
+        if(!StreamlabsCloudClient.widgetToken(widget).equals(widget)||!StreamlabsCloudClient.widgetToken("https://streamlabs.com/alert-box/v3?token="+widget).equals(widget)||!StreamlabsCloudClient.widgetToken("https://streamlabs.com/widgets/"+widget).equals(widget))throw new AssertionError("Widget token parsing");
+        for(String invalid:new String[]{"https://example.test/?token="+widget,"http://streamlabs.com/?token="+widget,"https://streamlabs.com:444/?token="+widget,"https://name@streamlabs.com/?token="+widget,"https://streamlabs.com/?token="+widget+"&token="+widget,"https://streamlabs.com/widgets/"+widget+"?token=another_widget_abcdefghijklmnopqrstuvwxyz","socket-token"}){
+          try{StreamlabsCloudClient.widgetToken(invalid);throw new AssertionError("Unsafe widget accepted");}catch(StreamlabsCloudClient.Failure expected){}
+        }
+        if(!StreamlabsCloudClient.accountKey(widget).matches("[a-f0-9]{64}")||StreamlabsCloudClient.accountKey(widget).equals(StreamlabsCloudClient.accountKey(widget+"x")))throw new AssertionError("Streamlabs account isolation");
+        org.json.JSONObject donor=new org.json.JSONObject().put("type","donation").put("platform","streamlabs").put("_id","event1").put("display_name","Alice").put("amount",3).put("currency","EUR").put("message","Bravo").put("email","private@example.test").put("oauth_token","should-not-cross").put("donor",new org.json.JSONObject().put("email","hidden@example.test"));
+        org.json.JSONObject widgetRow=new org.json.JSONObject().put("type","rollendcredits").put("platform","twitch_account").put("_id","noise");
+        org.json.JSONObject rawHistory=new org.json.JSONObject().put("access_token","secret-top").put("data",new org.json.JSONObject().put("donations",new org.json.JSONArray().put(donor).put("malformed")).put("follows",new org.json.JSONArray().put(widgetRow)).put("credentials",new org.json.JSONObject().put("token","secret-nested")));
+        org.json.JSONObject cleanHistory=StreamlabsCloudClient.publicPayload(rawHistory),cleanData=cleanHistory.getJSONObject("data"),cleanDonor=cleanData.getJSONArray("donations").getJSONObject(0);
+        if(cleanHistory.has("access_token")||cleanData.has("credentials")||cleanDonor.has("email")||cleanDonor.has("oauth_token")||cleanDonor.has("donor"))throw new AssertionError("Streamlabs private fields crossed native boundary");
+        if(cleanData.getJSONArray("donations").length()!=1||cleanData.getJSONArray("follows").length()!=0||!cleanDonor.getString("message").equals("Bravo")||!cleanDonor.opt("amount").equals(3))throw new AssertionError("Public activity lost or widget noise retained");
+        try{StreamlabsCloudClient.publicPayload(new org.json.JSONObject().put("data",new org.json.JSONObject().put("token","secret")));throw new AssertionError("Invalid history treated as success");}catch(StreamlabsCloudClient.Failure expected){}
+
         for (String code : new String[]{"INVALID_PAYLOAD", "INVALID_LINK", "REAUTH_REQUIRED", "HTTP_400", "HTTP_401", "HTTP_403", "HTTP_404", "HTTP_405", "HTTP_410", "HTTP_412", "HTTP_413", "HTTP_415", "HTTP_422", "HTTP_429"}) {
           if (!ProviderBridge.isDefinitiveNonCreation(code)) throw new AssertionError(code);
         }
@@ -104,6 +123,59 @@ test('ProviderBridge compiles with javac and accepts only idempotent deletion re
         }
       }
     }`,
+    'CloudPolicyTest.java': `package ${pkg}; import org.json.*; public class CloudPolicyTest {
+      static void check(boolean condition,String message){if(!condition)throw new AssertionError(message);}
+      static JSONObject metadata()throws Exception{return new JSONObject().put("title","Titre").put("description","").put("youtubeCategoryId","20").put("twitchGameId","").put("tags",new JSONArray());}
+      static JSONObject row(String id,String owner)throws Exception{return new JSONObject().put("id",id).put("snippet",new JSONObject().put("channelId",owner).put("title","Flux")).put("status",new JSONObject().put("streamStatus","active").put("lifeCycleStatus","ready")).put("contentDetails",new JSONObject().put("isReusable",true));}
+      static JSONObject items(JSONObject row)throws Exception{return new JSONObject().put("items",new JSONArray().put(row));}
+      public static void main(String[] args)throws Exception{
+        int[] writes={0}; JSONObject[] creationBodies={null}; String[] confirmationMode={"normal"};
+        CloudPlatforms cloud=new CloudPlatforms((provider,method,path,body)->{
+          check(provider.equals("youtube"),"Provider crossed");
+          if(!method.equals("GET")){
+            writes[0]++;creationBodies[0]=body;
+            JSONObject details=new JSONObject().put("enableAutoStart",false).put("enableAutoStop",false);
+            if(!confirmationMode[0].equals("missing"))details.put("enableEmbed",confirmationMode[0].equals("mismatch")?!body.getJSONObject("contentDetails").optBoolean("enableEmbed"):body.getJSONObject("contentDetails").optBoolean("enableEmbed"));
+            return row("video123456",confirmationMode[0].equals("owner")?"another":"owner").put("status",body.getJSONObject("status")).put("contentDetails",details);
+          }
+          if(path.startsWith("channels?"))return items(row("owner","owner"));
+          if(path.startsWith("liveStreams?"))return items(row("stream","owner").put("cdn",new JSONObject().put("ingestionInfo","SECRET")));
+          return items(row("video123456","another"));
+        });
+        JSONObject streams=cloud.execute(new JSONObject().put("operation","youtube.streams"));
+        check(!streams.getJSONArray("items").getJSONObject(0).has("cdn"),"Ingestion secret escaped");
+        try{cloud.execute(new JSONObject().put("operation","youtube.bind").put("broadcastId","video123456").put("streamId","stream"));throw new AssertionError("Foreign broadcast accepted");}catch(IllegalArgumentException expected){}
+        check(writes[0]==0,"Mutation before ownership check");
+        JSONObject create=new JSONObject().put("operation","youtube.create").put("metadata",metadata()).put("streamId","stream").put("scheduledStartTime",java.time.Instant.now().plusSeconds(3600).toString()).put("privacyStatus","private");
+        try{cloud.execute(create);throw new AssertionError("Missing audience accepted");}catch(IllegalArgumentException expected){}
+        check(writes[0]==0,"Created before audience choice");
+        create.put("madeForKids",false);JSONObject created=cloud.execute(create);check(writes[0]==1,"Creation count");
+        check(created.optBoolean("creationVerified")&&creationBodies[0].getJSONObject("contentDetails").optBoolean("enableEmbed"),"Embedding default not sent and confirmed");
+        create.put("enableEmbed",false);created=cloud.execute(create);
+        check(created.optBoolean("creationVerified")&&Boolean.FALSE.equals(creationBodies[0].getJSONObject("contentDetails").opt("enableEmbed")),"Disabled embedding not preserved");
+        create.put("enableEmbed","false");int beforeInvalid=writes[0];
+        try{cloud.execute(create);throw new AssertionError("Nonboolean embedding accepted");}catch(IllegalArgumentException expected){}
+        check(writes[0]==beforeInvalid,"Created before embedding validation");create.put("enableEmbed",false);
+        for(String mode:new String[]{"mismatch","missing","owner"}){
+          confirmationMode[0]=mode;created=cloud.execute(create);
+          check(!created.optBoolean("creationVerified")&&created.optBoolean("ok")&&created.getString("broadcastId").equals("video123456"),"Known creation lost on unconfirmed "+mode);
+        }
+        confirmationMode[0]="normal";
+        CloudPlatforms paginated=new CloudPlatforms((provider,method,path,body)->path.startsWith("channels?")?items(row("owner","owner")):items(row("stream","owner")).put("nextPageToken","again"));
+        try{paginated.execute(new JSONObject().put("operation","youtube.streams"));throw new AssertionError("Partial catalog accepted");}catch(IllegalStateException expected){}
+        CloudPlatforms mismatch=new CloudPlatforms((provider,method,path,body)->{
+          if(path.startsWith("channels?"))return items(row("owner","owner"));
+          return items(row("video123456","owner"));
+        });
+        try{mismatch.execute(new JSONObject().put("operation","youtube.metadata").put("broadcastId","video123456").put("metadata",metadata()));throw new AssertionError("Unconfirmed metadata accepted");}catch(IllegalStateException expected){}
+        String line="@id=m1;room-id=owner;user-id=u1;display-name=Alice;badges=moderator/1 :alice!alice@alice.tmi.twitch.tv PRIVMSG #channel :Bonjour";
+        JSONObject message=NativeTwitchChat.decode(line,"channel","owner");
+        check(message.getString("text").equals("Bonjour")&&message.has("receivedAt"),"Message lost");
+        check(message.getJSONObject("chatter").getString("login").equals("alice")&&message.getJSONObject("chatter").getJSONArray("badges").getJSONObject(0).getString("setId").equals("moderator"),"Chat schema mismatch");
+        check(NativeTwitchChat.decode(line,"other","owner")==null&&NativeTwitchChat.decode(line,"channel","another")==null,"Chat crossed accounts");
+        check(NativeTwitchChat.decode(":server NOTICE #channel :authentication failed","channel","owner")==null,"Notice rendered as chat");
+      }
+    }`,
     'MainActivity.java': `package ${pkg}; class MainActivity extends android.app.Activity { void dispatchProviderAuth(String p,boolean c) {} void dispatchProviderResult(String id,String result) {} }`,
     'DeepLinkRouter.java': `package ${pkg}; class DeepLinkRouter { enum Route { OAUTH } static Route route(String s) { return null; } }`,
   };
@@ -112,7 +184,8 @@ test('ProviderBridge compiles with javac and accepts only idempotent deletion re
       const file = path.join(directory, name);
       mkdirSync(path.dirname(file), { recursive: true }); writeFileSync(file, source); return file;
     });
-    execFileSync('javac', ['-d', path.join(directory, 'classes'), ...files, 'android/app/src/main/java/com/rastaaslan/streamdashboard/remote/ProviderBridge.java', 'android/app/src/main/java/com/rastaaslan/streamdashboard/remote/GoogleAuthorizationFlow.java'], { stdio: 'inherit' });
+    execFileSync('javac', ['-d', path.join(directory, 'classes'), ...files, 'android/app/src/main/java/com/rastaaslan/streamdashboard/remote/ProviderScheduler.java', 'android/app/src/main/java/com/rastaaslan/streamdashboard/remote/NativeTwitchChat.java', 'android/app/src/main/java/com/rastaaslan/streamdashboard/remote/CloudPlatforms.java', 'android/app/src/main/java/com/rastaaslan/streamdashboard/remote/ProviderBridge.java', 'android/app/src/main/java/com/rastaaslan/streamdashboard/remote/GoogleAuthorizationFlow.java', 'android/app/src/main/java/com/rastaaslan/streamdashboard/remote/StreamlabsCloudClient.java'], { stdio: 'inherit' });
     execFileSync('java', ['-cp', path.join(directory, 'classes'), pkg + '.DeletionPolicyTest'], { stdio: 'inherit' });
+    execFileSync('java', ['-cp', path.join(directory, 'classes'), pkg + '.CloudPolicyTest'], { stdio: 'inherit' });
   } finally { rmSync(directory, { recursive: true, force: true }); }
 });

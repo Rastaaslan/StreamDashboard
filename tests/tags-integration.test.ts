@@ -4,7 +4,7 @@ import { resolve } from 'node:path';
 import { runInNewContext } from 'node:vm';
 import { resolveTags, normalizeTags } from '../packages/core/src/tags.js';
 import { TwitchPreflight } from '../integrations/twitch/src/preflight.js';
-import { TwitchClient } from '../integrations/twitch/src/client.js';
+import { TwitchClient, TwitchHttpError } from '../integrations/twitch/src/client.js';
 import { startDashboardServer } from '../apps/server/src/index.js';
 
 const tags = { values: ['Français', 'Gaming'], source: 'generated' as const, validated: true, generatedAt: '2026-10-04T10:00:00Z' };
@@ -37,12 +37,23 @@ describe('tags integration', () => {
     expect(api.updateChannel).toHaveBeenCalledTimes(1);
   });
   it('retries without tags after rejection and stays ready', async () => {
-    const updateChannel = vi.fn().mockRejectedValueOnce(Error('tags rejected')).mockResolvedValue(undefined);
+    const updateChannel = vi.fn().mockRejectedValueOnce(new TwitchHttpError(400, 'Twitch HTTP 400', null, true)).mockResolvedValue(undefined);
     const preflight = new TwitchPreflight({ getChannel: async () => ({ title: '', gameId: '' }), searchGame: vi.fn(), updateChannel });
     expect(await preflight.prepare({ eventId: '1', title: event.title, categoryId: '42', tags: tags.values })).toMatchObject({ status: 'ready', tagsWarning: expect.any(String) });
     expect(updateChannel).toHaveBeenLastCalledWith({ title: event.title, gameId: '42' });
     const fallback = await resolveTags({ title: event.title }, { generate: async () => { throw Error(); } });
     expect(await preflight.prepare({ eventId: '1', title: event.title, categoryId: '42', tags: fallback.tags?.values })).toMatchObject({ status: 'ready' });
+  });
+  it.each([
+    ['lost acknowledgement', new Error('Connection closed after sending')],
+    ['server failure', new TwitchHttpError(503, 'Twitch HTTP 503')],
+    ['invalid category', new TwitchHttpError(400, 'Twitch HTTP 400')],
+  ])('does not repeat a preflight metadata write after %s', async (_name, failure) => {
+    const updateChannel = vi.fn().mockRejectedValue(failure);
+    const preflight = new TwitchPreflight({ getChannel: async () => ({ title: '', gameId: '' }), searchGame: vi.fn(), updateChannel });
+    await expect(preflight.prepare({ eventId: 'planned-live', title: 'New', categoryId: '42', tags: ['New'] })).rejects.toBe(failure);
+    expect(updateChannel).toHaveBeenCalledExactlyOnceWith({ title: 'New', gameId: '42', tags: ['New'] });
+    expect(preflight.key).toBe('');
   });
   it('sends tags through Helix Modify Channel Information', async () => {
     const fetchMock = vi.fn().mockResolvedValueOnce(new Response(JSON.stringify({ client_id: 'client', user_id: '42', scopes: ['channel:manage:broadcast'] }))).mockResolvedValueOnce(new Response(null, { status: 204 }));

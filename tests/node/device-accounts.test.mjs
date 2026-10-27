@@ -1,78 +1,82 @@
-import test from 'node:test';
 import assert from 'node:assert/strict';
+import {test} from 'node:test';
 import {accountDiagnostic,nativeGoogleAccounts,createDeviceAccounts} from '../../apps/mobile/control/device-accounts.js';
 
-test('failed YouTube authorization preserves Calendar status and shows the error on YouTube',()=>{
-  const states=nativeGoogleAccounts({connected:true,calendarAuthorized:true,youtubeAuthorized:false,configured:true,authorizationError:true,authorizationProvider:'youtube',code:'GOOGLE_API_10'});
-  assert.equal(states.google.connected,true);assert.equal(states.google.code,undefined);
-  assert.equal(states.youtube.connected,false);assert.equal(states.youtube.code,'GOOGLE_API_10');
-  assert.match(accountDiagnostic(states.youtube.code),/certificat/);
-  assert.match(accountDiagnostic('GOOGLE_API_99999'),/code/);
-});
+// Twitch + Google Calendar are the ONLY supported accounts. Legacy YouTube
+// account UI regression is archived under docs/legacy-tests.
+const status=(connected=false,other={})=>JSON.stringify({ok:true,connected,calendarAuthorized:connected,configured:true,...other});
+async function withWindow(fn){
+ const previous=globalThis.addEventListener;
+ globalThis.addEventListener=()=>{};
+ try{return await fn()}
+ finally{if(previous)globalThis.addEventListener=previous;else delete globalThis.addEventListener}
+}
+const button=(type,provider)=>({dataset:{[type]:provider},hasAttribute:()=>false});
 
-test('Google Play errors and pending consent reach both Google cards',()=>{
-  const states=nativeGoogleAccounts({configured:false,code:'GOOGLE_PLAY_SERVICES'});
-  assert.equal(states.youtube.code,'GOOGLE_PLAY_SERVICES');
-  const pending=nativeGoogleAccounts({configured:true,authorizing:true});
-  assert.equal(pending.google.authorizing,true);assert.equal(pending.youtube.authorizing,true);
+test('Google Calendar state reports only its own authorization and diagnostic',()=>{
+ const connected=nativeGoogleAccounts({connected:true,calendarAuthorized:true,configured:true});
+ assert.equal(connected.google.connected,true);
+ const denied=nativeGoogleAccounts({connected:false,calendarAuthorized:false,
+   authorizationError:true,authorizationProvider:'google',code:'GOOGLE_API_10'});
+ assert.equal(denied.google.connected,false);
+ assert.equal(denied.google.code,'GOOGLE_API_10');
+ assert.match(accountDiagnostic(denied.google.code),/certificat/);
+ assert.match(accountDiagnostic('GOOGLE_API_99999'),/code/);
 });
-
-test('native failure is displayed after authorization acknowledgement without a fake browser prompt',async()=>{
-  const original=globalThis.addEventListener;
-  globalThis.addEventListener=()=>{};
-  try{
-    let html='',status={ok:true,connected:false,configured:true};
-    const bridge={
-      twitchStatus:()=>JSON.stringify({ok:true,connected:false}),
-      googleStatus:()=>JSON.stringify(status),
-      youtubeAuthorize:()=>{status={...status,authorizationError:true,authorizationProvider:'youtube',code:'GOOGLE_API_10'};return '{"ok":true,"nativeAuthorization":true}';}
-    };
-    const accounts=createDeviceAccounts({bridge,modal:value=>{html=value;},esc:String,toast:()=>{}});
-    await accounts.open();
-    await accounts.click({dataset:{accountConnect:'youtube'},hasAttribute:()=>false});
-    assert.match(html,/GOOGLE_API_10/);assert.match(html,/certificat/);
-    assert.doesNotMatch(html,/Terminez la connexion dans le navigateur/);
-  }finally{if(original)globalThis.addEventListener=original;else delete globalThis.addEventListener;}
-});
-
-test('independent native accounts display both addresses and only disconnect the chosen service',async()=>{
-  const original=globalThis.addEventListener;
-  globalThis.addEventListener=()=>{};
-  try{
-    let html='',googleConnected=true,youtubeConnected=true;
-    const calls=[];
-    const bridge={
-      twitchStatus:()=>JSON.stringify({ok:true,connected:false}),
-      googleStatus:()=>JSON.stringify({ok:true,connected:googleConnected,configured:true,account:'agenda@example.test'}),
-      youtubeStatus:()=>JSON.stringify({ok:true,connected:youtubeConnected,configured:true,account:'video@example.test',channelName:'Ma chaîne'}),
-      youtubeLogout:()=>{calls.push('youtube');youtubeConnected=false;return '{"ok":true}';},
-      googleLogout:()=>{calls.push('google');googleConnected=false;return '{"ok":true}';}
-    };
-    const accounts=createDeviceAccounts({bridge,modal:value=>{html=value;},esc:String,toast:()=>{}});
-    await accounts.open();
-    assert.match(html,/agenda@example.test/);assert.match(html,/video@example.test/);assert.match(html,/Ma chaîne/);
-    assert.match(html,/Changer de compte/);
-    await accounts.click({dataset:{accountLogout:'youtube'},hasAttribute:()=>false});
-    assert.deepEqual(calls,['youtube']);assert.equal(googleConnected,true);assert.equal(youtubeConnected,false);
-    assert.match(html,/Connecté · agenda@example.test/);
-    await accounts.click({dataset:{accountLogout:'google'},hasAttribute:()=>false});
-    assert.deepEqual(calls,['youtube','google']);
-  }finally{if(original)globalThis.addEventListener=original;else delete globalThis.addEventListener;}
-});
-
-test('YouTube errors stay on YouTube while shared UI prevents overlapping account pickers',async()=>{
-  const original=globalThis.addEventListener;globalThis.addEventListener=()=>{};
-  try{
-    let html='';
-    const bridge={
-      twitchStatus:()=>JSON.stringify({ok:true,connected:false}),
-      googleStatus:()=>JSON.stringify({ok:true,connected:true,account:'agenda@example.test'}),
-      youtubeStatus:()=>JSON.stringify({ok:true,connected:false,code:'GOOGLE_API_8',authorizing:true})
-    };
-    await createDeviceAccounts({bridge,modal:value=>{html=value;},esc:String,toast:()=>{}}).open();
-    const google=html.split('<h3>Google Calendar</h3>')[1].split('</section>')[0];
-    const youtube=html.split('<h3>YouTube</h3>')[1].split('</section>')[0];
-    assert.doesNotMatch(google,/GOOGLE_API_8/);assert.match(youtube,/GOOGLE_API_8/);
-    assert.match(google,/data-account-connect="google" disabled/);assert.match(youtube,/data-account-connect="youtube" disabled/);
-  }finally{if(original)globalThis.addEventListener=original;else delete globalThis.addEventListener;}
-});
+test('account modal presents Twitch and Calendar, never retired YouTube even if old native methods exist',()=>withWindow(async()=>{
+ let html='';
+ const bridge={
+  twitchStatus:()=>JSON.stringify({ok:true,connected:true,account:'streamer'}),
+  googleStatus:()=>status(true,{account:'agenda@example.test'}),
+  youtubeStatus:()=>JSON.stringify({ok:true,connected:true,account:'retired@example.test'}),
+ };
+ const accounts=createDeviceAccounts({bridge,modal:v=>{html=v},esc:String,toast:()=>{}});
+ await accounts.open();
+ assert.match(html,/Twitch/);
+ assert.match(html,/Google Calendar/);
+ assert.match(html,/agenda@example.test/);
+ assert.doesNotMatch(html,/retired@example.test|data-account-connect="youtube"/);
+}));
+test('native calendar refusal is shown after acknowledgement, not as fictitious browser success',()=>withWindow(async()=>{
+ let html='',state={connected:false,calendarAuthorized:false,configured:true};
+ const bridge={
+  twitchStatus:()=>JSON.stringify({ok:true,connected:false}),
+  googleStatus:()=>JSON.stringify({ok:true,...state}),
+  googleAuthorize:()=>{state={...state,authorizationError:true,authorizationProvider:'google',code:'GOOGLE_API_10'};return JSON.stringify({ok:true,nativeAuthorization:true})},
+ };
+ const accounts=createDeviceAccounts({bridge,modal:v=>{html=v},esc:String,toast:()=>{}});
+ await accounts.open();
+ await accounts.click(button('accountConnect','google'));
+ assert.match(html,/GOOGLE_API_10/);
+ assert.match(html,/certificat/);
+ assert.doesNotMatch(html,/Terminez la connexion dans le navigateur/);
+}));
+test('Calendar logout does not touch Twitch session',()=>withWindow(async()=>{
+ let html='',calendar=true,twitch=true;const calls=[];
+ const bridge={
+  twitchStatus:()=>JSON.stringify({ok:true,connected:twitch,account:'streamer'}),
+  googleStatus:()=>status(calendar,{account:'agenda@example.test'}),
+  googleLogout:()=>{calls.push('google');calendar=false;return JSON.stringify({ok:true})},
+ };
+ const accounts=createDeviceAccounts({bridge,modal:v=>{html=v},esc:String,toast:()=>{}});
+ await accounts.open();
+ await accounts.click(button('accountLogout','google'));
+ assert.deepEqual(calls,['google']);
+ assert.equal(twitch,true);
+ assert.equal(calendar,false);
+ assert.match(html,/Non connecté/);
+ assert.doesNotMatch(html,/data-account-connect="youtube"/);
+}));
+test('pending Calendar authorization disables only Calendar, not Twitch',()=>withWindow(async()=>{
+ let html='';
+ const bridge={
+  twitchStatus:()=>JSON.stringify({ok:true,connected:false}),
+  googleStatus:()=>status(false,{authorizing:true,authorizationError:true,authorizationProvider:'google',code:'GOOGLE_API_10'}),
+ };
+ const accounts=createDeviceAccounts({bridge,modal:v=>{html=v},esc:String,toast:()=>{}});
+ await accounts.open();
+ assert.match(html,/data-account-connect="google" disabled/);
+ assert.match(html,/data-account-connect="twitch"/);
+ assert.doesNotMatch(html,/data-account-connect="twitch" disabled/);
+ assert.match(html,/GOOGLE_API_10/);
+}));

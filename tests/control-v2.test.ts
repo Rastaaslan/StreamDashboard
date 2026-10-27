@@ -57,18 +57,19 @@ describe('Shared durable controller',()=>{
   a.action=vi.fn(async()=>{throw new Error('OBS déconnecté');});
   expect(await control.execute(request('sound.stop','stop_failed_1'))).toMatchObject({status:'failed',message:'OBS déconnecté'});
  });
- it('returns partial results and retries only the failed platform without restarting Twitch',async()=>{
-  const active={twitch:false,youtube:false};let youtubeFails=true;const a=adapter();
-  a.live=vi.fn(async (p:Platform)=>active[p]);a.output=vi.fn(async(p:Platform,start:boolean)=>{if(p==='youtube'&&youtubeFails)throw new Error('YouTube unavailable');active[p]=start;});
+ it('does not dispatch a second Twitch start when the channel is already live',async()=>{
+  let live=false;const a=adapter();
+  a.live=vi.fn(async()=>live);a.output=vi.fn(async(_p:Platform,start:boolean)=>{live=start;});
   const control=await ControlService.open(path.join(await temporary(),'control.json'),a,()=>{},async()=>{});
-  const first=await control.execute(request('live.start'));expect(first.status).toBe('partial');expect(first.platforms?.twitch?.live).toBe(true);
-  youtubeFails=false;const retry=await control.execute(request('live.start','command_retry','youtube'));expect(retry.status).toBe('succeeded');
-  expect(vi.mocked(a.output).mock.calls.filter(([p])=>p==='twitch')).toHaveLength(1);
-  expect(active).toEqual({twitch:true,youtube:true});
+  const first=await control.execute(request('live.start','start_twitch_001'));
+  expect(first.status).toBe('succeeded');expect(first.platforms?.twitch?.live).toBe(true);
+  const second=await control.execute(request('live.start','start_twitch_002'));
+  expect(second.status).toBe('succeeded');expect(a.output).toHaveBeenCalledTimes(1);
+  await control.stop();
  });
  it('does not declare OBS dispatch a successful live without platform confirmation',async()=>{
   const a=adapter();const control=await ControlService.open(path.join(await temporary(),'control.json'),a,()=>{},async()=>{});
-  const result=await control.execute(request('live.start'));expect(result.status).toBe('uncertain');expect(result.platforms?.youtube?.live).toBe(false);
+  const result=await control.execute(request('live.start'));expect(result.status).toBe('uncertain');expect(result.platforms?.twitch?.live).toBe(false);
  });
  it('rejects obsolete immediate actions and conflicting configuration writes',async()=>{
   const a=adapter(),control=await ControlService.open(path.join(await temporary(),'control.json'),a);
@@ -76,12 +77,23 @@ describe('Shared durable controller',()=>{
   const config=control.snapshot().configuration;config.actions[0].label='Micro principal';await control.configure(config,0);
   await expect(control.configure(config,0)).rejects.toThrow('autre appareil');expect(a.action).not.toHaveBeenCalled();
  });
- it('retains desired metadata and per-platform results for targeted retry across restart',async()=>{
-  const file=path.join(await temporary(),'control.json'),a=adapter();a.metadata=vi.fn(async p=>{if(p==='youtube')throw new Error('Quota');});
-  let control=await ControlService.open(file,a);const metadata={...defaultControlData().configuration.metadata,title:'Le feu de camp',tags:['Francais']};
-  const result=await control.execute({...request('metadata.apply'),metadata,expectedRevision:0});expect(result.status).toBe('partial');
-  control=await ControlService.open(file,a);expect(control.snapshot().configuration.metadata.title).toBe(metadata.title);a.metadata=vi.fn(async()=>{});
-  await control.execute(request('metadata.retry','command_retry','youtube'));expect(a.metadata).toHaveBeenCalledExactlyOnceWith('youtube',metadata);
+ it('persists Twitch metadata and requires explicit review before retry after a quota failure',async()=>{
+  const file=path.join(await temporary(),'control.json'),a=adapter();
+  a.metadata=vi.fn(async()=>{throw new Error('Quota');});
+  let control=await ControlService.open(file,a);
+  const metadata={...defaultControlData().configuration.metadata,title:'Le feu de camp',tags:['Francais']};
+  const result=await control.execute({...request('metadata.apply'),metadata,expectedRevision:0});
+  expect(result.status).toBe('failed');expect(result.platforms?.twitch?.status).toBe('failed');
+  await control.stop();
+  control=await ControlService.open(file,a);
+  expect(control.snapshot().configuration.metadata.title).toBe(metadata.title);
+  expect(control.snapshot().metadataResults.twitch?.status).toBe('failed');
+  a.metadata=vi.fn(async()=>{});
+  const retry=await control.execute({...request('metadata.retry','command_retry','twitch'),
+    confirmed:true,expectedRevision:1,metadata});
+  expect(retry.status).toBe('succeeded');
+  expect(a.metadata).toHaveBeenCalledExactlyOnceWith('twitch',metadata);
+  await control.stop();
  });
  it('keeps legacy paired devices limited and persists explicit management rights',()=>{
   const auth=new RemoteAuth();const old=auth.createPairing(),next=auth.createPairing(undefined,true);const a=auth.pair(old.id,old.code,'Old'),b=auth.pair(next.id,next.code,'S24');
@@ -106,4 +118,20 @@ describe('Real HTTP persistence and cross-client conflict handling',()=>{
   state=(await call('/api/v2/state')).body;expect(state.host.settings.streamerName).toBe('Le Feu de Camp de Dam');expect(state.configuration.actions[0].label).toBe('Micro personnalisé');expect(state.host.planning[0].title).toBe('Modifié depuis le téléphone');
   expect((await call('/api/v2/planning/'+item.id,{expectedRevision:state.host.planningRevisions[item.id]},'DELETE')).status).toBe(200);expect((await call('/api/v2/state')).body.host.planning).toHaveLength(0);
  },20000);
+});
+
+it('rejects a stale action definition inside the serialized executor before any effect',async()=>{
+ const a=adapter(),control=await ControlService.open(path.join(await temporary(),'control.json'),a);
+ const original=control.snapshot().configuration.actions[0], config=control.snapshot().configuration;
+ config.actions[0].value='new-microphone';await control.configure(config,config.revision);
+ const result=await control.execute({...request(original.id,'stale_binding_1'),expectedAction:original});
+ expect(result.status).toBe('failed');expect(a.action).not.toHaveBeenCalled();
+ const confirmed=await control.execute({...request(original.id,'valid_binding_1'),expectedAction:config.actions[0]});
+ expect(confirmed.status).toBe('succeeded');expect(a.action).toHaveBeenCalledTimes(1);
+});
+
+it('rechecks an executor permission inside the command queue, before an action effect',async()=>{
+ const a=adapter(),control=await ControlService.open(path.join(await temporary(),'control.json'),a);
+ const result=await control.execute(request('micro','permission_queue'),()=>{throw Error('Permission revoked');});
+ expect(result.status).toBe('failed');expect(result.message).toContain('Permission revoked');expect(a.action).not.toHaveBeenCalled();
 });

@@ -1,0 +1,170 @@
+/* Mobile horizontal panes + persistent DJI Mic 3 battery badge.
+   Desktop layouts are untouched; no hidden pane is reloaded on tab taps. */
+.mobile-pane-rail,.floating-mic-battery{display:none}
+.compact-app {
+  --mobile-pane-nav-height: 63px;
+  --mobile-mic-float-height: 56px;
+}
+.compact-app .mobile-pane-rail:not([hidden]) {
+  position:fixed;
+  z-index:5;
+  display:grid;
+  grid-template-columns:repeat(4,minmax(0,1fr));
+  bottom:calc(var(--deck-nav-height) + env(safe-area-inset-bottom));
+  left:0;right:0;
+  height:var(--mobile-pane-nav-height);
+  padding:5px max(5px,env(safe-area-inset-right)) 5px max(5px,env(safe-area-inset-left));
+  border-top:1px solid #514064;
+  border-bottom:1px solid #3a2f48;
+  background:rgba(23,18,31,.98);
+  box-shadow:0 -12px 30px #09070e77;
+}
+.compact-app .mobile-pane-tab{
+  min-width:0;min-height:47px;
+  padding:4px 2px;
+  display:flex;flex-direction:column;align-items:center;justify-content:center;
+  border:1px solid transparent;border-radius:11px;
+  background:transparent;color:#b8adca;
+  font-size:14px;line-height:1.15;gap:4px;
+  touch-action:manipulation;-webkit-tap-highlight-color:transparent;
+}
+.compact-app .mobile-pane-tab[aria-selected=true]{
+  background:#3c2a4c;
+  color:#f0daff;
+  border-color:#74518c;
+}
+.compact-app .mobile-pane-tab:focus-visible{outline:2px solid #eacbff;outline-offset:-2px}
+.compact-app .mobile-pane-tab-icon{font-size:17px;line-height:17px}
+.compact-app .mobile-pane-tab-label{
+  max-width:100%;overflow:hidden;text-overflow:ellipsis;
+  white-space:nowrap;font-size:10px;font-weight:650;
+}
+.compact-app.mobile-panes-active .workspace main {
+  padding-bottom:calc(var(--deck-nav-height) + var(--mobile-pane-nav-height) + var(--mobile-mic-float-height) + env(safe-area-inset-bottom) + 38px);
+  scroll-padding-bottom:150px;
+}
+.compact-app.mobile-panes-active .workspace>footer{display:none}
+.compact-app.mobile-panes-active #notice{
+  bottom:calc(var(--deck-nav-height) + var(--mobile-pane-nav-height) + var(--mobile-mic-float-height) + env(safe-area-inset-bottom) + 24px);
+}
+.compact-app.mobile-panes-active .live-deck .deck-dock{position:static}
+.compact-app .mobile-pane-layout {min-width:0;max-width:100%;overflow-x:clip}
+.compact-app .mobile-pane-screen{min-width:0;width:100%;overflow:visible;touch-action:pan-y}
+.compact-app .mobile-pane-screen[hidden]{display:none!important}
+.compact-app .mobile-pane-title{margin:0 0 13px;display:flex;justify-content:space-between;align-items:center;gap:8px}
+.compact-app .mobile-pane-title h2{font-size:19px;margin:0;line-height:1.3}
+.compact-app .mobile-pane-title small{font-size:11px;color:var(--muted)}
+.compact-app .mobile-pane-empty{padding:22px 16px;border:1px dashed var(--line);border-radius:14px;font-size:12px;color:var(--muted);line-height:1.6;text-align:center}
+.compact-app .mobile-pane-sound-grid{
+  display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:9px;
+}
+.compact-app .mobile-pane-sound-grid>button{
+  display:flex;flex-direction:column;align-items:flex-start;justify-content:space-between;gap:8px;
+  min-height:94px;min-width:0;padding:12px;
+  text-align:left;background:#292234;color:#f1e8ff;border:1px solid #544262;border-radius:12px;
+  overflow-wrap:anywhere;
+}
+.compact-app .mobile-pane-sound-grid>button[disabled]{opacity:.45}
+.compact-app .mobile-pane-sound-grid>button small{font-size:10px;color:#bdb0cd}
+.compact-app .mobile-pane-sound-grid>button.playing{border-color:#83dfb0;color:#a7f6ce}
+.compact-app .mobile-pane-sound-filters{display:flex;gap:6px;overflow-x:auto;margin:0 0 12px;padding:2px 0 8px;scrollbar-width:none}
+.compact-app .mobile-pane-sound-filters button{flex:0 0 auto;min-height:40px;padding:8px 12px;font-size:11px}
+.compact-app .mobile-pane-action-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
+.compact-app .mobile-pane-action-grid button{min-height:100px;font-size:13px}
+.compact-app .mobile-pane-actions{margin-top:12px}
+.compact-app .mobile-pane-actions>button{width:100%;margin:0 0 9px}
+.compact-app .mobile-pane-screen .simple-mic-health{margin:0 0 12px}
+.compact-app .mobile-pane-screen .dji-battery-panel{margin:0 0 12px}
+.compact-app .mobile-pane-screen .spotify-panel{margin:0}
+.compact-app .mobile-pane-chat .live-monitor.spacer{margin-top:0;margin-bottom:10px}
+.compact-app .mobile-pane-chat .live-monitor>.section-heading{display:none}
+.compact-app .mobile-pane-chat .monitor-grid{display:block}
+.compact-app .mobile-pane-chat .monitor-video{display:none!important}
+.compact-app .mobile-pane-chat .monitor-native-twitch{display:flex;flex-direction:column;min-height:0}
+.compact-app .mobile-pane-chat .monitor-native-twitch .twitch-native-chat{height:clamp(330px,calc(100dvh - 250px),710px);min-height:310px}
+.compact-app .mobile-pane-chat .twitch-chat-log{min-height:170px}
+.compact-app .mobile-pane-planning .event{align-items:start}
+.compact-app .mobile-pane-planning .event-date{flex-shrink:0}
+.compact-app .mobile-pane-planning .event-content{min-width:0}
+.compact-app .mobile-pane-planning .panel{padding:14px}
+.compact-app .mobile-pane-planning .planning-filters{margin-top:10px}
+.compact-app .mobile-pane-planning .pagination{margin-top:13px}
+.compact-app .mobile-pane-deck .streamlabs-feed{height:clamp(330px,calc(100dvh - 285px),650px);display:flex;flex-direction:column}
+.compact-app .mobile-pane-deck .streamlabs-events{flex:1;min-height:140px;overflow-y:auto}
+.compact-app .floating-mic-battery:not([hidden]){
+  display:block;position:fixed;
+  z-index:6;
+  right:max(10px,env(safe-area-inset-right));
+  left:auto;
+  bottom:calc(var(--deck-nav-height) + var(--mobile-pane-nav-height) + env(safe-area-inset-bottom) + 8px);
+  max-width:min(calc(100vw - 20px),350px);
+  filter:drop-shadow(0 8px 19px #06050ccc);
+}
+.compact-app .floating-mic-battery-button{
+  display:flex;flex-direction:column;align-items:flex-start;justify-content:center;gap:3px;
+  max-width:100%;min-height:49px;min-width:150px;
+  padding:8px 12px;border:1px solid #7e5fb4;border-radius:15px;
+  background:#251b33;color:#f3e7ff;
+  font-variant-numeric:tabular-nums;
+  text-align:left;backdrop-filter:blur(16px);
+  box-shadow:0 4px 18px #0007;
+}
+.compact-app .floating-mic-battery-button strong{
+  display:block;max-width:100%;white-space:normal;overflow-wrap:break-word;
+  font-size:11px;line-height:1.3;font-weight:750;
+}
+.compact-app .floating-mic-battery-button small{
+  max-width:100%;font-size:9px;line-height:1.25;color:#dacbe7;
+}
+.compact-app .floating-mic-battery[data-tone=ok] .floating-mic-battery-button{border-color:#4c986f;background:#1d3028;color:#e1ffe9}
+.compact-app .floating-mic-battery[data-tone=check] .floating-mic-battery-button{border-color:#a8782f;background:#352819;color:#ffe1a3}
+.compact-app .floating-mic-battery[data-tone=critical] .floating-mic-battery-button{border-color:#b45465;background:#46202b;color:#ffccd1}
+.compact-app .floating-mic-battery[data-tone=offline] .floating-mic-battery-button{border-color:#605768;background:#222029;color:#b7adbf}
+@media(max-width:359px){
+ .compact-app{--mobile-pane-nav-height:59px}
+ .compact-app .mobile-pane-tab-label{font-size:9px}
+ .compact-app .mobile-pane-sound-grid{grid-template-columns:1fr 1fr}
+ .compact-app .floating-mic-battery-button{min-width:130px;padding:7px 9px}
+ .compact-app .floating-mic-battery-button strong{font-size:10px}
+}
+@media (orientation:landscape) and (max-height:600px) {
+ .compact-app{--mobile-pane-nav-height:51px}
+ .compact-app .mobile-pane-tab{flex-direction:row;gap:5px;min-height:39px}
+ .compact-app .mobile-pane-tab-label{font-size:10px}
+ .compact-app .floating-mic-battery-button{min-height:42px;padding:6px 10px}
+ .compact-app.mobile-panes-active .workspace main{padding-bottom:calc(var(--deck-nav-height) + var(--mobile-pane-nav-height) + 77px + env(safe-area-inset-bottom))}
+}
+@media (prefers-reduced-motion:reduce) {
+ .compact-app .mobile-pane-tab,.compact-app .floating-mic-battery-button{transition:none}
+}
+/* Four global destinations stay discoverable regardless of legacy nav mode. */
+.compact-app aside nav button[data-page="live"],
+.compact-app aside nav button[data-page="deck"],
+.compact-app aside nav button[data-page="planning"],
+.compact-app aside nav button[data-page="settings"]{display:flex!important}
+.compact-app aside nav button[data-page="live"]{order:0}
+.compact-app aside nav button[data-page="deck"]{order:1}
+.compact-app aside nav button[data-page="planning"]{order:2}
+.compact-app aside nav button[data-page="settings"]{order:3}
+.compact-app aside nav button[data-page="sounds"],
+.compact-app aside nav button[data-page="activity"],
+.compact-app aside nav button[data-page="manage"]{display:none!important}
+.compact-app aside nav button[data-page="planning"] span,
+.compact-app aside nav button[data-page="settings"] span{font-size:0}
+.compact-app aside nav button[data-page="planning"] span::after{content:'Planning';font-size:10px}
+.compact-app aside nav button[data-page="settings"] span::after{content:'Réglages';font-size:10px}
+
+/* On Settings the floating pill sits immediately above the global bar. */
+.compact-app:not(.mobile-panes-active) .floating-mic-battery:not([hidden]){bottom:calc(var(--deck-nav-height) + env(safe-area-inset-bottom) + 8px)}
+/* One concise connection line replaces the former 4-button mobile header. */
+.compact-app.mobile-panes-active .workspace>header{
+ display:flex!important;flex-direction:row!important;align-items:center!important;
+ height:45px!important;min-height:45px!important;
+ padding:7px max(14px,env(safe-area-inset-right)) 7px max(14px,env(safe-area-inset-left))!important;
+ gap:0!important;background:#14111c;
+}
+.compact-app.mobile-panes-active .workspace>header .header-actions{display:none!important}
+.compact-app.mobile-panes-active .workspace>header .eyebrow{display:none}
+.compact-app.mobile-panes-active .workspace>header #connection{
+ margin:0;font-size:11px;line-height:1.4;white-space:nowrap;overflow:hidden;text-overflow:ellipsis
+}

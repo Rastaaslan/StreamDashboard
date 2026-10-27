@@ -1,5 +1,5 @@
 export type Platform = 'twitch' | 'youtube';
-export type Outcome = 'running' | 'succeeded' | 'partial' | 'failed' | 'uncertain';
+export type Outcome = 'running' | 'succeeded' | 'partial' | 'failed' | 'uncertain' | 'pending';
 export interface PlatformResult { status: Outcome; message: string; observedAt: string; live?: boolean }
 export interface LiveMetadata { title: string; description: string; twitchGameId: string; youtubeCategoryId: string; tags: string[] }
 export interface OutputTarget { kind: 'unconfigured' | 'main' | 'output' | 'aitum-suite'; name: string }
@@ -11,7 +11,7 @@ export interface ControlConfiguration {
   metadata: LiveMetadata;
   replayAutoStart?: boolean;
 }
-export interface ControlRequest { id: string; issuedAt: string; action: string; platform?: Platform; expectedRevision?: number; metadata?: LiveMetadata; soundId?: string }
+export interface ControlRequest { id: string; issuedAt: string; action: string; platform?: Platform; expectedRevision?: number; metadata?: LiveMetadata; soundId?: string; expectedAction?: DeckAction; confirmed?: boolean; youtubeBaseline?: import('../../../integrations/youtube/src/client.js').YouTubeMetadata }
 export interface ActionResult { message: string; replayPath?: string; messageId?: string }
 export interface ControlReceipt { id: string; action: string; fingerprint: string; status: Outcome; message: string; createdAt: string; finishedAt?: string; result?: ActionResult; platforms?: Partial<Record<Platform, PlatformResult>> }
 // Documented global commands. Custom commands can be added without an API key.
@@ -36,3 +36,6 @@ export const defaultControlData = (): ControlData => ({
     ],
   }, receipts: [], metadataResults: {},
 });
+
+export interface ControllerDestination { server:string; credential:string; deviceId:string; definition:DeckAction }
+export interface ControllerConfiguration { server:string; credential:string; actions:DeckAction[]; destinations?:Record<string,ControllerDestination>; localWorkspace?:string }

@@ -43,11 +43,28 @@ describe('OBS recovery', () => {
     vi.useFakeTimers(); const client = new ObsClient();
     await client.connect(); const socket = instances.at(-1); const original = socket.call.getMockImplementation();
     socket.call.mockImplementation((type: string) => type === 'StopStream' ? new Promise(() => {}) : original(type));
-    const command = expect(client.stream(false)).rejects.toThrow(/délai/i);
+    const command = expect(client.stream(false)).rejects.toMatchObject({name:'ACTION_UNCERTAIN'});
     await vi.advanceTimersByTimeAsync(5_000); await command;
     expect(socket.call.mock.calls.filter(([type]: [string]) => type === 'StopStream')).toHaveLength(1);
     expect(client.state.connected).toBe(false);
     await client.close(); expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it('keeps a timed-out Aitum dispatch uncertain and never repeats it after reconnect scheduling',async()=>{
+    vi.useFakeTimers();const client=new ObsClient();await client.connect();
+    const socket=instances.at(-1),original=socket.call.getMockImplementation();
+    socket.call.mockImplementation((type:string,data:any)=>{
+      if(type==='GetHotkeyList')return Promise.resolve({hotkeys:['AitumStreamSuiteStartOutputYouTube','AitumStreamSuiteStopOutputYouTube']});
+      if(type==='CallVendorRequest')return data.requestType==='get_outputs'
+        ?Promise.resolve({responseData:{success:true,outputs:[{name:'YouTube',type:'stream',active:false}]}})
+        :new Promise(()=>{});
+      return original(type,data);
+    });
+    const command=expect(client.setStreamSuiteOutput('YouTube',true)).rejects.toMatchObject({name:'ACTION_UNCERTAIN'});
+    await vi.advanceTimersByTimeAsync(5_000);await command;
+    expect(socket.call.mock.calls.filter(([type,data]:[string,any])=>type==='CallVendorRequest'&&data.requestType==='start_output')).toHaveLength(1);
+    expect(client.state.connected).toBe(false);
+    await client.close();expect(vi.getTimerCount()).toBe(0);
   });
 
   it('does not confirm stale stream state while disconnected', async () => {

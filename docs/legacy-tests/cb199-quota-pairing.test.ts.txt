@@ -1,0 +1,96 @@
+import {describe,it,expect,vi} from 'vitest';
+import {mkdtemp,rm} from 'node:fs/promises';
+import {tmpdir} from 'node:os';
+import path from 'node:path';
+import {ControlService} from '../apps/server/src/control-service.js';
+import {YouTubeApiError,YouTubeClient} from '../integrations/youtube/src/client.js';
+import {PairingRequests,registerPairingRequests} from '../apps/server/src/pairing-requests.js';
+import {RemoteAuth} from '../apps/server/src/remote-auth.js';
+import type {SecretStore} from '../apps/server/src/storage.js';
+const metadata={title:'Draft',description:'Description',twitchGameId:'',youtubeCategoryId:'20',tags:['Gaming']};
+const baseline={...metadata,title:'Original',broadcastId:'broadcast',channelId:'channel'};
+const request=(action:string,extra={})=>({id:crypto.randomUUID(),issuedAt:new Date().toISOString(),action,...extra});
+describe('CB-199 durable metadata and explicit retry',()=>{
+ it.each(['quotaExceeded','dailyLimitExceeded','rateLimitExceeded'])('retains draft and waits across restart for %s',async reason=>{
+  const dir=await mkdtemp(path.join(tmpdir(),'cb199-'));const file=path.join(dir,'control.json');
+  const adapter={live:vi.fn(async()=>false),output:vi.fn(async()=>{}),action:vi.fn(async()=>{}),metadata:vi.fn(async(p:string)=>{if(p==='youtube')throw new YouTubeApiError(403,reason);})};
+  let service=await ControlService.open(file,adapter);
+  try{
+   const result=await service.execute(request('metadata.apply',{metadata,youtubeBaseline:baseline,expectedRevision:0}));
+   expect(result.platforms?.youtube?.status).toBe('pending');expect(result.platforms?.twitch?.status).toBe('succeeded');
+   await service.stop();adapter.metadata.mockClear();service=await ControlService.open(file,adapter);
+   expect(service.snapshot().configuration.metadata).toEqual(metadata);expect(service.snapshot().metadataResults.youtube?.status).toBe('pending');
+   expect(adapter.metadata).not.toHaveBeenCalled();
+   const refused=await service.execute(request('metadata.retry',{platform:'youtube'}));expect(refused.status).toBe('failed');expect(adapter.metadata).not.toHaveBeenCalled();
+   adapter.metadata.mockImplementation(async()=>{});
+   const retry=await service.execute(request('metadata.retry',{platform:'youtube',metadata,youtubeBaseline:baseline,confirmed:true,expectedRevision:1}));
+   expect(retry.status).toBe('succeeded');expect(adapter.metadata).toHaveBeenCalledExactlyOnceWith('youtube',metadata,baseline);
+   expect(adapter.output).not.toHaveBeenCalled();expect(adapter.action).not.toHaveBeenCalled();
+  }finally{await service.stop();await rm(dir,{recursive:true,force:true});}
+ });
+ it('requires a new review and rejects stale retry revisions without cloud calls',async()=>{
+  const dir=await mkdtemp(path.join(tmpdir(),'cb199-'));const adapter={live:vi.fn(async()=>false),output:vi.fn(async()=>{}),action:vi.fn(async()=>{}),metadata:vi.fn(async()=>{})};
+  const service=await ControlService.open(path.join(dir,'data.json'),adapter);
+  try{
+   expect((await service.execute(request('metadata.apply',{metadata,platform:'youtube',expectedRevision:0}))).status).toBe('failed');
+   expect(service.snapshot().configuration.metadata).toEqual(metadata);
+   expect((await service.execute(request('metadata.retry',{platform:'youtube',confirmed:true,expectedRevision:0,youtubeBaseline:baseline}))).status).toBe('failed');
+   expect(adapter.metadata).not.toHaveBeenCalled();
+  }finally{await service.stop();await rm(dir,{recursive:true,force:true});}
+ });
+});
+function youtube(current=baseline){
+ let snippet={title:current.title,description:current.description,categoryId:current.youtubeCategoryId,tags:current.tags,channelId:'channel'};
+ const transport=vi.fn(async(input:RequestInfo|URL,init:RequestInit={})=>{
+  const url=String(input);let body:unknown;
+  if(url.includes('/liveBroadcasts'))body={items:[{id:'broadcast',snippet:{channelId:'channel'},status:{lifeCycleStatus:'ready'},contentDetails:{}}]};
+  else if(init.method==='PUT'){snippet={...snippet,...JSON.parse(String(init.body)).snippet};body={};}
+  else body={items:[{id:'broadcast',snippet}]};
+  return new Response(JSON.stringify(body));
+ });
+ const secrets={getYouTubeTokens:async()=>({clientId:'client',accessToken:'test',refreshToken:'test-refresh',expiresAt:String(Date.now()+100000)})} as unknown as SecretStore;
+ return {client:new YouTubeClient(secrets,()=>({clientId:'client',channelId:'channel',broadcastId:'broadcast'}),transport),transport};
+}
+describe('CB-199 Studio concurrency and quota economy',()=>{
+ it('refuses an externally edited title before any write',async()=>{const {client,transport}=youtube({...baseline,title:'Studio edit'});await expect(client.update(metadata,baseline)).rejects.toMatchObject({name:'YOUTUBE_METADATA_CONFLICT'});expect(transport.mock.calls.some(([,init])=>init?.method==='PUT')).toBe(false);});
+ it('writes only after a matching review and verifies the result',async()=>{const {client,transport}=youtube();await client.update(metadata,baseline);expect(transport.mock.calls.filter(([,init])=>init?.method==='PUT')).toHaveLength(1);expect(transport).toHaveBeenCalledTimes(4);});
+ it('skips updates when all desired fields already match',async()=>{const {client,transport}=youtube({...baseline,...metadata});await client.update(metadata,{...baseline,...metadata});expect(transport.mock.calls.some(([,init])=>init?.method==='PUT')).toBe(false);expect(transport).toHaveBeenCalledTimes(2);});
+ it('rejects a review for a different broadcast',async()=>{const {client}=youtube();await expect(client.update(metadata,{...baseline,broadcastId:'other'})).rejects.toMatchObject({name:'YOUTUBE_METADATA_CONFLICT'});});
+});
+describe('CB-199 PC consent and reconnect',()=>{
+ it('requires consent, matching code and private poll secret; issues once and reconnects after restart',async()=>{
+  const queue=new PairingRequests(),auth=new RemoteAuth(),pending=queue.create('Android');
+  const issue=vi.fn(async(name:string)=>{const c=auth.createPairing();return auth.pair(c.id,c.code,name);});
+  expect(await queue.poll(pending.id,pending.secret,issue)).toEqual({state:'pending'});expect(issue).not.toHaveBeenCalled();
+  await expect(queue.poll(pending.id,'attacker',issue)).rejects.toThrow();expect(()=>queue.decide(pending.id,'wrong',true)).toThrow();
+  queue.decide(pending.id,pending.code,true);
+  const [one,two]=await Promise.all([queue.poll(pending.id,pending.secret,issue),queue.poll(pending.id,pending.secret,issue)]);expect(one).toEqual(two);expect(issue).toHaveBeenCalledTimes(1);
+  const paired=one.paired as {credential:string;deviceId:string};expect(new RemoteAuth(Date.now,auth.serialize()).authenticate(paired.credential)).toBe(paired.deviceId);
+ });
+ it('denial, expiry and restart never grant credentials',async()=>{
+  let now=0;const queue=new PairingRequests(()=>now),issue=vi.fn(async()=>({credential:'never'}));
+  const denied=queue.create('Android');queue.decide(denied.id,denied.code,false);expect(await queue.poll(denied.id,denied.secret,issue)).toEqual({state:'denied'});
+  const expired=queue.create('Android');now=300001;await expect(queue.poll(expired.id,expired.secret,issue)).rejects.toThrow();
+  await expect(new PairingRequests().poll(denied.id,denied.secret,issue)).rejects.toThrow();expect(issue).not.toHaveBeenCalled();
+ });
+ it('bounds unsolicited requests and never exposes poll secrets to the PC list',()=>{const queue=new PairingRequests();const pending=queue.create('Android');expect(JSON.stringify(queue.list())).not.toContain(pending.secret);for(let i=1;i<32;i++)queue.create('Android');expect(()=>queue.create('overflow')).toThrow();});
+});
+
+it('HTTP boundary requires TLS and permits consent only on the local PC, never a remote manager',async()=>{
+ const routes=new Map<string,Function>(),issue=vi.fn(async()=>({credential:'test-only'}));
+ registerPairingRequests({post:(p:string,h:Function)=>routes.set('POST '+p,h),get:(p:string,h:Function)=>routes.set('GET '+p,h)} as any,{enabled:()=>true,fingerprint:()=> 'ab'.repeat(32),isLocal:req=>!(req.socket as any).encrypted,issue});
+ async function call(route:string,body={},encrypted=true,id=''){
+  let status=200,value:any;const response={status:(s:number)=>{status=s;return response;},sendStatus:(s:number)=>{status=s;},json:(v:any)=>{value=v;},locals:{management:true}};
+  await routes.get(route)!({body,socket:{encrypted},params:{id}},response,(e:Error)=>{throw e;});return {status,value};
+ }
+ const route='POST /api/v1/remote/requests';
+ expect((await call(route,{name:'Android',fingerprint:'spoofed'})).status).toBe(403);
+ expect((await call(route,{name:'Android',fingerprint:'ab'.repeat(32)},false)).status).toBe(403);
+ const {value:p}=await call(route,{name:'Android',fingerprint:'ab'.repeat(32)});
+ expect((await call('GET /api/v1/remote/requests')).status).toBe(403);
+ expect((await call('POST /api/v1/remote/requests/:id/decision',{code:p.code,approve:true},true,p.id)).status).toBe(403);
+ expect(issue).not.toHaveBeenCalled();
+ await call('POST /api/v1/remote/requests/:id/decision',{code:p.code,approve:true},false,p.id);
+ expect((await call('POST /api/v1/remote/requests/:id/poll',{secret:p.secret},false,p.id)).status).toBe(403);
+ expect((await call('POST /api/v1/remote/requests/:id/poll',{secret:p.secret},true,p.id)).value.state).toBe('approved');expect(issue).toHaveBeenCalledTimes(1);
+});

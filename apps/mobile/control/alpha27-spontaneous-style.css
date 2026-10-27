@@ -1,0 +1,66 @@
+
+/* A spontaneous live is a deliberate, confirmed action, not a gesture target. */
+.compact-app .mobile-spontaneous-row {
+  display: grid;
+  gap: 7px;
+  padding: 11px;
+  margin: 10px 0 14px;
+  background: linear-gradient(115deg, rgba(171, 117, 242, .13), rgba(244, 182, 94, .09));
+  border: 1px solid #655073;
+  border-radius: 13px;
+}
+.compact-app .mobile-spontaneous-row > button {
+  width: 100%;
+  min-height: 52px;
+  font-size: 14px;
+  font-weight: 750;
+  background: #3b294c;
+  border: 1px solid #77599b;
+  color: #f4e3ff;
+  border-radius: 10px;
+}
+.compact-app .mobile-spontaneous-row > button:focus-visible {
+  outline: 3px solid #d6b8ff;
+  outline-offset: 2px;
+}
+.compact-app .mobile-spontaneous-row > small {
+  text-align: center;
+  line-height: 1.35;
+  color: #bdb0cd;
+  font-size: 10px;
+}
+.spontaneous-live-confirmation {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 9px;
+}
+.spontaneous-live-confirmation button {
+  min-height: 48px;
+  margin: 0;
+}
+.spontaneous-live-confirmation [data-task="spontaneous-live-confirm"] {
+  background: #654184;
+  color: #ffffff;
+  border-color: #9472b7;
+}
+.spontaneous-live-confirmation [data-task="spontaneous-live-confirm"][disabled] {
+  opacity: 0.48;
+}
+@media (prefers-reduced-motion: reduce) {
+  .compact-app .mobile-pane-screen {
+    transition: none !important;
+  }
+}
+
+/* alpha28: Android glyph fallback and no repeated Deck pane headings. */
+.compact-app .mobile-pane-tab-icon {
+ font-family: 'Noto Color Emoji','Segoe UI Emoji','Apple Color Emoji',system-ui,sans-serif;
+ font-variant-emoji: emoji;
+ display: inline-flex; align-items: center; justify-content: center;
+ min-width: 20px; min-height: 20px; line-height: 1.2;
+}
+.compact-app .mobile-pane-deck > .mobile-pane-title {display:none}
+/* UI polish: pane labels already exist in the bottom pane selector. */
+.compact-app.mobile-panes-active .mobile-pane-screen > .mobile-pane-title:has(h2:only-child){display:none!important}
+.compact-app.mobile-panes-active .mobile-pane-screen > .mobile-pane-title h2{display:none!important}
+.compact-app.mobile-panes-active .mobile-pane-screen > .mobile-pane-title:has(small){justify-content:flex-end;margin-bottom:6px}

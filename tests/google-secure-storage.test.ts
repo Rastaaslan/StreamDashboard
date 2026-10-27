@@ -41,3 +41,22 @@ it('refuses to write Google credentials when OS encryption is unavailable', asyn
   await expect(new ElectronSecretStore(directory).setGoogleClientSecret('test-value')).rejects.toThrow('stockage sécurisé');
   await expect(readFile(path.join(directory, 'secure/credentials.dat'))).rejects.toMatchObject({ code: 'ENOENT' });
 });
+
+it('independent controller and runtime stores cannot overwrite concurrent accounts and associations',async()=>{
+ vi.mocked(safeStorage.isEncryptionAvailable).mockReturnValue(true);
+ directory=await mkdtemp(path.join(os.tmpdir(),'universal-secure-'));
+ const controller=new ElectronSecretStore(directory),runtime=new ElectronSecretStore(directory);
+ await Promise.all([
+  controller.setControllerDevice('https://one.test','token-one'),
+  runtime.setYouTubeTokens({refreshToken:'youtube-token'}),
+  controller.setControllerDevice('https://two.test','token-two'),
+  runtime.setGoogleTokens({refreshToken:'calendar-token'}),
+  controller.setControllerBindings({server:'https://two.test',credential:'token-two',actions:[]}),
+ ]);
+ const restored=new ElectronSecretStore(directory);
+ expect(await restored.getControllerDevice('https://one.test')).toBe('token-one');
+ expect(await restored.getControllerDevice('https://two.test')).toBe('token-two');
+ expect(await restored.getYouTubeTokens()).toEqual({refreshToken:'youtube-token'});
+ expect(await restored.getGoogleTokens()).toEqual({refreshToken:'calendar-token'});
+ expect(await restored.getControllerBindings()).toMatchObject({server:'https://two.test'});
+});

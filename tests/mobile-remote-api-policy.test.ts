@@ -14,7 +14,7 @@ describe('contrat API télécommande Mobile', () => {
     ['GET','/v1/supports'],
     ['POST','/v1/twitch/device'],['POST','/v1/twitch/disconnect'],['POST','/v1/google/disconnect'],['GET','/v1/twitch/categories'],['POST','/v1/twitch/channel'],['POST','/v1/twitch/tags/suggest'],
     ['GET','/v1/twitch/videos'],['DELETE','/v1/twitch/videos/123'],['GET','/v1/twitch/clips'],['POST','/v1/twitch/clips'],
-    ['GET','/v1/twitch/chatters'],['POST','/v1/twitch/chat/messages'],['GET','/v1/twitch/moderation/capabilities'],
+    ['GET','/v1/twitch/chatters'],['GET','/v1/twitch/chat/state'],['POST','/v1/twitch/chat/messages'],['GET','/v1/twitch/moderation/capabilities'],
     ['DELETE','/v1/twitch/moderation/messages/msg_1'],['POST','/v1/twitch/moderation/bans'],['DELETE','/v1/twitch/moderation/bans/42'],
     ['POST','/v1/commands'],['POST','/v1/remote/ws-ticket'],
     ['POST','/v1/planning'],['PUT','/v1/planning/event-1'],['DELETE','/v1/planning/event-1'],['PUT','/v1/planning/event-1/occurrence'],['DELETE','/v1/planning/event-1/occurrence'],['POST','/v1/planning/event-1/retry/twitch'],['POST','/v1/planning/event-1/retry/google'],
@@ -42,6 +42,7 @@ describe('contrat API télécommande Mobile', () => {
   });
 
   it.each([
+    ['GET','/v2/youtube/channels'],['GET','/v2/youtube/broadcasts'],['GET','/v2/youtube/metadata'],
     ['POST','/v1/twitch/sync'],
     ['POST','/v1/google/sync'],
     ['PUT','/v1/profile'],

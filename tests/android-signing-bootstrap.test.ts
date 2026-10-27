@@ -26,13 +26,16 @@ describe('signature Android permanente', () => {
     expect(script).toContain('certificateSha256');
   });
 
-  it('refuse de publier sans signature stable et ne publie que la RC', () => {
+  it('refuse une release sans signature stable et distingue les APK de qualification', () => {
     expect(workflow).toContain('Refusing to publish an ephemeral debug-signed APK');
     expect(workflow).toContain('exit 1');
     expect(workflow).toContain('verify --verbose --print-certs');
     expect(workflow).toContain('ACTUAL_CERT_SHA256');
-    expect(workflow).toContain('path: StreamDashboard-Remote-rc.apk');
-    expect(workflow).not.toContain('StreamDashboard-Remote-debug.apk');
+    expect(workflow).toContain('path: StreamDashboard-Next-${{ env.ANDROID_VERSION_NAME }}-android.apk');
+    expect(workflow).toContain('StreamDashboard-Next-QA-debug.apk');
+    expect(workflow).toContain('StreamDashboard-Next-QA-preview.apk');
+    expect(workflow).toContain('These APKs are not a stable signed release or an update for an installed app.');
+    expect(workflow).toContain("if: github.event_name == 'workflow_dispatch'");
     expect(workflow).not.toContain('StreamDashboard-Remote-unsigned.apk');
     expect(workflow).not.toContain('assembleDebug assembleRelease');
   });

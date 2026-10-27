@@ -1,27 +1,36 @@
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
+import path from 'node:path';
 
-const state = vi.hoisted(() => ({ info: vi.fn(), primary: true, ready: undefined as (() => void) | undefined, start: vi.fn(), stop: vi.fn(), windows: [] as any[], displays: [{ workArea: { x: 0, y: 0, width: 1920, height: 1080 } }] }));
+const state = vi.hoisted(() => ({ configuration:undefined as any,change:vi.fn(),recoveries:0,info: vi.fn(), background: false, primary: true, ready: undefined as (() => void) | undefined, start: vi.fn(), stop: vi.fn(), installKeys: vi.fn(), stopKeys: vi.fn(), assets: vi.fn(), paths: { appData: '/unused', userData: '/unused/old-profile' } as Record<string,string>, windows: [] as any[], displays: [{ workArea: { x: 0, y: 0, width: 1920, height: 1080 } }] }));
 vi.mock('electron', async () => {
   const { EventEmitter } = await import('node:events');
   const app = Object.assign(new EventEmitter(), {
-    setName: vi.fn(), setAppUserModelId: vi.fn(), requestSingleInstanceLock: () => state.primary,
-    getPath: () => '/unused', isReady: () => true, whenReady: () => new Promise<void>(resolve => { state.ready = resolve; }),
-    quit: vi.fn(), exit: vi.fn(), getVersion: () => '1',
+    setName: vi.fn(), setPath: vi.fn((name:string,value:string)=>{state.paths[name]=value;}), setAppUserModelId: vi.fn(), requestSingleInstanceLock: () => state.primary,
+    getPath: (name:string) => state.paths[name] || '/unused', getAppPath: () => '/unused/app', isReady: () => true, whenReady: () => new Promise<void>(resolve => { state.ready = resolve; }),
+    quit: vi.fn(), exit: vi.fn(), relaunch:vi.fn(),getVersion: () => '1',
   });
   class Window extends EventEmitter {
-    webContents = Object.assign(new EventEmitter(), { setWindowOpenHandler: vi.fn() });
+    webContents = Object.assign(new EventEmitter(), { setWindowOpenHandler: vi.fn(), setAudioMuted: vi.fn(), send: vi.fn(), session: {}, mainFrame: { url: 'about:blank' } });
     destroyed = false; minimized = true;
     bounds = { x: 4000, y: 0, width: 1440, height: 900 };
-    constructor(public options: any) { super(); state.windows.push(this); }
+    constructor(public options: any) { super(); if(options.webPreferences?.session)this.webContents.session=options.webPreferences.session; state.windows.push(this); }
     removeMenu() {} isDestroyed() { return this.destroyed; } isMinimized() { return this.minimized; }
     restore = vi.fn(() => { this.minimized = false; });
-    show = vi.fn(); focus = vi.fn(); loadURL = vi.fn().mockResolvedValue(undefined);
+    show = vi.fn(); focus = vi.fn(); loadURL = vi.fn(async(url:string)=>{this.webContents.mainFrame.url=url;});
+    destroy = vi.fn(()=>{if(!this.destroyed){this.destroyed=true;this.emit('closed');}});
+    close = vi.fn(()=>this.destroy());
     getBounds() { return this.bounds; } setBounds(value: any) { this.bounds = value; }
   }
-  return { app, BrowserWindow: Window, screen: { getAllDisplays: () => state.displays, getPrimaryDisplay: () => state.displays[0] },
+  return { app, protocol:{registerSchemesAsPrivileged:vi.fn()}, BrowserWindow: Window, Tray: class extends EventEmitter {setToolTip(){} setContextMenu(){} destroy(){}}, Menu:{buildFromTemplate:(value:unknown)=>value},nativeImage:{createFromPath:()=>({})}, screen: { getAllDisplays: () => state.displays, getPrimaryDisplay: () => state.displays[0] },
     dialog: { showErrorBox: vi.fn() }, ipcMain: { handle: vi.fn(), on: vi.fn() }, shell: {} };
 });
+vi.mock('../apps/desktop/src/installation-store.js', () => ({ InstallationStore: class {
+  async recover() { state.recoveries++;return this.read(); }
+  async read() { return state.configuration||{version:2,revision:0,localDeviceId:'test-device',preset:'single-pc',runtimeProfile:'root',configured:false,background:state.background,routes:{obs:'test-device'},devices:[{id:'test-device',name:'Test',platform:'windows',enabled:true,roles:['controller','obs-executor','services'],capabilities:['obs','cloud']}]}; }
+  change=state.change;
+} }));
 vi.mock('../apps/desktop/src/lifecycle.js', () => ({ startDesktopRuntime: state.start }));
+vi.mock('../apps/desktop/src/controller.js', () => ({ installControllerKeys: state.installKeys, startControllerAssets: state.assets }));
 vi.mock('../apps/desktop/src/squirrel.js', () => ({ handleSquirrelStartup: () => false }));
 vi.mock('../apps/desktop/src/updater.js', () => ({ startUpdater: () => vi.fn() }));
 vi.mock('../apps/desktop/src/logger.js', () => ({ DesktopLogger: class {
@@ -33,7 +42,10 @@ let rejectionListeners: NodeJS.UnhandledRejectionListener[];
 beforeEach(async () => {
   const { app } = await import('electron');
   app.removeAllListeners();
-  vi.resetModules(); vi.clearAllMocks(); state.start.mockReset(); state.stop.mockReset(); state.primary = true; state.windows = [];
+  vi.resetModules(); vi.clearAllMocks(); state.start.mockReset(); state.stop.mockReset(); state.primary = true; state.background = false; state.windows = [];
+  state.configuration=undefined;state.change.mockReset();state.recoveries=0;
+  state.paths = { appData: '/unused', userData: '/unused/old-profile' };
+  state.installKeys.mockReturnValue(state.stopKeys);
   state.info.mockResolvedValue(undefined);
   exceptionListeners = process.listeners('uncaughtException');
   rejectionListeners = process.listeners('unhandledRejection');
@@ -53,15 +65,19 @@ it.each(['crash', 'server', 'load', 'secondary'] as const)('presents during star
   const previousRejections = process.listeners('unhandledRejection');
   try {
     await import('../apps/desktop/src/main.js');
+    expect(app.setPath).toHaveBeenCalledExactlyOnceWith('userData',path.join('/unused','StreamDashboard-Next'));
     state.ready!();
     if (failure === 'secondary') {
       await vi.waitFor(() => expect(app.quit).toHaveBeenCalled());
       app.emit('activate');
       expect(state.start).not.toHaveBeenCalled();
+      expect(state.installKeys).not.toHaveBeenCalled();
       expect(state.windows).toHaveLength(0);
       return;
     }
     await vi.waitFor(() => expect(state.start).toHaveBeenCalledTimes(1));
+    expect(state.installKeys).toHaveBeenCalledExactlyOnceWith(expect.any(Function),path.join('/unused','StreamDashboard-Next'),'http://127.0.0.1:48133',expect.any(Function),true,expect.objectContaining({request:expect.any(Function)}));
+    expect(state.assets).not.toHaveBeenCalled();
     const window = state.windows[0];
     expect(window.options.show).toBe(true);
     expect(window.show).toHaveBeenCalled();
@@ -72,7 +88,7 @@ it.each(['crash', 'server', 'load', 'secondary'] as const)('presents during star
     if (failure === 'server') rejectRuntime(new Error('listen EADDRINUSE 48132'));
     else {
       if (failure === 'load') window.loadURL.mockRejectedValueOnce(new Error('ERR_CONNECTION_REFUSED'));
-      resolveRuntime({ dashboard: { url: 'http://127.0.0.1:48132' }, stop: state.stop });
+      resolveRuntime({ dashboard: { url: 'http://127.0.0.1:48133' }, stop: state.stop });
       await vi.waitFor(() => expect(window.loadURL).toHaveBeenCalledTimes(2));
       app.emit('activate');
       expect(window.focus).toHaveBeenCalledTimes(22);
@@ -88,6 +104,7 @@ it.each(['crash', 'server', 'load', 'secondary'] as const)('presents during star
     app.emit('before-quit', { preventDefault: vi.fn() });
     await vi.waitFor(() => expect(app.exit).toHaveBeenCalledWith(1));
     expect(state.stop).toHaveBeenCalledTimes(failure === 'server' ? 0 : 1);
+    expect(state.stopKeys).toHaveBeenCalledTimes(1);
   } finally {
     for (const listener of process.listeners('uncaughtException')) if (!previousExceptions.includes(listener)) process.removeListener('uncaughtException', listener);
     for (const listener of process.listeners('unhandledRejection')) if (!previousRejections.includes(listener)) process.removeListener('unhandledRejection', listener);
@@ -100,7 +117,37 @@ function deferred<T>() {
   const promise = new Promise<T>((res, rej) => { resolve = res; reject = rej; });
   return { promise, resolve, reject };
 }
+it('keeps the background agent when closing a window aborts its pending navigation',async()=>{
+ state.background=true;
+ const acquisition=deferred<any>(),navigation=deferred<void>();
+ state.start.mockReturnValue(acquisition.promise);
+ const {app,dialog}=await import('electron');
+ await import('../apps/desktop/src/main.js');state.ready!();
+ await vi.waitFor(()=>expect(state.start).toHaveBeenCalledTimes(1));
+ const owner=state.windows[0];owner.loadURL.mockReturnValueOnce(navigation.promise);
+ acquisition.resolve({dashboard:{url:'http://127.0.0.1:48133'},stop:state.stop});
+ await vi.waitFor(()=>expect(owner.loadURL).toHaveBeenCalledTimes(2));
+ owner.close();owner.webContents.emit('did-fail-load',{},-2,'ERR_FAILED','',true);
+ navigation.reject(new Error('ERR_FAILED loading a deliberately closed window'));
+ await new Promise<void>(resolve=>setImmediate(resolve));
+ expect(dialog.showErrorBox).not.toHaveBeenCalled();expect(app.quit).not.toHaveBeenCalled();expect(state.stop).not.toHaveBeenCalled();
+ app.emit('activate');await vi.waitFor(()=>expect(state.windows).toHaveLength(2));
+ expect(state.start).toHaveBeenCalledTimes(1);
+ app.emit('before-quit',{preventDefault:vi.fn()});await vi.waitFor(()=>expect(app.exit).toHaveBeenCalledWith(0));
+});
 const drain = () => new Promise<void>(resolve => setImmediate(resolve));
+
+it('reopening a closed startup window waits for its single runtime acquisition',async()=>{
+ state.background=true;const acquisition=deferred<any>();state.start.mockReturnValue(acquisition.promise);
+ const {app,dialog}=await import('electron');await import('../apps/desktop/src/main.js');state.ready!();
+ await vi.waitFor(()=>expect(state.start).toHaveBeenCalledTimes(1));
+ state.windows[0].close();app.emit('activate');app.emit('activate');
+ await drain();expect(state.windows).toHaveLength(1);expect(state.start).toHaveBeenCalledTimes(1);
+ acquisition.resolve({dashboard:{url:'http://127.0.0.1:48133'},stop:state.stop});
+ await vi.waitFor(()=>expect(state.windows).toHaveLength(2));
+ expect(state.start).toHaveBeenCalledTimes(1);expect(state.installKeys).toHaveBeenCalledTimes(1);expect(dialog.showErrorBox).not.toHaveBeenCalled();
+ app.emit('before-quit',{preventDefault:vi.fn()});await vi.waitFor(()=>expect(app.exit).toHaveBeenCalledWith(0));
+});
 
 it.each(['before-acquire', 'acquire-during-quit', 'normal', 'stop-fails', 'cancel-pending'] as const)(
   'coordinates startup and shutdown: %s', async scenario => {
@@ -129,6 +176,7 @@ it.each(['before-acquire', 'acquire-during-quit', 'normal', 'stop-fails', 'cance
     app.emit('before-quit', { preventDefault });
     expect(preventDefault).toHaveBeenCalledTimes(2);
     expect(signal.aborted).toBe(true);
+    expect(state.stopKeys).toHaveBeenCalledTimes(1);
     if (scenario === 'cancel-pending') {
       await vi.waitFor(() => expect(app.exit).toHaveBeenCalledWith(0));
       expect(state.stop).not.toHaveBeenCalled();
@@ -151,3 +199,85 @@ it.each(['before-acquire', 'acquire-during-quit', 'normal', 'stop-fails', 'cance
     if (scenario === 'stop-fails') expect(state.info).not.toHaveBeenCalledWith('Shutdown complete');
     else expect(state.info).toHaveBeenCalledWith('Shutdown complete');
   });
+
+it('opens the Twitch viewer only for the current trusted main frame', async () => {
+  const { app, ipcMain } = await import('electron');
+  state.start.mockResolvedValue({ dashboard: { url: 'http://127.0.0.1:48133' }, stop: state.stop });
+  await import('../apps/desktop/src/main.js');
+  state.ready!();
+  await vi.waitFor(() => expect(state.windows[0]?.loadURL).toHaveBeenCalledTimes(2));
+  const dashboard=state.windows[0],frame=dashboard.webContents.mainFrame;
+  const handler=vi.mocked(ipcMain.handle).mock.calls.find(([name])=>name==='viewer:open-twitch-session')![1];
+  expect(frame.url).toBe('http://127.0.0.1:48133/mobile/control/');
+  for(const event of [
+    {sender:{},senderFrame:frame},
+    {sender:dashboard.webContents,senderFrame:{url:frame.url}},
+    {sender:dashboard.webContents,senderFrame:undefined},
+  ])expect(()=>handler(event as any,{channel:'campfire'})).toThrow('Interface non autorisée');
+  const trusted={sender:dashboard.webContents,senderFrame:frame};
+  for(const url of ['https://www.twitch.tv/login','http://127.0.0.1:48134/mobile/control/']){
+    frame.url=url;
+    expect(()=>handler(trusted as any,{channel:'campfire'})).toThrow('Interface non autorisée');
+  }
+  frame.url='http://127.0.0.1:48133/mobile/control/';
+  for(const value of [{channel:'../login'},{channel:'name with spaces'},{},null]){
+    expect(()=>handler(trusted as any,value)).toThrow('Chaîne Twitch invalide');
+  }
+  expect(state.windows).toHaveLength(1);
+  const result=handler(trusted as any,{channel:'campfire'});
+  expect(state.windows).toHaveLength(2);
+  const viewer=state.windows[1];
+  expect(viewer.options.webPreferences.session).toBe(dashboard.webContents.session);
+  viewer.close();
+  await expect(result).resolves.toEqual({status:'closed'});
+  dashboard.destroy();
+  expect(()=>handler(trusted as any,{channel:'campfire'})).toThrow('Interface non autorisée');
+  app.emit('before-quit',{preventDefault:vi.fn()});
+  await vi.waitFor(()=>expect(app.exit).toHaveBeenCalledWith(0));
+  expect(state.stop).toHaveBeenCalledTimes(1);
+  expect(state.stopKeys).toHaveBeenCalledTimes(1);
+});
+
+
+it('keeps one runtime and native macros while closing and reopening the dashboard in background mode',async()=>{
+ state.background=true;
+ state.start.mockResolvedValue({dashboard:{url:'http://127.0.0.1:48133'},stop:state.stop});
+ const {app}=await import('electron');
+ await import('../apps/desktop/src/main.js');state.ready!();
+ await vi.waitFor(()=>expect(state.windows[0]?.loadURL).toHaveBeenCalledTimes(2));
+ state.windows[0].destroy();app.emit('window-all-closed');
+ expect(app.quit).not.toHaveBeenCalled();expect(state.stopKeys).not.toHaveBeenCalled();
+ app.emit('activate');
+ await vi.waitFor(()=>expect(state.windows).toHaveLength(2));
+ await vi.waitFor(()=>expect(state.windows[1].loadURL).toHaveBeenCalledTimes(1));
+ expect(state.start).toHaveBeenCalledTimes(1);expect(state.installKeys).toHaveBeenCalledTimes(1);
+ app.emit('before-quit',{preventDefault:vi.fn()});
+ await vi.waitFor(()=>expect(state.stop).toHaveBeenCalledTimes(1));
+});
+
+it('legacy role changes join the installation queue and recover after a failed commit',async()=>{
+ const {app,ipcMain}=await import('electron');
+ state.configuration={version:2,revision:0,localDeviceId:'test-device',preset:'single-pc',runtimeProfile:'root',configured:true,background:false,routes:{},devices:[{id:'test-device',name:'Before',platform:'windows',enabled:true,roles:['controller','services'],capabilities:['obs','cloud']}]};
+ state.start.mockResolvedValue({dashboard:{url:'http://127.0.0.1:48133'},stop:state.stop});
+ await import('../apps/desktop/src/main.js');state.ready!();await vi.waitFor(()=>expect(state.windows[0]?.loadURL).toHaveBeenCalledTimes(2));
+ const owner=state.windows[0],event={sender:owner.webContents,senderFrame:owner.webContents.mainFrame};
+ const handler=(channel:string)=>(ipcMain.handle as any).mock.calls.find(([name]:[string])=>name===channel)[1];
+ const gate=deferred<void>();
+ state.change.mockImplementation(async(changes:any,revision:number,before:any)=>{
+  if(changes.name==='Modern')await gate.promise;
+  expect(revision).toBe(state.configuration.revision);
+  if(changes.name==='Broken')throw new Error('disk write failed');
+  const next=structuredClone(state.configuration);next.revision++;next.devices[0].name=changes.name;if(changes.roles)next.devices[0].roles=changes.roles;
+  const plan={next,restart:false,summary:[]};await before(plan);state.configuration=next;return plan;
+ });
+ const first=handler('installation:change')(event,{name:'Modern'},0);
+ const legacy=handler('app:set-device-role')(event,'control','Legacy');
+ await vi.waitFor(()=>expect(state.change).toHaveBeenCalledTimes(1));
+ gate.resolve();await first;await legacy;
+ expect(state.configuration.revision).toBe(2);expect(state.configuration.devices[0].name).toBe('Legacy');
+ expect(state.change.mock.calls[1][1]).toBe(1);
+ const recoveries=state.recoveries;
+ await expect(handler('app:set-device-role')(event,'control','Broken')).rejects.toThrow('disk write failed');
+ expect(state.recoveries).toBe(recoveries+2);expect(state.configuration.devices[0].name).toBe('Legacy');
+ app.emit('before-quit',{preventDefault:vi.fn()});await vi.waitFor(()=>expect(app.exit).toHaveBeenCalledWith(0));
+});

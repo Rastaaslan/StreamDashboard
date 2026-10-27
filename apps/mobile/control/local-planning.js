@@ -11,7 +11,7 @@ export function createLocalPlanning({store,providers,onChange=()=>{},locks=globa
  const snapshot=()=>store.view().data.host.planning;
  const planner=()=>new PlanningOrchestrator(snapshot(),providers.adapters,async items=>{await store.commitPlanning(items);onChange();});
  function validate(item){
-  if(!item.title?.trim()||item.title.length>140||!Number.isFinite(Date.parse(item.startAtUtc))||Date.parse(item.endAtUtc)<=Date.parse(item.startAtUtc)||!['live','production','personal'].includes(item.category||'live'))throw new Error('Titre, type et période valides requis.');
+  if(!item.title?.trim()||item.title.length>140||!Number.isFinite(Date.parse(item.startAtUtc))||!Number.isFinite(Date.parse(item.endAtUtc))||Date.parse(item.endAtUtc)<=Date.parse(item.startAtUtc)||!['live','production','personal'].includes(item.category||'live'))throw new Error('Titre, type et période valides requis.');
   if(item.desiredPublication?.twitch&&(item.category!=='live'||item.allDay))throw new Error('Twitch exige un événement Live avec des horaires précis.');
   if(item.recurrence){migrateRecurrence(item.recurrence);new Intl.DateTimeFormat('fr',{timeZone:item.recurrence.timeZone});}
  }
@@ -67,6 +67,7 @@ export function createLocalPlanning({store,providers,onChange=()=>{},locks=globa
     for(const incoming of result.items){
      const linked=items.find(x=>x.providers?.google?.remoteId===incoming.remoteId&&x.providers.google.calendarId===result.calendarId);
      if(linked&&linked.ownership!=='EXTERNAL'){
+      if(linked.transferredTo||linked.transferId)continue;
       if(linked.providers.google.remoteRevision&&linked.providers.google.remoteRevision!==incoming.revision){linked.providers.google.status='conflict';linked.providers.google.lastError='Événement modifié dans Google. Choisissez la version à conserver.';}
       continue;
      }
@@ -78,7 +79,7 @@ export function createLocalPlanning({store,providers,onChange=()=>{},locks=globa
     await store.commitPlanning(items);onChange();return {count:result.items.length};
    }
    if(path.endsWith('/preview')){
-    if(!Number.isFinite(Date.parse(body.start))||Date.parse(body.end)<=Date.parse(body.start))throw new Error('Période invalide.');
+    if(!Number.isFinite(Date.parse(body.start))||!Number.isFinite(Date.parse(body.end))||Date.parse(body.end)<=Date.parse(body.start))throw new Error('Période invalide.');
     const all=snapshot().filter(x=>Date.parse(x.startAtUtc)>=Date.parse(body.start)&&Date.parse(x.endAtUtc)<=Date.parse(body.end));
     const excluded=all.filter(x=>x.recurrence||x.editable===false||x.transferredTo||(!body.destinations?.twitch&&x.providers?.twitch?.remoteId)||(!body.destinations?.google&&x.providers?.google?.remoteId)).map(x=>({...x,reason:'Série, événement externe ou publication à conserver.'}));
     const items=all.filter(x=>!excluded.some(y=>y.id===x.id));bulk={token:newId(),items,excluded,count:items.length,destinations:body.destinations};return bulk;
@@ -89,5 +90,16 @@ export function createLocalPlanning({store,providers,onChange=()=>{},locks=globa
    return {deleted,failed,savedLocally:true};
   });
  }
- return {route,wait:()=>tail};
+ async function adopt(edit,signature,guard){
+  return serial(async()=>{
+   const item=edit.value;validate(item);
+   if(item.id!==edit.key.slice('planningTransfer/'.length)||item.transferredTo||item.editable===false||item.ownership==='EXTERNAL')throw new Error('Cet événement ne peut pas être repris par cet appareil.');
+   if(Object.values(item.providers||{}).some(link=>link.uncertainCreate||Object.values(link.projections||{}).some(entry=>entry.uncertainCreate)))throw new Error('Réconciliez les publications incertaines avant le transfert.');
+   // The source has already durably relinquished ownership. Preserve every
+   // provider ID, account binding, recurrence exception and deletion journal.
+   const receipt=await store.adoptPlanning(edit,signature,guard);onChange();return receipt;
+  });
+ }
+ async function handoff(own,operation,ticket,proof,guard){return serial(async()=>{validate(ticket.item);const receipt=await store.handoff(own,operation,ticket,proof,guard);onChange();return receipt;});}
+ return {route,adopt,handoff,wait:()=>tail};
 }

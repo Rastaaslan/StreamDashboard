@@ -1,5 +1,7 @@
-import OBSWebSocket from 'obs-websocket-js';
+import OBSWebSocket, { EventSubscription } from 'obs-websocket-js';
+import { MicHealthWatch } from './mic-health.js';
 import { AitumSuiteOutputs } from './aitum-suite.js';
+import { isObsRequestRejection, uncertainOutput } from './output-result.js';
 import type { ObsState } from '../../../packages/contracts/src/index.js';
 
 function friendlyError(error: unknown) {
@@ -25,29 +27,74 @@ export async function collectActiveSceneSources(sceneName: string, sceneItems: (
 
 export class ObsClient {
   private replaySaving = false;
+  private replayChanging = false;
   async replayStatus() {
     this.requireConnected();
-    const [state, mode, directory] = await Promise.all([this.call('GetReplayBufferStatus'), this.call('GetProfileParameter', { parameterCategory: 'Output', parameterName: 'Mode' }), this.call('GetRecordDirectory')]);
-    const parameterCategory = (mode.parameterValue || mode.defaultParameterValue) === 'Advanced' ? 'AdvOut' : 'SimpleOutput';
-    const [duration, enabled] = await Promise.all(['RecRBTime','RecRB'].map(parameterName => this.call('GetProfileParameter', { parameterCategory, parameterName })));
-    return { active: state.outputActive, seconds: Number(duration.parameterValue || duration.defaultParameterValue) || 20, enabled: ['true','1'].includes(enabled.parameterValue || enabled.defaultParameterValue), directory: directory.recordDirectory };
+    const generation = this.generation;
+    const parameter = async (parameterCategory: string, parameterName: string) => {
+      const result = await this.call('GetProfileParameter', { parameterCategory, parameterName });
+      return result.parameterValue || result.defaultParameterValue;
+    };
+    // OBS rejects GetReplayBufferStatus with 604 when no replay output exists.
+    // Read the profile first so its useful configuration is not discarded.
+    const modeValue = await parameter('Output', 'Mode');
+    if (!['Advanced', 'Simple'].includes(modeValue)) throw new Error('Mode de sortie OBS indisponible.');
+    const mode: 'Advanced' | 'Simple' = modeValue === 'Advanced' ? 'Advanced' : 'Simple';
+    const parameterCategory = mode === 'Advanced' ? 'AdvOut' : 'SimpleOutput';
+    const [duration, enabledValue, directory, recordingType] = await Promise.all([
+      parameter(parameterCategory, 'RecRBTime'), parameter(parameterCategory, 'RecRB'),
+      this.call('GetRecordDirectory'), mode === 'Advanced' ? parameter('AdvOut', 'RecType') : Promise.resolve(''),
+    ]);
+    this.requireConnected();
+    if (generation !== this.generation) throw new Error('Connexion OBS remplacée.');
+    if (!['true', 'false', '1', '0'].includes(enabledValue)) throw new Error('Réglage du tampon de replay OBS indisponible.');
+    const enabled = ['true', '1'].includes(enabledValue);
+    const seconds = Number(duration);
+    if (!Number.isFinite(seconds) || seconds <= 0) throw new Error('Durée du tampon de replay OBS indisponible.');
+    const configuration = { mode, enabled, seconds, directory: directory.recordDirectory };
+    if (!enabled) return { ...configuration, active: false, available: false, error: 'Activez le tampon de replay dans OBS → Paramètres → Sortie → Tampon de relecture, puis cliquez sur Appliquer.' };
+    if (mode === 'Advanced' && recordingType.toLowerCase() === 'ffmpeg') return { ...configuration, active: false, available: false, error: 'Le tampon de replay est indisponible avec la sortie personnalisée FFmpeg. Dans OBS → Paramètres → Sortie → Enregistrement, choisissez le type Standard.' };
+    try {
+      const state = await this.call('GetReplayBufferStatus');
+      this.requireConnected();
+      if (generation !== this.generation) throw new Error('Connexion OBS remplacée.');
+      return { ...configuration, active: state.outputActive, available: true, error: '' };
+    } catch (error) {
+      if (generation !== this.generation || (error as { code?: number }).code !== 604) throw error;
+      return { ...configuration, active: false, available: false, error: 'Le tampon est activé dans le profil mais reste indisponible dans OBS. Vérifiez Paramètres → Sortie → Tampon de relecture et appliquez les réglages lorsque les sorties sont arrêtées.' };
+    }
   }
   async setReplayBuffer(active: boolean) {
-    this.requireConnected();
+    const assertCurrent = this.outputConnectionGuard();
     if (this.replaySaving) throw new Error('Sauvegarde du clip en cours.');
-    const state = await this.replayStatus();
-    if (state.active === active) return;
-    if (active && !state.enabled) throw new Error('Activez le tampon de replay dans OBS → Paramètres → Sortie.');
-    await this.call(active ? 'StartReplayBuffer' : 'StopReplayBuffer');
-    for (let n = 0; n < 15; n++) {
-      if ((await this.call('GetReplayBufferStatus')).outputActive === active) return;
-      await new Promise(resolve => setTimeout(resolve, 100));
-    }
-    throw new Error('OBS n’a pas confirmé l’état du tampon de replay.');
+    if (this.replayChanging) throw new Error('Changement du tampon de replay déjà en cours.');
+    this.replayChanging = true;
+    try {
+      const state = await this.replayStatus();
+      assertCurrent();
+      if (state.active === active) return;
+      if (active && (!state.enabled || !state.available)) throw new Error(state.error || 'Tampon de replay OBS indisponible.');
+      try { await this.call(active ? 'StartReplayBuffer' : 'StopReplayBuffer'); }
+      catch (error) { if (isObsRequestRejection(error)) throw error; }
+      // A lost acknowledgement is not a refusal. Observe the original OBS
+      // connection only; never resend a replay start/stop after reconnecting.
+      try {
+        for (let n = 0; n < 15; n++) {
+          assertCurrent();
+          const observed = await this.call('GetReplayBufferStatus');
+          assertCurrent();
+          if (observed.outputActive === active) return;
+          if (typeof observed.outputActive !== 'boolean') break;
+          if (n < 14) await new Promise(resolve => setTimeout(resolve, 100));
+        }
+      } catch { /* No observation can prove that the dispatched command failed. */ }
+      throw uncertainOutput('Commande du tampon de replay envoyée ; état non confirmé. Vérifiez le tampon dans OBS avant de réessayer.');
+    } finally { this.replayChanging = false; }
   }
   async saveReplay() {
     this.requireConnected();
     if (this.replaySaving) throw new Error('Sauvegarde du clip déjà en cours.');
+    if (this.replayChanging) throw new Error('Changement du tampon de replay en cours. Attendez sa confirmation avant de sauvegarder un clip.');
     this.replaySaving = true;
     const client = this.client, generation = this.generation;
     let savedPath = '', dispatched = false;
@@ -59,13 +106,21 @@ export class ObsClient {
       if (generation !== this.generation) throw new Error('Connexion OBS remplacée.');
       client.on('ReplayBufferSaved', saved);
       dispatched = true;
-      await this.call('SaveReplayBuffer');
+      try { await this.call('SaveReplayBuffer'); }
+      catch (error) {
+        // An explicit OBS request rejection proves that no clip was saved by
+        // this request; a transport failure remains an uncertain dispatch.
+        if (isObsRequestRejection(error)) dispatched = false;
+        throw error;
+      }
       // The request acknowledgement alone is not a saved clip. Wait for the event
       // or a new path; a stale previous replay must never count as success.
       for (let n = 0; n < 40; n++) {
         if (generation !== this.generation) throw new Error('Connexion OBS interrompue pendant la sauvegarde.');
         if (savedPath) return savedPath;
         const current = await this.call('GetLastReplayBufferReplay').then(value => value.savedReplayPath, () => '');
+        this.requireConnected();
+        if (generation !== this.generation) throw new Error('Connexion OBS interrompue pendant la sauvegarde.');
         if (current && current !== previous) return current;
         await new Promise(resolve => setTimeout(resolve, 250));
       }
@@ -78,18 +133,45 @@ export class ObsClient {
   private suite = new AitumSuiteOutputs(async (requestType, requestData) => {
     const result = await this.call('CallVendorRequest', { vendorName: 'aitum-stream-suite', requestType, requestData });
     return result.responseData;
-  });
-  async streamSuiteOutputs() { return this.suite.inspect(); }
-  async setStreamSuiteOutput(name: string, active: boolean) { await this.suite.set(name, active); }
-  async outputs() { return (await this.call('GetOutputList')).outputs; }
+  }, async () => (await this.call('GetHotkeyList')).hotkeys);
+  async streamSuiteOutputs() { this.requireConnected(); return this.suite.inspect(); }
+  private outputConnectionGuard() {
+    this.requireConnected();
+    const generation = this.generation;
+    return () => {
+      this.requireConnected();
+      if (generation !== this.generation) throw new Error('Connexion OBS remplacée. Relancez la détection des sorties.');
+    };
+  }
+  async setStreamSuiteOutput(name: string, active: boolean) { await this.suite.set(name, active, this.outputConnectionGuard()); }
+  async outputs() { this.requireConnected(); return (await this.call('GetOutputList')).outputs; }
   async setOutput(name: string, active: boolean) {
-    if (!name.trim()) throw new Error('Sortie OBS non sélectionnée.');
-    const list = await this.outputs();
-    if (!list.some(output => output.outputName === name)) throw new Error('Sortie absente de GetOutputList OBS. Vérifiez le plugin de multidiffusion.');
+    const assertCurrent = this.outputConnectionGuard();
+    if (!name.trim() || name.length > 200 || /[\u0000-\u001f\u007f]/.test(name)) throw new Error('Nom de sortie OBS invalide ou non sélectionné.');
+    const matches = (await this.outputs()).filter(output => output.outputName === name);
+    assertCurrent();
+    if (matches.length !== 1) throw new Error('Sortie OBS absente ou ambiguë. Relancez la détection des sorties.');
+    // Keep existing named-output associations, but let Aitum initialize its own
+    // output and encoders instead of starting a possibly stale native instance.
+    const suitePrefix = 'Aitum Stream Suite Output ';
+    if (name.startsWith(suitePrefix)) return this.suite.set(name.slice(suitePrefix.length), active, assertCurrent);
+    const flags = matches[0].outputFlags as Record<string, unknown> | undefined;
+    if (flags?.OBS_OUTPUT_SERVICE !== true) throw new Error('Choisissez une sortie de diffusion OBS, pas un enregistrement, un tampon ou une caméra virtuelle.');
     const state = await this.call('GetOutputStatus', { outputName: name });
-    if (state.outputActive !== active) await this.call(active ? 'StartOutput' : 'StopOutput', { outputName: name });
-    const confirmed = await this.call('GetOutputStatus', { outputName: name });
-    if (confirmed.outputActive !== active) throw new Error('OBS n’a pas confirmé la sortie demandée.');
+    assertCurrent();
+    if (typeof state.outputActive !== 'boolean') throw new Error('État de la sortie OBS indisponible.');
+    if (state.outputActive === active) return;
+    try { await this.call(active ? 'StartOutput' : 'StopOutput', { outputName: name }); }
+    catch (error) { if (isObsRequestRejection(error)) throw error; }
+    // Read after both an acknowledgement and a transport failure: the command
+    // may already have run. Never retry it or confirm against a new connection.
+    try {
+      assertCurrent();
+      const confirmed = await this.call('GetOutputStatus', { outputName: name });
+      assertCurrent();
+      if (confirmed.outputActive === active) return;
+    } catch { /* An observation failure cannot prove the dispatch failed. */ }
+    throw uncertainOutput('Commande OBS envoyée ; état de la sortie non confirmé. Vérifiez avant de réessayer.');
   }
   private client = new OBSWebSocket();
   private reconnects = 0;
@@ -97,6 +179,24 @@ export class ObsClient {
   private generation = 0;
   private revision = 0;
   private connecting?: Promise<void>;
+  private readonly micHealthWatch = new MicHealthWatch();
+  private volumeSubscribed = false;
+  private micChangeAt = 0;
+  micHealth(inputName: string) {
+    const input = this.state.inputs[inputName];
+    return this.micHealthWatch.state(inputName, {
+      connected: this.state.connected, streaming: Boolean(this.state.streaming && this.state.streamingKnown),
+      exists: Boolean(input), muted: input?.muted,
+    });
+  }
+  private async updateMicSubscription() {
+    const want = Boolean(this.ready && this.state.connected && this.state.streamingKnown && this.state.streaming);
+    if (this.volumeSubscribed === want || !this.ready) return;
+    const current = this.client;
+    this.volumeSubscribed = want;
+    try { await current.reidentify({ eventSubscriptions: EventSubscription.All | (want ? EventSubscription.InputVolumeMeters : 0) }); }
+    catch { if (current === this.client) this.volumeSubscribed = false; }
+  }
   private ready = false;
   private streamPending = false;
   private heartbeat?: NodeJS.Timeout;
@@ -122,7 +222,8 @@ export class ObsClient {
         this.invalidate('OBS ne répond plus (timeout).');
         this.schedule();
       }
-      throw new Error(friendlyError(error));
+      const code = (error as { code?: unknown } | null)?.code;
+      throw Object.assign(new Error(friendlyError(error)), typeof code === 'number' ? { code } : {});
     }
   };
 
@@ -130,6 +231,8 @@ export class ObsClient {
     this.generation++;
     this.connecting = undefined;
     this.ready = false;
+    this.volumeSubscribed = false;
+    this.micHealthWatch.updateStream(false);
     clearInterval(this.heartbeat);
     clearTimeout(this.refreshTimer);
     this.refreshTimer = undefined;
@@ -155,7 +258,15 @@ export class ObsClient {
       if (!this.suppressReconnect) this.schedule();
     });
     on('CurrentProgramSceneChanged', ({ sceneName }) => { if (!this.ready) return; this.state.scene = sceneName; this.notify(); this.scheduleRefresh(); });
-    on('StreamStateChanged', ({ outputActive }) => { if (!this.ready) return; this.state.streaming = outputActive; this.state.streamingKnown = true; this.notify(); });
+    on('StreamStateChanged', ({ outputActive }) => { if (!this.ready) return; this.state.streaming = outputActive; this.state.streamingKnown = true; this.micHealthWatch.updateStream(outputActive); void this.updateMicSubscription(); this.notify(); });
+    // InputVolumeMeters is a high-volume event. Do not increment the client's
+    // revision or trigger a full OBS refresh for each meter frame.
+    client.on('InputVolumeMeters', payload => {
+      if (!this.ready || this.client !== client || !this.state.streaming) return;
+      if (!this.micHealthWatch.observe((payload.inputs ?? []) as unknown as Array<{inputName:string;inputLevelsMul:number[][]}>)) return;
+      const now = Date.now();
+      if (now - this.micChangeAt > 2_500) { this.micChangeAt = now; this.notify(); }
+    });
     on('RecordStateChanged', ({ outputActive }) => { if (!this.ready) return; this.state.recording = outputActive; this.notify(); });
     on('InputMuteStateChanged', ({ inputName, inputMuted }) => {
       if (!this.ready) return;
@@ -233,11 +344,13 @@ export class ObsClient {
         if (generation !== this.generation) return;
         this.ready = true;
         this.state.connected = true;
+        this.micHealthWatch.updateStream(this.state.streaming);
         this.state.connectionStatus = 'connected';
         this.reconnects = 0;
         this.heartbeat = setInterval(() => { void this.refresh().catch(() => undefined); }, 10_000);
         this.heartbeat.unref();
         this.notify();
+        void this.updateMicSubscription();
         if (this.refreshRequested) this.scheduleRefresh();
       } catch (error) {
         if (generation !== this.generation) return;
@@ -355,7 +468,7 @@ export class ObsClient {
     snapshot.activeAudioInputs = Object.keys(snapshot.inputs).filter(name => active.has(name));
     snapshot.error = null;
     if (revision !== this.revision) this.refreshRequested = true;
-    if (generation === this.generation && revision === this.revision) { Object.assign(this.state, snapshot); if (this.ready) this.notify(); }
+    if (generation === this.generation && revision === this.revision) { Object.assign(this.state, snapshot); this.micHealthWatch.updateStream(snapshot.streaming); if (this.ready) { void this.updateMicSubscription(); this.notify(); } }
   }
 
   onStateChanged(listener: () => void) { this.listeners.add(listener); return () => this.listeners.delete(listener); }
@@ -428,12 +541,20 @@ export class ObsClient {
   async volume(inputName: string, inputVolumeMul: number) { if (!Number.isFinite(inputVolumeMul) || inputVolumeMul < 0 || inputVolumeMul > 20) throw new Error('Volume OBS invalide.'); await this.requireInput(inputName, true); await this.call('SetInputVolume', { inputName, inputVolumeMul }); }
   async volumeDb(inputName: string, inputVolumeDb: number) { if (!Number.isFinite(inputVolumeDb) || inputVolumeDb < -100 || inputVolumeDb > 26) throw new Error('Volume OBS invalide.'); await this.requireInput(inputName, true); await this.call('SetInputVolume', { inputName, inputVolumeDb }); }
   async stream(start: boolean) {
-    this.requireConnected();
+    const assertCurrent = this.outputConnectionGuard();
     if (this.streamPending) throw new Error('Changement de diffusion OBS déjà en cours.');
     this.streamPending = true;
     try {
       const status = await this.call('GetStreamStatus');
-      if (status.outputActive !== start) await this.call(start ? 'StartStream' : 'StopStream');
+      assertCurrent();
+      if (typeof status.outputActive !== 'boolean') throw new Error('État de la sortie principale OBS indisponible.');
+      if (status.outputActive !== start) {
+        try { await this.call(start ? 'StartStream' : 'StopStream'); }
+        catch (error) {
+          if (isObsRequestRejection(error)) throw error;
+          throw uncertainOutput('Commande de diffusion OBS envoyée ; accusé non reçu. Vérifiez l’état avant de réessayer.');
+        }
+      }
     } finally { this.streamPending = false; }
   }
   async record(start: boolean) { this.requireConnected(); const status = await this.call('GetRecordStatus'); if (status.outputActive === start) return; await this.call(start ? 'StartRecord' : 'StopRecord'); }

@@ -2,7 +2,7 @@
 export const fields = {
  planning:['title','description','startAtUtc','endAtUtc','category','allDay','twitchCategoryId','twitchCategoryName','tags','tagPreferences','desiredPublication','recurrence'],
  settings:['streamerName','accent','confirmStop','obsUrl','launchObs','obsExecutablePath','modeScenes','chattingScene','startMode','timerBrowserSource','primaryMicInput','requireTimerOverlayOnStart','remoteEnabled','streamerPingRewardIds','tagPreferences'],
- sound:['name','favorite','volume','enabled','cooldownMs','category','monitoringMode'],
+ sound:['name','favorite','volume','enabled','cooldownMs','category','monitoringMode','outputId','playbackMode'],
  automation:['name','enabled','trigger','conditions','actions','cooldownMs'],
  template:['title','description','twitchCategoryId','twitchCategoryName','desiredPublication','tags','tagPreferences'],
 };
@@ -29,8 +29,9 @@ export function resources(bundle){
  const {data,extras={},sounds={sounds:[]}}=bundle,c=data.configuration,h=data.host,result={};
  result['settings/root']=pick(h.settings,fields.settings);
  for(const action of c.actions)result['action/'+action.id]=clone(action);
- for(const platform of ['twitch','youtube'])result['output/'+platform]=clone(c.outputs[platform]);
- result['youtube/root']=clone(c.youtube);result['preferences/root']={replayAutoStart:c.replayAutoStart!==false};
+ result['actionSet/root']={items:clone(c.actions)};
+ for(const platform of ['twitch'])result['output/'+platform]=clone(c.outputs[platform]);
+ result['preferences/root']={replayAutoStart:c.replayAutoStart!==false};
  for(const item of h.planning)result['planning/'+item.id]=pick(item,fields.planning);
  for(const item of extras.templates||[])result['template/'+item.id]=pick(item,fields.template);
  for(const item of extras.automations||[])result['automation/'+item.id]=pick(item,fields.automation);
@@ -47,6 +48,7 @@ export function overlay(bundle, edits){
   const [kind,id]=key.split('/');
   if(kind==='planning'){put(h.planning,id,value===null?null:{ownership:'LOCAL',editable:true,...value});h.planningRevisions[id]='local';}
   if(kind==='action')put(c.actions,id,value);
+  if(kind==='actionSet')c.actions=clone(value.items);
   if(kind==='template')put(extras.templates,id,value);
   if(kind==='automation')put(extras.automations,id,value);
   if(kind==='sound')put(result.sounds.sounds,id,value);

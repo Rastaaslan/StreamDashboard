@@ -1,0 +1,209 @@
+/*
+ * StreamDashboard mobile ergonomics (alpha26)
+ * Fixed header hosts the real Mic 3 badge; neither of the two bottom tab rows
+ * is covered. Optimised for 320px phones, foldables/tablets and short landscape.
+ * The short captions do not replace full accessibility labels.
+ */
+.compact-app {
+  --deck-nav-height: 58px;
+  --mobile-pane-nav-height: 51px;
+  --mobile-mic-float-height: 0px;
+  --compact-status-height: 55px;
+  --compact-mic-width: min(56vw, 238px);
+}
+.compact-app.mobile-panes-active .workspace > header {
+  position: sticky;
+  top: 0;
+  z-index: 5;
+  height: calc(var(--compact-status-height) + env(safe-area-inset-top)) !important;
+  min-height: calc(var(--compact-status-height) + env(safe-area-inset-top)) !important;
+  padding: calc(7px + env(safe-area-inset-top))
+    calc(var(--compact-mic-width) + 16px + env(safe-area-inset-right))
+    6px max(12px, env(safe-area-inset-left)) !important;
+  background: rgba(20, 17, 28, 0.98);
+  border-bottom: 1px solid #393043;
+  backdrop-filter: blur(16px);
+}
+.compact-app.mobile-panes-active .workspace > header #connection {
+  display: block;
+  min-width: 0;
+  font-size: 11px;
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.compact-app.mobile-panes-active .workspace main {
+  max-width: 850px;
+  margin: 0 auto;
+  min-height: calc(100dvh - var(--compact-status-height) - var(--deck-nav-height) - var(--mobile-pane-nav-height));
+  padding: 12px max(12px, env(safe-area-inset-right))
+    calc(var(--deck-nav-height) + var(--mobile-pane-nav-height) + env(safe-area-inset-bottom) + 25px)
+    max(12px, env(safe-area-inset-left));
+  scroll-padding-bottom: 80px;
+}
+.compact-app.mobile-panes-active .mobile-pane-title {
+  margin: 0 0 9px;
+}
+.compact-app.mobile-panes-active .mobile-pane-title h2 {
+  margin: 0;
+  font-size: 17px;
+  line-height: 1.25;
+}
+.compact-app.mobile-panes-active .mobile-pane-title small {
+  font-size: 10px;
+}
+.compact-app aside {
+  height: calc(var(--deck-nav-height) + env(safe-area-inset-bottom));
+  padding-top: 4px;
+}
+.compact-app aside nav button {
+  min-height: 47px;
+  padding: 5px 2px;
+  gap: 2px;
+}
+.compact-app aside nav button span {
+  font-size: 10px;
+}
+.compact-app .mobile-pane-rail:not([hidden]) {
+  height: var(--mobile-pane-nav-height);
+  padding-top: 3px;
+  padding-bottom: 3px;
+  gap: 3px;
+}
+.compact-app .mobile-pane-tab {
+  min-height: 44px;
+  padding: 3px 2px;
+  gap: 2px;
+}
+.compact-app .mobile-pane-tab-icon {
+  font-size: 16px;
+  line-height: 17px;
+}
+.compact-app .mobile-pane-tab-label {
+  font-size: 10px;
+  font-weight: 650;
+  letter-spacing: -0.1px;
+}
+.compact-app .mobile-pane-tab[aria-selected=true] {
+  background: #3a294b;
+  border-color: #7d61a1;
+  color: #f1dcff;
+}
+.compact-app.mobile-panes-active .floating-mic-battery:not([hidden]) {
+  display: block;
+  position: fixed;
+  z-index: 7;
+  top: calc(7px + env(safe-area-inset-top));
+  right: max(9px, env(safe-area-inset-right));
+  left: auto;
+  bottom: auto;
+  width: auto;
+  max-width: var(--compact-mic-width);
+  filter: drop-shadow(0 4px 9px #08050e7a);
+}
+.compact-app.mobile-panes-active .floating-mic-battery-button {
+  min-width: 112px;
+  min-height: 43px;
+  max-width: var(--compact-mic-width);
+  border-radius: 12px;
+  padding: 6px 9px;
+  gap: 3px;
+  background: #302339;
+  text-align: left;
+}
+.compact-app.mobile-panes-active .floating-mic-battery-button strong {
+  font-size: 10.5px;
+  line-height: 1.14;
+  letter-spacing: -.15px;
+  overflow-wrap: anywhere;
+}
+.compact-app.mobile-panes-active .floating-mic-battery-button small {
+  font-size: 9px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  display: block;
+}
+.compact-app.mobile-panes-active #notice {
+  bottom: calc(var(--deck-nav-height) + var(--mobile-pane-nav-height) + env(safe-area-inset-bottom) + 12px);
+  z-index: 8;
+}
+.compact-app.mobile-panes-active .mobile-pane-chat .live-monitor {
+  margin: 0;
+}
+.compact-app.mobile-panes-active .mobile-pane-chat .monitor-grid > .panel {
+  padding: 9px;
+}
+.compact-app.mobile-panes-active .mobile-pane-chat .monitor-native-twitch .twitch-native-chat {
+  height: clamp(295px, calc(100dvh - var(--compact-status-height) - var(--deck-nav-height) - var(--mobile-pane-nav-height) - 110px), 825px);
+  min-height: 270px;
+}
+.compact-app.mobile-panes-active .mobile-pane-screen .panel {
+  border-radius: 13px;
+}
+.compact-app.mobile-panes-active .mobile-pane-sound-grid > button {
+  min-height: 90px;
+  padding: 11px;
+}
+.compact-app.mobile-panes-active .mobile-pane-screen button[data-action='live.stop'] {
+  min-height: 54px;
+}
+.compact-app:not(.mobile-panes-active) .floating-mic-battery:not([hidden]) {
+  bottom: calc(var(--deck-nav-height) + env(safe-area-inset-bottom) + 8px);
+}
+.compact-app:not(.mobile-panes-active) .workspace main {
+  padding-bottom: calc(var(--deck-nav-height) + env(safe-area-inset-bottom) + 115px);
+}
+@media (max-width: 350px) {
+  .compact-app { --compact-mic-width: min(58vw, 197px); }
+  .compact-app.mobile-panes-active .mobile-pane-tab-label { font-size: 9.5px; }
+  .compact-app.mobile-panes-active .floating-mic-battery-button strong { font-size: 10px; }
+}
+@media (min-width: 701px) {
+  .compact-app { --compact-mic-width: 248px; }
+  .compact-app.mobile-panes-active .workspace main {
+    padding-left: 20px;
+    padding-right: 20px;
+  }
+}
+@media (orientation:landscape) and (max-height:600px) {
+  .compact-app {
+    --deck-nav-height: 46px;
+    --mobile-pane-nav-height: 44px;
+    --compact-status-height: 42px;
+    --compact-mic-width: min(45vw, 250px);
+  }
+  .compact-app.mobile-panes-active .workspace > header {
+    padding-top: calc(4px + env(safe-area-inset-top));
+  }
+  .compact-app.mobile-panes-active .floating-mic-battery:not([hidden]) {
+    top: calc(3px + env(safe-area-inset-top));
+  }
+  .compact-app.mobile-panes-active .floating-mic-battery-button {
+    min-height: 35px;
+    padding: 4px 9px;
+  }
+  .compact-app.mobile-panes-active .floating-mic-battery-button small {
+    display: none;
+  }
+  .compact-app aside nav button { min-height: 38px; padding: 3px; }
+  .compact-app .mobile-pane-rail:not([hidden]) { padding: 2px; }
+  .compact-app .mobile-pane-tab { min-height: 39px; padding: 3px; }
+  .compact-app.mobile-panes-active .mobile-pane-chat .monitor-native-twitch .twitch-native-chat {
+    height: min(340px, calc(100dvh - 170px));
+    min-height: 190px;
+  }
+}
+
+/* Chat itself already has a titled connection-status row, no redundant heading. */
+.compact-app.mobile-panes-active .mobile-pane-chat > .mobile-pane-title {
+  display: none;
+}
+.compact-app aside,
+.compact-app .mobile-pane-rail:not([hidden]) {
+  background: #17131f !important;
+}
+.compact-app.mobile-panes-active .mobile-pane-chat .monitor-grid > .panel {
+  padding: 10px;
+}

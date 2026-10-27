@@ -3,7 +3,7 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { startDashboardServer } from '../apps/server/src/index.js';
-import { TwitchClient } from '../integrations/twitch/src/client.js';
+import { TwitchClient, TwitchHttpError } from '../integrations/twitch/src/client.js';
 
 afterEach(() => vi.restoreAllMocks());
 it('applies live metadata, normalizes tags, retries rejection and leaves planning untouched', async () => {
@@ -28,7 +28,7 @@ it('applies live metadata, normalizes tags, retries rejection and leaves plannin
     state = await post({ tags: ['Manual'] });
     expect(update).toHaveBeenLastCalledWith({ tags: ['Manual'] });
     expect(state.twitch.tags).toEqual(['Manual']);
-    update.mockRejectedValueOnce(Error('tags rejected'));
+    update.mockRejectedValueOnce(new TwitchHttpError(400, 'Twitch HTTP 400', null, true));
     state = await post({ title: 'New title', gameId: '43', gameName: 'Other', tags: ['Rejected'] });
     expect(update).toHaveBeenLastCalledWith({ title: 'New title', gameId: '43' });
     expect(state.twitch).toMatchObject({ channelTitle: 'New title', gameId: '43', tags: ['Manual'], tagsWarning: expect.stringContaining('Corrige') });
@@ -77,7 +77,7 @@ it('edits tags independently when channel title and category are empty', async (
     state = await post({ title: '', gameId: '', gameName: '', tags: ['Edited'] });
     expect(update).toHaveBeenLastCalledWith({ tags: ['Edited'] });
     expect(state.twitch.tags).toEqual(['Edited']);
-    update.mockClear().mockRejectedValueOnce(Error('tags rejected'));
+    update.mockClear().mockRejectedValueOnce(new TwitchHttpError(400, 'Twitch HTTP 400', null, true));
     state = await post({ tags: ['Rejected'] });
     expect(update).toHaveBeenCalledExactlyOnceWith({ tags: ['Rejected'] });
     expect(state.twitch.tags).toEqual(['Edited']);

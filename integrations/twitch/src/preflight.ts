@@ -1,3 +1,5 @@
+import { isTwitchTagsRejection } from './client.js';
+
 export interface TwitchChannelMetadata { title: string; gameId: string; tags?: string[] }
 export interface TwitchPreflightApi {
   getChannel(): Promise<TwitchChannelMetadata>;
@@ -36,7 +38,7 @@ export class TwitchPreflight {
     if (!unchanged) {
       try { await this.api.updateChannel(desired); }
       catch (error) {
-        if (input.tags === undefined) throw error;
+        if (input.tags === undefined || !isTwitchTagsRejection(error)) throw error;
         await this.api.updateChannel({ title: desired.title, gameId });
         tagsWarning = 'Tags refusés par Twitch ; titre et catégorie appliqués.';
       }

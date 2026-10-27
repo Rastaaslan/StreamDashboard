@@ -11,11 +11,15 @@ module.exports = {
     appVersion: applicationVersion.split('-')[0],
     beforeAsar: [async ({ buildPath }) => {
       const fs = require('node:fs/promises');
-      const manifestPath = require('node:path').join(buildPath, 'package.json');
+      const paths = require('node:path');
+      await fs.cp(paths.resolve('.build/public/mobile'), paths.join(buildPath,'apps/mobile'), {recursive:true});
+      await fs.cp(paths.resolve('.build/public/web'), paths.join(buildPath,'apps/web'), {recursive:true});
+      const manifestPath = paths.join(buildPath, 'package.json');
       const manifest = JSON.parse(await fs.readFile(manifestPath, 'utf8'));
       manifest.version = applicationVersion;
       await fs.writeFile(manifestPath, JSON.stringify(manifest, null, 2) + '\n');
     }],
+    extraResource: ['./resources/dji-mic3'],
     executableName: 'StreamDashboard',
     appBundleId: 'com.rastaaslan.streamdashboard',
     icon: './resources/streamdashboard',
@@ -25,6 +29,8 @@ module.exports = {
     // package.json and production node_modules. Source/tests/tooling only increase the
     // attack/read surface and ASAR size, so exclude them from shipped builds.
     ignore: [
+      /^\/\.build(?:\/|$)/,
+      /^\/apps\/(?:mobile|web)(?:\/|$)/,
       /^\/\.cb52-tmp(?:\/|$)/,
       /^\/[^/]*\.log$/,
       /^\/\.dependencies(?:\/|$)/,
@@ -34,7 +40,7 @@ module.exports = {
       /^\/(?:_integration_sources|android|tests|docs|scripts|data|\.github|\.agents|\.codex)(?:\/|$)/,
       /^\/apps\/(?:desktop|server)\/src(?:\/|$)/,
       /^\/(?:integrations|packages)(?:\/|$)/,
-      /^\/(?:README\.md|tsconfig\.json|vitest\.config\.ts|playwright(?:\.[^/]*)?\.ts|\.env\.example|Lancer_StreamDashboard\.cmd|package-lock\.json)$/,
+      /^\/(?:README\.md|tsconfig(?:\.[^/]*)?\.json|vitest\.config\.ts|playwright(?:\.[^/]*)?\.ts|\.env\.example|Lancer_StreamDashboard\.cmd|package-lock\.json)$/,
     ],
     windowsSign: certificateFile ? {
       certificateFile,

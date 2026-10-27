@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { TwitchClient } from '../integrations/twitch/src/client.js';
+import type { CalendarItem } from '../packages/contracts/src/index.js';
 
 const empty = { clientId: '', accessToken: '', refreshToken: '', broadcasterId: '', userName: '', displayName: '' };
 async function authorize(client: TwitchClient, userId = '42') {
@@ -279,4 +280,46 @@ it('sync does not import a still-uncertain deleting request as a new local row',
   expect(rows[0].deletionPending).toBe(true);
   expect(rows[0].providers!.twitch!.uncertainCreate).toBeTruthy();
   for (const call of vi.mocked(fetch).mock.calls) expect(call[1]?.method ?? 'GET').toBe('GET');
+});
+
+it.each([false, true])('sync isolates unproven CREATE candidates while independent confirmed and new items proceed; materialized=%s', async materialized => {
+  const event: CalendarItem = { id: 'uncertain', title: 'Original request', category: 'live', ownership: 'LOCAL', startAtUtc: '2030-01-01T10:00:00Z', endAtUtc: '2030-01-01T11:00:00Z', desiredPublication: { local: true, twitch: true, google: false } };
+  const uncertainCreate = { event: structuredClone(event) as unknown as Record<string, unknown>, publishedContent: 'original-content' };
+  const pending: CalendarItem = { ...event, title: 'Title edited offline', description: 'Keep offline notes', providers: { twitch: materialized
+    ? { status: 'error', projectionMode: 'materialized', projections: { occurrence: { occurrenceKey: 'occurrence', managedBy: 'StreamDashboard', status: 'error', event, uncertainCreate } } }
+    : { status: 'error', uncertainCreate } } };
+  if (materialized) pending.recurrence = { frequency: 'daily', interval: 1, timeZone: 'UTC' };
+  const segment = { id: 'candidate-1', title: event.title, start_time: event.startAtUtc, end_time: event.endAtUtc, is_recurring: false };
+  const remote = new Map([['candidate-1', segment], ['candidate-2', { ...segment, id: 'candidate-2' }], ['confirmed', { ...segment, id: 'confirmed' }]]);
+  const acknowledged: CalendarItem = { ...event, id: 'acknowledged', twitchSegmentId: 'confirmed', providers: { twitch: { status: 'synced', remoteId: 'confirmed', projectionOwned: true } } };
+  const independent: CalendarItem = { ...event, id: 'independent', title: 'Independent new live', providers: {} };
+  const posts: string[] = [];
+  let disk: CalendarItem[] = [];
+  vi.stubGlobal('fetch', vi.fn(async (_input: string | URL | Request, init?: RequestInit) => {
+    if (init?.method === 'POST') {
+      const body = JSON.parse(String(init.body));
+      expect(disk.find(item => item.id === 'independent')!.providers!.twitch!.uncertainCreate).toBeTruthy();
+      posts.push(body.title);
+      const created = { ...segment, id: 'created', title: body.title };
+      remote.set(created.id, created);
+      return Response.json({ data: { segments: [created] } });
+    }
+    expect(init?.method ?? 'GET').toBe('GET');
+    return Response.json({ data: { segments: [...remote.values()] } });
+  }));
+  const client = new TwitchClient({ ...empty, clientId: 'id', accessToken: 'token', broadcasterId: '42' });
+  await authorize(client);
+  const persist = async (items: CalendarItem[]) => { disk = structuredClone(items); };
+  await client.sync([pending, acknowledged, independent], persist);
+  await client.sync(structuredClone(disk), persist);
+  expect(posts).toEqual(['Independent new live']);
+  expect(disk.map(item => item.id).sort()).toEqual(['acknowledged', 'independent', 'uncertain']);
+  const retained = disk.find(item => item.id === 'uncertain')!;
+  expect(retained).toMatchObject({ title: 'Title edited offline', description: 'Keep offline notes' });
+  const identity = materialized ? retained.providers!.twitch!.projections!.occurrence : retained.providers!.twitch!;
+  expect(identity.uncertainCreate).toEqual(uncertainCreate);
+  expect(identity.remoteId).toBeUndefined();
+  expect(disk.find(item => item.id === 'acknowledged')!.providers!.twitch).toMatchObject({ status: 'synced', remoteId: 'confirmed' });
+  expect(disk.find(item => item.id === 'independent')!.providers!.twitch).toMatchObject({ status: 'synced', remoteId: 'created' });
+  expect([...remote.keys()].sort()).toEqual(['candidate-1', 'candidate-2', 'confirmed', 'created']);
 });

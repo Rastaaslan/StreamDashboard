@@ -132,7 +132,8 @@ test('concurrent reconnect events close old sockets and ignore delayed responses
   await page.clock.fastForward(1000);
   await expect(page.locator('#pc')).toHaveText('Connecté');
   expect(await nativeCredential(page)).toBe('persistent-device-credential');
-  expect(await page.evaluate(() => (window as any).sockets.filter((socket: any) => socket.readyState === 1).length)).toBe(1);
+  // HTTP recovery is visible before the asynchronous WebSocket ticket returns.
+  await expect.poll(() => page.evaluate(() => (window as any).sockets.filter((socket: any) => socket.readyState === 1).length)).toBe(1);
   expect(errors).toEqual([]);
 });
 

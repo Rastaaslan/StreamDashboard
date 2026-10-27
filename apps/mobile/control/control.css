@@ -21,3 +21,183 @@ header{height:auto;min-height:98px;gap:18px}header>div:first-child{min-width:0;o
 @media(max-width:700px){.header-actions{grid-template-columns:repeat(2,minmax(0,1fr));}}
 
 .streamlabs-filters{display:flex;gap:14px;align-items:end;flex-wrap:wrap;margin:16px 0}.streamlabs-filters label{flex:1;min-width:170px}.streamlabs-events{max-height:390px;overflow:auto;overscroll-behavior:contain}.streamlabs-event{padding:14px 0;border-top:1px solid #342c42}.streamlabs-event-head{display:flex;align-items:center;flex-wrap:wrap;gap:10px}.streamlabs-event-head time{margin-left:auto;font-size:12px;color:#b4a9c4}.streamlabs-event-head strong{overflow-wrap:anywhere}.streamlabs-detail{color:#bdebcf;margin:8px 0 0}.streamlabs-message{white-space:pre-wrap;overflow-wrap:anywhere;margin:8px 0 0;font-size:14px}.streamlabs-feed .section-heading{flex-wrap:wrap;gap:12px}
+.youtube-identity{padding:14px;border:1px solid var(--line);border-radius:10px;line-height:1.7;overflow-wrap:anywhere}.youtube-broadcast-list{display:grid;gap:12px;margin:20px 0}.youtube-broadcast{padding:16px;background:#17131f;border:1px solid var(--line);border-radius:12px;overflow-wrap:anywhere}.youtube-broadcast h3{line-height:1.5}.youtube-broadcast p{line-height:1.6;margin:8px 0}.youtube-broadcast button{margin-top:6px}.youtube-identity small{color:var(--muted)}
+.live-destinations{display:grid;gap:12px;margin-top:18px}.live-destination{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:12px;border:1px solid var(--line);border-radius:10px}.live-destination>div{min-width:0}.live-destination p{margin:5px 0;line-height:1.5;overflow-wrap:anywhere}.live-destination small{overflow-wrap:anywhere}.live-destination button{flex-shrink:0;font-size:12px}.replay-panel details p{line-height:1.7}#category-results{display:flex;flex-wrap:wrap;gap:8px;margin:12px 0}#category-results button{font-weight:500;text-align:left}
+@media(max-width:700px){.live-destination{align-items:flex-start;flex-direction:column}.live-destination button{width:100%}}
+
+/* Keep the activity list in the same viewing area as the platform chats. */
+.streamlabs-feed-compact{position:relative;display:flex;flex-direction:column;gap:10px;min-height:0;padding:14px}
+.streamlabs-feed-compact .streamlabs-heading{margin:0;gap:8px;align-items:center;flex-wrap:nowrap}
+.streamlabs-heading h2{font-size:16px;margin:0}
+.streamlabs-tools{display:flex;gap:6px;align-items:center;flex-shrink:0}
+.streamlabs-tools>button,.streamlabs-options>summary{position:relative;z-index:6}
+.streamlabs-tools>button,.streamlabs-options>summary{min-height:36px;padding:8px 10px;font-size:11px;border:1px solid var(--line);border-radius:9px;background:#262130;color:#e4d9f1;cursor:pointer}
+.streamlabs-options{margin:0;padding:0;border:0}
+.streamlabs-options>summary{margin:0;display:flex;align-items:center;gap:4px;font-weight:650;list-style:none}
+.streamlabs-options>summary::-webkit-details-marker{display:none}
+.streamlabs-options>summary:after{content:'⌄';margin-left:3px}
+.streamlabs-options[open]>summary{border-color:var(--purple);color:#ead9ff}
+.streamlabs-options[open]>summary:after{content:'⌃'}
+.streamlabs-options-body{position:absolute;z-index:5;left:10px;right:10px;top:56px;max-height:min(430px,calc(100dvh - 170px));overflow:auto;overscroll-behavior:contain;padding:16px;border:1px solid #665078;border-radius:12px;background:#211b2b;box-shadow:0 15px 40px #0009}
+.streamlabs-options-body .streamlabs-filters{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;margin:0 0 12px}
+.streamlabs-options-body .streamlabs-filters label{min-width:0;margin:0;font-size:11px}
+.streamlabs-options-body .streamlabs-filters label:first-child{grid-column:1/-1}
+.streamlabs-options-body select{width:100%;padding:9px 7px;font-size:12px;min-height:40px}
+.streamlabs-options-body button{min-height:40px;padding:9px 12px;font-size:12px}
+.streamlabs-options-body p{font-size:11px;line-height:1.6;overflow-wrap:anywhere}
+.streamlabs-summary{display:flex;gap:5px 12px;flex-wrap:wrap;margin:0;font-size:10px;line-height:1.45;color:var(--muted)}
+.streamlabs-summary-context{display:flex;align-items:center;justify-content:space-between;gap:10px;width:100%;min-width:0}
+[data-feed-summary-source]{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:#dcd0e8}
+[data-feed-summary-count]{white-space:nowrap}
+.streamlabs-summary>[data-state]:before{content:'';display:inline-block;width:5px;height:5px;border-radius:50%;background:currentColor;margin:0 5px 1px 0}
+.streamlabs-summary [data-state=ok]{color:var(--green)}
+.streamlabs-summary [data-state=pending],.streamlabs-summary [data-state=stale]{color:var(--amber)}
+.streamlabs-summary [data-state=error]{color:var(--red)}
+.streamlabs-feed-compact .streamlabs-events{flex:1;min-height:0;max-height:560px;overflow:auto;scrollbar-gutter:stable;overscroll-behavior:contain}
+.streamlabs-feed-compact .streamlabs-event{padding:10px 0}
+.streamlabs-feed-compact .streamlabs-event-head{gap:5px 8px;font-size:12px;line-height:1.4}
+.streamlabs-feed-compact .streamlabs-event-head .pill{font-size:10px;padding:3px 6px}
+.streamlabs-feed-compact .streamlabs-event-head time{font-size:10px}
+.streamlabs-feed-compact .streamlabs-detail,.streamlabs-feed-compact .streamlabs-message{font-size:12px;margin:5px 0 0;line-height:1.45}
+.monitor-activity{min-width:0;min-height:0;scroll-margin-top:12px}
+.monitor-activity>.streamlabs-feed{height:100%;margin:0}
+.monitor-grid-with-activity{grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}
+.monitor-grid-with-activity>.monitor-video{grid-column:1;grid-row:1}
+.monitor-grid-with-activity>.monitor-activity{grid-column:2;grid-row:1}
+.monitor-grid-with-activity>.monitor-chat{grid-row:2}
+.monitor-grid-with-activity>.panel[hidden]{display:none}
+.monitor-grid-with-activity[data-screens-enabled=false]{display:block}
+.monitor-grid-with-activity[data-screens-enabled=false]>.monitor-activity{height:clamp(340px,65dvh,650px)}
+.activity-page-heading{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:18px}
+.activity-page-heading .eyebrow{display:block;margin-bottom:6px}
+.activity-page-heading h1{margin:0}
+.activity-page-heading button{font-size:12px}
+.activity-hint{color:var(--muted);font-size:13px;line-height:1.6}
+#activity-context:empty{display:none}
+#activity-context:not(:empty){margin-bottom:16px}
+.activity-page #streamlabs-feed>.streamlabs-feed{height:clamp(360px,calc(100dvh - 250px),900px)}
+.activity-page .streamlabs-events{max-height:none}
+@media(min-width:1280px){
+ html:not(.compact-app) .live-page .workspace>header{height:64px;padding:10px 24px}
+ html:not(.compact-app) .live-page main{max-width:none;padding:18px 24px}
+ html:not(.compact-app) #live-overview{display:flex;align-items:center;gap:20px;margin-bottom:14px}
+ html:not(.compact-app) #live-overview h1{font-size:23px;max-width:190px;margin:0}
+ html:not(.compact-app) #live-overview>.subtitle{display:none}
+ html:not(.compact-app) #live-overview>.statuses{flex:1;margin:0;gap:10px}
+ html:not(.compact-app) #live-overview .status-card{padding:10px 12px;gap:10px}
+ html:not(.compact-app) #live-overview .status-card small{margin-top:4px;font-size:10px}
+ html:not(.compact-app) .live-monitor.spacer{margin-top:0;margin-bottom:20px}
+ html:not(.compact-app) .live-monitor>.section-heading{margin-bottom:12px}
+ html:not(.compact-app) .live-monitor>.section-heading p{max-width:800px;font-size:11px}
+ html:not(.compact-app) .monitor-grid-with-activity[data-screens-enabled=true]{grid-template-columns:minmax(428px,1.3fr) repeat(2,minmax(0,1fr));grid-template-rows:minmax(408px,1.05fr) minmax(240px,1fr);height:clamp(660px,calc(100dvh - 250px),820px)}
+ html:not(.compact-app) .monitor-grid-with-activity>.panel{padding:12px;display:flex;flex-direction:column;min-height:0}
+ html:not(.compact-app) .monitor-grid-with-activity>.panel[hidden]{display:none}
+ html:not(.compact-app) .monitor-grid-with-activity>.monitor-video{grid-column:1;grid-row:1}
+ html:not(.compact-app) .monitor-grid-with-activity>.monitor-activity{grid-column:1;grid-row:2}
+ html:not(.compact-app) .monitor-grid-with-activity>.monitor-native-twitch{grid-column:2;grid-row:1/3}
+ html:not(.compact-app) .monitor-grid-with-activity>.monitor-chat:not(.monitor-native-twitch){grid-column:3;grid-row:1/3}
+ html:not(.compact-app) .monitor-grid-with-activity .monitor-heading{min-height:36px;margin-bottom:8px}
+ html:not(.compact-app) .monitor-grid-with-activity .monitor-footer{min-height:32px;margin-top:6px;gap:6px}
+ html:not(.compact-app) .monitor-grid-with-activity .monitor-footer button{min-height:30px;padding:5px 8px}
+ html:not(.compact-app) .monitor-grid-with-activity .monitor-slot{flex:1;min-height:0;height:auto}
+ html:not(.compact-app) .monitor-grid-with-activity .video-slot{min-height:300px;aspect-ratio:auto}
+ html:not(.compact-app) .monitor-grid-with-activity .video-slot iframe{min-height:300px}
+ html:not(.compact-app) .monitor-grid-with-activity [data-twitch-native]{flex:1;min-height:0}
+ html:not(.compact-app) .monitor-grid-with-activity .twitch-native-chat{height:100%;min-height:0;gap:8px}
+ html:not(.compact-app) .monitor-grid-with-activity .twitch-chat-compose label{margin:0}
+ html:not(.compact-app) .monitor-grid-with-activity .streamlabs-events{max-height:none}
+ html:not(.compact-app) .monitor-grid-with-activity[data-screens-enabled=true] .streamlabs-options-body{top:auto;bottom:calc(100% - 50px)}
+}
+@media(max-width:700px){
+ .monitor-grid-with-activity{grid-template-columns:1fr}
+ .monitor-grid-with-activity>.monitor-activity{grid-column:1;grid-row:1;min-height:320px}
+ .monitor-grid-with-activity>.monitor-video{grid-column:1;grid-row:2}
+ .monitor-grid-with-activity>.monitor-chat{grid-row:auto}
+ .streamlabs-feed-compact{padding:12px}
+ .streamlabs-tools>button,.streamlabs-options>summary{min-height:44px;padding:10px;font-size:11px}
+ .streamlabs-options-body{top:62px;max-height:calc(100dvh - 240px)}
+}
+.compact-app .activity-page .workspace>header,.compact-app .activity-page .workspace>footer{display:none}
+.compact-app .activity-page main{min-height:0;padding:max(18px,env(safe-area-inset-top)) max(14px,env(safe-area-inset-right)) 16px max(14px,env(safe-area-inset-left))}
+.compact-app .activity-page .activity-page-heading{min-height:52px;margin-bottom:14px}
+.compact-app .activity-page .activity-page-heading h1{font-size:27px}
+.compact-app .activity-page #streamlabs-feed>.streamlabs-feed{height:calc(100dvh - var(--deck-nav-height) - env(safe-area-inset-bottom) - env(safe-area-inset-top) - 116px);min-height:260px}
+.compact-app .activity-page:has(#activity-context:not(:empty)) #streamlabs-feed>.streamlabs-feed{height:360px;min-height:260px}
+
+.youtube-api-chat { padding: .75rem; border-bottom: 1px solid var(--border, #343448); }
+.youtube-api-messages { max-height: 220px; overflow-y: auto; overflow-wrap: anywhere; }
+.youtube-api-messages p { margin: .4rem 0; font-size: .85rem; }
+/* YouTube's API log is the primary chat; the independent web session is opt-in. */
+.monitor-chat:has([data-youtube-api]){display:flex;flex-direction:column}
+.monitor-chat .youtube-api-chat{display:flex;flex-direction:column;flex:1;min-height:260px;padding:0;border:0}
+[data-youtube-api]{display:flex;flex-direction:column;flex:1;min-height:0}
+[data-youtube-api] .youtube-api-messages{flex:1;min-height:180px;max-height:none;overflow-y:auto;background:#0e0c14;border:1px solid var(--line);border-radius:9px;padding:10px}
+[data-youtube-web]{margin-top:10px;font-size:12px}
+[data-youtube-web] summary{cursor:pointer;color:var(--muted)}
+[data-youtube-web][open] .monitor-slot{height:280px!important;min-height:280px!important;flex:none!important}
+[data-prepare-result]{margin-top:16px}
+[data-prepare-result] button{display:block;margin-top:12px}
+
+/* Twitch-only mobile home: one decision at a time, large touch targets. */
+.simple-twitch-head{display:flex;justify-content:space-between;align-items:center;gap:12px;margin:0 0 14px}
+.simple-twitch-head h1{font-size:clamp(22px,6vw,30px);line-height:1.14;margin:4px 0 8px}
+.simple-twitch-head .pill{padding:8px 13px;white-space:nowrap}
+.simple-live-stack{display:grid;gap:12px}
+.simple-live-hero,.simple-mic-health{display:flex;flex-direction:column;gap:10px;padding:16px}
+.simple-health-row{display:flex;gap:12px;align-items:start;justify-content:space-between}
+.simple-health-row>b{font-size:16px}
+.simple-health-row>span{font-size:12px;max-width:65%;text-align:right;line-height:1.35}
+.simple-live-actions{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.simple-live-actions button{min-height:58px;padding:12px 10px;font-size:14px;font-weight:700}
+.simple-shortcuts{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
+.simple-shortcuts button{min-height:54px;font-size:13px;padding:12px 9px}
+.simple-mic-health>p{margin:0;font-size:11px}
+.spotify-panel{margin:14px 0 0;padding:14px}
+.spotify-heading{display:flex;align-items:start;justify-content:space-between;gap:10px}
+.spotify-heading h2{font-size:16px;margin:0 0 5px}
+.spotify-heading p{font-size:11px;margin:0 0 12px}
+.spotify-heading>button{min-height:36px;padding:8px 14px}
+.spotify-controls{display:grid;grid-template-columns:1fr 2fr 1fr;gap:8px}
+.spotify-controls button{min-height:48px;min-width:0;font-size:13px;padding:8px 6px}
+.spotify-panel>[data-spotify-note]{font-size:10px;line-height:1.5;margin:10px 0 0}
+.compact-app .simple-live-stack~.live-monitor{margin-top:12px}
+.compact-app .simple-live-stack .panel,.compact-app .spotify-panel{border-radius:16px}
+@media(max-width:390px){.simple-live-actions{grid-template-columns:1fr}.simple-live-actions button{min-height:48px}.simple-health-row{flex-wrap:wrap}.simple-health-row>span{max-width:100%;text-align:left}}
+
+
+
+/* DJI Mic 3 native WinUSB readouts: never convert coarse levels to fake percentages. */
+.dji-battery-panel{margin:14px 0;padding:14px}
+.dji-battery-panel[hidden]{display:none}
+.dji-battery-heading{display:flex;align-items:baseline;justify-content:space-between;gap:10px;flex-wrap:wrap}
+.dji-battery-heading h2{font-size:16px;margin:0 0 12px}
+.dji-battery-heading span{font-size:11px}
+.dji-battery-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px}
+.dji-battery-cell{background:rgba(127,127,127,.08);border-radius:10px;padding:12px 8px;display:flex;flex-direction:column;gap:7px}
+.dji-battery-cell b{font-size:13px}
+.dji-battery-cell span{font-size:12px;line-height:1.5;overflow-wrap:anywhere}
+.dji-battery-panel>p{font-size:11px;margin:10px 0 0;line-height:1.5}
+@media(max-width:580px){.dji-battery-grid{grid-template-columns:1fr}.dji-battery-cell{flex-direction:row;justify-content:space-between;align-items:start;gap:14px}.dji-battery-cell span{text-align:right}}
+
+.dji-compact-strip{display:flex;flex-wrap:wrap;gap:6px 10px;align-items:baseline;border-radius:12px;padding:10px 12px;margin:0 0 10px;background:rgba(127,127,127,.09);font-size:12px}
+.dji-compact-strip b{font-size:13px}
+.dji-compact-strip span{font-variant-numeric:tabular-nums}
+.dji-compact-strip small{font-size:10px;opacity:.7}
+/* Compact desktop event listing: keep time, recurrence and provider statuses visible. */
+@media(min-width:701px){
+ .workspace .event{display:grid;grid-template-columns:46px minmax(0,1fr) auto;gap:12px;align-items:center;flex-wrap:nowrap;padding:11px 0}
+ .workspace .event-content{min-width:0}
+ .workspace .event-content h3{margin:0 0 2px;line-height:1.25}
+ .workspace .event-content p{display:inline;margin:0 9px 0 0;line-height:1.45}
+ .workspace .event-content p:not(:last-child)::after{content:' · ';color:var(--muted)}
+ .workspace .event-content .provider-status{display:inline-block;margin-right:7px}
+ .workspace .event .row-actions{width:auto;margin:0;flex-wrap:nowrap;align-items:center}
+ .workspace .event .row-actions button{flex:initial;min-height:31px;white-space:nowrap;padding:5px 8px}
+}
+
+/* Action names and dynamic status remain separate, without forced concatenation. */
+.deck button .deck-action-label{display:block;max-width:100%;overflow-wrap:anywhere;line-height:1.25}
+.deck button small{display:block;max-width:100%;overflow-wrap:anywhere;line-height:1.25}
+.streamlabs-feed-compact .streamlabs-event{padding:7px 0}
+.streamlabs-feed-compact .streamlabs-event-head{gap:3px 7px;line-height:1.3}
+.streamlabs-feed-compact .streamlabs-detail,.streamlabs-feed-compact .streamlabs-message{margin:3px 0 0;line-height:1.3}

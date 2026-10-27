@@ -89,19 +89,23 @@ describe('Android remote runtime', () => {
     expect(androidActivity).toContain('WebViewAssetLoader');
     expect(androidActivity).not.toContain('MIXED_CONTENT_ALWAYS_ALLOW');
     expect(androidActivity).toContain('import android.webkit.WebChromeClient;');
-    expect(androidActivity).toContain('webView.setWebChromeClient(new WebChromeClient());');
+    expect(androidActivity).toContain('webView.setWebChromeClient(new WebChromeClient(){');
+    expect(androidActivity).toContain('onShowFileChooser');
+    expect(androidActivity).toContain('Intent.ACTION_OPEN_DOCUMENT');
+    expect(androidActivity).toContain('FileSelectionPolicy.accepts(selected.toString(),getPackageName())');
   });
-  it('ouvre seulement les ressources Twitch HTTPS dans le navigateur système', () => {
+  it('ouvre seulement les destinations live et WizeBot autorisées dans le navigateur système', () => {
     expect(androidActivity).toContain('isAllowedExternalUri');
-    expect(androidActivity).toContain('host.equals("twitch.tv") || host.endsWith(".twitch.tv")');
+    expect(androidActivity).toContain('ExternalNavigationPolicy.accepts(uri.toString())');
     expect(androidActivity).toContain('startActivity(new Intent(Intent.ACTION_VIEW, uri))');
     expect(androidActivity).not.toContain('if (!"https".equalsIgnoreCase(uri.getScheme())) return;');
   });
 
   it('retourne le bon provider dans les statuts autonomes Android', () => {
-    for (const provider of ['twitch', 'google']) {
-      expect(androidProviderBridge).toContain(`return status("${provider}", BuildConfig.${provider.toUpperCase()}_ANDROID_CLIENT_ID)`);
-    }
+    expect(androidProviderBridge).toContain('return status("twitch", BuildConfig.TWITCH_ANDROID_CLIENT_ID)');
+    expect(androidProviderBridge).toContain('return googleProviderStatus("google")');
+    expect(androidProviderBridge).not.toContain('return googleProviderStatus("youtube")');
+    expect(androidProviderBridge).toContain('return status(provider, BuildConfig.GOOGLE_ANDROID_CLIENT_ID)');
     expect(androidProviderBridge).toContain('urn:ietf:params:oauth:grant-type:device_code');
     expect(androidProviderBridge).not.toContain('code_verifier');
     const diagnostic = providerDiagnostic({ configured: false });
@@ -114,9 +118,12 @@ describe('Android remote runtime', () => {
     ['192.168.1.10', 'http://192.168.1.10:48132'],
     ['192.168.1.10:48132', 'http://192.168.1.10:48132'],
     ['http://192.168.1.10:48132/', 'http://192.168.1.10:48132'],
+    ['http://100.126.186.44:48133', 'http://100.126.186.44:48133'],
+    ['100.64.0.0:48133', 'http://100.64.0.0:48133'],
+    ['100.127.255.255:48133', 'http://100.127.255.255:48133'],
   ])('normalizes %s', (input, expected) => expect(normalizeServer(input)).toBe(expected));
 
-  it.each(['https://example.com', 'http://8.8.8.8', 'ftp://192.168.1.2', 'http://user:pass@192.168.1.2'])('rejects unsafe server %s', input => {
+  it.each(['https://example.com', 'http://8.8.8.8', 'http://100.63.255.255:48133', 'http://100.128.0.0:48133', 'ftp://192.168.1.2', 'http://user:pass@192.168.1.2', 'http://user:pass@100.126.186.44:48133', 'http://100.126.186.44.evil.example:48133'])('rejects unsafe server %s', input => {
     expect(() => normalizeServer(input)).toThrow();
   });
 
@@ -124,6 +131,12 @@ describe('Android remote runtime', () => {
     expect(parsePairing('streamdashboard://pair?v=1&server=http%3A%2F%2F192.168.1.2%3A48132&id=abc&code=123456')).toEqual({
       server: 'http://192.168.1.2:48132', id: 'abc', code: '123456',
     });
+  });
+
+  it('keeps a Tailscale pairing destination usable by desktop global macros', () => {
+    const pairing = parsePairing('streamdashboard://pair?v=1&server=http%3A%2F%2F100.126.186.44%3A48133&id=paired-device&code=123456');
+    expect(pairing.server).toBe('http://100.126.186.44:48133');
+    expect(normalizeServer(pairing.server)).toBe(pairing.server);
   });
 
   it.each([

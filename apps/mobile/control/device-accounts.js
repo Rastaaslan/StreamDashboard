@@ -30,7 +30,7 @@ export function nativeGoogleAccounts(status) {
 // OAuth tokens are confined to Android Keystore or the desktop secret store.
 export function createDeviceAccounts({bridge=globalThis.StreamDashboardProviders,request,modal,esc,toast,openExternal}) {
   let states={},pending,visible=false,polling=false;
-  const names={twitch:'Twitch',google:'Google Calendar',youtube:'YouTube'};
+  const names={twitch:'Twitch',google:'Google Calendar'};
   async function call(method,payload={}) {
     if(typeof bridge?.[method]!=='function')throw new Error('Cette version ne prend pas en charge la connexion sur cet appareil.');
     const value=await callDeviceBridge(bridge,method,payload);
@@ -40,17 +40,17 @@ export function createDeviceAccounts({bridge=globalThis.StreamDashboardProviders
   async function read() {
     if(bridge){
       states.twitch=await call('twitchStatus');states.google=await call('googleStatus');
-      if(typeof bridge.youtubeStatus==='function')states.youtube=await call('youtubeStatus');
-      else Object.assign(states,nativeGoogleAccounts(states.google));
+
+      Object.assign(states,nativeGoogleAccounts(states.google));
       pending=states.twitch.pending;
     }else{
-      const [state,youtube]=await Promise.all([request('/api/v1/state'),request('/api/v2/youtube')]);
-      states={twitch:state.twitch,google:state.google,youtube};pending=state.twitch.deviceAuthorization;
+      const state=await request('/api/v1/state');
+      states={twitch:state.twitch,google:state.google};pending=state.twitch.deviceAuthorization;
     }
   }
   function draw(){
-    const googleBusy=states.google?.authorizing||states.youtube?.authorizing;
-    modal(`<div data-device-accounts><h2>Comptes de cet appareil</h2><p>Connectez vos comptes ici, même si les autres appareils sont éteints. Chaque connexion reste sur cet appareil. Google Agenda et YouTube peuvent utiliser deux adresses différentes.</p>${Object.entries(names).map(([p,name])=>{const s=states[p]||{};return `<section class="panel spacer"><h3>${name}</h3><p>${s.connected?'Connecté'+(s.account?' · '+esc(s.account):''):'Non connecté'}${s.channelName?' · Chaîne : '+esc(s.channelName):''}${s.error?' · '+esc(s.error):''}</p>${s.code?`<p role="status">${esc(accountDiagnostic(s.code))} <code>${esc(s.code)}</code></p>`:''}${s.authorizing?'<p role="status">Terminez l’autorisation dans la fenêtre Google du téléphone.</p>':''}<button data-account-connect="${p}" ${s.authorizing||(bridge&&p!=='twitch'&&googleBusy)?'disabled':''}>${s.connected?(bridge&&p!=='twitch'&&typeof bridge.youtubeStatus==='function'?'Changer de compte / réautoriser':'Réautoriser'):'Connecter'}</button><button class="secondary" data-account-test="${p}">Vérifier</button>${s.connected?`<button class="secondary" data-account-logout="${p}">Déconnecter</button>`:''}</section>`;}).join('')}${pending?authorization(pending):''}<p class="small muted">Les connexions de la régie se gèrent séparément dans Configuration → Diffusion et Intégrations. La connexion à un compte ne démarre aucun live.</p><button class="secondary spacer" data-account-refresh>Actualiser les états</button></div>`);
+    const googleBusy=states.google?.authorizing;
+    modal(`<div data-device-accounts><h2>Comptes de cet appareil</h2><p>Connectez vos comptes ici, même si les autres appareils sont éteints. Chaque connexion reste sur cet appareil. Google Agenda peut utiliser une adresse distincte.</p>${Object.entries(names).map(([p,name])=>{const s=states[p]||{};return `<section class="panel spacer"><h3>${name}</h3><p>${s.connected?'Connecté'+(s.account?' · '+esc(s.account):''):'Non connecté'}${s.channelName?' · Chaîne : '+esc(s.channelName):''}${s.error?' · '+esc(s.error):''}</p>${s.code?`<p role="status">${esc(accountDiagnostic(s.code))} <code>${esc(s.code)}</code></p>`:''}${s.authorizing?'<p role="status">Terminez l’autorisation dans la fenêtre Google du téléphone.</p>':''}<button data-account-connect="${p}" ${s.authorizing||(bridge&&p!=='twitch'&&googleBusy)?'disabled':''}>${s.connected?(bridge&&p!=='twitch'&&typeof bridge.youtubeStatus==='function'?'Changer de compte / réautoriser':'Réautoriser'):'Connecter'}</button><button class="secondary" data-account-test="${p}">Vérifier</button>${s.connected?`<button class="secondary" data-account-logout="${p}">Déconnecter</button>`:''}</section>`;}).join('')}${pending?authorization(pending):''}<p class="small muted">Les connexions de la régie se gèrent séparément dans Configuration → Diffusion et Intégrations. La connexion à un compte ne démarre aucun live.</p><button class="secondary spacer" data-account-refresh>Actualiser les états</button></div>`);
   }
   function authorization(value){const url=value.url||value.authorizationUrl||value.verification_uri||value.verificationUri;let allowed=false;try{const u=new URL(url);allowed=u.protocol==='https:'&&['www.twitch.tv','twitch.tv','accounts.google.com'].includes(u.hostname)&&!u.username&&!u.password;}catch{}
     return `<section class="panel spacer"><h3>Autorisation sur cet appareil</h3><p>${esc(value.user_code||value.userCode||'Terminez la connexion dans le navigateur de cet appareil.')}</p>${allowed?`<a href="${esc(url)}" target="_blank" rel="noopener">Ouvrir l’autorisation ↗</a>`:''}</section>`;

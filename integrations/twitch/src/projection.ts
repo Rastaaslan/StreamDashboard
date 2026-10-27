@@ -57,7 +57,7 @@ export async function resolveTwitchOccurrenceConflict(
       event = { ...event, ...patch };
     }
     entry.event = event;
-    entry.appliedContent = projectionContent(event);
+    entry.appliedContent = projectionContent(event, 'twitch');
     entry.status = 'synced'; entry.deletedRemotely = false;
     entry.lastSyncedAt = new Date().toISOString(); delete entry.lastError;
     summarizeProjection(item, 'twitch');

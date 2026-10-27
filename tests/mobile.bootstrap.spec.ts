@@ -12,10 +12,11 @@ test('le bootstrap mobile réel reste navigable lorsque REST est indisponible', 
       env: { ...process.env, NODE_ENV: 'test', APPDATA: profile, XDG_CONFIG_HOME: profile },
     });
     const page = await application.firstWindow();
-    await expect(page.locator('#runtime-status')).toHaveText('Runtime PC');
+    await expect(page).toHaveURL('http://127.0.0.1:48133/mobile/control/', { timeout: 30_000 });
+    await expect(page.locator('#connection')).toContainText('Régie connectée');
     const origin = await page.evaluate(() => location.origin);
-    // Leave the Desktop renderer before simulating a total REST outage. Otherwise an
-    // in-flight Desktop refresh can observe the intentional route abort and pollute
+    // Leave the production controller before simulating a total REST outage. Otherwise an
+    // in-flight controller refresh can observe the intentional route abort and pollute
     // this mobile-only bootstrap assertion with an unrelated pageerror.
     await page.goto('about:blank');
     const runtimeErrors: string[] = [];

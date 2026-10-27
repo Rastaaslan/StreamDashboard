@@ -1,61 +1,184 @@
+import {createLazyTask,createLazyPlanning} from './lazy-features.js';
+import {createSpotifyPanel} from './spotify-panel.js';
+import {createDjiMic3BatteryPanel} from './dji-battery-panel.js';
+import {djiRelayTarget} from './dji-relay-target.js';
+import {createDjiBatteryWarningTracker} from './dji-battery-warnings.js';
+import {createMobilePanes,MOBILE_PANES} from './mobile-panes.js';
+import {createFloatingMicBattery} from './floating-mic-battery.js';
+import {arrangeMobileLivePanes} from './mobile-live-layout.js';
+import {renderMobileSoundboard} from './mobile-soundboard-pane.js';
+import {ACTIONS,OUTCOME_LABELS} from '../shared/action-registry.js';
+import {randomUuid} from '../shared/uuid.js';
+import {renderSettings} from './settings-view.js';
+import {replaceMarkup, editingForm, createDraftWriter} from './render-policy.js';
+import {configurationTransferSupport} from '../shared/configuration-transfer.js';
+import {createExecutorSync} from './executor-sync.js';
+import {createDeviceExecutor, createExecutorBridge} from './device-executor.js';
+import {uploadSound} from './sound-transfer.js';
+import {createDiscoveryUI} from './discovery-ui.js';
+import {exportJSON} from './export-json.js';
+import {createLocalSoundLibrary,uploadLocalSound} from './local-sound-library.js';
+import {createPeerRequest, fingerprint} from './peer-request.js';
+import { createDevicePermissionsUI } from './device-permissions-ui.js';
+import { createActionRouter } from './action-routing.js';
+import { createActionRoutingUI } from './action-routing-ui.js';
+import { resolveCapability, deviceRoleAvailable } from '../shared/installation.js';
+import { createInstallationUI } from './installation-ui.js';
 import { LOCAL_SCOPE, readDevice, saveDevice, newWorkspace } from './device-workspace.js';
 import { openReplica } from './autonomy-store.js';
+import { linkReplicaEndpoint } from './replica-identity.js';
 import { createDeviceServices } from './device-services.js';
+import { createDeviceAudio } from './device-audio.js';
+import { createNativeDeviceAudio } from './native-device-audio.js';
 import { createDeviceProviders } from './device-providers.js';
-import { createLocalPlanning } from './local-planning.js';
 import { createDeviceAccounts } from './device-accounts.js';
 import { createAutonomy } from './autonomy.js';
 import { resources } from '../shared/autonomy.js';
 import { createWizebotManagement } from './wizebot.js';
-import { credentialStorage } from '../storage.js';
+import { createDeviceCredentials } from './device-credentials.js';
 import { createLiveMonitor } from './live-monitor.js';
-import { createStreamlabsFeed } from './streamlabs-feed.js';
+import { createTwitchCategoryPicker } from './twitch-category-picker.js';
+import { liveControlState } from './live-controls.js';
+import { createControllerBindings, isTemporaryControllerFailure, controllerConfigurationError } from './controller-bindings.js';
+import { createStreamlabsFeed, createStreamlabsConfiguration } from './streamlabs-feed.js';
 import { createPlanning } from './planning.js';
-let streamlabsFeed, streamlabsFeedRoot, streamlabsConfigTarget, liveMonitor, autonomy, localPlanning, deviceProviders, deviceServices, dialogBase, submittingBase, storageError='';
+import { deckActionMarkup } from './deck-action-markup.js';
+import { readDeckPreferences, saveDeckPreferences, defaultDeckFavorites, renderPerformancePage } from './performance-ui.js';
+let streamlabsFeed, streamlabsFeedRoot, liveMonitor, autonomy, localPlanning, deviceProviders, deviceServices, deviceAudio, dialogBase, submittingBase, storageError='', spotifyPanel, djiBatteryPanel;
 const formBases=new WeakMap();
+const metadataDrafts=createDraftWriter({onError:error=>toast(error.message)});
+const controllerBindings=createControllerBindings();
+let macroContextChanging=0,macroConfigurationGeneration=0,macroConfigurationError='';
+let storageUI;
+const twitchGameNames=new Map();
 
 const $ = selector => document.querySelector(selector);
 const esc = value => String(value ?? '').replace(/[&<>"']/g, char => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[char]));
-const uuid = () => globalThis.crypto?.randomUUID?.() ?? `req_${Date.now()}_${Math.random().toString(36).slice(2)}`;
-const labels = {running:'En cours',succeeded:'Réussi',failed:'Échec',partial:'Partiel',uncertain:'À vérifier'};
-const icons = {'mic.toggle':'♩','mode.set':'▣','scene.set':'▣','timer.add':'+','sound.play':'♫','sound.stop':'■','alert.play':'✦','chat.send':'↗','wizebot.command':'✉','replay.save':'✂','replay.start':'▶','replay.stop':'■','live.start':'◉','live.stop':'■'};
-const compact=Boolean(globalThis.StreamDashboardNative)||matchMedia('(max-width:700px)').matches;
-if(compact&&!localStorage.getItem('sd2.performance-first')){localStorage.setItem('sd2.page','deck');localStorage.setItem('sd2.performance-first','1');}
-let data, sounds, replay, soundError='', soundCategory='', deckCategory='all', online=false, page=localStorage.getItem('sd2.page') || (compact?'deck':'live'), tab='obs', busy=false, refreshFlight, pointerHeld=false, configurationDraft, profileDraft, noticeTimer;
+const uuid = randomUuid;
+const labels = OUTCOME_LABELS;
+const icons = Object.fromEntries(Object.entries(ACTIONS).map(([type,value])=>[type,value.icon]));
 const native=Boolean(globalThis.StreamDashboardNative);
+const compactViewport=matchMedia('(max-width:700px), (pointer:coarse) and (max-width:1100px)');
+let compact=native||compactViewport.matches;
+document.documentElement.classList.toggle('compact-app',compact);
+document.documentElement.classList.toggle('simple-nav',localStorage.getItem('sd2.navigation')!=='classic');
+if(compact&&!localStorage.getItem('sd2.performance-first')){localStorage.setItem('sd2.page','deck');localStorage.setItem('sd2.performance-first','1');}
+if(compact&&!localStorage.getItem('sd2.live-deck-intro')){localStorage.setItem('sd2.page','deck');localStorage.setItem('sd2.live-deck-intro','1');}
+if(compact&&!localStorage.getItem('sd2.twitch-simple-home')){localStorage.setItem('sd2.page','live');localStorage.setItem('sd2.twitch-simple-home','1');}
+let data, sounds, replay, soundError='', soundCategory='', deckCategory='all', online=false, page=localStorage.getItem('sd2.page') || (compact?'deck':'live'), tab='obs', busy=false, refreshFlight, pointerHeld=false, configurationDraft, profileDraft, noticeTimer;
+let deckScope, deckPreferences, deckEditing=false, deckEditBank='all', activeCommands=0;
 const clientRole=new URL(location.href).searchParams.get('role')==='client';
 let device=readDevice(localStorage,native);
 const desktopProfile=await globalThis.streamDashboardDesktop?.getDeviceProfile?.();
 if(desktopProfile){device={...device,...desktopProfile,name:desktopProfile.name||device.name};if(device.configured)device=saveDevice(device);}
 const localEndpoint=globalThis.streamDashboardDesktop?`http://127.0.0.1:${clientRole?48135:48133}`:'';
-const workspaceEndpoint=clientRole?'':localEndpoint;
+const installationProfile=await globalThis.streamDashboardDesktop?.getInstallation?.();
+const localObs=installationProfile?.devices.find(d=>d.id===installationProfile.localDeviceId)?.roles.includes('obs-executor');
+// Keep the original data workspace reachable even when the OBS role changes.
+const workspaceEndpoint=installationProfile?(installationProfile.runtimeProfile==='root'?localEndpoint:''):(clientRole?'':localEndpoint);
 const firstUse=!device.configured&&!localStorage.getItem('sd2.server');
 if(firstUse&&(native||clientRole))page='manage';
 let server=localStorage.getItem('sd2.workspace-mode')==='local'?(workspaceEndpoint||''):(localStorage.getItem('sd2.server') || workspaceEndpoint || (native || clientRole ? '' : location.origin));
-const credentials={ get:()=>globalThis.streamDashboardDesktop?.getControllerCredential?.() ?? credentialStorage.get(), set:value=>globalThis.streamDashboardDesktop?.setControllerCredential?.(value) ?? credentialStorage.set(value), clear:()=>globalThis.streamDashboardDesktop?.setControllerCredential?.('') ?? credentialStorage.clear() };
-let credential=await credentials.get();
+if(installationProfile?.routes.obs===installationProfile?.localDeviceId&&localObs&&localStorage.getItem('sd2.workspace-mode')!=='local')server=localEndpoint;
+const peers=createPeerRequest();
+const credentials=createDeviceCredentials();
+let credential=await credentials.initialize();
 const dialog=$('#dialog');
 function toast(message) { $('#notice').textContent=message; $('#notice').style.display='block'; clearTimeout(noticeTimer);noticeTimer=setTimeout(()=>{$('#notice').style.display='none';},7000); }
 function normalizeServer(value) { const url=new URL(value);if(!['http:','https:'].includes(url.protocol)||url.username||url.password)throw new Error('Adresse HTTP du PC de stream attendue.'); return url.origin; }
+function soundDestinationId(){const current=installationUI.current,id=server===localEndpoint?current.localDeviceId:current.devices.find(value=>value.endpoint===server)?.id;return id?.startsWith('legacy-')?undefined:id;}
 async function network(path, body, method=body===undefined?'GET':'POST',target=server,token=target===localEndpoint?'':credential) {
   if(!target)throw new Error('Renseignez l’adresse du PC de stream.');
-  const response=await fetch(target+path,{method,headers:{...(token?{Authorization:`Device ${token}`} : {}),...(body!==undefined?{'Content-Type':'application/json'}:{})},...(body!==undefined?{body:JSON.stringify(body)}:{}),signal:AbortSignal.timeout(path==='/api/v2/actions'||path.startsWith('/api/v2/wizebot/')||path==='/api/v2/autonomy/sync'?65_000:8_000)});
+  let response;
+  try{response=await peers.request(target+path,{method,token,body,timeoutMs:(path==='/api/v2/actions'||path==='/api/v2/sounds/export')?120_000:path.startsWith('/api/v2/wizebot/')||path.startsWith('/api/v2/youtube/')||path==='/api/v2/autonomy/sync'?65_000:path.startsWith('/api/v1/streamlabs/events')||path.startsWith('/api/v1/supports/streamlabs/history/')?20_000:8_000});}
+  catch(cause){const error=new Error(cause?.message||'Connexion à la régie interrompue ou délai dépassé.',{cause});error.transportUnavailable=true;throw error;}
   if(response.status===204)return {};
-  const value=await response.json();
+  let value;
+  try{value=await response.json();}catch(cause){const error=new Error(response.ok?'Réponse invalide de la régie.':`Erreur ${response.status}`,{cause});error.status=response.status;error.transportUnavailable=cause instanceof TypeError||['AbortError','TimeoutError'].includes(cause?.name);throw error;}
   if(!response.ok) { const error=new Error(value.error?.message || value.error || `Erreur ${response.status}`); error.status=response.status;error.body=value;throw error; }
   return value;
 }
-async function openLocal(){
- const target=server,token=target===localEndpoint?'':credential;
- await Promise.all([localPlanning?.wait(),deviceServices?.wait()]);localPlanning=undefined;deviceServices=undefined;autonomy?.store.close();
- try{autonomy=await createAutonomy(target||LOCAL_SCOPE,(p,b,m)=>network(p,b,m,target,token),bundle=>{if(autonomy?.store.view()&&bundle){data=bundle.data;sounds=bundle.sounds;}});if(!target){await autonomy.store.seed(newWorkspace(device));deviceServices=createDeviceServices({store:autonomy.store,autonomy,request:(p,b,m)=>network(p,b,m,localEndpoint,'')});deviceProviders=createDeviceProviders({request:(p,b,m)=>network(p,b,m,localEndpoint,''),getCalendar:()=>autonomy.store.view().extras.google.calendarId});localPlanning=createLocalPlanning({store:autonomy.store,providers:deviceProviders,onChange:()=>{const b=autonomy.store.view();data=b.data;sounds=b.sounds;shell();}});}const bundle=autonomy.store.view();data=bundle?.data;sounds=bundle?.sounds;storageError='';}
- catch(e){storageError=e.message;autonomy=undefined;}
+function applyWorkspaceBundle(bundle){
+ if(!bundle)return;
+ const local=!server,record=autonomy?.store.record;
+ data=local?{...bundle.data,metadataResults:record?.drafts.metadataResults||bundle.data.metadataResults,receipts:record?.drafts.deviceReceipts||bundle.data.receipts,
+  host:{...bundle.data.host,chat:record?.drafts.deviceChat||bundle.data.host.chat}}:bundle.data;
+ sounds=local&&deviceAudio?deviceAudio.snapshot(bundle.sounds):bundle.sounds;
 }
-function commandsBlocked(){return Boolean(server&&autonomy?.store.record.pending.some(op=>/^(action|settings|output|youtube|sound)\//.test(op.key)));}
-function configureMacros(){return globalThis.streamDashboardDesktop?.configureController?.({server,credential,actions:online&&!commandsBlocked()?(autonomy?.store.record.bundle?.data.configuration.actions||[]):[]}).catch(()=>{});}
+let localRuntime,localRuntimeFlight;
+async function getLocalRuntime(){
+ if(localRuntime)return localRuntime;
+ if(localRuntimeFlight)return localRuntimeFlight;
+ localRuntimeFlight=(async()=>{
+  const owner=await createAutonomy(LOCAL_SCOPE,()=>{throw new Error('Espace propre à cet appareil.');},bundle=>{if(autonomy===owner&&bundle)applyWorkspaceBundle(bundle);});
+  await owner.store.seed(newWorkspace(device));
+  const services=createDeviceServices({store:owner.store,autonomy:owner,enabled:localCapabilityEnabled,request:(p,b,m)=>network(p,b,m,localEndpoint,'')});
+  const providers=createDeviceProviders({enabled:localCapabilityEnabled,request:(p,b,m)=>network(p,b,m,localEndpoint,''),getCalendar:()=>owner.store.view().extras.google.calendarId});
+  const audioOptions={store:owner.store,onChange:()=>{if(autonomy!==owner||server||macroContextChanging)return;applyWorkspaceBundle(owner.store.view());if(!dialog.open)render();else shell();},onError:message=>{if(autonomy===owner&&!server)toast(message);}};
+  const audio=globalThis.streamDashboardDesktop?.autonomousRequest?createNativeDeviceAudio({...audioOptions,bridge:globalThis.streamDashboardDesktop}):createDeviceAudio(audioOptions);
+  try{await audio.refresh?.();}catch(error){owner.store.close();throw error;}
+  const planning=createLazyPlanning({store:owner.store,providers,onChange:()=>{if(autonomy===owner){applyWorkspaceBundle(owner.store.view());shell();}}});
+  return localRuntime={owner,services,providers,audio,planning};
+ })().finally(()=>{localRuntimeFlight=undefined;});
+ return localRuntimeFlight;
+}
+async function openLocal(){
+ await metadataDrafts.flush();
+ try{await deviceAudio?.stop();}catch(error){toast('Arrêt du son non confirmé : '+error.message);}
+ const target=server,token=target===localEndpoint?'':credential;
+ await Promise.all([localPlanning?.wait(),deviceServices?.wait()]);
+ if(autonomy&&autonomy!==localRuntime?.owner)autonomy.store.close();
+ localPlanning=undefined;deviceServices=undefined;deviceProviders=undefined;deviceAudio=undefined;
+ autonomy=undefined;data=undefined;sounds=undefined;replay=undefined;
+ try{
+  if(!target){
+   const runtime=await getLocalRuntime();autonomy=runtime.owner;deviceServices=runtime.services;deviceProviders=runtime.providers;deviceAudio=runtime.audio;localPlanning=runtime.planning;
+   await autonomy.store.reload();await deviceAudio.refresh?.();
+  }else{
+   let owner;owner=await createAutonomy(target,(p,b,m)=>network(p,b,m,target,token),bundle=>{if(owner&&autonomy===owner&&bundle)applyWorkspaceBundle(bundle);});autonomy=owner;
+  }
+  applyWorkspaceBundle(autonomy.store.view());storageError='';
+ }catch(e){storageError=e.message;if(autonomy&&autonomy!==localRuntime?.owner)autonomy.store.close();autonomy=undefined;data=undefined;sounds=undefined;}
+}
+function localCapabilityEnabled(capability){const current=installationUI.current;return deviceRoleAvailable(current.devices.find(d=>d.id===current.localDeviceId),capability);}
+function commandsBlocked(){return macroContextChanging>0||Boolean(server&&autonomy?.store.record.pending.some(op=>/^(action|settings|output|youtube|sound)\//.test(op.key)));}
+async function configureMacros({synchronized=false,suspend=false,required=false}={}){
+ const bridge=globalThis.streamDashboardDesktop;if(!bridge?.configureController)return;
+ const generation=++macroConfigurationGeneration;
+ const localWorkspace=!server&&bridge.autonomousRequest?autonomy?.store.record.workspace:undefined;
+ let localFailure,identityChanged=false,actions=autonomy?.store.record.bundle?.data.configuration.actions||[];
+ if(localWorkspace&&!suspend&&!commandsBlocked()){
+  try{
+   const confirmed=await bridge.autonomousRequest('state');
+   if(confirmed.workspace!==localWorkspace){identityChanged=true;throw new Error('Identité de l’espace autonome différente.');}
+   actions=confirmed.actions;synchronized=true;
+  }catch(error){localFailure=error;synchronized=false;}
+ }
+ if(generation!==macroConfigurationGeneration)return;
+ const configuration=controllerBindings({server,credential:localWorkspace?'':credential,localWorkspace,actions,synchronized,suspended:suspend||commandsBlocked()||identityChanged});
+ // Explicit destinations survive loss of the active workspace. Tokens remain
+ // in the native encrypted binding store and never enter installation JSON.
+ configuration.actions=configuration.actions.filter(a=>!actionRouter.binding(a));
+ if(!suspend&&!commandsBlocked()){
+  for(const action of data?.configuration.actions||[]){
+   const route=actionRouter.binding(action);if(!route||!action.shortcut)continue;
+   const target=installationUI.current.devices.find(d=>d.id===route.deviceId);
+   if(!target?.enabled)continue;
+   const origin=target.id===installationUI.current.localDeviceId?localEndpoint:target.endpoint;
+   if(!origin)continue;
+   let token='';try{token=origin===localEndpoint?'':await credentials.get(origin);}catch{continue;}if(!token&&origin!==localEndpoint)continue;
+   configuration.actions=configuration.actions.filter(a=>a.id!==action.id);configuration.actions.push(action);
+   (configuration.destinations??={})[action.id]={server:origin,credential:token,deviceId:target.id,definition:route.definition};
+  }
+ }
+ if(generation!==macroConfigurationGeneration)return;
+ try{const result=await bridge.configureController(configuration);if(localFailure)throw localFailure;if(generation===macroConfigurationGeneration){const previous=macroConfigurationError;macroConfigurationError='';if(previous&&$('#shortcut-status'))$('#shortcut-status').textContent='Configuration des raccourcis rétablie.';}return result;}
+ catch(error){if(generation===macroConfigurationGeneration){const message=controllerConfigurationError(error,configuration.credential),changed=message!==macroConfigurationError;macroConfigurationError=message;if($('#shortcut-status'))$('#shortcut-status').textContent=message;if(changed)toast(message);}if(required)throw new Error(controllerConfigurationError(error,configuration.credential));return undefined;}
+}
 async function api(path,body,method=body===undefined?'GET':'POST'){
- if(commandsBlocked()&&['/api/v2/actions','/api/v1/commands'].includes(path))throw new Error('Synchronisez ou résolvez les réglages en attente avant de déclencher une commande.');
+ if(commandsBlocked()&&!(path==='/api/v2/actions'&&body?.action==='sound.stop'&&!macroContextChanging)&&['/api/v2/actions','/api/v1/commands'].includes(path))throw new Error('Synchronisez ou résolvez les réglages en attente avant de déclencher une commande.');
  if(path==='/api/v2/settings'&&(body?.obsPassword||body?.clearObsPassword)&&online){if(autonomy?.store.record.pending.length)throw new Error('Synchronisez les modifications en attente avant de changer le mot de passe OBS.');return network(path,body,method);}
+ if(native&&!server&&path.startsWith('/api/v1/automations')&&method!=='GET')throw new Error('Les automatisations nécessitent une régie associée. Aucun moteur ne les exécute sur cet Android.');
  if(deviceServices){const result=await deviceServices.route(path,body,method);if(result!==undefined)return result;}
  if(localPlanning){const result=await localPlanning.route(path,body,method,submittingBase||(dialog.open?dialogBase:undefined));if(result!==undefined)return result;}
  if(autonomy){
@@ -70,133 +193,647 @@ function syncDialog(){
  const record=autonomy?.store.record;
  modal(`<h2>Synchronisation de cet appareil</h2><p>${esc(storageError||autonomy?.lastError||localSaveMessage())}</p><p class="small">Dernière connexion : ${record?.lastSync?new Date(record.lastSync).toLocaleString('fr-FR'):'aucune'}. Les données restent disponibles après fermeture de l’application.</p>${server?'<button data-task="sync-now">Synchroniser maintenant</button>':'<button data-task="connection">Associer une régie</button>'}<button class="secondary" data-task="sync-export">Exporter ma copie locale</button>${(record?.pending||[]).filter((x,i,all)=>all.findIndex(v=>v.key===x.key)===i).map(op=>{const last=record.pending.filter(x=>x.key===op.key).at(-1);return `<section class="panel spacer"><b>${esc(op.key)}</b><p>${esc(op.issue?.message||'En attente de connexion')}</p>${op.issue?`<p>Champs : ${esc(op.issue.fields?.join(', ')||'élément complet')}</p><div class="form-grid"><label>Ma version<textarea readonly rows="6">${esc(JSON.stringify(last.value,null,2))}</textarea></label><label>Version de la régie<textarea readonly rows="6">${esc(JSON.stringify(resources(record.bundle)[op.key]??null,null,2))}</textarea></label></div><button data-sync-keep="${esc(op.key)}">Conserver ma version</button><button class="secondary" data-sync-remote="${esc(op.key)}">Utiliser la version de la régie</button>`:''}</section>`;}).join('')}`);
 }
+const djiBatteryWarningTracker=createDjiBatteryWarningTracker();
 function shell() {
+  const active=online&&data?.host?.state?.obs?.streaming===true;
+  // The OBS silence toast is permanently retired: it caused false alarms
+  // with Voicemeeter and filters. DJI raw gauge warnings remain separate.
+  const warnings=djiBatteryWarningTracker.check({
+    streaming:active,relay:online?data?.host?.djiBatteryRelay:null,
+  });
+  for(const warning of warnings){
+    toast(warning.message);
+    globalThis.StreamDashboardNative?.haptic?.('heavy');
+    // Native Windows notifications remain visible when the cockpit is
+    // minimized. Only the allowlisted warning code crosses the IPC bridge.
+    if(typeof globalThis.streamDashboardDesktop?.notifyDjiWarning==='function')
+      void globalThis.streamDashboardDesktop.notifyDjiWarning(warning.code)
+        .catch(()=>undefined);
+  }
+  document.body.classList.toggle('performance-mode',Boolean(compact&&data&&['deck','sounds'].includes(page)));
+  document.body.classList.toggle('live-page',Boolean(data&&page==='live'));
+  document.body.classList.toggle('activity-page',Boolean(data&&page==='activity'));
   const toggle=$('#workspace-toggle');toggle.textContent=server?'Mon espace':localStorage.getItem('sd2.server')?'Ma régie':'Appareil autonome';toggle.dataset.task=server?'use-local':localStorage.getItem('sd2.server')?'use-paired':'device-setup';
-  $('.aside-foot small').textContent=server?'Exécution sur le PC de stream':'Comptes et données sur cet appareil';
-  $('nav').querySelectorAll('button').forEach(button=>button.classList.toggle('active',button.dataset.page===page||(button.dataset.page==='manage'&&['planning','settings','actions'].includes(page))));
+  $('.aside-foot small').textContent=server?'Exécution sur '+(data?.host.hostname||'l’appareil associé'):'Comptes et données sur cet appareil';
+  const simple=compact&&localStorage.getItem('sd2.navigation')!=='classic';
+  const navigationPage=simple?({sounds:'deck',activity:'live',manage:'settings',actions:'settings'}[page]||page):page;
+  $('nav').querySelectorAll('button').forEach(button=>button.classList.toggle('active',button.dataset.page===navigationPage||(!simple&&compact&&button.dataset.page==='manage'&&['planning','settings','actions'].includes(page))));
   $('#host-dot').classList.toggle('online',online);$('#host-name').textContent=data?.host.hostname || 'PC de stream';
   $('#role').textContent=({stream:'RÉGIE DE STREAM',control:'PILOTAGE',mobile:'STREAM DECK'})[device.role]+' · '+device.name;
   $('.brand small').textContent=data?.host.settings.streamerName||'VOTRE ESPACE';
   const count=autonomy?.store.record.pending.length||0,issues=autonomy?.store.record.pending.filter(x=>x.issue).length||0;
-  $('#connection').textContent=storageError||`${!server?'Espace de cet appareil':online?'Régie connectée':'Mode local · commandes suspendues'} · ${issues?issues+' modification(s) à résoudre':count?(server?count+' modification(s) en attente':'données sauvegardées localement'):'copie locale à jour'}`;
+  $('#connection').textContent=storageError||`${!server?'Espace de cet appareil':online?'Régie connectée':globalThis.streamDashboardDesktop?'Régie non confirmée · boutons suspendus':'Mode local · commandes suspendues'} · ${issues?issues+' modification(s) à résoudre':count?(server?count+' modification(s) en attente':'données sauvegardées localement'):'copie locale à jour'}`;
   $('#sync-status').textContent=issues?'Résoudre les conflits':count?'Synchronisation ('+count+')':'Synchronisation';
 }
+function actionAvailability(action){
+ const routed=actionRouter?.status(action);if(routed)return routed;
+ if(!server && action.type.startsWith('sound.') && action.type!=='sound.stop') { const current=installationUI.current;return resolveCapability(current,'audio',{[current.localDeviceId]:{connected:true}},current.localDeviceId); }
+ if(!server||!(/^(mic|scene|mode|replay|live|timer|alert|sound)\./.test(action.type)))return null;
+ const installation=installationUI.current;
+ const target=server===localEndpoint?installation.devices.find(d=>d.id===installation.localDeviceId):installation.devices.find(d=>d.endpoint===server);
+ if(!target)return null; // An RC11.7 association is still checked by the executor until its registry migration.
+ const sound=action.type.startsWith('sound.')?sounds?.sounds?.find(s=>s.id===(action.value||sounds?.currentPlayback?.soundId)):undefined;
+ const localAudio=target.platform==='android'||sounds?.localPlayback===true||sound?.outputId==='device-default'||sound?.outputId?.startsWith('device:');
+ return resolveCapability(installation,action.type.startsWith('replay.')?'clips':localAudio?'audio':'obs',{[target.id]:{connected:online,obsConnected:data?.host.state.obs.connected===true}},target.id);
+}
 function actionState(action) {
+ const routed=actionRouter?.status(action);if(routed)return routed.status==='available'?'Sur '+routed.name:routed.status==='unknown'?'Vérifier · '+routed.name:routed.message+' · '+routed.name;
+ const availability=actionAvailability(action);if(availability&&availability.status!=='available')return availability.message;
+ if(!server&&deviceAudio){
+  if(action.type==='sound.stop')return sounds?.currentPlayback?'Arrêter la lecture locale':'Aucun son en cours';
+  if(action.type==='sound.play')return sounds?.currentPlayback?.soundId===action.value?(sounds.currentPlayback.status==='starting'?'Chargement du son':'Lecture sur cet appareil'):'Jouer sur cet appareil';
+  if(action.type==='wizebot.command')return action.value+' · compte Twitch de cet appareil';
+  return 'Régie nécessaire';
+ }
  if(!online)return 'Régie déconnectée';
  const obs=data.host.state.obs;
  if(action.type==='replay.save')return replay?.active?`Dernières ${replay.seconds} s`:'Tampon à préparer';
  if(action.type==='wizebot.command')return action.value+(data.host.chat?.connected&&data.host.chat?.canSend?'':' · Twitch à reconnecter');
  if(action.type==='mic.toggle'){const mic=action.value||data.host.settings.primaryMicInput;return obs.connected&&obs.inputs[mic]?(obs.inputs[mic].muted?'Micro coupé':'Micro ouvert'):'Micro non confirmé';}
  if(action.type==='sound.stop')return sounds?.currentPlayback?'Lecture en cours':'Aucun son en cours';
- if(action.type==='sound.play')return sounds?.currentPlayback?.soundId===action.value?'Lecture en cours':'Jouer sur OBS';
+ if(action.type==='sound.play')return sounds?.currentPlayback?.soundId===action.value?'Lecture en cours':sounds?.sounds?.find(s=>s.id===action.value)?.outputId==='obs'?'Jouer sur OBS':'Jouer sur cet appareil';
  if(action.type==='scene.set'||action.type==='mode.set'){const target=action.type==='scene.set'?action.value:action.value==='chatting'?data.host.settings.chattingScene:data.host.settings.modeScenes[action.value];return obs.connected&&obs.scene===target?'À l’écran':target||'Scène à configurer';}
  return 'PC de stream';
 }
-function actionButton(action) {return `<button data-action="${esc(action.id)}" class="${esc(action.color)} ${actionState(action)==='À l’écran'||actionState(action)==='Lecture en cours'?'pad-active':''}" ${!online||busy||(action.type==='wizebot.command'&&(!data.host.chat?.connected||!data.host.chat?.canSend))?'disabled':''}><span>${icons[action.type]||'◇'}</span>${esc(action.label)}<small>${esc(actionState(action))}${action.shortcut?' · '+esc(action.shortcut.replace('Control+Alt+Shift+','M / ')):''}</small></button>`;}
-function resultRows() {const receipts=(data?.receipts||[]).slice(-5).reverse();return receipts.length?receipts.map(r=>`<div class="receipt"><div><b>${esc(data.configuration.actions.find(a=>a.id===r.action)?.label || ({'live.start':'Lancer le live','live.stop':'Arrêter le live','metadata.apply':'Informations du live','metadata.retry':'Reprise des informations','sound.play':'Lecture audio','sound.stop':'Arrêter le son','replay.save':'Sauvegarder un clip','replay.start':'Préparer les clips','replay.stop':'Arrêter le tampon'}[r.action]??r.action))}</b><p>${esc(r.message)}</p>${Object.entries(r.platforms||{}).map(([p,v])=>`<p><b>${esc(p)}</b> · ${esc(v.message)} ${v.status!=='succeeded'?`<button class="secondary" data-retry="${esc(r.action)}" data-platform="${p}">Reprendre ${p}</button>`:''}</p>`).join('')}</div><span class="result ${r.status}">${labels[r.status]}<p>${new Date(r.createdAt).toLocaleTimeString('fr-FR',{hour:'2-digit',minute:'2-digit'})}</p></span></div>`).join(''):'<p class="empty">Les résultats de vos actions apparaîtront ici.</p>';}
-function platformCard(name,label,icon) {const p=data.host.platforms[name], s=data.host.state;const text=!online?'État inconnu · régie déconnectée':name==='obs'?(s.obs.connected?'Connecté à OBS':'OBS indisponible'):p?.live===true?'En direct confirmé':p?.live===false?'Hors ligne confirmé':p?.error || 'État non vérifié';return `<div class="panel status-card"><span class="platform-icon ${name==='youtube'?'yt':name}">${icon}</span><div><b>${label}</b><small class="${p?.live?'succeeded':''}">${esc(text)}</small></div></div>`;}
+function actionDisabled(action){
+ const routed=actionRouter?.status(action);if(routed)return (busy&&routed.route.definition.type!=='sound.stop')||(routed.status==='unavailable'&&!['offline'].includes(routed.reason));
+ const availability=actionAvailability(action);if(availability&&availability.status!=='available')return true;
+ if(busy&&!['sound.stop','live.stop'].includes(action.type))return true;
+ if(!server&&deviceAudio){
+  if(action.type==='sound.stop')return !sounds?.currentPlayback;
+  if(action.type==='sound.play'){const sound=sounds?.sounds?.find(item=>item.id===action.value);return !sound?.enabled||!sound?.sourceAvailable;}
+  if(action.type==='wizebot.command')return false;
+  return true;
+ }
+ return !online||(action.type==='live.start'&&!liveControlState(data,online).canStartBoth)||(action.type==='wizebot.command'&&(!data.host.chat?.connected||!data.host.chat?.canSend));
+}
+function actionButton(action) {
+ const rawState=String(actionState(action)||'').trim();
+ const label=String(action.label||'').trim();
+ const icon=icons[action.type]||'◇';
+ const content=deckActionMarkup({label,status:rawState,shortcut:action.shortcut||'',icon});
+ const active=rawState==='À l’écran'||rawState==='Lecture en cours';
+ return `<button type="button" data-action="${esc(action.id)}" class="sd-action-pad ${esc(action.color)} ${active?'pad-active':''}" ${actionDisabled(action)?'disabled':''}>${content}</button>`;
+}
+function resultRows() {const receipts=(data?.receipts||[]).slice(-5).reverse();return receipts.length?receipts.map(r=>`<div class="receipt"><div><b>${esc(data.configuration.actions.find(a=>a.id===r.action)?.label || ({'live.start':'Lancer le live','live.stop':'Arrêter le live','metadata.apply':'Informations du live','metadata.retry':'Reprise des informations','sound.play':'Lecture audio','sound.stop':'Arrêter le son','replay.save':'Sauvegarder un clip','replay.start':'Préparer les clips','replay.stop':'Arrêter le tampon'}[r.action]??r.action))}</b><p>${esc(r.message)}</p>${Object.entries(r.platforms||{}).map(([p,v])=>`<p><b>${esc(p)}</b> · ${esc(v.message)} ${v.status!=='succeeded'&&canRetryPlatform(r,p)?`<button class="secondary" data-retry="${esc(r.action)}" data-platform="${p}">Reprendre ${p}</button>`:''}</p>`).join('')}</div><span class="result ${r.status}">${labels[r.status]}<p>${new Date(r.createdAt).toLocaleTimeString('fr-FR',{hour:'2-digit',minute:'2-digit'})}</p></span></div>`).join(''):'<p class="empty">Les résultats de vos actions apparaîtront ici.</p>';}
+function platformCard(name,label,icon) {const live=liveControlState(data,online),p=live.destinations[name],s=data.host.state;const text=!online?'État inconnu · régie déconnectée':name==='obs'?(!s.obs.connected?'OBS indisponible':s.obs.streamingKnown===false?'État de sortie inconnu':s.obs.streaming?'Sortie principale en émission':'OBS connecté · principale arrêtée'):p.live===true?'En direct confirmé':p.active===true?'OBS émet · confirmation du live attendue':p.live===false?'Hors ligne confirmé':p.error || 'État non vérifié';return `<div class="panel status-card"><span class="platform-icon ${name==='youtube'?'yt':name}">${icon}</span><div><b>${label}</b><small class="${p?.live?'succeeded':''}">${esc(text)}</small></div></div>`;}
+function compactLivePage(){
+ const state=data.host.state,live=liveControlState(data,online);
+ const obs=state.obs||{},mic=data.host.settings.primaryMicInput||'';
+ const input=obs.inputs?.[mic],lastStop=(data.receipts||[]).filter(r=>r.action==='live.stop').at(-1);
+ const running=live.anyActive===true,unknown=live.unconfirmed===true;
+ const status=!online?'Régie hors ligne':running?'Diffusion en cours':unknown?'État du live à vérifier':'Prêt à diffuser';
+ const micHealth=data.host.micHealth||{};
+ // Windows alpha23 still transmits the retired (unreliable) OBS 'quiet'
+ // state. Keep the actual OBS mute/missing-source information, not its alert.
+ const oldSilenceFlag=micHealth.state==='quiet';
+ const micStatus=(oldSilenceFlag?null:micHealth.warning)||(!obs.connected?'OBS déconnecté':!mic?'Sélectionnez le micro dans Réglages':!input?'Source micro introuvable dans OBS':input.muted?'Micro coupé dans OBS':'Source micro présente dans OBS');
+ const micWarn=(!oldSilenceFlag&&Boolean(micHealth.warning))||!obs.connected||!mic||!input||input.muted;
+ const meterLabel=micHealth.state==='healthy'?`Activité audio OBS relative : ${micHealth.levelPercent??0}/100`:micHealth.state==='monitoring'?'Niveau OBS nul pour le moment ; aucune coupure confirmée':micHealth.state==='idle'?'Surveillance audio en attente de mesures fiables':micHealth.state==='unavailable'?'Télémétrie audio OBS non confirmée':'';
+ return `<div id="live-overview" class="simple-twitch-head"><div><span class="eyebrow">RÉGIE TWITCH</span><h1>${esc(status)}</h1><p class="small muted">${esc(data.host.hostname||'Régie')} · ${online?'Connectée':'Non connectée'}</p></div><span class="pill">${running?'LIVE':'TWITCH'}</span></div>
+ <div id="live-controls" class="simple-live-stack">
+ <section class="panel simple-live-hero"><div class="simple-health-row"><b>◉ Twitch</b><span class="${running?'succeeded':'muted'}">${!online?'Injoignable':running?'En direct':unknown?'À confirmer':'Hors ligne'}</span></div>
+ <p class="small muted">OBS : ${!obs.connected?'déconnecté':obs.streaming?'diffusion active':'prêt'}${obs.scene?' · '+esc(obs.scene):''}</p>
+ <div class="mobile-spontaneous-row"><button type="button" class="secondary" data-task="spontaneous-live">⚡ Live spontané</button><small>Démarrer sans événement planifié, après confirmation.</small></div><div class="simple-live-actions"><button data-action="live.start" ${!live.canStartBoth||busy?'disabled':''}>◉ Lancer Twitch</button><button class="danger" data-action="live.stop" ${!online||busy?'disabled':''}>■ Arrêter Twitch</button></div>
+ ${lastStop?.status==='uncertain'?`<p class="warn">Dernier arrêt non confirmé. Vérifiez OBS et Twitch avant de réessayer.</p>`:''}
+ </section>
+ <section class="panel simple-mic-health" aria-live="polite"><div class="simple-health-row"><b>🎙️ Micro</b><span class="${micWarn?'warn':'succeeded'}">${esc(micStatus)}</span></div>
+ <p class="small muted">${esc(meterLabel)}</p><p class="small muted">Batterie DJI : inconnue. Consultez le récepteur ou DJI Mimo ; aucune estimation à partir du son.</p>
+ <button class="secondary" data-page="settings">Vérifier la source OBS</button></section>
+ <section class="simple-shortcuts">
+ <button class="secondary" data-page="deck">▦ Télécommande</button><button class="secondary" data-task="metadata">✎ Titre et jeu</button><button class="secondary" data-page="planning">▤ Planning</button><button class="secondary" data-page="activity">✦ Événements</button></section>
+ </div><div id="dji-battery-panel"></div><div id="spotify-panel"></div><div id="live-monitor"></div><div id="streamlabs-feed"></div>`;
+}
 function livePage() {
- const state=data.host.state, remaining=state.timer.remaining??0;
- return `<div id="live-overview"><h1>Votre prochain live</h1><p class="subtitle">Votre live, vos scènes et vos interactions. Une régie pour tous vos appareils.</p><div class="grid statuses">${platformCard('obs','OBS Studio','◉')}${platformCard('twitch','Twitch','T')}${platformCard('youtube','YouTube','▶')}</div></div><div id="live-monitor"></div>${!native?'<div id="streamlabs-feed"></div>':''}<div id="live-controls"><div class="grid columns"><section class="panel live-hero"><div class="hero-top"><span class="eyebrow">TWITCH + YOUTUBE</span><span class="pill">${!online?'RÉGIE DÉCONNECTÉE':state.obs.streaming?'OBS EN ÉMISSION':'PRÉPARATION'}</span></div><div class="hero-title">${esc(data.configuration.metadata.title||'Votre prochain live commence ici')}</div><p class="scene-label">${online?'Scène actuelle':'Dernière scène connue'} · <b>${esc(state.obs.scene||'OBS non connecté')}</b></p><button class="secondary" data-task="metadata">Modifier les informations du live</button><div class="live-tools"><button data-action="live.start" ${!online||busy?'disabled':''}>◉ Lancer le live</button><button class="danger" data-action="live.stop" ${!online||busy?'disabled':''}>■ Arrêter les deux</button></div><p class="small muted">Le résultat est confirmé séparément par Twitch et YouTube.</p></section><section class="panel"><span class="eyebrow">MINUTEUR DU STREAM</span><div class="timer" data-timer-clock>${timerClock(remaining)}</div><p data-timer-status class="small ${state.timer.running?'succeeded':'muted'}">${timerStatus(state.timer)}</p><div class="timer-buttons"><button class="secondary" data-command="timer.start" ${!online||busy||state.timer.running?'disabled':''}>${remaining>0&&remaining<state.timer.duration?'Reprendre':'Démarrer'}</button><button class="secondary" data-command="timer.pause" ${!online||busy||!state.timer.running?'disabled':''}>Pause</button><button class="secondary" data-command="timer.reset" ${!online||busy?'disabled':''}>Remettre à 5 min</button><button class="secondary" data-task="timer-duration">Choisir la durée</button></div><p class="small muted">L’overlay affiche le compteur en mode Introduction ou Pause.</p><button class="secondary" data-task="timer-overlay">Vérifier le minuteur dans OBS</button><div class="checklist">${state.checklist.map(c=>`<label class="check"><input type="checkbox" data-check="${esc(c.id)}" ${c.done?'checked':''}>${esc(c.label)}</label>`).join('')}</div></section></div><section class="spacer"><div class="section-heading"><h2>À portée de main</h2><button class="secondary" data-page="deck">Ouvrir mon Deck ↗</button></div><div class="deck">${data.configuration.actions.slice(0,6).map(actionButton).join('')}</div></section><section class="panel spacer"><div class="section-heading"><h2>Dernières actions</h2><span class="small muted">Exécution sur ${esc(data.host.hostname)}</span></div>${resultRows()}</section></div>`;
+ if(compact)return compactLivePage();
+ const state=data.host.state, remaining=state.timer.remaining??0, live=liveControlState(data,online);
+ if(!server&&native)return `<div id="live-overview"><h1>Mon live · services du téléphone</h1><p class="subtitle">Chats, comptes et préparation fonctionnent sur cet appareil.</p><div class="form-actions"><button data-task="metadata">Informations du live</button><button data-task="configure-platforms">Diffusion Twitch</button><button class="secondary" data-task="device-accounts">Mes comptes</button></div></div><div id="live-monitor"></div><div id="streamlabs-feed"></div><section class="panel" id="live-controls"><h2>Dernières actions</h2><button class="secondary" data-page="activity">Toute l’activité</button>${resultRows()}</section>`;
+ return `<div id="live-overview"><h1>${esc(live.heading)}</h1><p class="subtitle">Votre live, vos scènes et vos interactions. Une régie pour tous vos appareils.</p><div class="grid statuses">${platformCard('obs','OBS Studio','◉')}${platformCard('twitch','Twitch','T')}</div></div><div id="dji-battery-panel"></div><div id="spotify-panel"></div><div id="live-monitor"></div><div id="streamlabs-feed"></div><div id="live-controls"><div class="grid columns"><section class="panel live-hero"><div class="hero-top"><span class="eyebrow">TWITCH</span><span class="pill">${!online?'RÉGIE DÉCONNECTÉE':live.running?'COMMANDE EN COURS':live.anyActive?'DIFFUSION EN COURS':live.unconfirmed?'ÉTAT À VÉRIFIER':'PRÉPARATION'}</span></div><div class="hero-title">${esc(data.configuration.metadata.title||'Votre prochain live commence ici')}</div><p class="scene-label">${online?'Scène actuelle':'Dernière scène connue'} · <b>${esc(state.obs.scene||'OBS non connecté')}</b></p><div class="row-actions"><button class="secondary" data-task="metadata">Modifier les informations du live</button><button class="secondary" data-task="replay-config">✂ Clips OBS</button></div><div class="live-tools"><button data-action="live.start" ${!live.canStartBoth||busy?'disabled':''}>◉ ${live.running?'Commande en cours':live.bothLive?'Live déjà lancé':live.anyActive?'Diffusion en cours':'Lancer Twitch'}</button><button class="danger" data-action="live.stop" ${!online?'disabled':''}>■ Arrêter Twitch</button></div>${liveDestinationControls(live)}<p class="small muted">Le signal OBS et la confirmation Twitch sont suivis séparément.</p></section><section class="panel"><span class="eyebrow">MINUTEUR DU STREAM</span><div class="timer" data-timer-clock>${timerClock(remaining)}</div><p data-timer-status class="small ${state.timer.running?'succeeded':'muted'}">${timerStatus(state.timer)}</p><div class="timer-buttons"><button class="secondary" data-command="timer.start" ${!online||busy||state.timer.running?'disabled':''}>${remaining>0&&remaining<state.timer.duration?'Reprendre':'Démarrer'}</button><button class="secondary" data-command="timer.pause" ${!online||busy||!state.timer.running?'disabled':''}>Pause</button><button class="secondary" data-command="timer.reset" ${!online||busy?'disabled':''}>Remettre à 5 min</button><button class="secondary" data-task="timer-duration">Choisir la durée</button></div><p class="small muted">L’overlay affiche le compteur en mode Introduction ou Pause.</p><button class="secondary" data-task="timer-overlay">Vérifier le minuteur dans OBS</button><div class="checklist">${state.checklist.map(c=>`<label class="check"><input type="checkbox" data-check="${esc(c.id)}" ${c.done?'checked':''}>${esc(c.label)}</label>`).join('')}</div></section></div><section class="spacer"><div class="section-heading"><h2>À portée de main</h2><button class="secondary" data-page="deck">Ouvrir mon Deck ↗</button></div><div class="deck">${data.configuration.actions.slice(0,6).map(actionButton).join('')}</div></section><section class="panel spacer"><div class="section-heading"><h2>Dernières actions</h2><button class="secondary" data-page="activity">Toute l’activité</button><span class="small muted">Exécution sur ${esc(data.host.hostname)}</span></div>${resultRows()}</section></div>`;
+}
+function canRetryPlatform(receipt,platform){
+ if(!receipt.action.startsWith('live.'))return true;
+ const state=liveControlState(data,online);
+ return (receipt.action==='live.stop'||!state.running)&&(receipt.action==='live.start'?state.destinations[platform].canStart:state.destinations[platform].live!==false||state.destinations[platform].active===true);
+}
+function liveDestinationControls(state){
+ return `<div class="live-destinations">${['twitch'].map(platform=>{
+  const value=state.destinations[platform],label=platform==='twitch'?'Twitch':'YouTube',output=data.configuration.outputs[platform];
+  const signal=!online?'État inconnu':value.active===true?'Signal OBS actif':value.active===false?'Signal OBS arrêté':'Signal OBS à vérifier';
+  const status=value.live===true?'En direct confirmé':value.live===false?'Diffusion hors ligne':value.error||'Confirmation en attente';
+  const button=!value.configured||value.startBlockReason?'<button type="button" class="secondary" data-task="configure-platforms">Configurer '+label+'</button>':value.live===true?'<span class="succeeded">En direct</span>':value.transitioning?'<span class="muted">Démarrage en cours</span>':value.canStart&&(platform==='youtube'||value.active!==true)?`<button type="button" class="secondary" data-action="live.start" data-live-platform="${platform}" ${busy?'disabled':''}>${value.active===true?'Finaliser':'Lancer'} ${label}</button>`:'<button type="button" class="secondary" data-task="refresh-live">Vérifier l’état</button>';
+  return `<div class="live-destination"><div><b>${label}</b><p class="small">${esc(signal)} · ${esc(status)}</p><small class="muted">Sortie : ${esc(output.kind==='main'?'principale OBS':output.name||'à configurer')}</small></div>${button}</div>`;
+ }).join('')}</div>`;
+}
+function ensureDeckPreferences(){
+ const scope=autonomy?.store.scope||server||LOCAL_SCOPE;
+ if(deckScope!==scope){deckScope=scope;deckPreferences=readDeckPreferences(localStorage,scope);deckEditing=false;}
+ if(!deckPreferences&&data){const initial={version:1,bank:'favorites',soundCategory:'',favorites:defaultDeckFavorites(!server?{...data,configuration:{...data.configuration,actions:data.configuration.actions.filter(a=>['sound.play','sound.stop','wizebot.command'].includes(a.type))}}:data,sounds)};if(online||initial.favorites.length){deckPreferences=initial;saveDeckPreferences(localStorage,scope,initial);}return initial;}
+ return deckPreferences;
+}
+function updateDeckPreferences(patch){const current=ensureDeckPreferences();if(!current)return;const next={...current,...patch};deckPreferences=saveDeckPreferences(localStorage,deckScope,next)||next;}
+function mobilePerformancePage(mode){
+ const prefs=ensureDeckPreferences();
+ return renderPerformancePage({data,sounds,replay,online,local:!server&&Boolean(deviceAudio),busy,blocked:commandsBlocked(),mode,bank:deckEditing&&mode==='deck'?deckEditBank:prefs.bank,soundCategory:prefs.soundCategory,editing:deckEditing,favorites:prefs.favorites,actionState,routedStatus:action=>actionRouter.status(action),esc});
+}
+function resetPerformanceView(){const content=$('#content');if(content)content.dataset.renderedPage='';render();window.scrollTo(0,0);}
+function compactDjiBatteryStrip(){
+ const relay=data?.host?.djiBatteryRelay;
+ if(!relay||relay.status!=='ok'||relay.observation?.status!=='ok')return '';
+ const age=Date.now()-Date.parse(relay.receivedAt);
+ if(!Number.isFinite(age)||age>90_000||age< -15_000)return '';
+ const info=relay.observation;
+ const rows=(info.tx||[]).filter(tx=>tx.connected).map(tx=>
+    'TX'+tx.slot+': '+(Number.isInteger(tx.rawGauge)?tx.rawGauge+'/7':'inconnu'));
+ if(Number.isInteger(info.rx?.rawGauge))rows.push('RX: '+info.rx.rawGauge+'/7');
+ if(!rows.length)return '';
+ return '<div class="dji-compact-strip" role="status"><b>🎙️ DJI Mic 3</b><span>'+
+  esc(rows.join(' · '))+'</span><small>Paliers réels, non convertis en %</small></div>';
+}
+function compactDeckPage(){
+ const choice=mobilePanes.get('deck');
+ const available=data?.configuration?.actions||[];
+ const section=choice==='sounds'?
+     '<div id="mobile-deck-sounds"></div>':
+   choice==='wizebot'?
+     '<div class="mobile-pane-title"><h2>⚡ WizeBot</h2></div>'+
+     wizebotToolbar()+
+     '<div class="mobile-pane-action-grid">'+
+     (available.filter(a=>a.type==='wizebot.command').map(actionButton).join('')||
+       '<p class="mobile-pane-empty">Aucune commande WizeBot. Ajoutez-en depuis les boutons.</p>')+
+     '</div>':
+   choice==='streamlabs'?
+     '<div class="mobile-pane-title"><h2>♥ Streamlabs</h2></div>'+
+     '<div id="streamlabs-feed"></div>':
+     '<div class="mobile-pane-title"><h2>◉ Actions live</h2></div>'+
+     '<div class="simple-live-actions">'+
+     '<button type="button" data-action="live.start"'+(!liveControlState(data,online).canStartBoth||busy?' disabled':'')+'>◉ Lancer Twitch</button>'+
+     '<button type="button" class="danger" data-action="live.stop"'+(!online?' disabled':'')+'>■ Arrêter Twitch</button></div>'+
+     '<div class="mobile-spontaneous-row"><button type="button" class="secondary" data-task="spontaneous-live">⚡ Live spontané</button><small>Aucun événement créé dans le planning.</small></div>'+
+     '<p class="small muted">Les commandes d’arrêt conservent leur confirmation. Les macros restent liées à leur destination.</p>'+
+     '<div class="mobile-pane-action-grid">'+
+     (available.filter(a=>!['sound.play','sound.stop','wizebot.command','live.start','live.stop'].includes(a.type))
+       .slice(0,48).map(actionButton).join('')||
+       '<p class="mobile-pane-empty">Aucune action configurée. Ajoutez des boutons dans Gestion.</p>')+
+     '</div><div class="mobile-pane-actions"><button type="button" class="secondary" data-page="actions">Modifier mes boutons et macros</button></div>';
+ return '<div class="mobile-pane-layout" data-mobile-pane-group="deck">'+
+   '<section class="mobile-pane-screen mobile-pane-deck" data-mobile-pane-group="deck" data-mobile-pane="'+choice+'">'+
+   section+'</section></div>';
 }
 function deckPage(){
+ if(compact)return compactDeckPage();
  const groups=[['all','Tout'],['scenes','Scènes'],['alerts','Alertes'],['messages','Messages'],['wizebot','WizeBot']];
  const actions=data.configuration.actions.filter(a=>deckCategory==='all'||(deckCategory==='scenes'&&['mode.set','scene.set'].includes(a.type))||(deckCategory==='alerts'&&a.type==='alert.play')||(deckCategory==='messages'&&a.type==='chat.send')||(deckCategory==='wizebot'&&a.type==='wizebot.command'));
  return `<div class="performance-head"><div><span class="eyebrow">À VOUS DE JOUER</span><h1>Mon Deck</h1></div><span class="pill">${esc(data.host.state.obs.scene||'OBS indisponible')}</span></div><div class="tabs pad-tabs">${groups.map(([id,label])=>`<button class="${id===deckCategory?'':'secondary'}" data-deck-category="${id}">${label}</button>`).join('')}</div>${deckCategory==='wizebot'?wizebotToolbar():replayPanel()}<div class="deck performance-deck">${actions.map(actionButton).join('')||'<p class="empty">Ajoutez vos boutons depuis Gestion → Boutons & macros.</p>'}</div><div class="sound-transport">${stopAudioButton()}<button class="secondary" data-page="sounds">♫ Ouvrir la soundboard</button></div><section class="last-feedback" aria-live="polite">${resultRows()}</section>`;
 }
-function replayPanel(){return `<section class="panel replay-panel"><div class="section-heading"><div><b>✂ Clips OBS · ${replay?.seconds||'—'} secondes</b><p class="small ${replay?.active?'succeeded':'muted'}">${replay?.active?'Tampon actif · M5 sauvegarde le moment passé':esc(replay?.error||'Préparez le tampon avant le moment à conserver.')}</p></div><button class="secondary" data-action="${replay?.active?'replay.stop':'replay.start'}" ${!online||busy?'disabled':''}>${replay?.active?'Arrêter le tampon':'Préparer les clips'}</button></div><label class="check"><input type="checkbox" data-replay-auto ${data.configuration.replayAutoStart?'checked':''}>Préparer automatiquement quand OBS démarre le live</label><p class="small muted">Fichiers sur ${esc(data.host.hostname)}${replay?.directory?' · '+esc(replay.directory):''}</p>${data.host.replayAutoStartError?`<p class="warn">${esc(data.host.replayAutoStartError)}</p>`:''}</section>`;}
+function replayPanel(){
+ const active=online&&replay?.active===true,ready=online&&replay?.enabled===true&&replay?.available!==false;
+ const status=!online?'Régie déconnectée : état du tampon inconnu.':active?'Tampon actif : le bouton Clip sauvegarde les dernières secondes.':replay?.error||'Tampon arrêté. Démarrez-le avant le moment à conserver.';
+ const guide=replay?.mode==='Advanced'?'OBS → Paramètres → Sortie → onglet Tampon de relecture. Cochez « Activer le tampon de relecture », choisissez sa durée, puis Appliquer. Le type d’enregistrement doit être Standard.':'OBS → Paramètres → Sortie → Enregistrement. Cochez « Activer le tampon de relecture », choisissez sa durée, puis Appliquer.';
+ return `<section class="panel replay-panel"><div class="section-heading"><div><b>✂ Clips OBS · ${replay?.seconds||'—'} secondes</b><p class="small ${active?'succeeded':'muted'}">${esc(status)}</p></div><div class="row-actions">${active?'<button data-action="replay.save" '+(busy?'disabled':'')+'>Sauvegarder un clip</button><button class="secondary" data-action="replay.stop" '+(busy?'disabled':'')+'>Arrêter le tampon</button>':ready?'<button data-action="replay.start" '+(busy?'disabled':'')+'>Démarrer le tampon</button>':'<button class="secondary" data-task="refresh-replay" '+(!online?'disabled':'')+'>Vérifier les réglages OBS</button>'}</div></div><label class="check"><input type="checkbox" data-replay-auto ${data.configuration.replayAutoStart?'checked':''}>Démarrer le tampon automatiquement avec le live</label><p class="small muted">Le tampon conserve les moments à partir de son démarrage. Les clips sont enregistrés sur ${esc(data.host.hostname)}${replay?.directory?' · '+esc(replay.directory):''}.</p>${!ready&&!active?`<details open><summary>Où activer le tampon dans OBS ?</summary><p class="small">${esc(guide)}</p><p class="small">Revenez ici, vérifiez les réglages, puis cliquez sur Démarrer le tampon.</p></details>`:''}${data.host.replayAutoStartError&&!active?`<p class="warn">Démarrage automatique non confirmé : ${esc(data.host.replayAutoStartError)}</p>`:''}</section>`;
+}
+function replayDialog(){modal(`<div id="replay-dialog-root"><h2>Préparer et sauvegarder des clips</h2>${replayPanel()}</div>`);}
+
 function wizebotToolbar(){return `<section class="panel replay-panel"><div class="section-heading"><div><h2>Commandes WizeBot</h2><p class="small">${data.host.chat?.connected&&data.host.chat?.canSend?'Envoi dans le chat Twitch de '+esc(data.host.chat.channel):'Connectez Twitch sur la régie sélectionnée pour autoriser l’envoi.'}</p></div><button data-task="new-wizebot">+ Ajouter</button></div><p class="small muted">Un appui envoie la commande affichée. WizeBot doit être actif et la commande autorisée sur ta chaîne. Le résultat confirme l’envoi, pas la réponse du bot.</p><button data-task="wizebot-catalog">Importer / gérer mes commandes WizeBot</button><button class="secondary" data-page="actions">Modifier mes boutons</button>${!data.host.chat?.connected||!data.host.chat?.canSend?'<button class="secondary" data-task="connect-twitch">Connecter Twitch</button>':''}</section>`;}
 function editWizebot(id){configurationDraft=structuredClone(data.configuration);const a=configurationDraft.actions.find(x=>x.id===id)||{id:'wizebot_'+uuid().slice(0,8),label:'',type:'wizebot.command',value:'!',color:'purple',shortcut:''};modal(`<h2>${id?'Modifier':'Ajouter'} une commande WizeBot</h2><form id="wizebot-form" data-id="${esc(a.id)}">${input('Nom du bouton','label',a.label,'text','required maxlength="80"')}${input('Commande à envoyer dans Twitch','value',a.value,'text','required maxlength="500" placeholder="!discord"')}<p class="small muted">Saisis exactement la commande de ta chaîne, avec ses paramètres éventuels. Exemple : !uptime. Aucune clé API WizeBot nécessaire.</p>${select('Couleur','color',[['purple','Violet'],['green','Vert'],['amber','Ambre'],['red','Rouge']],a.color)}<div class="form-actions">${id?`<button type="button" class="danger" data-remove-action="${esc(a.id)}">Supprimer</button>`:''}<button>Enregistrer le bouton</button></div></form>`);}
-function stopAudioButton(){return `<button class="danger" data-action="sound.stop" ${!online?'disabled':''}>■ Arrêter le son</button>`;}
+function stopAudioButton(){return `<button class="danger" data-action="sound.stop" ${!online&&!deviceAudio?'disabled':''}>■ Arrêter tous les sons</button>`;}
 function soundsPage(){
+ if(compact)return mobilePerformancePage('sounds');
  const catalog=sounds?.sounds||[],categories=[...new Set(catalog.map(s=>s.category))];
  const shown=catalog.filter(s=>soundCategory==='favorites'?s.favorite:!soundCategory||s.category===soundCategory);
- return `<div class="performance-head"><div><span class="eyebrow">SONS SUR LE PC DE STREAM</span><h1>Soundboard</h1></div><span class="pill">${catalog.length} sons</span></div><div class="tabs pad-tabs">${[['','Tous'],['favorites','★ Favoris'],...categories.map(c=>[c,c])].map(([id,label])=>`<button class="${soundCategory===id?'':'secondary'}" data-sound-category="${esc(id)}">${esc(label)}</button>`).join('')}</div>${soundError?`<p class="warn">${esc(soundError)}</p>`:''}<div class="sound-transport"><p aria-live="polite">${!online?'État audio inconnu · régie déconnectée':sounds?.currentPlayback?'♫ '+esc(catalog.find(s=>s.id===sounds.currentPlayback.soundId)?.name||'Lecture en cours'):'Prêt · aucun son en cours'}</p>${stopAudioButton()}</div><div class="deck performance-deck sound-pads">${shown.map(s=>`<div class="sound-pad"><button class="green ${sounds?.currentPlayback?.soundId===s.id?'pad-active':''}" data-play-sound="${esc(s.id)}" ${!online||busy||!s.enabled||!s.sourceAvailable?'disabled':''}><span>♫</span><b>${esc(s.name)}</b><small>${!online?'Régie déconnectée':!s.enabled?'Désactivé':!s.sourceAvailable?'Fichier indisponible':sounds?.currentPlayback?.soundId===s.id?'Lecture en cours':esc(s.category)}</small></button><button class="favorite secondary" data-favorite-sound="${esc(s.id)}" aria-label="${s.favorite?'Retirer des':'Ajouter aux'} favoris" aria-pressed="${!!s.favorite}">${s.favorite?'★':'☆'}</button></div>`).join('')||'<p class="empty">Aucun son ici. Importez vos fichiers depuis Gestion → Bibliothèque audio.</p>'}</div><section class="last-feedback">${resultRows()}</section>`;
+ return `<div class="performance-head"><div><span class="eyebrow">${server?'SONS SUR L’APPAREIL SÉLECTIONNÉ':'SONS SUR CET APPAREIL'}</span><h1>Soundboard</h1></div><span class="pill">${catalog.length} sons</span></div><div class="tabs pad-tabs">${[['','Tous'],['favorites','★ Favoris'],...categories.map(c=>[c,c])].map(([id,label])=>`<button class="${soundCategory===id?'':'secondary'}" data-sound-category="${esc(id)}">${esc(label)}</button>`).join('')}</div>${soundError?`<p class="warn">${esc(soundError)}</p>`:''}<div class="sound-transport"><p aria-live="polite">${!online&&!deviceAudio?'État audio inconnu · régie déconnectée':sounds?.currentPlayback?'♫ '+(sounds.activePlaybacks?.length>1?sounds.activePlaybacks.length+' sons en cours':esc(catalog.find(s=>s.id===sounds.currentPlayback.soundId)?.name||'Lecture en cours')):'Prêt · aucun son en cours'}</p>${stopAudioButton()}</div><div class="deck performance-deck sound-pads">${shown.map(s=>`<div class="sound-pad"><button class="green ${(sounds?.activePlaybacks||[sounds?.currentPlayback]).some(p=>p?.soundId===s.id)?'pad-active':''}" data-play-sound="${esc(s.id)}" ${(!online&&!deviceAudio)||busy||!s.enabled||!s.sourceAvailable?'disabled':''}><span>♫</span><b>${esc(s.name)}</b><small>${!online&&!deviceAudio?'Régie déconnectée':!s.enabled?'Désactivé':!s.sourceAvailable?'Fichier indisponible':(sounds?.activePlaybacks||[sounds?.currentPlayback]).some(p=>p?.soundId===s.id)?'Lecture en cours':esc(s.category)}</small></button><button class="favorite secondary" data-favorite-sound="${esc(s.id)}" aria-label="${s.favorite?'Retirer des':'Ajouter aux'} favoris" aria-pressed="${!!s.favorite}">${s.favorite?'★':'☆'}</button></div>`).join('')||'<p class="empty">Aucun son ici. Importez vos fichiers depuis Gestion → Bibliothèque audio.</p>'}</div><section class="last-feedback">${resultRows()}</section>`;
 }
-function actionsPage(){return `<div class="section-heading"><div><h1>Boutons & macros</h1><p class="subtitle">Les associations sont partagées par le Deck et le clavier.</p></div><button data-task="new-action">+ Ajouter</button></div><section class="panel"><div class="table-wrap"><table><thead><tr><th>Bouton</th><th>Raccourci clavier</th><th></th></tr></thead><tbody>${data.configuration.actions.map(a=>`<tr><td>${esc(a.label)}</td><td>${esc(a.shortcut||'—')}</td><td><button class="secondary" data-edit-action="${esc(a.id)}">Modifier</button></td></tr>`).join('')}</tbody></table></div></section>`;}
+function actionsPage(){return `<div class="section-heading"><div><h1>Boutons & macros</h1><p class="subtitle">Les associations sont partagées par le Deck et le clavier.</p></div><button data-task="new-action">+ Ajouter</button></div><section class="panel"><div class="table-wrap"><table><thead><tr><th>Bouton</th><th>Raccourci clavier</th><th></th></tr></thead><tbody>${data.configuration.actions.map(a=>`<tr><td>${esc(a.label)}</td><td>${esc(a.shortcut||'—')}</td><td><button class="secondary" data-edit-action="${esc(a.id)}">Modifier</button><button class="secondary" data-task="action-route" data-action-id="${esc(a.id)}">Destination</button></td></tr>`).join('')}</tbody></table></div></section>`;}
 function managePage(){return `<h1>Gestion</h1><p class="subtitle">Votre planning, vos contenus et tous les réglages de la régie.</p><div class="management-grid"><button class="secondary" data-page="planning"><span>▤</span>Planning & événements<small>Agenda, séries, publications, export</small></button><button class="secondary" data-page="actions"><span>▦</span>Boutons & macros<small>Clavier, scènes, alertes et messages</small></button><button class="secondary" data-task="sounds"><span>♫</span>Bibliothèque audio<small>Importer, renommer, volume et destinations</small></button><button class="secondary" data-page="settings"><span>⚙</span>Configuration<small>OBS, comptes, appareils et intégrations</small></button></div>`;}
 function timerClock(value){const r=Math.max(0,Math.ceil(value));return [Math.floor(r/3600),Math.floor(r/60)%60,r%60].map(x=>String(x).padStart(2,'0')).join(':');}
 function timerStatus(t){return !online?'Hôte indisponible · dernier état reçu':t.running?'En cours sur la régie':t.remaining<=0?'Terminé':t.remaining<t.duration?'En pause':'Prêt à démarrer';}
 const input=(label,name,value='',type='text',extra='')=>`<label>${label}<input name="${name}" type="${type}" value="${esc(value)}" ${extra}></label>`;
-const select=(label,name,items,value)=>`<label>${label}<select name="${name}">${items.map(([id,text])=>`<option value="${esc(id)}" ${id===value?'selected':''}>${esc(text)}</option>`).join('')}</select></label>`;
+const select=(label,name,items,value)=>`<label>${esc(label)}<select name="${esc(name)}" aria-label="${esc(label)}">${items.map(([id,text])=>`<option value="${esc(id)}" ${id===value?'selected':''}>${esc(text)}</option>`).join('')}</select></label>`;
 const check=(label,name,value)=>`<label class="check"><input type="checkbox" name="${name}" ${value?'checked':''}>${label}</label>`;
 const wizebotManagement=createWizebotManagement({api,esc,modal,getData:()=>!server?{...data,host:{...data.host,chat:autonomy?.store.record.drafts.deviceChat}}:data,refresh,toast,uuid,isOnline:()=>!server||online,getDraft:(channel,id)=>autonomy?.store.record.drafts['wizebot/'+channel+'/'+id],saveDraft:(channel,id,value)=>autonomy.store.draft('wizebot/'+channel+'/'+id,value)});
 const planning=createPlanning({getData:()=>data,api,esc,input,select,check,modal,close:()=>dialog.close(),toast,refresh,render,prepare:metadataDialog});
-function settingsPage(){
- const settings=data.host.settings,c=data.configuration;
- let content='';
- if(tab==='obs')content=`<h2>OBS sur ${esc(data.host.hostname)}</h2><form id="settings-form" data-revision="${esc(data.host.settingsRevision)}"><div class="form-grid">${input('Adresse WebSocket OBS','obsUrl',settings.obsUrl)}${input('Mot de passe OBS (laisser vide pour conserver)','obsPassword','','password')}${select('Micro principal','primaryMicInput',[['','Choisir une source'],...Object.keys(data.host.state.obs.inputs).map(x=>[x,x])],settings.primaryMicInput)}${input('Source navigateur du minuteur','timerBrowserSource',settings.timerBrowserSource)}</div><h3>Scènes et préparation</h3><div class="form-grid">${['intro','live','pause','end'].map(mode=>select({intro:'Introduction',live:'Jeu',pause:'Pause',end:'Fin'}[mode],`scene-${mode}`,[['','Non associée'],...data.host.state.obs.scenes.map(x=>[x,x])],settings.modeScenes?.[mode])).join('')}${select('Discussion','chattingScene',[['','Non associée'],...data.host.state.obs.scenes.map(x=>[x,x])],settings.chattingScene)}${select('Scène au lancement','startMode',[['intro','Introduction'],['live','Jeu']],settings.startMode)}</div>${check('Vérifier la source minuteur avant le live','requireTimerOverlayOnStart',settings.requireTimerOverlayOnStart)}${check('Lancer OBS au démarrage de la régie','launchObs',settings.launchObs)}${input('Chemin OBS sur le PC de stream','obsExecutablePath',settings.obsExecutablePath)}${check('Autoriser les appareils du réseau local (redémarrage de la régie requis)','remoteEnabled',settings.remoteEnabled)}<div class="form-actions"><button>Enregistrer les réglages</button></div></form>`;
- if(tab==='platforms')content=`<h2>Twitch et YouTube</h2><p class="small muted">Twitch : ${!online?'état actuel inconnu':data.host.state.twitch.connected?'connecté':'à connecter'}. Les comptes et clés de diffusion restent sur le PC de stream.</p><div class="inline"><button class="secondary" data-task="connect-twitch">Connecter Twitch</button><button class="secondary" data-task="connect-youtube">Connecter YouTube</button></div><form id="platform-form" data-revision="${c.revision}" class="spacer">${input('Client ID Google Desktop pour YouTube','clientId',c.youtube.clientId)}<p class="small muted">La connexion Google s’ouvre sur le PC de stream. Utilisez le même projet que celui du Client Secret Google enregistré.</p><div class="form-grid">${input('Diffusion YouTube sélectionnée','broadcastId',c.youtube.broadcastId)}${input('Chaîne YouTube sélectionnée','channelId',c.youtube.channelId)}</div><button type="button" class="secondary" data-task="youtube-broadcasts">Choisir une diffusion préparée</button><h3 class="spacer">Sorties de multidiffusion OBS</h3><p class="small muted">Choisissez les sorties réellement utilisées. Une sortie principale partagée arrête les deux destinations lorsqu’elle est arrêtée.</p>${['twitch','youtube'].map(p=>`<div class="form-grid">${select(`Sortie ${p}`,`${p}-kind`,[['unconfigured','À configurer'],['main','Sortie principale OBS'],['output','Sortie nommée OBS'],['aitum-suite','Aitum Stream Suite']],c.outputs[p].kind)}${input(`Nom exact de la sortie ${p}`,`${p}-name`,c.outputs[p].name)}</div>`).join('')}<button type="button" class="secondary" data-task="outputs">Détecter les sorties OBS</button><div id="output-list" class="small muted"></div><div class="form-actions"><button>Enregistrer la diffusion</button></div></form>`;
- if(tab==='profile')content=`<h2>Profil et préférences</h2><form id="profile-settings" data-revision="${esc(data.host.settingsRevision)}">${input('Nom affiché','streamerName',settings.streamerName)}${select('Accent','accent',['violet','cyan','rose'].map(x=>[x,x]),settings.accent)}${check('Confirmer l’arrêt du live','confirmStop',settings.confirmStop)}${input('Récompenses Twitch Streamer Ping (IDs séparés par une virgule)','streamerPingRewardIds',(settings.streamerPingRewardIds||[]).join(','))}<label>Préférences de tags (JSON)<textarea name="tagPreferences">${esc(JSON.stringify(settings.tagPreferences||{},null,2))}</textarea></label><div class="form-actions"><button>Enregistrer</button></div></form><details><summary>Profil complet, modules, apparence et paramètres avancés</summary><button class="secondary" data-task="profile-json">Ouvrir l’éditeur du profil</button></details>`;
- if(tab==='integrations')content=`<h2>Connexions et interactions</h2><p class="small muted">${server?'Les réglages s’appliquent à la régie sélectionnée.':'Vos données et comptes restent sur cet appareil. Google et Twitch fonctionnent directement par Internet.'}</p><div class="grid form-grid"><section><h3>Google Calendar</h3><button class="secondary" data-task="google-connect">Connecter Google</button><button class="secondary spacer" data-task="google-calendars">Choisir le calendrier</button><button class="secondary spacer" data-task="google-secret">Configurer le Client Secret Google</button></section><section><h3>Bibliothèque de sons</h3><button class="secondary" data-task="sounds">Gérer les sons OBS</button><button class="secondary spacer" data-task="sound-setup">Préparer les sources audio OBS</button></section><section><h3>Discord</h3><button class="secondary" data-task="discord">Configurer le bot et le salon</button></section><section><h3>Streamlabs et WizeBot</h3><button class="secondary" data-task="streamlabs">Configurer Streamlabs</button><button class="secondary spacer" data-task="wizebot-catalog">Commandes WizeBot</button></section><section><h3>Automatisations</h3><button class="secondary" data-task="automations">Gérer les règles</button></section></div>`;
- if(tab==='devices')content=`<h2>Appareils et comptes</h2><div class="table-wrap"><table><tr><th>Appareil</th><th>Usage</th></tr><tr><td>${esc(device.name)}</td><td>${esc({stream:'Régie de stream',control:'Pilotage',mobile:'Stream Deck'}[device.role])}</td></tr><tr><td>${esc(server||'Aucune régie associée')}</td><td>${!server?'Espace autonome':online?'Régie connectée':'Copie locale disponible'}</td></tr></table></div><div class="form-actions"><button data-task="device-setup">Configurer cet appareil</button><button data-task="device-accounts">Mes comptes sur cet appareil</button><button class="secondary" data-task="connection">Associer une régie</button>${data.host.local?'<button data-task="pairing">Créer un code de gestion complète</button>':''}</div><div class="form-actions"><button class="secondary" data-task="use-local">Ouvrir mon espace local</button>${localStorage.getItem('sd2.server')?'<button class="secondary" data-task="use-paired">Retrouver ma régie</button>':''}${server?'<button class="secondary" data-task="import-local">Transférer mes créations locales</button>':''}</div><h3 class="spacer">Macros clavier</h3><p class="small muted">Affectez les touches de votre clavier aux raccourcis affichés dans Boutons & macros. Gardez StreamDashboard ouvert sur l’appareil qui reçoit ces touches. Pour un BlackWidow V4 X : utilisez Synapse pour associer M1 à M6 à Ctrl + Alt + Maj + F1 à F6, une pression simple.</p><button class="secondary" data-task="shortcut-status">Vérifier les raccourcis sur ce PC</button><p id="shortcut-status" class="small muted"></p>`;
- return `<h1>Configuration</h1><p class="subtitle">Vos réglages sont sauvegardés sur cet appareil, puis synchronisés avec la régie.</p><div class="tabs">${[['obs','OBS et scènes'],['platforms','Diffusion'],['profile','Profil'],['integrations','Intégrations'],['devices','Appareils & macros']].map(([id,label])=>`<button class="${id===tab?'':'secondary'}" data-tab="${id}">${label}</button>`).join('')}</div><section class="panel config-panel">${content}</section>`;
+
+const mobilePanes=createMobilePanes($('#mobile-pane-nav'),{
+ root:$('#content'),storage:localStorage,
+ onSelect:group=>{
+   if(group!==page)return;
+   if(group==='live')mobilePanes.applyDom();
+   else render();
+   window.scrollTo(0,0);
+ },
+});
+function mobileDjiOrigin(){
+ // Android reads the authenticated FIXE relay, not a local USB device.
+ if(localEndpoint)return localEndpoint;
+ if(server?.startsWith('https://'))return server;
+ const installation=installationUI.current;
+ const target=installation?.devices?.find(item=>item.id===installation?.routes?.obs);
+ return target?.enabled===true && typeof target.endpoint==='string' &&
+   target.endpoint.startsWith('https://')?target.endpoint:'';
 }
-function render(){
+async function readMobileDji(){
+ const host=mobileDjiOrigin();
+ if(!host)return {status:'unavailable',reason:'receiver-unavailable'};
+ const token=host===localEndpoint?'':host===server?credential:await credentials.get(host);
+ if(host!==localEndpoint&&!token)return {status:'unavailable',reason:'receiver-unavailable'};
+ return network('/api/v1/dji/overview',undefined,'GET',host,token);
+}
+const floatingMic=createFloatingMicBattery($('#floating-mic-battery'),{
+ read:readMobileDji,
+ onOpen:()=>{
+   if(!compact)return;
+   mobilePanes.select('live','micro',{notify:false});
+   if(page!=='live'){page='live';localStorage.setItem('sd2.page',page);render();}
+   else mobilePanes.applyDom();
+   window.scrollTo(0,0);
+ },
+});
+
+function settingsPage(){if(native&&!server&&tab==='obs')tab='platforms';return renderSettings({data,native,server,tab,online,device,localEndpoint,deviceExecutor,macroConfigurationError,esc,input,select,check});}
+
+function render({passive=false}={}){
+ if(passive&&(pointerHeld||dialog.open||editingForm($('#content')))){shell();return;}
+ const samePerformance=compact&&['deck','sounds'].includes(page)&&$('#content').dataset.renderedPage===page;
+ const scroll=samePerformance?window.scrollY:0;
+ const bankScroll=samePerformance?$('.deck-banks')?.scrollLeft||0:0;
+ document.documentElement.classList.toggle('mobile-panes-active',
+   compact&&['live','planning','deck'].includes(page));
  shell();
- if(!data){$('#content').innerHTML='<section class="panel"><h1>Retrouver votre régie</h1><p class="subtitle">Connectez-vous au PC de stream pour retrouver les scènes, le Deck et votre planning.</p><button data-task="connection">Configurer la connexion</button></section>';liveMonitor=undefined;return;}
+ mobilePanes.update({group:page,compact});
+ floatingMic.update({enabled:compact,sourceKey:mobileDjiOrigin()});
+ if(!data){liveMonitor?.destroy();streamlabsFeed?.destroy();streamlabsFeed=undefined;streamlabsFeedRoot=undefined;$('#content').innerHTML='<section class="panel"><h1>Retrouver votre régie</h1><p class="subtitle">Connectez-vous au PC de stream pour retrouver les scènes, le Deck et votre planning.</p><button data-task="connection">Configurer la connexion</button></section>';liveMonitor=undefined;return;}
  if(page==='live'){
   if(!$('#live-monitor')){
    $('#content').innerHTML=livePage();
-   liveMonitor=createLiveMonitor($('#live-monitor'),{native,configure:()=>{page='settings';tab='platforms';localStorage.setItem('sd2.page',page);render();}});
+   liveMonitor?.destroy();
+   liveMonitor=undefined;
   }else{
    const template=document.createElement('template');template.innerHTML=livePage();
    // Update changing state without detaching the video or either chat iframe.
-   for(const id of ['live-overview','live-controls'])$('#'+id).innerHTML=template.content.querySelector('#'+id).innerHTML;
+   for(const id of ['live-overview','live-controls'])replaceMarkup($('#'+id),template.content.querySelector('#'+id).innerHTML);
   }
-  liveMonitor.update(data);
-  if(!native){
-   if(!streamlabsFeed||!streamlabsFeedRoot?.isConnected){
-    streamlabsFeedRoot=$('#streamlabs-feed');
-    streamlabsFeed=createStreamlabsFeed(streamlabsFeedRoot,{request:target=>network('/api/v1/streamlabs/events',undefined,'GET',target,target===localEndpoint?'':credential),configure:target=>{
-     streamlabsConfigTarget=target.id;
-     modal(`<h2>Streamlabs · ${esc(target.label)}</h2><p>Le Socket Token reste enregistré sur cette source. Il permet la réception des événements.</p><form id="streamlabs-feed-config">${input('Socket Token Streamlabs','token','','password','required autocomplete="off"')}<button>Connecter et enregistrer</button></form>`);
-    }});
-   }
-   const sources=[];
-   if(server)sources.push({id:server,label:server===localEndpoint?'Cet appareil':`Régie · ${data.host.hostname||server}`});
-   if(localEndpoint&&localEndpoint!==server)sources.push({id:localEndpoint,label:'Cet appareil · connexion indépendante'});
-   streamlabsFeed.update(sources);
+  if(compact){
+    const mic=data?.configuration?.actions?.find(a=>a.type==='mic.toggle'&&
+      (!a.value||a.value===data.host.settings.primaryMicInput));
+    arrangeMobileLivePanes($('#content'),{microAction:mic?{
+      id:mic.id,label:mic.label,disabled:actionDisabled(mic)}:null});
+    const slot=$('#mobile-live-sounds');
+    if(slot)renderMobileSoundboard(slot,{
+      sounds:sounds?.sounds||[],
+      activePlaybacks:sounds?.activePlaybacks||[],
+      currentPlayback:sounds?.currentPlayback,
+      category:ensureDeckPreferences()?.soundCategory||'',
+      online:online||Boolean(deviceAudio),
+      blocked:commandsBlocked(),busy,
+      canStop:online||Boolean(deviceAudio),
+    });
   }
+  updateLiveMonitor();
+  updateStreamlabsFeed();
+ }else if(page==='activity'){
+  liveMonitor?.destroy();liveMonitor=undefined;
+  if($('#content').dataset.renderedPage!=='activity'||!$('#streamlabs-feed')){
+   streamlabsFeed?.destroy();streamlabsFeed=undefined;streamlabsFeedRoot=undefined;
+   $('#content').innerHTML='<div class="activity-page-heading"><div><span class="eyebrow">LE SUIVI DU LIVE</span><h1>Activité</h1></div><button class="secondary" data-page="deck">Mon Deck ↗</button></div><div id="activity-context"></div><div id="streamlabs-feed"></div>';
+  }
+  $('#activity-context').innerHTML=!server&&native?'<p class="activity-hint">Historique Streamlabs de cet appareil, accessible même lorsque les PC sont éteints. Configurez l’URL du widget de votre compte.</p>':!server&&!localEndpoint?'<p class="activity-hint">Associez votre régie pour retrouver ses événements Streamlabs sur ce téléphone.</p><button class="secondary" data-task="connection">Associer une régie</button>':'';
+  updateStreamlabsFeed();
  }else{
-  liveMonitor=undefined;
-  $('#content').innerHTML=page==='deck'?deckPage():page==='sounds'?soundsPage():page==='planning'?planning.page():page==='actions'?actionsPage():page==='manage'?managePage():settingsPage();
+  liveMonitor?.destroy();liveMonitor=undefined;
+  const retainStreamlabs=compact&&page==='deck'&&mobilePanes.get('deck')==='streamlabs'&&
+    $('#content').dataset.renderedPage==='deck'&&Boolean($('#streamlabs-feed'));
+  if(!retainStreamlabs){
+    streamlabsFeed?.destroy();streamlabsFeed=undefined;streamlabsFeedRoot=undefined;
+    replaceMarkup($('#content'),page==='deck'?deckPage():page==='sounds'?soundsPage():
+      page==='planning'?(compact?planning.mobilePage(mobilePanes.get('planning')):planning.page()):
+      page==='actions'?actionsPage():page==='manage'?managePage():settingsPage());
+  }
+  if(compact&&page==='deck'){
+    const slot=$('#mobile-deck-sounds');
+    if(slot)renderMobileSoundboard(slot,{
+      sounds:sounds?.sounds||[],
+      activePlaybacks:sounds?.activePlaybacks||[],
+      currentPlayback:sounds?.currentPlayback,
+      category:ensureDeckPreferences()?.soundCategory||'',
+      online:online||Boolean(deviceAudio),
+      blocked:commandsBlocked(),busy,canStop:online||Boolean(deviceAudio),
+    });
+    if($('#streamlabs-feed'))updateStreamlabsFeed();
+  }
  }
- if(commandsBlocked())document.querySelectorAll('[data-action], [data-play-sound], [data-command]').forEach(button=>{button.disabled=true;button.title='Synchronisez les réglages en attente avant de déclencher une commande.';});
+ mobilePanes.applyDom();
+ const djiRoot=$('#dji-battery-panel');
+ if(djiRoot){
+   if(djiBatteryPanel?.root!==djiRoot){
+     djiBatteryPanel?.destroy();
+     djiBatteryPanel=createDjiMic3BatteryPanel(djiRoot,{
+       // Local desktop first, otherwise read the paired host's relay.
+       read:()=>network('/api/v1/dji/overview',undefined,'GET',
+         localEndpoint || server, localEndpoint ? '' : credential),
+     });
+   }
+   djiBatteryPanel.update({enabled:Boolean(localEndpoint || server)});
+ }else{djiBatteryPanel?.destroy();djiBatteryPanel=undefined;}
+ const spotifyRoot=$('#spotify-panel');
+ if(spotifyRoot){
+   if(spotifyPanel?.root!==spotifyRoot){spotifyPanel?.destroy();spotifyPanel=createSpotifyPanel(spotifyRoot,{request:api,notify:toast});}
+   spotifyPanel.update({online:online&&Boolean(server),host:data.host.hostname});
+ }else{spotifyPanel?.destroy();spotifyPanel=undefined;}
+ if(commandsBlocked())document.querySelectorAll('[data-action], [data-play-sound], [data-command]').forEach(button=>{if(button.dataset.action==='sound.stop'&&!macroContextChanging)return;button.disabled=true;button.title='Synchronisez les réglages en attente avant de déclencher une commande.';});
+ $('#content').dataset.renderedPage=page;
+ if(samePerformance){const banks=$('.deck-banks');if(banks)banks.scrollLeft=bankScroll;window.scrollTo(0,scroll);}
  rememberForms();
 }
-function rememberForms(){if(autonomy?.store.view()){const base=resources(autonomy.store.view());document.querySelectorAll('form').forEach(f=>{if(!formBases.has(f))formBases.set(f,base);});}}
+function updateStreamlabsFeed(){
+ if(!$('#streamlabs-feed')){streamlabsFeed?.destroy();streamlabsFeed=undefined;streamlabsFeedRoot=undefined;return;}
+ if(!streamlabsFeed||!streamlabsFeedRoot?.isConnected){
+  streamlabsFeed?.destroy();
+  streamlabsFeedRoot=$('#streamlabs-feed');
+  streamlabsFeed=createStreamlabsFeed(streamlabsFeedRoot,{request:streamlabsRequest,configure:streamlabsConfiguration});
+ }
+ const sources=[];
+ if(!server&&native&&deviceServices)sources.push({id:LOCAL_SCOPE,label:'Cet appareil · historique Streamlabs'});
+ if(server)sources.push({id:server,label:server===localEndpoint?'Cet appareil':`Régie · ${data.host.hostname||server}`});
+ if(localEndpoint&&localEndpoint!==server)sources.push({id:localEndpoint,label:'Cet appareil · connexion indépendante'});
+ streamlabsFeed.update(sources,{workspaceKey:server||LOCAL_SCOPE,preferredSource:server||localEndpoint||(native?LOCAL_SCOPE:'')});
+}
+function streamlabsRequest(target,options={}){
+ if(target===LOCAL_SCOPE&&!server&&native&&deviceServices){requireDeviceStreamlabs();return deviceServices.route('/api/v1/streamlabs/events'+(options.refresh?'?refresh=1':''),undefined,'GET');}
+ if(!target||(target!==server&&target!==localEndpoint))throw new Error('La source Streamlabs a changé. Actualisez avant de réessayer.');
+ return network('/api/v1/streamlabs/events'+(options.refresh?'?refresh=1':''),undefined,'GET',target,target===localEndpoint?'':credential);
+}
+function requireDeviceStreamlabs(){
+ if(typeof globalThis.StreamDashboardProviders?.deviceService!=='function')throw new Error('Mettez à jour cette application pour configurer l’historique Streamlabs sur cet appareil.');
+}
+function streamlabsConfiguration(target){
+ if(!target?.id||(target.id!==server&&target.id!==localEndpoint&&!(target.id===LOCAL_SCOPE&&!server&&native&&deviceServices)))throw new Error('La source Streamlabs a changé. Actualisez avant de réessayer.');
+ const owner=deviceServices,selectedServer=server,selectedCredential=credential;
+ modal('<div id="streamlabs-configuration"></div>');
+ createStreamlabsConfiguration($('#streamlabs-configuration'),{label:target.label,socketSupported:target.id!==LOCAL_SCOPE,request:(path,body,method)=>{
+  if(target.id===LOCAL_SCOPE){if(server||!native||deviceServices!==owner)throw new Error('L’espace a changé. Rouvrez la configuration Streamlabs.');requireDeviceStreamlabs();return owner.route(path,body,method);}
+  if(server!==selectedServer||credential!==selectedCredential||(target.id!==server&&target.id!==localEndpoint))throw new Error('La source Streamlabs a changé. Rouvrez sa configuration avant de réessayer.');
+  return network(path,body,method,target.id,target.id===localEndpoint?'':credential);
+ },changed:()=>{void streamlabsFeed?.refresh(true);},notify:toast});
+}
+function liveChatRequest(path,body,method,sourceKey){
+ const target=localEndpoint||server;
+ if(!sourceKey||sourceKey!==target)throw new Error('La source du tchat a changé. Actualisez avant de réessayer.');
+ if(target===server&&target!==localEndpoint&&!online)throw new Error('Appareil du tchat déconnecté : choisissez votre connexion locale.');
+ // A chat message is never put in the configuration's offline queue.
+ return network(path,body,method,target,target===localEndpoint?'':credential);
+}
+function updateLiveMonitor(){
+ const root=$('#live-monitor');if(!root)return;
+ if(!localCapabilityEnabled('viewer')){
+  liveMonitor?.destroy();liveMonitor=undefined;
+  const activity=$('#streamlabs-feed');if(activity&&root.contains(activity))root.after(activity);
+  root.innerHTML='<p class="panel">Visionneuses et chats désactivés sur cet appareil. Réactivez ce rôle dans Mon installation.</p>';return;
+ }
+ liveMonitor??=createLiveMonitor(root,{native,activityRoot:compact?undefined:$('#streamlabs-feed'),request:liveChatRequest,configure:()=>{page='settings';tab='platforms';localStorage.setItem('sd2.page',page);render();}});
+ liveMonitor?.update(data,{online:localEndpoint?true:server?online:native,chatOnly:compact,sourceKey:localEndpoint||server||LOCAL_SCOPE});
+}
+function rememberForms(){const forms=[...document.querySelectorAll('form')].filter(f=>!formBases.has(f));if(!forms.length)return;const bundle=autonomy?.store.view();if(bundle){const base=resources(bundle);forms.forEach(f=>formBases.set(f,base));}}
 function modal(content){dialogBase=autonomy?.store.view()?resources(autonomy.store.view()):undefined;$('#dialog-content').innerHTML=content;if(!dialog.open)dialog.showModal();rememberForms();}
-function deviceSetup(){modal(`<h2>Bienvenue dans StreamDashboard</h2><p>Un ordinateur suffit. Ajoutez un téléphone ou un autre PC quand vous le souhaitez.</p><form id="device-setup-form">${input('Nom de cet appareil','name',device.name,'text','required maxlength="80"')}${select('Rôle de cet appareil','role',native?[['mobile','Téléphone · Stream Deck et gestion']]:[['stream','PC de stream · OBS et gestion'],['control','PC de jeu · pilotage et gestion']],native?'mobile':device.configured?device.role:clientRole?'control':'stream')}<p class="small muted">Vous pouvez connecter vos comptes et préparer vos données avant d’associer les appareils. Un serveur supplémentaire reste facultatif.</p><button>Enregistrer et continuer</button></form>`);}
+const installationUI=await createInstallationUI({device,native,localEndpoint,modal,esc,viewers:openRemoteViewers,select:selectInstallationDevice,remove:async target=>{if(server===target.endpoint)await switchWorkspace(true);if(localStorage.getItem('sd2.server')===target.endpoint)localStorage.removeItem('sd2.server');},changed:async (installation,restart)=>{
+ const local=installation.devices.find(d=>d.id===installation.localDeviceId);
+ if(!local.roles.includes('audio'))await localRuntime?.audio.stop();
+ device=saveDevice({name:local.name,role:native?'mobile':local.roles.includes('obs-executor')?'stream':'control'});
+ dialog.close();render();toast(restart?'Installation enregistrée. Redémarrage de l’application…':'Installation enregistrée. Les données existantes sont conservées.');
+}});
+function openRemoteViewers(target){
+ modal(`<h2>Écrans · ${esc(target.name)}</h2><p>La vidéo et les chats s’ouvriront sur cet Android avec ses propres sessions web.</p><form id="remote-viewers-form" data-device-id="${esc(target.id)}">${input('Chaîne Twitch','twitch',localStorage.getItem('sd2.monitor-channel')||data?.host.monitor?.twitchLogin||'')}<button>Ouvrir sur ${esc(target.name)}</button></form>`);
+}
+async function sendRemoteViewers(form,value){
+ await installationUI.reload();const target=installationUI.current.devices.find(d=>d.id===form.dataset.deviceId);
+ if(!target?.enabled||!target.endpoint||target.platform!=='android')throw new Error('Android associé indisponible.');
+ const token=await credentials.get(target.endpoint),descriptor=await network('/api/v2/device',undefined,'GET',target.endpoint,token);
+ if(descriptor.device?.id!==target.id)throw new Error('Identité Android différente. Vérifiez son association.');
+ if(!deviceRoleAvailable(descriptor.device,'viewer')||!descriptor.observed?.permissions?.includes('chat'))throw new Error('Le rôle Visionneuses et la permission Chat sont nécessaires sur cet Android.');
+ const result=await network('/api/v2/actions',{id:uuid(),issuedAt:new Date().toISOString(),action:'viewer.open',viewer:{twitch:value.twitch.trim(),youtube:'',source:'twitch'}},'POST',target.endpoint,token);
+ dialog.close();toast(`${labels[result.status]||'À vérifier'} · ${result.message}`);
+}
+async function selectInstallationDevice(target,commit){
+ const endpoint=target.id===installationUI.current.localDeviceId?localEndpoint:target.endpoint;const token=endpoint===localEndpoint?'':await credentials.get(endpoint);
+ if(!token&&endpoint!==localEndpoint)throw new Error('Associez cet appareil pour obtenir son autorisation.');
+ const replica=await network('/api/v2/autonomy',undefined,'GET',endpoint,token);
+ let descriptor;
+ try{descriptor=(await network('/api/v2/device',undefined,'GET',endpoint,token)).device;if(descriptor?.id!==target.id)throw new Error('L’identité de cet appareil a changé. Renouvelez son association.');}catch(error){if(error.status!==404||!target.id.startsWith('legacy-'))throw error;}
+ macroContextChanging++;
+ try{
+  await configureMacros({suspend:true,required:true});if(refreshFlight)await refreshFlight;
+  await linkReplicaEndpoint(endpoint,replica,descriptor?.id,installationUI.current.devices);
+  if(endpoint!==localEndpoint)await credentials.set(token,endpoint);
+  await commit();
+  server=endpoint;credential=token;online=false;
+  localStorage.setItem('sd2.server',endpoint);localStorage.setItem('sd2.workspace-mode','paired');
+  await openLocal();dialog.close();
+ }finally{macroContextChanging--;await refresh();render();}
+}
+let deviceExecutor;
+try{deviceExecutor=await createDeviceExecutor({bridge:createExecutorBridge(),installation:()=>installationUI.current,runtime:getLocalRuntime,openViewers:value=>globalThis.StreamDashboardNative?.openViewers?.(JSON.stringify(value))});}catch(error){toast(error.message||'Partage Android indisponible.');}
+const devicePermissionsUI=createDevicePermissionsUI({nativeExecutor:Boolean(deviceExecutor),request:(p,b,m)=>deviceExecutor?deviceExecutor.localRequest(p,b,m):network(p,b,m,localEndpoint||server,localEndpoint?'':credential),modal,esc});
+const discoveryUI=createDiscoveryUI({scan:()=>deviceExecutor?deviceExecutor.localRequest('/api/v1/remote/discover'):network('/api/v1/remote/discover',undefined,'GET',localEndpoint,''),modal,esc,localId:()=>installationUI.current.localDeviceId,choose:(endpoint,hint)=>connectionDialog(endpoint,hint)});
+const actionRouter=createActionRouter({installation:()=>installationUI.current,workspace:()=>autonomy?.store.scope||server||LOCAL_SCOPE,localEndpoint,credential:origin=>credentials.get(origin),request:network});
+const actionRoutingUI=createActionRoutingUI({installationUI,router:actionRouter,workspace:()=>autonomy?.store.scope||server||LOCAL_SCOPE,actions:()=>data?.configuration.actions||[],localEndpoint,modal,esc,changed:async()=>{await configureMacros({synchronized:online});dialog.close();render();}});
+const transferContexts={
+ devices:async()=>{await installationUI.reload();const model=installationUI.current;return [
+  {id:'autonomous',deviceId:model.localDeviceId,local:true,scope:LOCAL_SCOPE,name:device.name+' · espace autonome'},
+  ...(localEndpoint?[{id:'local-agent',deviceId:model.localDeviceId,endpoint:localEndpoint,scope:localEndpoint,name:device.name+' · agent Windows'}]:[]),
+  ...model.devices.filter(d=>d.enabled&&d.endpoint&&d.id!==model.localDeviceId).map(d=>({id:d.id,deviceId:d.id,endpoint:d.endpoint,scope:d.endpoint,name:d.name})),
+ ];},
+ snapshot:async target=>{
+  if(target.local){const runtime=await getLocalRuntime();await runtime.owner.store.reload();return {workspace:native?'device:'+installationUI.current.localDeviceId:runtime.owner.store.record.workspace,bundle:runtime.owner.store.view(),configurationTransfer:configurationTransferSupport('android')};}
+  const {endpoint,token}=await resolveHandoffDevice(target,false);return network('/api/v2/autonomy',undefined,'GET',endpoint,token);
+ },
+};
+const handoff=async(target,body)=>{
+  if(target.local){const runtime=await getLocalRuntime(),workspace=native?'device:'+installationUI.current.localDeviceId:runtime.owner.store.record.workspace;
+   const guard=()=>{if(target.deviceId!==installationUI.current.localDeviceId||body.workspace!==workspace)throw new Error('Identité locale modifiée.');if(!localCapabilityEnabled('planning'))throw new Error('Réactivez le rôle Planning avant de poursuivre.');};
+   guard();return {receipt:await runtime.planning.handoff(workspace,body.operation,body.ticket,body.proof,guard)};
+  }
+  const {endpoint,token}=await resolveHandoffDevice(target);return network('/api/v2/planning/handoff',body,'POST',endpoint,token);
+};
+const handoffUI=createLazyTask('planning-handoff',()=>import('./planning-handoff-ui.js'),'createPlanningHandoffUI',{...transferContexts,modal,esc,store:async()=>(await getLocalRuntime()).owner.store,changed:()=>refresh(true),call:handoff});
+async function resolveHandoffDevice(target,planning=true){
+ await installationUI.reload();const model=installationUI.current,current=model.devices.find(d=>d.id===target.deviceId&&d.enabled);
+ if(!current)throw new Error('Réactivez ou associez cet appareil pour reprendre le transfert.');
+ const endpoint=target.id==='local-agent'?localEndpoint:current.endpoint;if(!endpoint)throw new Error('Adresse de cet appareil indisponible.');
+ const token=endpoint===localEndpoint?'':await credentials.get(endpoint),descriptor=await network('/api/v2/device',undefined,'GET',endpoint,token);
+ if(descriptor.device?.id!==target.deviceId)throw new Error('Identité de l’appareil différente. Transfert suspendu.');
+ if(planning&&!deviceRoleAvailable(descriptor.device,'planning'))throw new Error('Réactivez le rôle Planning sur cet appareil.');
+ return {endpoint,token,descriptor};
+}
+const localConfigurationSync=createExecutorSync({runtime:getLocalRuntime,workspace:()=>native?'device:'+installationUI.current.localDeviceId:localRuntime.owner.store.record.workspace,authorize:()=>{},requireRole:()=>{throw new Error('Utilisez le transfert dédié au planning.');}});
+const applyConfiguration=async(target,body)=>{
+  if(target.local){await getLocalRuntime();if(target.deviceId!==installationUI.current.localDeviceId)throw new Error('Identité locale différente.');const receipt=await localConfigurationSync({},body);return {workspace:body.workspace,receipt};}
+  const {endpoint,token}=await resolveHandoffDevice(target,false);return network('/api/v2/autonomy/sync',body,'POST',endpoint,token);
+};
+const configurationCopyUI=createLazyTask('configuration-copy',()=>import('./configuration-transfer-ui.js'),'createConfigurationTransferUI',{...transferContexts,modal,esc,store:async()=>(await getLocalRuntime()).owner.store,changed:()=>refresh(true),apply:applyConfiguration});
+let localSoundLibrary;
+const readSoundLibrary=async(target,body)=>{
+  if(target.local){const runtime=await getLocalRuntime(),store=runtime.owner.store;
+   const guard=()=>{const workspace=native?'device:'+installationUI.current.localDeviceId:store.record.workspace;if(target.deviceId!==installationUI.current.localDeviceId||body.workspace!==workspace)throw new Error('Identité locale différente.');};
+   localSoundLibrary||=createLocalSoundLibrary(store);return localSoundLibrary(body,'local',guard);
+  }
+  const {endpoint,token}=await resolveHandoffDevice(target,false);return network('/api/v2/sounds/export',body,'POST',endpoint,token);
+};
+const uploadLibrarySound=async(target,input)=>{
+  if(target.local){const runtime=await getLocalRuntime(),store=runtime.owner.store,model=installationUI.current,own=model.devices.find(d=>d.id===model.localDeviceId),workspace=native?'device:'+own.id:store.record.workspace;
+   return uploadLocalSound(store,input,own,workspace,()=>{if(target.deviceId!==installationUI.current.localDeviceId||(!native&&store.record.workspace!==workspace))throw new Error('Identité locale différente.');});
+  }
+  const {endpoint,token}=await resolveHandoffDevice(target,false);return uploadSound({...input,peers,origin:endpoint,token,expectedDeviceId:target.deviceId});
+};
+const soundLibraryUI=createLazyTask('sound-library',()=>import('./sound-library-ui.js'),'createSoundLibraryUI',{...transferContexts,modal,esc,store:async()=>(await getLocalRuntime()).owner.store,changed:()=>refresh(true),read:readSoundLibrary,upload:uploadLibrarySound});
+const migrationDescriptor=async target=>{
+ await installationUI.reload();
+ if(target.local){if(target.deviceId!==installationUI.current.localDeviceId)throw new Error('Identité locale différente.');return {device:installationUI.current.devices.find(d=>d.id===target.deviceId)};}
+ return (await resolveHandoffDevice(target,false)).descriptor;
+};
+const migrationPreflight=async job=>{
+ for(const target of [job.source,job.target]){
+  const descriptor=await migrationDescriptor(target);
+  if(descriptor.device?.id!==target.deviceId)throw new Error('Identité de l’appareil différente.');
+  if(!target.local&&!descriptor.observed?.permissions?.includes('configuration'))throw new Error('Une association avec administration complète est nécessaire sur '+target.name+'.');
+  if(job.planning.length&&!deviceRoleAvailable(descriptor.device,'planning'))throw new Error('Activez Services et planning sur '+target.name+'.');
+  if(target.id===job.target.id){
+   if(job.audio.items.length&&!deviceRoleAvailable(descriptor.device,'audio'))throw new Error('Activez Audio local sur '+target.name+'.');
+   for(const route of job.routing.changes.actionRoutes||[])if(route.deviceId===target.deviceId&&!deviceRoleAvailable(descriptor.device,route.definition.type.startsWith('sound.')?'audio':route.definition.type.startsWith('replay.')?'clips':['chat.send','wizebot.command'].includes(route.definition.type)?'chat':'obs'))throw new Error('Un rôle nécessaire aux boutons est arrêté sur '+target.name+'.');
+  }
+ }
+};
+const setupMigrationUI=createLazyTask('setup-migration',()=>import('./setup-migration-ui.js'),'createSetupMigrationUI',{...transferContexts,modal,esc,descriptor:migrationDescriptor,installation:()=>installationUI.reload(),changeInstallation:(changes,revision)=>installationUI.apply(changes,revision),preflight:migrationPreflight,apply:applyConfiguration,handoff,read:readSoundLibrary,upload:uploadLibrarySound,store:async()=>(await getLocalRuntime()).owner.store,changed:async()=>{await installationUI.reload();await configureMacros({synchronized:online});await refresh(true);}});
+function deviceSetup(){installationUI.open();}
+
 const deviceAccounts=createDeviceAccounts({modal,esc,toast,request:(p,b,m)=>{if(!localEndpoint)throw new Error('Les comptes propres à cet appareil nécessitent l’application Android ou Windows.');return network(p,b,m,localEndpoint,'');},openExternal:url=>globalThis.streamDashboardDesktop?.openExternalAuth?.(url)});
-function connectionDialog(){modal(`<h2>Associer une régie</h2><p>La régie exécute les commandes OBS et les sons. Vos comptes locaux restent accessibles indépendamment.</p><form id="connection-form">${input('Adresse de la régie','server',server||'','url','placeholder="http://nom-du-pc:48133"')}<p class="small muted">Sur la régie : Configuration → Appareils → Créer un code de gestion complète. Collez le lien obtenu ici.</p>${input('Lien d’association (ou laisser vide si déjà associé)','link')}<div class="form-grid">${input('Identifiant d’association','pair')}${input('Code temporaire','code')}</div>${input('Nom de cet appareil','name',device.name)}<div class="form-actions"><button>Se connecter</button><button type="button" class="secondary" data-task="device-accounts">Mes comptes sur cet appareil</button></div></form>`);}
-async function switchWorkspace(local){if(local&&['deck','live','sounds'].includes(page))page='manage';if(refreshFlight)await refreshFlight;server=local?(workspaceEndpoint||''):(localStorage.getItem('sd2.server')||'');localStorage.setItem('sd2.workspace-mode',local?'local':'paired');online=false;await configureMacros();await openLocal();dialog.close();render();await refresh();}
-function metadataDialog(planned){const m=planned?{...data.configuration.metadata,title:planned.title,description:planned.description||'',twitchGameId:planned.twitchCategoryId||'',tags:planned.tags?.values||data.configuration.metadata.tags}:(autonomy?.store.record.drafts.metadata||data.configuration.metadata);modal(`<h2>Informations communes du live</h2><p class="small muted">Le titre et les tags s’appliquent aux deux plateformes. Le jeu Twitch et la catégorie YouTube ont une correspondance explicite ; la description est propre à YouTube.</p><form id="metadata-form" data-revision="${data.configuration.revision}">${input('Titre Twitch + YouTube','title',m.title,'text','required maxlength="100"')}<label>Description YouTube<textarea name="description" maxlength="5000">${esc(m.description)}</textarea></label><div class="form-grid">${input('ID du jeu Twitch','twitchGameId',m.twitchGameId)}${input('Catégorie YouTube (20 = Jeux vidéo)','youtubeCategoryId',m.youtubeCategoryId,'text','required')}</div>${input('Tags communs, séparés par une virgule','tags',m.tags.join(', '))}<button type="button" class="secondary" data-task="search-category">Rechercher le jeu Twitch</button><div id="category-results"></div><div class="form-actions"><button name="intent" value="draft" class="secondary">Conserver le brouillon</button><button name="intent" value="apply" ${!online?'disabled':''}>Appliquer à Twitch et YouTube</button></div></form>`);}
-function editAction(id){if(data.configuration.actions.find(a=>a.id===id)?.type==='wizebot.command'){editWizebot(id);return;}configurationDraft=structuredClone(data.configuration);const a=configurationDraft.actions.find(x=>x.id===id)||{id:'action_'+uuid().slice(0,8),label:'',type:'sound.play',value:'',color:'purple',shortcut:''};modal(`<h2>${id?'Modifier':'Ajouter'} un bouton</h2><form id="action-form" data-id="${esc(a.id)}">${input('Libellé','label',a.label,'text','required maxlength="80"')}${select('Action sur le PC de stream','type',Object.keys(icons).map(x=>[x,{'mic.toggle':'Micro · basculer muet','scene.set':'Choisir une scène','mode.set':'Scène associée à un mode','timer.add':'Ajouter des secondes','sound.play':'Jouer un son du catalogue','sound.stop':'Arrêter le son en cours','alert.play':'Relancer une source média OBS','chat.send':'Envoyer un message dans le chat','wizebot.command':'Commande WizeBot dans Twitch','replay.save':'Sauvegarder un clip OBS','replay.start':'Préparer le tampon de replay','replay.stop':'Arrêter le tampon de replay','live.start':'Lancer Twitch ET YouTube','live.stop':'Arrêter les deux diffusions'}[x]]),a.type)}${input('Paramètre (source, scène, ID son, secondes ou twitch:message / youtube:message)','value',a.value)}<p class="small muted">Micro : vide pour utiliser le micro principal. Modes : intro, live, pause, end, chatting. Les sons sont joués par OBS.</p>${select('Couleur','color',[['purple','Violet'],['green','Vert'],['amber','Ambre'],['red','Rouge']],a.color)}${select('Macro clavier','shortcut',[['','Aucun'],...Array.from({length:24},(_,i)=>[`Control+Alt+Shift+F${i+1}`,`Ctrl + Alt + Maj + F${i+1}`])],a.shortcut)}<div class="form-actions">${id?`<button type="button" class="danger" data-remove-action="${esc(a.id)}">Supprimer</button>`:''}<button>Enregistrer</button></div></form>`);}
+function connectionDialog(endpoint=server,hint){const hintedPin=typeof hint?.fingerprint==='string'&&/^[a-f0-9]{64}$/.test(hint.fingerprint)?hint.fingerprint:'';const quick=!!hintedPin;modal(`<h2>Associer un appareil</h2><p>Choisissez un ordinateur ou un Android compatible. Vos comptes locaux restent accessibles indépendamment.</p>${localEndpoint||deviceExecutor?'<button type="button" class="secondary" data-task="discover-devices">Rechercher sur le réseau local</button>':''}${quick?`<p>Régie détectée : <b>${esc(hint.name||'PC')}</b>. Vérifiez sur le PC le code d’identité <b>${hintedPin.slice(0,12).toUpperCase().match(/.{1,4}/g).join(' ')}</b> avant toute autorisation.</p>`:''}<form id="connection-form">${quick?'<details><summary>Connexion manuelle (avancé)</summary>':''}${input('Adresse de la régie','server',endpoint||'','url','placeholder="https://nom-du-pc:48136"')}<p class="small muted">Sur la régie : Configuration → Appareils → Créer un code de gestion complète. Collez le lien obtenu ici.</p>${input('Lien d’association (ou laisser vide si déjà associé)','link')}<div class="form-grid">${input('Identifiant d’association','pair')}${input('Code temporaire','code')}</div>${input('Empreinte SHA-256 affichée par l’agent (incluse dans le lien)','fingerprint')}<p class="small muted">Vérifiez le lien sur l’appareil à associer. Une nouvelle empreinte remplace son identité de confiance.</p>${quick?'<button type="submit" class="secondary">Association manuelle</button></details>':''}${input('Nom de cet appareil','name',device.name)}<div class="form-actions"><button type="button" data-task="request-pc-authorization">Demander l’autorisation sur le PC</button>${quick?'':'<button>Se connecter (parcours avancé)</button>'}<button type="button" class="secondary" data-task="device-accounts">Mes comptes sur cet appareil</button></div></form>`);if(hintedPin)$('#connection-form').elements.fingerprint.value=hintedPin;}
+async function switchWorkspace(local){
+ if(local&&page==='live')page='deck';
+ // Invalidate immediately; a previous poll must not rearm keys while the source changes.
+ macroContextChanging++;
+ try{await configureMacros({suspend:true,required:true});if(refreshFlight)await refreshFlight;server=local?(workspaceEndpoint||''):(localStorage.getItem('sd2.server')||'');localStorage.setItem('sd2.workspace-mode',local?'local':'paired');online=false;await openLocal();dialog.close();render();}
+ finally{macroContextChanging--;}
+ await refresh();
+}
+function metadataDialog(planned,platform){platform=platform==='twitch'?'twitch':'';const m=planned?{...data.configuration.metadata,title:planned.title,description:planned.description||'',twitchGameId:planned.twitchCategoryId||'',tags:planned.tags?.values||data.configuration.metadata.tags}:(autonomy?.store.record.drafts.metadata||data.configuration.metadata);const source=server||localEndpoint,cacheKey=id=>source+'\u001f'+id;const channel=data.host.state.twitch||{};const name=twitchGameNames.get(cacheKey(m.twitchGameId))||(channel.gameId===m.twitchGameId?channel.gameName:'')||(data.host.state.controlHub?.live?.categoryId===m.twitchGameId?data.host.state.controlHub.live.category:'')||(planned?.twitchCategoryId===m.twitchGameId?planned.twitchCategoryName:'')||'';modal(`<h2>Informations Twitch</h2><p class="small muted">Le titre, le jeu et les tags sont transmis uniquement à Twitch.</p><form id="metadata-form" data-platform="${esc(platform||'')}" data-revision="${data.configuration.revision}">${input('Titre Twitch','title',m.title,'text','required maxlength="100"')}<div class="form-grid"><div><label>Rechercher un jeu ou une catégorie Twitch<input type="search" id="twitch-game-query" placeholder="Ex. Minecraft, Just Chatting…" autocomplete="off"></label><input type="hidden" name="twitchGameId" value="${esc(m.twitchGameId)}"><p id="twitch-game-selected" class="small muted" role="status"></p></div></div>${input('Tags communs, séparés par une virgule','tags',m.tags.join(', '))}<button type="button" class="secondary" data-twitch-category-search>Rechercher sur Twitch</button><div id="category-results" aria-live="polite"></div><div class="form-actions"><button name="intent" value="draft" class="secondary">Conserver le brouillon</button><button name="intent" value="apply" ${!online&&!(native&&!server)?'disabled':''}>${platform?'Valider et reprendre '+esc(platform):'Appliquer à Twitch'}</button></div></form>`);const form=$('#metadata-form');createTwitchCategoryPicker(form,{request:path=>api(path),isCurrent:()=>dialog.open&&$('#metadata-form')===form&&source===(server||localEndpoint),initialName:name,remember:game=>twitchGameNames.set(cacheKey(game.id),game.name)});}
+function editAction(id){if(data.configuration.actions.find(a=>a.id===id)?.type==='wizebot.command'){editWizebot(id);return;}configurationDraft=structuredClone(data.configuration);const a=configurationDraft.actions.find(x=>x.id===id)||{id:'action_'+uuid().slice(0,8),label:'',type:'sound.play',value:'',color:'purple',shortcut:''};modal(`<h2>${id?'Modifier':'Ajouter'} un bouton</h2><form id="action-form" data-id="${esc(a.id)}">${input('Libellé','label',a.label,'text','required maxlength="80"')}${select(server?'Action sur le PC de stream':'Action du bouton','type',Object.keys(ACTIONS).filter(type=>!native||server||!['obs','clips'].includes(ACTIONS[type].capability)||type===a.type).map(type=>[type,ACTIONS[type].label]),a.type)}${input('Paramètre (source, scène, ID son, secondes ou twitch:message)','value',a.value)}<p class="small muted">Micro : vide pour utiliser le micro principal. Modes : intro, live, pause, end, chatting. Les sons sont joués ${server?'par OBS':'sur cet appareil'}.</p>${select('Couleur','color',[['purple','Violet'],['green','Vert'],['amber','Ambre'],['red','Rouge']],a.color)}${select('Macro clavier','shortcut',[['','Aucun'],...Array.from({length:24},(_,i)=>[`Control+Alt+Shift+F${i+1}`,`Ctrl + Alt + Maj + F${i+1}`])],a.shortcut)}<div class="form-actions">${id?`<button type="button" class="danger" data-remove-action="${esc(a.id)}">Supprimer</button>`:''}<button>Enregistrer</button></div></form>`);}
 async function refresh(force=false){
+ if(macroContextChanging)return;
  if(force&&server&&!online&&data){render();if(!refreshFlight)void refresh().catch(()=>{});return;}
- if(!server){await autonomy?.store.reload();const bundle=autonomy?.store.view();if(bundle){data=bundle.data;sounds=bundle.sounds;}render();return;}
+ if(!server){if(refreshFlight)return refreshFlight;const owner=autonomy;return refreshFlight=(async()=>{await owner?.store.reload();try{await deviceAudio?.refresh?.();soundError='';}catch(error){soundError=error.message;}if(owner!==autonomy||server)return;applyWorkspaceBundle(owner?.store.view());void configureMacros();render({passive:!force});})().finally(()=>{refreshFlight=undefined;});}
  if(refreshFlight){await refreshFlight;if(force)return refresh(true);return;}
  refreshFlight=(async()=>{
   try{
    if(!autonomy)throw new Error(storageError||'Stockage local indisponible.');
    await autonomy.sync();
-   const [audio,clips]=await Promise.all([network('/api/v1/soundboard').catch(()=>null),network('/api/v2/replay').catch(error=>({active:null,error:error.message}))]);
-   replay=clips;data=autonomy.store.view().data;sounds=autonomy.store.view().sounds;
-   if(audio){sounds={...audio,sounds:sounds.sounds.map(s=>({...s,sourceAvailable:audio.sounds.find(x=>x.id===s.id)?.sourceAvailable===true}))};}soundError='';const reconnect=!online;online=true;shell();
-   if(force||reconnect||(!dialog.open&&['live','deck','sounds','planning'].includes(page)&&!pointerHeld&&!document.activeElement?.matches('input, textarea, select, [contenteditable]')))render();
-   void configureMacros();
-  }catch(e){online=false;void configureMacros();replay={active:null,error:'Régie déconnectée'};if(sounds)sounds.currentPlayback=null;shell();if(!dialog.open)render();if(force)toast(e.message);}
+   const needsAudio=['live','deck','sounds'].includes(page),needsReplay=['live','deck'].includes(page);
+   const [audio,clips]=await Promise.all([needsAudio?network('/api/v1/soundboard').catch(()=>null):null,needsReplay?network('/api/v2/replay').catch(error=>({active:null,error:error.message})):replay]);
+   replay=clips;const bundle=autonomy.store.view();data=bundle.data;sounds=bundle.sounds;
+   if(audio){sounds={...audio,sounds:sounds.sounds.map(s=>({...s,sourceAvailable:audio.sounds.find(x=>x.id===s.id)?.sourceAvailable===true}))};}soundError='';const reconnect=!online;online=true;shell();updateLiveMonitor();
+   if(force||reconnect||(!dialog.open&&['live','activity','deck','sounds','planning'].includes(page)&&!pointerHeld&&!document.activeElement?.matches('input, textarea, select, [contenteditable]')))render({passive:!force});
+   void configureMacros({synchronized:true});
+  }catch(e){online=false;void configureMacros({suspend:!isTemporaryControllerFailure(e)});replay={active:null,error:'Régie déconnectée'};if(sounds){sounds.currentPlayback=null;sounds.activePlaybacks=[];}shell();updateLiveMonitor();if(!dialog.open)render({passive:!force});if(force)toast(e.message);}
  })().finally(()=>{refreshFlight=undefined;});
  return refreshFlight;
 }
-async function runAction(action,platform,soundId){if(!online||(busy&&action!=='sound.stop'))return;if(commandsBlocked()){toast('Synchronisez les réglages en attente avant de déclencher une commande.');return;}const configured=data.configuration.actions.find(a=>a.id===action);if((action==='live.stop'||configured?.type==='live.stop')&&!confirm('Arrêter la diffusion Twitch ET YouTube ?'))return;busy=true;render();try{const result=await api('/api/v2/actions',{id:uuid(),issuedAt:new Date().toISOString(),action:['live.start','live.stop'].includes(configured?.type)?configured.type:action, ...(platform?{platform}:{}),...(soundId?{soundId}:{})});toast(`${labels[result.status]} · ${result.message}`);globalThis.StreamDashboardNative?.haptic(result.status==='succeeded'?'light':'heavy');}catch(e){toast(`Résultat non reçu : ${e.message}. Vérifiez le journal avant de recommencer.`);}finally{busy=false;await refresh(true);}}
+async function runLocalAction(action,type,configured,soundId){
+ if(!['sound.play','sound.stop','wizebot.command'].includes(type)){toast('Cette commande nécessite une régie connectée.');return;}
+ if(busy&&type!=='sound.stop')return;
+ const owner=autonomy,player=deviceAudio;
+ activeCommands++;busy=true;
+ try{
+  render();let result;
+  if(globalThis.streamDashboardDesktop?.autonomousRequest){
+   const receipt=await globalThis.streamDashboardDesktop.autonomousRequest('command',{id:uuid(),issuedAt:new Date().toISOString(),workspace:owner.store.record.workspace,action,expectedAction:configured,soundId});
+   if(owner===autonomy&&!server)toast((labels[receipt.status]||'À vérifier')+' · '+receipt.message);
+   return;
+  }
+  if(type==='sound.play')result=await player.play(soundId||configured?.value);
+  else if(type==='sound.stop')result=player.stop();
+  else{
+   const context=await api('/api/v2/wizebot/context');
+   if(owner!==autonomy||server||macroContextChanging)return;
+   if(!context.connected||!context.canSend||!context.channel)throw new Error('Connectez Twitch sur cet appareil avec les droits du tchat.');
+   if(configured?.wizebot?.channel&&configured.wizebot.channel!==context.channel)throw new Error('Ce bouton appartient à une autre chaîne Twitch. Actualisez vos commandes WizeBot.');
+   result=await api('/api/v2/wizebot/command',{commandId:uuid(),channel:context.channel,command:configured?.value||''});
+  }
+  if(owner!==autonomy||server)return;
+  const receipt={id:uuid(),action,status:result.status==='sent'?'succeeded':result.status||'uncertain',message:result.message||'Résultat à vérifier.',createdAt:new Date().toISOString()};
+  await owner.store.draft('deviceReceipts',[...(owner.store.record.drafts.deviceReceipts||[]),receipt].slice(-50));
+  toast((labels[receipt.status]||'À vérifier')+' · '+receipt.message);
+  globalThis.StreamDashboardNative?.haptic(receipt.status==='succeeded'?'light':'heavy');
+ }catch(error){if(error?.code!=='CANCELED'&&owner===autonomy&&!server)toast(error.message||'Action locale non confirmée.');}
+ finally{busy=--activeCommands>0;if(owner===autonomy&&!server)await refresh(true);}
+}
+async function runAction(action,platform,soundId){
+ const configured=data?.configuration.actions.find(value=>value.id===action),type=configured?.type||action;
+ if(commandsBlocked()&&!(action==='sound.stop'&&!macroContextChanging)){toast('Synchronisez les réglages en attente avant de déclencher une commande.');return;}
+ if(configured&&actionRouter.binding(configured)){
+  const bound=actionRouter.binding(configured);
+  if(busy&&!['sound.stop','live.stop'].includes(bound.definition.type))return;
+  if(bound.definition.type==='live.stop'&&!confirm('Arrêter la diffusion sur l’appareil cible ?'))return;
+  activeCommands++;busy=true;
+  try{render();const result=await actionRouter.execute(configured,{id:uuid(),issuedAt:new Date().toISOString(),...(platform?{platform}:{})});toast(`${result.deviceName} · ${labels[result.status]} · ${result.message}`);}
+  catch(error){toast('Destination : '+error.message+' Aucun nouvel envoi automatique.');}
+  finally{busy=--activeCommands>0;render();}return;
+ }
+ if(!server&&deviceAudio){const available=actionAvailability(configured||{type,value:soundId});if(available&&available.status!=='available'){toast(available.message);return;}return runLocalAction(action,type,configured,soundId);}
+ if(!online||(busy&&!['sound.stop','live.stop'].includes(type)))return;
+ const availability=type==='sound.stop'?null:actionAvailability(configured||{type,value:soundId});if(availability&&availability.status!=='available'){toast(availability.message);return;}
+ if(type==='replay.save'&&replay?.active!==true){replayDialog();return;}
+ if(type==='live.start'){
+  const current=liveControlState(data,online);
+  if(platform&&platform!=='twitch'){toast('YouTube désactivé.');return;}if(platform?current.destinations[platform].live===true:current.anyActive){toast(platform?`${platform==='youtube'?'YouTube':'Twitch'} est déjà en direct.`:'Une diffusion est déjà en cours. Utilisez le contrôle de la destination à compléter.');return;}
+  if(current.running||!(platform?current.destinations[platform].canStart:current.canStartBoth)){toast('Vérifiez la configuration et l’état des destinations avant de lancer le live.');return;}
+ }
+ if(type==='live.stop'&&!confirm(`Arrêter la diffusion ${platform?(platform==='youtube'?'YouTube':'Twitch'):'Twitch'} ?`))return;
+ activeCommands++;busy=true;
+ try{
+  render();
+  const result=await api('/api/v2/actions',{id:uuid(),issuedAt:new Date().toISOString(),action:['live.start','live.stop'].includes(configured?.type)?configured.type:action,...(platform?{platform}:{}),...(soundId?{soundId}:{}),...(configured?{expectedAction:configured}:{})});
+  toast(`${labels[result.status]} · ${result.message}`);globalThis.StreamDashboardNative?.haptic(result.status==='succeeded'?'light':'heavy');
+ }catch(error){toast(`Résultat non reçu : ${error.message}. Vérifiez le journal avant de recommencer.`);}
+ finally{busy=--activeCommands>0;await refresh(true);if(dialog.open&&$('#replay-dialog-root'))replayDialog();}
+}
+
 async function openAuthorization(value){const url=value.url||value.authorizationUrl||value.verification_uri||value.verificationUri; if(!url){toast(JSON.stringify(value));return;}if(data.host.local&&globalThis.streamDashboardDesktop?.openExternalAuth)await globalThis.streamDashboardDesktop.openExternalAuth(url);modal(`<h2>Autorisation du service</h2><p class="small">${value.user_code||value.userCode?'Code : <b>'+esc(value.user_code||value.userCode)+'</b>':'Terminez cette autorisation dans le navigateur du PC de stream.'}</p><p><a href="${esc(url)}" target="_blank" rel="noopener">Ouvrir l’autorisation</a></p><label>Lien à ouvrir sur le PC de stream<textarea readonly>${esc(url)}</textarea></label>`);}
 async function jsonEditor(title,path,key,method='PUT'){const response=await api(path);profileDraft=response;modal(`<h2>${esc(title)}</h2><form id="json-form" data-path="${esc(path)}" data-key="${esc(key||'')}" data-method="${method}"><label>Configuration JSON<textarea name="value" rows="16">${esc(JSON.stringify(key?response[key]:response,null,2))}</textarea></label><div class="form-actions"><button>Enregistrer</button></div></form>`);}
-async function task(name){
+async function task(name,b){
+ if(['storage','storage-purge','storage-restore'].includes(name)){storageUI??=(await import('./audio-storage.js')).createStorageUI({getStore:()=>autonomy.store,isLocal:()=>!server,modal,esc,toast});return name==='storage'?storageUI.open():name==='storage-restore'?storageUI.restore():storageUI.purge();}
+
  if(name==='close-dialog'){dialog.close();return;}
  if(name==='connection'){connectionDialog();return;}
- if(name==='device-setup'){deviceSetup();return;}
+ if(name==='request-pc-authorization'){
+  const form=$('#connection-form'),origin=normalizeServer(form.elements.server.value),pin=fingerprint(form.elements.fingerprint.value),previous=await peers.getFingerprint(origin);
+  if(await credentials.get(origin))throw new Error('Cet appareil possède déjà une association. Utilisez Se connecter pour la réutiliser.');
+  if(!confirm('Avez-vous vérifié cette empreinte SHA-256 sur le PC choisi ? '+pin))return;
+  if(previous&&previous!==pin)throw new Error('Identité modifiée. Utilisez le parcours avancé pour la vérifier.');
+  await peers.trust(origin,pin,previous);
+  try{
+   const pending=await network('/api/v1/remote/requests',{name:form.elements.name.value,fingerprint:pin},'POST',origin,'');
+   modal(`<h2>Autorisation en attente sur le PC</h2><p>Sur FIXE : Configuration → Appareils → Demandes d’autorisation. Vérifiez le même code sur les deux écrans avant d’approuver.</p><b>${esc(pending.code)}</b><p>La demande expire dans cinq minutes. Fermer annule l’attente sur ce téléphone.</p><p data-pairing-status></p>`);
+   const marker=$('[data-pairing-status]');
+   while(marker?.isConnected&&Date.now()<pending.expiresAt){
+    const result=await network('/api/v1/remote/requests/'+encodeURIComponent(pending.id)+'/poll',{secret:pending.secret},'POST',origin,'');
+    if(!marker.isConnected)return;
+    if(result.state==='denied')throw new Error('Autorisation refusée sur le PC.');
+    if(result.state==='approved'){
+     await credentials.set(result.paired.credential,origin);
+     connectionDialog(origin);$('#connection-form').elements.fingerprint.value=pin;$('#connection-form').requestSubmit();return;
+    }
+    await new Promise(resolve=>setTimeout(resolve,2000));
+   }
+  }finally{if(!await credentials.get(origin))await peers.trust(origin,previous,pin);}
+  return;
+ }
+ if(await discoveryUI.task(name,b))return;
+ if(await devicePermissionsUI.task(name,b))return;
+ if(await actionRoutingUI.task(name,b))return;
+ if(await installationUI.task(name,b))return;
+ if(await setupMigrationUI.task(name,b))return;
+ if(await handoffUI.task(name,b))return;
+ if(await configurationCopyUI.task(name,b))return;
+ if(await soundLibraryUI.task(name,b))return;
+ if(name==='navigation-mode'){const classic=localStorage.getItem('sd2.navigation')==='classic';localStorage.setItem('sd2.navigation',classic?'simple':'classic');document.documentElement.classList.toggle('simple-nav',classic);render();return;}
+ if(name==='keep-awake'){const active=localStorage.getItem('sd2.keep-awake')!=='false';localStorage.setItem('sd2.keep-awake',String(!active));globalThis.StreamDashboardNative?.setKeepAwake(!active);render();toast(!active?'Écran maintenu allumé.':'Veille normale du téléphone rétablie.');return;}
  if(name==='device-accounts'){await deviceAccounts.open();return;}
  if(name==='use-local'||name==='use-paired'){await switchWorkspace(name==='use-local');return;}
  if(name==='import-local'){const source=await openReplica(LOCAL_SCOPE);const pending=source.record.pending;source.close();modal(`<h2>Transférer mes créations locales</h2><p>Destination : ${esc(server)}. La destination reprend les événements et leurs identifiants de publication. Ils restent consultables ici ; leurs prochaines modifications se feront dans la destination. Les comptes et secrets restent sur cet appareil.</p><p>${pending.length} modification(s) à transférer.</p><ul>${pending.map(op=>`<li>${esc(op.value?.title||op.value?.label||op.key)}</li>`).join('')}</ul><button data-task="import-local-apply" ${pending.length?'':'disabled'}>Transférer ces modifications</button>`);return;}
@@ -207,17 +844,62 @@ async function task(name){
    const initial=source.record.pending.find(op=>op.key==='sound/'+id&&op.base===null&&op.value);
    if(!initial||!source.view().sounds.sounds.some(x=>x.id===id))continue;
    const file=await source.soundAsset(id);if(!file)throw new Error('Fichier audio local manquant : '+asset.name);
-   const response=await fetch(server+'/api/v2/sounds/upload?id='+encodeURIComponent(id)+'&name='+encodeURIComponent(initial.value.name)+'&extension='+encodeURIComponent(asset.name.split('.').pop()),{method:'POST',headers:{...(server===localEndpoint?{}:{Authorization:`Device ${credential}`}), 'Content-Type':'application/octet-stream'},body:file,signal:AbortSignal.timeout(120000)});
-   if(!response.ok){const failure=await response.json().catch(()=>({}));throw new Error('Transfert audio refusé : '+asset.name+' · '+(failure.error?.message||failure.error||response.status)+'. Les données locales sont conservées.');}
+   await uploadSound({peers,origin:server,token:server===localEndpoint?'':credential,file,filename:asset.name,name:initial.value.name,soundId:id,expectedDeviceId:soundDestinationId()});
   }}finally{source.close();}
   await autonomy.store.importLocal(LOCAL_SCOPE);dialog.close();await refresh(true);return;
  }
 
  if(name==='sync-status'){syncDialog();return;}
  if(name==='sync-now'){await refresh();syncDialog();return;}
- if(name==='sync-export'){const blob=new Blob([JSON.stringify(autonomy?.store.record,null,2)],{type:'application/json'}),url=URL.createObjectURL(blob),link=document.createElement('a');link.href=url;link.download='StreamDashboard-copie-locale.json';link.click();setTimeout(()=>URL.revokeObjectURL(url),1000);return;}
+ if(name==='sync-export'){await exportJSON(autonomy?.store.record,'StreamDashboard-copie-locale.json');return;}
  if(!data)throw new Error('Connectez la régie.');
  if(name==='metadata'){metadataDialog();return;}
+ if(name==='spontaneous-live'){
+   // One tap opens a preview, NEVER starts OBS. No planning event is created.
+   const current=liveControlState(data,online);
+   const allowed=Boolean(online&&!busy&&!commandsBlocked()&&current.canStartBoth&&
+     !current.running&&!current.anyActive&&!current.unconfirmed);
+   const title=esc(data.configuration?.metadata?.title||'Titre actuel de Twitch');
+   const reason=!online?'Régie déconnectée.':
+     current.anyActive?'Un live est déjà actif.':
+     current.running||current.unconfirmed?'OBS/Twitch doit confirmer son état.':
+     !current.canStartBoth?'Configuration Twitch ou OBS à vérifier.':
+     commandsBlocked()?'Synchronisation des commandes en attente.':
+     busy?'Une commande est déjà en cours.':
+     'Les informations Twitch actuelles seront réutilisées.';
+   modal(
+     '<h2>⚡ Live spontané</h2>'+
+     '<p>Démarrer un live Twitch maintenant, sans créer d’événement programmé.</p>'+
+     '<section class="panel"><b>Titre Twitch actuel</b><p>'+title+'</p>'+
+     '<p class="small muted">Le jeu et les tags enregistrés sont conservés.</p></section>'+
+     '<p class="'+(allowed?'small muted':'warn')+'">'+esc(reason)+'</p>'+
+     '<div class="form-actions spontaneous-live-confirmation">'+
+     '<button type="button" class="secondary" data-task="metadata">✎ Modifier le titre / jeu</button>'+
+     '<button type="button" data-task="spontaneous-live-confirm" '+(allowed?'':'disabled')+'>'+
+     '◉ Confirmer et lancer Twitch</button>'+
+     '<button type="button" class="secondary" data-task="close-dialog">Annuler</button></div>'
+   );
+   return;
+ }
+ if(name==='spontaneous-live-confirm'){
+   // Re-evaluate the safety guards; OBS/Twitch may have changed while the
+   // confirmation dialog was open. Use the SAME existing command pathway.
+   if(!dialog.open||!$('#dialog-content [data-task="spontaneous-live-confirm"]'))return;
+   const current=liveControlState(data,online);
+   if(!online||busy||commandsBlocked()||!current.canStartBoth||
+      current.anyActive||current.running||current.unconfirmed){
+     toast('Le live spontané ne peut pas démarrer : vérifiez OBS et Twitch.');
+     return;
+   }
+   b.disabled=true;
+   dialog.close();
+   await runAction('live.start');
+   return;
+ }
+ if(name==='refresh-live'){await refresh(true);return;}
+ if(name==='replay-config'){replayDialog();return;}
+ if(name==='refresh-replay'){replay=await api('/api/v2/replay');if(dialog.open&&$('#replay-dialog-root'))replayDialog();else render();return;}
+ if(name==='configure-platforms'){page='settings';tab='platforms';localStorage.setItem('sd2.page',page);render();return;}
  if(name==='new-action'){editAction();return;}
  if(name==='wizebot-catalog'){await wizebotManagement.open();return;}
  if(name==='new-wizebot'){editWizebot();return;}
@@ -227,18 +909,19 @@ async function task(name){
   modal(`<h2>Minuteur dans OBS</h2><p class="${r.ready?'succeeded':'warn'}">${r.ready?'Source confirmée dans la scène courante.':esc(r.error)}</p><p class="small">Source : ${esc(r.source||'À configurer')}</p><label>URL StreamDashboard Next sur le PC de stream<input readonly value="${esc(r.expectedUrl)}"></label><p class="small muted">Le compteur est visible en Introduction ou Pause. Si OBS utilise encore le port 48132, reconnectez sa source à Next.</p>${r.source?'<button data-task="timer-reconnect">Reconnecter la source à Next</button>':''}`);return;
  }
  if(name==='timer-duration'){modal(`<h2>Démarrer le minuteur</h2><form id="timer-form">${input('Durée en minutes','minutes',Math.max(1,data.host.state.timer.duration/60),'number','required min="0.016667" max="1440" step="any"')}<p class="small muted">Remplace la durée et démarre immédiatement sur la régie.</p><button>Démarrer cette durée</button></form>`);return;}
- if(name==='pairing'){const p=await api('/api/v1/remote/pairing',{management:true});modal(`<h2>Associer un appareil de confiance</h2><p class="small">Ce code donne accès au pilotage et à toute la configuration. Valable cinq minutes, une utilisation.</p><label>Lien à coller sur l’autre appareil<textarea readonly>${esc(`${p.urls[0]?.replace(/\/mobile\/?$/,'')}/mobile/control/?pair=${p.id}&code=${p.code}`)}</textarea></label><p>Code : <b>${esc(p.code)}</b></p><p class="small muted">Créez un code distinct pour chaque appareil.</p>`);return;}
- if(!server&&(['connect-twitch','connect-youtube','google-connect'].includes(name)||(native&&name==='google-secret'))){await deviceAccounts.open();return;}
+
+ if(!server&&(['connect-twitch','google-connect'].includes(name)||(native&&name==='google-secret'))){await deviceAccounts.open();return;}
  if(name==='connect-twitch'){await openAuthorization(await api('/api/v1/twitch/device',{}));return;}
- if(name==='connect-youtube'){await openAuthorization(await api('/api/v2/youtube/connect',{}));return;}
+
  if(name==='google-connect'){await openAuthorization(await api('/api/v1/google/oauth/start',{}));return;}
  if(name==='outputs'){
   const r=await api('/api/v2/outputs'),suite=r.streamSuite;
-  $('#output-list').innerHTML=`<h3>Sorties OBS</h3><p>${esc(r.outputs.map(v=>`${v.outputName} (${v.outputActive?'active':'inactive'})`).join(' · ')||'Aucune sortie nommée exposée par OBS.')}</p><h3>Aitum Stream Suite ${esc(suite.version||'')}</h3>${suite.error?`<p>${esc(suite.error)}</p>`:suite.outputs.map(v=>`<p><b>${esc(v.name)}</b> · ${esc(v.type)} · ${v.active?'active':'inactive'} ${v.type==='stream'&&suite.outputs.filter(o=>o.name===v.name).length===1?['twitch','youtube'].map(p=>`<button type="button" class="secondary" data-suite-output="${esc(v.name)}" data-platform="${p}">Associer à ${p}</button>`).join(' '):''}</p>`).join('')||'<p>Aucune sortie Stream Suite configurée.</p>'}<p>Vérifiez chaque destination, puis enregistrez la diffusion.</p>`;return;
+  $('#output-list').innerHTML=`<h3>Sorties OBS</h3><p>${esc(r.outputs.map(v=>`${v.outputName} (${v.outputActive?'active':'inactive'})`).join(' · ')||'Aucune sortie nommée exposée par OBS.')}</p><h3>Aitum Stream Suite ${esc(suite.version||'')}</h3>${suite.error?`<p>${esc(suite.error)}</p>`:suite.outputs.map(v=>`<p><b>${esc(v.name)}</b> · ${esc(v.type)} · ${v.active?'active':'inactive'} ${v.type==='stream'&&suite.outputs.filter(o=>o.name===v.name).length===1?['twitch'].map(p=>`<button type="button" class="secondary" data-suite-output="${esc(v.name)}" data-platform="${p}">Associer à ${p}</button>`).join(' '):''}</p>`).join('')||'<p>Aucune sortie Stream Suite configurée.</p>'}<p>Vérifiez chaque destination, puis enregistrez la diffusion.</p>`;return;
  }
- if(name==='youtube-broadcasts'){const r=await api('/api/v2/youtube/broadcasts');modal(`<h2>Choisir la diffusion YouTube</h2><p class="small muted">Aucune diffusion n’est créée automatiquement.</p>${r.items.map(v=>`<p><button class="secondary" data-broadcast="${esc(v.id)}" data-channel="${esc(v.channelId)}">${esc(v.title)} · ${esc(v.status)}${v.bound?'':' · flux non lié'}</button></p>`).join('')||'<p>Aucune diffusion préparée.</p>'}`);return;}
- if(name==='search-category'){const query=prompt('Nom du jeu Twitch');if(!query)return;const r=await api('/api/v1/twitch/categories?query='+encodeURIComponent(query));const items=Array.isArray(r)?r:r.items||r.data||[];$('#category-results').innerHTML=items.map(v=>`<button type="button" class="secondary" data-category="${esc(v.id)}">${esc(v.name)}</button>`).join('');return;}
+
+
  if(name==='profile-json'){await jsonEditor('Profil complet','/api/v1/profile','profile');return;}
+ if(name==='automations'&&native&&!server){modal('<h2>Automatisations</h2><p>Les règles sont exécutées par une régie associée. Cet Android autonome ne possède pas de moteur d’automatisation.</p><button data-task="connection">Associer une régie</button><button class="secondary" data-task="close-dialog">Fermer</button>');return;}
  if(name==='automations'){const r=await api('/api/v1/automations');modal(`<h2>Automatisations</h2><p class="small muted">Déclencheurs et actions sont exécutés par le PC de stream.</p>${(r.items||r.automations||r).map?.(a=>`<p><button class="secondary" data-automation="${esc(a.id)}">${esc(a.name||a.id)}</button></p>`).join('')||''}<button data-task="new-automation">Créer une règle</button>`);profileDraft=r;return;}
  if(name==='new-automation'){modal(`<h2>Nouvelle automatisation</h2><form id="automation-form"><label>Règle JSON<textarea name="value" rows="14">${esc(JSON.stringify({name:'Nouvelle règle',enabled:false,trigger:{type:'stream.started'},actions:[{type:'timer.start',payload:{}}]},null,2))}</textarea></label><button>Créer</button></form>`);return;}
  if(name==='sound-setup'){await api('/api/v1/soundboard/obs/setup',{});toast('Sources audio OBS préparées.');return;}
@@ -246,84 +929,132 @@ async function task(name){
  if(name==='import-sound'){modal(`<h2>Importer un son dans cet espace</h2><form id="sound-import"><label>Fichier audio<input type="file" name="file" accept=".wav,.mp3,.ogg,.aac,.m4a,.flac" required></label>${input('Nom du son','name','','text','required')}<button>Importer</button></form>`);return;}
  if(name==='google-calendars'){const r=await api('/api/v1/google/calendars');modal(`<h2>Calendrier de destination</h2>${(Array.isArray(r)?r:r.items||[]).filter(c=>c.writable||['owner','writer'].includes(c.accessRole)).map(c=>`<p><button class="secondary" data-calendar="${esc(c.id)}">${esc(c.summary)}</button></p>`).join('')||'<p>Connectez Google pour afficher les calendriers accessibles.</p>'}`);return;}
  if(name==='google-secret'){modal(`<h2>Client Secret Google sur la régie</h2><form id="secret-form" data-path="/api/v1/google/oauth/config" data-method="POST" data-key="clientSecret">${input('Client Secret Google Desktop','secret','','password','required')}<button>Enregistrer dans le stockage sécurisé</button></form>`);return;}
+ if(name==='streamlabs'){const target=server||localEndpoint||(native&&deviceServices?LOCAL_SCOPE:'');if(!target)throw new Error('La connexion Streamlabs locale nécessite l’application Android ou Windows.');streamlabsConfiguration({id:target,label:target===LOCAL_SCOPE||target===localEndpoint?'Cet appareil':`Régie · ${data.host.hostname||target}`});return;}
  if(name==='streamlabs'||name==='wizebot'){modal(`<h2>${name==='streamlabs'?'Streamlabs':'WizeBot'}</h2><form id="integration-form" data-provider="${name}">${name==='wizebot'?input('URL API WizeBot','apiBaseUrl','','url','required'):''}${input(name==='streamlabs'?'Socket Token Streamlabs':'Jeton WizeBot','token','','password','required')}<button>Connecter</button></form>`);return;}
  if(name==='discord'){const r=await api('/api/v1/discord/status');modal(`<h2>Discord</h2><form id="discord-form">${input('Jeton du bot (vide pour conserver)','token','','password')}${input('ID du serveur','guildId',r.guildId)}${input('ID du salon','channelId',r.channelId)}${input('Message par défaut','defaultMessage',r.defaultMessage)}<button>Enregistrer</button></form>`);return;}
- if(name==='shortcut-status'){const r=await globalThis.streamDashboardDesktop?.controllerStatus?.();$('#shortcut-status').textContent=r?JSON.stringify(r):'Les raccourcis globaux nécessitent l’application Windows ouverte sur cet ordinateur.';return;}
+ if(name==='shortcut-status'){try{const r=await globalThis.streamDashboardDesktop?.controllerStatus?.();$('#shortcut-status').textContent=macroConfigurationError||(r?`${r.registered?.length||0} raccourci(s) global(aux) enregistré(s).${r.unavailable?.length?' Indisponibles sur ce PC : '+r.unavailable.join(', '):r.registered?.length?' StreamDashboard peut rester en arrière-plan.':' Vérifiez les associations et la connexion à la régie.'}`:'Les raccourcis globaux nécessitent l’application Windows ouverte sur cet ordinateur.');}catch(error){$('#shortcut-status').textContent=controllerConfigurationError(error,credential);}return;}
 
 }
 document.addEventListener('click',async event=>{const b=event.target.closest('button');if(!b)return;try{
+ if(b.disabled)return;
+ if(b.dataset.deckBank!==undefined){if(deckEditing)deckEditBank=b.dataset.deckBank;else updateDeckPreferences({bank:b.dataset.deckBank});resetPerformanceView();return;}
+ if(b.dataset.deckEdit!==undefined){ensureDeckPreferences();deckEditing=!deckEditing;if(deckEditing)deckEditBank='all';resetPerformanceView();return;}
+ if(b.dataset.deckFavorite!==undefined){const prefs=ensureDeckPreferences(),key=b.dataset.deckFavorite;updateDeckPreferences({favorites:prefs.favorites.includes(key)?prefs.favorites.filter(id=>id!==key):[...prefs.favorites,key]});render();return;}
+ if(b.dataset.deckClips!==undefined){replayDialog();return;}
+ if(b.dataset.deckLog!==undefined){modal(`<h2>Dernières actions</h2><button class="secondary" data-page="activity">Toute l’activité</button>${resultRows()}`);return;}
  if(b.dataset.planning){b.disabled=true;try{await planning.click(b);}finally{b.disabled=false;}return;}
  if(b.dataset.syncKeep||b.dataset.syncRemote){const key=b.dataset.syncKeep||b.dataset.syncRemote;if(b.dataset.syncKeep&&!confirm('Appliquer votre version à cette entité ? La version de la régie sera remplacée après comparaison.'))return;await autonomy.resolve(key,!!b.dataset.syncKeep);await refresh(true);syncDialog();return;}
  if(b.dataset.deckCategory!==undefined){deckCategory=b.dataset.deckCategory;render();return;}
- if(b.dataset.soundCategory!==undefined){soundCategory=b.dataset.soundCategory;render();return;}
+ if(b.dataset.soundCategory!==undefined){if(compact){updateDeckPreferences({soundCategory:b.dataset.soundCategory});resetPerformanceView();}else{soundCategory=b.dataset.soundCategory;render();}return;}
  if(await deviceAccounts.click(b))return;
  if(await wizebotManagement.click(b))return;
  if(b.dataset.playSound){await runAction('sound.play',undefined,b.dataset.playSound);return;}
  if(b.dataset.favoriteSound){const sound=sounds.sounds.find(s=>s.id===b.dataset.favoriteSound);await api('/api/v1/soundboard/sounds/'+encodeURIComponent(sound.id),{favorite:!sound.favorite},'PUT');await refresh(true);return;}
- if(b.dataset.page){page=b.dataset.page;localStorage.setItem('sd2.page',page);render();return;}
+ if(b.dataset.page){deckEditing=false;page=b.dataset.page;localStorage.setItem('sd2.page',page);resetPerformanceView();return;}
  if(b.dataset.tab){tab=b.dataset.tab;render();return;}
  if(b.dataset.suiteOutput!==undefined){const f=$('#platform-form'),p=b.dataset.platform;f.elements[p+'-kind'].value='aitum-suite';f.elements[p+'-name'].value=b.dataset.suiteOutput;toast('Association préparée. Enregistrez la diffusion pour la conserver.');return;}
- if(b.dataset.task){await task(b.dataset.task);return;}
- if(b.dataset.action){await runAction(b.dataset.action);return;}
+ if(b.dataset.task){await task(b.dataset.task,b);return;}
+ if(b.dataset.action){await runAction(b.dataset.action,b.dataset.livePlatform);return;}
+ if(b.dataset.retry?.startsWith('metadata.')){metadataDialog(undefined,b.dataset.platform);return;}
  if(b.dataset.retry){await runAction(b.dataset.retry.startsWith('metadata.')?'metadata.retry':b.dataset.retry,b.dataset.platform);return;}
- if(b.dataset.command){if(busy||!online)return;busy=true;try{await api('/api/v1/commands',{type:b.dataset.command,commandId:uuid()});await refresh(true);toast(timerStatus(data.host.state.timer));}finally{busy=false;render();}return;}
+ if(b.dataset.command){if(busy||!online)return;activeCommands++;busy=true;try{await api('/api/v1/commands',{type:b.dataset.command,commandId:uuid()});await refresh(true);toast(timerStatus(data.host.state.timer));}finally{busy=--activeCommands>0;render();}return;}
  if(b.dataset.editAction){editAction(b.dataset.editAction);return;}
  if(b.dataset.removeAction){if(!confirm('Supprimer ce bouton et son association macro ?'))return;configurationDraft.actions=configurationDraft.actions.filter(a=>a.id!==b.dataset.removeAction);await api('/api/v2/configuration',{configuration:configurationDraft,expectedRevision:configurationDraft.revision},'PUT');dialog.close();await refresh(true);return;}
- if(b.dataset.broadcast){$('#platform-form').elements.broadcastId.value=b.dataset.broadcast;$('#platform-form').elements.channelId.value=b.dataset.channel;dialog.close();return;}
- if(b.dataset.category){$('#metadata-form').elements.twitchGameId.value=b.dataset.category;$('#category-results').innerHTML='';return;}
+
  if(b.dataset.calendar){await api('/api/v1/google/target',{calendarId:b.dataset.calendar},'PUT');dialog.close();toast('Calendrier enregistré.');return;}
- if(b.dataset.sound){const s=profileDraft.sounds.find(s=>s.id===b.dataset.sound);modal(`<h2>${esc(s.name)}</h2><form id="sound-form" data-id="${esc(s.id)}">${input('Nom','name',s.name)}${input('Catégorie','category',s.category)}${input('Volume (0 à 1)','volume',s.volume,'number','min="0" max="1" step="0.05"')}${input('Délai entre lectures (ms)','cooldownMs',s.cooldownMs,'number','min="0"')}${check('Activé','enabled',s.enabled)}${check('Favori','favorite',s.favorite)}${select('Destination','monitoringMode',[['stream','Diffusion OBS'],['monitor','Diffusion et écoute OBS']],s.monitoringMode)}<div class="form-actions"><button type="button" class="danger" data-delete-sound="${esc(s.id)}">Supprimer</button><button>Enregistrer</button></div></form>`);return;}
+ if(b.dataset.sound){const s=profileDraft.sounds.find(s=>s.id===b.dataset.sound);if(server){const refreshed=await api('/api/v1/soundboard?outputs=refresh');profileDraft.outputs=refreshed.outputs||[];if(!profileDraft.outputs.some(output=>output.id===s.outputId))profileDraft.outputs.push({id:s.outputId,name:'Sortie configurée indisponible ('+s.outputId+')'});}modal(`<h2>${esc(s.name)}</h2><form id="sound-form" data-id="${esc(s.id)}">${input('Nom','name',s.name)}${input('Catégorie','category',s.category)}${input('Volume (0 à 1)','volume',s.volume,'number','min="0" max="1" step="0.05"')}${input('Délai entre lectures (ms)','cooldownMs',s.cooldownMs,'number','min="0"')}${check('Activé','enabled',s.enabled)}${check('Favori','favorite',s.favorite)}${select('Lecture','playbackMode',[['replace','Remplacer les sons en cours'],['mix','Superposer aux sons en cours (sortie locale)']],s.playbackMode||'replace')}${server?select('Sortie audio','outputId',(profileDraft.outputs||[{id:'obs',name:'Mix OBS'}]).map(output=>[output.id,output.name]),s.outputId)+select('Écoute OBS','monitoringMode',[['stream','Diffusion OBS'],['monitor','Diffusion et écoute OBS']],s.monitoringMode):`<input type="hidden" name="monitoringMode" value="${esc(s.monitoringMode)}"><p class="small muted">Lecture sur la sortie audio de cet appareil.</p>`}<div class="form-actions"><button type="button" class="danger" data-delete-sound="${esc(s.id)}">Supprimer</button><button>Enregistrer</button></div></form>`);return;}
  if(b.dataset.deleteSound){if(!confirm('Supprimer ce son de la bibliothèque ?'))return;await api('/api/v1/soundboard/sounds/'+encodeURIComponent(b.dataset.deleteSound),{},'DELETE');dialog.close();await refresh(true);return;}
  if(b.dataset.automation){const all=profileDraft.items||profileDraft.automations||profileDraft;const a=all.find(a=>a.id===b.dataset.automation);modal(`<h2>Modifier la règle</h2><form id="automation-form" data-id="${esc(a.id)}"><label>Règle JSON<textarea name="value" rows="16">${esc(JSON.stringify(a,null,2))}</textarea></label><div class="form-actions"><button type="button" class="danger" data-delete-automation="${esc(a.id)}">Supprimer</button><button>Enregistrer</button></div></form>`);return;}
  if(b.dataset.deleteAutomation){if(!confirm('Supprimer cette automatisation ?'))return;await api('/api/v1/automations/'+encodeURIComponent(b.dataset.deleteAutomation),{},'DELETE');dialog.close();return;}
 }catch(e){toast(e.message);}});
+for(const kind of ['input','change'])document.addEventListener(kind,event=>{const form=event.target.closest?.('form');if(form)form.dataset.editing='true';});
+document.addEventListener('input',event=>{
+ const form=event.target.closest?.('#metadata-form');if(!form||!autonomy)return;
+ const v=Object.fromEntries(new FormData(form));
+ const owner=autonomy, value={title:v.title,description:v.description,twitchGameId:v.twitchGameId,youtubeCategoryId:v.youtubeCategoryId,tags:String(v.tags||'').split(',').map(t=>t.trim()).filter(Boolean)};
+ metadataDrafts.schedule(()=>owner.store.draft('metadata',value));
+});
 document.addEventListener('change',async event=>{if(planning.change(event.target))return;if(event.target.matches('[data-replay-auto]')){try{const c=structuredClone(data.configuration);c.replayAutoStart=event.target.checked;await api('/api/v2/configuration',{configuration:c,expectedRevision:c.revision},'PUT');await refresh(true);}catch(e){toast(e.message);await refresh(true);}return;}if(event.target.dataset.check){try{await api('/api/v1/commands',{type:'checklist.toggle',id:event.target.dataset.check,commandId:uuid()});await refresh(true);}catch(e){toast(e.message);}}});
-document.addEventListener('submit',async event=>{const f=event.target;submittingBase=formBases.get(f);event.preventDefault();const v=Object.fromEntries(new FormData(f));const submit=f.querySelector('button:not([type=button])');if(submit)submit.disabled=true;try{
- if(f.id==='streamlabs-feed-config'){
-  const result=await network('/api/v1/supports/streamlabs/config',{token:v.token},'PUT',streamlabsConfigTarget,streamlabsConfigTarget===localEndpoint?'':credential);
-  dialog.close();await streamlabsFeed?.refresh(true);
-  toast(result.status==='CONNECTED'?'Streamlabs connecté.':result.lastError?.message||'Configuration enregistrée ; connexion non confirmée.');return;
- }
- if(f.id==='device-setup-form'){const previous=device;device=saveDevice(v);try{await globalThis.streamDashboardDesktop?.setDeviceRole?.(v.role,v.name);}catch(e){device=previous;localStorage.setItem('sd2.device',JSON.stringify(previous));throw e;}dialog.close();render();toast('Appareil configuré.');return;}
+document.addEventListener('submit',async event=>{const f=event.target;submittingBase=formBases.get(f);event.preventDefault();const v=Object.fromEntries(new FormData(f));const submit=f.querySelector('button:not([type=button])');if(submit)submit.disabled=true;try{await metadataDrafts.flush();
+ if(await devicePermissionsUI.submit(f))return;
+ if(await actionRoutingUI.submit(f))return;
+ if(await installationUI.submit(f))return;
+ if(await setupMigrationUI.submit(f))return;
+ if(await handoffUI.submit(f))return;
+ if(await configurationCopyUI.submit(f))return;
+ if(await soundLibraryUI.submit(f))return;
  if(await planning.submit(f))return;
  if(await wizebotManagement.submit(f))return;
+ if(f.id==='remote-viewers-form'){await sendRemoteViewers(f,v);return;}
  if(f.id==='timer-form'){await api('/api/v1/commands',{type:'timer.start',seconds:Math.round(Number(v.minutes)*60),commandId:uuid()});dialog.close();await refresh(true);toast(timerStatus(data.host.state.timer));return;}
  if(f.id==='connection-form'){
   let target=v.server;
-  if(v.link){const link=new URL(v.link);target=link.searchParams.get('server')||link.origin;v.pair=link.searchParams.get('pair')||link.searchParams.get('id');v.code=link.searchParams.get('code');}
-  const nextServer=normalizeServer(target);if(refreshFlight)await refreshFlight;
-  // Validate pairing before replacing the working address or its credential.
-  let nextCredential=nextServer===localStorage.getItem('sd2.server')?credential:'';
-  if(v.pair&&v.code){const paired=await network('/api/v1/remote/pair',{id:v.pair,code:v.code,name:v.name},'POST',nextServer,'');nextCredential=paired.credential;}
-  await network('/api/v2/autonomy',undefined,'GET',nextServer,nextCredential);
-  await credentials.set(nextCredential);credential=nextCredential;server=nextServer;online=false;
-  localStorage.setItem('sd2.server',server);localStorage.setItem('sd2.workspace-mode','paired');
-  await openLocal();await refresh();if(online)dialog.close();render();return;
+  if(v.link){const link=new URL(v.link);target=link.searchParams.get('server')||link.origin;v.pair=link.searchParams.get('pair')||link.searchParams.get('id');v.code=link.searchParams.get('code');v.fingerprint=link.searchParams.get('fingerprint')||v.fingerprint;}
+  const nextServer=normalizeServer(target);
+  macroContextChanging++;
+  let previousPin='',nextPin='',pinChanged=false,associationSaved=false;
+  try{
+   await configureMacros({suspend:true,required:true});if(refreshFlight)await refreshFlight;
+   if(nextServer.startsWith('https:')){
+    previousPin=await peers.getFingerprint(nextServer);nextPin=v.fingerprint?fingerprint(v.fingerprint):previousPin;
+    if(!nextPin)throw new Error('Collez le lien HTTPS avec l’empreinte affichée sur l’agent.');
+    if(nextPin!==previousPin){await peers.trust(nextServer,nextPin,previousPin);pinChanged=true;}
+   }
+   // Validate pairing before replacing the working address or its credential.
+   let nextCredential=await credentials.get(nextServer);
+   if(v.pair&&v.code){const paired=await network('/api/v1/remote/pair',{id:v.pair,code:v.code,name:v.name},'POST',nextServer,'');nextCredential=paired.credential;}
+   const replica=await network('/api/v2/autonomy',undefined,'GET',nextServer,nextCredential);
+   let descriptor;
+   try{const value=await network('/api/v2/device',undefined,'GET',nextServer,nextCredential);if(value.version!==1||!value.device)throw new Error('Identité de cet appareil invalide.');descriptor=value.device;}catch(error){if(error.status!==404)throw error;}
+   await installationUI.reload();
+   await linkReplicaEndpoint(nextServer,replica,descriptor?.id,installationUI.current.devices);
+   await installationUI.remember(nextServer,descriptor);
+   await credentials.set(nextCredential,nextServer);associationSaved=true;
+   credential=nextCredential;server=nextServer;online=false;
+   localStorage.setItem('sd2.server',server);localStorage.setItem('sd2.workspace-mode','paired');
+   await openLocal();
+  }finally{if(pinChanged&&!associationSaved)await peers.trust(nextServer,previousPin,nextPin).catch(()=>{toast('L’identité a changé pendant l’association. Vérifiez-la avant de réutiliser cet agent.');});macroContextChanging--;await refresh();}
+  if(online)dialog.close();render();return;
  }
- if(f.id==='metadata-form'){const metadata={title:v.title,description:v.description,twitchGameId:v.twitchGameId,youtubeCategoryId:v.youtubeCategoryId,tags:v.tags.split(',').map(x=>x.trim()).filter(Boolean)};await autonomy.store.draft('metadata',metadata);if(event.submitter?.value==='draft'){dialog.close();toast('Brouillon conservé sur cet appareil. Aucune plateforme modifiée.');return;}const result=await api('/api/v2/actions',{id:uuid(),issuedAt:new Date().toISOString(),action:'metadata.apply',expectedRevision:Number(f.dataset.revision),metadata});toast(`${labels[result.status]} · ${result.message}`);dialog.close();await refresh(true);return;}
+ if(f.id==='metadata-form'){const metadata={title:v.title,description:data.configuration.metadata.description||'',twitchGameId:v.twitchGameId,youtubeCategoryId:data.configuration.metadata.youtubeCategoryId||'20',tags:v.tags.split(',').map(x=>x.trim()).filter(Boolean)};await autonomy.store.draft('metadata',metadata);if(event.submitter?.value==='draft'){dialog.close();toast('Brouillon Twitch conservé sur cet appareil.');return;}const platform=f.dataset.platform==='twitch'?'twitch':undefined;const result=await api('/api/v2/actions',{id:uuid(),issuedAt:new Date().toISOString(),action:platform?'metadata.retry':'metadata.apply',...(platform?{platform}:{}),confirmed:true,expectedRevision:Number(f.dataset.revision),metadata});toast(`${labels[result.status]} · ${result.message}`);dialog.close();await refresh(true);return;}
  if(f.id==='wizebot-form'){const previous=configurationDraft.actions.find(a=>a.id===f.dataset.id);const a={id:f.dataset.id,label:v.label,type:'wizebot.command',value:v.value.trim(),color:v.color,shortcut:previous?.shortcut||'',...(previous?.wizebot&&v.value.trim()===previous.value?{wizebot:previous.wizebot}:{})};const index=configurationDraft.actions.findIndex(x=>x.id===a.id);if(index>=0)configurationDraft.actions[index]=a;else configurationDraft.actions.push(a);await api('/api/v2/configuration',{configuration:configurationDraft,expectedRevision:configurationDraft.revision},'PUT');}
  if(f.id==='action-form'){const a={id:f.dataset.id,...v};const index=configurationDraft.actions.findIndex(x=>x.id===a.id);if(index>=0)configurationDraft.actions[index]=a;else configurationDraft.actions.push(a);await api('/api/v2/configuration',{configuration:configurationDraft,expectedRevision:configurationDraft.revision},'PUT');}
  if(f.id==='settings-form'){const value={expectedRevision:f.dataset.revision,obsUrl:v.obsUrl,...(v.obsPassword?{obsPassword:v.obsPassword}:{}),primaryMicInput:v.primaryMicInput,timerBrowserSource:v.timerBrowserSource,chattingScene:v.chattingScene,startMode:v.startMode,requireTimerOverlayOnStart:!!v.requireTimerOverlayOnStart,launchObs:!!v.launchObs,obsExecutablePath:v.obsExecutablePath,remoteEnabled:!!v.remoteEnabled,modeScenes:Object.fromEntries(['intro','live','pause','end'].map(x=>[x,v['scene-'+x]]))};await api('/api/v2/settings',value,'PUT');}
  if(f.id==='profile-settings'){await api('/api/v2/settings',{expectedRevision:f.dataset.revision,streamerName:v.streamerName,accent:v.accent,confirmStop:!!v.confirmStop,streamerPingRewardIds:v.streamerPingRewardIds.split(',').map(x=>x.trim()).filter(Boolean),tagPreferences:JSON.parse(v.tagPreferences)},'PUT');}
- if(f.id==='platform-form'){const c=structuredClone(data.configuration);c.youtube={clientId:v.clientId,broadcastId:v.broadcastId,channelId:v.channelId};for(const p of ['twitch','youtube'])c.outputs[p]={kind:v[p+'-kind'],name:v[p+'-name']};await api('/api/v2/configuration',{configuration:c,expectedRevision:Number(f.dataset.revision)},'PUT');}
+ if(f.id==='platform-form'){const c=structuredClone(data.configuration);if(!(native&&!server))for(const p of ['twitch'])c.outputs[p]={kind:v[p+'-kind'],name:v[p+'-name']};await api('/api/v2/configuration',{configuration:c,expectedRevision:Number(f.dataset.revision)},'PUT');}
  if(f.id==='json-form'){const value=JSON.parse(v.value);await api(f.dataset.path,value,f.dataset.method);}
  if(f.id==='secret-form'){await api(f.dataset.path,{[f.dataset.key]:v.secret},f.dataset.method);}
  if(f.id==='integration-form'){await api((f.dataset.provider==='wizebot'?'/api/v1/wizebot/config':'/api/v1/supports/streamlabs/config'),v,'PUT');}
  if(f.id==='discord-form'){if(v.token)await api('/api/v1/discord/token',{token:v.token},'PUT');await api('/api/v1/discord/settings',{guildId:v.guildId,channelId:v.channelId,defaultMessage:v.defaultMessage},'PUT');}
  if(f.id==='sound-form'){await api('/api/v1/soundboard/sounds/'+encodeURIComponent(f.dataset.id),{...v,volume:Number(v.volume),cooldownMs:Number(v.cooldownMs),enabled:!!v.enabled,favorite:!!v.favorite},'PUT');}
- if(f.id==='sound-import'){const file=f.elements.file.files[0];if(!file||file.size>100*1024*1024)throw new Error('Fichier audio requis, maximum 100 Mo.');if(!server){await autonomy.store.addSound(file,v.name);}else{const result=await fetch(server+'/api/v2/sounds/upload?name='+encodeURIComponent(v.name)+'&extension='+encodeURIComponent(file.name.split('.').pop()),{method:'POST',headers:{Authorization:`Device ${credential}`,'Content-Type':'application/octet-stream'},body:file,signal:AbortSignal.timeout(120_000)});if(!result.ok){const r=await result.json();throw new Error(r.error?.message||'Import impossible.');}}}
+ if(f.id==='sound-import'){const file=f.elements.file.files[0];if(!file||file.size>100*1024*1024)throw new Error('Fichier audio requis, maximum 100 Mo.');if(!server){await autonomy.store.addSound(file,v.name);}else{f.dataset.soundId||=uuid();await uploadSound({peers,origin:server,token:server===localEndpoint?'':credential,file,name:v.name,soundId:f.dataset.soundId,expectedDeviceId:soundDestinationId()});}}
  if(f.id==='automation-form'){await api('/api/v1/automations'+(f.dataset.id?'/'+encodeURIComponent(f.dataset.id):''),JSON.parse(v.value),f.dataset.id?'PUT':'POST');}
- if(dialog.open)dialog.close();await refresh(true);toast(localSaveMessage());
+ delete f.dataset.editing;if(dialog.open)dialog.close();await refresh(true);toast(localSaveMessage());
 }catch(e){toast(e.message);}finally{submittingBase=undefined;if(submit)submit.disabled=f.dataset.completed==='true';}});
 document.addEventListener('keydown',event=>{if(globalThis.streamDashboardDesktop)return;if(event.ctrlKey&&event.altKey&&event.shiftKey&&!event.repeat&&online){const a=data?.configuration.actions.find(a=>a.shortcut===`Control+Alt+Shift+${event.key}`);if(a){event.preventDefault();void runAction(a.id);}}});
 const initial=new URL(location.href);if(initial.searchParams.has('pair')){connectionDialog();$('#connection-form').elements.link.value=location.href;history.replaceState(null,'',location.pathname);}
 globalThis.streamDashboardDesktop?.onControllerReceipt?.(receipt=>{toast(`${labels[receipt.status]||'Macro'} · ${receipt.message}`);void refresh(true);});
-globalThis.StreamDashboardNative?.setKeepAwake(true);
-globalThis.StreamDashboardHandleBack=()=>{if(dialog.open){dialog.close();return true;}if(page!=='deck'){page='deck';render();return true;}return false;};
-globalThis.addEventListener('native-pairing',event=>{const u=new URL(event.detail);connectionDialog();$('#connection-form').elements.server.value=u.searchParams.get('server')||'';$('#connection-form').elements.pair.value=u.searchParams.get('id')||'';$('#connection-form').elements.code.value=u.searchParams.get('code')||'';});
-await openLocal();void navigator.storage?.persist?.().catch(()=>{});render();await refresh(true);if(firstUse&&!dialog.open&&(!data?.host.planning.length)&&(!data?.host.settings.streamerName||data.host.settings.streamerName==='Streamer'))deviceSetup();setInterval(()=>{void refresh();},2500);setInterval(()=>{void deviceAccounts.poll();},5000);
+globalThis.StreamDashboardNative?.setKeepAwake(localStorage.getItem('sd2.keep-awake')!=='false');
+globalThis.StreamDashboardHandleBack=()=>{if(dialog.open){dialog.close();return true;}if(deckEditing){deckEditing=false;resetPerformanceView();return true;}const first=compact&&MOBILE_PANES[page]?.[0]?.id;if(first&&mobilePanes.get(page)!==first){mobilePanes.select(page,first);return true;}if(page!=='deck'){page='deck';localStorage.setItem('sd2.page',page);resetPerformanceView();return true;}return false;};
+compactViewport.addEventListener('change',()=>{
+ const previous=compact;
+ compact=native||compactViewport.matches;
+ document.documentElement.classList.toggle('compact-app',compact);
+ if(previous!==compact&&page==='live'){
+   liveMonitor?.destroy();liveMonitor=undefined;
+   streamlabsFeed?.destroy();streamlabsFeed=undefined;streamlabsFeedRoot=undefined;
+   $('#content').replaceChildren();
+ }
+ render();
+});
+globalThis.addEventListener('native-pairing',event=>{const u=new URL(event.detail);connectionDialog();$('#connection-form').elements.link.value=event.detail;$('#connection-form').elements.server.value=u.searchParams.get('server')||'';$('#connection-form').elements.pair.value=u.searchParams.get('id')||'';$('#connection-form').elements.code.value=u.searchParams.get('code')||'';});
+await openLocal();void navigator.storage?.persist?.().catch(()=>{});render();await refresh(true);if(firstUse&&!dialog.open&&(!data?.host.planning.length)&&(!data?.host.settings.streamerName||data.host.settings.streamerName==='Streamer'))deviceSetup();setInterval(()=>{if(!document.hidden)void refresh();},2500);setInterval(()=>{if(!document.hidden)void deviceAccounts.poll();},5000);
+document.addEventListener('visibilitychange',()=>{void metadataDrafts.flush();if(!document.hidden)void refresh();});
+globalThis.addEventListener('pagehide',()=>{void metadataDrafts.flush();});
 
 // Do not replace a pressed control between pointerdown and click during a poll.
 document.addEventListener('pointerdown',()=>{pointerHeld=true;});
 for(const name of ['pointerup','pointercancel'])document.addEventListener(name,()=>{setTimeout(()=>{pointerHeld=false;},0);});
 setInterval(()=>{const t=data?.host.state.timer;if(!t)return;const clock=$('[data-timer-clock]');if(clock)clock.textContent=timerClock(online&&t.running&&t.deadline?Math.max(0,(t.deadline-Date.now())/1000):t.remaining);const status=$('[data-timer-status]');if(status)status.textContent=timerStatus(t);},250);
+
+if(globalThis.isSecureContext&&'serviceWorker' in navigator)void navigator.serviceWorker.register(new URL('../control-sw.js',import.meta.url)).catch(()=>{});

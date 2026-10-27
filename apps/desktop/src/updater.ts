@@ -1,5 +1,6 @@
 import { app, autoUpdater, dialog, type BrowserWindow } from 'electron';
 import type { DashboardServerHandle } from '../../server/src/index.js';
+import { requireDesktopRestartSafety } from './restart-safety.js';
 
 export function startUpdater(
   window: BrowserWindow,
@@ -17,15 +18,23 @@ export function startUpdater(
 
   const logError = (...values: unknown[]) => { void Promise.resolve(logger.error(...values)).catch(() => undefined); };
   const offerWhenSafe = async () => {
-    const obs = dashboard.state().obs;
-    if (!active || !ready || dialogOpen || Date.now() < deferredUntil || !obs.connected || obs.streamingKnown === false || obs.streaming) return;
+    if (!active || !ready || dialogOpen || Date.now() < deferredUntil) return;
     dialogOpen = true;
     try {
+      // This covers every configured OBS output, including Aitum. Unknown
+      // observations never authorize a restart, and slow reads cannot overlap.
+      try { await requireDesktopRestartSafety(() => dashboard.assessRestartSafety()); }
+      catch { return; }
+      if (!active || !ready) return;
       const choice = await dialog.showMessageBox(window, {
         type: 'info', title: 'Mise à jour prête', message: 'Une mise à jour de StreamDashboard est prête.',
         detail: 'Redémarrer maintenant pour l’installer ?', buttons: ['Plus tard', 'Redémarrer et installer'], defaultId: 1, cancelId: 0,
       });
       if (choice.response === 1) {
+        if (!active || !ready) return;
+        try { await requireDesktopRestartSafety(() => dashboard.assessRestartSafety()); }
+        catch (error) { logError('Installation différée : une diffusion est active ou non confirmée', error); return; }
+        if (!active || !ready) return;
         ready = false;
         try { await beforeInstall(); }
         catch (error) { ready = true; logError('Préparation de la mise à jour impossible', error); return; }

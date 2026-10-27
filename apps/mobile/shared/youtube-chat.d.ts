@@ -1,0 +1,4 @@
+export interface ChatBroadcast {id:string;channelId:string;account?:string;broadcastState:string;liveChatId?:string;ingestionStatus?:string|null;chatDisabled?:boolean}
+export interface ChatPage {items:Array<{id:string;snippet?:{displayMessage?:string;publishedAt?:string};authorDetails?:{displayName?:string;isChatOwner?:boolean;isChatModerator?:boolean}}>;nextPageToken?:string;pollingIntervalMillis:number;offlineAt?:string}
+export interface ChatSnapshot {broadcastId:string;channelId:string;account:string;status:string;message:string;messages:Array<{id:string;text:string;author:string;publishedAt:string}>;broadcastState:string;phase?:string;phaseMessage?:string;ingestionStatus:string|null;observedAt:string|null;nextPollAt:number}
+export function createYouTubeChatReader(options:{broadcast:(id:string)=>Promise<ChatBroadcast>;messages:(id:string,token:string)=>Promise<ChatPage>;now?:()=>number}):{read:(id:string)=>Promise<ChatSnapshot>};

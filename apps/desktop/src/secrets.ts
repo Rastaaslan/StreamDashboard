@@ -5,7 +5,11 @@ import path from 'node:path';
 import type { SecretStore } from '../../server/src/storage.js';
 
 interface SecurePayload {
+  agentCertificate?: import('./agent-certificate.js').AgentCertificate;
+  peerFingerprints?: Record<string,string>;
   controller?: { credential: string };
+  controllerDevices?: Record<string, string>;
+  controllerBindings?: import('../../../packages/contracts/src/control.js').ControllerConfiguration;
   youtube?: Record<string, string>;
   twitch?: Record<string, string>;
   google?: Record<string, string>;
@@ -13,6 +17,7 @@ interface SecurePayload {
   obsPassword?: string;
   discordToken?: string;
   streamlabsToken?: string;
+  streamlabsWidgetToken?: string;
   streamlabsOAuth?: { clientId: string; clientSecret: string; accessToken?: string };
   wizebot?: { apiBaseUrl: string; token: string };
 }
@@ -20,9 +25,9 @@ interface SecurePayload {
 export class ElectronSecretStore implements SecretStore {
   readonly persistent: boolean = true;
   private readonly file: string;
-  private writes: Promise<void> = Promise.resolve();
+  private static writes = new Map<string,Promise<void>>();
 
-  constructor(userData: string) { this.file = path.join(userData, 'secure', 'credentials.dat'); }
+  constructor(userData: string) { this.file = path.resolve(userData, 'secure', 'credentials.dat'); }
 
   private async readNow(): Promise<SecurePayload> {
     try {
@@ -36,7 +41,7 @@ export class ElectronSecretStore implements SecretStore {
   }
 
   private async read(): Promise<SecurePayload> {
-    await this.writes;
+    await ElectronSecretStore.writes.get(this.file);
     return this.readNow();
   }
 
@@ -66,18 +71,40 @@ export class ElectronSecretStore implements SecretStore {
   }
 
   private update(change: (value: SecurePayload) => void) {
-    const operation = this.writes.then(async () => {
+    const operation = (ElectronSecretStore.writes.get(this.file) ?? Promise.resolve()).then(async () => {
       const value = await this.readNow();
       change(value);
       await this.writeNow(value);
     });
-    this.writes = operation.catch(() => undefined);
+    const tail = operation.catch(() => undefined);
+    ElectronSecretStore.writes.set(this.file, tail);
+    void tail.then(() => { if(ElectronSecretStore.writes.get(this.file) === tail) ElectronSecretStore.writes.delete(this.file); });
     return operation;
   }
 
   async getTwitchTokens() { return (await this.read()).twitch ?? null; }
+  async getAgentCertificate() { return (await this.read()).agentCertificate ?? null; }
+  async setAgentCertificate(certificate:import('./agent-certificate.js').AgentCertificate) { await this.update(value=>{value.agentCertificate={...certificate};}); }
+  async replaceAgentCertificate(certificate:import('./agent-certificate.js').AgentCertificate|null,expected:string) {
+    await this.update(value=>{
+      if((value.agentCertificate?.certificate||'')!==expected)throw new Error('Certificat modifié ailleurs. Actualisez les informations de cet agent.');
+      if(certificate)value.agentCertificate={...certificate};else delete value.agentCertificate;
+    });
+  }
+  async getPeerFingerprints() { return {...(await this.read()).peerFingerprints}; }
+  async setPeerFingerprint(origin:string,fingerprint:string,expected:string) {
+    await this.update(value=>{
+      if((value.peerFingerprints?.[origin]||'')!==expected)throw new Error('Identité de l’agent modifiée ailleurs. Actualisez l’association.');
+      value.peerFingerprints={...value.peerFingerprints};
+      if(fingerprint)value.peerFingerprints[origin]=fingerprint;else delete value.peerFingerprints[origin];
+    });
+  }
   async getController() { return (await this.read()).controller ?? null; }
-  async setController(controller: { credential: string }) { await this.update(value => { value.controller = { ...controller }; }); }
+  async getControllerDevice(server: string) { return (await this.read()).controllerDevices?.[server] || ''; }
+  async setControllerDevice(server: string, credential: string) { await this.update(value => { value.controllerDevices = { ...value.controllerDevices, [server]:credential }; }); }
+  async setController(controller: { credential: string }) { await this.update(value => { if (value.controller?.credential !== controller.credential) delete value.controllerBindings; value.controller = { ...controller }; }); }
+  async getControllerBindings() { return (await this.read()).controllerBindings ?? null; }
+  async setControllerBindings(bindings: SecurePayload['controllerBindings']) { await this.update(value => { if (bindings) value.controllerBindings = structuredClone(bindings); else delete value.controllerBindings; }); }
   async getYouTubeTokens() { return (await this.read()).youtube ?? null; }
   async setYouTubeTokens(youtube: Record<string, string>) { await this.update(value => { value.youtube = { ...youtube }; }); }
   async clearYouTubeTokens() { await this.update(value => { delete value.youtube; }); }
@@ -97,6 +124,9 @@ export class ElectronSecretStore implements SecretStore {
   async getStreamlabsToken() { return (await this.read()).streamlabsToken ?? ''; }
   async setStreamlabsToken(streamlabsToken: string) { await this.update(value => { value.streamlabsToken = streamlabsToken; }); }
   async clearStreamlabsToken() { await this.update(value => { delete value.streamlabsToken; }); }
+  async getStreamlabsWidgetToken() { return (await this.read()).streamlabsWidgetToken ?? ''; }
+  async setStreamlabsWidgetToken(token: string) { await this.update(value => { value.streamlabsWidgetToken = token; }); }
+  async clearStreamlabsWidgetToken() { await this.update(value => { delete value.streamlabsWidgetToken; }); }
   async getStreamlabsOAuth() { const value = (await this.read()).streamlabsOAuth; return value ? { ...value } : null; }
   async setStreamlabsOAuth(streamlabsOAuth: { clientId: string; clientSecret: string; accessToken?: string }) { await this.update(value => { value.streamlabsOAuth = { ...streamlabsOAuth }; }); }
   async clearStreamlabsOAuth() { await this.update(value => { delete value.streamlabsOAuth; }); }

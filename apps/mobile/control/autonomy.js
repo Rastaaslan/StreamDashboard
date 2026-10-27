@@ -1,4 +1,4 @@
-import { validateProductProfile } from '../shared/planning-engine.js';
+import { validateProductProfile } from '../shared/device-utils.js';
 import { openReplica, newId } from './autonomy-store.js';
 import { fields, pick, resources, equal, clone } from '../shared/autonomy.js';
 import { mergeOccurrencePatch } from '../shared/recurrence.js';
@@ -21,8 +21,8 @@ export async function createAutonomy(scope,network,onChange=()=>{}){
    const baseActions=new Map(original.actions.map(a=>[a.id,a]));
    for(const a of c.actions)if(!equal(baseActions.get(a.id),a))changes['action/'+a.id]=a;
    for(const a of original.actions)if(!c.actions.some(x=>x.id===a.id))changes['action/'+a.id]=null;
-   for(const p of ['twitch','youtube'])if(!equal(original.outputs[p],c.outputs[p]))changes['output/'+p]=c.outputs[p];
-   if(!equal(original.youtube,c.youtube))changes['youtube/root']=c.youtube;
+   for(const p of ['twitch'])if(!equal(original.outputs[p],c.outputs[p]))changes['output/'+p]=c.outputs[p];
+
    if(original.replayAutoStart!==c.replayAutoStart)changes['preferences/root']={replayAutoStart:c.replayAutoStart!==false};
    return stage(changes);
   }
@@ -40,7 +40,7 @@ export async function createAutonomy(scope,network,onChange=()=>{}){
     value=clone(old);value.recurrence.exceptions||={};const previous=value.recurrence.exceptions[body.occurrenceKey];
     value.recurrence.exceptions[body.occurrenceKey]=method==='DELETE'?{...previous,cancelled:true}:mergeOccurrencePatch(previous,body.patch);
    }else value=method==='DELETE'?null:{...old,...pick(body,fields.planning)};
-   if(value!==null){if(!value.title?.trim()||value.title.length>140||!Number.isFinite(Date.parse(value.startAtUtc))||Date.parse(value.endAtUtc)<=Date.parse(value.startAtUtc))throw new Error('Titre et période valides requis.');}
+   if(value!==null){if(!value.title?.trim()||value.title.length>140||!Number.isFinite(Date.parse(value.startAtUtc))||!Number.isFinite(Date.parse(value.endAtUtc))||Date.parse(value.endAtUtc)<=Date.parse(value.startAtUtc))throw new Error('Titre et période valides requis.');}
    await stage({['planning/'+id]:value});return {savedLocally:true,createdItemId:id};
   }
   for(const [prefix,kind] of [['/api/v1/companion/templates','template'],['/api/v1/automations','automation'],['/api/v1/soundboard/sounds','sound']]){
@@ -73,8 +73,8 @@ export async function createAutonomy(scope,network,onChange=()=>{}){
     try{await store.reload();await store.accept(await network('/api/v2/autonomy'));
      // Keep per-resource order; a conflict must not hold back unrelated entities.
      for(let count=0;count<100;count++){
-      await store.reload();const blocked=new Set(store.record.pending.filter(x=>x.issue).map(x=>x.key));
-      const op=store.record.pending.find(x=>!x.issue&&!blocked.has(x.key));if(!op)break;
+      if(count)await store.reload();const record=store.record,blocked=new Set(record.pending.filter(x=>x.issue).map(x=>x.key));
+      const op=record.pending.find(x=>!x.issue&&!blocked.has(x.key));if(!op)break;
       const response=await network('/api/v2/autonomy/sync',{workspace:store.record.workspace,edit:pick(op,['id','key','base','value'])});await store.accept(response,op.id);
      }
      lastError='';changed();return true;

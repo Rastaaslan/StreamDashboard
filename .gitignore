@@ -1,4 +1,4 @@
-node_modules/
+node_modules
 dist/
 out/
 test-results/
@@ -25,3 +25,15 @@ android/app/src/main/res/mipmap-*/
 
 # Planning export references are generated locally on demand
 tests/fixtures/planning-export/*.png
+
+.build/
+
+# Never publish local TLS/Android credential material.
+*.p12
+*.pfx
+*.pem
+*.key
+android/**/local.properties
+
+# Local pre-fix snapshots from the alpha27 audit workspace (not runtime inputs)
+*.before-*

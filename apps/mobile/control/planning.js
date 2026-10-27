@@ -25,6 +25,64 @@ export function createPlanning({getData,api,esc,input,select,check,modal,close,t
   const all=rows(),p=paginatePlanning(all,number,15);number=p.page;visible=p.items;
   return `<div class="section-heading"><div><h1>Planning & événements</h1><p class="subtitle">Votre agenda partagé, ses récurrences et ses publications.</p></div>${button('+ Créer','new','','')}</div><div class="planning-filters panel"><div class="form-grid">${select('Afficher','planning-temporal',[['upcoming','À venir'],['past','Passés'],['all','Tous']],temporal)}${select('Période','planning-period',[['','Toutes les dates'],['today','Aujourd’hui'],['this-week','Cette semaine'],['next-week','Semaine prochaine']],period)}${select('Type','planning-category',[['','Tous les événements'],['live','Lives'],['production','Production'],['personal','Personnel']],category)}${input('Rechercher','planning-query',query,'search')}</div><div class="toolbar">${button('Image & Discord','export')}${button('Modèles','templates')}${button('Synchroniser Google','sync')}${getData().host.standalone?button('Actualiser les publications','refresh-publications'):''}${button('Supprimer une période','bulk')}</div></div><section class="panel spacer"><p class="small muted">${all.length} événement(s) · les séries affichent leurs occurrences${!period?' sur les deux prochaines années':''}.</p>${visible.map((item,i)=>`<article class="event" data-event-row="${i}"><div class="event-date">${item.allDay?Number(item.startAtUtc.slice(8,10)):new Date(item.startAtUtc).getDate()}<small>${new Date(item.startAtUtc).toLocaleDateString('fr-FR',{month:'short',...(item.allDay?{timeZone:'UTC'}:{})})}</small></div><div class="event-content"><h3>${esc(item.title)}</h3><p>${esc(item.allDay?'Journée entière':new Date(item.startAtUtc).toLocaleString('fr-FR',{weekday:'long',hour:'2-digit',minute:'2-digit'}))} · ${esc(item.twitchCategoryName||item.category||'Live')}</p>${item.recurrence?`<p>${esc(recurrenceSummary(item))}</p>`:''}<p>${providerStatus(item)}</p></div><div class="row-actions">${button('Modifier','edit',`data-index="${i}"`)}${button('Dupliquer','duplicate',`data-index="${i}"`)}${item.category==='live'?button('Préparer','prepare',`data-index="${i}"`):''}</div></article>`).join('')||'<p class="empty">Aucun événement pour ces filtres.</p>'}<div class="pagination">${button('← Précédents','previous',number===1?'disabled':'')}<span>${number} / ${p.totalPages}</span>${button('Suivants →','next',number===p.totalPages?'disabled':'')}</div></section>`;
  }
+
+ function mobilePage(view='next'){
+  const events=Array.isArray(getData()?.host?.planning)?getData().host.planning:[];
+  const now=Date.now(),dayMs=86400000;
+  const row=(item,i)=>{
+    const start=new Date(item.startAtUtc);
+    const label=item.allDay?'Journée entière':start.toLocaleString('fr-FR',{weekday:'short',day:'numeric',month:'short',hour:'2-digit',minute:'2-digit'});
+    const title=esc(item.title||'Événement');
+    const category=esc(item.twitchCategoryName||item.category||'Live');
+    return '<article class="event" data-event-row="'+i+'">'+
+      '<div class="event-date">'+start.getDate()+'<small>'+start.toLocaleDateString('fr-FR',{month:'short'})+'</small></div>'+
+      '<div class="event-content"><h3>'+title+'</h3><p>'+esc(label)+' · '+category+'</p>'+
+      (item.recurrence?'<p>'+esc(recurrenceSummary(item))+'</p>':'')+
+      '<p>'+providerStatus(item)+'</p></div>'+
+      '<div class="row-actions">'+button('Modifier','edit','data-index="'+i+'"')+
+      button('Dupliquer','duplicate','data-index="'+i+'"')+
+      ((item.category||'live')==='live'?button('Préparer','prepare','data-index="'+i+'"'):'')+
+      '</div></article>';
+  };
+  let title='',description='',body='';
+  if(view==='events'){
+    visible=[];
+    body=page();
+  }else if(view==='manage'){
+    visible=[];
+    title='⚙ Gestion du planning';
+    description='Créer, publier, partager ou nettoyer les événements, sans perdre les récurrences.';
+    body='<section class="panel"><div class="toolbar">'+button('+ Créer un événement','new')+
+      button('Image & Discord','export')+button('Mes modèles','templates')+
+      button('Synchroniser Google','sync')+
+      (getData().host.standalone?button('Actualiser les publications','refresh-publications'):'')+
+      button('Supprimer une période','bulk')+'</div></section>';
+  }else{
+    const range=view==='week'?periodBounds('this-week'):{start:now-dayMs,end:now+366*dayMs};
+    const expanded=expandEditableRecurringItems(events,{from:range.start,to:range.end});
+    let chosen=expanded.filter(item=>Number.isFinite(Date.parse(item.startAtUtc)))
+      .sort((a,b)=>Date.parse(a.startAtUtc)-Date.parse(b.startAtUtc));
+    if(view==='next'){
+      chosen=chosen.filter(item=>(item.category||'live')==='live'&&Date.parse(item.endAtUtc||item.startAtUtc)>now).slice(0,1);
+      title='▶ Prochain live';
+      description='Votre prochain rendez-vous Twitch et sa préparation.';
+    }else{
+      chosen=chosen.filter(item=>Date.parse(item.startAtUtc)<range.end&&Date.parse(item.endAtUtc||item.startAtUtc)>=range.start).slice(0,100);
+      title='▤ Cette semaine';
+      description='Tous les événements prévus cette semaine, lives ou non.';
+    }
+    visible=chosen;
+    body=chosen.length?'<section class="panel">'+chosen.map(row).join('')+'</section>':
+       '<p class="mobile-pane-empty">Aucun événement à afficher pour cette période.</p>';
+    if(!chosen.length)body+=button('+ Créer un événement','new','','');
+    if(view==='week'&&chosen.length>=100)body+='<p class="small muted">Affichage limité à 100 occurrences. Ouvrez « Événements » pour filtrer.</p>';
+  }
+  const header=view==='events'?'':'<div class="mobile-pane-title"><h2>'+title+'</h2></div>'+
+    (description?'<p class="small muted">'+description+'</p>':'');
+  return '<div class="mobile-pane-layout" data-mobile-pane-group="planning">'+
+    '<section class="mobile-pane-screen mobile-pane-planning" data-mobile-pane-group="planning" data-mobile-pane="'+
+    (['next','week','events','manage'].includes(view)?view:'next')+'">'+header+body+'</section></div>';
+ }
  function providers(item){
   if(!item)return '';
   return `<section class="provider-details">${providerStatus(item)}${Object.entries(item.providers||{}).map(([provider,v])=>`${['error','conflict'].includes(v.status)?button('Réessayer '+providerNames[provider],'retry',`data-provider="${provider}"`):''}${v.status==='conflict'&&!item.deletionPending?['local','remote'].map(strategy=>button(strategy==='local'?'Garder StreamDashboard':'Garder '+providerNames[provider],'conflict',`data-provider="${provider}" data-strategy="${strategy}"`)).join(''):''}${Object.entries(v.projections||{}).filter(([,p])=>p.status==='conflict').map(([key,p])=>`<p>${esc(key)} · ${esc(p.lastError||'Conflit sur cette occurrence')}</p>${['local','remote'].map(strategy=>button(strategy==='local'?'Garder StreamDashboard':'Garder la version distante','conflict',`data-provider="${provider}" data-strategy="${strategy}" data-key="${esc(key)}"`)).join('')}`).join('')}`).join('')}</section>`;
@@ -128,5 +186,5 @@ export function createPlanning({getData,api,esc,input,select,check,modal,close,t
   if(target.form?.id==='planning-export-form'){exportPreview=null;document.querySelector('#planning-export-result').replaceChildren();return true;}
   return false;
  }
- return {page,open,click,change,submit};
+ return {page,mobilePage,open,click,change,submit};
 }

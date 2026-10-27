@@ -2,7 +2,8 @@ import { BrowserWindow, shell } from 'electron';
 import path from 'node:path';
 
 export { isAllowedExternalAuthUrl, isAllowedGoogleOAuthUrl, isAllowedTwitchUrl } from './security.js';
-import { isAllowedExternalAuthUrl, isAllowedLiveViewUrl, isSameOrigin } from './security.js';
+import { isAllowedExternalAuthUrl, isAllowedLiveViewUrl, isSameOrigin, isTwitchViewerLoginUrl } from './security.js';
+import { openTwitchViewerSession } from './twitch-viewer.js';
 
 export function createDashboardWindow(url: string, preload: string, title = 'StreamDashboard') {
   const window = new BrowserWindow({
@@ -21,10 +22,19 @@ export function createDashboardWindow(url: string, preload: string, title = 'Str
       sandbox: true,
       webSecurity: true,
       allowRunningInsecureContent: false,
+      // Keep configuration and connection status current while this control
+      // surface is minimized. Global macro dispatch lives in the main process.
+      backgroundThrottling: false,
     },
   });
   window.removeMenu();
   window.webContents.setWindowOpenHandler(({ url: target }) => {
+    if (isTwitchViewerLoginUrl(target)) {
+      void openTwitchViewerSession(window, '', target).then(() => {
+        if (!window.isDestroyed()) window.webContents.send('viewer:twitch-session-closed');
+      }).catch(() => undefined);
+      return { action: 'deny' };
+    }
     if (isAllowedExternalAuthUrl(target) || isAllowedLiveViewUrl(target)) void shell.openExternal(target).catch(() => undefined);
     return { action: 'deny' };
   });

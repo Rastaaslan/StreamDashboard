@@ -1,19 +1,24 @@
+import type { DeckAction } from '../../../packages/contracts/src/control.js';
+import { actionCapability } from '../../mobile/shared/action-definition.js';
+import type { DevicePermission } from '../../mobile/shared/device-permissions.js';
 const GET_EXACT = new Set([
   '/v1/state','/v1/profile','/v1/connections','/v1/control-hub','/v1/events','/v1/soundboard',
   '/v1/automations','/v1/automations/capabilities','/v1/streamlabs/events','/v1/supports','/v1/twitch/categories',
-  '/v1/twitch/videos','/v1/twitch/clips','/v1/twitch/chatters','/v1/twitch/moderation/capabilities',
+  '/v1/dji/overview','/v1/spotify/status','/v1/twitch/videos','/v1/twitch/clips','/v1/twitch/chatters','/v1/twitch/chat/state','/v1/twitch/moderation/capabilities',
   '/v1/discord/status','/v1/discord/guilds',
 ]);
 
 /** Full configuration is granted only by a new, explicit host pairing; legacy credentials stay limited. */
 export function isManagementApiAllowed(method: string, path: string) {
+  if(method==='POST'&&path==='/v2/sounds/export')return true;
+  if(method==='POST'&&path==='/v2/planning/handoff')return true;
   if ((method === 'GET' && path === '/v2/autonomy') || (method === 'POST' && path === '/v2/autonomy/sync')) return true;
   if (path.startsWith('/v2/')) return isRemoteApiAllowed(method, path);
   const routes: Record<string, string[]> = {
-    GET: ['/v1/profile','/v1/google/calendars','/v1/google/oauth/config','/v1/soundboard/obs/status','/v1/supports/streamlabs/oauth/status','/v1/wizebot'],
-    PUT: ['/v1/supports/streamlabs/oauth/config','/v1/profile','/v1/google/target','/v1/discord/token','/v1/supports/streamlabs/config','/v1/wizebot/config','/v1/soundboard/catalog'],
+    GET: ['/v1/profile','/v1/google/calendars','/v1/google/oauth/config','/v1/soundboard/obs/status','/v1/supports/streamlabs/oauth/status','/v1/supports/streamlabs/history/status','/v1/wizebot'],
+    PUT: ['/v1/supports/streamlabs/oauth/config','/v1/profile','/v1/google/target','/v1/discord/token','/v1/supports/streamlabs/config','/v1/supports/streamlabs/history/config','/v1/wizebot/config','/v1/soundboard/catalog'],
     POST: ['/v1/google/oauth/config','/v1/google/oauth/start','/v1/google/sync','/v1/profile/import','/v1/soundboard/obs/setup','/v1/soundboard/sounds','/v1/supports/streamlabs/oauth/start','/v1/supports/streamlabs/oauth/config'],
-    DELETE: ['/v1/google/oauth/config','/v1/discord/token','/v1/supports/streamlabs/config','/v1/wizebot/config'],
+    DELETE: ['/v1/google/oauth/config','/v1/discord/token','/v1/supports/streamlabs/config','/v1/supports/streamlabs/history/config','/v1/wizebot/config'],
   };
   return (routes[method]?.includes(path) ?? false) || (method === 'DELETE' && /^\/v1\/soundboard\/sounds\/[A-Za-z0-9_-]+$/.test(path));
 }
@@ -23,7 +28,7 @@ const PUT_EXACT = new Set([
 ]);
 
 const POST_EXACT = new Set([
-  '/v1/commands','/v1/remote/ws-ticket','/v1/obs/test',
+  '/v1/spotify/control','/v1/dji/telemetry','/v1/commands','/v1/remote/ws-ticket','/v1/obs/test',
   '/v1/soundboard/play','/v1/soundboard/volume','/v1/soundboard/stop',
   '/v1/twitch/device','/v1/twitch/disconnect','/v1/google/disconnect',
   '/v1/automations','/v1/automations/test',
@@ -34,9 +39,9 @@ const POST_EXACT = new Set([
 export function isRemoteApiAllowed(method: string, pathName: string) {
   const verb = method.toUpperCase();
   // Paired clients own the shared control surface. OAuth secrets remain on the host.
-  if (verb === 'GET' && ['/v2/wizebot/catalog','/v2/state','/v2/replay','/v2/outputs','/v2/youtube','/v2/youtube/broadcasts'].includes(pathName)) return true;
+  if (verb === 'GET' && ['/v2/device','/v2/wizebot/catalog','/v2/state','/v2/replay','/v2/outputs'].includes(pathName)) return true;
   if (verb === 'PUT' && ['/v2/configuration','/v2/settings'].includes(pathName)) return true;
-  if (verb === 'POST' && ['/v2/wizebot/refresh','/v2/wizebot/import','/v2/wizebot/edit','/v2/actions','/v2/planning','/v2/sounds/upload','/v2/youtube/connect','/v2/youtube/disconnect'].includes(pathName)) return true;
+  if (verb === 'POST' && ['/v2/wizebot/refresh','/v2/wizebot/import','/v2/wizebot/edit','/v2/actions','/v2/planning','/v2/sounds/upload'].includes(pathName)) return true;
   if (['PUT','DELETE'].includes(verb) && /^\/v2\/planning\/[^/]+(?:\/occurrence)?$/.test(pathName)) return true;
   if (verb === 'GET') {
     return GET_EXACT.has(pathName)
@@ -68,3 +73,27 @@ export const remoteApiPolicySnapshot = {
   put: [...PUT_EXACT],
   post: [...POST_EXACT],
 } as const;
+
+/** Explicit permissions supplement the existing legacy/management allowlists. */
+export function requiredDevicePermissions(method:string,path:string,body:unknown,actions:DeckAction[]=[]):DevicePermission[] {
+  if(path==='/v2/sounds/export')return ['configuration','audio'];
+  if(path==='/v2/planning/handoff')return ['configuration','planning'];
+  const value=body as {action?:string;type?:string}|undefined;
+  if(path==='/v2/actions') {
+    const type=actions.find(a=>a.id===value?.action)?.type||value?.action||'';
+    if(type.startsWith('live.'))return ['obs','cloud'];
+    if(type.startsWith('metadata.'))return ['cloud'];
+    return [actionCapability(type as DeckAction['type']) as DevicePermission];
+  }
+  // Legacy commands can combine several effects. Limited devices use the
+  // typed v2 actions; legacy callers retain their explicitly granted full set.
+  if(path==='/v1/commands'||path.includes('/automations')||(method!=='GET'&&/\/autonomy|\/profile|\/configuration|\/settings/.test(path)))return ['configuration'];
+  if(path==='/v1/spotify/control'||path==='/v1/dji/telemetry')return ['audio'];
+  if(/\/soundboard|\/sounds/.test(path))return ['audio'];
+  if(/\/replay/.test(path))return ['clips'];
+  if(/\/obs|\/outputs/.test(path))return ['obs'];
+  if(/\/chat(?:\/|$)|\/moderation|\/wizebot/.test(path))return ['chat'];
+  if(/\/planning|\/google|\/companion/.test(path))return ['planning'];
+  if(/\/twitch|\/youtube|\/streamlabs|\/supports|\/discord/.test(path))return ['cloud'];
+  return method==='GET'||path==='/v1/remote/ws-ticket'?['observe']:['configuration'];
+}

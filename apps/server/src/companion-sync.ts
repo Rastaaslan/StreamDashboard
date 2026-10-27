@@ -176,6 +176,10 @@ export function reconcileCompanionBatch(planning: CalendarItem[], desktopCheckli
     if (!['create', 'update', 'delete'].includes(type)) throw Object.assign(new Error('Type opération compagnon invalide.'), { code: 'COMPANION_PAYLOAD_INVALID' });
     const index = nextPlanning.findIndex(item => item.id === entityId); const current = index < 0 ? undefined : nextPlanning[index]; const currentRevision = nextState.eventRevisions[entityId] ?? (current ? 1 : 0);
     const previousDeletedItem = nextState.tombstones[entityId]?.item as CalendarItem | undefined;
+    if (current?.transferredTo || current?.transferId) {
+      const conflict = { operationId, entityType:'planning', entityId, fields:['ownership'], pc:clone(current), android:clone(raw.patch ?? null), baseRevision };
+      nextState.conflicts[operationId] = conflict; conflicts.push(conflict); continue;
+    }
     const patch = normalizeEventPatch(validatePatch(raw.patch ?? {}, EVENT_FIELDS));
     if (type === 'create') {
       if (current || nextState.tombstones[entityId]) {
@@ -319,6 +323,7 @@ export function resolveCompanionConflict(planning: CalendarItem[], state: Compan
     const list = isPlanning ? planning : state[kind];
     const index = list.findIndex(item => item.id === conflict.entityId);
     const current = list[index];
+    if(isPlanning&&((current as CalendarItem)?.transferredTo||(current as CalendarItem)?.transferId))throw new Error('Événement transféré : conservez la responsabilité de son nouvel appareil.');
     if (conflict.android == null) {
       if (index >= 0) list.splice(index, 1);
       if (isPlanning) {
