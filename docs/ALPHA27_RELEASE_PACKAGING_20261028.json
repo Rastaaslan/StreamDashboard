@@ -1,0 +1,126 @@
+{
+  "kind": "StreamDashboard alpha27 QA packaging kit, not NEXT complete",
+  "source_base_commit": "86618112a114194d7cef91a7609f3730c5ddd8e0",
+  "uncommitted_restore_patch": {
+    "purpose": "Restore already-existing DJI sources required by forge extraResource",
+    "source": "/home/damien/StreamDashboard-TwitchOnly-Audit/resources/dji-mic3",
+    "verified_identical_to_existing_alpha27_packaged_resources": true,
+    "files": {
+      "DjiMic3PassiveBulkRead.cs": "7435acf41a881814d6dcf416d9f8ec097764d05c3c75c30a178f26496c6262a0",
+      "Read-Battery.ps1": "5977d1901d4577895c3248289dff082168d3d3a1108562981599c1f3b7b8710c"
+    },
+    "scripts_executed": false
+  },
+  "artifacts": {
+    "controller_windows": {
+      "path": "/home/damien/StreamDashboard-Alpha27-AgentV2-Integration/out/qualification-20261028/StreamDashboard-Controller-alpha27-Windows-QA-20261028.zip",
+      "bytes": 153103953,
+      "sha256": "4606d69eaa9c208fa379f990013e1e5d7d75b5e6d126c5adc0d7a56d3c6f522a"
+    },
+    "android_debug": {
+      "path": "/home/damien/StreamDashboard-Alpha27-AgentV2-Integration/out/qualification-20261028/StreamDashboard-Remote-alpha27-Android-QA-20261028.apk",
+      "bytes": 3692649,
+      "sha256": "fbadd441829ab4328aacdc5dbbf5cf352b436991c126ba2f5185a27119285689"
+    },
+    "agent_readonly_rc2": {
+      "path": "/home/damien/StreamDashboard-Alpha27-AgentV2-Integration/out/qualification-20261028/StreamDashboard-AgentV2-ReadOnly-Windows-QA-RC2-20261028.zip",
+      "bytes": 36136,
+      "sha256": "2c3ceb3981960c24952a944d39cf43f856245d563dc7bbf212c90629e67e517a"
+    }
+  },
+  "controller_package": {
+    "version": "2.1.0-alpha.27",
+    "electron": "43.7.0",
+    "platform": "win32-x64",
+    "authenticode": "UNSIGNED_QA",
+    "checker_exit": 0,
+    "exe_sha256": "b52531fe08c070dbada5ac1ae49852be58d20ef8a97a8a74e439d804f54b868d",
+    "asar_sha256": "6f5d2a3c35441f97bb2e3bf10c6cf01063686aec52acc5952ad4bbd3ba0808f6",
+    "checked": "runtime SemVer, public IDs, role ports, all built runtime/public asset hashes, exclusions and EXE/ASAR integrity",
+    "build_proof_source_hash": "d13fe4bd65526b9fd354dec6a4488bb8cd0d52ad85d1eadc814d18d64c47a92a",
+    "build_proof_output_hash": "57b78409325c755bada082eee262b1e8911f8c07183338e6c9246e6bc6aa5fb5",
+    "package_file_count": 77,
+    "log": "/tmp/sd-alpha27-controller-restored-resources-20261028.log",
+    "physical_windows_launch": "NOT_RUN"
+  },
+  "android": {
+    "path": "/home/damien/StreamDashboard-Alpha27-AgentV2-Integration/android/app/build/outputs/apk/debug/app-debug.apk",
+    "bytes": 3692649,
+    "sha256": "fbadd441829ab4328aacdc5dbbf5cf352b436991c126ba2f5185a27119285689",
+    "source_commit": "86618112a114194d7cef91a7609f3730c5ddd8e0",
+    "badging_exit": 0,
+    "badging": [
+      "package: name='com.rastaaslan.streamdashboard.remote.next' versionCode='2010027' versionName='2.1.0-alpha.27' platformBuildVersionName='15' platformBuildVersionCode='35' compileSdkVersion='35' compileSdkVersionCodename='15'",
+      "sdkVersion:'26'",
+      "targetSdkVersion:'35'"
+    ],
+    "signature_exit": 0,
+    "signature": [
+      "Signer #1 certificate DN: C=US, O=Android, CN=Android Debug",
+      "Signer #1 certificate SHA-256 digest: c09e61d51adcc0e06398e5f23bc4a88aa3afb68493dea1564f0b248fcb3403b0"
+    ],
+    "unit_tests": {
+      "tests": 49,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0,
+      "suites": 11
+    },
+    "lint_issues": {
+      "Warning": 15
+    },
+    "mobile_asset_integrity": {
+      "verified": 100,
+      "mismatches": [],
+      "profile": "production"
+    }
+  },
+  "compatibility": {
+    "coinstall_as_separate_qa_files": true,
+    "controller_ui_to_node_agent_v2_persistent_connection": "NOT_WIRED",
+    "agent_default_listener": false,
+    "readPinnedAgentHealth_runtime_references": [
+      "apps/controller/src/read-only-gateway-client.ts"
+    ],
+    "android_to_controller_physical_qa": "NOT_RUN",
+    "new_dpapi_credential_to_real_obs": "NOT_RUN",
+    "obs_stream_start_stop_commands_executed": false,
+    "applications_deployed_or_started": false,
+    "next_complete": false
+  },
+  "historical_artifacts": {
+    "delivered_alpha27_apk": {
+      "path": "/home/damien/StreamDashboard-Delivery-alpha27-Slide-Spontaneous/StreamDashboard-Next-alpha27-Slide-Spontane.apk",
+      "sha256": "571a6855bfdafbb84ae5e18221a73e7a3e2ef3a0ec613b01447545c3fc6d12d7",
+      "versionName": "2.1.0-alpha.27",
+      "versionCode": 2010027,
+      "exact_source_commit": "NOT_PROVEN"
+    },
+    "canonical_previous_alpha27_debug_apk": {
+      "sha256": "39503e92e9c02371f12ae355af803c1ada3a642f19d75b70d07dc3e1a39e53a4",
+      "evidence": "/home/damien/project-handoffs/STREAMDASHBOARD_PROUTLOST_REPRISE.md line208"
+    },
+    "previous_alpha25_windows": {
+      "sha256": "61a9c5d439be54a70bbd9ab299cbc87cdeb9ad1c25bae5f367e0a8eca762aa99",
+      "not_base_for_current_build": true
+    }
+  },
+  "logs": [
+    "/tmp/sd-alpha27-android-offline-20261028.log",
+    "/tmp/sd-alpha27-controller-offline-20261028.log",
+    "/tmp/sd-alpha27-controller-isolated-tmp-20261028.log",
+    "/tmp/sd-alpha27-controller-restored-resources-20261028.log"
+  ],
+  "known_packaging_failures_preserved": [
+    "EPERM on shared /tmp/electron-packager, solved with isolated TMPDIR without touching shared files",
+    "Missing resources/dji-mic3, restored exact existing source files with both source/package hashes matched"
+  ],
+  "remaining_release_gates": [
+    "Commit restored resources through root review",
+    "Physical Windows Controller UI launch in isolated profile",
+    "Physical Android device / safe pairing and reconnection",
+    "Persistent Controller/Node Agent link and supervised Windows service",
+    "OBS command writer, fencing and Android fallback",
+    "Production signing and installation/migration/rollback exercise"
+  ]
+}
