@@ -2,12 +2,13 @@ import {createServer, type Server as HttpsServer} from 'node:https';
 import {createHash, timingSafeEqual, X509Certificate} from 'node:crypto';
 import type {TLSSocket} from 'node:tls';
 import {isIP} from 'node:net';
+import type {Duplex} from 'node:stream';
 import {networkInterfaces} from 'node:os';
 import type {AgentObservation} from '../../../packages/contracts/src/agent-v2.js';
 import {observationFreshness} from '../../../packages/contracts/src/agent-v2.js';
 import type {ObsHealth} from './read-only-observer.js';
 
-/** Experimental read-only TLS endpoint: not started by any production entrypoint.
+/** Certificate-pinned read-only TLS endpoint shared by the explicit service and labs.
  * The Controller certificate fingerprint must be provisioned out of band.
  * Mutual TLS proves key possession; app-layer pinning verifies the exact
  * client certificate even when that certificate is self-signed.
@@ -27,7 +28,7 @@ export function createReadOnlyGateway(config:ReadOnlyGatewayConfig):HttpsServer 
   return createServer({
     key:config.serverKey,cert:config.serverCertificate,requestCert:true,
     rejectUnauthorized:false, // Exact pinned client cert is checked before ANY response data.
-    minVersion:'TLSv1.3',maxVersion:'TLSv1.3',
+    minVersion:'TLSv1.3',maxVersion:'TLSv1.3',handshakeTimeout:4000,
   },(request,response)=>{
     const reject=(status:number,reason:string)=>{
       response.writeHead(status,{'Content-Type':'application/json','Cache-Control':'no-store',
@@ -130,4 +131,42 @@ export async function listenReadOnlyOnApprovedInterface(
     server.once('close',()=>clearTimeout(expire));
     return server;
   }catch(error){server.close();throw error}
+}
+
+const managedSockets=new WeakMap<HttpsServer,Set<Duplex>>();
+export interface ManagedReadOnlyBinding {
+  interfaceAddress:string;
+  port:number;
+  optIn:'I_ACCEPT_PRIVATE_MTLS_READ_ONLY';
+}
+/** Explicit service lifetime owned by its process, never started by default. */
+export async function listenManagedReadOnlyGateway(
+  config:ReadOnlyGatewayConfig,binding:ManagedReadOnlyBinding,
+):Promise<HttpsServer>{
+  if(binding?.optIn!=='I_ACCEPT_PRIVATE_MTLS_READ_ONLY'||
+     !Number.isSafeInteger(binding.port)||binding.port<0||binding.port>65535||
+     !(privateIpv4(binding.interfaceAddress)||binding.interfaceAddress==='127.0.0.1'))
+    throw Error('MANAGED_AGENT_BINDING_REFUSED');
+  const assigned=Object.values(networkInterfaces()).flat()
+    .some(value=>value?.family==='IPv4'&&value.address===binding.interfaceAddress);
+  if(!assigned)throw Error('MANAGED_AGENT_BINDING_REFUSED');
+  const server=createReadOnlyGateway(config);
+  const sockets=new Set<Duplex>();managedSockets.set(server,sockets);
+  server.on('connection',socket=>{sockets.add(socket);socket.once('close',()=>sockets.delete(socket))});
+  server.headersTimeout=4000;server.requestTimeout=4000;server.keepAliveTimeout=1000;
+  server.maxConnections=16;
+  try{
+    await new Promise<void>((resolve,reject)=>{
+      server.once('error',reject);
+      server.listen(binding.port,binding.interfaceAddress,()=>{server.removeListener('error',reject);resolve()});
+    });
+    return server;
+  }catch(error){server.close();throw error}
+}
+
+export async function stopManagedReadOnlyGateway(server:HttpsServer):Promise<void>{
+  const stopped=new Promise<void>(resolve=>server.close(()=>resolve()));
+  for(const socket of managedSockets.get(server)??[])socket.destroy();
+  server.closeAllConnections();
+  await stopped;managedSockets.delete(server);
 }

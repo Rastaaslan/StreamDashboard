@@ -13,6 +13,7 @@ export interface ReadOnlyAgentPeer {
   clientCertificate:string|Buffer;
   clientKey:string|Buffer;
   timeoutMs?:number;
+  signal?:AbortSignal;
 }
 const validId=(s:string)=>/^[A-Za-z0-9_-]{1,96}$/.test(s);
 const fingerprint=(certificate:Buffer)=>createHash('sha256').update(certificate).digest();
@@ -26,7 +27,7 @@ function isPrivateNumericAddress(host:string):boolean {
     (a[0]===192&&a[1]===168)||
     (a[0]===100&&a[1]>=64&&a[1]<=127);
 }
-function checkedEndpoint(input:string):URL {
+export function checkedEndpoint(input:string):URL {
   let url:URL;
   try{url=new URL(input)}catch{throw Error('INVALID_AGENT_ENDPOINT')}
   if(url.protocol!=='https:'||!isPrivateNumericAddress(url.hostname)||url.username||
@@ -68,7 +69,7 @@ export async function readPinnedAgentHealth(peer:ReadOnlyAgentPeer,now=Date.now(
 
   return new Promise((resolve,reject)=>{
     const req=httpsRequest(url,{
-      method:'GET',agent:false,ca:peer.serverCertificate,
+      method:'GET',agent:false,ca:peer.serverCertificate,signal:peer.signal,
       cert:peer.clientCertificate,key:peer.clientKey,rejectUnauthorized:true,
       minVersion:'TLSv1.3',maxVersion:'TLSv1.3',
       checkServerIdentity(_hostname,cert) {
@@ -101,6 +102,8 @@ export async function readPinnedAgentHealth(peer:ReadOnlyAgentPeer,now=Date.now(
       });
       res.on('error',reject);
     });
+    const deadline=setTimeout(()=>req.destroy(Error('AGENT_REQUEST_TIMEOUT')),timeout);
+    req.once('close',()=>clearTimeout(deadline));
     req.setTimeout(timeout,()=>req.destroy(Error('AGENT_REQUEST_TIMEOUT')));
     req.on('error',reject);req.end();
   });

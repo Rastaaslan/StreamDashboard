@@ -16,6 +16,8 @@ import type { Server } from 'node:http';
 import { configureLoginStartup } from './login-startup.js';
 import { InstallationStore } from './installation-store.js';
 import { desktopUserData } from './qa-profile.js';
+import {ControllerAgentLink} from '../../controller/src/agent-link.js';
+import {loadManagedControllerPeer} from '../../agent/src/readonly-network-config.js';
 import {PeerTransport} from './peer-transport.js';
 import {ElectronSecretStore} from './secrets.js';
 import {createAgentCertificate} from './agent-certificate.js';
@@ -35,6 +37,7 @@ const logger = new DesktopLogger(path.join(app.getPath('userData'), 'logs'));
 const desktopSecrets=new ElectronSecretStore(app.getPath('userData'));
 const peers=new PeerTransport(desktopSecrets);
 const peerRequests=new Map<string,AbortController>();
+const nodeAgent=new ControllerAgentLink(()=>loadManagedControllerPeer(process.env));
 const log = (event: string) => { void logger.info(event, { pid: process.pid }).catch(() => undefined); };
 const primary = !squirrelHandled && app.requestSingleInstanceLock();
 if (!primary) app.quit();
@@ -157,6 +160,7 @@ function cleanupRuntime(): Promise<void> {
     await stopControllerKeys.flush?.();
     await autonomous.dispose();
     for(const request of peerRequests.values())request.abort();
+    await nodeAgent.stop();
     await peers.close();
     if (controllerServer) await new Promise<void>((resolve,reject) => {
       controllerServer!.close(error => error ? reject(error) : resolve());
@@ -192,6 +196,7 @@ function boot(): Promise<void> {
     booting = true;
     try {
       log('Electron ready; creating visible startup window');
+      nodeAgent.start();
       const preview = process.argv.includes('--ui-preview=desktop-v2') && await stat(path.join(app.getAppPath(),'apps/web/preview/index.html')).then(()=>true,()=>false);
       const legacy = process.argv.includes('--ui-legacy=desktop-v1');
       installation = await installations.recover(async current => { configureLoginStartup(app, Boolean(current.startAtLogin)); });
@@ -301,6 +306,9 @@ function applyInstallation(operation: () => Promise<InstallationPlan>) {
   installationChange = pending.catch(() => undefined);
   return pending;
 }
+ipcMain.handle('node-agent:status',event=>{
+  requireInstallationSender(event);nodeAgent.start();return nodeAgent.snapshot();
+});
 ipcMain.handle('installation:get', async event => { requireInstallationSender(event); return installations.read(); });
 ipcMain.handle('autonomous:request',async(event,operation:'state'|'command',body?:unknown)=>{requireInstallationSender(event);return autonomous.request(operation,body);});
 const agentIdentityStore=new ElectronSecretStore(app.getPath('userData'));
