@@ -80,7 +80,7 @@ Preuve physique factice : `AGENT_DPAPI_WINDOWS_FAKESECRET_20261028.txt`.
 ```bash
 npm ci
 npm test
-npm run build:types
+npx tsc --noEmit --pretty false
 npm run security:check
 node scripts/build-agent-readonly-qa.mjs
 ```
