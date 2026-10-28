@@ -24,3 +24,31 @@ describe('Agent read-only runner',()=>{
   expect(records).toHaveLength(0);expect(errors).toEqual(['OBS_READ_UNAVAILABLE']);
  });
 });
+
+it('stops promptly if OBS never responds instead of blocking service shutdown',async()=>{
+ const stop=new AbortController(),results:unknown[]=[];
+ const task=runReadOnlyAgent({
+  client:{call:async()=>new Promise<never>(()=>{})},
+  deviceId:'pc-stream',signal:stop.signal,now:Date.now,
+  sleep:async()=>{throw Error('should not reach sleep after abort')},
+  emit:value=>results.push(value),
+  reportUnreachable:()=>{throw Error('aborted read should not report healthy')},
+  readTimeoutMs:10000,
+ });
+ setTimeout(()=>stop.abort(),20);
+ await Promise.race([task,new Promise<never>((_,reject)=>
+  setTimeout(()=>reject(Error('SHUTDOWN_STALLED')),700))]);
+ expect(results).toHaveLength(0);
+});
+it('times out an unresponsive OBS read without creating connected snapshots',async()=>{
+ const stop=new AbortController(),events:unknown[]=[],diagnostics:string[]=[];
+ await runReadOnlyAgent({
+  client:{call:async()=>new Promise<never>(()=>{})},
+  deviceId:'pc-stream',signal:stop.signal,now:Date.now,
+  sleep:async()=>{stop.abort()},
+  emit:value=>events.push(value),reportUnreachable:code=>diagnostics.push(code),
+  readTimeoutMs:100,
+ });
+ expect(events).toEqual([]);
+ expect(diagnostics).toEqual(['OBS_READ_UNAVAILABLE']);
+});
