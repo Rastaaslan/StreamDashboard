@@ -1,0 +1,108 @@
+{
+  "kind": "StreamDashboard Agent Windows read-only RC2 qualification",
+  "state": "QA_ONLY_NOT_PRODUCTION_NOT_DASHBOARD_NEXT_COMPLETE",
+  "date": "2026-10-28",
+  "base_commit_before_root_integration": "dfabefb9f122c34741a2ee6327b7a44828801932",
+  "code_files": {
+    "apps/agent/src/windows-secret-store.ts": {
+      "sha256": "c4782d4ba1e7785be1623ed3363a3a3137228950a82b54704819fc06cbac52f7",
+      "bytes": 9401
+    },
+    "apps/agent/src/windows-readonly-service.ts": {
+      "sha256": "2e56c7248e075162ca3d8c3382754d33a8009758397533c2f550e751421dcefe",
+      "bytes": 7289
+    },
+    "tests/agent-v2-windows-secret-store.test.ts": {
+      "sha256": "2c61b637c4708d7c9878c4a7fc8a25b6ebb96cd9bbd77fe6bb3b1b9be68d9097",
+      "bytes": 7160
+    },
+    "tests/agent-v2-windows-readonly.test.ts": {
+      "sha256": "fcf0ef65d8d6b2926e82752b853a89fa02eac04abc8d14c871633eda03d13ec3",
+      "bytes": 8162
+    }
+  },
+  "dpapi_integration": {
+    "entrypoint": "apps/agent/src/windows-readonly-service.ts",
+    "directory_env": "SD_AGENT_DPAPI_DIR",
+    "opt_in_env": "SD_AGENT_DPAPI_OPT_IN",
+    "required_opt_in": "I_ACCEPT_CURRENT_USER_DPAPI",
+    "secret_id": "obs_password",
+    "missing_or_corrupt_secret": "REFUSE_WITHOUT_PLAINTEXT_FALLBACK",
+    "automatic_obs_secret_migration": false,
+    "decoded_buffer_zeroed": true,
+    "javascript_password_string_zeroing_guaranteed": false,
+    "obs_endpoint": "ws://127.0.0.1:<authenticated-local-configuration-port>",
+    "allowed_port_range": [
+      1024,
+      65535
+    ],
+    "dpapi_process_timeout_ms": 10000,
+    "obs_connect_timeout_ms": 6000
+  },
+  "tests": {
+    "full_npm_test": {
+      "exit": 0,
+      "vitest_pass": 1531,
+      "vitest_lab_skip": 2,
+      "node_pass": 353,
+      "node_fail": 0,
+      "command": "nice -n 15 npm test",
+      "log": "/tmp/sd-agent-dpapi-full-gate-20261028.log"
+    },
+    "agent_suite": {
+      "pass": 50,
+      "lab_skip": 2,
+      "log": "/tmp/sd-agent-dpapi-integrated-tests-20261028.log"
+    },
+    "types": {
+      "exit": 0,
+      "log": "/tmp/sd-agent-dpapi-integrated-types-20261028.log"
+    },
+    "security": {
+      "exit": 0,
+      "log": "/tmp/sd-agent-dpapi-integrated-security-20261028.log"
+    },
+    "builder": {
+      "exit": 0,
+      "log": "/tmp/sd-agent-dpapi-integrated-builder-final-20261028.log"
+    }
+  },
+  "physical_dpapi": {
+    "device": "FIXE",
+    "node": "v22.22.3",
+    "powershell": "5.1.26100.9711",
+    "scope": "ONLY_FAKE_SECRETS_STANDALONE_DPAPI_MODULE",
+    "source_sha256": "c4782d4ba1e7785be1623ed3363a3a3137228950a82b54704819fc06cbac52f7",
+    "markers": [
+      "WINDOWS_DPAPI_CURRENT_USER_ROUNDTRIP_PASS",
+      "WINDOWS_DPAPI_RELOCATED_ID_REFUSED",
+      "WINDOWS_DPAPI_TAMPER_REFUSED",
+      "WINDOWS_DPAPI_WRONG_ENTROPY_REFUSED",
+      "WINDOWS_DPAPI_TEMP_STORE_CLEAN_PASS",
+      "WINDOWS_DPAPI_REAL_NODE_QA_PASS"
+    ],
+    "exit": 0,
+    "temp_directory_removed": true,
+    "evidence": "docs/AGENT_DPAPI_WINDOWS_FAKESECRET_20261028.txt",
+    "evidence_sha256": "fc84b820cea524ca5ce90b41aaecf56a8f31e2974ccf30c332fa88dad2c0c758"
+  },
+  "artifact": {
+    "path": "/home/damien/StreamDashboard-Alpha27-AgentV2-Integration/dist/StreamDashboard-AgentV2-ReadOnly-Windows-QA-RC2-20261028.zip",
+    "sha256": "2c3ceb3981960c24952a944d39cf43f856245d563dc7bbf212c90629e67e517a",
+    "bytes": 36136,
+    "bundle_sha256": "d948d9baacaf94f1cbcdf39e8188cb238fbca47075e8d67b4446f519ea004f70",
+    "secret_included": false,
+    "delivered_to_pc": false,
+    "activated": false,
+    "reproduction_instructions": "docs/AGENT_WINDOWS_READONLY_RC2.md"
+  },
+  "limits": [
+    "New DPAPI credential consumer tested with fake store, not connected to real OBS in this pass",
+    "Existing RC1 physical OBS evidence does not independently certify RC2",
+    "Credential provisioning is explicit through WindowsAgentSecretStore API in the compiled repository; no portable migration wizard",
+    "No supervised Windows service, OBS command writer or Android fallback qualified",
+    "Windows rename metadata power-loss durability not qualified",
+    "DPAPI uses same user/profile; same-user malware is outside its isolation guarantee",
+    "No active applications, OBS, firewall, Windows settings or WorldPrep changed"
+  ]
+}
