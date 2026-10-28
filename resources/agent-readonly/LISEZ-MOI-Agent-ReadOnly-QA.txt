@@ -1,0 +1,44 @@
+STREAMDASHBOARD — AGENT WINDOWS READ-ONLY (QA)
+Version de qualification — 28 octobre 2026
+=========================================
+
+CE QUE CE PAQUET FAIT :
+- Lit uniquement les statistiques OBS (GetStats) et l'état de diffusion (GetStreamStatus).
+- Fonctionne sur le PC de stream, en connexion locale 127.0.0.1.
+- Utilise en memoire le mot de passe OBS WebSocket DEJA configure sur le PC.
+- N'installe AUCUN service, ne touche ni a OBS ni au pare-feu, n'ouvre aucun port LAN.
+- Le mode test quitte apres une seule lecture. Le mode surveillance peut etre arrete avec Ctrl+C.
+
+PREALABLES
+- Windows avec Node.js 22+ installe.
+- OBS ouvert et OBS WebSocket active AVEC authentification.
+- Utiliser ce paquet seulement sur un PC que vous controlez.
+- NE PAS partager le dossier de configuration OBS : il peut contenir un secret.
+
+TEST UNE SEULE LECTURE (recommande)
+Ouvrir PowerShell dans ce dossier :
+    .\Start-Agent-ReadOnly.ps1 -DeviceId FIXE_QA
+
+SURVEILLANCE LOCALE, LECTURE SEULE
+    .\Start-Agent-ReadOnly.ps1 -Monitor -DeviceId FIXE_QA
+Arret : Ctrl+C. Aucun lancement automatique au demarrage Windows.
+
+ROLLBACK / DESINSTALLATION
+1. Arreter le processus dans PowerShell avec Ctrl+C.
+2. Supprimer simplement ce dossier QA.
+Aucune modification d'OBS ou de StreamDashboard ne doit etre annulee.
+
+LIMITATIONS IMPORTANTES
+- Prototype, non homologue en production.
+- AUCUNE commande OBS de demarrage/arret de stream, scene ou volume.
+- AUCUN controle Controller/Agent en production, pas de bascule Android.
+- Le secret du WebSocket OBS est charge depuis sa configuration locale, en memoire.
+  Il n'est ni affiche ni ecrit dans ce paquet, mais un coffre de secrets Windows
+  reste a preparer avant une distribution finale.
+- Si le WebSocket OBS n'est pas disponible ou son auth echoue, le programme
+  refuse de donner un faux etat 'connecte'.
+
+PREUVES DU LABORATOIRE
+- Premiere lecture reelle sur FIXE (OBS port 4555) reussie, sans ecriture OBS.
+- Tests Typescript et Agent V2 en cours de qualification globale.
+- Ce paquet n'est pas une installation complete du Dashboard NEXT.
