@@ -9,7 +9,8 @@ const server = readFileSync(new URL('../apps/server/src/index.ts', import.meta.u
 
 describe('Desktop V2 promu en production', () => {
   it('est bien le shell chargé par Electron et possède une CSP', () => {
-    expect(main).toContain("'/preview/?runtime=1'");
+    expect(main).toContain("'/mobile/control/'");
+    expect(main).toContain("'/preview/'");
     expect(html).toContain('Content-Security-Policy');
     expect(html).toContain("script-src 'self'");
     expect(html).toContain('id="brand-context"');

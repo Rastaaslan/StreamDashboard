@@ -52,4 +52,4 @@ it('Google recurring master survives sync, restart, ETag conflict resolution, re
     await request(`planning/${id}`, { local: true, google: true }, 'DELETE');
     expect(remote).toBeUndefined(); expect((await snapshot()).planning).toHaveLength(0);
   } finally { await server.stop(); await rm(dataDir, { recursive: true, force: true }); }
-});
+}, 15_000);

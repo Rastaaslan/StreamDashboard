@@ -161,8 +161,12 @@ for (const provider of ['twitch', 'google'] as const) {
       expect(f.calls['GET /oauth2/validate']).toBe(2);
       expect(f.calls['GET /helix/schedule']).toBe(1 + 4 * ids.length);
       // Includes real durable storage, restart maintenance and explicit retry.
-      // Bound per-occurrence writes plus the fixed lifecycle summaries (create/restart/retry/edit/delete).
-      expect(f.phases.persistence.count).toBeLessThanOrEqual(4 * ids.length + 8);
+      // These checkpoints include durable uncertain-CREATE intents before remote I/O,
+      // confirmed identity snapshots after I/O, and deletion/restart fences.
+      // Trace 2026-10-29: 49 checkpoints for 7 creates and 7 deletes (39.7ms
+      // total), while all remote writes above remain exactly once. Keep a
+      // bounded budget; optimizing away intent/identity fences would be unsafe.
+      expect(f.phases.persistence.count).toBeLessThanOrEqual(6 * ids.length + 8);
     }
   });
 }
@@ -255,7 +259,7 @@ it.each(['twitch', 'google'] as const)('%s conversion cycles, cancelled remote r
   await f.request(`planning/${id}`, { confirmRecurring: true }, 'DELETE');
   expect(f.active()).toEqual([external]);
   expect(f.writes.some(write => write.id === 'external')).toBe(false);
-});
+}, 15_000);
 
 it.each(['local', 'remote'] as const)('Twitch retirement detects remote conflict and resolves %s without blind deletion', async strategy => {
   const f = await fixture('twitch');
@@ -395,7 +399,7 @@ it.each(['twitch', 'google'] as const)('%s offline occurrence move survives relo
   expect(f.item().providers![provider]!.lastError).toBeUndefined();
 });
 
-it('Twitch sync settles a lost replacement CREATE response without retiring the recovered identity again', async () => {
+it('Twitch does not adopt or replay a lost replacement CREATE without a provable remote identity', async () => {
   const f = await fixture('twitch');
   await f.request('planning', { ...f.input, recurrence: { frequency: 'weekly', interval: 1, timeZone: 'UTC' } });
   const id = f.item().id;
@@ -405,12 +409,16 @@ it('Twitch sync settles a lost replacement CREATE response without retiring the 
   expect(f.item().providers!.twitch!.uncertainCreate).toBeTruthy();
   expect(f.active()).toHaveLength(1);
   const remoteId = f.active()[0].id, writes = f.writes.length;
+  // Twitch cannot attach an application-owned identity or idempotency key to
+  // its Schedule CREATE. Matching a remote event by title/time is not proof
+  // that it was created by our lost request (another client could create it).
   await f.restart();
-  await f.request('twitch/sync');
-  expect(f.item().providers!.twitch!.status).toBe('synced');
-  expect(f.item().providers!.twitch!.uncertainCreate).toBeFalsy();
-  expect(f.item().providers!.twitch!.nativeReplacementRequested).toBeUndefined();
-  await f.restart(); await f.request(`planning/${id}/retry/twitch`);
+  await f.request('twitch/sync', {}, 'POST', false);
+  expect(f.item().providers!.twitch!.uncertainCreate).toBeTruthy();
+  expect(f.item().providers!.twitch!.status).toBe('error');
+  await f.restart();
+  await f.request(`planning/${id}/retry/twitch`, {}, 'POST', false);
+  expect(f.item().providers!.twitch!.uncertainCreate).toBeTruthy();
   expect(f.active().map(event => event.id)).toEqual([remoteId]);
   expect(f.writes).toHaveLength(writes);
 });

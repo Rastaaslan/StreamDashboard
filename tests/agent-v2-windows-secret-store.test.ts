@@ -1,6 +1,6 @@
 import {afterEach,describe,expect,it,vi} from 'vitest';
 import {createCipheriv,createDecipheriv,randomBytes} from 'node:crypto';
-import {mkdtemp,readFile,readdir,rename,rm,symlink,writeFile} from 'node:fs/promises';
+import {mkdtemp,readFile,readdir,realpath,rename,rm,symlink,writeFile} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import path from 'node:path';
 import {WindowsAgentSecretStore,createCurrentUserDpapi,type AgentDataProtection}
@@ -27,7 +27,9 @@ function testProtection():AgentDataProtection {
 const directories:string[]=[];
 afterEach(async()=>{for(const dir of directories.splice(0))await rm(dir,{recursive:true,force:true})});
 async function fixture(protection=testProtection()){
-  const dir=await mkdtemp(path.join(tmpdir(),'sd-agent-secret-test-'));directories.push(dir);
+  // Resolve the OS temporary-directory parent before creating the secret-store fixture.
+  // Windows CI can expose a junction for TEMP; the production store correctly rejects alias paths.
+  const dir=await mkdtemp(path.join(await realpath(tmpdir()),'sd-agent-secret-test-'));directories.push(dir);
   const options={optIn:'I_ACCEPT_CURRENT_USER_DPAPI' as const,protection};
   return {dir,options,store:await WindowsAgentSecretStore.open(dir,options)};
 }
