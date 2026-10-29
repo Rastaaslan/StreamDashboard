@@ -56,3 +56,42 @@ it('reconciles another writer record if journal changed since this process opene
   expect(second.find('one')?.result).toBe('uncertain');
  }finally{await rm(dir,{recursive:true,force:true})}
 });
+
+it('only finalises a durable reservation after external observation and preserves unrelated evidence',async()=>{
+ const dir=await mkdtemp(path.join(tmpdir(),'sd-v2-journal-confirm-'));
+ try {
+  const file=path.join(dir,'receipts.json'),first=await DurableReceiptJournal.open(file);
+  await expect(first.confirmReservation({commandId:'missing',result:'confirmed',observedAt:10}))
+   .rejects.toThrow('RESERVATION_REQUIRED');
+  await first.record({commandId:'reserved',result:'uncertain',reason:'PRE_EXECUTION_RESERVED',observedAt:10});
+  const second=await DurableReceiptJournal.open(file);
+  await second.record({commandId:'other',result:'uncertain',observedAt:11});
+  await expect(first.confirmReservation({commandId:'reserved',result:'confirmed',observedAt:9}))
+   .rejects.toThrow('RESERVATION_REQUIRED');
+  await first.confirmReservation({commandId:'reserved',result:'confirmed',reason:'STATE_OBSERVED',observedAt:12});
+  const reopened=await DurableReceiptJournal.open(file);
+  expect(reopened.find('reserved')).toMatchObject({result:'confirmed',reason:'STATE_OBSERVED'});
+  expect(reopened.find('other')?.result).toBe('uncertain');
+  expect(reopened.hasUncertain()).toBe(true);
+  await expect(reopened.record({commandId:'reserved',result:'confirmed',observedAt:13}))
+   .rejects.toThrow('DUPLICATE');
+  await expect(reopened.confirmReservation({commandId:'other',result:'confirmed',observedAt:13}))
+   .rejects.toThrow('RESERVATION_REQUIRED');
+  await expect(reopened.confirmReservation({commandId:'reserved',result:'executed',observedAt:13}))
+   .rejects.toThrow('CONFIRMED_RECEIPT_REQUIRED');
+ }finally{await rm(dir,{recursive:true,force:true})}
+});
+
+it('snapshots receipt arguments before asynchronous persistence',async()=>{
+ const dir=await mkdtemp(path.join(tmpdir(),'sd-v2-journal-snapshot-'));
+ try {
+  const journal=await DurableReceiptJournal.open(path.join(dir,'receipts.json'));
+  const reserved={commandId:'snap',result:'uncertain' as const,observedAt:10,reason:'PRE_EXECUTION_RESERVED'};
+  const pending=journal.record(reserved);reserved.reason='CALLER_MUTATION';await pending;
+  expect(journal.find('snap')?.reason).toBe('PRE_EXECUTION_RESERVED');
+  const receipt={commandId:'snap',result:'confirmed' as const,observedAt:11,reason:'OBSERVED'};
+  const confirming=journal.confirmReservation(receipt);receipt.commandId='forged';await confirming;
+  expect(journal.find('snap')).toMatchObject({result:'confirmed',reason:'OBSERVED'});
+  expect(journal.find('forged')).toBeUndefined();
+ }finally{await rm(dir,{recursive:true,force:true})}
+});

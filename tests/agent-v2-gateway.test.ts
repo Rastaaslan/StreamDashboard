@@ -83,4 +83,64 @@ describe('pinned mutual-TLS read-only Agent gateway (isolated loopback LAB)',()=
       now:()=>Date.now(),snapshot:()=>null,
     })).toThrow('INVALID_CLIENT_FINGERPRINT');
   });
+
+  it('serves fresh health, returns unavailable during a fake OBS outage and recovers without a Controller runtime',async()=>{
+    const {runManagedReadOnlyAgent,waitReadOnly}=await import('../apps/agent/src/managed-readonly-runtime.js');
+    const {AgentHealthSnapshotCache}=await import('../apps/agent/src/health-snapshot-cache.js');
+    const {listenManagedReadOnlyGateway,stopManagedReadOnlyGateway}=await import('../apps/agent/src/readonly-gateway.js');
+    const stop=new AbortController(),firstDisconnect=new AbortController();
+    const cache=new AgentHealthSnapshotCache('stream');
+    let attempts=0,resume!:(value:import('../apps/agent/src/managed-readonly-runtime.js').ReadOnlyConnection)=>void;
+    const secondConnection=new Promise<import('../apps/agent/src/managed-readonly-runtime.js').ReadOnlyConnection>(resolve=>{resume=resolve});
+    const makeConnection=(active:boolean)=>({
+      call:async(kind:'GetStats'|'GetStreamStatus')=>kind==='GetStats'?{renderTotalFrames:100}:{outputActive:active},
+      close:async()=>{},
+    });
+    const worker=runManagedReadOnlyAgent({deviceId:'stream',signal:stop.signal,pollMs:10,
+      sleep:(_milliseconds,signal)=>waitReadOnly(5,signal),unavailable:()=>cache.invalidate(),
+      connect:async()=>++attempts===1?{...makeConnection(false),disconnected:firstDisconnect.signal}:secondConnection,
+      emit:value=>cache.accept(value,Date.now()),
+    });
+    const server=await listenManagedReadOnlyGateway({
+      serverKey:key,serverCertificate:cert,authorizedClientFingerprint:clientFingerprint,
+      now:Date.now,snapshot:()=>cache.read(Date.now()),
+    },{interfaceAddress:'127.0.0.1',port:0,optIn:'I_ACCEPT_PRIVATE_MTLS_READ_ONLY'});
+    const port=(server.address() as AddressInfo).port;
+    const {connect}=await import('node:net');
+    const idle=connect(port,'127.0.0.1');idle.on('error',()=>{});
+    const idleClosed=new Promise<void>(resolve=>idle.once('close',()=>resolve()));
+    await new Promise<void>(resolve=>idle.once('connect',()=>resolve()));
+    const until=async(check:()=>boolean)=>{
+      const end=Date.now()+4000;
+      while(!check()){if(Date.now()>=end)throw Error('MANAGED_TLS_CONDITION_TIMEOUT');await new Promise(resolve=>setTimeout(resolve,5))}
+    };
+    try{
+      await until(()=>cache.read(Date.now())!==null);
+      const first=await fetchFromLab(port,'valid');expect(first.code).toBe(200);
+      const before=JSON.parse(first.body) as {revision:number;payload:{active:boolean}};
+      expect(before.payload.active).toBe(false);
+      firstDisconnect.abort();await until(()=>cache.read(Date.now())===null);
+      expect((await fetchFromLab(port,'valid')).code).toBe(503);
+      resume(makeConnection(true));await until(()=>cache.read(Date.now())?.payload.active===true);
+      const restored=await fetchFromLab(port,'valid');expect(restored.code).toBe(200);
+      const after=JSON.parse(restored.body) as {revision:number;payload:{active:boolean}};
+      expect(after.payload.active).toBe(true);expect(after.revision).toBeGreaterThan(before.revision);
+      expect(attempts).toBe(2);expect(server.listening).toBe(true);
+      const last=cache.read(Date.now())!.revision;
+      await until(()=>Boolean(cache.read(Date.now())&&cache.read(Date.now())!.revision>last));
+    }finally{
+      stop.abort();await worker;await stopManagedReadOnlyGateway(server);await idleClosed;
+    }
+    expect(server.listening).toBe(false);
+  },15000);
+  it('refuses unmanaged, wildcard, public and nonlocal service bindings before opening a port',async()=>{
+    const {listenManagedReadOnlyGateway}=await import('../apps/agent/src/readonly-gateway.js');
+    const config={serverKey:key,serverCertificate:cert,authorizedClientFingerprint:clientFingerprint,
+      now:Date.now,snapshot:()=>null};
+    for(const host of ['0.0.0.0','8.8.8.8','localhost','10.254.254.254'])
+      await expect(listenManagedReadOnlyGateway(config,{interfaceAddress:host,port:0,
+        optIn:'I_ACCEPT_PRIVATE_MTLS_READ_ONLY'})).rejects.toThrow('MANAGED_AGENT_BINDING_REFUSED');
+    await expect(listenManagedReadOnlyGateway(config,{interfaceAddress:'127.0.0.1',port:0,
+      optIn:'no' as never})).rejects.toThrow('MANAGED_AGENT_BINDING_REFUSED');
+  });
 });

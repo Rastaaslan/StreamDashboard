@@ -1,0 +1,183 @@
+{
+  "kind": "Agent-only PR84 managed monitor and isolated fake OBS writer candidate",
+  "public_base_commit": "12e985a8e1241f8407b061f4a10ebeb7dbdd4e79",
+  "public_head_rechecked": "12e985a8e1241f8407b061f4a10ebeb7dbdd4e79",
+  "local_branch": "agent/pr84-runtime-port-20261028",
+  "scope": [
+    "apps/agent sources",
+    "Agent launcher/readme",
+    "Agent tests",
+    "Agent docs"
+  ],
+  "excluded_changes": [
+    "alpha27 history/base",
+    "Controller implementation/UI",
+    "mobile implementation/UI",
+    "Android/Gradle",
+    "JAR",
+    "package.json version",
+    "live apps/services",
+    "RC3 binary repack"
+  ],
+  "origin_monitor_commit": "3d44f59c1805c08df64490921f36eb627e03102d",
+  "origin_simulation_commit": "b7665eec5290825ae14b608ec7e602ab8d1fe590",
+  "adaptations": [
+    "Agent-only protected network loader; no Controller imports",
+    "Agent-only monitor/network and gateway tests",
+    "Standalone Agent install/migration/rollback notes"
+  ],
+  "validation": {
+    "agent_tests": {
+      "pass": 75,
+      "skipped_opt_in_lab": 2,
+      "files": 17
+    },
+    "fake_obs_websocket_scenarios": 14,
+    "journal_scenarios": 7,
+    "typescript_no_emit": "PASS",
+    "security": "PASS (380 files)",
+    "portable_build": "PASS",
+    "binary_checks": {
+      "bundleGraph": {
+        "status": "PASS",
+        "inputCount": 52,
+        "sourceInputs": [
+          "apps/agent/src/read-only-observer.ts",
+          "apps/agent/src/read-only-runner.ts",
+          "apps/agent/src/windows-secret-store.ts",
+          "apps/agent/src/managed-readonly-runtime.ts",
+          "apps/agent/src/readonly-network-config.ts",
+          "packages/contracts/src/agent-v2.ts",
+          "apps/agent/src/readonly-gateway.ts",
+          "apps/agent/src/health-snapshot-cache.ts",
+          "apps/agent/src/windows-readonly-service.ts"
+        ],
+        "excluded": [
+          "apps/controller",
+          "simulated-obs-*"
+        ],
+        "bundledBytesMatch": true,
+        "privateKeyBlocks": 0,
+        "writeRpcLiterals": 0
+      },
+      "manifestVerified": true,
+      "portableFileCount": 4,
+      "noConsentSmoke": {
+        "exit": 1,
+        "stdoutBytes": 0,
+        "stderr": "READ_ONLY_AGENT_START_FAILED",
+        "beforeObsConnection": true
+      },
+      "files": {
+        "LISEZ-MOI-Agent-ReadOnly-QA.txt": {
+          "bytes": 4752,
+          "sha256": "2766f03df4a360702e54beb837aac8651493cbc6e0ecf375a1639a1a6bb912bf"
+        },
+        "MANIFEST-QA.json": {
+          "bytes": 766,
+          "sha256": "07059c97b244dc902b23c81dc0038749b06722b6dfd0387256be8a30b94bd8ad"
+        },
+        "Start-Agent-ReadOnly.ps1": {
+          "bytes": 2411,
+          "sha256": "19246d88dded9d2c30eb5a183cbc6f381ac157648a382b4e5bd3b66f56b5c400"
+        },
+        "StreamAgent-ReadOnly.mjs": {
+          "bytes": 114553,
+          "sha256": "4a3a889c99385962353cc8daf19c1e470f69e9563b3b0d240c137223e7b62e23"
+        }
+      }
+    }
+  },
+  "build_environment": {
+    "node": "v24.21.0",
+    "dependencies": "existing local cache; no install",
+    "priority": "nice19, Vitest maxWorkers1, GOMAXPROCS2, UV_THREADPOOL_SIZE2"
+  },
+  "sources": {
+    "apps/agent/src/durable-receipts.ts": {
+      "bytes": 5848,
+      "sha256": "1f98426378f116bef357d188321a961e9a2ad05dc72f412b10f4cc7d57675dd4"
+    },
+    "apps/agent/src/managed-readonly-runtime.ts": {
+      "bytes": 4431,
+      "sha256": "c5a72d76663d60cfd779e493dacbd0791e393ea540758dbf135a083c148bde5f"
+    },
+    "apps/agent/src/readonly-gateway.ts": {
+      "bytes": 7799,
+      "sha256": "f57ef4537ccd388c35605a9a88cc50083f168acda94a738d46a0448461129bf1"
+    },
+    "apps/agent/src/readonly-network-config.ts": {
+      "bytes": 2609,
+      "sha256": "31c23680b1dd72f8ea0df121390c7d52f5ac0e0a3d7a358cc2b7323702836647"
+    },
+    "apps/agent/src/simulated-obs-transport.ts": {
+      "bytes": 3271,
+      "sha256": "98f117f2a1130fc2f1d003636b1fb1844c0dbc5d25ba4d91907a4358ba9be1cb"
+    },
+    "apps/agent/src/simulated-obs-writer.ts": {
+      "bytes": 12746,
+      "sha256": "e5f10d003828d052af65727dac75d38f4366e09e67c27c2ec5c095e79353a634"
+    },
+    "apps/agent/src/windows-readonly-service.ts": {
+      "bytes": 9776,
+      "sha256": "3b2ac012b67b31e1197cd2538dd7987ae461d9db45e4d0f97c2f005309325289"
+    },
+    "resources/agent-readonly/Start-Agent-ReadOnly.ps1": {
+      "bytes": 2411,
+      "sha256": "19246d88dded9d2c30eb5a183cbc6f381ac157648a382b4e5bd3b66f56b5c400"
+    },
+    "resources/agent-readonly/LISEZ-MOI-Agent-ReadOnly-QA.txt": {
+      "bytes": 4752,
+      "sha256": "2766f03df4a360702e54beb837aac8651493cbc6e0ecf375a1639a1a6bb912bf"
+    },
+    "tests/agent-v2-durable-receipts.test.ts": {
+      "bytes": 5593,
+      "sha256": "97a4e28025f8a73641ae4179bd4033243c73a97bbafceac71b36370043210626"
+    },
+    "tests/agent-v2-gateway.test.ts": {
+      "bytes": 8803,
+      "sha256": "45c4abd929856db2bb947518e167e671135159eb94daf4a954faa2d3a93c4ec3"
+    },
+    "tests/agent-v2-managed-runtime.test.ts": {
+      "bytes": 6267,
+      "sha256": "34bd7d8eaca8efe394582d2d423c7329fad7abcc7be7bae3957090325089acce"
+    },
+    "tests/agent-v2-simulated-obs-execution.test.ts": {
+      "bytes": 14858,
+      "sha256": "7d4e84f2e985fb3253fd11fe9196da9cde964235226fdae30e9330ac835c0760"
+    },
+    "tests/agent-v2-simulated-writer.test.ts": {
+      "bytes": 3046,
+      "sha256": "ab6ae7e111f1a27db2191cbfa2a19c8e696ef48f25db884ff2051f3c7c6cddf3"
+    }
+  },
+  "unchanged_public_files": [
+    "package.json",
+    "package-lock.json",
+    "packages/contracts/src/agent-v2.ts",
+    "apps/agent/src/health-snapshot-cache.ts",
+    "apps/controller/src/read-only-gateway-client.ts",
+    "scripts/build-agent-readonly-qa.mjs"
+  ],
+  "physical": {
+    "windows_supervisor_execution": "NOT_RUN",
+    "windows_powershell_ast": "NOT_RUN_THIS_PORT; identical launcher bytes to previously parsed candidate",
+    "real_obs": "NOT_RUN",
+    "two_pc_link": "NOT_RUN",
+    "android_physical": "NOT_RUN",
+    "windows_power_loss_durability": "NOT_RUN"
+  },
+  "limitations": [
+    "No Controller UI poller/IPC in this port",
+    "Writer simulator excluded from portable Agent; no production write transport",
+    "Stop priority affects queued starts; does not preempt an emitted uncertain action",
+    "No automatic provisioning, migration, installation or replay"
+  ],
+  "logs": [
+    "sd-pr84-agent-port-agent-tests-20261029.log",
+    "sd-pr84-agent-port-types-20261029.log",
+    "sd-pr84-agent-port-security-20261029.log",
+    "sd-pr84-agent-port-portable-build-20261029.log"
+  ],
+  "state": "LOCAL_REVIEW_CANDIDATE_NOT_PUSHED_NOT_DEPLOYED"
+}

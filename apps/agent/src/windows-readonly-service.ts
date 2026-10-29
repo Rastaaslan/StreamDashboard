@@ -5,6 +5,11 @@ import {pathToFileURL} from 'node:url';
 import {observeObsHealth} from './read-only-observer.js';
 import {runReadOnlyAgent} from './read-only-runner.js';
 import {WindowsAgentSecretStore} from './windows-secret-store.js';
+import {runManagedReadOnlyAgent,type ReadOnlyConnection} from './managed-readonly-runtime.js';
+import {loadManagedAgentNetwork,type ManagedAgentNetwork} from './readonly-network-config.js';
+import {listenManagedReadOnlyGateway,stopManagedReadOnlyGateway} from './readonly-gateway.js';
+import {AgentHealthSnapshotCache} from './health-snapshot-cache.js';
+import type {Server as HttpsServer} from 'node:https';
 
 export type ReadOnlyMode='once'|'monitor';
 export interface ProtectedObsCredentials {
@@ -43,6 +48,8 @@ export function parseReadOnlyStartup(
     validateProtectedCredentials(protectedCredentials);
   }
   const mode=argv.includes('--monitor')?'monitor':'once';
+  if(mode==='once'&&['SD_AGENT_MTLS_OPT_IN','SD_AGENT_MTLS_HOST','SD_AGENT_MTLS_PORT','SD_AGENT_MTLS_DPAPI_DIR']
+    .some(key=>env[key]!==undefined))throw Error('MANAGED_AGENT_REQUIRES_MONITOR');
   return {mode,deviceId,obsConfigPath:path.join(env.APPDATA,
     'obs-studio','plugin_config','obs-websocket','config.json'),
     ...(protectedCredentials?{protectedCredentials}:{})};
@@ -126,33 +133,65 @@ export async function runReadOnlySession(
     readTimeoutMs:3000,
   });
 }
+async function openObsReadOnlyConnection(options:ReadOnlyStartup,signal:AbortSignal):Promise<ReadOnlyConnection>{
+  const credential=await loadLocalObsCredential(options.obsConfigPath,readFile,options.protectedCredentials);
+  try{
+    signal.throwIfAborted();
+    const client=new OBSWebSocket(),closed=new AbortController();
+    const lost=()=>closed.abort();
+    const abort=()=>{closed.abort();void client.disconnect().catch(()=>{})};
+    signal.addEventListener('abort',abort,{once:true});
+    client.once('ConnectionClosed',lost);
+    try{
+      await client.connect(credential.url,credential.password,{eventSubscriptions:0});
+      if(signal.aborted){await client.disconnect();throw Error('READ_ONLY_CANCELLED')}
+      return {call:kind=>client.call(kind),disconnected:closed.signal,async close(){
+        signal.removeEventListener('abort',abort);client.off('ConnectionClosed',lost);
+        closed.abort();await client.disconnect();
+      }};
+    }catch(error){
+      signal.removeEventListener('abort',abort);client.off('ConnectionClosed',lost);
+      void client.disconnect().catch(()=>{});throw error;
+    }
+  }finally{credential.password=''}
+}
 export async function main(
   argv:readonly string[]=process.argv.slice(2),
   env:NodeJS.ProcessEnv=process.env,
 ):Promise<void> {
-  const options=parseReadOnlyStartup(argv,env);
-  const obs=await loadLocalObsCredential(options.obsConfigPath,readFile,options.protectedCredentials);
-  const client=new OBSWebSocket(),signal=new AbortController();
+  const options=parseReadOnlyStartup(argv,env),signal=new AbortController();
+  const cache=new AgentHealthSnapshotCache(options.deviceId);
+  let network:ManagedAgentNetwork|undefined,server:HttpsServer|undefined;
   const stop=()=>signal.abort();
   process.once('SIGINT',stop);process.once('SIGTERM',stop);
   try{
-    try{await boundedConnect(client.connect(obs.url,obs.password,{eventSubscriptions:0}),6000)}
-    finally{obs.password=''} // The OBS API needs a string; drop our reference promptly.
-    client.on('ConnectionClosed',stop);
-    await runReadOnlySession({
-      mode:options.mode,deviceId:options.deviceId,signal:signal.signal,
-      call:kind=>client.call(kind),
-      emit:data=>process.stdout.write(JSON.stringify(data)+'\n'),
-      diagnostic:code=>process.stderr.write(code+'\n'),
-    });
+    if(options.mode==='monitor'){
+      network=await loadManagedAgentNetwork(env);
+      if(network){
+        server=await listenManagedReadOnlyGateway({...network.gateway,
+          now:Date.now,snapshot:()=>cache.read(Date.now())},network.binding);
+        server.once('error',()=>signal.abort());
+      }
+      await runManagedReadOnlyAgent({deviceId:options.deviceId,signal:signal.signal,
+        connect:active=>openObsReadOnlyConnection(options,active),
+        emit:snapshot=>{cache.accept(snapshot,Date.now());process.stdout.write(JSON.stringify(snapshot)+'\n')},
+        unavailable:()=>cache.invalidate(),
+        state:state=>{if(state==='unavailable')process.stderr.write('READ_ONLY_AGENT_OBS_UNAVAILABLE\n')},
+      });
+    }else{
+      const connection=await boundedConnect(openObsReadOnlyConnection(options,signal.signal),6000);
+      try{await runReadOnlySession({mode:'once',deviceId:options.deviceId,signal:signal.signal,
+        call:kind=>kind==='GetStats'?connection.call('GetStats'):connection.call('GetStreamStatus'),emit:data=>process.stdout.write(JSON.stringify(data)+'\n'),
+        diagnostic:()=>process.stderr.write('READ_ONLY_AGENT_OBS_UNAVAILABLE\n')});
+      }finally{signal.abort();await connection.close()}
+    }
   }catch{
-    // Do not include library errors: they may echo the credential or URL.
-    process.stderr.write('READ_ONLY_AGENT_OBS_UNAVAILABLE\n');
-    process.exitCode=1;
+    process.stderr.write('READ_ONLY_AGENT_START_FAILED\n');process.exitCode=1;
   }finally{
-    signal.abort();
+    signal.abort();cache.invalidate();
+    if(server)await stopManagedReadOnlyGateway(server);
+    network?.dispose();
     process.off('SIGINT',stop);process.off('SIGTERM',stop);
-    try{await client.disconnect()}catch{}
   }
 }
 if(process.argv[1]&&import.meta.url===pathToFileURL(process.argv[1]).href){

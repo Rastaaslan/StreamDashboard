@@ -1,15 +1,16 @@
-STREAMDASHBOARD — AGENT WINDOWS READ-ONLY QA RC2
-Qualification du 28 octobre 2026
+STREAMDASHBOARD — AGENT WINDOWS READ-ONLY, CANDIDATE MONITOR ET HEALTH MTLS
+Port Agent-only PR84 du 29 octobre 2026
 ===============================================
 
 Ce paquet lit seulement GetStats et GetStreamStatus sur OBS local (127.0.0.1).
 Il ne lance ni n'arrete une diffusion. Il n'installe aucun service, ne configure
-pas le pare-feu et n'ouvre aucun port LAN. Aucun lancement automatique Windows.
+pas le pare-feu et n'ouvre aucun port LAN sans option mTLS explicite.
+Aucun lancement automatique Windows.
 
 PREREQUIS
 - Windows, Node.js 22+, OBS WebSocket active AVEC authentification.
 - Utiliser un dossier QA distinct de votre application active.
-- Conserver le ZIP RC1 et la configuration existante pour revenir en arriere.
+- Conserver le dossier ou ZIP RC2 et la configuration existante pour revenir en arriere.
 
 LECTURE UNIQUE
 Ouvrir PowerShell dans ce dossier :
@@ -47,25 +48,40 @@ Pour revenir au mode historique, APRES avoir arrete le processus QA :
 
 RETOUR ARRIERE
 1. Arreter uniquement le processus QA par Ctrl+C.
-2. Retirer les deux variables ci-dessus dans ce PowerShell, si utilisees.
-3. Reutiliser le dossier RC1 conserve ou supprimer le dossier extrait RC2.
+2. Retirer les variables SD_AGENT_MTLS_* ajoutees dans ce PowerShell.
+3. Reutiliser le dossier RC2 conserve ; garder ses choix DPAPI existants.
 4. Conserver un magasin DPAPI provisionne tant qu'il sert ; sa suppression
    n'est jamais automatique et n'est pas necessaire au rollback du programme.
 Aucune application active, configuration OBS ou installation Windows n'est remplacee.
 
+ENDPOINT HEALTH MTLS OPTIONNEL
+Le mode -Monitor reconnecte automatiquement OBS apres perte ou timeout, sans
+aucune commande stream/scene/audio. Le lanceur limite les redemarrages du
+processus (trois par defaut, -RestartLimit 0 a 5) et bloque deux lanceurs Monitor
+concurrents dans le meme dossier. Ctrl+C termine la surveillance.
+
+La liaison distante TLS1.3 reste desactivee par defaut. Elle exige un coffre TLS
+DEJA provisionne et les quatre variables SD_AGENT_MTLS_OPT_IN, SD_AGENT_MTLS_HOST,
+SD_AGENT_MTLS_PORT et SD_AGENT_MTLS_DPAPI_DIR. Consentement exact :
+I_ACCEPT_PRIVATE_MTLS_READ_ONLY. Ce coffre TLS ne change pas le choix du mot
+de passe OBS. Les IDs du coffre sont tls_key, tls_certificate et
+authorized_controller_fingerprint. GET /v2/obs/health uniquement, reponses
+503 en cas de panne ou etat perime, aucune commande HTTP d'ecriture.
+
+Ce port PR84 ne raccorde pas automatiquement une UI Controller. Le client
+programmatique readPinnedAgentHealth deja present peut lire cet endpoint avec
+son propre certificat client epingle. Aucun panneau ou parametre Controller
+alpha27 ne fait partie de ce paquet Agent.
+
 PREUVES ET LIMITES
-- 8 tests coffre + 4 tests de raccordement ajoutes ; tests Agent, types et audit
-  securite passes. Les nombres complets figurent dans le manifeste de qualification.
-- DPAPI natif sur FIXE/Node22 : roundtrip, corruption, changement d'identite et
-  mauvaise entropie refuses, uniquement avec donnees factices. Dossier QA supprime.
-- Le nouvel usage DPAPI -> connexion OBS reelle n'a pas ete execute : les tests
-  de raccordement utilisent un faux magasin, sans lire de secret OBS reel.
-- Les anciens essais OBS physiques du RC1 ne certifient pas a eux seuls la RC2.
-- Pas de service supervise, controle OBS ecriture, bascule Android ou Dashboard
-  NEXT complet. Version QA, pas une release de production.
-- DPAPI protege pour le compte Windows courant ; pas une barriere contre un
-  programme malveillant sous le meme compte. Un futur service doit utiliser le
-  meme compte/profil. Pas de deploiement automatique.
-- Ecriture fichier synchronisee et remplacement atomique ; durabilite des
-  metadonnees apres coupure electrique Windows non qualifiee. Verrou abandonne :
-  inspection requise, pas de recuperation silencieuse.
+- Tests de reconnexion/expiration/arret et TLS loopback avec faux OBS PASS ;
+  types, controle de securite et bundle Agent verifies sur le port public.
+- Syntaxe du lanceur validee par le parseur Windows PowerShell 5.1 uniquement.
+- Aucun essai du nouveau runtime sur OBS reel, aucun secret reel provisionne,
+  aucun service Windows installe et aucune application active remplacee.
+- Le canal V2 demeure en lecture seule ; l'ecriture n'est testee que sur un
+  simulateur, avec reservation durable uncertain et refus des rejeux.
+- Cette candidate n'est pas Dashboard NEXT entierement qualifie. Les identites
+  et profils Windows restent a qualifier sur les deux PC.
+- Instructions completes et matrice des options dans le depot :
+  docs/AGENT_PR84_MANAGED_MONITOR.md

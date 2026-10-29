@@ -61,13 +61,27 @@ export class DurableReceiptJournal {
     return receipt?{...receipt}:undefined;
   }
 
+  hasUncertain():boolean {
+    return [...this.receipts.values()].some(receipt=>receipt.result==='uncertain');
+  }
+
+  /** Only a reserved command may be finalised after external state observation.
+   * record() remains append-only; this does not grant permission to dispatch.
+   */
+  confirmReservation(receipt:AgentReceipt):Promise<void> {
+    if(receipt.result!=='confirmed')return Promise.reject(Error('CONFIRMED_RECEIPT_REQUIRED'));
+    return this.persist(receipt,true);
+  }
+
   /** Atomic replace + file/directory fsync on one local filesystem.
    * Underlying at-most-once dispatch must still enforce durable authority and
    * reserve before any effect; multi-host/shared-NFS safety is NOT promised.
    */
-  record(receipt:AgentReceipt):Promise<void> {
+  record(receipt:AgentReceipt):Promise<void> {return this.persist(receipt,false)}
+
+  private persist(input:AgentReceipt,confirm:boolean):Promise<void> {
+    const receipt={...input};
     const next=this.chain.then(async()=>{
-      if(this.receipts.has(receipt.commandId))throw new Error('DUPLICATE');
       if(!validId(receipt.commandId)||!outcomes.has(receipt.result)||
         !Number.isFinite(receipt.observedAt)||
         (receipt.reason!==undefined&&(typeof receipt.reason!=='string'||receipt.reason.length>256)))
@@ -75,13 +89,17 @@ export class DurableReceiptJournal {
       const release=await DurableReceiptJournal.requireExclusiveWriter(this.file);
       try {
         const onDisk=decodeJournal(await readFile(this.file,'utf8'));
-        if(onDisk.has(receipt.commandId))throw new Error('DUPLICATE');
-        if(onDisk.size>=maxRecords)throw new Error('JOURNAL_FULL');
-        const updated=[...onDisk.values(),{...receipt}];
+        const previous=onDisk.get(receipt.commandId);
+        if(confirm){
+          if(previous?.result!=='uncertain'||previous.reason!=='PRE_EXECUTION_RESERVED'||
+            receipt.observedAt<previous.observedAt)throw Error('RESERVATION_REQUIRED');
+        }else if(previous)throw new Error('DUPLICATE');
+        if(!previous&&onDisk.size>=maxRecords)throw new Error('JOURNAL_FULL');
+        const updated=new Map(onDisk);updated.set(receipt.commandId,{...receipt});
         const temp=this.file+'.tmp-'+process.pid+'-'+Math.random().toString(16).slice(2);
         const descriptor=await open(temp,'wx',0o600);
         try {
-          await descriptor.writeFile(JSON.stringify(updated));
+          await descriptor.writeFile(JSON.stringify([...updated.values()]));
           await descriptor.sync();
         }finally{await descriptor.close()}
         try{await rename(temp,this.file)}
