@@ -78,3 +78,18 @@ services, pare-feu et paquets QA restent en place.
 Ce commit contient seulement ces notes et leur manifeste. Le code du port Agent,
 ses 75 tests ciblés et son build portable ne sont pas modifiés. Aucun push ni
 déploiement n'est effectué par cette qualification.
+
+## Inventaire Android après la qualification
+
+ADB était déjà installé sur FIXE, avec son serveur préexistant. La commande
+adb devices -l a réussi : aucun appareil connecté, autorisé, non autorisé ou
+hors ligne. Le PID et l'heure de démarrage du serveur ADB sont restés inchangés.
+Aucun logiciel installé, connexion initiée ou demande utilisateur. Laptop était
+hors ligne dans l'inventaire Remote Desktop Commander. Android physique reste
+NOT_RUN ; le banc n'attend pas une intervention utilisateur.
+
+Le Controller Windows visuel reste NOT_RUN. Le prochain banc devra démontrer
+avant tout lancement que les chemins de profil/configuration sont isolés, les
+ports QA réservés et tous les adaptateurs mutateurs redirigés vers un faux OBS.
+Le profil et l'application actifs ne doivent jamais être ouverts par ce banc.
+Aucune instance Controller n'a été lancée pour cette préparation.

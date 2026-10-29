@@ -96,5 +96,26 @@
     "firewall_or_service_installations": 0,
     "rc3_repack": false,
     "push": false
+  },
+  "capability_probe_after_physical_commit": {
+    "utc": "2026-10-29T00:59:03.0136464Z",
+    "fixe": {
+      "adb_already_installed": true,
+      "existing_server_unchanged": true,
+      "command": "adb devices -l",
+      "exit": 0,
+      "authorized_devices": 0,
+      "unauthorized_devices": 0,
+      "offline_devices": 0,
+      "software_installed": false,
+      "connection_initiated": false
+    },
+    "laptop": {
+      "status": "OFFLINE",
+      "source": "Remote Desktop Commander device inventory"
+    },
+    "android_physical": "NOT_RUN: no connected authorised device on FIXE, Laptop unavailable",
+    "controller_windows_ui": "NOT_RUN: isolated profile/ports/adapters not yet guaranteed",
+    "adb_evidence_canonical_sha256": "cded20dfc0487dd393ebe1d1e76c773c85ef0f74aff45ca99232f2d6048f2d4a"
   }
 }
