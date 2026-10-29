@@ -2,7 +2,7 @@
 
 ## Périmètre et sécurité
 
-Branche indépendante `fix/dashboard-ci-gates-20261029`, base publique PR #84 `a88dc1d` (elle-même basée sur une ancienne branche Next). Corrections exclusivement dans les tests ; aucune modification de code applicatif, des données, d'OBS, du pare-feu, des exécutables Windows actifs ou des autres worktrees. Cette branche **n'est pas** une release Twitch-only et ne doit pas être fusionnée ni déployée directement comme telle.
+Branche indépendante `fix/dashboard-ci-gates-20261029`, base publique PR #84 `a88dc1d` (elle-même basée sur une ancienne branche Next). **Phase 1 (commit `ddffcb6`) : tests uniquement. Phase 2 : correction bornée de l'API locale Twitch** et réconciliation des invariants de sécurité des tests de planning ; aucune modification des données, d'OBS, du pare-feu, des exécutables Windows actifs ou des autres worktrees. Cette branche **n'est pas** une release Twitch-only complète et ne doit pas être fusionnée ni déployée directement comme telle.
 
 ## Corrections démontrées
 
@@ -14,13 +14,13 @@ Branche indépendante `fix/dashboard-ci-gates-20261029`, base publique PR #84 `a
 - `providers-api.test.ts` : vérifie le 4e callback effectif du transport Streamlabs.
 - `agent-v2-windows-secret-store.test.ts` : crée ses secrets factices sous le chemin réel/canonique du répertoire TEMP ; ne relâche pas le rejet de chemins symlink/junction dans le magasin réel. **À revérifier dans la CI Windows** (hypothèse ciblée sur l'environnement du runner, pas preuve de correction Windows).
 
-### Preuves locales (Debian, Node existant, priorité faible)
+### Preuves locales de phase 1 — commit `ddffcb6` (Debian, Node existant, priorité faible)
 
 - Cinq fichiers ciblés : 69/69 tests OK après corrections ; 14 échecs avant corrections dans ces cinq fichiers.
 - Suite Vitest complète : **1187 passed, 4 failed, 2 skipped (1193)**, 144 fichiers réussis, 2 échoués, 1 ignoré. La suite n'est PAS verte. Log local : `/tmp/sd-ci-finalization-full-20261029.log`.
 - Sur GitHub PR #84, avant ces changements : Windows 26 échecs et Android 20 échecs (dernier SHA `a88dc1d`), avec packaging non exécuté. Les suites Windows/Android complètes doivent être relancées sur la nouvelle branche avant toute conclusion.
 
-## Bloqueurs produits non masqués
+## Bloqueurs identifiés avant la phase 2 (historique du commit `ddffcb6`)
 
 1. `cb122-recurrence-runtime.test.ts` — cycle Twitch daily/1 : 48 écritures de persistance contre une limite de 36. Mesure de nombre, pas une simple lenteur de CI : étudier les écritures et préserver leurs garanties de durabilité.
 2. `cb122-recurrence-runtime.test.ts` — réponse CREATE Twitch perdue après remplacement de récurrence : le retry renvoie `Création distante incertaine`. Ne jamais forcer un retry ni ignorer cette erreur sans preuve de propriété et déduplication distante.
@@ -43,3 +43,23 @@ CI=1 vitest run
 ```
 
 Les tests utilisent une injection de backend factice ; aucun stream public ni commande OBS réelle n'a été exécuté pendant cette passe.
+
+## Phase 2 — réconciliation ciblée des quatre échecs (complément)
+
+1. `apps/server/src/index.ts` : `POST /api/v1/twitch/channel` fonctionne à nouveau comme une API Twitch **indépendante de YouTube**. Les titres et catégories sont validés avant mutation, les tags sont normalisés (déduplication, caractères, maximum dix) ; l'interface ne change l'état local qu'après un PATCH Twitch accepté. Un rejet explicite des *tags* permet un repli idempotent sur titre/catégorie avec avertissement et conservation des tags précédents. Les échecs réseau/autorisation sont des échecs HTTP, pas des faux succès ; l'API conserve la projection distante filtrée pour la télécommande.
+2. `tests/live-metadata-tags.test.ts` : régression supplémentaire pour vérifier qu'un PATCH titre non confirmé, une erreur réseau sur tags seuls et un gameId invalide ne deviennent pas des mises à jour locales fictives. **L'essai de mutation réelle sur Twitch n'a pas été effectué**.
+3. `tests/cb122-recurrence-runtime.test.ts` : un CREATE Twitch à réponse perdue **ne peut pas** être rapproché par simple titre/heure, car l'API Twitch ne fournit aucune marque d'identité propriété application ou clé d'idempotence. Le test historique attendait une adoption automatique non démontrable. Il vérifie désormais que les synchronisations/retries refusent de refaire ou supprimer l'événement sans preuve d'identité, en conservant le statut incertain et les écritures distantes inchangées. Ce comportement sûr reste une **limitation utilisateur** nécessitant une réconciliation explicite.
+4. La limite obsolète de 36 écritures locales était incompatible avec le journal d'intention durable et les clôtures par identité : trace isolée de **49 checkpoints / 7 créations + 7 suppressions** (39,7 ms cumulés), aucune écriture distantes supplémentaire. La nouvelle limite bornée `6 * occurrences + 8` autorise 50 checkpoints pour ce scénario sans supprimer les protections. Cela corrige un **critère de performance des tests**, pas un gain d'exécution produit.
+5. Le scénario de conversions répétées, deux plateformes, redémarrages et horizon mobile conserve toutes ses assertions, avec 15 secondes de délai par scénario à la place de 5, pour les agents CI Windows lents. Aucun timeout global ni test désactivé.
+
+**Preuves initiales** : 63/63 tests ciblés des récurrences et tags, puis 4/4 tests de l'API Twitch avec le nouvel invariant d'échec réseau ; TypeScript et sécurité passaient après la première passe, sous réserve de leur relance finale. La nouvelle suite complète et les CI GitHub sont des contrôles distincts. Pas de packaging Windows/Android, pas de connexion Twitch réelle, pas de déploiement.
+
+**Ne pas présenter le résultat comme une finition Dashboard** : les anciennes PR intègrent encore des chemins Twitch+YouTube ; l'intégration définitive Twitch-only, l'Agent/Controller et la validation trois appareils restent à qualifier dans le chantier propriétaire.
+
+### Qualification de fin de phase 2 (branche isolée, sans installation)
+
+- **Vitest complet** : `1192 passed / 0 failed / 2 skipped` sur 1194 tests, 146 fichiers PASS, 1 fichier de tests LAB ignoré. Commande : `CI=1 vitest run --maxWorkers=2 --no-file-parallelism`. Journal `/tmp/sd-ci-finalization-round3-all.log` (référence locale non publiée).
+- **TypeScript** : `tsc -p tsconfig.json --noEmit` PASS.
+- **Sécurité** : `tsx scripts/security-check.ts` PASS, 382 fichiers contrôlés.
+- **Diff du dépôt** : `git diff --check` PASS.
+- **Niveau de preuve** : tests sur Debian et fournisseurs simulés ; **pas de CI Windows/Android qualifiée pour ce commit, pas de test live réel ni de release**. La CI GitHub de PR #85 doit se relancer après publication du nouveau commit. Le cas CREATE Twitch incertain reste volontairement bloqué pour éviter doublons et suppressions non autorisées.

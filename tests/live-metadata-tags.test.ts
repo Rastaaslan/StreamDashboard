@@ -86,3 +86,33 @@ it('edits tags independently when channel title and category are empty', async (
     expect(state.controlHub.live).toEqual(before.controlHub.live);
   } finally { await server.stop(); await rm(dir, { recursive: true, force: true }); }
 });
+
+it('never acknowledges a refused Twitch title or invalid category as a successful update', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'live-tags-failclosed-'));
+  const server = await startDashboardServer({ port: 0, dataDir: dir, logger: { info() {}, warn() {}, error() {} } });
+  await server.providersReady;
+  const update = vi.spyOn(TwitchClient.prototype, 'updateChannelMetadata').mockRejectedValueOnce(new Error('Twitch unavailable'));
+  vi.spyOn(TwitchClient.prototype, 'state', 'get').mockReturnValue({ connected: true } as never);
+  const post = (body: unknown) => fetch(server.url + '/api/v1/twitch/channel', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body),
+  });
+  try {
+    const denied = await post({ title: 'Not confirmed' });
+    expect(denied.ok).toBe(false);
+    expect(update).toHaveBeenCalledExactlyOnceWith({ title: 'Not confirmed' });
+    const afterDenied = await fetch(server.url + '/api/v1/state').then(response => response.json());
+    expect(afterDenied.twitch.channelTitle).toBeNull();
+    // A lost connection is not a tag validation error. It must not be
+    // reported as a successful tags-only operation with a warning.
+    update.mockRejectedValueOnce(new Error('Twitch unavailable'));
+    const refusedTags = await post({ tags: ['Unconfirmed'] });
+    expect(refusedTags.ok).toBe(false);
+    expect(update).toHaveBeenNthCalledWith(2, { tags: ['Unconfirmed'] });
+    const invalid = await post({ gameId: 'not-a-twitch-category' });
+    expect(invalid.status).toBe(400);
+    expect(update).toHaveBeenCalledTimes(2);
+    const after = await fetch(server.url + '/api/v1/state').then(response => response.json());
+    expect(after.twitch.gameId).toBeNull();
+    expect(after.twitch.tags).toBeUndefined();
+  } finally { await server.stop(); await rm(dir, { recursive: true, force: true }); }
+});

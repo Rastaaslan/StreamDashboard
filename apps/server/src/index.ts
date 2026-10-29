@@ -2,7 +2,7 @@ import { WizeBotService } from './wizebot-service.js';
 import { measureSync, syncBatch, syncDiagnostics } from '../../../packages/core/src/sync-performance.js';
 import { bulkDeleteSelection } from '../../../packages/core/src/planning-bulk-delete.js';
 import { TwitchTagIntelligence } from '../../../packages/core/src/tag-intelligence.js';
-import { resolveTags, editedTags, tagMetadata, tagPreferences, type TagEngine } from '../../../packages/core/src/tags.js';
+import { resolveTags, editedTags, normalizeTags, tagMetadata, tagPreferences, type TagEngine } from '../../../packages/core/src/tags.js';
 import { googleRecurrence, parseGoogleRecurrence } from '../../../integrations/google-calendar/src/recurrence.js';
 import express from 'express';
 import { ControlService } from './control-service.js';
@@ -2023,19 +2023,56 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
       }, options.tagEngine ?? tagIntelligence, true));
     } catch (error) { next(error); }
   });
+  // This is the Twitch-only editor (including the Android remote). It must not
+  // depend on a YouTube broadcast, a common mandatory title, or the shared
+  // multi-platform action. A PATCH acknowledged by Twitch is the only success.
   app.post('/api/v1/twitch/channel', async (req, res, next) => {
     try {
-      const configuration = control.snapshot().configuration;
-      const metadata = { ...configuration.metadata,
-        title: typeof req.body?.title === 'string' ? req.body.title : configuration.metadata.title || twitchChannel.title,
-        twitchGameId: typeof req.body?.gameId === 'string' ? req.body.gameId : configuration.metadata.twitchGameId,
-        tags: req.body?.tags === undefined ? configuration.metadata.tags : req.body.tags,
+      const input = req.body ?? {};
+      if (input.title !== undefined && typeof input.title !== 'string') {
+        res.status(400).json({ error: 'Titre Twitch invalide.' }); return;
+      }
+      if (input.gameId !== undefined && typeof input.gameId !== 'string') {
+        res.status(400).json({ error: 'Identifiant de catégorie Twitch invalide.' }); return;
+      }
+      if (input.tags !== undefined && !Array.isArray(input.tags)) {
+        res.status(400).json({ error: 'Liste de tags Twitch invalide.' }); return;
+      }
+      const title = typeof input.title === 'string' ? input.title.trim() : '';
+      const gameId = typeof input.gameId === 'string' ? input.gameId.trim() : '';
+      if (title.length > 140 || (gameId && !/^\d{1,30}$/.test(gameId))) {
+        res.status(400).json({ error: 'Titre ou catégorie Twitch invalide.' }); return;
+      }
+      const tags = input.tags === undefined ? undefined : normalizeTags(input.tags);
+      const updates = { ...(title ? { title } : {}), ...(gameId ? { gameId } : {}), ...(tags !== undefined ? { tags } : {}) };
+      if (!Object.keys(updates).length) {
+        res.status(400).json({ error: 'Aucune information Twitch à modifier.' }); return;
+      }
+      if (!twitch.state.connected) {
+        res.status(409).json({ error: 'Connectez Twitch avant de modifier la chaîne.' }); return;
+      }
+      let tagsWarning: string | undefined;
+      try {
+        await twitch.updateChannelMetadata(updates);
+      } catch (error) {
+        // An auth/network failure must NEVER become a misleading tag warning
+        // or HTTP success. Fall back only for an explicit tag rejection.
+        if (tags === undefined || !(error instanceof Error && /tag/i.test(error.message))) throw error;
+        // Twitch may reject tags while accepting the rest. Do not pretend the
+        // tags were updated; retry *only* the idempotent title/game fields.
+        const safe = { ...(title ? { title } : {}), ...(gameId ? { gameId } : {}) };
+        if (Object.keys(safe).length) await twitch.updateChannelMetadata(safe);
+        tagsWarning = 'Corrigez les tags refusés par Twitch ; les précédents ont été conservés.';
+      }
+      twitchChannel = {
+        ...twitchChannel,
+        ...(title ? { title } : {}),
+        ...(gameId ? { gameId, gameName: typeof input.gameName === 'string' ? input.gameName.slice(0, 140) : twitchChannel.gameName } : {}),
+        ...(!tagsWarning && tags !== undefined ? { tags } : {}),
+        tagsWarning,
       };
-      const receipt = await control.execute({ id: randomUUID(), issuedAt: new Date().toISOString(), action: 'metadata.apply', expectedRevision: configuration.revision, metadata });
-      res.status(receipt.status === 'succeeded' ? 200 : 409).json({ ...(isRemoteRequest(req) ? toRemoteDashboardState(snapshot()) : snapshot()), receipt,
-        ...(receipt.status !== 'succeeded' ? { error: { code: 'MULTISTREAM_INCOMPLETE', message: receipt.message } } : {}),
-      });
-      return;
+      broadcast();
+      res.json(isRemoteRequest(req) ? toRemoteDashboardState(snapshot()) : snapshot());
     } catch (error) { next(error); }
   });
   app.post('/api/v1/commands', async (req, res, next) => {
