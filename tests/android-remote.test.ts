@@ -99,9 +99,9 @@ describe('Android remote runtime', () => {
   });
 
   it('retourne le bon provider dans les statuts autonomes Android', () => {
-    for (const provider of ['twitch', 'google']) {
-      expect(androidProviderBridge).toContain(`return status("${provider}", BuildConfig.${provider.toUpperCase()}_ANDROID_CLIENT_ID)`);
-    }
+    expect(androidProviderBridge).toContain('return status("twitch", BuildConfig.TWITCH_ANDROID_CLIENT_ID)');
+    expect(androidProviderBridge).toContain('return googleProviderStatus("google")');
+    expect(androidProviderBridge).toContain('return status(provider, BuildConfig.GOOGLE_ANDROID_CLIENT_ID)');
     expect(androidProviderBridge).toContain('urn:ietf:params:oauth:grant-type:device_code');
     expect(androidProviderBridge).not.toContain('code_verifier');
     const diagnostic = providerDiagnostic({ configured: false });

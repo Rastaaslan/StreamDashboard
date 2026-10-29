@@ -4,7 +4,7 @@ const state = vi.hoisted(() => ({ info: vi.fn(), primary: true, ready: undefined
 vi.mock('electron', async () => {
   const { EventEmitter } = await import('node:events');
   const app = Object.assign(new EventEmitter(), {
-    setName: vi.fn(), setAppUserModelId: vi.fn(), requestSingleInstanceLock: () => state.primary,
+    setName: vi.fn(), setPath: vi.fn(), getAppPath: () => process.cwd(), setAppUserModelId: vi.fn(), requestSingleInstanceLock: () => state.primary,
     getPath: () => '/unused', isReady: () => true, whenReady: () => new Promise<void>(resolve => { state.ready = resolve; }),
     quit: vi.fn(), exit: vi.fn(), getVersion: () => '1',
   });
@@ -19,7 +19,8 @@ vi.mock('electron', async () => {
     getBounds() { return this.bounds; } setBounds(value: any) { this.bounds = value; }
   }
   return { app, BrowserWindow: Window, screen: { getAllDisplays: () => state.displays, getPrimaryDisplay: () => state.displays[0] },
-    dialog: { showErrorBox: vi.fn() }, ipcMain: { handle: vi.fn(), on: vi.fn() }, shell: {} };
+    dialog: { showErrorBox: vi.fn() }, ipcMain: { handle: vi.fn(), removeHandler: vi.fn(), on: vi.fn() },
+    globalShortcut: { register: vi.fn(), unregisterAll: vi.fn() }, shell: {} };
 });
 vi.mock('../apps/desktop/src/lifecycle.js', () => ({ startDesktopRuntime: state.start }));
 vi.mock('../apps/desktop/src/squirrel.js', () => ({ handleSquirrelStartup: () => false }));

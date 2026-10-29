@@ -48,7 +48,7 @@ it.each(['EACCES', 'EADDRINUSE'])('Desktop fails explicitly on %s at the fixed e
   await options(); desktop.userData = directory;
   const { error, spy } = failListen(code);
   await expect(startDesktopRuntime()).rejects.toBe(error);
-  expect(spy.mock.calls.map(args => args.slice(0, 2))).toEqual([[48132, '127.0.0.1']]);
+  expect(spy.mock.calls.map(args => args.slice(0, 2))).toEqual([[48133, '127.0.0.1']]);
 });
 
 it('keeps unexpected listen errors fatal without retry', async () => {
