@@ -1,0 +1,100 @@
+{
+  "kind": "Windows physical qualification of original RC3 read-only Agent",
+  "tested": {
+    "source_commit": "3d44f59c1805c08df64490921f36eb627e03102d",
+    "original_zip_bytes": 39363,
+    "original_zip_sha256": "77848841f5f70d4e39f2d4c2f467796e3b453f0531e46db0c357c1c4273a8ee8",
+    "bundle_sha256": "30bb58992676b28563a4bc4eb0ddfddad89aaa3bd38e39298b3c4c9cecb79b9a",
+    "launcher_sha256": "19246d88dded9d2c30eb5a183cbc6f381ac157648a382b4e5bd3b66f56b5c400",
+    "node": "v22.22.3",
+    "powershell": "5.1.26100.9711",
+    "host": "FIXE",
+    "started_utc": "2026-10-29T00:49:39.829Z",
+    "finished_utc": "2026-10-29T00:50:00.350Z"
+  },
+  "results": {
+    "native_dpapi_fake_fixtures": "PASS",
+    "native_ephemeral_server_client_certificates": "PASS",
+    "fake_secret_roundtrip_and_tampering": "PASS",
+    "original_rc3_once_real_obs_4555": "PASS",
+    "managed_monitor_with_fake_dpapi_password_and_tls": "PASS",
+    "second_launcher_refused": "PASS",
+    "only_qa_proxy_interrupted": "PASS",
+    "observation_revision_before": 1,
+    "observation_revision_after": 2,
+    "owned_agent_child_restart": "PASS",
+    "ctrl_c_only_private_console_members": "PASS",
+    "launcher_and_child_exit": "PASS",
+    "exclusive_lock_reacquisition_after_stop": "PASS",
+    "active_obs_and_seven_dashboard_pid_start_times_unchanged": "PASS",
+    "active_listeners_unchanged": "PASS",
+    "qa_listeners_and_processes_remaining": 0,
+    "fake_credential_directories_remaining": 0,
+    "private_key_or_dpapi_files_remaining": 0,
+    "independent_final": "PASS",
+    "overall": "PASS"
+  },
+  "readonly_observability": {
+    "allowed_rpc": [
+      "GetStats",
+      "GetStreamStatus"
+    ],
+    "broker_observed_rpc_counts": {
+      "GetStats": 5,
+      "GetStreamStatus": 5
+    },
+    "direct_once_completed": true,
+    "actual_obs_active_before": false,
+    "actual_obs_active_after": false,
+    "proxy_unavailability_observed_by": "readPinnedAgentHealth rejection; raw HTTP status not separately captured",
+    "obs_process_or_server_never_interrupted": true,
+    "obs_mutation_path_in_harness": false
+  },
+  "secret_handling": {
+    "real_obs_password": "read existing local configuration into memory only; never saved to QA store, command arguments, environment, log or archive",
+    "dpapi_credentials": "fake values generated for this QA only, CurrentUser, deleted at teardown",
+    "certificates": "ephemeral RSACng keys; no persistent certificate-store import",
+    "visible_secret_output": false,
+    "real_dpapi_export": false,
+    "qa_directory_acl_protected": true
+  },
+  "retained_evidence": {
+    "local_directory": "out/windows-physical-rc3-20261029",
+    "physical_proof_sha256": "d605f7a0fccc086d9e0e781cecb3315727dbeac9f718235cd0e740423c10c39b",
+    "fixtures_pass_sha256": "14ac65b0b887adbe32a8194bd7ee2ec9ea5d32434de9adcbbc1e49c68940edd6",
+    "first_preflight_failure_sha256": "c17c522f42879193e5d6ad31dd69ab1c45f7012da24889caa28367620fe4ca8b",
+    "qa_harness_sha256": "9b49e35cc7a315b307843c4513544c66629e1b08455eb72fe74c6261830f1452",
+    "private_console_helper_sha256": "f4039bfa6090526e72754c9fb093f19cd9e068d43972ca5beba49307b8bebcca",
+    "independent_final_original_windows_sha256": "b7f06fddb43f01d691d1fb5b35a9d9e9da1877f91a13ac32929b34986c185b44",
+    "independent_final_canonical_copy_sha256": "4433cf86cfdae34105a4aa442854efb00cd379cb322f4d9a081e0d0b323a5986"
+  },
+  "corrections": [
+    {
+      "phase": "first native certificate preflight",
+      "observation": "CngKey.Create from PowerShell returned a non-ephemeral key; guard refused before any OBS connection",
+      "resolution": "RSACng(2048) returned an ephemeral exportable key. The one key created by the failed preflight was identified by exact UniqueName and creation window and removed through its CNG handle; no other key touched."
+    },
+    {
+      "phase": "post-stop lock measurement",
+      "observation": "raw harness lockReleased=false meant no .lock file remained; the launcher removes that file in finally",
+      "resolution": "independent check observed the file absent, acquired FileShare.None on the same path, disposed it and removed its own probe. Original raw proof retained unchanged."
+    }
+  ],
+  "limits": {
+    "exact_pr84_port_17afbcb_binary": "NOT_RUN; portable bundle hash differs from original RC3; only launcher bytes are identical",
+    "controller_windows_ui": "NOT_RUN",
+    "two_pc_mtls": "NOT_RUN",
+    "android_physical": "NOT_RUN",
+    "scm_or_automatic_start_installation": "NOT_RUN",
+    "real_obs_writer": "NOT_RUN",
+    "power_loss_durability": "NOT_RUN",
+    "next_complete_release": false
+  },
+  "changes": {
+    "runtime_source_changes": 0,
+    "active_app_replacements": 0,
+    "firewall_or_service_installations": 0,
+    "rc3_repack": false,
+    "push": false
+  }
+}
