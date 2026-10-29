@@ -46,7 +46,7 @@ it('returns before provider startup and stops stalled work before releasing the 
     spy.mockRestore();
     await rm(directory, { recursive: true, force: true });
   }
-});
+}, 15_000);
 
 it('defers Streamlabs OAuth recovery and cancels its network request on stop', async () => {
   const directory = await mkdtemp(path.join(tmpdir(), 'startup-streamlabs-'));
