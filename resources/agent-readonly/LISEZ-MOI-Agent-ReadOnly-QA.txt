@@ -1,0 +1,87 @@
+STREAMDASHBOARD — AGENT WINDOWS READ-ONLY, CANDIDATE MONITOR ET HEALTH MTLS
+Port Agent-only PR84 du 29 octobre 2026
+===============================================
+
+Ce paquet lit seulement GetStats et GetStreamStatus sur OBS local (127.0.0.1).
+Il ne lance ni n'arrete une diffusion. Il n'installe aucun service, ne configure
+pas le pare-feu et n'ouvre aucun port LAN sans option mTLS explicite.
+Aucun lancement automatique Windows.
+
+PREREQUIS
+- Windows, Node.js 22+, OBS WebSocket active AVEC authentification.
+- Utiliser un dossier QA distinct de votre application active.
+- Conserver le dossier ou ZIP RC2 et la configuration existante pour revenir en arriere.
+
+LECTURE UNIQUE
+Ouvrir PowerShell dans ce dossier :
+    .\Start-Agent-ReadOnly.ps1 -DeviceId FIXE_QA
+
+SURVEILLANCE LOCALE
+    .\Start-Agent-ReadOnly.ps1 -Monitor -DeviceId FIXE_QA
+Arret : Ctrl+C.
+
+COFFRE DPAPI CURRENTUSER — OPTION EXPLICITE
+Le mode historique charge le mot de passe OBS deja configure uniquement en
+memoire. La RC2 peut utiliser exclusivement une cle obs_password preprovisionnee
+dans WindowsAgentSecretStore, sous le meme compte/profil Windows.
+
+Le provisionnement se fait explicitement par l'API WindowsAgentSecretStore.set
+du depot source/compile qualifie. Ce ZIP n'ajoute pas d'assistant de migration.
+Ne placez jamais le mot de passe dans une commande, une variable d'environnement,
+un rapport ou ce dossier distribue. Aucun secret reel n'est fourni dans le ZIP.
+
+Pour activer un magasin DEJA provisionne dans le PowerShell de QA :
+    $env:SD_AGENT_DPAPI_DIR = Join-Path $env:LOCALAPPDATA 'StreamDashboard\AgentV2\secure'
+    $env:SD_AGENT_DPAPI_OPT_IN = 'I_ACCEPT_CURRENT_USER_DPAPI'
+    .\Start-Agent-ReadOnly.ps1 -DeviceId FIXE_QA
+
+Les deux variables sont obligatoires. Chemins relatifs et UNC refuses.
+Le port OBS et l'authentification restent verifies depuis la configuration
+locale OBS. Si le magasin, obs_password ou DPAPI est absent/corrompu, le
+programme refuse la connexion SANS utiliser le mot de passe de configuration
+comme secours. Le Buffer dechiffre est efface apres decodage ; l'API OBS exige
+ensuite une chaine JavaScript dont l'effacement memoire complet n'est pas garanti.
+
+Pour revenir au mode historique, APRES avoir arrete le processus QA :
+    Remove-Item Env:SD_AGENT_DPAPI_DIR -ErrorAction SilentlyContinue
+    Remove-Item Env:SD_AGENT_DPAPI_OPT_IN -ErrorAction SilentlyContinue
+
+RETOUR ARRIERE
+1. Arreter uniquement le processus QA par Ctrl+C.
+2. Retirer les variables SD_AGENT_MTLS_* ajoutees dans ce PowerShell.
+3. Reutiliser le dossier RC2 conserve ; garder ses choix DPAPI existants.
+4. Conserver un magasin DPAPI provisionne tant qu'il sert ; sa suppression
+   n'est jamais automatique et n'est pas necessaire au rollback du programme.
+Aucune application active, configuration OBS ou installation Windows n'est remplacee.
+
+ENDPOINT HEALTH MTLS OPTIONNEL
+Le mode -Monitor reconnecte automatiquement OBS apres perte ou timeout, sans
+aucune commande stream/scene/audio. Le lanceur limite les redemarrages du
+processus (trois par defaut, -RestartLimit 0 a 5) et bloque deux lanceurs Monitor
+concurrents dans le meme dossier. Ctrl+C termine la surveillance.
+
+La liaison distante TLS1.3 reste desactivee par defaut. Elle exige un coffre TLS
+DEJA provisionne et les quatre variables SD_AGENT_MTLS_OPT_IN, SD_AGENT_MTLS_HOST,
+SD_AGENT_MTLS_PORT et SD_AGENT_MTLS_DPAPI_DIR. Consentement exact :
+I_ACCEPT_PRIVATE_MTLS_READ_ONLY. Ce coffre TLS ne change pas le choix du mot
+de passe OBS. Les IDs du coffre sont tls_key, tls_certificate et
+authorized_controller_fingerprint. GET /v2/obs/health uniquement, reponses
+503 en cas de panne ou etat perime, aucune commande HTTP d'ecriture.
+
+Ce port PR84 ne raccorde pas automatiquement une UI Controller. Le client
+programmatique readPinnedAgentHealth deja present peut lire cet endpoint avec
+son propre certificat client epingle. Aucun panneau ou parametre Controller
+alpha27 ne fait partie de ce paquet Agent.
+
+PREUVES ET LIMITES
+- Tests de reconnexion/expiration/arret et TLS loopback avec faux OBS PASS ;
+  types, controle de securite et bundle Agent verifies sur le port public.
+- Syntaxe du lanceur validee par le parseur Windows PowerShell 5.1 uniquement.
+- Aucun essai du nouveau runtime sur OBS reel, aucun secret reel provisionne,
+  aucun service Windows installe et aucune application active remplacee.
+- Le canal V2 demeure en lecture seule ; l'ecriture n'est testee que sur un
+  simulateur, avec reservation durable uncertain et refus des rejeux.
+- Cette candidate n'est pas Dashboard NEXT entierement qualifie. Les identites
+  et profils Windows restent a qualifier sur les deux PC.
+- Instructions completes et matrice des options dans le depot :
+  docs/AGENT_PR84_MANAGED_MONITOR.md
