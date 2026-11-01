@@ -15,7 +15,7 @@ const marker: MomentInput = { sessionId: 'live_01', correlationId: 'manual_01',
   source: 'manual', instant: 1720000000000, title: 'Moments fixture',
   status: 'observed' };
 
-it('F09 distinguishes no durable journal from an observed empty session', async () => {
+it('F09 distinguishes no durable journal and unobserved session from a recorded session', async () => {
   const storage = new Memory();
   const pipeline = new MomentsPipeline(storage);
   expect(await pipeline.exportObserved('live_01')).toBeUndefined();
@@ -23,7 +23,7 @@ it('F09 distinguishes no durable journal from an observed empty session', async 
   const observed = await pipeline.exportObserved('live_01');
   expect(observed?.markers).toHaveLength(1);
   expect(observed?.markers[0]?.title).toBe('Moments fixture');
-  expect((await pipeline.exportObserved('some_other_session'))?.markers).toEqual([]);
+  expect(await pipeline.exportObserved('some_other_session')).toBeUndefined();
 });
 
 it('F09 fails closed on corrupt journal and never writes during read', async () => {

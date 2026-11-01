@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import { exportMarkers, validateMoment, type Moment, type MomentInput } from '../../../packages/core/src/streamcockpit-moments.js';
+import { exportMarkers, momentIdentifier, validateMoment, type Moment, type MomentInput } from '../../../packages/core/src/streamcockpit-moments.js';
 
 /** CAS must be exclusive across all writers, atomic and durable before success.
  * null means absent, never unreadable/corrupt. A rejected write may have committed:
@@ -77,8 +77,13 @@ export class MomentsPipeline {
    * This has no writer side effects and never creates a local fallback.
    */
   async exportObserved(sessionId: string) {
+    momentIdentifier(sessionId);
     const raw = await this.storage.read();
     if (raw === null) return undefined;
-    return exportMarkers(sessionId, project(decode(raw).requests));
+    const moments = project(decode(raw).requests);
+    // A global journal says nothing about sessions it has never observed.
+    // Don't turn an unknown session into an authoritative zero-marker result.
+    if (!moments.some(moment => moment.sessionId === sessionId)) return undefined;
+    return exportMarkers(sessionId, moments);
   }
 }

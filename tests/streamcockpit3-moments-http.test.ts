@@ -34,7 +34,7 @@ async function fixture(run: (f: {
   const app = express();
   app.use('/api/v1/streamcockpit-moments', createMomentsReadRouter({
     canRead(request: Request) {
-      const credential = request.headers.authorization?.match(/^Device (\\S+)$/)?.[1];
+      const credential = request.headers.authorization?.match(/^Device (\S+)$/)?.[1];
       const id = credential ? auth.authenticate(credential) : null;
       return host && Boolean(id && auth.permits(id, ['observe']));
     },
@@ -87,9 +87,9 @@ it('F09 exports observed markers via authenticated read-only HTTP, no provider c
     const head = await call(f.url, 'HEAD');
     expect(head.status).toBe(200);
     expect(await head.text()).toBe('');
-    expect((await call(f.url.replace('session_1', 'other'))).status).toBe(200);
-    const other = await (await call(f.url.replace('session_1', 'other'))).json();
-    expect(other.markers).toEqual([]);
+    // The existence of some other session is not evidence that this one
+    // was ever observed. An unknown session must not report a fake empty run.
+    expect((await call(f.url.replace('session_1', 'other'))).status).toBe(503);
     for (const method of ['POST', 'PUT', 'PATCH', 'DELETE'])
       expect((await call(f.url, method)).status).toBe(405);
   }));
