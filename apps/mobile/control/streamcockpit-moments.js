@@ -1,3 +1,22 @@
+/** F09: a read-only view of the FIXE-owned observed journal. No local durable
+ * cache, synthetic stream duration, provider command or background refresh. */
+const sources = [
+  ['all', 'Toutes les sources'],
+  ['obs', 'OBS'],
+  ['twitch', 'Twitch'],
+  ['manual', 'Manuel'],
+  ['streamlabs', 'Streamlabs'],
+];
+const statuses = [
+  ['all', 'Tous les statuts'],
+  ['observed', 'Observé'],
+  ['confirmed', 'Confirmé'],
+  ['failed', 'Échoué'],
+  ['uncertain', 'Incertain'],
+];
+const validSource = new Set(sources.slice(1).map(([key]) => key));
+const validStatus = new Set(statuses.slice(1).map(([key]) => key));
+
 /** Inject a session-scoped read function returning MarkerExport v1. No commands,
  * credentials, polling or transport ownership belong to this component. */
 export function mountMomentsTimeline(root, { sessionId, read }) {
@@ -7,35 +26,102 @@ export function mountMomentsTimeline(root, { sessionId, read }) {
   const status = doc.createElement('p');
   status.setAttribute('role', 'status');
   const list = doc.createElement('ol');
-  section.append(status, list);
+  const filters = doc.createElement('div');
+  filters.setAttribute('class', 'cockpit-moments-filters');
+  const makeFilter = (labelText, choices) => {
+    const label = doc.createElement('label');
+    label.textContent = labelText;
+    const select = doc.createElement('select');
+    select.setAttribute('aria-label', labelText);
+    for (const [value, title] of choices) {
+      const option = doc.createElement('option');
+      option.value = value;
+      option.textContent = title;
+      select.append(option);
+    }
+    select.value = 'all';
+    label.append(select);
+    filters.append(label);
+    return select;
+  };
+  const sourceFilter = makeFilter('Filtrer par source', sources);
+  const statusFilter = makeFilter('Filtrer par statut', statuses);
+  const summary = doc.createElement('p');
+  summary.setAttribute('class', 'cockpit-moments-summary');
+  summary.setAttribute('aria-label', 'Bilan des repères observés');
+  filters.hidden = true;
+  summary.hidden = true;
+  section.append(status, list, filters, summary);
   root.append(section);
-  let disposed = false, generation = 0;
+
+  let disposed = false, generation = 0, records = [];
+  const clear = () => {
+    records = [];
+    list.replaceChildren();
+    filters.hidden = true;
+    summary.hidden = true;
+    summary.textContent = '';
+  };
+  const showFiltered = () => {
+    if (disposed || filters.hidden) return;
+    list.replaceChildren();
+    const visible = records.filter(marker =>
+      (sourceFilter.value === 'all' || marker.source === sourceFilter.value) &&
+      (statusFilter.value === 'all' || marker.status === statusFilter.value));
+    for (const marker of visible) {
+      const item = doc.createElement('li');
+      item.textContent = `${new Date(marker.instant).toISOString()} · ${marker.source} · ${marker.title} · ${marker.status}`;
+      list.append(item);
+    }
+    status.textContent = visible.length === records.length
+      ? `${records.length} moment(s) · lecture seule`
+      : `${visible.length} sur ${records.length} moment(s) · filtres locaux, lecture seule`;
+  };
+  sourceFilter.addEventListener('change', showFiltered);
+  statusFilter.addEventListener('change', showFiltered);
+
   const refresh = async () => {
     if (disposed) return;
     const request = ++generation;
+    clear(); // Never retain private markers while freshness is unknown.
     status.textContent = 'Chargement des moments…';
     try {
       const data = await read(sessionId);
       if (disposed || request !== generation) return;
       if (data?.schemaVersion !== 1 || data.kind !== 'streamcockpit-markers' || data.timebase !== 'unix-ms' ||
-          data.sessionId !== sessionId || !Array.isArray(data.markers) || data.markers.some(m =>
+          data.sessionId !== sessionId || !Array.isArray(data.markers) || data.markers.length > 10000 ||
+          data.markers.some(m => !m || typeof m !== 'object' ||
             m.sessionId !== sessionId || !Number.isSafeInteger(m.instant) || m.instant < 0 ||
             m.instant > 8640000000000000 || !Number.isSafeInteger(m.sequence) || m.sequence < 1 ||
-            typeof m.title !== 'string' || !['obs', 'twitch', 'manual', 'streamlabs'].includes(m.source) ||
-            !['observed', 'confirmed', 'failed', 'uncertain'].includes(m.status))) throw new Error('INVALID_TIMELINE');
-      list.replaceChildren();
-      for (const m of [...data.markers].sort((a, b) => a.instant - b.instant || a.sequence - b.sequence)) {
-        const item = doc.createElement('li');
-        item.textContent = `${new Date(m.instant).toISOString()} · ${m.source} · ${m.title} · ${m.status}`;
-        list.append(item);
+            typeof m.title !== 'string' || !m.title.length || m.title.length > 240 ||
+            !validSource.has(m.source) || !validStatus.has(m.status)))
+        throw new Error('INVALID_TIMELINE');
+      records = [...data.markers].sort((a, b) => a.instant - b.instant || a.sequence - b.sequence);
+      if (!records.length) {
+        status.textContent = 'Aucun moment pour cette session';
+        return;
       }
-      status.textContent = data.markers.length ? `${data.markers.length} moment(s) · lecture seule` : 'Aucun moment pour cette session';
+      const confirmed = records.filter(m => m.status === 'confirmed').length;
+      const uncertain = records.filter(m => m.status === 'uncertain').length;
+      // Earliest/latest observed markers do NOT establish actual live duration.
+      const span = records.length > 1
+        ? `Écart entre repères : ${Math.floor((records.at(-1).instant - records[0].instant) / 60000)} min`
+        : 'Un seul repère : durée du live inconnue';
+      summary.textContent = `${records.length} repère(s) observé(s) · ${confirmed} confirmé(s) · ${uncertain} incertain(s) · ${span}`;
+      filters.hidden = false;
+      summary.hidden = false;
+      showFiltered();
     } catch {
       if (disposed || request !== generation) return;
-      list.replaceChildren();
+      clear();
       status.textContent = 'Moments indisponibles · actualisation nécessaire';
     }
   };
   void refresh();
-  return { refresh, destroy() { disposed = true; generation++; section.remove(); } };
+  return { refresh, destroy() {
+    disposed = true;
+    generation++;
+    clear();
+    section.remove();
+  } };
 }

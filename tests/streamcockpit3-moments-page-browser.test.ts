@@ -20,7 +20,7 @@ it.skipIf(process.env.MOMENTS_BROWSER_TEST !== '1')('F09 Plus timeline is readab
       external.push(route.request().url());
       return route.abort();
     });
-    await page.setContent('<meta name="viewport" content="width=device-width,initial-scale=1"><main id="root" style="width:100%;min-width:0"></main>');
+    await page.setContent('<meta name="viewport" content="width=device-width,initial-scale=1"><main id="root" class="compact-app" style="width:100%;min-width:0"></main>');
     await page.addStyleTag({content:readFileSync('apps/mobile/control/streamcockpit-mobile-v2.css','utf8')});
     await page.addScriptTag({ content: output.outputFiles[0].text });
     await page.evaluate(() => {
@@ -49,6 +49,13 @@ it.skipIf(process.env.MOMENTS_BROWSER_TEST !== '1')('F09 Plus timeline is readab
     expect(await page.locator('img').count()).toBe(0);
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= 320)).toBe(true);
     expect(await page.evaluate(() => (window as any).calls)).toEqual(['/api/v1/streamcockpit-moments/sess_1']);
+    expect(await page.locator('.cockpit-moments-summary').textContent()).toContain('durée du live inconnue');
+    await page.getByLabel('Filtrer par source').selectOption('twitch');
+    expect(await page.locator('section[aria-label="Moments marquants"] li').count()).toBe(0);
+    expect(await page.locator('section[aria-label="Moments marquants"] [role="status"]').textContent()).toContain('0 sur 1');
+    await page.getByLabel('Filtrer par source').selectOption('obs');
+    expect(await page.locator('section[aria-label="Moments marquants"] li').count()).toBe(1);
+    expect(await page.evaluate(() => (window as any).calls)).toHaveLength(1); // Filters never refetch.
     await page.evaluate(() => (window as any).presenter.unavailable());
     expect(await page.locator('section[aria-label="Moments marquants"]').count()).toBe(0);
     expect(await page.locator('main').textContent()).not.toContain('Marker réel');

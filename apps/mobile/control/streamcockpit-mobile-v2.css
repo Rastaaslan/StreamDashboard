@@ -186,3 +186,21 @@
 .cockpit-moments-page input { box-sizing: border-box; min-width: 0; width: 100%; }
 .cockpit-moments-results ol { padding-inline-start: 1.4rem; }
 .cockpit-moments-results li { overflow-wrap: anywhere; margin-block: .45rem; }
+
+/* F09: factual journal summary and ephemeral filters; never an offline cache. */
+.compact-app .cockpit-moments-page { min-width:0;max-width:100%; }
+.compact-app .cockpit-moments-results { min-width:0;overflow-wrap:anywhere; }
+.compact-app .cockpit-moments-results ol { padding-inline-start:1.5rem; }
+.compact-app .cockpit-moments-results li { margin:0 0 9px;line-height:1.5;overflow-wrap:anywhere; }
+.compact-app .cockpit-moments-filters {
+  display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));
+  gap:10px;margin-top:12px;
+}
+.compact-app .cockpit-moments-filters label { display:grid;gap:5px;min-width:0;font-size:12px; }
+.compact-app .cockpit-moments-filters select {
+  width:100%;min-height:44px;max-width:100%;font:inherit;color:inherit;
+  background:#272034;border:1px solid #7d6590;border-radius:10px;padding:8px;
+}
+.compact-app .cockpit-moments-summary { font-size:12px;line-height:1.6;color:#dfcbe8; }
+.compact-app .cockpit-moments-filters[hidden],
+.compact-app .cockpit-moments-summary[hidden] { display:none!important; }

@@ -421,6 +421,10 @@
           "kind": "2026-11-01 FIXE F09 Plus: manual known-session read-only UI, host-only observe API; disconnect and late-response fencing tested, no Android hardware evidence"
         },
         {
+          "path": "apps/mobile/control/streamcockpit-moments.js",
+          "kind": "2026-11-01 FIXE F09: host-observed marker summary and ephemeral source/status filters, no network request on filtering, no synthetic stream duration, fail-closed on >10000 or malformed entries and clear on destroy; real Edge 320px tested, no Android hardware"
+        },
+        {
           "path": "apps/mobile/control/control.js",
           "kind": "2026-11-01 FIXE F09 Plus route integrated; passive refresh preserves session while connected; no local fallback"
         },
@@ -447,10 +451,10 @@
       "blockers": [
         "F09 API and read-only Plus timeline are integrated; manual known session ID required, no live moments producer, session discovery or Android hardware validation",
         "Node 22 node:sqlite experimental; power-loss hardware durability and legacy JSON migration unqualified",
-        "FIXE targeted StreamCockpit 3.0 regression now 362 PASS / 51 explicitly skipped / 0 FAIL (42 Linux-only ClipForge); full all-project Windows suite remains unqualified"
+        "FIXE full Vitest 1948 PASS / 54 explicitly skipped / 0 FAIL after F09 filters; 42 Linux-only ClipForge checks remain non-qualified and Windows encoding/hardware still blocked"
       ],
       "ownerJob": "streamcockpit/3.0-lot-d",
-      "integrationNote": "2026-11-01 FIXE F09 Q merged previously (Windows SQLite EXTRA, authenticated host API). Added Plus manually-selected-session timeline, no polling, no cached remote markers, explicit failure and disconnect clearing; Edge real 320px opt-in PASS and targeted 3.0 suite 362 PASS / 51 skipped / 0 FAIL, TypeScript, browser types, security 801 files, dev build 125 public assets. No journal producer/session discovery, physical Android, full-project suite or media pipeline qualification."
+      "integrationNote": "2026-11-01 FIXE F09 Q already merged (Windows SQLite EXTRA, authenticated host observe API). Plus manual-session timeline improved with read-only factual counts, earliest/latest marker gap (not live duration), ephemeral source/status filters, 10000-entry bound and removal on failure/disconnect. 10/10 targeted tests including real Edge 320px PASS; full FIXE Vitest 1948 PASS / 54 skipped / 0 FAIL (237 files); TypeScript, browser types, security 803 files PASS; development build 125 public assets and shipped-JS 132 PASS. No producer/session discovery, physical Android, signed candidate, Windows ClipForge or power-loss proof; G2 remains partial."
     },
     {
       "id": "F10",
