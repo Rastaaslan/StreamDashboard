@@ -34,6 +34,9 @@ import path from 'node:path';
 import { createHash, randomUUID, X509Certificate } from 'node:crypto';
 import { WebSocketServer, type WebSocket } from 'ws';
 import { ObsClient } from '../../../integrations/obs/src/client.js';
+import { AdvancedTwitch } from '../../../integrations/twitch/src/streamcockpit-advanced.js';
+import { StreamcockpitTwitchService } from './streamcockpit-twitch-service.js';
+import { createTwitchCapabilitiesRouter, twitchReadActor } from './streamcockpit-twitch-router.js';
 import { TwitchClient, TwitchHttpError } from '../../../integrations/twitch/src/client.js';
 import { TwitchPreflight } from '../../../integrations/twitch/src/preflight.js';
 import { TwitchEventSub, type TwitchChatMessage, type TwitchRewardRedemption } from '../../../integrations/twitch/src/eventsub.js';
@@ -665,6 +668,11 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
     if (tokens) await secrets.setTwitchTokens(tokens);
     else await secrets.clearTwitchTokens();
   }, runtimeFetch());
+  const advancedTwitch = new StreamcockpitTwitchService(new AdvancedTwitch(() => ({
+    clientId: twitchClientId,
+    accessToken: twitch.exportTokens().accessToken ?? '',
+    broadcasterId: twitch.publicIdentity().broadcasterId,
+  }), runtimeFetch()));
   const tagIntelligence = new TwitchTagIntelligence((gameId, signal) => twitch.getStreamsForGame(gameId, signal), () => local.planning, Date.now, undefined, undefined, () => local.settings.tagPreferences ?? {});
   const googleClientId = options.googleClientId ?? process.env.GOOGLE_CLIENT_ID ?? '';
   const google = new GoogleCalendarClient(
@@ -1900,6 +1908,15 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
       res.status(201).json(remoteAuth.createWsTicket(credential));
     } catch (error) { next(error); }
   });
+
+  // Mounted after identity/permission/role guards, before legacy Twitch initialization.
+  app.use('/api/v1/twitch/advanced/capabilities', createTwitchCapabilitiesRouter({
+    service: advancedTwitch,
+    actor: async req => {
+      await assertRole('chat');
+      return twitchReadActor(req, remoteAuth, isLocalRequest(req), remoteRuntimeEnabled);
+    },
+  }));
 
   app.use('/api/v1/streamcockpit-health', createHealthRouter({
     canRead: request => {
