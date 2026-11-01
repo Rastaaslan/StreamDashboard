@@ -18,7 +18,12 @@ it('refuses a damaged completed backup before writing a new installation',async(
  const root=await fixture(),backup=(await ensureRc117Backup(root))!;await writeFile(path.join(backup,'files/device-role.json'),'{}');
  await expect(new InstallationStore(root).read()).rejects.toThrow('altérée');await expect(readFile(path.join(root,'installation-v2.json'))).rejects.toMatchObject({code:'ENOENT'});
 });
-it('does not follow a configuration symlink or create a checkpoint for an empty first install',async()=>{
- const root=await fixture();await symlink(path.join(root,'device-role.json'),path.join(root,'device-runtime/config/link.json'));
- await expect(ensureRc117Backup(root)).rejects.toThrow('lien');const empty=await mkdtemp(path.join(os.tmpdir(),'sd-empty-'));roots.push(empty);expect(await ensureRc117Backup(empty)).toBeUndefined();
+it('does not follow a configuration symlink or NTFS junction and keeps empty installations unchanged',async()=>{
+ const root=await fixture();
+ if(process.platform==='win32')
+  await symlink(path.join(root,'secure'),path.join(root,'device-runtime/config/link-dir'),'junction');
+ else await symlink(path.join(root,'device-role.json'),path.join(root,'device-runtime/config/link.json'));
+ await expect(ensureRc117Backup(root)).rejects.toThrow('lien');
+ const empty=await mkdtemp(path.join(os.tmpdir(),'sd-empty-'));roots.push(empty);
+ expect(await ensureRc117Backup(empty)).toBeUndefined();
 });

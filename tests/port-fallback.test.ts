@@ -23,6 +23,16 @@ let dashboard: DashboardServerHandle | undefined;
 let runtime: DesktopRuntime | undefined;
 const logger = { info: vi.fn(), warn: vi.fn(), error: vi.fn() };
 const realListen = Server.prototype.listen;
+/** Route success-path desktop startup tests onto ephemeral loopback ports, without
+ * touching the installed StreamDashboard bound to the production fixed endpoint.
+ * Error-path tests above continue asserting the production 48133 port exactly. */
+function isolateDesktopTestPorts() {
+  vi.spyOn(Server.prototype, 'listen').mockImplementation(function(this: Server, ...args: Parameters<typeof realListen>) {
+    if (args[0] === 48133 || args[0] === 48136)
+      return realListen.apply(this, [0, ...args.slice(1)] as Parameters<typeof realListen>);
+    return realListen.apply(this, args);
+  });
+}
 function failListen(code: string, everyPort = false) {
   const error = Object.assign(new Error(`listen ${code}: permission denied 0.0.0.0:48132`), { code });
   const spy = vi.spyOn(Server.prototype, 'listen').mockImplementation(function (this: Server, ...args: Parameters<typeof realListen>) {
@@ -71,7 +81,8 @@ it.each([48132, 0])('does not retry indefinitely when port 0 also fails (request
   expect(spy).toHaveBeenCalledTimes(1);
 });
 
-it('preserves pairing and credentials across fixed-port Desktop restarts', async () => {
+it('preserves pairing and credentials across Desktop restarts on isolated test ports', async () => {
+  isolateDesktopTestPorts();
   await options(); desktop.userData = directory;
   await mkdir(path.join(directory, 'config'));
   await writeFile(path.join(directory, 'config', 'dashboard.json'), JSON.stringify({ settings: { remoteEnabled: true } }));
@@ -99,6 +110,7 @@ it('reports corrupt Desktop configuration without silently replacing it or leaki
 });
 
 it('preserves local services and diagnoses remote sharing when certificate storage is unavailable',async()=>{
+  isolateDesktopTestPorts();
   await options();desktop.userData=directory;desktop.certificateUnavailable=true;
   await mkdir(path.join(directory,'config'));
   await writeFile(path.join(directory,'config','dashboard.json'),JSON.stringify({settings:{remoteEnabled:true}}));

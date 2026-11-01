@@ -110,14 +110,16 @@ describe('Node-only Windows Agent encrypted store',()=>{
       await expect(store.set('tls_key',value)).rejects.toThrow('INVALID_AGENT_SECRET_SIZE');
     expect(await readdir(dir)).toEqual([]);
   });
-  it('rejects a symlinked record or directory',async()=>{
-    const {dir,options,store}=await fixture();
+  it.skipIf(process.platform==='win32')('rejects a symlinked record (requires OS file-link privilege on Windows)',async()=>{
+    const {dir,store}=await fixture();
     const external=path.join(dir,'external');await writeFile(external,'FAKE');
     await symlink(external,path.join(dir,'tls_key.dpapi'));
     await expect(store.get('tls_key')).rejects.toThrow('WINDOWS_SECRET_STORE_UNAVAILABLE');
-    const alias=dir+'-alias';
+  });
+  it('rejects a linked secret directory using a real NTFS junction on Windows',async()=>{
+    const {dir,options}=await fixture(),alias=dir+'-alias';
     try{
-      await symlink(dir,alias,'dir');
+      await symlink(dir,alias,process.platform==='win32'?'junction':'dir');
       await expect(WindowsAgentSecretStore.open(alias,options))
         .rejects.toThrow('WINDOWS_SECRET_STORE_UNAVAILABLE');
     }finally{await rm(alias,{force:true})}

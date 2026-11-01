@@ -7,7 +7,8 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const repository = fileURLToPath(new URL('../../', import.meta.url));
-const workflow = readFileSync(join(repository, '.github/workflows/android.yml'), 'utf8');
+// Git checks out YAML as CRLF on Windows. Parse the same workflow semantics on both hosts.
+const workflow = readFileSync(join(repository, '.github/workflows/android.yml'), 'utf8').replace(/\r\n/g, '\n');
 const gradle = readFileSync(join(repository, 'android/app/build.gradle'), 'utf8');
 const version = JSON.parse(readFileSync(join(repository, 'package.json'), 'utf8')).version;
 const versionParts = version.match(/^(\d+)\.(\d+)\.(\d+)(?:-(alpha|rc)\.(\d+))?$/);

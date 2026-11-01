@@ -542,7 +542,11 @@
         "tests/streamcockpit3-twitch-mobile.test.ts",
         "tests/streamcockpit3-planning-integration-browser.test.ts",
         "tests/streamcockpit3-moments-page.test.ts",
-        "tests/streamcockpit3-moments-page-browser.test.ts"
+        "tests/streamcockpit3-moments-page-browser.test.ts",
+        "tests/port-fallback.test.ts",
+        "tests/agent-v2-windows-secret-store.test.ts",
+        "tests/migration-backup.test.ts",
+        "tests/node/android-ci.test.mjs"
       ]
     },
     {
