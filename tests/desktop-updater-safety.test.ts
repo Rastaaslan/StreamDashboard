@@ -55,7 +55,9 @@ describe('desktop updater uses current restart safety around its confirmation di
     expect(assess).toHaveBeenCalledTimes(2);
     expect(beforeInstall).not.toHaveBeenCalled();
     expect(mocks.quitAndInstall).not.toHaveBeenCalled();
-    expect(logger.error).toHaveBeenCalledWith(expect.stringContaining('différée'), expect.any(Error));
+    // Errors from OBS/restart guards may contain sensitive diagnostic details.
+    expect(logger.error).toHaveBeenCalledWith(expect.stringContaining('différée'));
+    expect(JSON.stringify(logger.error.mock.calls)).not.toContain('YouTube est maintenant en direct.');
   });
 
   it('does not act on a confirmation after this updater has been disposed', async () => {
@@ -79,20 +81,27 @@ describe('desktop updater uses current restart safety around its confirmation di
     expect(mocks.quitAndInstall).not.toHaveBeenCalled();
   });
 
-  it('performs its last check before teardown, then installs only after cleanup succeeds', async () => {
+  it('requires a verified staged transaction before teardown or installation', async () => {
     mocks.show.mockResolvedValue({ response: 1 });
-    beforeInstall.mockImplementation(async () => { expect(assess).toHaveBeenCalledTimes(2); stop!(); });
+    beforeInstall.mockImplementation(async () => { throw new Error('Unexpected cleanup'); });
     await downloaded();
-    expect(beforeInstall).toHaveBeenCalledTimes(1);
-    expect(mocks.quitAndInstall).toHaveBeenCalledTimes(1);
-    expect(beforeInstall.mock.invocationCallOrder[0]).toBeLessThan(mocks.quitAndInstall.mock.invocationCallOrder[0]);
+    expect(assess.mock.calls.length).toBeGreaterThanOrEqual(2);
+    expect(beforeInstall).not.toHaveBeenCalled();
+    expect(mocks.quitAndInstall).not.toHaveBeenCalled();
+    expect(mocks.show).toHaveBeenCalledTimes(2);
+    expect(logger.error).toHaveBeenCalledWith('Installation bloquée par le préflight', expect.objectContaining({
+      launchAllowed: false, releaseVerified: false,
+    }));
   });
 
-  it('keeps installation pending if cleanup fails', async () => {
+  it('preserves runtime and profile data while release evidence is unavailable', async () => {
     mocks.show.mockResolvedValue({ response: 1 });
     beforeInstall.mockRejectedValue(new Error('Cannot flush profile'));
     await downloaded();
+    expect(beforeInstall).not.toHaveBeenCalled();
     expect(mocks.quitAndInstall).not.toHaveBeenCalled();
-    expect(logger.error).toHaveBeenCalledWith('Préparation de la mise à jour impossible', expect.any(Error));
+    expect(logger.error).toHaveBeenCalledWith('Installation bloquée par le préflight', expect.objectContaining({
+      state: 'blocked', launchAllowed: false,
+    }));
   });
 });

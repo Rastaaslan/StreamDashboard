@@ -1,14 +1,23 @@
 import { app, autoUpdater, dialog, type BrowserWindow } from 'electron';
 import type { DashboardServerHandle } from '../../server/src/index.js';
 import { requireDesktopRestartSafety } from './restart-safety.js';
+import { preflightDesktopUpgrade, type DesktopUpgradePreflightDependencies } from './streamcockpit-upgrade.js';
 
 export function startUpdater(
   window: BrowserWindow,
   dashboard: DashboardServerHandle,
   logger: Pick<Console, 'info' | 'error'> = console,
-  beforeInstall: () => Promise<void> = async () => undefined,
+  // Kept for caller compatibility; cleanup must never run for a blocked preflight.
+  _beforeInstall: () => Promise<void> = async () => undefined,
+  preflightDependencies?: Omit<DesktopUpgradePreflightDependencies, 'assessRestartSafety'>,
 ) {
-  if (!app.isPackaged || process.platform !== 'win32' || process.env.NODE_ENV === 'test') return () => undefined;
+  const preflight = () => preflightDesktopUpgrade({
+    ...preflightDependencies,
+    assessRestartSafety: () => dashboard.assessRestartSafety(),
+  });
+  if (!app.isPackaged || process.platform !== 'win32' || process.env.NODE_ENV === 'test') {
+    return Object.assign(() => undefined, { preflight });
+  }
   const feed = `https://update.electronjs.org/Rastaaslan/StreamDashboard/${process.platform}-${process.arch}/${app.getVersion()}`;
   autoUpdater.setFeedURL({ url: feed });
   let ready = false;
@@ -27,41 +36,53 @@ export function startUpdater(
       catch { return; }
       if (!active || !ready) return;
       const choice = await dialog.showMessageBox(window, {
-        type: 'info', title: 'Mise à jour prête', message: 'Une mise à jour de StreamDashboard est prête.',
-        detail: 'Redémarrer maintenant pour l’installer ?', buttons: ['Plus tard', 'Redémarrer et installer'], defaultId: 1, cancelId: 0,
+        type: 'info', title: 'Mise à jour téléchargée', message: 'Une mise à jour de StreamDashboard doit être vérifiée.',
+        detail: 'Vérifier les conditions de mise à jour. L’installation transactionnelle n’est pas encore disponible.', buttons: ['Plus tard', 'Vérifier le préflight'], defaultId: 0, cancelId: 0,
       });
       if (choice.response === 1) {
         if (!active || !ready) return;
         try { await requireDesktopRestartSafety(() => dashboard.assessRestartSafety()); }
-        catch (error) { logError('Installation différée : une diffusion est active ou non confirmée', error); return; }
+        catch { logError('Installation différée : une diffusion est active ou non confirmée'); return; }
         if (!active || !ready) return;
         ready = false;
-        try { await beforeInstall(); }
-        catch (error) { ready = true; logError('Préparation de la mise à jour impossible', error); return; }
-        autoUpdater.quitAndInstall();
+        const report = await preflight();
+        logError('Installation bloquée par le préflight', report);
+        if (active) await dialog.showMessageBox(window, {
+          type: 'warning', title: 'Mise à jour bloquée',
+          message: 'Aucun redémarrage ni installation effectué.',
+          detail: report.reasons.join('\n'), buttons: ['Fermer'], defaultId: 0, cancelId: 0,
+        });
       } else {
         deferredUntil = Date.now() + 15 * 60_000;
       }
-    } catch (error) { logError('Erreur dialogue updater', error); }
+    } catch { logError('Erreur dialogue updater (détails masqués)'); }
     finally { dialogOpen = false; }
   };
   const onDownloaded = () => {
     void Promise.resolve(logger.info('Mise à jour téléchargée')).catch(() => undefined);
     ready = true; deferredUntil = 0; void offerWhenSafe();
   };
-  const onError = (error: Error) => logError('Erreur updater', error);
+  const onError = () => logError('Erreur updater (détails masqués)');
   autoUpdater.on('update-downloaded', onDownloaded);
   autoUpdater.on('error', onError);
 
-  const checkNow = () => { if (active) void Promise.resolve(autoUpdater.checkForUpdates()).catch(error => logError('Vérification updater impossible', error)); };
+  const checkNow = () => {
+    if (!active) return;
+    try {
+      void Promise.resolve(autoUpdater.checkForUpdates()).catch(() => logError('Vérification updater impossible (détails masqués)'));
+    } catch {
+      // Some Electron backends throw synchronously before returning a promise.
+      logError('Vérification updater impossible (détails masqués)');
+    }
+  };
   const firstCheck = setTimeout(checkNow, process.argv.includes('--squirrel-firstrun') ? 10_000 : 0);
   const check = setInterval(checkNow, 30 * 60_000); check.unref();
   const readyWatcher = setInterval(() => { if (ready) void offerWhenSafe(); }, 5_000); readyWatcher.unref();
 
-  return () => {
+  return Object.assign(() => {
     active = false;
     clearTimeout(firstCheck); clearInterval(check); clearInterval(readyWatcher);
     autoUpdater.off('update-downloaded', onDownloaded);
     autoUpdater.off('error', onError);
-  };
+  }, { preflight });
 }
