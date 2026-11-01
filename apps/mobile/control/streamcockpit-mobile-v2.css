@@ -1,0 +1,146 @@
+/* FC1 mobile UX: five destinations, shared host timer and operational cockpit.
+ * This overrides historical compact navigation without touching desktop views.
+ * No local timer state is introduced by the presentation layer. */
+.compact-only { display:none!important; }
+.compact-app { --compact-status-height:55px; --deck-nav-height:62px; }
+.compact-app aside nav {
+  display:grid; grid-template-columns:repeat(5,minmax(0,1fr));
+  gap:2px; align-items:stretch; width:100%;
+}
+.compact-app aside nav button[data-page="home"],
+.compact-app aside nav button[data-page="live"],
+.compact-app aside nav button[data-page="sounds"],
+.compact-app aside nav button[data-page="planning"],
+.compact-app aside nav button[data-page="plus"] {
+  display:flex!important; order:unset!important; flex:1 1 auto;
+  min-width:0; min-height:50px; padding:5px 0 4px;
+  flex-direction:column; align-items:center; justify-content:center;
+  gap:3px; font-size:20px; font-weight:650; line-height:1.15;
+}
+.compact-app aside nav button[data-page="home"] { order:0!important; }
+.compact-app aside nav button[data-page="live"] { order:1!important; }
+.compact-app aside nav button[data-page="sounds"] { order:2!important; }
+.compact-app aside nav button[data-page="planning"] { order:3!important; }
+.compact-app aside nav button[data-page="plus"] { order:4!important; }
+.compact-app aside nav button[data-page="home"] span,
+.compact-app aside nav button[data-page="live"] span,
+.compact-app aside nav button[data-page="sounds"] span,
+.compact-app aside nav button[data-page="planning"] span,
+.compact-app aside nav button[data-page="plus"] span {
+  font-size:10px!important; font-weight:700; line-height:1.15;
+  letter-spacing:0!important;
+}
+.compact-app aside nav button[data-page="planning"] span::after { content:none!important; }
+.compact-app aside nav button[data-page="deck"],
+.compact-app aside nav button[data-page="settings"],
+.compact-app aside nav button[data-page="activity"],
+.compact-app aside nav button[data-page="manage"] { display:none!important; }
+.compact-app aside { padding:4px 5px calc(3px + env(safe-area-inset-bottom))!important; }
+.compact-app aside nav button.active {
+  background:linear-gradient(155deg,#463252,#2c213e);
+  border:1px solid #9b73bc; color:#f8defe;
+}
+.compact-app .workspace>header,
+.compact-app.mobile-panes-active .workspace>header {
+  display:flex!important; position:sticky; top:0; z-index:6;
+  min-height:calc(var(--compact-status-height) + env(safe-area-inset-top))!important;
+  height:calc(var(--compact-status-height) + env(safe-area-inset-top))!important;
+  padding:calc(8px + env(safe-area-inset-top)) max(12px,env(safe-area-inset-right))
+    6px max(12px,env(safe-area-inset-left))!important;
+  background:rgba(19,16,27,.97); border-bottom:1px solid #42384e;
+}
+.compact-app.mobile-panes-active .workspace>header {
+  padding-right:calc(var(--compact-mic-width) + 16px + env(safe-area-inset-right))!important;
+}
+.compact-app .workspace>header #connection {
+  display:block; font-size:11px; font-weight:600; line-height:1.4;
+  white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
+}
+.compact-app .workspace>header .header-actions,
+.compact-app .workspace>header #role { display:none!important; }
+.compact-app .mobile-timer-strip:not([hidden]),
+.compact-app.mobile-panes-active .mobile-timer-strip:not([hidden]){
+  top:calc(var(--compact-status-height) + env(safe-area-inset-top));
+  z-index:5; background:rgba(17,14,24,.97);
+}
+.compact-app .mobile-timer-strip-action {
+  background:linear-gradient(100deg,#392742,#232138 70%);
+  border-color:#8c6b9c; min-height:50px; border-radius:14px;
+}
+.compact-app .mobile-timer-strip-action:focus-visible,
+.compact-app aside nav button:focus-visible {outline:2px solid #ffe3ad;outline-offset:-2px}
+.compact-app .workspace main {
+  max-width:850px; margin:0 auto;
+  padding:16px max(13px,env(safe-area-inset-right))
+    calc(var(--deck-nav-height) + env(safe-area-inset-bottom) + 110px)
+    max(13px,env(safe-area-inset-left));
+}
+.compact-app.mobile-panes-active .workspace main {
+  padding-bottom:calc(var(--deck-nav-height) + var(--mobile-pane-nav-height) + env(safe-area-inset-bottom) + 60px);
+}
+.compact-app .floating-mic-battery:not([hidden]) { z-index:7; }
+.compact-app .cockpit-screen { display:grid;gap:15px; }
+.compact-app .cockpit-hero {
+  padding:20px 18px 18px;
+  border:1px solid #795a80; border-radius:20px;
+  background:radial-gradient(ellipse at 95% 0%,rgba(192,130,160,.24),transparent 64%),
+    linear-gradient(155deg,#342237,#1b1a29 80%);
+}
+.compact-app .cockpit-kicker {
+  color:#efbc88; font-size:10px; letter-spacing:1.5px; font-weight:800;
+}
+.compact-app .cockpit-hero h1 { margin:8px 0 10px; font-size:clamp(23px,6vw,30px); line-height:1.18; }
+.compact-app .cockpit-hero p { margin:0; font-size:12px; color:#e0d0e5; line-height:1.6; }
+.compact-app .cockpit-hero-status { display:flex;flex-wrap:wrap;gap:8px;margin-top:14px; }
+.compact-app .cockpit-chip {
+  border:1px solid #685678; border-radius:100px; background:#2b2236;
+  padding:7px 10px; font-size:11px; font-weight:700; color:#ede0f4;
+}
+.compact-app .cockpit-chip[data-tone="live"] { color:#a9f3d1; border-color:#4b8c70; background:#22362e; }
+.compact-app .cockpit-chip[data-tone="warn"] { color:#ffdfad; border-color:#8a653c; background:#352a22; }
+.compact-app .cockpit-section-title { margin:5px 0 0; font-size:17px; letter-spacing:-.2px; }
+.compact-app .cockpit-status-grid { display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px; }
+.compact-app .cockpit-status-card {
+  display:flex;flex-direction:column;gap:7px;min-width:0;
+  border:1px solid #45384f;border-radius:16px;padding:15px 12px;
+  background:#211c2b;
+}
+.compact-app .cockpit-status-card .service-name {font-size:11px;letter-spacing:.5px;color:#c8b8d6;font-weight:700;}
+.compact-app .cockpit-status-card strong {font-size:14px;color:#f2e9fa;overflow-wrap:anywhere;}
+.compact-app .cockpit-status-card small {font-size:10px;line-height:1.5;color:#bdb0ca;overflow-wrap:anywhere;}
+.compact-app .cockpit-status-card[data-state="good"] {border-color:#3a685a;background:#1b2d2a;}
+.compact-app .cockpit-status-card[data-state="warn"] {border-color:#826047;background:#31251f;}
+.compact-app .cockpit-cta-grid { display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px; }
+.compact-app .cockpit-cta-grid button {min-height:74px;padding:12px;display:flex;flex-direction:column;justify-content:center;align-items:flex-start;gap:6px;text-align:left;font-size:12px;}
+.compact-app .cockpit-cta-grid button b {font-size:14px;}
+.compact-app .cockpit-next {
+  border-radius:15px;border:1px solid #52425f;padding:15px;
+  background:#22202e;font-size:12px;line-height:1.6;
+}
+.compact-app .cockpit-next p {margin:5px 0 0;color:#bcb1cb;}
+.compact-app .cockpit-next button {margin-top:10px;width:100%;}
+.compact-app .cockpit-link-grid { display:grid;grid-template-columns:1fr;gap:10px;}
+.compact-app .cockpit-link-grid button {
+  display:flex;justify-content:space-between;align-items:center;
+  min-height:59px;text-align:left;gap:10px;padding:13px 15px;
+  border:1px solid #554462;background:#282337;color:#f2e6ff;
+}
+.compact-app .cockpit-link-grid button span {display:flex;flex-direction:column;gap:4px;font-size:14px;font-weight:700;}
+.compact-app .cockpit-link-grid button small {font-size:10px;line-height:1.4;color:#c4b8d0;font-weight:500;}
+.compact-app .cockpit-link-grid button::after {content:'›';font-size:22px;color:#c69bdf;}
+.compact-app .cockpit-offline {border:1px solid #9c7043;background:#3a2a20;border-radius:12px;padding:11px 13px;font-size:11px;line-height:1.5;color:#f5d6a5;}
+.compact-app .cockpit-screen button:focus-visible {outline:2px solid #f7e3b2;outline-offset:2px;}
+.compact-app .mobile-pane-layout { margin-top:3px; }
+@media(max-width:350px) {
+  .compact-app aside nav button[data-page] span {font-size:9px!important;}
+  .compact-app .cockpit-status-grid {gap:7px;}
+  .compact-app .cockpit-status-card {padding:12px 9px;}
+  .compact-app .cockpit-cta-grid button {padding:10px;}
+}
+@media(orientation:landscape) and (max-height:600px) {
+  .compact-app {--deck-nav-height:48px;--compact-status-height:45px;}
+  .compact-app .mobile-timer-strip-action {min-height:43px;}
+  .compact-app .cockpit-screen {grid-template-columns:repeat(2,minmax(0,1fr));align-items:start;}
+  .compact-app .cockpit-hero {grid-column:1/-1;}
+  .compact-app .cockpit-status-grid {grid-template-columns:repeat(2,minmax(0,1fr));}
+}

@@ -11,6 +11,12 @@ export const MOBILE_PANES = Object.freeze({
     {id:'events',label:'Événements',shortLabel:'Agenda',icon:'📋'},
     {id:'manage',label:'Gestion',shortLabel:'Gérer',icon:'⚙️'},
   ],
+  sounds: [
+    {id:'sounds',label:'Soundboard',shortLabel:'Sons',icon:'🔊'},
+    {id:'actions',label:'Deck adaptatif',shortLabel:'Deck',icon:'▦'},
+    {id:'wizebot',label:'WizeBot',shortLabel:'WizeBot',icon:'⚡'},
+    {id:'streamlabs',label:'Streamlabs',shortLabel:'Alertes',icon:'💟'},
+  ],
   deck: [
     {id:'sounds',label:'Soundboard',shortLabel:'Sons',icon:'🔊'},
     {id:'actions',label:'Actions live',shortLabel:'Actions',icon:'🔴'},
@@ -19,7 +25,7 @@ export const MOBILE_PANES = Object.freeze({
   ],
 });
 const STORE_PREFIX='sd2.mobile.pane:';
-const FALLBACK={live:'chat',planning:'next',deck:'sounds'};
+const FALLBACK={live:'chat',planning:'next',sounds:'sounds',deck:'sounds'};
 const SWIPE_MIN_PX=65;
 export const PANE_SLIDE_DURATION_MS=180;
 const PANE_SLIDE_DISTANCE_PX=26;

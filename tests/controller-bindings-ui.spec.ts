@@ -16,15 +16,15 @@ test.beforeAll(async () => {
 });
 test.afterAll(async () => { await new Promise<void>((resolve, reject) => server.close(error => error ? reject(error) : resolve())); });
 
-async function setup(page: Page, rejectNative = false) {
+async function setup(page: Page, rejectNative = false, legacyPage = 'settings') {
   const errors: string[] = [];
   page.on('pageerror', error => errors.push(error.message));
   const backend = { snapshot: null as any, failure: 0, offline: false, conflict: false, sameDevice: false, calls: [] as string[], pairGate: undefined as Promise<void> | undefined };
-  await page.addInitScript(({ regie, credential, rejectNative }) => {
+  await page.addInitScript(({ regie, credential, rejectNative, legacyPage }) => {
     const win = window as any;
     localStorage.setItem('sd2.server', regie);
     localStorage.setItem('sd2.workspace-mode', 'paired');
-    localStorage.setItem('sd2.page', 'settings');
+    localStorage.setItem('sd2.page', legacyPage);
     win.credential = credential;
     win.deviceCredentials = { [regie]:credential };
     win.nativeConfigurations = [];
@@ -46,7 +46,32 @@ async function setup(page: Page, rejectNative = false) {
         catch{return {ok:false,error:{message:'synthetic transport unavailable'}};}
       },
       getDeviceProfile: async () => ({ configured: true, name: 'PC jeu de test', role: 'control' }),
-      getInstallation: async () => ({runtimeProfile:'device-runtime',localDeviceId:'pc-jeu',devices:[{id:'pc-jeu',roles:['controller'],capabilities:['global-keys','audio'],enabled:true},{id:'regie-fixe',roles:['obs-executor'],capabilities:['obs','clips','audio','chat','cloud','planning','viewer','storage'],enabled:true,endpoint:regie}],routes:{obs:'regie-fixe'}}),
+      // Faithful Windows-native installation store, with revision-checked writes.
+      // A static getInstallation() fixture silently replaced the updated
+      // configuration and made reassociation fail with a spurious conflict.
+      getInstallation: async () => {
+        const installationModule='/mobile/shared/installation.js';
+        const {migrateInstallation}=await import(installationModule);
+        let current=JSON.parse(localStorage.getItem('sd2.installation.v2')||'null');
+        if(!current){
+          current=migrateInstallation({id:'pc-jeu',platform:'windows',legacy:{role:'control',name:'PC jeu',configured:true},pairedEndpoint:regie});
+          const remote=current.devices.find((d:any)=>d.id==='legacy-paired');
+          remote.id='regie-fixe';
+          remote.name='Fixture régie';
+          remote.capabilities=['obs','clips','audio','chat','cloud','planning','viewer','storage'];
+          current.routes.obs='regie-fixe';current.routes.clips='regie-fixe';
+          localStorage.setItem('sd2.installation.v2',JSON.stringify(current));
+        }
+        return structuredClone(current);
+      },
+      changeInstallation: async (changes:any,revision:number) => {
+        const installationModule='/mobile/shared/installation.js';
+        const {planInstallationChange}=await import(installationModule);
+        const current=await win.streamDashboardDesktop.getInstallation();
+        const plan=planInstallationChange(current,changes,revision);
+        localStorage.setItem('sd2.installation.v2',JSON.stringify(plan.next));
+        return plan;
+      },
       getControllerCredential: async () => win.credential,
       getDeviceCredential: async (server:string) => win.deviceCredentials[server]||'',
       setDeviceCredential: async (server:string,value:string) => { win.deviceCredentials[server]=value; },
@@ -60,7 +85,7 @@ async function setup(page: Page, rejectNative = false) {
       controllerStatus: async () => ({ registered: win.nativeConfiguration.actions.map((action: any) => action.shortcut), unavailable: [] }),
       onControllerReceipt: () => {},
     };
-  }, { regie: REGIE, credential: CREDENTIAL, rejectNative });
+  }, { regie: REGIE, credential: CREDENTIAL, rejectNative, legacyPage });
   await page.route('**/*', async route => {
     const request = route.request(), url = new URL(request.url());
     if ([REGIE, OTHER_REGIE].includes(url.origin) && url.pathname.startsWith('/api/')) {
@@ -242,10 +267,10 @@ test('Stop remains executable while an unrelated offline action edit has a confl
  expect(errors).toEqual([]);
 });
 
-// Retain coverage of the optional classic phone navigation. The default four-tab layout has its own cleanup regression.
+// Exercise the shared five-tab navigation (classic legacy preference is migrated harmlessly).
 test.beforeEach(async ({page})=>{await page.addInitScript(()=>localStorage.setItem('sd2.navigation','classic'));});
 
-test('displays the contextual four-pane mobile destinations and persistent DJI mic badge', async ({page}) => {
+test('displays the Live/Planning/Sons contextual panes and persistent DJI mic badge', async ({page}) => {
   await setup(page);
   await page.setViewportSize({width:390,height:800});
   await page.locator('nav button[data-page="live"]').click();
@@ -279,7 +304,7 @@ test('displays the contextual four-pane mobile destinations and persistent DJI m
   await page.locator('#mobile-pane-nav [data-pane-tab="manage"]').click();
   await expect(page.locator('[data-mobile-pane="manage"] [data-planning="new"]')).toBeVisible();
 
-  await page.locator('nav button[data-page="deck"]').click();
+  await page.locator('nav button[data-page="sounds"]').click();
   await expect(page.locator('[data-mobile-pane="sounds"] #mobile-deck-sounds')).toBeVisible();
   await page.locator('#mobile-pane-nav [data-pane-tab="actions"]').click();
   await expect(page.locator('[data-mobile-pane="actions"] [data-action="live.stop"]')).toBeVisible();
@@ -625,7 +650,7 @@ test('Planning and Deck follow a horizontal drag and animate on the new pane aft
   await expect(page.locator('[data-mobile-pane="week"]')).toBeVisible();
   await page.locator('#mobile-pane-nav [data-pane-tab="events"]').click();
   await expect(page.locator('[data-mobile-pane="events"]')).toBeVisible();
-  await page.locator('aside nav button[data-page="deck"]').click();
+  await page.locator('aside nav button[data-page="sounds"]').click();
   await page.locator('#mobile-pane-nav [data-pane-tab="actions"]').click();
   await expect(page.locator('[data-mobile-pane="actions"]')).toBeVisible();
   await page.locator('#mobile-pane-nav [data-pane-tab="sounds"]').click();
@@ -657,3 +682,144 @@ test('StreamCockpit mobile timer follows the remote host deadline and never star
   await expect(page.locator('#mobile-live-timer [data-command="timer.pause"]')).toBeEnabled();
   expect(errors).toEqual([]);
 });
+
+test('FC1 Android UX shows exactly five primary tabs, host timer, Live diffusion and adaptive deck', async ({page}) => {
+  await page.setViewportSize({width:390,height:844});
+  const {backend,errors}=await setup(page);
+  const tabs=page.locator('aside nav button:visible');
+  await expect(tabs).toHaveCount(5);
+  await expect(tabs).toHaveText(['⌂ Accueil','◉ Live','♫ Sons','▤ Planning','☷ Plus']);
+  await page.locator('aside nav button[data-page="home"]').click();
+  await expect(page.locator('[data-screen="home"]')).toBeVisible();
+  await expect(page.locator('#floating-mic-battery')).toBeHidden();
+  if(process.env.SC_CAPTURE_UI)await page.screenshot({path:'/tmp/streamcockpit-fc1-new-home.png',fullPage:true});
+  await expect(page.locator('#mobile-timer-strip')).toBeVisible();
+  await expect(page.locator('#mobile-timer-strip [data-timer-clock]')).toHaveText('00:05:00');
+  await expect(page.locator('[data-screen="home"]')).toContainText('OBS Studio');
+  await expect(page.locator('[data-screen="home"]')).toContainText('Twitch');
+  await page.locator('[data-open-pane="live:control"]').click();
+  await expect(page.locator('[data-mobile-pane-group="live"][data-mobile-pane="control"]')).toBeVisible();
+  await expect(page.locator('#floating-mic-battery')).toBeVisible();
+  await expect(page.locator('#mobile-live-timer [data-command="timer.start"]')).toBeVisible();
+  await page.locator('aside nav button[data-page="sounds"]').click();
+  await expect(page.locator('[data-mobile-pane-group="sounds"][data-mobile-pane="sounds"]')).toBeVisible();
+  await page.locator('#mobile-pane-nav [data-pane-tab="actions"]').click();
+  await expect(page.locator('[data-mobile-pane-group="sounds"][data-mobile-pane="actions"]')).toBeVisible();
+  await expect(page.locator('[data-mobile-pane="actions"] [data-action="live.stop"]')).toBeVisible();
+  await expect(page.locator('[data-mobile-pane="actions"] [data-deck-bank="favorites"]')).toBeVisible();
+  await page.locator('[data-mobile-pane="actions"] [data-deck-bank="scenes"]').click();
+  await expect(page.locator('[data-mobile-pane="actions"] [data-deck-bank="scenes"]')).toHaveAttribute('aria-pressed','true');
+  await page.locator('[data-mobile-pane="actions"] [data-deck-edit]').click();
+  await expect(page.locator('[data-mobile-pane="actions"] [data-deck-edit]')).toHaveAttribute('aria-pressed','true');
+  await page.locator('[data-mobile-pane="actions"] [data-deck-edit]').click();
+  await page.locator('[data-mobile-pane="actions"] .deck-banks [data-page="sounds"]').click();
+  await expect(page.locator('[data-mobile-pane-group="sounds"][data-mobile-pane="sounds"]')).toBeVisible();
+  await page.locator('aside nav button[data-page="planning"]').click();
+  await expect(page.locator('[data-mobile-pane-group="planning"][data-mobile-pane="next"]')).toBeVisible();
+  await page.locator('aside nav button[data-page="plus"]').click();
+  await expect(page.locator('[data-screen="plus"]')).toBeVisible();
+  await expect(page.locator('#floating-mic-battery')).toBeHidden();
+  if(process.env.SC_CAPTURE_UI)await page.screenshot({path:'/tmp/streamcockpit-fc1-new-plus.png',fullPage:true});
+  await expect(page.locator('[data-screen="plus"]')).toContainText('WizeBot');
+  await expect(page.locator('[data-screen="plus"]')).toContainText('Streamlabs');
+  await expect(page.locator('[data-screen="plus"]')).toContainText('DJI');
+  await page.locator('[data-screen="plus"] [data-open-pane="sounds:wizebot"]').click();
+  await expect(page.locator('[data-mobile-pane-group="sounds"][data-mobile-pane="wizebot"]')).toBeVisible();
+  await page.locator('aside nav button[data-page="plus"]').click();
+  await page.locator('[data-screen="plus"] [data-open-pane="sounds:streamlabs"]').click();
+  await expect(page.locator('[data-mobile-pane-group="sounds"][data-mobile-pane="streamlabs"]')).toBeVisible();
+  await expect(page.locator('#mobile-timer-strip')).toBeVisible();
+  expect(backend.calls.some(value=>value.includes('/api/v1/commands'))).toBe(false);
+  expect(errors).toEqual([]);
+});
+
+test('FC1 host clock and offline guards persist through reconnect across five-tab navigation', async ({page}) => {
+  await page.setViewportSize({width:360,height:780});
+  const {backend,errors}=await setup(page);
+  const hostTimer=backend.snapshot.bundle.data.host.state.timer;
+  Object.assign(hostTimer,{running:true,duration:180,remaining:180,deadline:Date.now()+180_000});
+  const heartbeat=()=>page.evaluate(()=>{
+    const tick=(window as any).intervals.find((entry:any)=>entry.ms===2500);
+    if(!tick)throw Error('Renderer heartbeat not registered');
+    tick.callback();
+  });
+  await heartbeat();
+  await expect(page.locator('#mobile-timer-strip [data-timer-clock]')).toHaveText(/^00:0[23]:/);
+  await page.locator('aside nav button[data-page="home"]').click();
+  await expect(page.locator('#mobile-timer-strip')).toBeVisible();
+  backend.offline=true;
+  await heartbeat();
+  await expect(page.locator('#connection')).toContainText('Régie non confirmée');
+  await expect(page.locator('[data-screen="home"]')).toContainText('Régie non joignable');
+  await expect(page.locator('#mobile-timer-strip [data-timer-status]')).toContainText('Hôte indisponible');
+  await page.locator('[data-open-pane="live:control"]').click();
+  await expect(page.locator('#mobile-live-timer [data-command="timer.start"]')).toBeDisabled();
+  await expect(page.locator('[data-mobile-pane="control"] [data-action="live.start"]')).toBeDisabled();
+  await expect(page.locator('#mobile-timer-strip')).toBeVisible();
+  backend.offline=false;
+  await heartbeat();
+  await expect(page.locator('#connection')).toContainText('Régie connectée');
+  await expect(page.locator('#mobile-timer-strip [data-timer-status]')).toContainText('En cours sur la régie');
+  await page.locator('aside nav button[data-page="plus"]').click();
+  await expect(page.locator('#mobile-timer-strip [data-timer-clock]')).toHaveText(/^00:0[23]:/);
+  expect(hostTimer.running).toBe(true);
+  expect(backend.calls.some(value=>value.includes('/api/v1/commands'))).toBe(false);
+  expect(errors).toEqual([]);
+});
+
+test('FC1 home reacts to live OBS state changes during stable connection without user command', async ({page}) => {
+  await page.setViewportSize({width:320,height:700});
+  const {backend,errors}=await setup(page);
+  await page.locator('aside nav button[data-page="home"]').click();
+  const obsCard=page.locator('.cockpit-status-card').filter({hasText:'OBS Studio'});
+  await expect(obsCard).toContainText('Déconnecté');
+  const obs=backend.snapshot.bundle.data.host.state.obs;
+  Object.assign(obs,{connected:true,streaming:false,streamingKnown:true,scene:'PAUSE'});
+  await page.evaluate(()=>{
+    const poll=(window as any).intervals.find((item:any)=>item.ms===2500);
+    poll.callback();
+  });
+  await expect(obsCard).toContainText('Prêt');
+  await expect(obsCard).toContainText('PAUSE');
+  Object.assign(obs,{connected:true,streaming:true,streamingKnown:true,scene:'JEU'});
+  await page.evaluate(()=>{
+    const poll=(window as any).intervals.find((item:any)=>item.ms===2500);
+    poll.callback();
+  });
+  await expect(obsCard).toContainText('En émission');
+  await expect(obsCard).toContainText('JEU');
+  const tabs=page.locator('aside nav button:visible');
+  await expect(tabs).toHaveCount(5);
+  const boxes=await tabs.evaluateAll(nodes=>nodes.map(node=>{
+    const r=node.getBoundingClientRect();return {left:r.left,right:r.right,width:r.width};
+  }));
+  expect(boxes.every((box,index)=>box.width>=44&&box.left>=0&&box.right<=320.5&&(index===0||box.left>=boxes[index-1].right-1))).toBe(true);
+  expect(backend.calls.some(value=>value.includes('/api/v1/commands'))).toBe(false);
+  expect(errors).toEqual([]);
+});
+
+for (const [legacy,target] of [['deck','sounds'],['manage','plus']] as const) {
+  test(`FC1 migrates legacy ${legacy} navigation without rewriting pairing or installation data`, async ({page}) => {
+    await page.setViewportSize({width:360,height:780});
+    const {errors}=await setup(page,false,legacy);
+    await expect(page.locator(`aside nav button[data-page="${target}"]`)).toHaveAttribute('aria-current','page');
+    const before=await page.evaluate(() => ({
+      page:localStorage.getItem('sd2.page'),
+      marker:localStorage.getItem('sd2.mobile-five-tabs-v1'),
+      server:localStorage.getItem('sd2.server'),
+      mode:localStorage.getItem('sd2.workspace-mode'),
+      installation:localStorage.getItem('sd2.installation.v2'),
+    }));
+    expect(before).toMatchObject({page:target,marker:'1',server:REGIE,mode:'paired'});
+    expect(before.installation).toBeTruthy();
+    await page.locator('aside nav button[data-page="home"]').click();
+    await page.locator('aside nav button[data-page="plus"]').click();
+    const after=await page.evaluate(() => ({
+      server:localStorage.getItem('sd2.server'),
+      mode:localStorage.getItem('sd2.workspace-mode'),
+      installation:localStorage.getItem('sd2.installation.v2'),
+    }));
+    expect(after).toEqual({server:before.server,mode:before.mode,installation:before.installation});
+    expect(errors).toEqual([]);
+  });
+}

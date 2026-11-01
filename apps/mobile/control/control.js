@@ -7,6 +7,7 @@ import {createDjiBatteryWarningTracker} from './dji-battery-warnings.js';
 import {createMobilePanes,MOBILE_PANES} from './mobile-panes.js';
 import {createFloatingMicBattery} from './floating-mic-battery.js';
 import {arrangeMobileLivePanes} from './mobile-live-layout.js';
+import {renderMobileHome,renderMobilePlus} from './mobile-five-tab-ui.js';
 import {renderMobileSoundboard} from './mobile-soundboard-pane.js';
 import {ACTIONS,OUTCOME_LABELS} from '../shared/action-registry.js';
 import {randomUuid} from '../shared/uuid.js';
@@ -63,10 +64,15 @@ const compactViewport=matchMedia('(max-width:700px), (pointer:coarse) and (max-w
 let compact=native||compactViewport.matches;
 document.documentElement.classList.toggle('compact-app',compact);
 document.documentElement.classList.toggle('simple-nav',localStorage.getItem('sd2.navigation')!=='classic');
-if(compact&&!localStorage.getItem('sd2.performance-first')){localStorage.setItem('sd2.page','deck');localStorage.setItem('sd2.performance-first','1');}
-if(compact&&!localStorage.getItem('sd2.live-deck-intro')){localStorage.setItem('sd2.page','deck');localStorage.setItem('sd2.live-deck-intro','1');}
-if(compact&&!localStorage.getItem('sd2.twitch-simple-home')){localStorage.setItem('sd2.page','live');localStorage.setItem('sd2.twitch-simple-home','1');}
-let data, sounds, replay, soundError='', soundCategory='', deckCategory='all', online=false, page=localStorage.getItem('sd2.page') || (compact?'deck':'live'), tab='obs', busy=false, refreshFlight, pointerHeld=false, configurationDraft, profileDraft, noticeTimer;
+// Migrate only mobile navigation state. Pairing, credentials, offline edits,
+// action banks and stream configurations are never rewritten by this update.
+if(compact&&!localStorage.getItem('sd2.mobile-five-tabs-v1')){
+ const previous=localStorage.getItem('sd2.page');
+ if(!previous||previous==='deck')localStorage.setItem('sd2.page',previous==='deck'?'sounds':'home');
+ else if(['manage','settings','actions'].includes(previous))localStorage.setItem('sd2.page','plus');
+ localStorage.setItem('sd2.mobile-five-tabs-v1','1');
+}
+let data, sounds, replay, soundError='', soundCategory='', deckCategory='all', online=false, page=localStorage.getItem('sd2.page') || (compact?'home':'live'), tab='obs', busy=false, refreshFlight, pointerHeld=false, configurationDraft, profileDraft, noticeTimer;
 let deckScope, deckPreferences, deckEditing=false, deckEditBank='all', activeCommands=0;
 const clientRole=new URL(location.href).searchParams.get('role')==='client';
 let device=readDevice(localStorage,native);
@@ -78,7 +84,7 @@ const localObs=installationProfile?.devices.find(d=>d.id===installationProfile.l
 // Keep the original data workspace reachable even when the OBS role changes.
 const workspaceEndpoint=installationProfile?(installationProfile.runtimeProfile==='root'?localEndpoint:''):(clientRole?'':localEndpoint);
 const firstUse=!device.configured&&!localStorage.getItem('sd2.server');
-if(firstUse&&(native||clientRole))page='manage';
+if(firstUse&&(native||clientRole))page=compact?'plus':'manage';
 let server=localStorage.getItem('sd2.workspace-mode')==='local'?(workspaceEndpoint||''):(localStorage.getItem('sd2.server') || workspaceEndpoint || (native || clientRole ? '' : location.origin));
 if(installationProfile?.routes.obs===installationProfile?.localDeviceId&&localObs&&localStorage.getItem('sd2.workspace-mode')!=='local')server=localEndpoint;
 // Windows client bootstrap is host-first. Never recover from a missing pairing
@@ -238,9 +244,13 @@ function shell() {
   document.body.classList.toggle('activity-page',Boolean(data&&page==='activity'));
   const toggle=$('#workspace-toggle');toggle.textContent=server?'Mon espace':localStorage.getItem('sd2.server')?'Ma régie':'Appareil autonome';toggle.dataset.task=server?'use-local':localStorage.getItem('sd2.server')?'use-paired':'device-setup';
   $('.aside-foot small').textContent=server?'Exécution sur '+(data?.host.hostname||'l’appareil associé'):'Comptes et données sur cet appareil';
-  const simple=compact&&localStorage.getItem('sd2.navigation')!=='classic';
-  const navigationPage=simple?({sounds:'deck',activity:'live',manage:'settings',actions:'settings'}[page]||page):page;
-  $('nav').querySelectorAll('button').forEach(button=>button.classList.toggle('active',button.dataset.page===navigationPage||(!simple&&compact&&button.dataset.page==='manage'&&['planning','settings','actions'].includes(page))));
+  // Five stable destinations, including deep-link pages under Sons and Plus.
+  const navigationPage=compact?({deck:'sounds',activity:'plus',manage:'plus',actions:'plus',settings:'plus'}[page]||page):page;
+  $('nav').querySelectorAll('button').forEach(button=>{
+    const active=button.dataset.page===navigationPage;
+    button.classList.toggle('active',active);
+    if(active)button.setAttribute('aria-current','page');else button.removeAttribute('aria-current');
+  });
   $('#host-dot').classList.toggle('online',online);$('#host-name').textContent=data?.host.hostname || 'PC de stream';
   $('#role').textContent=({stream:'RÉGIE DE STREAM',control:'PILOTAGE',mobile:'STREAM DECK'})[device.role]+' · '+device.name;
   $('.brand small').textContent=data?.host.settings.streamerName||'VOTRE ESPACE';
@@ -384,8 +394,8 @@ function compactDjiBatteryStrip(){
  return '<div class="dji-compact-strip" role="status"><b>🎙️ DJI Mic 3</b><span>'+
   esc(rows.join(' · '))+'</span><small>Paliers réels, non convertis en %</small></div>';
 }
-function compactDeckPage(){
- const choice=mobilePanes.get('deck');
+function compactDeckPage(group='deck'){
+ const choice=mobilePanes.get(group);
  const available=data?.configuration?.actions||[];
  const section=choice==='sounds'?
      '<div id="mobile-deck-sounds"></div>':
@@ -399,6 +409,14 @@ function compactDeckPage(){
    choice==='streamlabs'?
      '<div class="mobile-pane-title"><h2>♥ Streamlabs</h2></div>'+
      '<div id="streamlabs-feed"></div>':
+   choice==='actions'&&group==='sounds'?
+     '<div class="mobile-pane-title"><h2>▦ Deck adaptatif</h2></div>'+
+     '<div class="simple-live-actions">'+
+     '<button type="button" data-action="live.start"'+(!liveControlState(data,online).canStartBoth||busy?' disabled':'')+'>◉ Lancer Twitch</button>'+
+     '<button type="button" class="danger" data-action="live.stop"'+(!online?' disabled':'')+'>■ Arrêter Twitch</button></div>'+
+     '<p class="small muted">Sélectionnez vos favoris, banques, scènes et macros. Chaque bouton indique son état réel ; le départ et l’arrêt du direct exigent confirmation.</p>'+
+     mobilePerformancePage('deck')+
+     '<div class="mobile-pane-actions"><button type="button" class="secondary" data-page="actions">Modifier les macros et leurs destinations</button></div>':
      '<div class="mobile-pane-title"><h2>◉ Actions live</h2></div>'+
      '<div class="simple-live-actions">'+
      '<button type="button" data-action="live.start"'+(!liveControlState(data,online).canStartBoth||busy?' disabled':'')+'>◉ Lancer Twitch</button>'+
@@ -410,8 +428,8 @@ function compactDeckPage(){
        .slice(0,48).map(actionButton).join('')||
        '<p class="mobile-pane-empty">Aucune action configurée. Ajoutez des boutons dans Gestion.</p>')+
      '</div><div class="mobile-pane-actions"><button type="button" class="secondary" data-page="actions">Modifier mes boutons et macros</button></div>';
- return '<div class="mobile-pane-layout" data-mobile-pane-group="deck">'+
-   '<section class="mobile-pane-screen mobile-pane-deck" data-mobile-pane-group="deck" data-mobile-pane="'+choice+'">'+
+ return '<div class="mobile-pane-layout" data-mobile-pane-group="'+group+'">'+
+   '<section class="mobile-pane-screen mobile-pane-deck" data-mobile-pane-group="'+group+'" data-mobile-pane="'+choice+'">'+
    section+'</section></div>';
 }
 function deckPage(){
@@ -491,10 +509,11 @@ function render({passive=false}={}){
  const scroll=samePerformance?window.scrollY:0;
  const bankScroll=samePerformance?$('.deck-banks')?.scrollLeft||0:0;
  document.documentElement.classList.toggle('mobile-panes-active',
-   compact&&['live','planning','deck'].includes(page));
+   compact&&['live','planning','deck','sounds'].includes(page));
  shell();
  mobilePanes.update({group:page,compact});
- floatingMic.update({enabled:compact,sourceKey:mobileDjiOrigin()});
+ // Keep the DJI battery badge actionable during Live without covering Home or Plus cards.
+ floatingMic.update({enabled:compact&&page==='live',sourceKey:mobileDjiOrigin()});
  if(!data){liveMonitor?.destroy();streamlabsFeed?.destroy();streamlabsFeed=undefined;streamlabsFeedRoot=undefined;$('#content').innerHTML='<section class="panel"><h1>Retrouver votre régie</h1><p class="subtitle">Connectez-vous au PC de stream pour retrouver les scènes, le Deck et votre planning.</p><button data-task="connection">Configurer la connexion</button></section>';liveMonitor=undefined;return;}
  if(page==='live'){
   if(!$('#live-monitor')){
@@ -534,15 +553,17 @@ function render({passive=false}={}){
   updateStreamlabsFeed();
  }else{
   liveMonitor?.destroy();liveMonitor=undefined;
-  const retainStreamlabs=compact&&page==='deck'&&mobilePanes.get('deck')==='streamlabs'&&
-    $('#content').dataset.renderedPage==='deck'&&Boolean($('#streamlabs-feed'));
+  const retainStreamlabs=compact&&['deck','sounds'].includes(page)&&mobilePanes.get(page)==='streamlabs'&&
+    $('#content').dataset.renderedPage===page&&Boolean($('#streamlabs-feed'));
   if(!retainStreamlabs){
     streamlabsFeed?.destroy();streamlabsFeed=undefined;streamlabsFeedRoot=undefined;
-    replaceMarkup($('#content'),page==='deck'?deckPage():page==='sounds'?soundsPage():
+    replaceMarkup($('#content'),page==='home'?renderMobileHome({data,online,server,live:liveControlState(data,online),esc}):
+      page==='plus'?renderMobilePlus({data,online,server,esc}):
+      page==='deck'?deckPage():page==='sounds'?(compact?compactDeckPage('sounds'):soundsPage()):
       page==='planning'?(compact?planning.mobilePage(mobilePanes.get('planning')):planning.page()):
       page==='actions'?actionsPage():page==='manage'?managePage():settingsPage());
   }
-  if(compact&&page==='deck'){
+  if(compact&&['deck','sounds'].includes(page)){
     const slot=$('#mobile-deck-sounds');
     if(slot)renderMobileSoundboard(slot,{
       sounds:sounds?.sounds||[],
@@ -763,7 +784,7 @@ async function refresh(force=false){
    const [audio,clips]=await Promise.all([needsAudio?network('/api/v1/soundboard').catch(()=>null):null,needsReplay?network('/api/v2/replay').catch(error=>({active:null,error:error.message})):replay]);
    replay=clips;const bundle=autonomy.store.view();data=bundle.data;sounds=bundle.sounds;
    if(audio){sounds={...audio,sounds:sounds.sounds.map(s=>({...s,sourceAvailable:audio.sounds.find(x=>x.id===s.id)?.sourceAvailable===true}))};}soundError='';const reconnect=!online;online=true;shell();updateLiveMonitor();
-   if(force||reconnect||(!dialog.open&&['live','activity','deck','sounds','planning'].includes(page)&&!pointerHeld&&!document.activeElement?.matches('input, textarea, select, [contenteditable]')))render({passive:!force});
+   if(force||reconnect||(!dialog.open&&['home','plus','live','activity','deck','sounds','planning'].includes(page)&&!pointerHeld&&!document.activeElement?.matches('input, textarea, select, [contenteditable]')))render({passive:!force});
    void configureMacros({synchronized:true});
   }catch(e){online=false;void configureMacros({suspend:!isTemporaryControllerFailure(e)});replay={active:null,error:'Régie déconnectée'};if(sounds){sounds.currentPlayback=null;sounds.activePlaybacks=[];}shell();updateLiveMonitor();if(!dialog.open)render({passive:!force});if(force)toast(e.message);}
  })().finally(()=>{refreshFlight=undefined;});
@@ -973,6 +994,12 @@ async function task(name,b){
 }
 document.addEventListener('click',async event=>{const b=event.target.closest('button');if(!b)return;try{
  if(b.disabled)return;
+ if(b.dataset.openPane){
+   const [group,pane]=b.dataset.openPane.split(':');
+   if(!compact||!MOBILE_PANES[group]?.some(item=>item.id===pane))return;
+   mobilePanes.select(group,pane,{notify:false});
+   page=group;localStorage.setItem('sd2.page',page);resetPerformanceView();return;
+ }
  if(b.dataset.deckBank!==undefined){if(deckEditing)deckEditBank=b.dataset.deckBank;else updateDeckPreferences({bank:b.dataset.deckBank});resetPerformanceView();return;}
  if(b.dataset.deckEdit!==undefined){ensureDeckPreferences();deckEditing=!deckEditing;if(deckEditing)deckEditBank='all';resetPerformanceView();return;}
  if(b.dataset.deckFavorite!==undefined){const prefs=ensureDeckPreferences(),key=b.dataset.deckFavorite;updateDeckPreferences({favorites:prefs.favorites.includes(key)?prefs.favorites.filter(id=>id!==key):[...prefs.favorites,key]});render();return;}
@@ -986,7 +1013,15 @@ document.addEventListener('click',async event=>{const b=event.target.closest('bu
  if(await wizebotManagement.click(b))return;
  if(b.dataset.playSound){await runAction('sound.play',undefined,b.dataset.playSound);return;}
  if(b.dataset.favoriteSound){const sound=sounds.sounds.find(s=>s.id===b.dataset.favoriteSound);await api('/api/v1/soundboard/sounds/'+encodeURIComponent(sound.id),{favorite:!sound.favorite},'PUT');await refresh(true);return;}
- if(b.dataset.page){deckEditing=false;page=b.dataset.page;localStorage.setItem('sd2.page',page);resetPerformanceView();return;}
+ if(b.dataset.page){
+   // Re-selecting Sons, or opening the Sons shortcut inside the adaptive deck,
+   // must actually reveal the soundboard instead of retaining the Deck pane.
+   if(compact&&b.dataset.page==='sounds'&&page==='sounds'&&
+      (b.closest('aside')||b.closest('.live-deck'))){
+     mobilePanes.select('sounds','sounds',{notify:false});
+   }
+   deckEditing=false;page=b.dataset.page;localStorage.setItem('sd2.page',page);resetPerformanceView();return;
+ }
  if(b.dataset.tab){tab=b.dataset.tab;render();return;}
  if(b.dataset.suiteOutput!==undefined){const f=$('#platform-form'),p=b.dataset.platform;f.elements[p+'-kind'].value='aitum-suite';f.elements[p+'-name'].value=b.dataset.suiteOutput;toast('Association préparée. Enregistrez la diffusion pour la conserver.');return;}
  if(b.dataset.task){await task(b.dataset.task,b);return;}
@@ -1071,7 +1106,7 @@ document.addEventListener('keydown',event=>{if(globalThis.streamDashboardDesktop
 const initial=new URL(location.href);if(initial.searchParams.has('pair')){connectionDialog();$('#connection-form').elements.link.value=location.href;history.replaceState(null,'',location.pathname);}
 globalThis.streamDashboardDesktop?.onControllerReceipt?.(receipt=>{toast(`${labels[receipt.status]||'Macro'} · ${receipt.message}`);void refresh(true);});
 globalThis.StreamDashboardNative?.setKeepAwake(localStorage.getItem('sd2.keep-awake')!=='false');
-globalThis.StreamDashboardHandleBack=()=>{if(dialog.open){dialog.close();return true;}if(deckEditing){deckEditing=false;resetPerformanceView();return true;}const first=compact&&MOBILE_PANES[page]?.[0]?.id;if(first&&mobilePanes.get(page)!==first){mobilePanes.select(page,first);return true;}if(page!=='deck'){page='deck';localStorage.setItem('sd2.page',page);resetPerformanceView();return true;}return false;};
+globalThis.StreamDashboardHandleBack=()=>{if(dialog.open){dialog.close();return true;}if(deckEditing){deckEditing=false;resetPerformanceView();return true;}const first=compact&&MOBILE_PANES[page]?.[0]?.id;if(first&&mobilePanes.get(page)!==first){mobilePanes.select(page,first);return true;}if(page!==(compact?'home':'deck')){page=compact?'home':'deck';localStorage.setItem('sd2.page',page);resetPerformanceView();return true;}return false;};
 compactViewport.addEventListener('change',()=>{
  const previous=compact;
  compact=native||compactViewport.matches;
