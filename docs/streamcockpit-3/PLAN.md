@@ -47,3 +47,7 @@ Au lancement : premier sous-lot d'implémentation par lot. Chaque lot doit livre
 
 ## Journal et gestion des changements
 La source de vérité machine est `docs/streamcockpit-3/feature-matrix.json` ; chaque module doit y renseigner les preuves vérifiables après intégration. `docs/streamcockpit-3/CONTINUITY.md` conserve décisions, commits, tests, bloquants, suites. Les jobs autonomes ne fusionnent pas leurs propres branches. Un intégrateur unique relit code, diff, preuves et conflits.
+
+## Backlog version 3.1 — hors critères de livraison 3.0
+- **SC31-LAYOUT-001 : Cockpit à disposition modulaire et entièrement personnalisable.** Modules à déplacer, redimensionner, afficher/masquer et regrouper, profils par appareil/format et sauvegarde, édition tactile et souris/clavier. Voir ROADMAP_3_1_MODULAR_DISPLAY.md et ROADMAP_3_1_BACKLOG.json.
+- Ce chantier **n'ajoute aucune obligation à G2–G5** ; conserver une seule livraison 3.0 complète avant d'engager la phase 3.1. Aucun module existant ne doit être considéré automatiquement apte au drag-and-drop sans audit des contrats de rendu.

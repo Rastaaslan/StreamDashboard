@@ -1,0 +1,51 @@
+{
+  "schemaVersion": 1,
+  "release": "3.1",
+  "milestone": "Post-3.0 Full Experience",
+  "items": [
+    {
+      "id": "SC31-LAYOUT-001",
+      "name": "Cockpit à disposition entièrement personnalisable",
+      "status": "planned",
+      "priority": "P1",
+      "dependsOn": [
+        "3.0:G5"
+      ],
+      "scope": [
+        "desktop-fixe",
+        "desktop-laptop",
+        "android-portrait",
+        "android-landscape"
+      ],
+      "description": "Composer son interface avec les composants existants : déplacer, redimensionner, réduire, masquer/réafficher, ordonner et disposer les modules par écran et appareil.",
+      "subtasks": [
+        "inventaire des widgets et registre stable",
+        "mode édition souris/tactile/clavier",
+        "grille responsive anti-collision",
+        "bibliothèque de modules et sauvegarde",
+        "profils de disposition locaux et contextuels opt-in",
+        "import/export sans secrets et migrations",
+        "validation et rollback multiappareils"
+      ],
+      "acceptanceCriteria": [
+        "édition fluide Windows et Android",
+        "dispositions distinctes FIXE/laptop/Android avec un seul maître OBS/Twitch/minuteur",
+        "contrôles critiques toujours accessibles et aucune commande involontaire en mode édition",
+        "sauvegarde/migration/restauration sans pertes",
+        "performances et accessibilité validées matériellement"
+      ],
+      "evidence": [
+        "docs/streamcockpit-3/ROADMAP_3_1_MODULAR_DISPLAY.md"
+      ],
+      "verifiedTests": [],
+      "hardwareEvidence": []
+    }
+  ],
+  "nonBlockingFor": [
+    "3.0:G2",
+    "3.0:G3",
+    "3.0:G4",
+    "3.0:G5"
+  ],
+  "notes": "Ne pas annoncer implémenté : demande de conception documentée, aucune fonctionnalité 3.1 livrée."
+}
