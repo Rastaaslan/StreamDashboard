@@ -21,7 +21,7 @@ export async function startDesktopRuntime(logger = new DesktopLogger(path.join(a
     const config = JSON.parse(await readFile(path.join(userData, 'config', 'dashboard.json'), 'utf8'));
     launchObs = config.settings?.launchObs === true;
     obsExecutablePath = typeof config.settings?.obsExecutablePath === 'string' ? config.settings.obsExecutablePath : undefined;
-    remoteEnabled = config.settings?.remoteEnabled === true;
+    remoteEnabled = !controller && config.settings?.remoteEnabled === true;
   } catch (error) { if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw new Error('Configuration utilisateur Desktop illisible. Conservez dashboard.json et consultez les diagnostics.'); }
   const obsResult = await launchObsIfRequested(obsEnabled && launchObs, obsExecutablePath, signal);
   await logger.info(obsResult.detail).catch(() => undefined);
