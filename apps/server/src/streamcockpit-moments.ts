@@ -72,4 +72,13 @@ export class MomentsPipeline {
   async export(sessionId: string) {
     return exportMarkers(sessionId, project(decode(await this.storage.read()).requests));
   }
+  /** A missing durable journal is UNKNOWN, not evidence of an empty session.
+   * Read once so deletion/replacement cannot turn a missing file into a false zero.
+   * This has no writer side effects and never creates a local fallback.
+   */
+  async exportObserved(sessionId: string) {
+    const raw = await this.storage.read();
+    if (raw === null) return undefined;
+    return exportMarkers(sessionId, project(decode(raw).requests));
+  }
 }
