@@ -178,3 +178,11 @@
 .cockpit-mixer table { min-width: 760px; border-collapse: collapse; }
 .cockpit-mixer th, .cockpit-mixer td { padding: .5rem .65rem; text-align: left; white-space: nowrap; }
 .cockpit-mixer [role="status"] { max-width: 100%; white-space: normal; overflow-wrap: anywhere; }
+
+/* F09: an existing host journal only. Keep session entry and marker text in the 320px viewport. */
+.cockpit-moments-page { min-width: 0; max-width: 100%; overflow-wrap: anywhere; }
+.cockpit-moments-page form { display: flex; align-items: end; flex-wrap: wrap; gap: .65rem; }
+.cockpit-moments-page label { display: grid; gap: .35rem; min-width: 0; flex: 1 1 180px; }
+.cockpit-moments-page input { box-sizing: border-box; min-width: 0; width: 100%; }
+.cockpit-moments-results ol { padding-inline-start: 1.4rem; }
+.cockpit-moments-results li { overflow-wrap: anywhere; margin-block: .45rem; }

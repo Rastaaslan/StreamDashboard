@@ -407,6 +407,18 @@
           "kind": "2026-11-01 F09 Q Windows SQLite EXTRA durable CAS; process crash tests, hardware power-failure not tested"
         },
         {
+          "path": "apps/mobile/control/streamcockpit-moments-page.js",
+          "kind": "2026-11-01 FIXE F09 Plus: manual known-session read-only UI, host-only observe API; disconnect and late-response fencing tested, no Android hardware evidence"
+        },
+        {
+          "path": "apps/mobile/control/control.js",
+          "kind": "2026-11-01 FIXE F09 Plus route integrated; passive refresh preserves session while connected; no local fallback"
+        },
+        {
+          "path": "apps/mobile/control-sw.js",
+          "kind": "2026-11-01 FIXE development build includes F09 page and timeline modules in public cache; no API response cached"
+        },
+        {
           "path": "apps/server/src/streamcockpit-clipforge-pipeline.ts",
           "kind": "2026-11-01 wave3 implemented and integrated; G2 partial only"
         }
@@ -417,16 +429,18 @@
         "tests/streamcockpit3-moments-http.test.ts",
         "tests/streamcockpit3-moments-observed.test.ts",
         "tests/streamcockpit3-moments-sqlite.test.ts",
+        "tests/streamcockpit3-moments-page.test.ts",
+        "tests/streamcockpit3-moments-page-browser.test.ts",
         "tests/streamcockpit3-clipforge.test.ts"
       ],
       "hardwareEvidence": [],
       "blockers": [
-        "F09 Q route is read-only: no live moments producer or Android timeline UI yet",
+        "F09 API and read-only Plus timeline are integrated; manual known session ID required, no live moments producer, session discovery or Android hardware validation",
         "Node 22 node:sqlite experimental; power-loss hardware durability and legacy JSON migration unqualified",
-        "FIXE targeted StreamCockpit 3.0 regression now 356 PASS / 51 explicitly skipped / 0 FAIL; 42 skips are Linux-only ClipForge, and full all-project Windows suite remains unqualified"
+        "FIXE targeted StreamCockpit 3.0 regression now 362 PASS / 51 explicitly skipped / 0 FAIL (42 Linux-only ClipForge); full all-project Windows suite remains unqualified"
       ],
       "ownerJob": "streamcockpit/3.0-lot-d",
-      "integrationNote": "2026-11-01 F09 Q merged: authenticated read-only host API, Windows SQLite transactional journal. Canonical FIXE 46/46 applicable F09 tests PASS (6 POSIX-only skipped), targeted 3.0 suite 356 PASS / 51 skipped, types/security PASS; full all-project Windows suite, event writer, real media/UX/hardware unqualified."
+      "integrationNote": "2026-11-01 FIXE F09 Q merged previously (Windows SQLite EXTRA, authenticated host API). Added Plus manually-selected-session timeline, no polling, no cached remote markers, explicit failure and disconnect clearing; Edge real 320px opt-in PASS and targeted 3.0 suite 362 PASS / 51 skipped / 0 FAIL, TypeScript, browser types, security 801 files, dev build 125 public assets. No journal producer/session discovery, physical Android, full-project suite or media pipeline qualification."
     },
     {
       "id": "F10",
@@ -526,7 +540,9 @@
         "docs/streamcockpit-3/LOT_O_WAVE4.md",
         "tests/streamcockpit3-health-observation-http.test.ts",
         "tests/streamcockpit3-twitch-mobile.test.ts",
-        "tests/streamcockpit3-planning-integration-browser.test.ts"
+        "tests/streamcockpit3-planning-integration-browser.test.ts",
+        "tests/streamcockpit3-moments-page.test.ts",
+        "tests/streamcockpit3-moments-page-browser.test.ts"
       ]
     },
     {
