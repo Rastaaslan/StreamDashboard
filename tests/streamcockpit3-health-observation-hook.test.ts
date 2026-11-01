@@ -49,7 +49,14 @@ it('production binds exactly one recorder to existing subscription before legacy
   const entry=readFileSync('apps/server/src/index.ts','utf8');
   expect(entry.match(/new ObsHealthObservation\(/g)).toHaveLength(1);
   expect(entry).toContain('obs: obsHealthObservation,');
-  expect(entry).toContain('const unsubscribeObs = obs.onStateChanged(() => {\n    obsHealthObservation.observe(obs.state);\n    autoStartReplay();');
+  const start = entry.indexOf('const unsubscribeObs = obs.onStateChanged(() => {');
+  const health = entry.indexOf('obsHealthObservation.observe(obs.state);', start);
+  const mixer = entry.indexOf('obsMixerObservation.observe(obs.state, obs.connectionGeneration);', start);
+  const existing = entry.indexOf('autoStartReplay();', start);
+  expect(start).toBeGreaterThanOrEqual(0);
+  expect(health).toBeGreaterThan(start);
+  expect(mixer).toBeGreaterThan(health);
+  expect(existing).toBeGreaterThan(mixer);
   expect(entry).toContain('unsubscribeObs();');
   const module=readFileSync('apps/server/src/streamcockpit-health/obs-observation.ts','utf8');
   expect(module).not.toMatch(/setInterval|setTimeout|fetch\(|WebSocket/);

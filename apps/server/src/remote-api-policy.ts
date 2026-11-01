@@ -2,7 +2,7 @@ import type { DeckAction } from '../../../packages/contracts/src/control.js';
 import { actionCapability } from '../../mobile/shared/action-definition.js';
 import type { DevicePermission } from '../../mobile/shared/device-permissions.js';
 const GET_EXACT = new Set([
-  '/v1/twitch/advanced/capabilities','/v1/streamcockpit-health','/v1/state','/v1/profile','/v1/connections','/v1/control-hub','/v1/events','/v1/soundboard',
+  '/v1/twitch/advanced/capabilities','/v1/streamcockpit-health','/v1/streamcockpit-mixer','/v1/state','/v1/profile','/v1/connections','/v1/control-hub','/v1/events','/v1/soundboard',
   '/v1/automations','/v1/automations/capabilities','/v1/streamlabs/events','/v1/supports','/v1/twitch/categories',
   '/v1/dji/overview','/v1/spotify/status','/v1/twitch/videos','/v1/twitch/clips','/v1/twitch/chatters','/v1/twitch/chat/state','/v1/twitch/moderation/capabilities',
   '/v1/discord/status','/v1/discord/guilds',
@@ -38,7 +38,7 @@ const POST_EXACT = new Set([
 
 export function isRemoteApiAllowed(method: string, pathName: string) {
   const verb = method.toUpperCase();
-  if (verb === 'HEAD' && ['/v1/streamcockpit-health', '/v1/twitch/advanced/capabilities'].includes(pathName)) return true;
+  if (verb === 'HEAD' && ['/v1/streamcockpit-health', '/v1/streamcockpit-mixer', '/v1/twitch/advanced/capabilities'].includes(pathName)) return true;
   // Paired clients own the shared control surface. OAuth secrets remain on the host.
   if (verb === 'GET' && ['/v2/device','/v2/wizebot/catalog','/v2/state','/v2/replay','/v2/outputs'].includes(pathName)) return true;
   if (verb === 'PUT' && ['/v2/configuration','/v2/settings'].includes(pathName)) return true;
@@ -78,7 +78,7 @@ export const remoteApiPolicySnapshot = {
 /** Explicit permissions supplement the existing legacy/management allowlists. */
 export function requiredDevicePermissions(method:string,path:string,body:unknown,actions:DeckAction[]=[]):DevicePermission[] {
   if(path==='/v1/twitch/advanced/capabilities')return ['chat'];
-  if(path==='/v1/streamcockpit-health')return ['observe'];
+  if(path==='/v1/streamcockpit-health'||path==='/v1/streamcockpit-mixer')return ['observe'];
   if(path==='/v2/sounds/export')return ['configuration','audio'];
   if(path==='/v2/planning/handoff')return ['configuration','planning'];
   const value=body as {action?:string;type?:string}|undefined;

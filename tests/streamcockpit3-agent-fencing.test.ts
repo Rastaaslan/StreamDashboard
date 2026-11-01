@@ -142,7 +142,7 @@ describe('Agent production writer startup and durable non replay',()=>{
     await rm(options.journalFile+'.authority.lock');
     await expect(ProductionObsWriter.open(options,factory)).rejects.toThrow('RECONCILIATION_REQUIRED');
     expect(factory).not.toHaveBeenCalled();
-  }));
+  }), 15_000); // Child has an independent 10s limit; avoid Vitest's 5s test cutoff under NVMe contention.
   it('keeps a lost ack uncertain, refuses concurrent commands, replay and restart',()=>writerLab(async({writer,peer,options})=>{
     const c=command(writer),entered=deferred<void>(),finish=deferred<void>();
     peer.write.mockImplementation(async()=>{entered.resolve();await finish.promise;peer.disconnected.abort()});

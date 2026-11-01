@@ -3,6 +3,7 @@ export function mountMixerTable(root, { read }) {
   const doc = root.ownerDocument;
   const section = doc.createElement('section');
   section.setAttribute('aria-label', 'Mixeur audio — lecture seule');
+  section.setAttribute('class', 'cockpit-mixer');
   const status = doc.createElement('p');
   status.setAttribute('role', 'status');
   const table = doc.createElement('table');

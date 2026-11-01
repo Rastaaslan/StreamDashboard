@@ -224,16 +224,64 @@
         {
           "path": "apps/server/src/streamcockpit-mixer.ts",
           "kind": "2026-11-01 wave2 integrated, tests only; remaining adapters/UI/hardware unqualified"
+        },
+        {
+          "path": "apps/server/src/streamcockpit-mixer-observation.ts",
+          "kind": "2026-11-01 F05 host OBS notifications -> authenticated observe GET -> Plus Android read-only; hardware/mutations unqualified"
+        },
+        {
+          "path": "apps/server/src/streamcockpit-mixer-router.ts",
+          "kind": "2026-11-01 F05 host OBS notifications -> authenticated observe GET -> Plus Android read-only; hardware/mutations unqualified"
+        },
+        {
+          "path": "apps/server/src/index.ts",
+          "kind": "2026-11-01 F05 host OBS notifications -> authenticated observe GET -> Plus Android read-only; hardware/mutations unqualified"
+        },
+        {
+          "path": "apps/server/src/remote-api-policy.ts",
+          "kind": "2026-11-01 F05 host OBS notifications -> authenticated observe GET -> Plus Android read-only; hardware/mutations unqualified"
+        },
+        {
+          "path": "apps/mobile/control/streamcockpit-mixer-page.js",
+          "kind": "2026-11-01 F05 host OBS notifications -> authenticated observe GET -> Plus Android read-only; hardware/mutations unqualified"
+        },
+        {
+          "path": "apps/mobile/control/streamcockpit-mixer.js",
+          "kind": "2026-11-01 F05 host OBS notifications -> authenticated observe GET -> Plus Android read-only; hardware/mutations unqualified"
+        },
+        {
+          "path": "apps/mobile/control/control.js",
+          "kind": "2026-11-01 F05 host OBS notifications -> authenticated observe GET -> Plus Android read-only; hardware/mutations unqualified"
+        },
+        {
+          "path": "apps/mobile/control/mobile-five-tab-ui.js",
+          "kind": "2026-11-01 F05 host OBS notifications -> authenticated observe GET -> Plus Android read-only; hardware/mutations unqualified"
+        },
+        {
+          "path": "apps/mobile/control/streamcockpit-mobile-v2.css",
+          "kind": "2026-11-01 F05 host OBS notifications -> authenticated observe GET -> Plus Android read-only; hardware/mutations unqualified"
+        },
+        {
+          "path": "apps/mobile/control-sw.js",
+          "kind": "2026-11-01 F05 host OBS notifications -> authenticated observe GET -> Plus Android read-only; hardware/mutations unqualified"
         }
       ],
       "verifiedTests": [
         "tests/streamcockpit3-mixer.test.ts",
-        "tests/streamcockpit3-mixer-mobile.test.ts"
+        "tests/streamcockpit3-mixer-mobile.test.ts",
+        "tests/streamcockpit3-mixer-observation.test.ts",
+        "tests/streamcockpit3-mixer-http.test.ts",
+        "tests/streamcockpit3-mixer-page.test.ts",
+        "tests/streamcockpit3-mixer-browser.test.ts",
+        "tests/streamcockpit3-health-observation-hook.test.ts"
       ],
       "hardwareEvidence": [],
-      "blockers": [],
-      "ownerJob": "streamcockpit/3.0-lot-f",
-      "integrationNote": "Mixer telemetry/preview module only; no OBS audio mutation or UI route integrated"
+      "blockers": [
+        "OBS gain/mute end-to-end hardware not verified",
+        "OBS/PC game routing, stream/VOD separation, audio level meters, confirmed writes and rollback not implemented"
+      ],
+      "ownerJob": "streamcockpit/3.0-f05-integration",
+      "integrationNote": "F05 OBS gain/mute read-only observations from existing FIXE OBS client events, authenticated observe GET/HEAD and mobile Plus. Host role windows/obs-executor required, fresh revision, permission rechecked after await. No live OBS mutation, confirmed audio level, VOD routing, peripheral health or hardware test."
     },
     {
       "id": "F06",

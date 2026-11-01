@@ -172,3 +172,9 @@
   .compact-app .cockpit-hero {grid-column:1/-1;}
   .compact-app .cockpit-status-grid {grid-template-columns:repeat(2,minmax(0,1fr));}
 }
+
+/* F05: large OBS tables scroll inside Plus at 320px, not across the five-tab shell. */
+.cockpit-mixer { max-width: 100%; min-width: 0; overflow-x: auto; overscroll-behavior-x: contain; }
+.cockpit-mixer table { min-width: 760px; border-collapse: collapse; }
+.cockpit-mixer th, .cockpit-mixer td { padding: .5rem .65rem; text-align: left; white-space: nowrap; }
+.cockpit-mixer [role="status"] { max-width: 100%; white-space: normal; overflow-wrap: anywhere; }

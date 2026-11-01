@@ -1,6 +1,7 @@
 import { renderContextPreview } from './streamcockpit-context-preview.js';
 import { mountHealthPage } from './streamcockpit-health/page.js';
-let healthPage;
+import { mountMixerPage } from './streamcockpit-mixer-page.js';
+let healthPage, mixerPage;
 import {createLazyTask,createLazyPlanning} from './lazy-features.js';
 import {clientAuthorityEndpoint,clientMustDelegateCommand} from './client-authority.js';
 import {createSpotifyPanel} from './spotify-panel.js';
@@ -253,7 +254,7 @@ function shell() {
   const toggle=$('#workspace-toggle');toggle.textContent=server?'Mon espace':localStorage.getItem('sd2.server')?'Ma régie':'Appareil autonome';toggle.dataset.task=server?'use-local':localStorage.getItem('sd2.server')?'use-paired':'device-setup';
   $('.aside-foot small').textContent=server?'Exécution sur '+(data?.host.hostname||'l’appareil associé'):'Comptes et données sur cet appareil';
   // Five stable destinations, including deep-link pages under Sons and Plus.
-  const navigationPage=compact?({deck:'sounds',activity:'plus',health:'plus',manage:'plus',actions:'plus',settings:'plus'}[page]||page):page;
+  const navigationPage=compact?({deck:'sounds',activity:'plus',health:'plus',mixer:'plus',manage:'plus',actions:'plus',settings:'plus'}[page]||page):page;
   $('nav').querySelectorAll('button').forEach(button=>{
     const active=button.dataset.page===navigationPage;
     button.classList.toggle('active',active);
@@ -513,8 +514,9 @@ const floatingMic=createFloatingMicBattery($('#floating-mic-battery'),{
 function settingsPage(){if(native&&!server&&tab==='obs')tab='platforms';return renderSettings({data,native,server,tab,online,device,localEndpoint,deviceExecutor,macroConfigurationError,esc,input,select,check});}
 
 function render({passive=false}={}){
- if(passive&&(pointerHeld||dialog.open||editingForm($('#content')))){shell();if(!online)healthPage?.unavailable();return;}
+ if(passive&&(pointerHeld||dialog.open||editingForm($('#content')))){shell();if(!online){healthPage?.unavailable();mixerPage?.unavailable();}return;}
  healthPage?.destroy();healthPage=undefined;
+ mixerPage?.destroy();mixerPage=undefined;
  const samePerformance=compact&&['deck','sounds'].includes(page)&&$('#content').dataset.renderedPage===page;
  const scroll=samePerformance?window.scrollY:0;
  const bankScroll=samePerformance?$('.deck-banks')?.scrollLeft||0:0;
@@ -558,6 +560,11 @@ function render({passive=false}={}){
   streamlabsFeed?.destroy();streamlabsFeed=undefined;streamlabsFeedRoot=undefined;
   $('#content').innerHTML='<button type="button" class="secondary" data-page="plus">Retour à Plus</button><div id="health-page"></div>';
   healthPage=mountHealthPage($('#health-page'),{online:Boolean(online&&server),request:path=>network(path)});
+ }else if(page==='mixer'){
+  liveMonitor?.destroy();liveMonitor=undefined;
+  streamlabsFeed?.destroy();streamlabsFeed=undefined;streamlabsFeedRoot=undefined;
+  $('#content').innerHTML='<button type="button" class="secondary" data-page="plus">Retour à Plus</button><div id="mixer-page"></div>';
+  mixerPage=mountMixerPage($('#mixer-page'),{online:Boolean(online&&server),request:path=>network(path)});
  }else if(page==='activity'){
   liveMonitor?.destroy();liveMonitor=undefined;
   if($('#content').dataset.renderedPage!=='activity'||!$('#streamlabs-feed')){
@@ -800,7 +807,7 @@ async function refresh(force=false){
    const [audio,clips]=await Promise.all([needsAudio?network('/api/v1/soundboard').catch(()=>null):null,needsReplay?network('/api/v2/replay').catch(error=>({active:null,error:error.message})):replay]);
    replay=clips;const bundle=autonomy.store.view();data=bundle.data;sounds=bundle.sounds;
    if(audio){sounds={...audio,sounds:sounds.sounds.map(s=>({...s,sourceAvailable:audio.sounds.find(x=>x.id===s.id)?.sourceAvailable===true}))};}soundError='';const reconnect=!online;online=true;shell();updateLiveMonitor();
-   if(force||reconnect||(!dialog.open&&['home','plus','health','live','activity','deck','sounds','planning'].includes(page)&&!pointerHeld&&!document.activeElement?.matches('input, textarea, select, [contenteditable]')))render({passive:!force});
+   if(force||reconnect||(!dialog.open&&['home','plus','health','mixer','live','activity','deck','sounds','planning'].includes(page)&&!pointerHeld&&!document.activeElement?.matches('input, textarea, select, [contenteditable]')))render({passive:!force});
    void configureMacros({synchronized:true});
   }catch(e){online=false;void configureMacros({suspend:!isTemporaryControllerFailure(e)});replay={active:null,error:'Régie déconnectée'};if(sounds){sounds.currentPlayback=null;sounds.activePlaybacks=[];}shell();updateLiveMonitor();if(!dialog.open)render({passive:!force});if(force)toast(e.message);}
  })().finally(()=>{refreshFlight=undefined;});

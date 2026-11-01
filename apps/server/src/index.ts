@@ -1,6 +1,8 @@
 import { createHealthRouter } from './streamcockpit-health/index.js';
 import { mapHostHealth } from './streamcockpit-health/host-adapter.js';
 import { ObsHealthObservation } from './streamcockpit-health/obs-observation.js';
+import { ObsMixerObservation } from './streamcockpit-mixer-observation.js';
+import { createMixerRouter, mixerHostEligible } from './streamcockpit-mixer-router.js';
 import { registerPairingRequests } from './pairing-requests.js';
 import {createPlatformObserver} from './platform-observer.js';
 import { AudioDestinations, RoleAudioPlayback } from './audio-destinations.js';
@@ -659,6 +661,7 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
   const discordClient = () => new DiscordClient(discordToken, options.discordFetch ?? fetch);
   const obs = new ObsClient(local.settings.obsUrl, currentObsPassword, { logger });
   const obsHealthObservation = new ObsHealthObservation();
+  const obsMixerObservation = new ObsMixerObservation();
   const savedTokens = await secrets.getTwitchTokens() ?? {};
   const twitchClientId = options.twitchClientId ?? process.env.TWITCH_CLIENT_ID ?? '';
   const twitch = new TwitchClient({
@@ -1933,6 +1936,23 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
       twitch: platformLive.twitch,
       obs: obsHealthObservation,
     }, Date.now()),
+  }));
+
+  // F05: audio gain/mute from notifications emitted by the local OBS host.
+  // Reading never polls OBS and cannot modify gain, VOD routing or Spotify.
+  app.use('/api/v1/streamcockpit-mixer', createMixerRouter({
+    canRead: async request => {
+      if (options.obsEnabled === false || options.timerAuthority === false) return false;
+      // Only the trusted enabled Windows OBS executor can disclose host audio.
+      // An unidentified legacy/controller runtime stays unavailable.
+      const device = await options.deviceDescriptor?.().catch(() => undefined);
+      if (!mixerHostEligible(device)) return false;
+      if (isLocalRequest(request)) return true;
+      const credential = request.headers.authorization?.match(/^Device (\S+)$/)?.[1];
+      const id = credential ? remoteAuth.authenticate(credential) : null;
+      return Boolean(id && remoteAuth.permits(id, ['observe']));
+    },
+    readSnapshot: () => obsMixerObservation.read(Date.now()),
   }));
 
   const health = (_req: express.Request, res: express.Response) => res.json({
@@ -3305,6 +3325,7 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
   };
   const unsubscribeObs = obs.onStateChanged(() => {
     obsHealthObservation.observe(obs.state);
+    obsMixerObservation.observe(obs.state, obs.connectionGeneration);
     autoStartReplay();
     const obsPayload = { connected: obs.state.connected, streaming: obs.state.streaming, streamingKnown: obs.state.streamingKnown !== false, scene: obs.state.scene };
     eventCore.publish({ type: 'obs.state.changed', source: 'obs', payload: obsPayload });

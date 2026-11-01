@@ -115,6 +115,7 @@ export function renderMobilePlus({data,online,server,esc}){
     <h2 class="cockpit-section-title">Mes outils</h2>
     <div class="cockpit-link-grid">
       ${link('Centre de santé','Observations horodatées · lecture seule','data-page="health"')}
+      ${link('🎚 Mixeur OBS','Gains et muets observés sur le fixe · lecture seule','data-page="mixer"')}
       ${link('⚙ Configuration','OBS, Twitch, Google Agenda, services','data-page="settings"')}
       ${link('☷ Gestion','Bibliothèque audio, actions, planning','data-page="manage"')}
       ${link('◉ Appareils et connexion','Association et empreinte de la régie','data-task="connection"')}
