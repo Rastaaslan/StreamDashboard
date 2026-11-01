@@ -406,7 +406,9 @@
         "tests/streamcockpit3-clipforge.test.ts"
       ],
       "hardwareEvidence": [],
-      "blockers": [],
+      "blockers": [
+        "FIXE Windows NTFS: directory fsync returns EPERM; isolated F09-Q durable adapter has 10/44 failing tests, no safe Windows persistence qualified (2026-11-01)"
+      ],
       "ownerJob": "streamcockpit/3.0-lot-d",
       "integrationNote": "Wave3 offline export plan, no Moments-to-ClipForge binding or real media encode"
     },
