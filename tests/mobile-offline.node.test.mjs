@@ -22,7 +22,13 @@ async function startupModules(entry = 'index.html') {
     if (modules.has(url)) continue;
     const source = await readFile(localFile(url), 'utf8');
     modules.set(url, source);
-    for (const match of source.matchAll(/\bimport\(\s*['"]([^'"]+)['"]\s*\)/g)) pending.push(new URL(match[1], url).href);
+    // Type-only imports in JSDoc are not runtime module dependencies.
+    for (const match of source.matchAll(/\bimport\(\s*['"]([^'"]+)['"]\s*\)/g)) {
+      const prefix = source.slice(0, match.index);
+      const inBlockComment = prefix.lastIndexOf('/*') > prefix.lastIndexOf('*/');
+      const inLineComment = prefix.slice(prefix.lastIndexOf('\n') + 1).trimStart().startsWith('//');
+      if (!inBlockComment && !inLineComment) pending.push(new URL(match[1], url).href);
+    }
     for (const match of source.matchAll(/(?:^|\n)\s*(?:import|export)\s+(?:[^;'"\n]*?\s+from\s*)?['"]([^'"]+)['"]/g)) {
       assert.ok(match[1].startsWith('.'), `Startup import must resolve locally: ${match[1]}`);
       pending.push(new URL(match[1], url).href);

@@ -76,18 +76,25 @@
         {
           "path": "apps/mobile/control/streamcockpit-health/page.js",
           "kind": "2026-11-01 wave2 integrated, tests only; remaining adapters/UI/hardware unqualified"
+        },
+        {
+          "path": "apps/server/src/streamcockpit-health/obs-observation.ts",
+          "kind": "2026-11-01 wave4 integrated with targeted tests, no hardware qualification"
         }
       ],
       "verifiedTests": [
         "tests/streamcockpit3-health.test.ts",
         "tests/streamcockpit3-health-api.test.ts",
-        "tests/streamcockpit3-health-integration.test.ts"
+        "tests/streamcockpit3-health-integration.test.ts",
+        "tests/streamcockpit3-health-observation.test.ts",
+        "tests/streamcockpit3-health-observation-hook.test.ts",
+        "tests/streamcockpit3-health-observation-http.test.ts"
       ],
       "hardwareEvidence": [],
       "blockers": [],
       "ownerJob": "streamcockpit/3.0-lot-a",
       "integrationJob": "streamcockpit/3.0-lot-e",
-      "integrationNote": "Health read-only HTTP and Android Plus integrated; OBS/mic/DJI/sync samples without trustworthy timestamps remain UNKNOWN"
+      "integrationNote": "Wave4 OBS health comes only from local ObsClient state notifications with host timestamps; health endpoint read-only; no real hardware, micro/DJI/sync UNKNOWN"
     },
     {
       "id": "F02",
@@ -110,17 +117,22 @@
         {
           "path": "apps/server/src/streamcockpit-twitch-router.ts",
           "kind": "2026-11-01 wave3 implemented and integrated; G2 partial only"
+        },
+        {
+          "path": "apps/mobile/control/streamcockpit-twitch-advanced.js",
+          "kind": "2026-11-01 wave4 integrated with targeted tests, no hardware qualification"
         }
       ],
       "verifiedTests": [
         "tests/streamcockpit3-twitch.test.ts",
         "tests/streamcockpit3-twitch-integration.test.ts",
-        "tests/streamcockpit3-twitch-integration-http.test.ts"
+        "tests/streamcockpit3-twitch-integration-http.test.ts",
+        "tests/streamcockpit3-twitch-mobile.test.ts"
       ],
       "hardwareEvidence": [],
       "blockers": [],
       "ownerJob": "streamcockpit/3.0-lot-b",
-      "integrationNote": "Wave3 GET/HEAD capabilities Shield/AutoMod, revocation and permissions; no new mutation, oauth scopes or native UI"
+      "integrationNote": "Wave4 Shield/AutoMod read-only capability panel mounted in Live Monitor; real OAuth scopes and mutation UI not connected"
     },
     {
       "id": "F03",
@@ -248,12 +260,14 @@
       ],
       "verifiedTests": [
         "tests/streamcockpit3-planning.test.ts",
-        "tests/streamcockpit3-planning-ui.test.ts"
+        "tests/streamcockpit3-planning-ui.test.ts",
+        "tests/streamcockpit3-planning-integration.test.ts",
+        "tests/streamcockpit3-planning-integration-browser.test.ts"
       ],
       "hardwareEvidence": [],
       "blockers": [],
       "ownerJob": "streamcockpit/3.0-lot-g",
-      "integrationNote": "Planning suggestions and duplicate drafts only; no Google/Twitch publication integrated"
+      "integrationNote": "Wave4 actual Planning page shows local event suggestions, all Google/Twitch remote availability UNKNOWN and no automatic duplicate/publish"
     },
     {
       "id": "F07",
@@ -301,17 +315,22 @@
         {
           "path": "apps/server/src/streamcockpit-twitch-router.ts",
           "kind": "2026-11-01 wave3 implemented and integrated; G2 partial only"
+        },
+        {
+          "path": "apps/mobile/control/streamcockpit-twitch-advanced.js",
+          "kind": "2026-11-01 wave4 integrated with targeted tests, no hardware qualification"
         }
       ],
       "verifiedTests": [
         "tests/streamcockpit3-twitch.test.ts",
         "tests/streamcockpit3-twitch-integration.test.ts",
-        "tests/streamcockpit3-twitch-integration-http.test.ts"
+        "tests/streamcockpit3-twitch-integration-http.test.ts",
+        "tests/streamcockpit3-twitch-mobile.test.ts"
       ],
       "hardwareEvidence": [],
       "blockers": [],
       "ownerJob": "streamcockpit/3.0-lot-b",
-      "integrationNote": "Wave3 guarded read-only capabilities only; polls/predictions/raids/shoutouts not added"
+      "integrationNote": "Wave4 read-only Twitch advanced capability display; no raids, polls UI, predictions or shoutouts implemented"
     },
     {
       "id": "F09",
@@ -416,7 +435,13 @@
         "tests/streamcockpit3-agent-fencing.test.ts",
         "tests/streamcockpit3-context-integration-browser.test.ts",
         "tests/streamcockpit3-twitch-integration-http.test.ts",
-        "tests/streamcockpit3-clipforge-executor.test.ts"
+        "tests/streamcockpit3-clipforge-executor.test.ts",
+        "docs/streamcockpit-3/LOT_M_WAVE4.md",
+        "docs/streamcockpit-3/LOT_N_WAVE4.md",
+        "docs/streamcockpit-3/LOT_O_WAVE4.md",
+        "tests/streamcockpit3-health-observation-http.test.ts",
+        "tests/streamcockpit3-twitch-mobile.test.ts",
+        "tests/streamcockpit3-planning-integration-browser.test.ts"
       ]
     },
     {
