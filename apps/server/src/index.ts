@@ -4,6 +4,7 @@ import { ObsHealthObservation } from './streamcockpit-health/obs-observation.js'
 import { ObsMixerObservation } from './streamcockpit-mixer-observation.js';
 import { createMixerRouter, mixerHostEligible } from './streamcockpit-mixer-router.js';
 import { createMomentsReadRouter } from './streamcockpit-moments-router.js';
+import { createMomentsManualRouter } from './streamcockpit-moments-manual-router.js';
 import { MomentsPipeline } from './streamcockpit-moments.js';
 import { MomentsFileStorage } from './streamcockpit-moments-file.js';
 import { registerPairingRequests } from './pairing-requests.js';
@@ -496,6 +497,8 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
   };
   const readMoments = async (sessionId: string) => (await observedMomentsPipeline()).exportObserved(sessionId);
   const readMomentSessions = async () => (await observedMomentsPipeline()).listObservedSessions();
+  const recordManualMoment = async (input: { sessionId: string; correlationId: string; title: string; instant: number }) =>
+    (await observedMomentsPipeline()).recordHostManual(input);
   const dataFile = path.resolve(process.env.DATA_FILE ?? path.join(dataDir, 'dashboard.json'));
   const soundLibraryDir = path.resolve(options.soundLibraryDir ?? path.join(dataDir, 'soundboard'));
   const profileFile = path.resolve(options.profileFile ?? path.join(dataDir, 'streamdashboard.yaml'));
@@ -1973,6 +1976,30 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
       return Boolean(id && remoteAuth.permits(id, ['observe']));
     },
     readSnapshot: () => obsMixerObservation.read(Date.now()),
+  }));
+
+  // F09: explicit manual marker, with FIXE-owned live identity and clock.
+  // Never start/stop OBS, infer a session from mobile, or retry a write.
+  app.use('/api/v1/streamcockpit-moments/manual/add', createMomentsManualRouter({
+    authorize: async request => {
+      if (options.obsEnabled === false || options.timerAuthority === false) return undefined;
+      const device = await options.deviceDescriptor?.().catch(() => undefined);
+      if (!mixerHostEligible(device)) return undefined;
+      if (isLocalRequest(request)) return 'host-local';
+      if (!remoteRuntimeEnabled) return undefined;
+      const credential = request.headers.authorization?.match(/^Device (\S+)$/)?.[1];
+      const id = credential ? remoteAuth.authenticate(credential) : null;
+      return id && remoteAuth.permits(id, ['observe', 'clips']) ? id : undefined;
+    },
+    activeSessionId: async () => {
+      if (!obs.state.connected || obs.state.streamingKnown !== true || !obs.state.streaming) return undefined;
+      await streamTrackingQueue;
+      if (!obs.state.connected || obs.state.streamingKnown !== true || !obs.state.streaming) return undefined;
+      const tracked = findTrackedDraft();
+      // Scheduled lives are deliberately not guessed from the planning.
+      return tracked && tracked.id === trackedUnplannedLiveId ? tracked.id : undefined;
+    },
+    recordManual: input => recordManualMoment(input),
   }));
 
   // F09: existing durable marker sessions may be inspected by the FIXE host

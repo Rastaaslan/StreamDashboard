@@ -413,6 +413,10 @@
           "kind": "2026-11-01 FIXE F09 read-only marker and observed-session index routes; paired observe permission before/after disk read, no provider command or live inference"
         },
         {
+          "path": "apps/server/src/streamcockpit-moments-manual-router.ts",
+          "kind": "2026-11-01 FIXE: explicit paired observe+clips POST manual marker, FIXE OBS live/session authority, no provider command or silent retry; simulated HTTP and SQLite tests, not hardware qualified"
+        },
+        {
           "path": "apps/server/src/streamcockpit-moments-sqlite.ts",
           "kind": "2026-11-01 F09 Q Windows SQLite EXTRA durable CAS; process crash tests, hardware power-failure not tested"
         },
@@ -445,6 +449,7 @@
         "tests/streamcockpit3-moments.test.ts",
         "tests/streamcockpit3-moments-mobile.test.ts",
         "tests/streamcockpit3-moments-http.test.ts",
+        "tests/streamcockpit3-moments-manual-guard.test.ts",
         "tests/streamcockpit3-moments-observed.test.ts",
         "tests/streamcockpit3-moments-sqlite.test.ts",
         "tests/streamcockpit3-moments-page.test.ts",
@@ -453,7 +458,7 @@
       ],
       "hardwareEvidence": [],
       "blockers": [
-        "F09 manual session and explicit read-only index are integrated; no authenticated live moments producer, active session authority, Android physical test or bilateral streaming validation",
+        "F09 explicit manual marker POST is implemented only for a FIXE-verified unplanned OBS live with a tracked host session; scheduled live identity, automatic OBS/Twitch/Streamlabs producer, physical Android and multi-device streaming tests are not qualified",
         "Node 22 node:sqlite experimental; power-loss hardware durability and legacy JSON migration unqualified",
         "FIXE full Vitest after explicit session discovery 1956 PASS / 54 explicitly skipped / 0 FAIL on 237 files; 42 Linux-only ClipForge checks remain non-qualified and Windows encoding/hardware still blocked"
       ],

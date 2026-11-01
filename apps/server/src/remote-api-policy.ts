@@ -39,6 +39,7 @@ const POST_EXACT = new Set([
 export function isRemoteApiAllowed(method: string, pathName: string) {
   const verb = method.toUpperCase();
   if (verb === 'HEAD' && ['/v1/streamcockpit-health', '/v1/streamcockpit-mixer', '/v1/twitch/advanced/capabilities'].includes(pathName)) return true;
+  if (verb === 'POST' && pathName === '/v1/streamcockpit-moments/manual/add') return true;
   if (['GET','HEAD'].includes(verb) && (pathName === '/v1/streamcockpit-moments' ||
       /^\/v1\/streamcockpit-moments\/[A-Za-z0-9_-]{1,128}$/.test(pathName))) return true;
   // Paired clients own the shared control surface. OAuth secrets remain on the host.
@@ -81,6 +82,7 @@ export const remoteApiPolicySnapshot = {
 export function requiredDevicePermissions(method:string,path:string,body:unknown,actions:DeckAction[]=[]):DevicePermission[] {
   if(path==='/v1/twitch/advanced/capabilities')return ['chat'];
   if(path==='/v1/streamcockpit-health'||path==='/v1/streamcockpit-mixer')return ['observe'];
+  if(method==='POST'&&path==='/v1/streamcockpit-moments/manual/add')return ['observe','clips'];
   if(path==='/v1/streamcockpit-moments'||/^\/v1\/streamcockpit-moments\/[A-Za-z0-9_-]{1,128}$/.test(path))return ['observe'];
   if(path==='/v2/sounds/export')return ['configuration','audio'];
   if(path==='/v2/planning/handoff')return ['configuration','planning'];

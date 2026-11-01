@@ -76,6 +76,34 @@ export class MomentsPipeline {
     }
     throw new Error('MOMENTS_BUSY');
   }
+  /** A manual observation comes from the authoritative FIXE clock, not the
+   * phone clock. Retry with the SAME device-scoped correlation ID and title
+   * reconciles the original durable instant; a changed session is a conflict.
+   * Neither this method nor its callers issue external provider commands. */
+  async recordHostManual(value: { sessionId: string; correlationId: string; title: string; instant: number }):
+      Promise<{ moment: Moment; outcome: 'created' | 'replayed' }> {
+    const input = validateMoment({ ...value, source: 'manual', status: 'observed' });
+    for (let attempt = 0; attempt < 16; attempt++) {
+      const raw = await this.storage.read(), state = decode(raw), moments = project(state.requests);
+      const previous = state.requests.find(a => a.correlationId === input.correlationId);
+      if (previous) {
+        if (previous.sessionId !== input.sessionId || previous.source !== 'manual' ||
+            previous.status !== 'observed' || previous.title !== input.title ||
+            previous.sourceEventId !== undefined || previous.clip !== undefined)
+          throw new Error('MOMENT_IDEMPOTENCY_CONFLICT');
+        const moment = moments.find(a => sameRequest(a, previous));
+        if (!moment) throw new Error('CORRUPT_MOMENTS');
+        // Even a replay requires the backend's durable barrier.
+        if (await this.storage.compareAndSwap(raw, raw!)) return { moment, outcome: 'replayed' };
+        continue;
+      }
+      if (moments.length >= 10000) throw new Error('MOMENTS_TOO_MANY');
+      state.requests.push(input);
+      if (await this.storage.compareAndSwap(raw, encode(state)))
+        return { moment: { ...input, sequence: moments.length + 1 }, outcome: 'created' };
+    }
+    throw new Error('MOMENTS_BUSY');
+  }
   async export(sessionId: string) {
     return exportMarkers(sessionId, project(decode(await this.storage.read()).requests));
   }
