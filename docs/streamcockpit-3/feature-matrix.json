@@ -1,0 +1,290 @@
+{
+  "schemaVersion": 1,
+  "project": "Le StreamCockpit 3.0 Full Experience",
+  "baseline": {
+    "date": "2026-11-01",
+    "ref": "1cbb1d9c021eb20e2b4c6c4a8e12dcd0b50d3174",
+    "branch": "streamcockpit/fc1-integration-active-20261101",
+    "qualification": "RC2 feature base, NOT 3.0 certified"
+  },
+  "statusLegend": {
+    "planned": "Not implemented as full feature",
+    "partial": "Some code exists; full scope not qualified",
+    "implemented": "Coded but lacking integration/hardware evidence",
+    "qualified": "All defined acceptance tests and real hardware evidence available"
+  },
+  "features": [
+    {
+      "id": "F00",
+      "name": "Agent V2 autonome + régie maîtresse",
+      "status": "partial",
+      "lot": "A",
+      "dependsOn": [],
+      "acceptance": "Service contrôlant OBS sans fenêtre Electron, identité/permission et minuteur maître vérifiés sur fixe/laptop/Android",
+      "evidence": [
+        {
+          "path": "apps/agent/src/production-obs-writer.ts",
+          "kind": "existing partial implementation only"
+        },
+        {
+          "path": "apps/server/src/index.ts",
+          "kind": "existing partial implementation only"
+        }
+      ],
+      "verifiedTests": [],
+      "hardwareEvidence": [],
+      "blockers": [],
+      "ownerJob": null
+    },
+    {
+      "id": "F01",
+      "name": "Centre de santé intelligent",
+      "status": "partial",
+      "lot": "A",
+      "dependsOn": [
+        "F00"
+      ],
+      "acceptance": "État OBS/Twitch/audio/DJI/réseau et freshness, alertes fondées sur mesures sans faux positif",
+      "evidence": [
+        {
+          "path": "apps/agent/src/health-snapshot-cache.ts",
+          "kind": "existing partial implementation only"
+        },
+        {
+          "path": "apps/server/src/platform-observer.ts",
+          "kind": "existing partial implementation only"
+        }
+      ],
+      "verifiedTests": [],
+      "hardwareEvidence": [],
+      "blockers": [],
+      "ownerJob": null
+    },
+    {
+      "id": "F02",
+      "name": "Modération Twitch avancée",
+      "status": "partial",
+      "lot": "B",
+      "dependsOn": [
+        "F00"
+      ],
+      "acceptance": "Ban/timeout/delete/unban + AutoMod/Shield/historique viewer selon scopes, traces et confirmations",
+      "evidence": [
+        {
+          "path": "apps/server/src/index.ts",
+          "kind": "existing partial implementation only"
+        },
+        {
+          "path": "apps/mobile/control/live-monitor.js",
+          "kind": "existing partial implementation only"
+        }
+      ],
+      "verifiedTests": [],
+      "hardwareEvidence": [],
+      "blockers": [],
+      "ownerJob": null
+    },
+    {
+      "id": "F03",
+      "name": "Régie et macros contextuelles",
+      "status": "partial",
+      "lot": "C",
+      "dependsOn": [
+        "F00",
+        "F01"
+      ],
+      "acceptance": "Règles déterministes scène/jeu/état, prévisualisation, permission, non-rejeu et journal d'exécution",
+      "evidence": [
+        {
+          "path": "apps/server/src/automation-runtime.ts",
+          "kind": "existing partial implementation only"
+        },
+        {
+          "path": "apps/mobile/control/performance-ui.js",
+          "kind": "existing partial implementation only"
+        }
+      ],
+      "verifiedTests": [],
+      "hardwareEvidence": [],
+      "blockers": [],
+      "ownerJob": null
+    },
+    {
+      "id": "F04",
+      "name": "Marqueurs, clips, ClipForge",
+      "status": "partial",
+      "lot": "D",
+      "dependsOn": [
+        "F00"
+      ],
+      "acceptance": "Marqueurs réels OBS/Twitch, fichiers et horodatage, workflow ClipForge vertical validé",
+      "evidence": [
+        {
+          "path": "apps/server/src/replay-auto-start.ts",
+          "kind": "existing partial implementation only"
+        }
+      ],
+      "verifiedTests": [],
+      "hardwareEvidence": [],
+      "blockers": [],
+      "ownerJob": null
+    },
+    {
+      "id": "F05",
+      "name": "Mixeur audio distribué",
+      "status": "partial",
+      "lot": "C",
+      "dependsOn": [
+        "F00",
+        "F01"
+      ],
+      "acceptance": "Sources, gains, mute, routage obs/jeu et piste VOD, confirmations et rollback",
+      "evidence": [
+        {
+          "path": "apps/server/src/audio-destinations.ts",
+          "kind": "existing partial implementation only"
+        }
+      ],
+      "verifiedTests": [],
+      "hardwareEvidence": [],
+      "blockers": [],
+      "ownerJob": null
+    },
+    {
+      "id": "F06",
+      "name": "Planning assisté",
+      "status": "partial",
+      "lot": "C",
+      "dependsOn": [
+        "F00"
+      ],
+      "acceptance": "Suggestions et duplication, récurrences correctes, agenda Google avec confirmation de publication",
+      "evidence": [
+        {
+          "path": "apps/mobile/control/planning.js",
+          "kind": "existing partial implementation only"
+        }
+      ],
+      "verifiedTests": [],
+      "hardwareEvidence": [],
+      "blockers": [],
+      "ownerJob": null
+    },
+    {
+      "id": "F07",
+      "name": "Deck Android adaptatif",
+      "status": "partial",
+      "lot": "C",
+      "dependsOn": [
+        "F03"
+      ],
+      "acceptance": "Banques contextuelles selon jeu/scène/rôle, états confirmés, interaction tactile et déconnexion",
+      "evidence": [
+        {
+          "path": "apps/mobile/control/mobile-panes.js",
+          "kind": "existing partial implementation only"
+        },
+        {
+          "path": "apps/mobile/control/performance-ui.js",
+          "kind": "existing partial implementation only"
+        }
+      ],
+      "verifiedTests": [],
+      "hardwareEvidence": [],
+      "blockers": [],
+      "ownerJob": null
+    },
+    {
+      "id": "F08",
+      "name": "Interactions Twitch enrichies",
+      "status": "planned",
+      "lot": "B",
+      "dependsOn": [
+        "F02"
+      ],
+      "acceptance": "Sondages, prédictions, raids, shoutouts vérifiés et autorisés par OAuth, pas d'action silencieuse",
+      "evidence": [],
+      "verifiedTests": [],
+      "hardwareEvidence": [],
+      "blockers": [],
+      "ownerJob": null
+    },
+    {
+      "id": "F09",
+      "name": "Moments marquants et bilans",
+      "status": "planned",
+      "lot": "D",
+      "dependsOn": [
+        "F04",
+        "F08"
+      ],
+      "acceptance": "Timeline unifiée, repères/clips horodatés et export de bilan validés",
+      "evidence": [
+        {
+          "path": "apps/server/src/streamlabs-history.ts",
+          "kind": "existing partial implementation only"
+        }
+      ],
+      "verifiedTests": [],
+      "hardwareEvidence": [],
+      "blockers": [],
+      "ownerJob": null
+    },
+    {
+      "id": "F10",
+      "name": "Mise à jour sans interruption",
+      "status": "partial",
+      "lot": "D",
+      "dependsOn": [
+        "F00"
+      ],
+      "acceptance": "Livraison staged Agent/clients, garde live, migration, reprise et retour arrière matériel",
+      "evidence": [
+        {
+          "path": "apps/desktop/src/updater.ts",
+          "kind": "existing partial implementation only"
+        }
+      ],
+      "verifiedTests": [],
+      "hardwareEvidence": [],
+      "blockers": [],
+      "ownerJob": null
+    }
+  ],
+  "gates": [
+    {
+      "id": "G0",
+      "status": "qualified",
+      "verifiedEvidence": [
+        "docs/streamcockpit-3/PLAN.md",
+        "tests/streamcockpit-3-roadmap.test.ts",
+        "docs/streamcockpit-3/CONTINUITY.md"
+      ]
+    },
+    {
+      "id": "G1",
+      "status": "open",
+      "verifiedEvidence": []
+    },
+    {
+      "id": "G2",
+      "status": "open",
+      "verifiedEvidence": []
+    },
+    {
+      "id": "G3",
+      "status": "open",
+      "verifiedEvidence": []
+    },
+    {
+      "id": "G4",
+      "status": "open",
+      "verifiedEvidence": []
+    },
+    {
+      "id": "G5",
+      "status": "open",
+      "verifiedEvidence": []
+    }
+  ]
+}
