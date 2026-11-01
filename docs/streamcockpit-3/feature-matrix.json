@@ -383,15 +383,34 @@
         {
           "path": "apps/desktop/src/streamcockpit-upgrade.ts",
           "kind": "2026-11-01 wave2 integrated, tests only; remaining adapters/UI/hardware unqualified"
+        },
+        {
+          "path": "apps/desktop/src/streamcockpit-upgrade-preflight.ts",
+          "kind": "2026-11-01 lot P read-only fail-closed preflight integrated; no installer enabled"
+        },
+        {
+          "path": "tests/streamcockpit3-upgrade-integration.test.ts",
+          "kind": "2026-11-01 lot P read-only fail-closed preflight integrated; no installer enabled"
+        },
+        {
+          "path": "tests/streamcockpit3-upgrade-integration-updater.test.ts",
+          "kind": "2026-11-01 lot P read-only fail-closed preflight integrated; no installer enabled"
         }
       ],
       "verifiedTests": [
-        "tests/streamcockpit3-upgrade.test.ts"
+        "tests/streamcockpit3-upgrade.test.ts",
+        "tests/streamcockpit3-upgrade-integration.test.ts",
+        "tests/streamcockpit3-upgrade-integration-updater.test.ts",
+        "tests/desktop-updater-safety.test.ts",
+        "tests/desktop-restart-safety.test.ts"
       ],
       "hardwareEvidence": [],
-      "blockers": [],
-      "ownerJob": "streamcockpit/3.0-lot-h",
-      "integrationNote": "Staged-update/rollback contracts only; no executable installer integrated"
+      "blockers": [
+        "Real Windows/Android trusted signing and staged bytes verification unavailable",
+        "Durable installer, migration/recovery and rollback on hardware not integrated"
+      ],
+      "ownerJob": "streamcockpit/3.0-lot-p",
+      "integrationNote": "F10 lot P preflight read-only integrated 2026-11-01; 71/71 targeted PASS, types/security PASS; transaction Squirrel, real signatures and hardware rollback absent. No quitAndInstall enabled."
     }
   ],
   "gates": [
