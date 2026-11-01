@@ -48,3 +48,46 @@ it.skipIf(process.env.MOMENTS_BROWSER_TEST !== '1')('F09 manual creation is expl
     expect(external).toEqual([]);
   }finally{await browser.close();}
 },30000);
+
+it.skipIf(process.env.MOMENTS_BROWSER_TEST !== '1')('F09 Edge 320px recovers an uncertain marker via GET without POST replay',async()=>{
+  const bundle=await build({stdin:{contents:"import {mountMomentsPage} from './apps/mobile/control/streamcockpit-moments-page.js';globalThis.mountMomentsPage=mountMomentsPage;",resolveDir:process.cwd()},
+    bundle:true,write:false,format:'iife',platform:'browser'});
+  const browser=await chromium.launch({channel:'msedge',headless:true});
+  try{
+    const page=await browser.newPage({viewport:{width:320,height:720},hasTouch:true});
+    const external:string[]=[];
+    await page.route('**/*',route=>{external.push(route.request().url());return route.abort();});
+    await page.setContent('<meta name="viewport" content="width=device-width,initial-scale=1"><main id="root" class="compact-app" style="width:100%;min-width:0"></main>');
+    await page.addStyleTag({content:readFileSync('apps/mobile/control/streamcockpit-mobile-v2.css','utf8')});
+    await page.addScriptTag({content:bundle.outputFiles[0].text});
+    await page.evaluate(()=>{
+      const w=window as any;
+      w.calls=[];
+      w.presenter=w.mountMomentsPage(document.getElementById('root'),{
+        online:true,request:async (path:string,body?:unknown)=>{
+          w.calls.push({path,body});
+          if(path.endsWith('/manual/add'))throw new Error('lost response after COMMIT');
+          if(path.includes('/manual/status/'))return {schemaVersion:1,kind:'streamcockpit-manual-marker-status',
+            status:'confirmed',sessionId:'session_1',instant:1800000000000,sequence:1,source:'manual'};
+          throw new Error('Unexpected API read');
+        },
+      });
+    });
+    await page.getByLabel('Nom du repère manuel').fill('Repère privé');
+    await page.getByRole('button',{name:'Enregistrer un repère manuel'}).click();
+    const verify=page.getByRole('button',{name:/Vérifier le repère incertain/});
+    await expect.poll(()=>verify.isVisible()).toBe(true);
+    expect(await page.getByRole('button',{name:'Enregistrer un repère manuel'}).isDisabled()).toBe(true);
+    await verify.click();
+    await expect.poll(()=>page.getByLabel('Identifiant exact de session').inputValue()).toBe('session_1');
+    expect(await page.getByRole('button',{name:'Enregistrer un repère manuel'}).isEnabled()).toBe(true);
+    const calls=await page.evaluate(()=>(window as any).calls);
+    expect(calls).toHaveLength(2);
+    expect(calls[0].path).toBe('/api/v1/streamcockpit-moments/manual/add');
+    expect(calls[1].path).toBe('/api/v1/streamcockpit-moments/manual/status/'+calls[0].body.requestId);
+    expect(await page.evaluate(()=>document.documentElement.scrollWidth<=320)).toBe(true);
+    await page.evaluate(()=>(window as any).presenter.unavailable());
+    expect(await page.locator('main').textContent()).not.toContain('Repère privé');
+    expect(external).toEqual([]);
+  }finally{await browser.close();}
+},30000);

@@ -104,6 +104,17 @@ export class MomentsPipeline {
     }
     throw new Error('MOMENTS_BUSY');
   }
+  /** Reconcile a lost manual-write response by reading only the host journal.
+   * A missing row is NOT proof that an in-flight transaction cannot commit;
+   * callers must never turn it into permission to retry a write automatically.
+   */
+  async lookupHostManual(correlationId: string): Promise<{ journalObserved: boolean; moment?: Moment }> {
+    const raw = await this.storage.read();
+    if (raw === null) return { journalObserved: false };
+    const moments = project(decode(raw).requests);
+    return { journalObserved: true,
+      moment: moments.find(moment => moment.source === 'manual' && moment.correlationId === correlationId) };
+  }
   async export(sessionId: string) {
     return exportMarkers(sessionId, project(decode(await this.storage.read()).requests));
   }

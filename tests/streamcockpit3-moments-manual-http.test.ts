@@ -19,6 +19,7 @@ async function fixture(run: (f: {
   setHost: (value: boolean) => void;
   setTime: (value: number) => void;
   setWriter: (writer: ((input: {sessionId: string; correlationId: string; title: string; instant: number}) => ReturnType<MomentsPipeline['recordHostManual']>) | undefined) => void;
+  setReader: (reader: ((correlationId: string) => ReturnType<MomentsPipeline['lookupHostManual']>) | undefined) => void;
 }) => Promise<void>) {
   const dir = await mkdtemp(join(tmpdir(), 'sc3-manual-http-'));
   const pipeline = new MomentsPipeline(new MomentsSqliteStorage(join(dir, 'journal.sqlite')));
@@ -27,9 +28,10 @@ async function fixture(run: (f: {
   const paired = auth.pair(pairing.id, pairing.code, 'Android test');
   let session: string | undefined = 'session_1', host = true, time = 1_800_000_000_000;
   let writer: ((input: { sessionId: string; correlationId: string; title: string; instant: number }) => ReturnType<MomentsPipeline['recordHostManual']>) | undefined;
+  let reader: ((correlationId: string) => ReturnType<MomentsPipeline['lookupHostManual']>) | undefined;
   const app = express();
   app.use(express.json({ limit: '4kb' }));
-  app.use('/api/v1/streamcockpit-moments/manual/add', createMomentsManualRouter({
+  app.use('/api/v1/streamcockpit-moments/manual', createMomentsManualRouter({
     authorize(request: Request) {
       const credential = request.headers.authorization?.match(/^Device (\S+)$/)?.[1];
       const id = credential ? auth.authenticate(credential) : null;
@@ -37,6 +39,7 @@ async function fixture(run: (f: {
     },
     activeSessionId: async () => session,
     recordManual: input => (writer ?? (value => pipeline.recordHostManual(value)))(input),
+    lookupManual: correlationId => (reader ?? (id => pipeline.lookupHostManual(id)))(correlationId),
     now: () => time,
   }));
   const server = createServer(app);
@@ -49,6 +52,7 @@ async function fixture(run: (f: {
     await run({ url, auth, id: paired.deviceId, credential: paired.credential, pipeline,
       setSession: id => {session = id;}, setHost: value => {host = value;},
       setTime: value => {time = value;}, setWriter: value => {writer = value;},
+      setReader: value => {reader = value;},
     });
   } finally {
     if (server.listening) {
@@ -83,7 +87,7 @@ it('F09 authorizes only explicit clipped paired manual writes, no guessed live o
     expect((await call(f.url, f.credential, invalid)).status).toBe(400);
   expect(await f.pipeline.listObservedSessions()).toBeUndefined();
   const source = readFileSync('apps/server/src/index.ts', 'utf8');
-  expect(source).toContain("app.use('/api/v1/streamcockpit-moments/manual/add'");
+  expect(source).toContain("app.use('/api/v1/streamcockpit-moments/manual'");
   expect(source).toContain('obs.state.streamingKnown !== true');
   expect(source).toContain('findTrackedDraft()');
 }));
@@ -138,4 +142,82 @@ it('F09 fails closed after uncertain SQLite result; never reruns or echoes backe
   expect(text).not.toContain('SUPER_SECRET');
   expect(writes).toBe(1);
   expect(await f.pipeline.listObservedSessions()).toBeUndefined();
+}));
+
+const statusUrl = (url: string, id = requestId) => url.replace('/manual/add', '/manual/status/' + id);
+
+it('F09 read-only status resolves a committed-but-unacknowledged write without a second POST', () => fixture(async f => {
+  expect(isRemoteApiAllowed('GET', '/v1/streamcockpit-moments/manual/status/' + requestId)).toBe(true);
+  expect(isRemoteApiAllowed('POST', '/v1/streamcockpit-moments/manual/status/' + requestId)).toBe(false);
+  expect(requiredDevicePermissions('GET', '/v1/streamcockpit-moments/manual/status/' + requestId, {})).toEqual(['observe','clips']);
+  const absent = await call(statusUrl(f.url), f.credential, undefined, 'GET');
+  expect(absent.status).toBe(503);
+  expect((await absent.json()).error.code).toBe('MOMENTS_NOT_OBSERVED');
+  let writes = 0;
+  f.setWriter(async input => {
+    writes++;
+    await f.pipeline.recordHostManual(input);
+    throw new Error('response lost after COMMIT');
+  });
+  const lost = await call(f.url, f.credential);
+  expect(lost.status).toBe(503);
+  expect((await lost.json()).error.code).toBe('MOMENTS_WRITE_UNCERTAIN');
+  const check = await call(statusUrl(f.url), f.credential, undefined, 'GET');
+  expect(check.status).toBe(200);
+  expect(check.headers.get('cache-control')).toContain('no-store');
+  const result = await check.json();
+  expect(result).toEqual({schemaVersion:1,kind:'streamcockpit-manual-marker-status',
+    status:'confirmed',sessionId:'session_1',instant:1800000000000,sequence:1,source:'manual'});
+  expect(JSON.stringify(result)).not.toContain('Premier repère');
+  expect(writes).toBe(1);
+  expect((await f.pipeline.exportObserved('session_1'))?.markers).toHaveLength(1);
+}));
+
+it('F09 status hides other devices, requires clips and never treats not-found as a safe retry', () => fixture(async f => {
+  expect((await call(f.url, f.credential)).status).toBe(201);
+  const noMatch = await call(statusUrl(f.url,'9c712f02-0339-419b-820a-8cff8aff94e2'), f.credential, undefined, 'GET');
+  expect(noMatch.status).toBe(200);
+  expect(await noMatch.json()).toEqual({schemaVersion:1,kind:'streamcockpit-manual-marker-status',status:'not_found_at_read'});
+  expect((await call(statusUrl(f.url), 'invalid', undefined, 'GET')).status).toBe(403);
+  const second = f.auth.createPairing(undefined, false, ['observe','clips']);
+  const device = f.auth.pair(second.id,second.code,'Other Android');
+  expect((await (await call(statusUrl(f.url),device.credential,undefined,'GET')).json()).status).toBe('not_found_at_read');
+  f.auth.setPermissions(f.id, ['observe']);
+  expect((await call(statusUrl(f.url),f.credential,undefined,'GET')).status).toBe(403);
+  f.auth.revoke(f.id);
+  expect((await call(statusUrl(f.url),f.credential,undefined,'GET')).status).toBe(403);
+  expect((await call(statusUrl(f.url,'malformed'),device.credential,undefined,'GET')).status).toBe(400);
+  expect((await call(statusUrl(f.url),device.credential,{},'POST')).status).toBe(405);
+}));
+
+it('F09 status rechecks authorization after disk read and suppresses revoked receipts', () => fixture(async f => {
+  expect((await call(f.url, f.credential)).status).toBe(201);
+  let started!: () => void, release!: () => void;
+  const began = new Promise<void>(resolve => { started = resolve; });
+  const gate = new Promise<void>(resolve => { release = resolve; });
+  f.setReader(async correlationId => {
+    const result = await f.pipeline.lookupHostManual(correlationId);
+    started(); await gate; return result;
+  });
+  const pending = call(statusUrl(f.url), f.credential, undefined, 'GET');
+  await began;
+  f.auth.revoke(f.id);release();
+  const response = await pending;
+  expect(response.status).toBe(403);
+  const body = await response.text();
+  expect(body).not.toContain('session_1');
+  expect(body).not.toContain('1800000000000');
+}));
+
+it('F09 status prioritizes revocation even after a failed or unreadable journal', () => fixture(async f => {
+  let started!: () => void, release!: () => void;
+  const began = new Promise<void>(resolve => { started = resolve; });
+  const gate = new Promise<void>(resolve => { release = resolve; });
+  f.setReader(async () => { started(); await gate; throw new Error('secret from disk'); });
+  const pending = call(statusUrl(f.url), f.credential, undefined, 'GET');
+  await began;
+  f.auth.revoke(f.id);release();
+  const response = await pending;
+  expect(response.status).toBe(403);
+  expect(await response.text()).not.toContain('secret from disk');
 }));

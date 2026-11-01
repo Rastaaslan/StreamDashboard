@@ -13,10 +13,11 @@ export function createMomentsManualRouter(options: {
   authorize(request: Request): string | undefined | Promise<string | undefined>;
   activeSessionId(): string | undefined | Promise<string | undefined>;
   recordManual(value: { sessionId: string; correlationId: string; title: string; instant: number }): Promise<ManualResult>;
+  lookupManual(correlationId: string): Promise<{ journalObserved: boolean; moment?: Moment }>;
   now?: () => number;
 }) {
   const router = Router();
-  router.all('/', async (request, response) => {
+  router.all('/add', async (request, response) => {
     response.set('Cache-Control', 'no-store');
     if (request.method !== 'POST') {
       response.set('Allow', 'POST').status(405).json({ error: { code: 'METHOD_NOT_ALLOWED' } });
@@ -97,6 +98,59 @@ export function createMomentsManualRouter(options: {
       instant: result.moment.instant, sequence: result.moment.sequence,
       source: 'manual', status: 'observed',
     });
+  });
+  // A read-only, authenticated reconciliation of a possibly committed write.
+  // It never creates a marker, never retries POST and never asserts that an
+  // absent row cannot still be committed by an in-flight request.
+  router.all('/status/:requestId', async (request, response) => {
+    response.set('Cache-Control', 'private, no-store');
+    if (request.method !== 'GET') {
+      response.set('Allow', 'GET').status(405).json({ error: { code: 'METHOD_NOT_ALLOWED' } });
+      return;
+    }
+    let actor: string | undefined;
+    try { actor = await options.authorize(request); } catch { /* deny */ }
+    if (!actor) {
+      response.status(403).json({ error: { code: 'MOMENTS_READ_FORBIDDEN' } });
+      return;
+    }
+    const requestId = request.params.requestId;
+    if (!requestIdPattern.test(requestId)) {
+      response.status(400).json({ error: { code: 'INVALID_MANUAL_MARKER' } });
+      return;
+    }
+    const correlationId = createHash('sha256').update(JSON.stringify([actor, requestId.toLowerCase()])).digest('hex');
+    let result: { journalObserved: boolean; moment?: Moment } | undefined;
+    let failed = false;
+    try { result = await options.lookupManual(correlationId); } catch { failed = true; }
+    let reauthorized: string | undefined;
+    try { reauthorized = await options.authorize(request); } catch { /* deny */ }
+    if (reauthorized !== actor) {
+      response.status(403).json({ error: { code: 'MOMENTS_READ_FORBIDDEN' } });
+      return;
+    }
+    if (failed || !result) {
+      response.status(503).json({ error: { code: 'MOMENTS_UNAVAILABLE' } });
+      return;
+    }
+    if (!result.journalObserved) {
+      response.status(503).json({ error: { code: 'MOMENTS_NOT_OBSERVED' } });
+      return;
+    }
+    const moment = result.moment;
+    if (!moment) {
+      response.json({ schemaVersion: 1, kind: 'streamcockpit-manual-marker-status', status: 'not_found_at_read' });
+      return;
+    }
+    if (moment.correlationId !== correlationId || moment.source !== 'manual' ||
+        moment.status !== 'observed' || !Number.isSafeInteger(moment.instant) ||
+        !Number.isSafeInteger(moment.sequence)) {
+      response.status(503).json({ error: { code: 'MOMENTS_UNAVAILABLE' } });
+      return;
+    }
+    response.json({ schemaVersion: 1, kind: 'streamcockpit-manual-marker-status',
+      status: 'confirmed', sessionId: moment.sessionId, instant: moment.instant,
+      sequence: moment.sequence, source: 'manual' });
   });
   return router;
 }

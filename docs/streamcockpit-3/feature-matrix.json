@@ -435,11 +435,11 @@
         },
         {
           "path": "apps/server/src/streamcockpit-moments-manual-router.ts",
-          "kind": "2026-11-01 FIXE: explicit paired observe+clips POST manual marker, FIXE OBS live/session authority, no provider command or silent retry; simulated HTTP and SQLite tests, not hardware qualified"
+          "kind": "2026-11-01 FIXE: paired observe+clips POST manual marker and GET /manual/status/:requestId: read-only actor-bound reconciliation after uncertain write, permission recheck after all disk outcomes, no duplicate POST or provider command; simulated SQLite HTTP + Edge 320px, no hardware qualification"
         },
         {
           "path": "apps/mobile/control/streamcockpit-moments-manual.js",
-          "kind": "2026-11-01 FIXE F09: explicitly submitted host manual marker with secure UUID, no local outbox or silent retry; clears private input on disconnect; Edge 320px and simulated HTTP verified, physical Android NOT tested"
+          "kind": "2026-11-01 FIXE F09: explicit UUID POST and user-triggered GET-only lookup when the POST result is uncertain; no auto retry, missing receipt remains uncertain, in-memory request ID erased on disconnect; Edge 320px verified, Android hardware NOT tested"
         },
         {
           "path": "apps/server/src/streamcockpit-moments-sqlite.ts",
@@ -447,7 +447,7 @@
         },
         {
           "path": "apps/server/src/streamcockpit-moments.ts",
-          "kind": "2026-11-01 FIXE read-only observed-session index derives marker counts and latest marker timestamp strictly from durably recorded events; unknown journal is never an empty authoritative live"
+          "kind": "2026-11-01 FIXE observed-session index plus lookupHostManual(correlationId) read-only from the single durable marker journal; missing journal or unmatched correlation never certifies a safely retryable write"
         },
         {
           "path": "apps/mobile/control/streamcockpit-moments-page.js",
@@ -491,7 +491,7 @@
         "FIXE full Vitest after explicit session discovery 1956 PASS / 54 explicitly skipped / 0 FAIL on 237 files; 42 Linux-only ClipForge checks remain non-qualified and Windows encoding/hardware still blocked"
       ],
       "ownerJob": "streamcockpit/3.0-lot-d",
-      "integrationNote": "2026-11-01 FIXE F09: existing Q SQLite EXTRA journal and paired observe-only marker route extended with GET/HEAD index of exclusively durable marker sessions (1k sessions/10k markers max), no live or duration inference. Plus now explicitly lists, selects then consults; no automatic polling, second authority, marker title exposure in index, or local persistence; late responses and disconnect clear private state. 23/23 targeted F09 PASS including real Edge 320px; full FIXE Vitest 1956 PASS / 54 skipped / 0 FAIL (237 files); Node 349 PASS / 6 skipped / 0 FAIL (355 cases); TypeScript, browser types, security 803 files PASS; dev build 125 assets and shipped-JS 132 PASS. A full pass initially lacked OpenSSL in test PATH; rerun with process-only Git OpenSSL passed. No live producer, real Android hardware, signed candidate, Windows ClipForge or power-loss proof; G2 remains partial."
+      "integrationNote": "2026-11-01 FIXE F09: existing Q SQLite EXTRA journal and paired observe-only marker route extended with GET/HEAD index of exclusively durable marker sessions (1k sessions/10k markers max), no live or duration inference. Plus now explicitly lists, selects then consults; no automatic polling, second authority, marker title exposure in index, or local persistence; late responses and disconnect clear private state. 23/23 targeted F09 PASS including real Edge 320px; full FIXE Vitest 1956 PASS / 54 skipped / 0 FAIL (237 files); Node 349 PASS / 6 skipped / 0 FAIL (355 cases); TypeScript, browser types, security 803 files PASS; dev build 125 assets and shipped-JS 132 PASS. A full pass initially lacked OpenSSL in test PATH; rerun with process-only Git OpenSSL passed. 2026-11-01 23h FIXE: GET read-only manual marker status by original actor/UUID, refuses revoked access even after disk failure, manual mobile reconciliation of possibly committed lost POST, no silent replay or safe-retry claim for not_found. 22/22 targeted F09 including 2 true Edge touch 320px, full Vitest 1981 PASS / 58 skipped / 0 FAIL (243 files); types/browser-types, security 814 files, dev build 127 assets, shipped JS 134 files PASS. No live producer, real Android hardware, signed candidate, Windows ClipForge or power-loss proof; G2 remains partial."
     },
     {
       "id": "F10",

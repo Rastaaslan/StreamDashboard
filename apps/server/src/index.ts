@@ -497,6 +497,7 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
   };
   const readMoments = async (sessionId: string) => (await observedMomentsPipeline()).exportObserved(sessionId);
   const readMomentSessions = async () => (await observedMomentsPipeline()).listObservedSessions();
+  const lookupManualMoment = async (correlationId: string) => (await observedMomentsPipeline()).lookupHostManual(correlationId);
   const recordManualMoment = async (input: { sessionId: string; correlationId: string; title: string; instant: number }) =>
     (await observedMomentsPipeline()).recordHostManual(input);
   const dataFile = path.resolve(process.env.DATA_FILE ?? path.join(dataDir, 'dashboard.json'));
@@ -1980,7 +1981,7 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
 
   // F09: explicit manual marker, with FIXE-owned live identity and clock.
   // Never start/stop OBS, infer a session from mobile, or retry a write.
-  app.use('/api/v1/streamcockpit-moments/manual/add', createMomentsManualRouter({
+  app.use('/api/v1/streamcockpit-moments/manual', createMomentsManualRouter({
     authorize: async request => {
       if (options.obsEnabled === false || options.timerAuthority === false) return undefined;
       const device = await options.deviceDescriptor?.().catch(() => undefined);
@@ -2000,6 +2001,7 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
       return tracked && tracked.id === trackedUnplannedLiveId ? tracked.id : undefined;
     },
     recordManual: input => recordManualMoment(input),
+    lookupManual: correlationId => lookupManualMoment(correlationId),
   }));
 
   // F09: existing durable marker sessions may be inspected by the FIXE host
