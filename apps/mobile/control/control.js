@@ -574,7 +574,7 @@ function render({passive=false}={}){
   liveMonitor?.destroy();liveMonitor=undefined;
   streamlabsFeed?.destroy();streamlabsFeed=undefined;streamlabsFeedRoot=undefined;
   $('#content').innerHTML='<button type="button" class="secondary" data-page="plus">Retour à Plus</button><div id="moments-page"></div>';
-  momentsPage=mountMomentsPage($('#moments-page'),{online:Boolean(online&&server),request:path=>network(path)});
+  momentsPage=mountMomentsPage($('#moments-page'),{online:Boolean(online&&server),request:(path,body)=>network(path,body)});
  }else if(page==='activity'){
   liveMonitor?.destroy();liveMonitor=undefined;
   if($('#content').dataset.renderedPage!=='activity'||!$('#streamlabs-feed')){

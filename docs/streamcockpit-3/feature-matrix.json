@@ -417,6 +417,10 @@
           "kind": "2026-11-01 FIXE: explicit paired observe+clips POST manual marker, FIXE OBS live/session authority, no provider command or silent retry; simulated HTTP and SQLite tests, not hardware qualified"
         },
         {
+          "path": "apps/mobile/control/streamcockpit-moments-manual.js",
+          "kind": "2026-11-01 FIXE F09: explicitly submitted host manual marker with secure UUID, no local outbox or silent retry; clears private input on disconnect; Edge 320px and simulated HTTP verified, physical Android NOT tested"
+        },
+        {
           "path": "apps/server/src/streamcockpit-moments-sqlite.ts",
           "kind": "2026-11-01 F09 Q Windows SQLite EXTRA durable CAS; process crash tests, hardware power-failure not tested"
         },
@@ -450,6 +454,9 @@
         "tests/streamcockpit3-moments-mobile.test.ts",
         "tests/streamcockpit3-moments-http.test.ts",
         "tests/streamcockpit3-moments-manual-guard.test.ts",
+        "tests/streamcockpit3-moments-manual-http.test.ts",
+        "tests/streamcockpit3-moments-manual-ui.test.ts",
+        "tests/streamcockpit3-moments-manual-browser.test.ts",
         "tests/streamcockpit3-moments-observed.test.ts",
         "tests/streamcockpit3-moments-sqlite.test.ts",
         "tests/streamcockpit3-moments-page.test.ts",

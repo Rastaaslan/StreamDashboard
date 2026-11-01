@@ -1,4 +1,5 @@
 import { mountMomentsTimeline } from './streamcockpit-moments.js';
+import { mountManualMomentForm } from './streamcockpit-moments-manual.js';
 
 const validSession = /^[A-Za-z0-9_-]{1,128}$/;
 
@@ -9,12 +10,12 @@ export function mountMomentsPage(root, { online, request }) {
   const doc = root.ownerDocument;
   const section = doc.createElement('section');
   section.setAttribute('class', 'cockpit-moments-page');
-  section.setAttribute('aria-label', 'Journal de moments — lecture seule');
+  section.setAttribute('aria-label', 'Journal de moments du FIXE');
 
   const heading = doc.createElement('h2');
   heading.textContent = 'Moments marquants';
   const hint = doc.createElement('p');
-  hint.textContent = 'Consultez une session déjà enregistrée par le fixe. Aucun marqueur n’est créé ici et les sessions ne sont pas devinées.';
+  hint.textContent = 'Consultation des sessions réelles du fixe. Un repère manuel exige un live OBS actif et une session identifiée par le fixe ; rien n’est déduit du téléphone.';
   const form = doc.createElement('form');
   form.setAttribute('aria-label', 'Consulter une session enregistrée');
   const label = doc.createElement('label');
@@ -54,6 +55,15 @@ export function mountMomentsPage(root, { online, request }) {
   root.append(section);
 
   let disposed = false, connected = Boolean(online), timeline, browseGeneration = 0;
+  const manual = mountManualMomentForm(section, {
+    online: connected, request,
+    onRecorded(sessionId) {
+      if (disposed || !connected) return;
+      input.value = sessionId;
+      clear();
+      status.textContent = 'Repère enregistré : sélectionnez Consulter pour vérifier la session du fixe.';
+    },
+  });
   const clear = () => {
     timeline?.destroy();
     timeline = undefined;
@@ -163,6 +173,7 @@ export function mountMomentsPage(root, { online, request }) {
     unavailable() {
       if (disposed) return;
       connected = false;
+      manual.unavailable();
       clear();
       clearBrowse();
       input.value = '';
@@ -174,6 +185,7 @@ export function mountMomentsPage(root, { online, request }) {
     destroy() {
       if (disposed) return;
       disposed = true;
+      manual.destroy();
       clear();
       clearBrowse();
       input.value = '';
