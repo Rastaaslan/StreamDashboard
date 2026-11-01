@@ -124,6 +124,29 @@ it('F09 rechecks authorization after asynchronous disk read; no stale private re
     expect(await result.text()).not.toContain(input.title);
   }));
 
+it('F09 returns 403 after revocation for both missing and failed asynchronous reads', async () => {
+  for (const outcome of ['missing', 'error'] as const) {
+    await fixture(async f => {
+      let signal!: () => void;
+      let begin!: () => void;
+      const begun = new Promise<void>(resolve => { begin = resolve; });
+      f.setRead(() => new Promise<undefined>((resolve, reject) => {
+        signal = () => outcome === 'missing' ? resolve(undefined) : reject(new Error('PRIVATE_TOKEN'));
+        begin();
+      }));
+      const pending = fetch(f.url, { headers: { authorization: `Device ${f.credential}` } });
+      await begun;
+      f.auth.revoke(f.id);
+      signal();
+      const response = await pending;
+      expect(response.status).toBe(403);
+      const body = await response.text();
+      expect(body).toContain('MOMENTS_READ_FORBIDDEN');
+      expect(body).not.toContain('PRIVATE_TOKEN');
+    });
+  }
+});
+
 it('F09 rejects malformed session ids and corrupted persisted journal without overwriting', () =>
   fixture(async f => {
     await f.pipeline.record(input);

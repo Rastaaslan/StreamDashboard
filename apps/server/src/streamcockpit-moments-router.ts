@@ -32,29 +32,41 @@ export function createMomentsReadRouter(options: {
       response.status(400).json({ error: { code: 'INVALID_MOMENTS_SESSION' } });
       return;
     }
+    let exportData: MarkerExport | undefined;
+    let readFailed = false;
     try {
-      const exportData = await options.readExport(sessionId);
-      // A missing file means no producer has established a durable journal:
-      // do NOT advertise an empty but authoritative session.
-      if (!exportData) {
-        response.status(503).json({ error: { code: 'MOMENTS_NOT_OBSERVED' } });
-        return;
-      }
-      if (exportData.sessionId !== sessionId || exportData.schemaVersion !== 1 ||
-          exportData.kind !== 'streamcockpit-markers' || exportData.timebase !== 'unix-ms' ||
-          !Array.isArray(exportData.markers) || exportData.markers.length > 10000) {
-        response.status(503).json({ error: { code: 'MOMENTS_UNAVAILABLE' } });
-        return;
-      }
-      // Pairing, capabilities and host roles can be revoked during the disk read.
+      exportData = await options.readExport(sessionId);
+    } catch {
+      readFailed = true;
+    }
+    // Recheck authorization after *every* storage outcome, including missing
+    // or corrupt journals. A revoked device must get 403, never a stale 503/200.
+    try {
       if (!await options.canRead(request)) {
         response.status(403).json({ error: { code: 'MOMENTS_READ_FORBIDDEN' } });
         return;
       }
-      response.json({ ...exportData, readOnly: true });
     } catch {
-      response.status(503).json({ error: { code: 'MOMENTS_UNAVAILABLE' } });
+      response.status(403).json({ error: { code: 'MOMENTS_READ_FORBIDDEN' } });
+      return;
     }
+    if (readFailed) {
+      response.status(503).json({ error: { code: 'MOMENTS_UNAVAILABLE' } });
+      return;
+    }
+    // A missing file means no producer has established a durable journal:
+    // do NOT advertise an empty but authoritative session.
+    if (!exportData) {
+      response.status(503).json({ error: { code: 'MOMENTS_NOT_OBSERVED' } });
+      return;
+    }
+    if (exportData.sessionId !== sessionId || exportData.schemaVersion !== 1 ||
+        exportData.kind !== 'streamcockpit-markers' || exportData.timebase !== 'unix-ms' ||
+        !Array.isArray(exportData.markers) || exportData.markers.length > 10000) {
+      response.status(503).json({ error: { code: 'MOMENTS_UNAVAILABLE' } });
+      return;
+    }
+    response.json({ ...exportData, readOnly: true });
   });
   return router;
 }
