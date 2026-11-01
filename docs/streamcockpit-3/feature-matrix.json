@@ -37,7 +37,8 @@
       ],
       "hardwareEvidence": [],
       "blockers": [],
-      "ownerJob": "streamcockpit/3.0-lot-a"
+      "ownerJob": "streamcockpit/3.0-lot-a",
+      "integrationJob": "streamcockpit/3.0-lot-e"
     },
     {
       "id": "F01",
@@ -64,7 +65,8 @@
       ],
       "hardwareEvidence": [],
       "blockers": [],
-      "ownerJob": "streamcockpit/3.0-lot-a"
+      "ownerJob": "streamcockpit/3.0-lot-a",
+      "integrationJob": "streamcockpit/3.0-lot-e"
     },
     {
       "id": "F02",
@@ -161,7 +163,7 @@
       "verifiedTests": [],
       "hardwareEvidence": [],
       "blockers": [],
-      "ownerJob": null
+      "ownerJob": "streamcockpit/3.0-lot-f"
     },
     {
       "id": "F06",
@@ -181,7 +183,7 @@
       "verifiedTests": [],
       "hardwareEvidence": [],
       "blockers": [],
-      "ownerJob": null
+      "ownerJob": "streamcockpit/3.0-lot-g"
     },
     {
       "id": "F07",
@@ -268,7 +270,7 @@
       "verifiedTests": [],
       "hardwareEvidence": [],
       "blockers": [],
-      "ownerJob": null
+      "ownerJob": "streamcockpit/3.0-lot-h"
     }
   ],
   "gates": [
@@ -297,7 +299,7 @@
     },
     {
       "id": "G2",
-      "status": "open",
+      "status": "in_progress",
       "verifiedEvidence": []
     },
     {

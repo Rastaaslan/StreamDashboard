@@ -39,3 +39,12 @@
 - `npx vitest run tests/streamcockpit3*.test.ts tests/streamcockpit-3-roadmap.test.ts --maxWorkers=1` : **125 tests PASS / 0 FAIL** sur 7 fichiers (A 14, B 36, C 37, D 35, matrice 3).
 - `npm run build:types` : PASS ; `npm run security:check` : PASS (629 fichiers).
 - Les quatre incréments sont des modules **pas encore branchés dans les parcours utilisateurs**. G1 peut être déclaré qualifié (contrats/modules), G2–G5 restent ouverts. F00–F10 non qualifiés.
+
+## 2026-11-01, deuxième vague lancée (G2 en progression)
+- Worktree canonique au commit `627dca3`, WAVE1 intégrée avec preuves G1. Les quatre processus A-D ont terminé.
+- **Lot E** : relier réellement la télémétrie santé au serveur et à Plus, avec contrôles permission/provenance et tests HTTP/UI.
+- **Lot F** : premier mixeur audio F05, contrat et plan sûr (aucun changement de son OBS réel non confirmé).
+- **Lot G** : planning assisté F06, propositions/doublons/conflits et dates DST avec publication toujours manuelle.
+- **Lot H** : mise à jour transactionnelle F10, validation d'identité, report pendant live/état incertain, reprise/rollback.
+- Quatre nouveaux worktrees `/home/damien/StreamCockpit-3.0-Lot-{E,F,G,H}`, branches correspondantes; tickets propres à chaque lot. Sessions Codex CLI lancées sous faible priorité CPU/I/O. PIDs, logs et résultats : même convention que la vague 1. **Ne pas en lancer de doublon.**
+- Aucun module de wave2 encore accepté/branché à cet instant ; des tests et une revue sont obligatoires avant import. Restent une vague interactions Twitch complètes, ClipForge vertical et autres intégrations de parcours.
