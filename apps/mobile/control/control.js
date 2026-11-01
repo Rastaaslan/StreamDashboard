@@ -219,8 +219,13 @@ function updateMobileTimerStrip(){
  strip.hidden=!compact||!server||!timer;
  if(strip.hidden)return;
  const seconds=online&&timer.running&&timer.deadline?Math.max(0,(timer.deadline-Date.now())/1000):timer.remaining??0;
- strip.querySelector('[data-timer-clock]').textContent=timerClock(seconds);
- strip.querySelector('[data-timer-status]').textContent=timerStatus(timer);
+ const display=timerClock(seconds),status=timerStatus(timer);
+ strip.querySelector('[data-timer-clock]').textContent=display;
+ strip.querySelector('[data-timer-status]').textContent=status;
+ // A passive host refresh can retain Home/Live DOM nodes; reconcile all
+ // clocks immediately from the same authoritative FIXE snapshot.
+ document.querySelectorAll('#content [data-timer-clock]').forEach(node=>{node.textContent=display;});
+ document.querySelectorAll('#content [data-timer-status]').forEach(node=>{node.textContent=status;});
  strip.classList.toggle('timer-strip-offline',!online);
 }
 function shell() {
@@ -598,6 +603,7 @@ function render({passive=false}={}){
  $('#content').dataset.renderedPage=page;
  if(samePerformance){const banks=$('.deck-banks');if(banks)banks.scrollLeft=bankScroll;window.scrollTo(0,scroll);}
  rememberForms();
+ updateMobileTimerStrip();
 }
 function updateStreamlabsFeed(){
  if(!$('#streamlabs-feed')){streamlabsFeed?.destroy();streamlabsFeed=undefined;streamlabsFeedRoot=undefined;return;}

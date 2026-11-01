@@ -742,6 +742,64 @@ test('FC1 Android UX shows exactly five primary tabs, host timer, Live diffusion
   expect(errors).toEqual([]);
 });
 
+test('FC1 Home clock reconciles immediately with fixed-host snapshot without local timer commands', async ({page}) => {
+  await page.setViewportSize({width:320,height:700});
+  const {backend,errors}=await setup(page);
+  await page.locator('aside nav button[data-page="home"]').click();
+  const home=page.locator('.cockpit-shared-timer');
+  const strip=page.locator('#mobile-timer-strip');
+  await expect(home.locator('[data-timer-clock]')).toHaveText('00:05:00');
+  await expect(strip.locator('[data-timer-clock]')).toHaveText('00:05:00');
+  const hostTimer=backend.snapshot.bundle.data.host.state.timer;
+  Object.assign(hostTimer,{running:true,duration:120,remaining:120,deadline:Date.now()+120_000});
+  // No simulated 250-ms paint timer: the host snapshot must update both
+  // visible clocks immediately during refresh.
+  await page.evaluate(()=>{
+    (window as any).intervals.find((item:any)=>item.ms===2500).callback();
+  });
+  await expect(home.locator('[data-timer-clock]')).toHaveText(/^00:0[12]:/);
+  const clocks=await page.locator('#mobile-timer-strip [data-timer-clock], .cockpit-shared-timer [data-timer-clock]')
+    .allTextContents();
+  expect(clocks).toHaveLength(2);
+  expect(clocks[0]).toBe(clocks[1]);
+  await expect(home.locator('[data-timer-status]')).toContainText('En cours sur la régie');
+  await home.getByRole('button',{name:'Gérer'}).click();
+  await expect(page.locator('[data-mobile-pane-group="live"][data-mobile-pane="control"]')).toBeVisible();
+  expect(backend.calls.some(call=>call.includes('/api/v1/commands'))).toBe(false);
+  expect(errors).toEqual([]);
+});
+
+test('FC1 320px Home and Plus preserve nav labels, actions, and Twitch confirmation boundaries',async({page},testInfo)=>{
+  await page.setViewportSize({width:320,height:700});
+  const {backend,errors}=await setup(page);
+  const obs=backend.snapshot.bundle.data.host.state.obs;
+  Object.assign(obs,{connected:true,streaming:true,streamingKnown:true,scene:'LIVE'});
+  backend.snapshot.bundle.data.host.platforms.twitch={live:false,observedAt:'2025-01-01T00:00:00.000Z'};
+  await page.locator('aside nav button[data-page="home"]').click();
+  await page.evaluate(()=>{(window as any).intervals.find((item:any)=>item.ms===2500).callback();});
+  const hero=page.locator('[data-screen="home"] .cockpit-hero');
+  await expect(hero).toContainText('Sortie OBS active · Twitch à confirmer');
+  await expect(hero).not.toContainText('Twitch en direct');
+  await expect(page.locator('.cockpit-status-card').filter({hasText:'Twitch'})).toContainText('État non confirmé');
+  for (const tab of await page.locator('aside nav button:visible').all()) {
+    const bounds=await tab.evaluate(node=>{
+      const button=node.getBoundingClientRect(),label=node.querySelector('span')!.getBoundingClientRect();
+      return {buttonLeft:button.left,buttonRight:button.right,labelLeft:label.left,labelRight:label.right,
+        labelWidth:label.width,scrollWidth:node.querySelector('span')!.scrollWidth};
+    });
+    expect(bounds.labelLeft).toBeGreaterThanOrEqual(bounds.buttonLeft-1);
+    expect(bounds.labelRight).toBeLessThanOrEqual(bounds.buttonRight+1);
+    expect(bounds.scrollWidth).toBeLessThanOrEqual(bounds.labelWidth+1);
+  }
+  if(process.env.SC_CAPTURE_UI)await page.screenshot({path:testInfo.outputPath('fc1-320-home.png'),fullPage:true});
+  await page.locator('aside nav button[data-page="plus"]').click();
+  await expect(page.locator('[data-screen="plus"]')).toBeVisible();
+  await expect(page.locator('#floating-mic-battery')).toBeHidden();
+  if(process.env.SC_CAPTURE_UI)await page.screenshot({path:testInfo.outputPath('fc1-320-plus.png'),fullPage:true});
+  expect(backend.calls.some(call=>call.includes('/api/v1/commands'))).toBe(false);
+  expect(errors).toEqual([]);
+});
+
 test('FC1 host clock and offline guards persist through reconnect across five-tab navigation', async ({page}) => {
   await page.setViewportSize({width:360,height:780});
   const {backend,errors}=await setup(page);

@@ -78,7 +78,35 @@
 .compact-app.mobile-panes-active .workspace main {
   padding-bottom:calc(var(--deck-nav-height) + var(--mobile-pane-nav-height) + env(safe-area-inset-bottom) + 60px);
 }
+/* Only Live owns the floating DJI badge: never obscure Home/Plus actions. */
 .compact-app .floating-mic-battery:not([hidden]) { z-index:7; }
+.compact-app body:not(.live-page) .floating-mic-battery:not([hidden]) {
+  display:none!important;
+}
+.compact-app aside nav button[data-page] span {
+  max-width:100%; white-space:nowrap; overflow:hidden; text-overflow:clip;
+}
+.compact-app .cockpit-shared-timer {
+  padding:15px 16px; border-radius:18px;
+  border:1px solid #84629b; background:linear-gradient(125deg,#38283f,#211d31);
+}
+.compact-app .cockpit-shared-timer-heading,
+.compact-app .cockpit-shared-timer-row {
+  display:flex; align-items:center; justify-content:space-between; gap:10px;
+}
+.compact-app .cockpit-shared-timer-heading {font-size:12px;font-weight:750}
+.compact-app .cockpit-shared-timer-heading small {font-size:10px;color:#cdb9d9;font-weight:550}
+.compact-app .cockpit-shared-timer-row {margin-top:12px}
+.compact-app .cockpit-shared-timer-row strong {
+  display:block; font-size:clamp(28px,9vw,40px);
+  font-variant-numeric:tabular-nums;letter-spacing:.04em;
+}
+.compact-app .cockpit-shared-timer-row p {
+  color:#d7c5e2;font-size:11px;margin:4px 0 0;
+}
+.compact-app .cockpit-shared-timer-row button {
+  flex:0 0 auto;min-height:44px;padding:8px 12px;font-size:12px;
+}
 .compact-app .cockpit-screen { display:grid;gap:15px; }
 .compact-app .cockpit-hero {
   padding:20px 18px 18px;

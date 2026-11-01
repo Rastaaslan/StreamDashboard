@@ -10,10 +10,23 @@ const link=(title,caption,attrs)=>
 
 export function renderMobileHome({data,online,server,live,esc,now=Date.now()}){
   const host=data?.host||{},state=host.state||{},obs=state.obs||{};
-  const connected=Boolean(online&&server),broadcast=connected&&live.anyActive===true;
-  const uncertain=connected&&live.unconfirmed===true;
-  const streamState=!connected?'Indisponible':broadcast?'En direct':uncertain?'À confirmer':'Hors ligne';
+  const connected=Boolean(online&&server);
   const twitch=live.destinations?.twitch||{};
+  // OBS output is not proof of a public Twitch broadcast. Distinguish them.
+  const twitchConfirmed=connected&&twitch.live===true;
+  const obsEmitting=connected&&obs.connected===true&&obs.streaming===true;
+  const uncertain=connected&&live.unconfirmed===true;
+  const streamState=!connected?'Indisponible':twitchConfirmed?'Twitch en direct':
+    obsEmitting?'OBS diffuse · Twitch à vérifier':uncertain?'À confirmer':'Hors ligne';
+  const timer=state.timer||{};
+  const timerSeconds=connected&&timer.running&&timer.deadline?
+    Math.max(0,(timer.deadline-now)/1000):timer.remaining??0;
+  const timerValue=Math.max(0,Math.ceil(Number.isFinite(timerSeconds)?timerSeconds:0));
+  const timerClock=[Math.floor(timerValue/3600),Math.floor(timerValue/60)%60,timerValue%60]
+    .map(value=>String(value).padStart(2,'0')).join(':');
+  const timerLabel=!server?'Régie non associée':!online?'Hôte indisponible':
+    timer.running?'En cours sur la régie':timer.remaining<=0?'Terminé':
+      timer.remaining<timer.duration?'En pause':'Prêt à démarrer';
   const twitchState=!connected?'Non vérifié':twitch.live===true?'Confirmé en direct':
     twitch.live===false?'Hors ligne confirmé':'État non confirmé';
   const obsState=!connected?'Non vérifié':!obs.connected?'Déconnecté':
@@ -32,14 +45,21 @@ export function renderMobileHome({data,online,server,live,esc,now=Date.now()}){
   return `<div class="cockpit-screen" data-screen="home">
     <section class="cockpit-hero">
       <span class="cockpit-kicker">LE STREAMCOCKPIT · ACCUEIL</span>
-      <h1>${broadcast?'Votre direct est en cours':uncertain?'État du live à confirmer':'Votre régie, au même endroit.'}</h1>
+      <h1>${twitchConfirmed?'Twitch en direct':obsEmitting?'Sortie OBS active · Twitch à confirmer':uncertain?'État du live à confirmer':'Votre régie, au même endroit.'}</h1>
       <p>${friendlyHost} · ${connected?'Régie maîtresse connectée':'Régie non joignable ou non associée'}. Les commandes ne partent jamais d'une seconde régie Android.</p>
       <div class="cockpit-hero-status">
-        <span class="cockpit-chip" data-tone="${broadcast?'live':uncertain||!connected?'warn':'neutral'}">${streamState}</span>
+        <span class="cockpit-chip" data-tone="${twitchConfirmed?'live':obsEmitting||uncertain||!connected?'warn':'neutral'}">${streamState}</span>
         <span class="cockpit-chip">⏱ Minuteur du fixe</span>
       </div>
     </section>
     ${!connected?'<div class="cockpit-offline" role="status">Régie indisponible : états non confirmés, commandes de diffusion désactivées. Vérifiez l’association et le réseau.</div>':''}
+    <section class="cockpit-shared-timer" aria-label="Minuteur partagé du PC de stream">
+      <div class="cockpit-shared-timer-heading"><span>⏱ Minuteur du fixe</span><small>Régie maîtresse</small></div>
+      <div class="cockpit-shared-timer-row">
+        <div><strong data-timer-clock>${timerClock}</strong><p data-timer-status>${timerLabel}</p></div>
+        <button type="button" class="secondary" data-task="open-mobile-timer" ${connected?'':'disabled'}>Gérer ›</button>
+      </div>
+    </section>
     <h2 class="cockpit-section-title">État des services</h2>
     <div class="cockpit-status-grid">
       ${service('◉ OBS Studio',obsState,connected&&obs.scene?'Scène : '+esc(obs.scene):'État fourni par le PC de stream',connected&&obs.connected&&obs.streamingKnown!==false?'good':'warn')}
