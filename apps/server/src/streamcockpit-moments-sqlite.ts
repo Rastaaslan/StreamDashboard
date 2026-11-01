@@ -20,7 +20,14 @@ export class MomentsSqliteStorage implements MomentsStorage {
   }
 
   private guardLegacy() {
-    if (existsSync(this.legacyFile)) throw new Error('MOMENTS_LEGACY_MIGRATION_REQUIRED');
+    try {
+      // lstat also detects dangling symlinks. Access denied is not 'missing'.
+      lstatSync(this.legacyFile);
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === 'ENOENT') return;
+      throw new Error('MOMENTS_LEGACY_CHECK_FAILED');
+    }
+    throw new Error('MOMENTS_LEGACY_MIGRATION_REQUIRED');
   }
 
   async read(): Promise<string | null> {

@@ -45,3 +45,10 @@
 - Tests exécutés sur FIXE : SQLite Windows 7/7 PASS, HTTP 6/6 PASS, cinq fichiers F09 cumulés 40 PASS et 11 tests POSIX ignorés sur NTFS. TypeScript PASS, sécurité 685 fichiers PASS, build runtime PASS.
 - Réserves : `node:sqlite` reste expérimental sous Node 22.22.3 ; aucun test matériel Electron empaqueté, ni coupure électrique, ni migration JSON ou production réelle de moments. Suite générale non validée ici. Aucun déploiement ou modification RC2.
 - F09 PARTIAL, G2 in_progress, G3–G5 OPEN. Ne pas intégrer Q avant revue et tests supplémentaires.
+
+## 2026-11-01 16:25 CET — vérification multi-suite et limites de portabilité
+- Adaptateur SQLite NTFS relu : contrôle supplémentaire du mode effectif DELETE, du niveau EXTRA et de l'absence de migration JSON automatique ; vérification lstat (y compris symlink cassé, accès refusé ≠ absent). Journal JSON POSIX historique inchangé.
+- Windows FIXE : cinq fichiers F09 exécutés à nouveau, **46 PASS / 6 skipped POSIX uniquement / 0 FAIL** (52 cas). SQLite 8 PASS, incluant sortie réelle de sous-processus avec commit confirmé et interruption de transaction avant COMMIT ; HTTP 6 PASS, révocation durant lecture confirmée.
+- `npm run build:types` PASS (post lstat) ; `npm run security:check` PASS, **796 fichiers** (post lstat). `git diff --check` PASS. Aucune action OBS/Twitch ou installation.
+- Audit comparatif Windows (maxWorkers=2) : branche canonique préalable **348 PASS / 37 FAIL / 3 skipped** (31 fichiers), Q **365 PASS / 31 FAIL / 9 skipped** (34 fichiers) ; aucun échec additionnel Q, six tests de journal POSIX non applicables sont remplacés par huit scénarios SQLite Windows. Ces suites générales **ne sont PAS vertes** : cas Linux-only avec `/tmp`, attentes de transpilation sensibles aux fins de ligne Windows, et mocks d'exécuteur POSIX ; ne pas attribuer un PASS G2.
+- Preuves durables limitées à transactions SQLite et crash de processus sur disque de test. Absence de test coupure électrique, matériel Electron empaqueté, producteur d'événements, migration JSON, UI Android et signature de production. `node:sqlite` reste expérimental. F09 **PARTIAL** ; G2 **in_progress**, G3–G5 **OPEN**.
