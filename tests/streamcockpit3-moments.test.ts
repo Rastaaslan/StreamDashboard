@@ -122,6 +122,7 @@ describe('durable file adapter and corruption', () => {
     expect((await resumed.record(moment())).outcome).toBe(stage === 'renamed' ? 'replayed' : 'created');
     expect((await resumed.export('session-1')).markers).toHaveLength(1);
   }));
+  // Child process itself has a 10s timeout; shared I/O can exceed Vitest default 5s.
   it.each(['synced-temp', 'renamed'])('recovers after actual process exit at %s only after explicit stale-lock recovery', stage => withFile(async file => {
     // This child touches only the temporary fixture. Exit skips finally blocks.
     const script = `import { MomentsPipeline } from './apps/server/src/streamcockpit-moments.ts';
@@ -137,7 +138,7 @@ describe('durable file adapter and corruption', () => {
     await unlink(`${file}.writer.lock`);
     expect((await resumed.record(moment())).outcome).toBe(stage === 'renamed' ? 'replayed' : 'created');
     expect((await resumed.export('session-1')).markers).toHaveLength(1);
-  }));
+  }), 15_000);
   it('does not overwrite a changed revision or bypass a foreign lock', () => withFile(async file => {
     const storage = new MomentsFileStorage(file);
     await new MomentsPipeline(storage).record(moment());

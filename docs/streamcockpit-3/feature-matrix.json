@@ -43,7 +43,8 @@
       "hardwareEvidence": [],
       "blockers": [],
       "ownerJob": "streamcockpit/3.0-lot-a",
-      "integrationJob": "streamcockpit/3.0-lot-e"
+      "integrationJob": "streamcockpit/3.0-lot-e",
+      "integrationNote": "Health read-only route integrated; autonomous Agent V2 service not qualified"
     },
     {
       "id": "F01",
@@ -80,7 +81,8 @@
       "hardwareEvidence": [],
       "blockers": [],
       "ownerJob": "streamcockpit/3.0-lot-a",
-      "integrationJob": "streamcockpit/3.0-lot-e"
+      "integrationJob": "streamcockpit/3.0-lot-e",
+      "integrationNote": "Health read-only HTTP and Android Plus integrated; OBS/mic/DJI/sync samples without trustworthy timestamps remain UNKNOWN"
     },
     {
       "id": "F02",
@@ -188,7 +190,8 @@
       ],
       "hardwareEvidence": [],
       "blockers": [],
-      "ownerJob": "streamcockpit/3.0-lot-f"
+      "ownerJob": "streamcockpit/3.0-lot-f",
+      "integrationNote": "Mixer telemetry/preview module only; no OBS audio mutation or UI route integrated"
     },
     {
       "id": "F06",
@@ -219,7 +222,8 @@
       ],
       "hardwareEvidence": [],
       "blockers": [],
-      "ownerJob": "streamcockpit/3.0-lot-g"
+      "ownerJob": "streamcockpit/3.0-lot-g",
+      "integrationNote": "Planning suggestions and duplicate drafts only; no Google/Twitch publication integrated"
     },
     {
       "id": "F07",
@@ -316,7 +320,8 @@
       ],
       "hardwareEvidence": [],
       "blockers": [],
-      "ownerJob": "streamcockpit/3.0-lot-h"
+      "ownerJob": "streamcockpit/3.0-lot-h",
+      "integrationNote": "Staged-update/rollback contracts only; no executable installer integrated"
     }
   ],
   "gates": [
@@ -354,7 +359,9 @@
         "tests/streamcockpit3-health-integration.test.ts",
         "tests/streamcockpit3-mixer.test.ts",
         "tests/streamcockpit3-planning.test.ts",
-        "tests/streamcockpit3-upgrade.test.ts"
+        "tests/streamcockpit3-upgrade.test.ts",
+        "tests/controller-bindings-ui.spec.ts",
+        "tests/streamlabs-feed-ui.spec.ts"
       ]
     },
     {
