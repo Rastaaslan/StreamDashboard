@@ -53,6 +53,7 @@ export async function startDesktopRuntime(logger = new DesktopLogger(path.join(a
     remoteError,
     remoteTls:certificate?{pfx:Buffer.from(certificate.pfx,'base64'),passphrase:certificate.passphrase,certificate:certificate.certificate}:undefined,
     obsEnabled,
+    timerAuthority:!controller,
     dataDir: path.join(userData, 'config'),
     soundLibraryDir: path.join(userData, 'soundboard'),
     webDir: path.join(app.getAppPath(), 'apps', 'web'),

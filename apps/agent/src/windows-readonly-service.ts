@@ -1,5 +1,5 @@
 import OBSWebSocket from 'obs-websocket-js';
-import {readFile} from 'node:fs/promises';
+import {readFile,mkdir} from 'node:fs/promises';
 import path from 'node:path';
 import {pathToFileURL} from 'node:url';
 import {observeObsHealth} from './read-only-observer.js';
@@ -9,6 +9,9 @@ import {runManagedReadOnlyAgent,type ReadOnlyConnection} from './managed-readonl
 import {loadManagedAgentNetwork,type ManagedAgentNetwork} from './readonly-network-config.js';
 import {listenManagedReadOnlyGateway,stopManagedReadOnlyGateway} from './readonly-gateway.js';
 import {AgentHealthSnapshotCache} from './health-snapshot-cache.js';
+import {ProductionObsWriter} from './production-obs-writer.js';
+import {realObsWriterOptIn} from './real-obs-transport.js';
+import type {AgentCapability} from '../../../packages/contracts/src/agent-v2.js';
 import type {Server as HttpsServer} from 'node:https';
 
 export type ReadOnlyMode='once'|'monitor';
@@ -28,6 +31,7 @@ export interface ReadOnlyStartup {
   deviceId:string;
   obsConfigPath:string;
   protectedCredentials?:ProtectedObsCredentials;
+  productionWriter?:{controllerDeviceId:string;grants:ReadonlySet<AgentCapability>;journalFile:string};
 }
 export function parseReadOnlyStartup(
   argv:readonly string[],env:NodeJS.ProcessEnv,
@@ -48,11 +52,28 @@ export function parseReadOnlyStartup(
     validateProtectedCredentials(protectedCredentials);
   }
   const mode=argv.includes('--monitor')?'monitor':'once';
+  let productionWriter:ReadOnlyStartup['productionWriter'];
+  const writerVariables=['SD_AGENT_OBS_WRITER_OPT_IN','SD_AGENT_OBS_WRITER_CONTROLLER_ID',
+    'SD_AGENT_OBS_WRITER_GRANTS'];
+  if(writerVariables.some(key=>env[key]!==undefined)){
+    const controllerDeviceId=env.SD_AGENT_OBS_WRITER_CONTROLLER_ID||'';
+    const raw=env.SD_AGENT_OBS_WRITER_GRANTS||'';
+    const grants=raw.split(',').filter(Boolean);
+    if(mode!=='monitor'||env.SD_AGENT_OBS_WRITER_OPT_IN!==realObsWriterOptIn||
+       !/^[A-Za-z0-9_-]{1,96}$/.test(controllerDeviceId)||
+       !grants.length||grants.length>3||new Set(grants).size!==grants.length||
+       grants.some(value=>!['obs.stream.start','obs.stream.stop','obs.scene.set'].includes(value)))
+      throw Error('REAL_OBS_WRITE_OPT_IN_REQUIRED');
+    productionWriter={controllerDeviceId,
+      grants:new Set(grants as AgentCapability[]),
+      journalFile:path.join(env.APPDATA,'StreamCockpit-AgentV2','receipts.json')};
+  }
   if(mode==='once'&&['SD_AGENT_MTLS_OPT_IN','SD_AGENT_MTLS_HOST','SD_AGENT_MTLS_PORT','SD_AGENT_MTLS_DPAPI_DIR']
     .some(key=>env[key]!==undefined))throw Error('MANAGED_AGENT_REQUIRES_MONITOR');
   return {mode,deviceId,obsConfigPath:path.join(env.APPDATA,
     'obs-studio','plugin_config','obs-websocket','config.json'),
-    ...(protectedCredentials?{protectedCredentials}:{})};
+    ...(protectedCredentials?{protectedCredentials}:{}),
+    ...(productionWriter?{productionWriter}:{})};
 }
 export interface LocalObsCredential {url:string;password:string}
 /** Existing local OBS configuration supplies authentication state and port.
@@ -161,15 +182,35 @@ export async function main(
 ):Promise<void> {
   const options=parseReadOnlyStartup(argv,env),signal=new AbortController();
   const cache=new AgentHealthSnapshotCache(options.deviceId);
-  let network:ManagedAgentNetwork|undefined,server:HttpsServer|undefined;
+  let network:ManagedAgentNetwork|undefined,server:HttpsServer|undefined,writer:ProductionObsWriter|undefined;
   const stop=()=>signal.abort();
   process.once('SIGINT',stop);process.once('SIGTERM',stop);
   try{
     if(options.mode==='monitor'){
       network=await loadManagedAgentNetwork(env);
+      if(options.productionWriter&&!network)throw Error('REAL_OBS_WRITER_REQUIRES_PINNED_MTLS');
+      if(options.productionWriter){
+        await mkdir(path.dirname(options.productionWriter.journalFile),{recursive:true,mode:0o700});
+        const credential=await loadLocalObsCredential(options.obsConfigPath,readFile,options.protectedCredentials);
+        try{
+          writer=await ProductionObsWriter.open({
+            optIn:realObsWriterOptIn,url:credential.url,password:credential.password,
+            localDeviceId:options.deviceId,
+            controllerDeviceId:options.productionWriter.controllerDeviceId,
+            grants:options.productionWriter.grants,
+            journalFile:options.productionWriter.journalFile,
+          });
+        }finally{credential.password=''}
+      }
       if(network){
         server=await listenManagedReadOnlyGateway({...network.gateway,
-          now:Date.now,snapshot:()=>cache.read(Date.now())},network.binding);
+          now:Date.now,snapshot:()=>cache.read(Date.now()),
+          ...(writer&&options.productionWriter?{
+            authorizedControllerDeviceId:options.productionWriter.controllerDeviceId,
+            authorityObservation:()=>writer!.observation(),
+            executeObsCommand:(command,actor,confirmed)=>writer!.submit(command,actor,confirmed),
+          }:{}),
+        },network.binding);
         server.once('error',()=>signal.abort());
       }
       await runManagedReadOnlyAgent({deviceId:options.deviceId,signal:signal.signal,
@@ -190,6 +231,7 @@ export async function main(
   }finally{
     signal.abort();cache.invalidate();
     if(server)await stopManagedReadOnlyGateway(server);
+    if(writer)await writer.close();
     network?.dispose();
     process.off('SIGINT',stop);process.off('SIGTERM',stop);
   }

@@ -154,6 +154,8 @@ export interface DashboardServerOptions {
   deviceDescriptor?: () => Promise<InstallationDevice>;
   /** A control-only desktop owns its accounts but must never connect to OBS. */
   obsEnabled?: boolean;
+  /** StreamCockpit: a controller runtime never owns the authoritative stream timer. */
+  timerAuthority?: boolean;
   /** Cancels acquisition; startup settles only after partial resources are closed. */
   startupSignal?: AbortSignal;
   tagEngine?: TagEngine;
@@ -1238,7 +1240,10 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
       }
       if (action.type === 'scene.set') await commands.execute({ type: 'obs.scene', scene: action.value });
       else if (action.type === 'mode.set') await commands.execute(action.value === 'chatting' ? { type: 'scene.chatting' } : parseCommand({ type: 'mode.set', mode: action.value }));
-      else if (action.type === 'timer.add') await commands.execute({ type: 'timer.add', seconds: Number(action.value) });
+      else if (action.type === 'timer.add') {
+        if (options.timerAuthority === false) throw Object.assign(new Error('Minuteur contrôlé uniquement par la régie principale.'), { name:'TIMER_AUTHORITY_REQUIRED' });
+        await commands.execute({ type: 'timer.add', seconds: Number(action.value) });
+      }
       else if (action.type === 'alert.play') await commands.execute({ type: 'obs.media.restart', input: action.value });
       else throw new Error('Action non prise en charge.');
     },
@@ -1459,6 +1464,9 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
     }
     const commandBody = Object.fromEntries(Object.entries(envelope).filter(([key]) => key !== 'commandId' && key !== 'correlationId'));
     const command = remote ? parseRemoteCommand(commandBody, snapshot()) : parseCommand(commandBody);
+    if (options.timerAuthority === false && (command.type.startsWith('timer.') || command.type === 'session.prepare')) {
+      throw Object.assign(new Error('Minuteur contrôlé uniquement par la régie principale.'), { name:'TIMER_AUTHORITY_REQUIRED' });
+    }
     if (command.type === 'session.prepare') await assertRole('cloud');
     else if (/^(obs|session|mode|scene)\./.test(command.type)) await assertRole('obs');
     if (command.type === 'session.start' || command.type === 'session.stop' || command.type === 'obs.stream') {

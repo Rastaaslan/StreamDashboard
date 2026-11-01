@@ -78,7 +78,7 @@ function ensureTray() {
   if (tray || !backgroundEnabled()) return;
   const icon = nativeImage.createFromPath(path.join(app.getAppPath(), 'resources', 'streamdashboard.ico'));
   tray = new Tray(icon);
-  tray.setToolTip('StreamDashboard — agent actif');
+  tray.setToolTip('Le StreamCockpit — agent actif');
   tray.setContextMenu(Menu.buildFromTemplate([
     { label: 'Ouvrir StreamDashboard', click: present },
     { label: 'Quitter l’agent et les macros', click: () => app.quit() },
@@ -221,7 +221,7 @@ function boot(): Promise<void> {
         log('Agent ready without a dashboard window');
         return;
       }
-      window = createDashboardWindow(targetUrl, path.join(import.meta.dirname, 'preload.cjs'), 'StreamDashboard — Démarrage…');
+      window = createDashboardWindow(targetUrl, path.join(import.meta.dirname, 'preload.cjs'), 'Le StreamCockpit — Démarrage…');
       const owner = window;
       let closing = false;
       owner.on('close', () => { closing = true; });
@@ -241,7 +241,7 @@ function boot(): Promise<void> {
         return;
       }
       await loadWindow('data:text/html;charset=utf-8,' + encodeURIComponent(
-        '<!doctype html><meta charset="utf-8"><meta http-equiv="Content-Security-Policy" content="default-src \'none\'; style-src \'unsafe-inline\'"><title>StreamDashboard — Démarrage…</title><body style="background:#080a10;color:#fff;font:20px system-ui;padding:48px"><h1>StreamDashboard</h1><p>Démarrage en cours…</p><p>Vous pouvez fermer cette fenêtre pour annuler.</p></body>'));
+        '<!doctype html><meta charset="utf-8"><meta http-equiv="Content-Security-Policy" content="default-src \'none\'; style-src \'unsafe-inline\'"><title>StreamDashboard — Démarrage…</title><body style="background:#080a10;color:#fff;font:20px system-ui;padding:48px"><h1>Le StreamCockpit</h1><p>Démarrage en cours…</p><p>Vous pouvez fermer cette fenêtre pour annuler.</p></body>'));
       if (quitting) return;
       stopControllerKeys = installControllerKeys(() => window, app.getPath('userData'), uiOrigin,peers.fetch,installation.devices.find(d=>d.id===installation.localDeviceId)!.roles.includes('controller'),autonomous);
       void stopControllerKeys.restore?.();

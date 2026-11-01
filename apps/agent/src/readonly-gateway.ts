@@ -4,7 +4,7 @@ import type {TLSSocket} from 'node:tls';
 import {isIP} from 'node:net';
 import type {Duplex} from 'node:stream';
 import {networkInterfaces} from 'node:os';
-import type {AgentObservation} from '../../../packages/contracts/src/agent-v2.js';
+import type {AgentObservation,AgentCommand,AgentReceipt} from '../../../packages/contracts/src/agent-v2.js';
 import {observationFreshness} from '../../../packages/contracts/src/agent-v2.js';
 import type {ObsHealth} from './read-only-observer.js';
 
@@ -19,12 +19,21 @@ export interface ReadOnlyGatewayConfig {
   authorizedClientFingerprint:string;
   now():number;
   snapshot():AgentObservation<ObsHealth>|null;
+  /** Optional explicit writable mode. A fingerprint-pinned mTLS client is the
+   * only caller; its actor identity comes from the local protected config. */
+  authorizedControllerDeviceId?:string;
+  authorityObservation?:()=>AgentObservation<{active:boolean}>|null;
+  executeObsCommand?:(command:AgentCommand,authenticatedActorId:string,confirmed:boolean)=>Promise<AgentReceipt>;
 }
 export function createReadOnlyGateway(config:ReadOnlyGatewayConfig):HttpsServer {
   const fingerprint=config.authorizedClientFingerprint.replace(/:/g,'').toLowerCase();
   if(!/^[a-f0-9]{64}$/.test(fingerprint))throw new Error('INVALID_CLIENT_FINGERPRINT');
   const trusted=Buffer.from(fingerprint,'hex');
   if(!config.serverKey||!config.serverCertificate)throw new Error('TLS_CERT_REQUIRED');
+  if(Boolean(config.authorityObservation)!==Boolean(config.executeObsCommand)||
+     Boolean(config.executeObsCommand)!==Boolean(config.authorizedControllerDeviceId)||
+     (config.authorizedControllerDeviceId&&!/^[A-Za-z0-9_-]{1,96}$/.test(config.authorizedControllerDeviceId)))
+    throw Error('AGENT_WRITER_AUTH_CONFIGURATION_REQUIRED');
   return createServer({
     key:config.serverKey,cert:config.serverCertificate,requestCert:true,
     rejectUnauthorized:false, // Exact pinned client cert is checked before ANY response data.
@@ -49,6 +58,56 @@ export function createReadOnlyGateway(config:ReadOnlyGatewayConfig):HttpsServer 
         reject(403,'FORBIDDEN');return;
       }
     }catch {reject(403,'FORBIDDEN');return}
+    if(request.method==='GET'&&request.url==='/v2/obs/authority') {
+      if(!config.authorityObservation){reject(404,'NOT_FOUND');return}
+      try {
+        const state=config.authorityObservation();
+        if(!state||observationFreshness(state,config.now())!=='fresh'){
+          reject(503,'UNAVAILABLE');return;
+        }
+        const body=JSON.stringify(state);
+        response.writeHead(200,{'Content-Type':'application/json','Cache-Control':'no-store',
+          'X-Content-Type-Options':'nosniff','Content-Length':Buffer.byteLength(body)});
+        response.end(body);
+      }catch{reject(503,'UNAVAILABLE')}
+      return;
+    }
+    if(request.method==='POST'&&request.url==='/v2/obs/command') {
+      if(!config.executeObsCommand||!config.authorizedControllerDeviceId){reject(404,'NOT_FOUND');return}
+      if(!String(request.headers['content-type']??'').startsWith('application/json')){
+        reject(415,'INVALID_CONTENT_TYPE');return;
+      }
+      // No unbounded body buffering or reconnect retry. A lost response is
+      // explicitly uncertain; only a new observed revision can be acted on.
+      void (async()=>{
+        try{
+          const parts:Buffer[]=[];let size=0;
+          for await(const part of request){
+            const buffer=Buffer.isBuffer(part)?part:Buffer.from(part);
+            size+=buffer.length;if(size>8192){reject(413,'REQUEST_TOO_LARGE');return}
+            parts.push(buffer);
+          }
+          const message:unknown=JSON.parse(Buffer.concat(parts).toString('utf8'));
+          if(!message||typeof message!=='object'||Array.isArray(message)){
+            reject(400,'INVALID_COMMAND');return;
+          }
+          const body=message as Record<string,unknown>;
+          if(!body.command||typeof body.command!=='object'||Array.isArray(body.command)||
+             typeof body.confirmedCriticalAction!=='boolean'){
+            reject(400,'INVALID_COMMAND');return;
+          }
+          const receipt=await config.executeObsCommand!(body.command as AgentCommand,
+            config.authorizedControllerDeviceId!,body.confirmedCriticalAction);
+          const result=JSON.stringify(receipt);
+          if(result.length>4096){reject(503,'INVALID_RECEIPT');return}
+          response.writeHead(receipt.result==='confirmed'?200:receipt.result==='uncertain'?202:409,
+            {'Content-Type':'application/json','Cache-Control':'no-store',
+              'X-Content-Type-Options':'nosniff','Content-Length':Buffer.byteLength(result)});
+          response.end(result);
+        }catch{if(!response.writableEnded)reject(503,'COMMAND_RESULT_UNAVAILABLE')}
+      })();
+      return;
+    }
     if(request.method!=='GET') {reject(405,'METHOD_NOT_ALLOWED');return}
     if(request.url!=='/v2/obs/health') {reject(404,'NOT_FOUND');return}
     try{

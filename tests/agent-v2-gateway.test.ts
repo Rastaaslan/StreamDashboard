@@ -32,10 +32,11 @@ describe('pinned mutual-TLS read-only Agent gateway (isolated loopback LAB)',()=
   });
   afterAll(async()=>{if(temp)await rm(temp,{recursive:true,force:true})});
 
-  const fetchFromLab=(port:number,client:'valid'|'none'|'other',route='/v2/obs/health',method='GET'):
+  const fetchFromLab=(port:number,client:'valid'|'none'|'other',route='/v2/obs/health',method='GET',body?:string):
     Promise<{code:number;body:string}>=>new Promise((resolve,reject)=>{
     const req=httpsRequest({
       hostname:'127.0.0.1',port,path:route,method,ca:cert,rejectUnauthorized:true,
+      ...(body?{headers:{'Content-Type':'application/json'}}:{}),
       ...(client==='none'?{}:{cert:client==='valid'?controllerCert:otherCert,
         key:client==='valid'?controllerKey:otherKey}),
     },res=>{
@@ -43,7 +44,7 @@ describe('pinned mutual-TLS read-only Agent gateway (isolated loopback LAB)',()=
       res.on('data',chunk=>{body+=String(chunk)});
       res.on('end',()=>resolve({code:res.statusCode??0,body}));
     });
-    req.on('error',reject);req.end();
+    req.on('error',reject);req.end(body);
   });
 
   it('requires exact pinned client certificate; exposes only a fresh observation',async()=>{
@@ -143,6 +144,86 @@ describe('pinned mutual-TLS read-only Agent gateway (isolated loopback LAB)',()=
     }
     expect(server.listening).toBe(false);expect(link.snapshot().status).toBe('stopped');
   },15000);
+
+  it('gates production OBS command behind pinned mutual TLS and derives actor identity on the server',async()=>{
+    const now=Date.now();
+    const received:{actor:string;confirmed:boolean;capability:string}[]=[];
+    const state={sourceDeviceId:'stream',revision:23,observedAt:now,staleAt:now+2500,payload:{active:false}};
+    const server=await listenReadOnlyLoopback({
+      serverKey:key,serverCertificate:cert,authorizedClientFingerprint:clientFingerprint,
+      now:()=>now,snapshot:()=>null,
+      authorizedControllerDeviceId:'controllerX',authorityObservation:()=>state,
+      executeObsCommand:async(command,actor,confirmed)=>{
+        received.push({actor,confirmed,capability:command.capability});
+        return {commandId:command.commandId,result:'confirmed',observedAt:now,reason:'OBS_STATE_VERIFIED'};
+      },
+    });
+    try{
+      const port=(server.address() as AddressInfo).port;
+      const payload=JSON.stringify({command:{protocol:2,commandId:'safe1',actorDeviceId:'controllerX',
+        targetDeviceId:'stream',capability:'obs.stream.start',issuedAt:now,
+        preconditionRevision:23,payload:{}},confirmedCriticalAction:true});
+      expect((await fetchFromLab(port,'none','/v2/obs/command','POST',payload)).code).toBe(403);
+      expect((await fetchFromLab(port,'other','/v2/obs/command','POST',payload)).code).toBe(403);
+      expect(received).toEqual([]);
+      const status=await fetchFromLab(port,'valid','/v2/obs/authority');
+      expect(status.code).toBe(200);
+      expect(JSON.parse(status.body)).toMatchObject(state);
+      const accepted=await fetchFromLab(port,'valid','/v2/obs/command','POST',payload);
+      expect(accepted.code).toBe(200);
+      expect(JSON.parse(accepted.body).result).toBe('confirmed');
+      expect(received).toEqual([{actor:'controllerX',confirmed:true,capability:'obs.stream.start'}]);
+      const large=await fetchFromLab(port,'valid','/v2/obs/command','POST',JSON.stringify({command:payload.repeat(100)}));
+      expect(large.code).toBe(413);
+      expect(received).toHaveLength(1);
+    }finally{await new Promise<void>(resolve=>server.close(()=>resolve()))}
+  });
+  it('uses pinned Controller SDK to read authority and submit one no-retry command',async()=>{
+    const {readPinnedAgentAuthority,sendPinnedAgentCommand}=await import('../apps/controller/src/agent-command-client.js');
+    const now=Date.now(),received:string[]=[];
+    const server=await listenReadOnlyLoopback({
+      serverKey:key,serverCertificate:cert,authorizedClientFingerprint:clientFingerprint,
+      now:()=>now,snapshot:()=>null,
+      authorizedControllerDeviceId:'controllerX',
+      authorityObservation:()=>({sourceDeviceId:'stream',revision:71,observedAt:now,staleAt:now+5000,payload:{active:false}}),
+      executeObsCommand:async(command,actor)=>{
+        received.push(actor);
+        return {commandId:command.commandId,result:'refused',observedAt:now,reason:'CONFIRMATION_REQUIRED'};
+      },
+    });
+    try{
+      const port=(server.address() as AddressInfo).port;
+      const serverPin=createHash('sha256').update(new X509Certificate(cert).raw).digest('hex');
+      const peer={url:'https://127.0.0.1:'+port+'/v2/obs/health',expectedDeviceId:'stream',
+        serverCertificate:cert,serverFingerprint:serverPin,clientCertificate:controllerCert,
+        clientKey:controllerKey};
+      const observation=await readPinnedAgentAuthority(peer);
+      expect(observation).toMatchObject({revision:71,payload:{active:false}});
+      const command={protocol:2 as const,commandId:'request_1',actorDeviceId:'controllerX',
+        targetDeviceId:'stream',capability:'obs.stream.start' as const,issuedAt:now,
+        preconditionRevision:71,payload:{}};
+      expect(await sendPinnedAgentCommand(peer,command,false)).toMatchObject({result:'refused',reason:'CONFIRMATION_REQUIRED'});
+      expect(received).toEqual(['controllerX']);
+      await expect(readPinnedAgentAuthority({...peer,serverFingerprint:'f'.repeat(64)}))
+        .rejects.toThrow('AGENT_SERVER_PIN_MISMATCH');
+      await expect(sendPinnedAgentCommand({...peer,clientCertificate:otherCert,clientKey:otherKey},
+        {...command,commandId:'request_2'},true)).rejects.toThrow('AGENT_COMMAND_ENDPOINT_UNAVAILABLE');
+      expect(received).toEqual(['controllerX']);
+    }finally{await new Promise<void>(resolve=>server.close(()=>resolve()))}
+  });
+  it('does not expose writable endpoints unless all writer trust parameters exist',async()=>{
+    const config={serverKey:key,serverCertificate:cert,authorizedClientFingerprint:clientFingerprint,
+      now:Date.now,snapshot:()=>null};
+    expect(()=>createReadOnlyGateway({...config,authorizedControllerDeviceId:'controllerX'}))
+      .toThrow('AGENT_WRITER_AUTH_CONFIGURATION_REQUIRED');
+    const server=await listenReadOnlyLoopback(config);
+    try{
+      const port=(server.address() as AddressInfo).port;
+      expect((await fetchFromLab(port,'valid','/v2/obs/command','POST','{}')).code).toBe(404);
+      expect((await fetchFromLab(port,'valid','/v2/obs/authority')).code).toBe(404);
+    }finally{await new Promise<void>(resolve=>server.close(()=>resolve()))}
+  });
+
   it('refuses unmanaged, wildcard, public, and nonlocal service bindings before opening a port',async()=>{
     const {listenManagedReadOnlyGateway}=await import('../apps/agent/src/readonly-gateway.js');
     const config={serverKey:key,serverCertificate:cert,authorizedClientFingerprint:clientFingerprint,

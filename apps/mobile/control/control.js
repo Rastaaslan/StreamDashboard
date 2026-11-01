@@ -1,4 +1,5 @@
 import {createLazyTask,createLazyPlanning} from './lazy-features.js';
+import {clientAuthorityEndpoint,clientMustDelegateCommand} from './client-authority.js';
 import {createSpotifyPanel} from './spotify-panel.js';
 import {createDjiMic3BatteryPanel} from './dji-battery-panel.js';
 import {djiRelayTarget} from './dji-relay-target.js';
@@ -80,6 +81,13 @@ const firstUse=!device.configured&&!localStorage.getItem('sd2.server');
 if(firstUse&&(native||clientRole))page='manage';
 let server=localStorage.getItem('sd2.workspace-mode')==='local'?(workspaceEndpoint||''):(localStorage.getItem('sd2.server') || workspaceEndpoint || (native || clientRole ? '' : location.origin));
 if(installationProfile?.routes.obs===installationProfile?.localDeviceId&&localObs&&localStorage.getItem('sd2.workspace-mode')!=='local')server=localEndpoint;
+// Windows client bootstrap is host-first. Never recover from a missing pairing
+// by interpreting the client's local runtime as the stream regie.
+if(clientRole){
+ const authority=clientAuthorityEndpoint(installationProfile);
+ server=authority||'';
+ credential=server?await credentials.get(server):'';
+}
 const peers=createPeerRequest();
 const credentials=createDeviceCredentials();
 let credential=await credentials.initialize();
@@ -176,6 +184,10 @@ async function configureMacros({synchronized=false,suspend=false,required=false}
  catch(error){if(generation===macroConfigurationGeneration){const message=controllerConfigurationError(error,configuration.credential),changed=message!==macroConfigurationError;macroConfigurationError=message;if($('#shortcut-status'))$('#shortcut-status').textContent=message;if(changed)toast(message);}if(required)throw new Error(controllerConfigurationError(error,configuration.credential));return undefined;}
 }
 async function api(path,body,method=body===undefined?'GET':'POST'){
+ if(clientMustDelegateCommand(clientRole,path,body)){
+  if(!server||server===localEndpoint||!online)throw new Error('Minuteur indisponible : la régie principale doit être connectée. Aucune commande locale ou en attente.');
+  return network(path,body,method,server,credential);
+ }
  if(commandsBlocked()&&!(path==='/api/v2/actions'&&body?.action==='sound.stop'&&!macroContextChanging)&&['/api/v2/actions','/api/v1/commands'].includes(path))throw new Error('Synchronisez ou résolvez les réglages en attente avant de déclencher une commande.');
  if(path==='/api/v2/settings'&&(body?.obsPassword||body?.clearObsPassword)&&online){if(autonomy?.store.record.pending.length)throw new Error('Synchronisez les modifications en attente avant de changer le mot de passe OBS.');return network(path,body,method);}
  if(native&&!server&&path.startsWith('/api/v1/automations')&&method!=='GET')throw new Error('Les automatisations nécessitent une régie associée. Aucun moteur ne les exécute sur cet Android.');

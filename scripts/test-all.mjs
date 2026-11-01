@@ -15,7 +15,7 @@ if (!scratch) throw new Error('A writable temporary directory outside the reposi
 const env = { ...process.env, TMPDIR: scratch, TMP: scratch, TEMP: scratch };
 let status = 1;
 try {
-  const fixture = spawnSync(process.execPath, ['scripts/generate-test-tls.mjs'], { stdio: 'inherit', env });
+  const fixture = spawnSync(process.execPath, ['scripts/generate-test-tls.mjs', '--force'], { stdio: 'inherit', env });
   if (fixture.error) throw fixture.error;
   if (fixture.status !== 0) throw new Error('Ephemeral test-only TLS fixtures unavailable.');
   const unit = spawnSync(process.execPath, ['node_modules/vitest/vitest.mjs', 'run'], { stdio: 'inherit', env });
