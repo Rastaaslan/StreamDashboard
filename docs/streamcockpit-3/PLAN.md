@@ -10,7 +10,7 @@ Le StreamCockpit 3.0 est une régie de streaming Twitch-only, pilotable depuis F
 2. Une seule régie et un seul minuteur ; zéro fallback vers le laptop ou Android quand le fixe est déconnecté. L'indisponibilité et les résultats incertains doivent être affichés honnêtement.
 3. Twitch seulement ; pas de réintroduction de flux ou comptes YouTube. Les scopes OAuth sont vérifiés à la demande, et toute fonction non autorisée est désactivée avec un message précis.
 4. DJI : données batterie réelles avec fraîcheur et provenance, jamais de pourcentage inventé. Spotify : contrôle du lecteur Windows explicitement présenté comme tel tant que l'intégration compte n'est pas réelle.
-5. Pas de modification de WorldPrep, Director, Crafty, NAT, OBS de production, profils utilisateurs, secrets ou clés Android. Développement isolé sur dam-server ; charge limitée à quatre lots Codex, sans manipuler les jobs étrangers.
+5. Pas de modification de WorldPrep, Director, Crafty, NAT, OBS de production, profils utilisateurs, secrets ou clés Android. Depuis la migration du 01/11/2026, développement exclusivement sur FIXE Windows 11 ; quatre chantiers maximum, un propriétaire par fichier. Ne pas restaurer les anciens worktrees de dam-server ni modifier la RC2 qui y reste conservée.
 6. Modèle de développement : un lot = un propriétaire des fichiers, des tests de panne et une démonstration de parcours réel. Les composants nouveaux utilisent les interfaces existantes ; pas de refonte générale des API sans justification.
 7. Ne jamais qualifier « terminé » sur la seule base d'un build. Le contrôle sur les trois appareils et le retour arrière sont des gates de livraison, jamais des tests fictifs.
 

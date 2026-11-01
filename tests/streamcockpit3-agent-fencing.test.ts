@@ -3,13 +3,21 @@ import {mkdtemp,readFile,rm,writeFile} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import path from 'node:path';
 import {spawnSync} from 'node:child_process';
+import {DatabaseSync} from 'node:sqlite';
 import {DurableReceiptJournal} from '../apps/agent/src/durable-receipts.js';
+import {WindowsSqliteReceiptJournal} from '../apps/agent/src/windows-sqlite-receipts.js';
 import {RealObsConnection,realObsWriterOptIn,type RealObsClient} from '../apps/agent/src/real-obs-transport.js';
 import {ProductionObsWriter,type ProductionWriterOptions} from '../apps/agent/src/production-obs-writer.js';
 import {parseReadOnlyStartup} from '../apps/agent/src/windows-readonly-service.js';
 import type {AgentCommand} from '../packages/contracts/src/agent-v2.js';
 
 const endpoint={optIn:realObsWriterOptIn,url:'ws://127.0.0.1:4555',password:'SYNTHETIC_ONLY',timeoutMs:100};
+async function diskReceipts(file:string):Promise<Array<Record<string,unknown>>> {
+  if(process.platform!=='win32')return JSON.parse(await readFile(file,'utf8'));
+  const db=new DatabaseSync(file+'.sqlite',{readOnly:true});
+  try{return db.prepare('SELECT command_id AS commandId,result,observed_at AS observedAt,reason FROM sc3_receipts').all() as Array<Record<string,unknown>>}
+  finally{db.close()}
+}
 const deferred=<T>()=>{let resolve!:(v:T)=>void;const promise=new Promise<T>(r=>resolve=r);return {promise,resolve}};
 afterEach(()=>vi.useRealTimers());
 function clientLab(){
@@ -104,18 +112,28 @@ describe('Agent production writer startup and durable non replay',()=>{
     peer.read.mockImplementation(async()=>{peer.disconnected.abort();return false});
     expect((await writer.submit(c,'controller',true)).result).toBe('refused');
     expect(peer.write).not.toHaveBeenCalled();expect(writer.observation()).toBeNull();
-    expect(JSON.parse(await readFile(options.journalFile,'utf8'))).toEqual([]);
+    expect(await diskReceipts(options.journalFile)).toEqual([]);
   }));
   it('does not dispatch if connection is lost while the reservation is persisted',()=>writerLab(async({writer,peer})=>{
-    const original=DurableReceiptJournal.prototype.record;
-    const record=vi.spyOn(DurableReceiptJournal.prototype,'record').mockImplementation(async function(this:DurableReceiptJournal,receipt){
-      await original.call(this,receipt);peer.disconnected.abort();
-    });
+    let restore:()=>void;
+    if(process.platform==='win32'){
+      const original=WindowsSqliteReceiptJournal.prototype.record;
+      const spy=vi.spyOn(WindowsSqliteReceiptJournal.prototype,'record').mockImplementation(async function(this:WindowsSqliteReceiptJournal,receipt){
+        await original.call(this,receipt);peer.disconnected.abort();
+      });
+      restore=()=>spy.mockRestore();
+    }else{
+      const original=DurableReceiptJournal.prototype.record;
+      const spy=vi.spyOn(DurableReceiptJournal.prototype,'record').mockImplementation(async function(this:DurableReceiptJournal,receipt){
+        await original.call(this,receipt);peer.disconnected.abort();
+      });
+      restore=()=>spy.mockRestore();
+    }
     try{
       expect((await writer.submit(command(writer),'controller',true)).result).toBe('uncertain');
       expect(peer.write).not.toHaveBeenCalled();
       expect(writer.receipt('first')?.result).toBe('uncertain');
-    }finally{record.mockRestore()}
+    }finally{restore()}
   }));
   it('blocks restart after a real process exits between durable reservation and effect',()=>writerLab(async({writer,options,peer})=>{
     await writer.close();
@@ -134,7 +152,7 @@ describe('Agent production writer startup and durable non replay',()=>{
     `],{cwd:process.cwd(),env:{...process.env,SC3_CRASH_OPTIONS:JSON.stringify(options)},
       stdio:'ignore',timeout:10000});
     expect(child.error).toBeUndefined();expect(child.status).toBe(73);
-    expect(JSON.parse(await readFile(options.journalFile,'utf8'))).toMatchObject([
+    expect(await diskReceipts(options.journalFile)).toMatchObject([
       {commandId:'crash',result:'uncertain',reason:'PRE_EXECUTION_RESERVED'}]);
     const factory=vi.fn(async()=>peer);
     await expect(ProductionObsWriter.open(options,factory)).rejects.toThrow('REAL_OBS_AUTHORITY_LOCKED');
@@ -147,7 +165,7 @@ describe('Agent production writer startup and durable non replay',()=>{
     const c=command(writer),entered=deferred<void>(),finish=deferred<void>();
     peer.write.mockImplementation(async()=>{entered.resolve();await finish.promise;peer.disconnected.abort()});
     const pending=writer.submit(c,'controller',true);await entered.promise;
-    expect(JSON.parse(await readFile(options.journalFile,'utf8'))[0].result).toBe('uncertain');
+    expect((await diskReceipts(options.journalFile))[0].result).toBe('uncertain');
     expect((await writer.submit({...c,commandId:'second'},'controller',true)).reason).toBe('WRITER_BUSY');
     finish.resolve();expect((await pending).result).toBe('uncertain');
     expect(writer.observation()).toBeNull();

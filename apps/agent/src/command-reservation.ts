@@ -1,6 +1,6 @@
 import type {AgentCapability,AgentCommand} from '../../../packages/contracts/src/agent-v2.js';
 import {AgentCommandGuard} from './command-guard.js';
-import {DurableReceiptJournal} from './durable-receipts.js';
+import type {AgentReceiptStore} from './durable-receipts.js';
 
 /** PRE-EXECUTION RESERVATION ONLY: this module NEVER dispatches OBS commands.
  * The caller must first establish an authenticated and authorised device session.
@@ -9,7 +9,7 @@ import {DurableReceiptJournal} from './durable-receipts.js';
 export class AgentCommandReservation {
   constructor(
     private readonly guard:AgentCommandGuard,
-    private readonly journal:DurableReceiptJournal,
+    private readonly journal:Pick<AgentReceiptStore,'record'>,
     private readonly localDeviceId:string,
   ) {
     if(!/^[A-Za-z0-9_-]{1,96}$/.test(localDeviceId))throw new Error('INVALID_LOCAL_DEVICE');

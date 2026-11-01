@@ -37,19 +37,29 @@
         {
           "path": "apps/agent/src/real-obs-transport.ts",
           "kind": "2026-11-01 wave3 implemented and integrated; G2 partial only"
+        },
+        {
+          "path": "apps/agent/src/windows-sqlite-receipts.ts",
+          "kind": "2026-11-01 FIXE Windows transactional SQLite EXTRA receipts and monotonic authority epoch; targeted simulated OBS and crash tests, no live hardware or power-loss validation"
         }
       ],
       "verifiedTests": [
         "tests/streamcockpit3-health.test.ts",
         "tests/streamcockpit3-health-api.test.ts",
         "tests/streamcockpit3-health-integration.test.ts",
-        "tests/streamcockpit3-agent-fencing.test.ts"
+        "tests/streamcockpit3-agent-fencing.test.ts",
+        "tests/streamcockpit3-agent-windows-sqlite.test.ts",
+        "tests/streamcockpit-production-obs-writer.test.ts"
       ],
       "hardwareEvidence": [],
-      "blockers": [],
+      "blockers": [
+        "Agent real OBS production execution on FIXE and hardware power-loss behavior of SQLite rollback journal not qualified",
+        "Legacy JSON receipt or epoch history intentionally blocks Windows startup pending explicit reconciliation/migration",
+        "Node 22 node:sqlite experimental; no packaged Windows service and no FIXE/laptop/Android timer-master hardware evidence"
+      ],
       "ownerJob": "streamcockpit/3.0-lot-a",
       "integrationJob": "streamcockpit/3.0-lot-e",
-      "integrationNote": "Wave3 Agent OBS fencing on disconnect and late responses, no real Windows service or physical OBS validation"
+      "integrationNote": "Wave3 OBS fencing retained. 2026-11-01 FIXE F00 Windows SQLite receipts, epoch and fail-closed legacy guards integrated with simulated writer; 38/38 targeted PASS (5 suites), TypeScript and security 803 files PASS. Full Windows Vitest after F00: 1945 PASS / 55 skipped; Node: 349 PASS / 6 skipped, both exit 0. No real OBS write, packaged service, power-loss or G3 tests."
     },
     {
       "id": "F01",

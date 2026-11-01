@@ -7,6 +7,17 @@ const validId = (value:unknown):value is string =>
 const outcomes=new Set(['accepted','executed','confirmed','uncertain','refused']);
 const maxRecords=100_000;
 
+/** Minimal persistence contract shared by POSIX and transactional Windows
+ * implementations. A receipt store never dispatches or retries OBS commands.
+ */
+export interface AgentReceiptStore {
+  find(id:string):AgentReceipt|undefined;
+  hasUncertain():boolean;
+  record(receipt:AgentReceipt):Promise<void>;
+  confirmReservation(receipt:AgentReceipt):Promise<void>;
+  close?():void|Promise<void>;
+}
+
 /** Only persisted receipts in this prototype, not a permit to execute OBS.
  * A stranded lock is intentionally NOT auto-recovered: manual inspection is required.
  * This is a single-host experimental journal; test on Windows before service use.

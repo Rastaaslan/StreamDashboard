@@ -3,7 +3,8 @@ import path from 'node:path';
 import {randomUUID} from 'node:crypto';
 import {AgentCommandGuard} from './command-guard.js';
 import {AgentCommandReservation} from './command-reservation.js';
-import {DurableReceiptJournal} from './durable-receipts.js';
+import {DurableReceiptJournal,type AgentReceiptStore} from './durable-receipts.js';
+import type {WindowsSqliteReceiptJournal} from './windows-sqlite-receipts.js';
 import {RealObsConnection,checkedRealObsEndpoint,type RealObsEndpoint} from './real-obs-transport.js';
 import {observationFreshness,type AgentCommand,type AgentReceipt,type AgentObservation,
   type AgentCapability} from '../../../packages/contracts/src/agent-v2.js';
@@ -53,7 +54,7 @@ export class ProductionObsWriter {
   private faulted=false;
   private closeTask:Promise<void>|null=null;
   private constructor(private readonly options:Omit<ProductionWriterOptions,'password'|'url'|'optIn'>,
-    private readonly journal:DurableReceiptJournal,
+    private readonly journal:AgentReceiptStore,
     private readonly peer:Pick<RealObsConnection,'read'|'write'|'readScene'|'sceneNames'|'writeScene'|'close'|'disconnected'>,
     private readonly signal:AbortController,private readonly authority:FileHandle,
     private readonly lockFile:string,private readonly revisionBase:number){
@@ -77,11 +78,17 @@ export class ProductionObsWriter {
     let authority:FileHandle;
     try{authority=await open(lockFile,'wx',0o600)}catch{throw Error('REAL_OBS_AUTHORITY_LOCKED')}
     const signal=new AbortController();let peer:Awaited<ReturnType<typeof openPeer>>|undefined;
+    let journal:AgentReceiptStore|undefined;
     try{
       await authority.writeFile(String(process.pid));await authority.sync();
-      const revisionBase=await claimEpoch(file+'.epoch');
-      const journal=await DurableReceiptJournal.open(file);
+      // NTFS cannot guarantee the JSON rename metadata survived power loss.
+      // Windows uses an independent SQLite rollback journal + durable epoch.
+      journal=process.platform==='win32'?
+        await (await import('./windows-sqlite-receipts.js')).WindowsSqliteReceiptJournal.open(file):
+        await DurableReceiptJournal.open(file);
       if(journal.hasUncertain())throw Error('RECONCILIATION_REQUIRED');
+      const revisionBase=process.platform==='win32'?
+        (journal as WindowsSqliteReceiptJournal).claimEpoch():await claimEpoch(file+'.epoch');
       peer=await openPeer(input,signal.signal);
       const safe={journalFile:file,localDeviceId:input.localDeviceId,
         controllerDeviceId:input.controllerDeviceId,grants:new Set(input.grants),now:input.now};
@@ -89,7 +96,7 @@ export class ProductionObsWriter {
       writer.publish(await peer.read(),await peer.readScene());
       return writer;
     }catch(error){signal.abort();await peer?.close().catch(()=>{});
-      await authority.close();await rm(lockFile,{force:true});throw error}
+      await journal?.close?.();await authority.close();await rm(lockFile,{force:true});throw error}
   }
   private publish(active:boolean,scene:string):void{
     this.signal.signal.throwIfAborted();
@@ -198,8 +205,12 @@ export class ProductionObsWriter {
     if(this.closeTask)return this.closeTask;
     this.closing=true;this.signal.abort();
     this.closeTask=(async()=>{
-      await this.inFlight?.catch(()=>{});await this.peer.close();
-      await this.authority.close();await rm(this.lockFile,{force:true});
+      try{
+        await this.inFlight?.catch(()=>{});await this.peer.close();
+      }finally{
+        try{await this.journal.close?.()}
+        finally{await this.authority.close();await rm(this.lockFile,{force:true})}
+      }
     })();
     return this.closeTask;
   }
