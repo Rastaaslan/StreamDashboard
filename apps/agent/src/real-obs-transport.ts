@@ -27,9 +27,19 @@ export class RealObsConnection {
   readonly disconnected=new AbortController();
   private constructor(private readonly client:RealObsClient,private readonly timeout:number,
     private readonly signal:AbortSignal,private readonly listener:()=>void){}
-  private bounded<T>(promise:Promise<T>):Promise<T>{
+  private async bounded<T>(work:()=>Promise<T>):Promise<T>{
     if(this.signal.aborted||this.disconnected.signal.aborted)throw Error('OBS_CONNECTION_LOST');
-    return readOnlyDeadline(promise,this.timeout,AbortSignal.any([this.signal,this.disconnected.signal]));
+    try{
+      const result=await readOnlyDeadline(work(),this.timeout,
+        AbortSignal.any([this.signal,this.disconnected.signal]));
+      if(this.signal.aborted||this.disconnected.signal.aborted)throw Error('OBS_CONNECTION_LOST');
+      return result;
+    }catch(error){
+      // A timeout does not cancel an OBS RPC. Fence this connection permanently;
+      // a late response or a reconnect must never authorise another dispatch.
+      this.disconnected.abort();
+      throw error;
+    }
   }
   static async open(options:RealObsEndpoint,signal:AbortSignal,
     factory:()=>RealObsClient=()=>new OBSWebSocket()):Promise<RealObsConnection>{
@@ -41,7 +51,7 @@ export class RealObsConnection {
     lost.signal.addEventListener('abort',()=>connection.disconnected.abort(),{once:true});
     try{
       signal.throwIfAborted();
-      await connection.bounded(client.connect(url,options.password,{eventSubscriptions:0}));
+      await connection.bounded(()=>client.connect(url,options.password,{eventSubscriptions:0}));
       if(signal.aborted||connection.disconnected.signal.aborted)throw Error('OBS_CONNECTION_LOST');
       await connection.read();
       return connection;
@@ -51,29 +61,29 @@ export class RealObsConnection {
     }
   }
   async read():Promise<boolean>{
-    const result=await this.bounded(this.client.call('GetStreamStatus'));
+    const result=await this.bounded(()=>this.client.call('GetStreamStatus'));
     if(typeof result?.outputActive!=='boolean')throw Error('REAL_OBS_STATUS_INVALID');
     return result.outputActive;
   }
   async readScene():Promise<string>{
-    const result=await this.bounded(this.client.call('GetCurrentProgramScene'));
+    const result=await this.bounded(()=>this.client.call('GetCurrentProgramScene'));
     if(typeof result?.currentProgramSceneName!=='string'||!result.currentProgramSceneName)
       throw Error('REAL_OBS_SCENE_INVALID');
     return result.currentProgramSceneName;
   }
   async sceneNames():Promise<string[]>{
-    const result=await this.bounded(this.client.call('GetSceneList'));
+    const result=await this.bounded(()=>this.client.call('GetSceneList'));
     if(!Array.isArray(result?.scenes))throw Error('REAL_OBS_SCENES_INVALID');
     return result.scenes.map(value=>value.sceneName).filter((value):value is string=>typeof value==='string');
   }
   async writeScene(scene:string):Promise<void>{
     if(typeof scene!=='string'||!scene.trim()||scene.length>256||/[\x00-\x1f\x7f]/.test(scene))
       throw Error('INVALID_SCENE');
-    await this.bounded(this.client.call('SetCurrentProgramScene',{sceneName:scene}));
+    await this.bounded(()=>this.client.call('SetCurrentProgramScene',{sceneName:scene}));
   }
   async write(kind:'StartStream'|'StopStream'):Promise<void>{
     if(kind!=='StartStream'&&kind!=='StopStream')throw Error('REAL_OBS_WRITE_UNSUPPORTED');
-    await this.bounded(this.client.call(kind));
+    await this.bounded(()=>this.client.call(kind));
   }
   async close():Promise<void>{
     this.disconnected.abort();

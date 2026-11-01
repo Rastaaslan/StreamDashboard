@@ -59,7 +59,9 @@ export class ProductionObsWriter {
     private readonly lockFile:string,private readonly revisionBase:number){
     this.now=options.now??Date.now;
     this.reservation=new AgentCommandReservation(this.guard,journal,options.localDeviceId);
-    peer.disconnected.signal.addEventListener('abort',()=>{this.faulted=true},{once:true});
+    const lost=()=>{this.faulted=true;this.signal.abort()};
+    peer.disconnected.signal.addEventListener('abort',lost,{once:true});
+    if(peer.disconnected.signal.aborted)lost();
   }
   static async open(input:ProductionWriterOptions,
     openPeer:(options:RealObsEndpoint,signal:AbortSignal)=>Promise<Pick<RealObsConnection,'read'|'write'|'readScene'|'sceneNames'|'writeScene'|'close'|'disconnected'>>=RealObsConnection.open):Promise<ProductionObsWriter>{
@@ -90,6 +92,9 @@ export class ProductionObsWriter {
       await authority.close();await rm(lockFile,{force:true});throw error}
   }
   private publish(active:boolean,scene:string):void{
+    this.signal.signal.throwIfAborted();
+    if(typeof active!=='boolean'||typeof scene!=='string'||!scene.trim())
+      throw Error('REAL_OBS_STATE_INVALID');
     const now=this.now(),revision=(this.snapshot?.revision??this.revisionBase)+1;
     if(!Number.isFinite(now)||revision>=this.revisionBase+revisionBlock)
       throw Error('REAL_OBS_REVISION_EXHAUSTED');
@@ -149,6 +154,7 @@ export class ProductionObsWriter {
     try{[active,scene]=await Promise.all([this.peer.read(),this.peer.readScene()])}
     catch{this.faulted=true;return this.result(command.commandId,'refused','REAL_OBS_UNAVAILABLE')}
     if(this.closing)return this.result(command.commandId,'refused','WRITER_CLOSED');
+    if(this.faulted)return this.result(command.commandId,'refused','RECONCILIATION_REQUIRED');
     if(active!==this.snapshot!.payload.active||scene!==this.snapshot!.payload.scene){
       this.publish(active,scene);return this.result(command.commandId,'refused','STALE_REVISION');
     }
@@ -158,6 +164,7 @@ export class ProductionObsWriter {
           return this.result(command.commandId,'refused','UNKNOWN_SCENE');
       }catch{return this.result(command.commandId,'refused','REAL_OBS_UNAVAILABLE')}
     }
+    if(this.closing||this.faulted)return this.result(command.commandId,'refused','REAL_OBS_UNAVAILABLE');
     const guard=this.guard.inspect(command,this.options.grants,this.now(),confirmed);
     if(!guard.accepted)return this.result(command.commandId,'refused',guard.reason);
     const reserved=await this.reservation.reserve(command,actor,this.options.grants,this.now(),confirmed);
