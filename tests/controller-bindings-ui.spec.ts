@@ -723,6 +723,15 @@ test('FC1 Android UX shows exactly five primary tabs, host timer, Live diffusion
   await expect(page.locator('[data-screen="plus"]')).toContainText('WizeBot');
   await expect(page.locator('[data-screen="plus"]')).toContainText('Streamlabs');
   await expect(page.locator('[data-screen="plus"]')).toContainText('DJI');
+  await expect(page.locator('[data-screen="plus"]')).toContainText('Modération Twitch');
+  await page.locator('[data-screen="plus"] [data-open-pane="live:chat"]').click();
+  await expect(page.locator('[data-mobile-pane-group="live"][data-mobile-pane="chat"]')).toBeVisible();
+  await page.locator('aside nav button[data-page="plus"]').click();
+  await page.locator('[data-screen="plus"] [data-page="activity"]').click();
+  await expect(page.locator('#content [data-open-pane="sounds:actions"]')).toBeVisible();
+  await page.locator('#content [data-open-pane="sounds:actions"]').click();
+  await expect(page.locator('[data-mobile-pane-group="sounds"][data-mobile-pane="actions"]')).toBeVisible();
+  await page.locator('aside nav button[data-page="plus"]').click();
   await page.locator('[data-screen="plus"] [data-open-pane="sounds:wizebot"]').click();
   await expect(page.locator('[data-mobile-pane-group="sounds"][data-mobile-pane="wizebot"]')).toBeVisible();
   await page.locator('aside nav button[data-page="plus"]').click();

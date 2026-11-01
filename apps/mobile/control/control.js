@@ -547,7 +547,7 @@ function render({passive=false}={}){
   liveMonitor?.destroy();liveMonitor=undefined;
   if($('#content').dataset.renderedPage!=='activity'||!$('#streamlabs-feed')){
    streamlabsFeed?.destroy();streamlabsFeed=undefined;streamlabsFeedRoot=undefined;
-   $('#content').innerHTML='<div class="activity-page-heading"><div><span class="eyebrow">LE SUIVI DU LIVE</span><h1>Activité</h1></div><button class="secondary" data-page="deck">Mon Deck ↗</button></div><div id="activity-context"></div><div id="streamlabs-feed"></div>';
+   $('#content').innerHTML='<div class="activity-page-heading"><div><span class="eyebrow">LE SUIVI DU LIVE</span><h1>Activité</h1></div><button class="secondary" '+(compact?'data-open-pane="sounds:actions"':'data-page="deck"')+'>Mon Deck ↗</button></div><div id="activity-context"></div><div id="streamlabs-feed"></div>';
   }
   $('#activity-context').innerHTML=!server&&native?'<p class="activity-hint">Historique Streamlabs de cet appareil, accessible même lorsque les PC sont éteints. Configurez l’URL du widget de votre compte.</p>':!server&&!localEndpoint?'<p class="activity-hint">Associez votre régie pour retrouver ses événements Streamlabs sur ce téléphone.</p><button class="secondary" data-task="connection">Associer une régie</button>':'';
   updateStreamlabsFeed();

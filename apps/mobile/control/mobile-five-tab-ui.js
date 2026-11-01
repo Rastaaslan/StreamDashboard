@@ -88,7 +88,8 @@ export function renderMobilePlus({data,online,server,esc}){
       ${link('▦ Deck & macros','Actions, scènes, micro, clips et raccourcis','data-open-pane="sounds:actions"')}
       ${link('⚡ WizeBot',chat.connected&&chat.canSend?'Chat Twitch autorisé':'Commandes disponibles après connexion Twitch','data-open-pane="sounds:wizebot"')}
       ${link('♥ Streamlabs','Événements et alertes de votre compte','data-open-pane="sounds:streamlabs"')}
-      ${link('✦ Modération & activité','Suivi du chat, alertes et reçus','data-page="activity"')}
+      ${link('🛡 Modération Twitch','Ban, timeout et suppression dans le chat Live, selon vos droits','data-open-pane="live:chat"')}
+      ${link('✦ Activité & alertes','Historique Streamlabs et événements','data-page="activity"')}
       ${link('🎙 Spotify / Micro / DJI',djiOk?'Relais DJI récent':'Batterie DJI non vérifiée · pas de pourcentage inventé','data-open-pane="live:micro"')}
     </div>
     <h2 class="cockpit-section-title">Mes outils</h2>
