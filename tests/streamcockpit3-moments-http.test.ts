@@ -8,6 +8,7 @@ import { expect, it } from 'vitest';
 import { RemoteAuth } from '../apps/server/src/remote-auth.js';
 import { MomentsPipeline } from '../apps/server/src/streamcockpit-moments.js';
 import { MomentsFileStorage } from '../apps/server/src/streamcockpit-moments-file.js';
+import { MomentsSqliteStorage } from '../apps/server/src/streamcockpit-moments-sqlite.js';
 import { createMomentsReadRouter } from '../apps/server/src/streamcockpit-moments-router.js';
 import { isRemoteApiAllowed, requiredDevicePermissions } from '../apps/server/src/remote-api-policy.js';
 
@@ -25,7 +26,9 @@ async function fixture(run: (f: {
   setRead: (reader: (sessionId: string) => Promise<Awaited<ReturnType<MomentsPipeline['exportObserved']>>>) => void;
 }) => Promise<void>) {
   const dir = await mkdtemp(join(tmpdir(), 'sc3-moments-http-'));
-  const pipeline = new MomentsPipeline(new MomentsFileStorage(join(dir, 'moments.json')));
+  const pipeline = new MomentsPipeline(process.platform === 'win32'
+    ? new MomentsSqliteStorage(join(dir, 'moments.sqlite'), join(dir, 'moments.json'))
+    : new MomentsFileStorage(join(dir, 'moments.json')));
   const auth = new RemoteAuth();
   const pair = auth.createPairing(undefined, false, ['observe']);
   const paired = auth.pair(pair.id, pair.code, 'Android');

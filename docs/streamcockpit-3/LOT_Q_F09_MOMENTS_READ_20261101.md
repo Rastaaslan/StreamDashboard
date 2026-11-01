@@ -38,3 +38,10 @@
 - Tests manuels LOCAUX `node --import tsx` à priorité nice19/ionice idle, tous avec code de sortie 0 : HTTP loopback simple **9 vérifications PASS** (dont absence, session enregistrée, HEAD, refus POST et permission), HTTP loopback avec `RemoteAuth` réelle **7 vérifications PASS** (pairing, scopes, révocation et autorité), révocation pendant lecture asynchrone **2 vérifications PASS** (403, marqueur privé absent de la réponse). Aucune connexion OBS/Twitch réelle, aucun accès Internet.
 - `node --check` sur 3 sources/tests touchés **3/3 PASS** ; `git diff --check` PASS. Ces contrôles ne remplacent PAS Vitest des quatre fichiers, TypeScript complet ou sécurité globale : **non exécutés** pendant cette contention.
 - Pression I/O full avg10 observée de ~41 à ~66 % ; disque `190G/221G`, ~20G libres. Pas de Vitest/packaging ni installation sous cette charge. Le lot Q reste isolé, non intégré à la 3.0. RC2 et projets tiers intacts.
+
+## 2026-11-01 ~16:19 CET — essais Windows SQLite, Q toujours isolé
+- Windows NTFS confirme `EPERM` pour la synchronisation de répertoire du stockage POSIX. Aucun contournement silencieux de ce garde.
+- Adaptateur transactionnel SQLite Windows en branche Q avec `synchronous=EXTRA`, `journal_mode=DELETE`, CAS et refus de migration implicite d'un journal JSON. Le routeur utilise son import uniquement sur Windows ; le serveur n'est pas arrêté si cet import échoue.
+- Tests exécutés sur FIXE : SQLite Windows 7/7 PASS, HTTP 6/6 PASS, cinq fichiers F09 cumulés 40 PASS et 11 tests POSIX ignorés sur NTFS. TypeScript PASS, sécurité 685 fichiers PASS, build runtime PASS.
+- Réserves : `node:sqlite` reste expérimental sous Node 22.22.3 ; aucun test matériel Electron empaqueté, ni coupure électrique, ni migration JSON ou production réelle de moments. Suite générale non validée ici. Aucun déploiement ou modification RC2.
+- F09 PARTIAL, G2 in_progress, G3–G5 OPEN. Ne pas intégrer Q avant revue et tests supplémentaires.
