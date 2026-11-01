@@ -11,3 +11,7 @@ export function createDesktopUpgradePlanner(
     requireSafe: () => requireDesktopRestartSafety(() => fixeDashboard.assessRestartSafety()),
   });
 }
+
+// Read-only candidate-updater entry point. Does not instantiate or install a planner.
+export { preflightDesktopUpgrade } from './streamcockpit-upgrade-preflight.js';
+export type { DesktopUpgradePreflightDependencies, DesktopUpgradePreflightReport } from './streamcockpit-upgrade-preflight.js';
