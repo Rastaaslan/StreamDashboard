@@ -396,6 +396,14 @@
           "kind": "existing partial implementation only"
         },
         {
+          "path": "apps/server/src/streamcockpit-moments-router.ts",
+          "kind": "2026-11-01 F09 Q integrated host-only authenticated read route, no producer"
+        },
+        {
+          "path": "apps/server/src/streamcockpit-moments-sqlite.ts",
+          "kind": "2026-11-01 F09 Q Windows SQLite EXTRA durable CAS; process crash tests, hardware power-failure not tested"
+        },
+        {
           "path": "apps/server/src/streamcockpit-clipforge-pipeline.ts",
           "kind": "2026-11-01 wave3 implemented and integrated; G2 partial only"
         }
@@ -403,14 +411,19 @@
       "verifiedTests": [
         "tests/streamcockpit3-moments.test.ts",
         "tests/streamcockpit3-moments-mobile.test.ts",
+        "tests/streamcockpit3-moments-http.test.ts",
+        "tests/streamcockpit3-moments-observed.test.ts",
+        "tests/streamcockpit3-moments-sqlite.test.ts",
         "tests/streamcockpit3-clipforge.test.ts"
       ],
       "hardwareEvidence": [],
       "blockers": [
-        "FIXE Windows NTFS: directory fsync returns EPERM; isolated F09-Q durable adapter has 10/44 failing tests, no safe Windows persistence qualified (2026-11-01)"
+        "F09 Q route is read-only: no live moments producer or Android timeline UI yet",
+        "Node 22 node:sqlite experimental; power-loss hardware durability and legacy JSON migration unqualified",
+        "Windows general regression suite still has 31 pre-existing platform failures (Linux /tmp, POSIX assumptions, browser generated comparison)"
       ],
       "ownerJob": "streamcockpit/3.0-lot-d",
-      "integrationNote": "Wave3 offline export plan, no Moments-to-ClipForge binding or real media encode"
+      "integrationNote": "2026-11-01 F09 Q merged: authenticated read-only host API, Windows SQLite transactional journal. Canonical FIXE 46/46 applicable tests PASS (6 POSIX-only skipped), types/security PASS; full Windows regression not green, no event writer, real media/UX/hardware unqualified."
     },
     {
       "id": "F10",
