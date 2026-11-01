@@ -1,3 +1,5 @@
+import { createHealthRouter } from './streamcockpit-health/index.js';
+import { mapHostHealth } from './streamcockpit-health/host-adapter.js';
 import { registerPairingRequests } from './pairing-requests.js';
 import {createPlatformObserver} from './platform-observer.js';
 import { AudioDestinations, RoleAudioPlayback } from './audio-destinations.js';
@@ -1898,6 +1900,20 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
       res.status(201).json(remoteAuth.createWsTicket(credential));
     } catch (error) { next(error); }
   });
+
+  app.use('/api/v1/streamcockpit-health', createHealthRouter({
+    canRead: request => {
+      if (isLocalRequest(request)) return true;
+      const credential = request.headers.authorization?.match(/^Device (\S+)$/)?.[1];
+      const id = credential ? remoteAuth.authenticate(credential) : null;
+      return Boolean(id && remoteAuth.permits(id, ['observe']));
+    },
+    readSnapshot: async () => mapHostHealth({
+      device: options.obsEnabled === false || options.timerAuthority === false ? undefined
+        : options.deviceDescriptor ? await options.deviceDescriptor() : undefined,
+      twitch: platformLive.twitch,
+    }, Date.now()),
+  }));
 
   const health = (_req: express.Request, res: express.Response) => res.json({
     ok: true,
