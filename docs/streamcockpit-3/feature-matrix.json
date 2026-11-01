@@ -33,18 +33,23 @@
         {
           "path": "apps/server/src/streamcockpit-health/host-adapter.ts",
           "kind": "2026-11-01 wave2 integrated, tests only; remaining adapters/UI/hardware unqualified"
+        },
+        {
+          "path": "apps/agent/src/real-obs-transport.ts",
+          "kind": "2026-11-01 wave3 implemented and integrated; G2 partial only"
         }
       ],
       "verifiedTests": [
         "tests/streamcockpit3-health.test.ts",
         "tests/streamcockpit3-health-api.test.ts",
-        "tests/streamcockpit3-health-integration.test.ts"
+        "tests/streamcockpit3-health-integration.test.ts",
+        "tests/streamcockpit3-agent-fencing.test.ts"
       ],
       "hardwareEvidence": [],
       "blockers": [],
       "ownerJob": "streamcockpit/3.0-lot-a",
       "integrationJob": "streamcockpit/3.0-lot-e",
-      "integrationNote": "Health read-only route integrated; autonomous Agent V2 service not qualified"
+      "integrationNote": "Wave3 Agent OBS fencing on disconnect and late responses, no real Windows service or physical OBS validation"
     },
     {
       "id": "F01",
@@ -101,14 +106,21 @@
         {
           "path": "apps/mobile/control/live-monitor.js",
           "kind": "existing partial implementation only"
+        },
+        {
+          "path": "apps/server/src/streamcockpit-twitch-router.ts",
+          "kind": "2026-11-01 wave3 implemented and integrated; G2 partial only"
         }
       ],
       "verifiedTests": [
-        "tests/streamcockpit3-twitch.test.ts"
+        "tests/streamcockpit3-twitch.test.ts",
+        "tests/streamcockpit3-twitch-integration.test.ts",
+        "tests/streamcockpit3-twitch-integration-http.test.ts"
       ],
       "hardwareEvidence": [],
       "blockers": [],
-      "ownerJob": "streamcockpit/3.0-lot-b"
+      "ownerJob": "streamcockpit/3.0-lot-b",
+      "integrationNote": "Wave3 GET/HEAD capabilities Shield/AutoMod, revocation and permissions; no new mutation, oauth scopes or native UI"
     },
     {
       "id": "F03",
@@ -128,14 +140,21 @@
         {
           "path": "apps/mobile/control/performance-ui.js",
           "kind": "existing partial implementation only"
+        },
+        {
+          "path": "apps/mobile/control/streamcockpit-context-preview.js",
+          "kind": "2026-11-01 wave3 implemented and integrated; G2 partial only"
         }
       ],
       "verifiedTests": [
-        "tests/streamcockpit3-context.test.ts"
+        "tests/streamcockpit3-context.test.ts",
+        "tests/streamcockpit3-context-integration.test.ts",
+        "tests/streamcockpit3-context-integration-browser.test.ts"
       ],
       "hardwareEvidence": [],
       "blockers": [],
-      "ownerJob": "streamcockpit/3.0-lot-c"
+      "ownerJob": "streamcockpit/3.0-lot-c",
+      "integrationNote": "Wave3 fail-closed read-only context preview; missing authenticated scene/game/role observations"
     },
     {
       "id": "F04",
@@ -150,15 +169,26 @@
         {
           "path": "apps/server/src/replay-auto-start.ts",
           "kind": "existing partial implementation only"
+        },
+        {
+          "path": "apps/server/src/streamcockpit-clipforge-pipeline.ts",
+          "kind": "2026-11-01 wave3 implemented and integrated; G2 partial only"
+        },
+        {
+          "path": "apps/server/src/streamcockpit-clipforge-executor.ts",
+          "kind": "2026-11-01 wave3 implemented and integrated; G2 partial only"
         }
       ],
       "verifiedTests": [
         "tests/streamcockpit3-moments.test.ts",
-        "tests/streamcockpit3-moments-mobile.test.ts"
+        "tests/streamcockpit3-moments-mobile.test.ts",
+        "tests/streamcockpit3-clipforge.test.ts",
+        "tests/streamcockpit3-clipforge-executor.test.ts"
       ],
       "hardwareEvidence": [],
       "blockers": [],
-      "ownerJob": "streamcockpit/3.0-lot-d"
+      "ownerJob": "streamcockpit/3.0-lot-d",
+      "integrationNote": "Wave3 offline ClipForge contract, fake executor tests; FFmpeg absent on dam-server, real encoding and UI untested"
     },
     {
       "id": "F05",
@@ -242,14 +272,21 @@
         {
           "path": "apps/mobile/control/performance-ui.js",
           "kind": "existing partial implementation only"
+        },
+        {
+          "path": "apps/mobile/control/streamcockpit-context-preview.js",
+          "kind": "2026-11-01 wave3 implemented and integrated; G2 partial only"
         }
       ],
       "verifiedTests": [
-        "tests/streamcockpit3-context.test.ts"
+        "tests/streamcockpit3-context.test.ts",
+        "tests/streamcockpit3-context-integration.test.ts",
+        "tests/streamcockpit3-context-integration-browser.test.ts"
       ],
       "hardwareEvidence": [],
       "blockers": [],
-      "ownerJob": "streamcockpit/3.0-lot-c"
+      "ownerJob": "streamcockpit/3.0-lot-c",
+      "integrationNote": "Wave3 preview in Deck, 320px Chromium test; contextual activation remains intentionally UNKNOWN"
     },
     {
       "id": "F08",
@@ -260,13 +297,21 @@
         "F02"
       ],
       "acceptance": "Sondages, prédictions, raids, shoutouts vérifiés et autorisés par OAuth, pas d'action silencieuse",
-      "evidence": [],
+      "evidence": [
+        {
+          "path": "apps/server/src/streamcockpit-twitch-router.ts",
+          "kind": "2026-11-01 wave3 implemented and integrated; G2 partial only"
+        }
+      ],
       "verifiedTests": [
-        "tests/streamcockpit3-twitch.test.ts"
+        "tests/streamcockpit3-twitch.test.ts",
+        "tests/streamcockpit3-twitch-integration.test.ts",
+        "tests/streamcockpit3-twitch-integration-http.test.ts"
       ],
       "hardwareEvidence": [],
       "blockers": [],
-      "ownerJob": "streamcockpit/3.0-lot-b"
+      "ownerJob": "streamcockpit/3.0-lot-b",
+      "integrationNote": "Wave3 guarded read-only capabilities only; polls/predictions/raids/shoutouts not added"
     },
     {
       "id": "F09",
@@ -282,15 +327,21 @@
         {
           "path": "apps/server/src/streamlabs-history.ts",
           "kind": "existing partial implementation only"
+        },
+        {
+          "path": "apps/server/src/streamcockpit-clipforge-pipeline.ts",
+          "kind": "2026-11-01 wave3 implemented and integrated; G2 partial only"
         }
       ],
       "verifiedTests": [
         "tests/streamcockpit3-moments.test.ts",
-        "tests/streamcockpit3-moments-mobile.test.ts"
+        "tests/streamcockpit3-moments-mobile.test.ts",
+        "tests/streamcockpit3-clipforge.test.ts"
       ],
       "hardwareEvidence": [],
       "blockers": [],
-      "ownerJob": "streamcockpit/3.0-lot-d"
+      "ownerJob": "streamcockpit/3.0-lot-d",
+      "integrationNote": "Wave3 offline export plan, no Moments-to-ClipForge binding or real media encode"
     },
     {
       "id": "F10",
@@ -361,7 +412,11 @@
         "tests/streamcockpit3-planning.test.ts",
         "tests/streamcockpit3-upgrade.test.ts",
         "tests/controller-bindings-ui.spec.ts",
-        "tests/streamlabs-feed-ui.spec.ts"
+        "tests/streamlabs-feed-ui.spec.ts",
+        "tests/streamcockpit3-agent-fencing.test.ts",
+        "tests/streamcockpit3-context-integration-browser.test.ts",
+        "tests/streamcockpit3-twitch-integration-http.test.ts",
+        "tests/streamcockpit3-clipforge-executor.test.ts"
       ]
     },
     {
