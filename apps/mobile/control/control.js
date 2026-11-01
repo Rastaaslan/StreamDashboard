@@ -1,3 +1,4 @@
+import { renderContextPreview } from './streamcockpit-context-preview.js';
 import { mountHealthPage } from './streamcockpit-health/page.js';
 let healthPage;
 import {createLazyTask,createLazyPlanning} from './lazy-features.js';
@@ -418,6 +419,7 @@ function compactDeckPage(group='deck'){
      '<div id="streamlabs-feed"></div>':
    choice==='actions'&&group==='sounds'?
      '<div class="mobile-pane-title"><h2>▦ Deck adaptatif</h2></div>'+
+     renderContextPreview({online,server,actions:available})+
      '<div class="simple-live-actions">'+
      '<button type="button" data-action="live.start"'+(!liveControlState(data,online).canStartBoth||busy?' disabled':'')+'>◉ Lancer Twitch</button>'+
      '<button type="button" class="danger" data-action="live.stop"'+(!online?' disabled':'')+'>■ Arrêter Twitch</button></div>'+
