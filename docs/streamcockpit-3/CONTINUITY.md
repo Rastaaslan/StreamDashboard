@@ -29,3 +29,13 @@
 - PIDs : `/tmp/streamcockpit3-lot-{A,B,C,D}.pid`; résultats attendus `/tmp/streamcockpit3-lot-{A,B,C,D}-final.txt`. Les quatre processus sont **en cours au dernier contrôle**, PAS encore terminés ni intégrés.
 - La tâche récurrente existante a été renommée « Développement Le StreamCockpit 3.0 » avec mission de suivre les lots, réaliser la revue des diffs, l'intégration, les tests, puis les autres lots F05/F06/F10, au rythme horaire conservé.
 - Les jobs ne doivent pas pousser, déployer, lancer un live, modifier les identités, ni éditer les entrypoints partagés.
+
+## 2026-11-01, première vague terminée et intégrée (G1)
+- Les 4 agents ont terminé leurs premiers incréments sur branches distinctes. Chacun a modifié **uniquement de nouveaux fichiers propriétaires**, sans toucher aux entrypoints ni au socle RC2.
+- Lot A intégré par cherry-pick `dba7f0e` : moteur de santé déterministe, diagnostic provenance/fraîcheur, contrat routeur Express read-only, panneau mobile read-only; mapping à l'hôte et tests physiques non encore intégrés.
+- Lot B `2eaeff0` : couche Twitch scopes/Shield/AutoMod en lecture, création de sondages avec confirmation server-side; aucune route ni token réel branché; modération complète/raids/prédictions encore à faire.
+- Lot C `2d31f32` : moteur strict de banques contextuelles et présentation Android, aucune commande déclenchée automatiquement; pas encore relié au Deck existant.
+- Lot D `26cecb4` : journal durable CAS des moments, timeline et export de marqueurs de données; ClipForge vertical et création de marqueurs réels restent à implémenter.
+- `npx vitest run tests/streamcockpit3*.test.ts tests/streamcockpit-3-roadmap.test.ts --maxWorkers=1` : **125 tests PASS / 0 FAIL** sur 7 fichiers (A 14, B 36, C 37, D 35, matrice 3).
+- `npm run build:types` : PASS ; `npm run security:check` : PASS (629 fichiers).
+- Les quatre incréments sont des modules **pas encore branchés dans les parcours utilisateurs**. G1 peut être déclaré qualifié (contrats/modules), G2–G5 restent ouverts. F00–F10 non qualifiés.

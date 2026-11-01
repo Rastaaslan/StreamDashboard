@@ -31,7 +31,10 @@
           "kind": "existing partial implementation only"
         }
       ],
-      "verifiedTests": [],
+      "verifiedTests": [
+        "tests/streamcockpit3-health.test.ts",
+        "tests/streamcockpit3-health-api.test.ts"
+      ],
       "hardwareEvidence": [],
       "blockers": [],
       "ownerJob": "streamcockpit/3.0-lot-a"
@@ -55,7 +58,10 @@
           "kind": "existing partial implementation only"
         }
       ],
-      "verifiedTests": [],
+      "verifiedTests": [
+        "tests/streamcockpit3-health.test.ts",
+        "tests/streamcockpit3-health-api.test.ts"
+      ],
       "hardwareEvidence": [],
       "blockers": [],
       "ownerJob": "streamcockpit/3.0-lot-a"
@@ -79,7 +85,9 @@
           "kind": "existing partial implementation only"
         }
       ],
-      "verifiedTests": [],
+      "verifiedTests": [
+        "tests/streamcockpit3-twitch.test.ts"
+      ],
       "hardwareEvidence": [],
       "blockers": [],
       "ownerJob": "streamcockpit/3.0-lot-b"
@@ -104,7 +112,9 @@
           "kind": "existing partial implementation only"
         }
       ],
-      "verifiedTests": [],
+      "verifiedTests": [
+        "tests/streamcockpit3-context.test.ts"
+      ],
       "hardwareEvidence": [],
       "blockers": [],
       "ownerJob": "streamcockpit/3.0-lot-c"
@@ -124,7 +134,10 @@
           "kind": "existing partial implementation only"
         }
       ],
-      "verifiedTests": [],
+      "verifiedTests": [
+        "tests/streamcockpit3-moments.test.ts",
+        "tests/streamcockpit3-moments-mobile.test.ts"
+      ],
       "hardwareEvidence": [],
       "blockers": [],
       "ownerJob": "streamcockpit/3.0-lot-d"
@@ -189,7 +202,9 @@
           "kind": "existing partial implementation only"
         }
       ],
-      "verifiedTests": [],
+      "verifiedTests": [
+        "tests/streamcockpit3-context.test.ts"
+      ],
       "hardwareEvidence": [],
       "blockers": [],
       "ownerJob": "streamcockpit/3.0-lot-c"
@@ -197,14 +212,16 @@
     {
       "id": "F08",
       "name": "Interactions Twitch enrichies",
-      "status": "planned",
+      "status": "partial",
       "lot": "B",
       "dependsOn": [
         "F02"
       ],
       "acceptance": "Sondages, prédictions, raids, shoutouts vérifiés et autorisés par OAuth, pas d'action silencieuse",
       "evidence": [],
-      "verifiedTests": [],
+      "verifiedTests": [
+        "tests/streamcockpit3-twitch.test.ts"
+      ],
       "hardwareEvidence": [],
       "blockers": [],
       "ownerJob": "streamcockpit/3.0-lot-b"
@@ -212,7 +229,7 @@
     {
       "id": "F09",
       "name": "Moments marquants et bilans",
-      "status": "planned",
+      "status": "partial",
       "lot": "D",
       "dependsOn": [
         "F04",
@@ -225,7 +242,10 @@
           "kind": "existing partial implementation only"
         }
       ],
-      "verifiedTests": [],
+      "verifiedTests": [
+        "tests/streamcockpit3-moments.test.ts",
+        "tests/streamcockpit3-moments-mobile.test.ts"
+      ],
       "hardwareEvidence": [],
       "blockers": [],
       "ownerJob": "streamcockpit/3.0-lot-d"
@@ -263,8 +283,17 @@
     },
     {
       "id": "G1",
-      "status": "open",
-      "verifiedEvidence": []
+      "status": "qualified",
+      "verifiedEvidence": [
+        "docs/streamcockpit-3/LOT_A_HEALTH.md",
+        "docs/streamcockpit-3/LOT_B_FIRST_PASS.md",
+        "docs/streamcockpit-3/LOT_C_FIRST_PASS.md",
+        "docs/streamcockpit-3/LOT_D_FIRST_PASS.md",
+        "tests/streamcockpit3-health.test.ts",
+        "tests/streamcockpit3-twitch.test.ts",
+        "tests/streamcockpit3-context.test.ts",
+        "tests/streamcockpit3-moments.test.ts"
+      ]
     },
     {
       "id": "G2",
