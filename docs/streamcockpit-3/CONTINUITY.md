@@ -17,3 +17,15 @@
 - **Lot D :** F04/F09 Marqueurs et moments ; données durables et relecture, sans export ClipForge prétendu complet.
 - Phases suivantes : F05/F06 mixage et planning assisté, F10 mise à jour sûre, puis clôture de chaque fonction à la matrice de preuves.
 - Un intégrateur unique fait la revue et le rapprochement des branches. Les résultats CodexBridge sont **des propositions de code**, jamais des commits intégrés de façon automatique sans tests.
+
+## 2026-11-01, première vague d'implémentation lancée
+- Révision de départ des quatre lots : `79c7de3`; aucun changement aux installations du FIXE, laptop et Android.
+- Tentative d'orchestration native via CodexBridge Debian : le miroir `/srv/codexbridge/repos/StreamDashboard` n'avait pas le nouveau ref; le chemin personnel était interdit par `EACCES`. **Aucun accès forcé, aucun repo miroir modifié.**
+- Solution sûre : quatre worktrees Git distincts, chacun avec le CLI Codex authentifié sous l'utilisateur `damien`, niveau de priorité CPU/I/O faible et mode d'approbation autonome dans sandbox workspace-write.
+- A santé : `/home/damien/StreamCockpit-3.0-Lot-A`, journal `/tmp/streamcockpit3-lot-A-20261101.log`.
+- B Twitch : `/home/damien/StreamCockpit-3.0-Lot-B`, journal `/tmp/streamcockpit3-lot-B-20261101.log`.
+- C contexte : `/home/damien/StreamCockpit-3.0-Lot-C`, journal `/tmp/streamcockpit3-lot-C-20261101.log`.
+- D marqueurs : `/home/damien/StreamCockpit-3.0-Lot-D`, journal `/tmp/streamcockpit3-lot-D-20261101.log`.
+- PIDs : `/tmp/streamcockpit3-lot-{A,B,C,D}.pid`; résultats attendus `/tmp/streamcockpit3-lot-{A,B,C,D}-final.txt`. Les quatre processus sont **en cours au dernier contrôle**, PAS encore terminés ni intégrés.
+- La tâche récurrente existante a été renommée « Développement Le StreamCockpit 3.0 » avec mission de suivre les lots, réaliser la revue des diffs, l'intégration, les tests, puis les autres lots F05/F06/F10, au rythme horaire conservé.
+- Les jobs ne doivent pas pousser, déployer, lancer un live, modifier les identités, ni éditer les entrypoints partagés.

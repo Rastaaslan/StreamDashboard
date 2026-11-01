@@ -34,7 +34,7 @@
       "verifiedTests": [],
       "hardwareEvidence": [],
       "blockers": [],
-      "ownerJob": null
+      "ownerJob": "streamcockpit/3.0-lot-a"
     },
     {
       "id": "F01",
@@ -58,7 +58,7 @@
       "verifiedTests": [],
       "hardwareEvidence": [],
       "blockers": [],
-      "ownerJob": null
+      "ownerJob": "streamcockpit/3.0-lot-a"
     },
     {
       "id": "F02",
@@ -82,7 +82,7 @@
       "verifiedTests": [],
       "hardwareEvidence": [],
       "blockers": [],
-      "ownerJob": null
+      "ownerJob": "streamcockpit/3.0-lot-b"
     },
     {
       "id": "F03",
@@ -107,7 +107,7 @@
       "verifiedTests": [],
       "hardwareEvidence": [],
       "blockers": [],
-      "ownerJob": null
+      "ownerJob": "streamcockpit/3.0-lot-c"
     },
     {
       "id": "F04",
@@ -127,7 +127,7 @@
       "verifiedTests": [],
       "hardwareEvidence": [],
       "blockers": [],
-      "ownerJob": null
+      "ownerJob": "streamcockpit/3.0-lot-d"
     },
     {
       "id": "F05",
@@ -192,7 +192,7 @@
       "verifiedTests": [],
       "hardwareEvidence": [],
       "blockers": [],
-      "ownerJob": null
+      "ownerJob": "streamcockpit/3.0-lot-c"
     },
     {
       "id": "F08",
@@ -207,7 +207,7 @@
       "verifiedTests": [],
       "hardwareEvidence": [],
       "blockers": [],
-      "ownerJob": null
+      "ownerJob": "streamcockpit/3.0-lot-b"
     },
     {
       "id": "F09",
@@ -228,7 +228,7 @@
       "verifiedTests": [],
       "hardwareEvidence": [],
       "blockers": [],
-      "ownerJob": null
+      "ownerJob": "streamcockpit/3.0-lot-d"
     },
     {
       "id": "F10",
