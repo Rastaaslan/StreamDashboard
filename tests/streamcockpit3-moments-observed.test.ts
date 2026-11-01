@@ -46,3 +46,26 @@ it('F09 exports immutable snapshots and validates session ID before exposing dat
   expect(again?.markers[0]?.title).toBe('Moments fixture');
   await expect(pipeline.exportObserved('../secrets')).rejects.toThrow('INVALID_MOMENT');
 });
+
+it('F09 lists only sessions present in durable markers and counts unique events, not requests', async () => {
+  const storage = new Memory(), pipeline = new MomentsPipeline(storage);
+  expect(await pipeline.listObservedSessions()).toBeUndefined();
+  await pipeline.record(marker);
+  await pipeline.record({ ...marker, correlationId: 'retry_02', sourceEventId: 'remote_1' });
+  await pipeline.record({ ...marker, sessionId: 'later', correlationId: 'later_01', instant: 1720000000500 });
+  expect(await pipeline.listObservedSessions()).toEqual([
+    { sessionId: 'later', markerCount: 1, lastMarkerAt: 1720000000500 },
+    { sessionId: 'live_01', markerCount: 2, lastMarkerAt: 1720000000000 },
+  ]);
+  const before = storage.data;
+  await pipeline.listObservedSessions();
+  expect(storage.data).toBe(before); // no write or repair on read
+});
+
+it('F09 listing fails closed when the durable journal is corrupt', async () => {
+  const storage = new Memory(), pipeline = new MomentsPipeline(storage);
+  storage.data = '{"payload":"private","sha256":"incorrect"}';
+  const before = storage.data;
+  await expect(pipeline.listObservedSessions()).rejects.toThrow('CORRUPT_MOMENTS');
+  expect(storage.data).toBe(before);
+});

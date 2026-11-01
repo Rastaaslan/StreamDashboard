@@ -132,3 +132,71 @@ it('F09 is reachable from Plus and included in the production mobile cache graph
   expect(sw).toContain('/mobile/control/streamcockpit-moments-page.js');
   expect(sw).toContain('/mobile/control/streamcockpit-moments.js');
 });
+
+it('F09 Plus discovers only durable sessions after an explicit click and requires a second click to inspect markers', async () => {
+  const root = new Node();
+  const request = vi.fn(async (path: string) => path.endsWith('/streamcockpit-moments')
+    ? { schemaVersion: 1, kind: 'streamcockpit-moment-sessions', readOnly: true,
+        sessions: [{ sessionId: 'session_1', markerCount: 1, lastMarkerAt: 1000 }] }
+    : journal());
+  const page = mountMomentsPage(root, { online: true, request });
+  const c = controls(root);
+  const [button, select, browseStatus] = c.section.children[6].children;
+  expect(request).not.toHaveBeenCalled();
+  button.dispatch('click');
+  await vi.waitFor(() => expect(select.hidden).toBe(false));
+  expect(request).toHaveBeenCalledExactlyOnceWith('/api/v1/streamcockpit-moments');
+  expect(select.children[1].textContent).toContain('session_1');
+  expect(browseStatus.textContent).toContain('session(s)');
+  select.value = 'session_1'; select.dispatch('change');
+  expect(c.input.value).toBe('session_1');
+  expect(request).toHaveBeenCalledTimes(1); // selection never performs commands or reads markers
+  c.form.dispatch('submit');
+  await vi.waitFor(() => expect(request).toHaveBeenCalledWith('/api/v1/streamcockpit-moments/session_1'));
+  page.destroy();
+  expect(select.children).toEqual([]);
+  expect(c.input.value).toBe('');
+});
+
+it('F09 Plus refuses forged session lists, never renders private errors or arbitrary paths', async () => {
+  const root = new Node();
+  const request = vi.fn()
+    .mockResolvedValueOnce({ schemaVersion: 1, kind: 'streamcockpit-moment-sessions', readOnly: false, sessions: [] })
+    .mockResolvedValueOnce({ schemaVersion: 1, kind: 'streamcockpit-moment-sessions', readOnly: true,
+      sessions: [{ sessionId: '../secrets', markerCount: 1, lastMarkerAt: 1000 }] })
+    .mockRejectedValueOnce(new Error('Bearer secret-value'));
+  const page = mountMomentsPage(root, { online: true, request });
+  const c = controls(root);
+  const [button, select, browseStatus] = c.section.children[6].children;
+  for (let n = 0; n < 3; n++) {
+    button.dispatch('click');
+    await vi.waitFor(() => expect(browseStatus.textContent).toContain('indisponible'));
+    expect(select.hidden).toBe(true);
+    expect(select.children).toEqual([]);
+  }
+  expect(browseStatus.textContent).not.toContain('secret-value');
+  expect(c.results.children).toEqual([]);
+  page.destroy();
+});
+
+it('F09 Plus removes session choices and ignores late listing after FIXE disconnect', async () => {
+  const root = new Node();
+  let release!: (data: unknown) => void;
+  const request = vi.fn(() => new Promise(resolve => { release = resolve; }));
+  const page = mountMomentsPage(root, { online: true, request });
+  const c = controls(root);
+  const [button, select, browseStatus] = c.section.children[6].children;
+  button.dispatch('click');
+  expect(request).toHaveBeenCalledTimes(1);
+  page.unavailable();
+  release({ schemaVersion: 1, kind: 'streamcockpit-moment-sessions', readOnly: true,
+    sessions: [{ sessionId: 'private_1', markerCount: 1, lastMarkerAt: 5000 }] });
+  await Promise.resolve(); await Promise.resolve();
+  expect(select.children).toEqual([]);
+  expect(select.hidden).toBe(true);
+  expect(browseStatus.textContent).toBe('');
+  expect(button.disabled).toBe(true);
+  button.dispatch('click');
+  expect(request).toHaveBeenCalledTimes(1);
+  page.destroy();
+});

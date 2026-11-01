@@ -410,15 +410,19 @@
         },
         {
           "path": "apps/server/src/streamcockpit-moments-router.ts",
-          "kind": "2026-11-01 F09 Q integrated host-only authenticated read route, no producer"
+          "kind": "2026-11-01 FIXE F09 read-only marker and observed-session index routes; paired observe permission before/after disk read, no provider command or live inference"
         },
         {
           "path": "apps/server/src/streamcockpit-moments-sqlite.ts",
           "kind": "2026-11-01 F09 Q Windows SQLite EXTRA durable CAS; process crash tests, hardware power-failure not tested"
         },
         {
+          "path": "apps/server/src/streamcockpit-moments.ts",
+          "kind": "2026-11-01 FIXE read-only observed-session index derives marker counts and latest marker timestamp strictly from durably recorded events; unknown journal is never an empty authoritative live"
+        },
+        {
           "path": "apps/mobile/control/streamcockpit-moments-page.js",
-          "kind": "2026-11-01 FIXE F09 Plus: manual known-session read-only UI, host-only observe API; disconnect and late-response fencing tested, no Android hardware evidence"
+          "kind": "2026-11-01 FIXE Plus: explicit host journal session listing, choose then consult; no automatic discovery/polling, no cached session list, disconnect and late-response fencing, Edge 320px tested"
         },
         {
           "path": "apps/mobile/control/streamcockpit-moments.js",
@@ -449,12 +453,12 @@
       ],
       "hardwareEvidence": [],
       "blockers": [
-        "F09 API and read-only Plus timeline are integrated; manual known session ID required, no live moments producer, session discovery or Android hardware validation",
+        "F09 manual session and explicit read-only index are integrated; no authenticated live moments producer, active session authority, Android physical test or bilateral streaming validation",
         "Node 22 node:sqlite experimental; power-loss hardware durability and legacy JSON migration unqualified",
-        "FIXE full Vitest 1948 PASS / 54 explicitly skipped / 0 FAIL after F09 filters; 42 Linux-only ClipForge checks remain non-qualified and Windows encoding/hardware still blocked"
+        "FIXE full Vitest after explicit session discovery 1956 PASS / 54 explicitly skipped / 0 FAIL on 237 files; 42 Linux-only ClipForge checks remain non-qualified and Windows encoding/hardware still blocked"
       ],
       "ownerJob": "streamcockpit/3.0-lot-d",
-      "integrationNote": "2026-11-01 FIXE F09 Q already merged (Windows SQLite EXTRA, authenticated host observe API). Plus manual-session timeline improved with read-only factual counts, earliest/latest marker gap (not live duration), ephemeral source/status filters, 10000-entry bound and removal on failure/disconnect. 10/10 targeted tests including real Edge 320px PASS; full FIXE Vitest 1948 PASS / 54 skipped / 0 FAIL (237 files); TypeScript, browser types, security 803 files PASS; development build 125 public assets and shipped-JS 132 PASS. No producer/session discovery, physical Android, signed candidate, Windows ClipForge or power-loss proof; G2 remains partial."
+      "integrationNote": "2026-11-01 FIXE F09: existing Q SQLite EXTRA journal and paired observe-only marker route extended with GET/HEAD index of exclusively durable marker sessions (1k sessions/10k markers max), no live or duration inference. Plus now explicitly lists, selects then consults; no automatic polling, second authority, marker title exposure in index, or local persistence; late responses and disconnect clear private state. 23/23 targeted F09 PASS including real Edge 320px; full FIXE Vitest 1956 PASS / 54 skipped / 0 FAIL (237 files); Node 349 PASS / 6 skipped / 0 FAIL (355 cases); TypeScript, browser types, security 803 files PASS; dev build 125 assets and shipped-JS 132 PASS. A full pass initially lacked OpenSSL in test PATH; rerun with process-only Git OpenSSL passed. No live producer, real Android hardware, signed candidate, Windows ClipForge or power-loss proof; G2 remains partial."
     },
     {
       "id": "F10",

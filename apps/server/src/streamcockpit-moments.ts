@@ -44,6 +44,13 @@ function encode(state: State): string {
   const payload = JSON.stringify(state);
   return JSON.stringify({ payload, sha256: hash(payload) });
 }
+export interface ObservedMomentSession {
+  sessionId: string;
+  markerCount: number;
+  /** Timestamp of the latest marker, NOT a stream end time. */
+  lastMarkerAt: number;
+}
+
 export class MomentsPipeline {
   constructor(private readonly storage: MomentsStorage) {}
   async record(value: unknown): Promise<{ moment: Moment; outcome: 'created' | 'replayed' | 'deduplicated' }> {
@@ -71,6 +78,28 @@ export class MomentsPipeline {
   }
   async export(sessionId: string) {
     return exportMarkers(sessionId, project(decode(await this.storage.read()).requests));
+  }
+  /** Discover ONLY sessions present in the FIXE durable marker journal.
+   * Never infer a live, a start/end time, or a session from client history.
+   * Absence of a journal is unknown; corrupt or excessive data fails closed.
+   */
+  async listObservedSessions(): Promise<ObservedMomentSession[] | undefined> {
+    const raw = await this.storage.read();
+    if (raw === null) return undefined;
+    const moments = project(decode(raw).requests);
+    if (moments.length > 10000) throw new Error('MOMENTS_TOO_MANY');
+    const sessions = new Map<string, ObservedMomentSession>();
+    for (const moment of moments) {
+      const entry = sessions.get(moment.sessionId);
+      if (entry) {
+        entry.markerCount++;
+        entry.lastMarkerAt = Math.max(entry.lastMarkerAt, moment.instant);
+      } else {
+        sessions.set(moment.sessionId, { sessionId: moment.sessionId, markerCount: 1, lastMarkerAt: moment.instant });
+        if (sessions.size > 1000) throw new Error('MOMENTS_TOO_MANY_SESSIONS');
+      }
+    }
+    return [...sessions.values()].sort((a, b) => b.lastMarkerAt - a.lastMarkerAt || a.sessionId.localeCompare(b.sessionId));
   }
   /** A missing durable journal is UNKNOWN, not evidence of an empty session.
    * Read once so deletion/replacement cannot turn a missing file into a false zero.

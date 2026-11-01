@@ -204,3 +204,9 @@
 .compact-app .cockpit-moments-summary { font-size:12px;line-height:1.6;color:#dfcbe8; }
 .compact-app .cockpit-moments-filters[hidden],
 .compact-app .cockpit-moments-summary[hidden] { display:none!important; }
+
+/* F09: session index is an explicit FIXE read, never a local history. */
+.compact-app .cockpit-moments-browse { min-width:0; max-width:100%; margin-top:14px; display:grid; gap:10px; }
+.compact-app .cockpit-moments-browse button { max-width:100%; white-space:normal; overflow-wrap:anywhere; }
+.compact-app .cockpit-moments-browse select { box-sizing:border-box; width:100%; max-width:100%; min-width:0; min-height:44px; }
+.compact-app .cockpit-moments-browse select[hidden] { display:none!important; }

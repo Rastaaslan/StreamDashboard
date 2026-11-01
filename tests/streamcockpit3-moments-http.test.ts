@@ -18,12 +18,14 @@ const input = { sessionId: 'session_1', instant: 1000, source: 'manual' as const
 
 async function fixture(run: (f: {
   url: string;
+  listUrl: string;
   auth: RemoteAuth;
   id: string;
   credential: string;
   pipeline: MomentsPipeline;
   allow: (value: boolean) => void;
   setRead: (reader: (sessionId: string) => Promise<Awaited<ReturnType<MomentsPipeline['exportObserved']>>>) => void;
+  setList: (reader: () => Promise<Awaited<ReturnType<MomentsPipeline['listObservedSessions']>>>) => void;
 }) => Promise<void>) {
   const dir = await mkdtemp(join(tmpdir(), 'sc3-moments-http-'));
   const pipeline = new MomentsPipeline(process.platform === 'win32'
@@ -34,6 +36,7 @@ async function fixture(run: (f: {
   const paired = auth.pair(pair.id, pair.code, 'Android');
   let host = true;
   let reader = (sessionId: string) => pipeline.exportObserved(sessionId);
+  let listing = () => pipeline.listObservedSessions();
   const app = express();
   app.use('/api/v1/streamcockpit-moments', createMomentsReadRouter({
     canRead(request: Request) {
@@ -42,6 +45,7 @@ async function fixture(run: (f: {
       return host && Boolean(id && auth.permits(id, ['observe']));
     },
     readExport: sessionId => reader(sessionId),
+    readSessions: () => listing(),
   }));
   const server = createServer(app);
   try {
@@ -52,9 +56,11 @@ async function fixture(run: (f: {
     const address = server.address() as AddressInfo;
     await run({
       url: `http://127.0.0.1:${address.port}${base}`,
+      listUrl: `http://127.0.0.1:${address.port}/api/v1/streamcockpit-moments`,
       auth, id: paired.deviceId, credential: paired.credential, pipeline,
       allow: value => { host = value; },
       setRead: value => { reader = value; },
+      setList: value => { listing = value; },
     });
   } finally {
     if (server.listening) {
@@ -173,4 +179,70 @@ it('F09 does not allow missing data, corrupt source or oversized export to masqu
     f.setRead(async () => ({ schemaVersion: 1, kind: 'streamcockpit-markers', sessionId: 'session_1',
       timebase: 'unix-ms', markers: Array.from({length: 10001}, () => ({ ...input, sequence: 1 })) }));
     expect((await request()).status).toBe(503);
+  }));
+
+it('F09 lists only persisted sessions over paired read-only HTTP, without inferring a live', () =>
+  fixture(async f => {
+    const call = (method = 'GET', credential = f.credential) => fetch(f.listUrl, {
+      method, headers: { authorization: `Device ${credential}` },
+    });
+    expect(isRemoteApiAllowed('GET', '/v1/streamcockpit-moments')).toBe(true);
+    expect(isRemoteApiAllowed('HEAD', '/v1/streamcockpit-moments')).toBe(true);
+    expect(requiredDevicePermissions('GET', '/v1/streamcockpit-moments', undefined)).toEqual(['observe']);
+    for (const method of ['POST', 'PUT', 'PATCH', 'DELETE'])
+      expect(isRemoteApiAllowed(method, '/v1/streamcockpit-moments')).toBe(false);
+    expect((await call()).status).toBe(503); // No durable journal is unknown.
+    await f.pipeline.record(input);
+    await f.pipeline.record({ ...input, instant: 5000, correlationId: 'local_2', title: 'Deuxieme repere' });
+    await f.pipeline.record({ ...input, sessionId: 'session_2', instant: 3000, correlationId: 'local_3' });
+    const response = await call();
+    expect(response.status).toBe(200);
+    expect(response.headers.get('cache-control')).toBe('no-store');
+    const body = await response.json();
+    expect(body).toEqual({ schemaVersion: 1, kind: 'streamcockpit-moment-sessions', readOnly: true,
+      sessions: [
+        { sessionId: 'session_1', markerCount: 2, lastMarkerAt: 5000 },
+        { sessionId: 'session_2', markerCount: 1, lastMarkerAt: 3000 },
+      ] });
+    expect(JSON.stringify(body)).not.toContain(input.title); // no marker title or secret in list
+    const head = await call('HEAD');
+    expect(head.status).toBe(200);
+    expect(await head.text()).toBe('');
+    for (const method of ['POST', 'PUT', 'PATCH', 'DELETE'])
+      expect((await call(method)).status).toBe(405);
+    expect((await call('GET', 'not-paired')).status).toBe(403);
+    f.allow(false); expect((await call()).status).toBe(403);
+    f.allow(true);
+    f.auth.setPermissions(f.id, ['chat']); expect((await call()).status).toBe(403);
+  }));
+
+it('F09 session listing rechecks revocation while disk access is pending', () =>
+  fixture(async f => {
+    let release!: (value: Awaited<ReturnType<MomentsPipeline['listObservedSessions']>>) => void;
+    let signal!: () => void;
+    const begun = new Promise<void>(resolve => { signal = resolve; });
+    f.setList(() => new Promise(resolve => { release = resolve; signal(); }));
+    const pending = fetch(f.listUrl, { headers: { authorization: `Device ${f.credential}` } });
+    await begun;
+    f.auth.revoke(f.id);
+    release([{ sessionId: 'private_1', markerCount: 1, lastMarkerAt: 1000 }]);
+    const response = await pending;
+    expect(response.status).toBe(403);
+    expect(await response.text()).not.toContain('private_1');
+  }));
+
+it('F09 refuses corrupted, excessive, or spoofed session listings and suppresses external errors', () =>
+  fixture(async f => {
+    const call = () => fetch(f.listUrl, { headers: { authorization: `Device ${f.credential}` } });
+    f.setList(async () => { throw new Error('Bearer PRIVATE_SECRET'); });
+    const failed = await call();
+    expect(failed.status).toBe(503);
+    expect(await failed.text()).not.toContain('PRIVATE_SECRET');
+    f.setList(async () => [{ sessionId: 'bad/path', markerCount: 1, lastMarkerAt: 5000 }]);
+    expect((await call()).status).toBe(503);
+    f.setList(async () => Array.from({length: 1001}, (_, i) => ({sessionId: `s_${i}`, markerCount: 1, lastMarkerAt: i})));
+    expect((await call()).status).toBe(503);
+    f.setList(async () => [{ sessionId: 'duplicate', markerCount: 1, lastMarkerAt: 1 },
+      { sessionId: 'duplicate', markerCount: 1, lastMarkerAt: 2 }]);
+    expect((await call()).status).toBe(503);
   }));

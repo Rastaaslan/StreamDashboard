@@ -482,18 +482,20 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
   // F09: read-only journal. On Windows, SQLite's durable transactions replace
   // the unsupported directory fsync; older JSON journals require migration.
   // Lazy import: an unavailable backend must not stop the main cockpit server.
-  const readMoments = async (sessionId: string) => {
+  const observedMomentsPipeline = async () => {
     if (process.platform === 'win32') {
       const { MomentsSqliteStorage } = await import('./streamcockpit-moments-sqlite.js');
       return new MomentsPipeline(new MomentsSqliteStorage(
         path.join(dataDir, 'streamcockpit-moments.sqlite'),
         path.join(dataDir, 'streamcockpit-moments.json'),
-      )).exportObserved(sessionId);
+      ));
     }
     return new MomentsPipeline(new MomentsFileStorage(
       path.join(dataDir, 'streamcockpit-moments.json'),
-    )).exportObserved(sessionId);
+    ));
   };
+  const readMoments = async (sessionId: string) => (await observedMomentsPipeline()).exportObserved(sessionId);
+  const readMomentSessions = async () => (await observedMomentsPipeline()).listObservedSessions();
   const dataFile = path.resolve(process.env.DATA_FILE ?? path.join(dataDir, 'dashboard.json'));
   const soundLibraryDir = path.resolve(options.soundLibraryDir ?? path.join(dataDir, 'soundboard'));
   const profileFile = path.resolve(options.profileFile ?? path.join(dataDir, 'streamdashboard.yaml'));
@@ -1986,6 +1988,7 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
       return Boolean(id && remoteAuth.permits(id, ['observe']));
     },
     readExport: sessionId => readMoments(sessionId),
+    readSessions: () => readMomentSessions(),
   }));
 
   const health = (_req: express.Request, res: express.Response) => res.json({

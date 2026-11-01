@@ -39,15 +39,81 @@ export function mountMomentsPage(root, { online, request }) {
   results.setAttribute('class', 'cockpit-moments-results');
   form.append(label, submit);
   section.append(heading, hint, form, refresh, status, results);
+  const browse = doc.createElement('div');
+  browse.setAttribute('class', 'cockpit-moments-browse');
+  const browseButton = doc.createElement('button');
+  browseButton.setAttribute('type', 'button');
+  browseButton.textContent = 'Lister les sessions enregistrées sur le fixe';
+  const browseSelect = doc.createElement('select');
+  browseSelect.setAttribute('aria-label', 'Choisir une session réellement enregistrée');
+  browseSelect.hidden = true;
+  const browseStatus = doc.createElement('p');
+  browseStatus.setAttribute('role', 'status');
+  browse.append(browseButton, browseSelect, browseStatus);
+  section.append(browse);
   root.append(section);
 
-  let disposed = false, connected = Boolean(online), timeline;
+  let disposed = false, connected = Boolean(online), timeline, browseGeneration = 0;
   const clear = () => {
     timeline?.destroy();
     timeline = undefined;
     results.replaceChildren();
     refresh.hidden = true;
   };
+  const clearBrowse = () => {
+    browseGeneration++;
+    browseSelect.replaceChildren();
+    browseSelect.hidden = true;
+    browseStatus.textContent = '';
+  };
+  browseButton.addEventListener('click', async () => {
+    if (disposed || !connected) return;
+    clearBrowse();
+    const generation = browseGeneration;
+    browseStatus.textContent = 'Lecture des sessions du fixe…';
+    try {
+      const data = await request('/api/v1/streamcockpit-moments');
+      if (disposed || !connected || generation !== browseGeneration) return;
+      if (data?.readOnly !== true || data.schemaVersion !== 1 ||
+          data.kind !== 'streamcockpit-moment-sessions' ||
+          !Array.isArray(data.sessions) || data.sessions.length > 1000) throw new Error('UNVERIFIED_SESSIONS');
+      const ids = new Set();
+      for (const session of data.sessions) {
+        if (!session || !validSession.test(session.sessionId) || ids.has(session.sessionId) ||
+            !Number.isSafeInteger(session.markerCount) || session.markerCount < 1 ||
+            session.markerCount > 10000 || !Number.isSafeInteger(session.lastMarkerAt) ||
+            session.lastMarkerAt < 0 || session.lastMarkerAt > 8640000000000000) throw new Error('INVALID_SESSIONS');
+        ids.add(session.sessionId);
+      }
+      if (!data.sessions.length) {
+        browseStatus.textContent = 'Journal présent, aucune session avec repère enregistré.';
+        return;
+      }
+      const placeholder = doc.createElement('option');
+      placeholder.value = '';
+      placeholder.textContent = 'Choisir une session';
+      browseSelect.append(placeholder);
+      for (const session of data.sessions) {
+        const option = doc.createElement('option');
+        option.value = session.sessionId;
+        option.textContent = `${session.sessionId} · ${session.markerCount} repère(s) · dernier repère ${new Date(session.lastMarkerAt).toLocaleString()}`;
+        browseSelect.append(option);
+      }
+      browseSelect.value = '';
+      browseSelect.hidden = false;
+      browseStatus.textContent = `${data.sessions.length} session(s) avec repères durables · sélection explicite requise.`;
+    } catch {
+      if (disposed || !connected || generation !== browseGeneration) return;
+      clearBrowse();
+      browseStatus.textContent = 'Liste indisponible : aucune session déduite localement.';
+    }
+  });
+  browseSelect.addEventListener('change', () => {
+    if (disposed || !connected || !validSession.test(browseSelect.value)) return;
+    input.value = browseSelect.value;
+    clear();
+    status.textContent = 'Session sélectionnée. Appuyez sur Consulter pour lire les repères du fixe.';
+  });
   const show = event => {
     event?.preventDefault?.();
     if (disposed) return;
@@ -86,6 +152,7 @@ export function mountMomentsPage(root, { online, request }) {
   if (!connected) {
     input.disabled = true;
     submit.disabled = true;
+    browseButton.disabled = true;
   }
   status.textContent = connected
     ? 'Aucune session consultée. Saisissez un identifiant vérifié.'
@@ -97,6 +164,9 @@ export function mountMomentsPage(root, { online, request }) {
       if (disposed) return;
       connected = false;
       clear();
+      clearBrowse();
+      input.value = '';
+      browseButton.disabled = true;
       input.disabled = true;
       submit.disabled = true;
       status.textContent = 'Fixe déconnecté : données effacées, nouvelle connexion nécessaire.';
@@ -105,6 +175,8 @@ export function mountMomentsPage(root, { online, request }) {
       if (disposed) return;
       disposed = true;
       clear();
+      clearBrowse();
+      input.value = '';
       section.remove();
     },
   };
