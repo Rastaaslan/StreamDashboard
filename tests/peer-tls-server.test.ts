@@ -13,7 +13,8 @@ const certificate=await readFile(new URL('./fixtures/tls/agent.pem',import.meta.
 const pfx=await readFile(new URL('./fixtures/tls/agent.p12',import.meta.url));
 function request(url:string,expected=certificateFingerprint(certificate),body?:unknown,credential='') {
  return new Promise<{status:number;body:any}>((resolve,reject)=>{
-  const req=httpsRequest(url,{method:body===undefined?'GET':'POST',ca:certificate,checkServerIdentity:(_host,cert)=>new X509Certificate(cert.raw).fingerprint256.replaceAll(':','').toLowerCase()===expected?undefined:new Error('Wrong pinned certificate'),headers:{'content-type':'application/json',...(credential?{Authorization:'Device '+credential}:{})}},response=>{
+  // Force a new TLS handshake for each pin assertion; the global Agent can resume a cached TLS session.
+  const req=httpsRequest(url,{method:body===undefined?'GET':'POST',agent:false,ca:certificate,checkServerIdentity:(_host,cert)=>new X509Certificate(cert.raw).fingerprint256.replaceAll(':','').toLowerCase()===expected?undefined:new Error('Wrong pinned certificate'),headers:{'content-type':'application/json',...(credential?{Authorization:'Device '+credential}:{})}},response=>{
    let raw='';response.on('data',chunk=>{raw+=chunk;});response.on('end',()=>{resolve({status:response.statusCode!,body:raw?JSON.parse(raw):null});});
   });req.on('error',reject);req.end(body===undefined?undefined:JSON.stringify(body));
  });

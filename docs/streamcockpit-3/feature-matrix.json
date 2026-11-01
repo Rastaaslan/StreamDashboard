@@ -198,9 +198,12 @@
         "tests/streamcockpit3-clipforge-executor.test.ts"
       ],
       "hardwareEvidence": [],
-      "blockers": [],
+      "blockers": [
+        "ClipForge pipeline and resource launcher require Linux /proc and O_NOFOLLOW; FIXE Windows correctly refuses before encoding, no Windows implementation yet",
+        "42 Linux-only ClipForge tests explicitly skipped on FIXE; two Windows fail-closed tests passed, no real FFmpeg/vertical export or OBS/Twitch marker producer qualified"
+      ],
       "ownerJob": "streamcockpit/3.0-lot-d",
-      "integrationNote": "Wave3 offline ClipForge contract, fake executor tests; FFmpeg absent on dam-server, real encoding and UI untested"
+      "integrationNote": "2026-11-01 FIXE Windows: Linux-only ClipForge assertions not applicable; pure geometry/planning tests remain active; two Windows fail-closed checks pass. F04 not qualified until Windows-safe pipeline, resource isolation and real encoding tested."
     },
     {
       "id": "F05",
@@ -420,10 +423,10 @@
       "blockers": [
         "F09 Q route is read-only: no live moments producer or Android timeline UI yet",
         "Node 22 node:sqlite experimental; power-loss hardware durability and legacy JSON migration unqualified",
-        "Windows general regression suite still has 31 pre-existing platform failures (Linux /tmp, POSIX assumptions, browser generated comparison)"
+        "FIXE targeted StreamCockpit 3.0 regression now 356 PASS / 51 explicitly skipped / 0 FAIL; 42 skips are Linux-only ClipForge, and full all-project Windows suite remains unqualified"
       ],
       "ownerJob": "streamcockpit/3.0-lot-d",
-      "integrationNote": "2026-11-01 F09 Q merged: authenticated read-only host API, Windows SQLite transactional journal. Canonical FIXE 46/46 applicable tests PASS (6 POSIX-only skipped), types/security PASS; full Windows regression not green, no event writer, real media/UX/hardware unqualified."
+      "integrationNote": "2026-11-01 F09 Q merged: authenticated read-only host API, Windows SQLite transactional journal. Canonical FIXE 46/46 applicable F09 tests PASS (6 POSIX-only skipped), targeted 3.0 suite 356 PASS / 51 skipped, types/security PASS; full all-project Windows suite, event writer, real media/UX/hardware unqualified."
     },
     {
       "id": "F10",

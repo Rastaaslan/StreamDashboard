@@ -10,7 +10,7 @@ const read = (path: string) => readFile(new URL('../' + path, import.meta.url), 
 const actions = [{ id: 'live.start', label: '<img src=x onerror="alert(1)">' }];
 describe('Mounted mobile context preview, deliberately not authorized', () => {
   it('ships exactly the canonical core compiled for the browser', async () => {
-    expect(await read('apps/mobile/control/streamcockpit-context-core.js')).toBe(await contextBrowserSource());
+    expect((await read('apps/mobile/control/streamcockpit-context-core.js')).replace(/\r\n/g, '\n')).toBe((await contextBrowserSource()).replace(/\r\n/g, '\n'));
   });
   it.each([false, true, false, true])('neutralizes offline and reconnect without trusting cached state (%s)', online => {
     const html = renderContextPreview({ online, server: 'paired', actions });

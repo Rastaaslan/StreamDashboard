@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it as vitestIt, vi } from 'vitest';
 import { mkdtemp, mkdir, writeFile, readFile, rm, symlink, chmod, open } from 'node:fs/promises';
 import { writeSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -28,7 +28,16 @@ beforeEach(async () => {
 });
 afterEach(async () => { vi.restoreAllMocks(); await rm(root, { recursive: true, force: true }); });
 const pipeline = () => new ClipForge(input, output, executor);
+// These FS/descriptor/durability scenarios require Linux O_NOFOLLOW and /proc/self/fd.
+// Keep the pure planning assertions active on Windows; test fail-closed there separately.
+const it = process.platform === 'linux' ? vitestIt : vitestIt.skip;
 describe('ClipForge offline', () => {
+  vitestIt.skipIf(process.platform !== 'win32')('Windows refuses Linux-only path pipeline before reserving or encoding', async () => {
+    const result = await pipeline().prepare('windows_refused', grant, segment);
+    expect(result).toEqual({ status: 'FAILED', code: 'DIRECTORY' });
+    expect(calls).toBe(0);
+    await expect(readFile(join(output, 'windows_refused.intent'))).rejects.toMatchObject({ code: 'ENOENT' });
+  });
   it('creates a deterministic verified manifest and sidecar without altering source', async () => {
     const request = { ...segment, captions: [{ startMs: 0, endMs: 1000, text: 'Bonjour' }] };
     const result = await pipeline().prepare('one', grant, request);
@@ -58,19 +67,19 @@ describe('ClipForge offline', () => {
     }
     expect(calls).toBe(0);
   });
-  it.each([NaN, Infinity, -1, 0, 1.1, 90_000_000])('rejects invalid duration %s', n => {
+  vitestIt.each([NaN, Infinity, -1, 0, 1.1, 90_000_000])('rejects invalid duration %s', n => {
     expect(() => planClip(segment, { ...sourceMetrics, durationMs: n })).toThrow();
   });
-  it.each([{ startMs: -1 }, { endMs: 999999 }, { endMs: 1000 }, { startMs: NaN }, { fit: '9:9' }, { extra: 'token' }])('rejects invalid segment %j', patch => {
+  vitestIt.each([{ startMs: -1 }, { endMs: 999999 }, { endMs: 1000 }, { startMs: NaN }, { fit: '9:9' }, { extra: 'token' }])('rejects invalid segment %j', patch => {
     expect(() => planClip({ ...segment, ...patch } as typeof segment, sourceMetrics)).toThrow();
   });
-  it('validates geometry, duration limits and captions', () => {
+  vitestIt('validates geometry, duration limits and captions', () => {
     for (const width of [NaN, 0, 9000, 1.5]) expect(() => planClip(segment, { ...sourceMetrics, width })).toThrow();
     expect(() => planClip({ ...segment, startMs: 0, endMs: 120001 }, { ...sourceMetrics, durationMs: 200000 })).toThrow();
     for (const text of ['<script>', 'bad\ntext', '', 'a'.repeat(201)]) expect(() => planClip({ ...segment, captions: [{ startMs: 0, endMs: 100, text }] }, sourceMetrics)).toThrow();
     expect(() => planClip({ ...segment, captions: [{ startMs: 1000, endMs: 2001, text: 'x' }] }, sourceMetrics)).toThrow();
   });
-  it('builds only fixed arguments, 9:16 pad/crop and single thread', () => {
+  vitestIt('builds only fixed arguments, 9:16 pad/crop and single thread', () => {
     const plan = planClip({ ...segment, fit: 'pad', captions: [{ startMs: 0, endMs: 10, text: '$(touch injected); x' }] }, sourceMetrics);
     expect(plan.args.join(' ')).not.toContain('touch'); expect(plan.args).toContain('pipe:4');
     expect(plan.args).toContain('scale=360:640:force_original_aspect_ratio=decrease,pad=360:640:(ow-iw)/2:(oh-ih)/2,setsar=1');

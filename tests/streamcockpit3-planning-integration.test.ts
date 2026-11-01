@@ -10,7 +10,7 @@ const esc = (v: string) => String(v).replaceAll('&','&amp;').replaceAll('<','&lt
 const now=Date.parse('2026-03-29T00:00:00Z');
 const items=[{id:'busy',title:'<img src=x onerror=alert(1)>',source:'GOOGLE',providers:{google:{status:'synced',lastSyncedAt:'2020-01-01T00:00:00Z'}},startAtUtc:'2026-03-29T00:00:00Z',endAtUtc:'2026-03-29T02:00:00Z',category:'personal'}];
 it('browser adapter exactly matches canonical transpilation (including recurrence imports)',()=>{
- const source=readFileSync('apps/mobile/control/streamcockpit-planning.js','utf8').split('// BEGIN core adapter: TypeScript ES2022 transpilation; see LOT_O_WAVE4.md.\n')[1].split('// END core adapter')[0];
+ const source=readFileSync('apps/mobile/control/streamcockpit-planning.js','utf8').replace(/\r\n/g, '\n').split('// BEGIN core adapter: TypeScript ES2022 transpilation; see LOT_O_WAVE4.md.\n')[1].split('// END core adapter')[0];
  const expected=ts.transpileModule(readFileSync('packages/core/src/streamcockpit-planning.ts','utf8'),{compilerOptions:{target:ts.ScriptTarget.ES2022,module:ts.ModuleKind.ES2022}}).outputText.replace("from './recurrence.js'","from '../shared/recurrence.js'").replace("from './uuid.js'","from '../shared/uuid.js'");
  expect(source).toBe(expected);
 });

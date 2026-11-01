@@ -1,10 +1,12 @@
 import { EventEmitter } from 'node:events';
 import { PassThrough } from 'node:stream';
-import { afterEach, expect, it, vi } from 'vitest';
+import { afterEach, expect, it as vitestIt, vi } from 'vitest';
 import { spawn } from 'node:child_process';
 import { LinuxClipExecutor } from '../apps/server/src/streamcockpit-clipforge-executor.js';
 import { CLIP_LIMITS } from '../packages/core/src/streamcockpit-clipforge-plan.js';
 vi.mock('node:child_process', () => ({ spawn: vi.fn() }));
+// Linux resource launcher uses /proc and POSIX execution primitives; Windows must fail closed.
+const it = process.platform === 'linux' ? vitestIt : vitestIt.skip;
 const config = { nice: '/usr/bin/nice', ionice: '/usr/bin/ionice', prlimit: '/usr/bin/prlimit', ffmpeg: '/usr/bin/ffmpeg', ffprobe: '/usr/bin/ffprobe' };
 function setup() {
   const child = Object.assign(new EventEmitter(), { stdout: new PassThrough(), kill: vi.fn() });
@@ -12,6 +14,10 @@ function setup() {
   return { child, executor: new LinuxClipExecutor(config) };
 }
 afterEach(() => { vi.clearAllMocks(); vi.useRealTimers(); });
+vitestIt.skipIf(process.platform !== 'win32')('Windows rejects Linux resource launcher without spawning FFmpeg', () => {
+  expect(() => new LinuxClipExecutor(config)).toThrow('CLIPFORGE_BINARIES');
+  expect(spawn).not.toHaveBeenCalled();
+});
 it('passes fixed resource limits, low priority, no shell or inherited secrets, pinned FDs', async () => {
   const { child, executor } = setup(); const pending = executor.encode(['-f', 'mp4', 'pipe:4'], 31, 32, new AbortController().signal);
   expect(spawn).toHaveBeenCalledWith(config.nice, expect.arrayContaining(['-n', '15', config.ionice, '-c', '3', config.prlimit,

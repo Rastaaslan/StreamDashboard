@@ -1,6 +1,8 @@
 import { expect, it, vi } from 'vitest';
 import express from 'express';
 import type { AddressInfo } from 'node:net';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { AdvancedTwitch } from '../integrations/twitch/src/streamcockpit-advanced.js';
 import { StreamcockpitTwitchService } from '../apps/server/src/streamcockpit-twitch-service.js';
 import { createTwitchCapabilitiesRouter, twitchReadActor } from '../apps/server/src/streamcockpit-twitch-router.js';
@@ -77,7 +79,7 @@ it('poll preview/confirm are not remote-allowlisted in any method',()=>{
 it('real server mounts read route behind origin guard and leaves poll mutations absent',async()=>{
   const {startDashboardServer}=await import('../apps/server/src/index.js');
   const {mkdtemp,rm}=await import('node:fs/promises');
-  const dir=await mkdtemp('/tmp/lot-j-server-');
+  const dir=await mkdtemp(join(tmpdir(),'lot-j-server-'));
   let server:Awaited<ReturnType<typeof startDashboardServer>>|undefined;
   try {
     server=await startDashboardServer({port:0,dataDir:dir,remoteEnabled:false,obsEnabled:false,timerAuthority:false,logger:{info(){},warn(){},error(){}}});
