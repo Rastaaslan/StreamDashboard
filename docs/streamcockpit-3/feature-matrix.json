@@ -29,11 +29,16 @@
         {
           "path": "apps/server/src/index.ts",
           "kind": "existing partial implementation only"
+        },
+        {
+          "path": "apps/server/src/streamcockpit-health/host-adapter.ts",
+          "kind": "2026-11-01 wave2 integrated, tests only; remaining adapters/UI/hardware unqualified"
         }
       ],
       "verifiedTests": [
         "tests/streamcockpit3-health.test.ts",
-        "tests/streamcockpit3-health-api.test.ts"
+        "tests/streamcockpit3-health-api.test.ts",
+        "tests/streamcockpit3-health-integration.test.ts"
       ],
       "hardwareEvidence": [],
       "blockers": [],
@@ -57,11 +62,20 @@
         {
           "path": "apps/server/src/platform-observer.ts",
           "kind": "existing partial implementation only"
+        },
+        {
+          "path": "apps/server/src/streamcockpit-health/host-adapter.ts",
+          "kind": "2026-11-01 wave2 integrated, tests only; remaining adapters/UI/hardware unqualified"
+        },
+        {
+          "path": "apps/mobile/control/streamcockpit-health/page.js",
+          "kind": "2026-11-01 wave2 integrated, tests only; remaining adapters/UI/hardware unqualified"
         }
       ],
       "verifiedTests": [
         "tests/streamcockpit3-health.test.ts",
-        "tests/streamcockpit3-health-api.test.ts"
+        "tests/streamcockpit3-health-api.test.ts",
+        "tests/streamcockpit3-health-integration.test.ts"
       ],
       "hardwareEvidence": [],
       "blockers": [],
@@ -158,9 +172,20 @@
         {
           "path": "apps/server/src/audio-destinations.ts",
           "kind": "existing partial implementation only"
+        },
+        {
+          "path": "packages/core/src/streamcockpit-mixer.ts",
+          "kind": "2026-11-01 wave2 integrated, tests only; remaining adapters/UI/hardware unqualified"
+        },
+        {
+          "path": "apps/server/src/streamcockpit-mixer.ts",
+          "kind": "2026-11-01 wave2 integrated, tests only; remaining adapters/UI/hardware unqualified"
         }
       ],
-      "verifiedTests": [],
+      "verifiedTests": [
+        "tests/streamcockpit3-mixer.test.ts",
+        "tests/streamcockpit3-mixer-mobile.test.ts"
+      ],
       "hardwareEvidence": [],
       "blockers": [],
       "ownerJob": "streamcockpit/3.0-lot-f"
@@ -178,9 +203,20 @@
         {
           "path": "apps/mobile/control/planning.js",
           "kind": "existing partial implementation only"
+        },
+        {
+          "path": "packages/core/src/streamcockpit-planning.ts",
+          "kind": "2026-11-01 wave2 integrated, tests only; remaining adapters/UI/hardware unqualified"
+        },
+        {
+          "path": "apps/mobile/control/streamcockpit-planning.js",
+          "kind": "2026-11-01 wave2 integrated, tests only; remaining adapters/UI/hardware unqualified"
         }
       ],
-      "verifiedTests": [],
+      "verifiedTests": [
+        "tests/streamcockpit3-planning.test.ts",
+        "tests/streamcockpit3-planning-ui.test.ts"
+      ],
       "hardwareEvidence": [],
       "blockers": [],
       "ownerJob": "streamcockpit/3.0-lot-g"
@@ -265,9 +301,19 @@
         {
           "path": "apps/desktop/src/updater.ts",
           "kind": "existing partial implementation only"
+        },
+        {
+          "path": "packages/core/src/streamcockpit-upgrade.ts",
+          "kind": "2026-11-01 wave2 integrated, tests only; remaining adapters/UI/hardware unqualified"
+        },
+        {
+          "path": "apps/desktop/src/streamcockpit-upgrade.ts",
+          "kind": "2026-11-01 wave2 integrated, tests only; remaining adapters/UI/hardware unqualified"
         }
       ],
-      "verifiedTests": [],
+      "verifiedTests": [
+        "tests/streamcockpit3-upgrade.test.ts"
+      ],
       "hardwareEvidence": [],
       "blockers": [],
       "ownerJob": "streamcockpit/3.0-lot-h"
@@ -300,7 +346,16 @@
     {
       "id": "G2",
       "status": "in_progress",
-      "verifiedEvidence": []
+      "verifiedEvidence": [
+        "docs/streamcockpit-3/LOT_E_HEALTH_INTEGRATION.md",
+        "docs/streamcockpit-3/LOT_F_MIXER.md",
+        "docs/streamcockpit-3/LOT_G_PLANNING.md",
+        "docs/streamcockpit-3/LOT_H_UPGRADE.md",
+        "tests/streamcockpit3-health-integration.test.ts",
+        "tests/streamcockpit3-mixer.test.ts",
+        "tests/streamcockpit3-planning.test.ts",
+        "tests/streamcockpit3-upgrade.test.ts"
+      ]
     },
     {
       "id": "G3",

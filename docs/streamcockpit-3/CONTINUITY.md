@@ -48,3 +48,10 @@
 - **Lot H** : mise à jour transactionnelle F10, validation d'identité, report pendant live/état incertain, reprise/rollback.
 - Quatre nouveaux worktrees `/home/damien/StreamCockpit-3.0-Lot-{E,F,G,H}`, branches correspondantes; tickets propres à chaque lot. Sessions Codex CLI lancées sous faible priorité CPU/I/O. PIDs, logs et résultats : même convention que la vague 1. **Ne pas en lancer de doublon.**
 - Aucun module de wave2 encore accepté/branché à cet instant ; des tests et une revue sont obligatoires avant import. Restent une vague interactions Twitch complètes, ClipForge vertical et autres intégrations de parcours.
+
+## 2026-11-01 10:15 CET — WAVE2 intégrée, vérification commune
+- Les quatre changements ont été cherry-pickés sur la branche 3.0 : E `4a4f170`, F `1602309`, G `d20207c`, H `6157d52`. Relecture des rapports et `git show --check` ; aucun changement aux installations RC2.
+- Au commit `6157d52`, validation **commune et réelle sur dam-server** : `npx vitest run tests/streamcockpit3*.test.ts tests/streamcockpit-3-roadmap.test.ts --maxWorkers=1 --configLoader runner --no-cache` = **204/204 PASS (13 fichiers)** ; `npm run build:types` = PASS ; `npm run security:check` = PASS (644 fichiers). Logs : `/tmp/streamcockpit3-wave2-{integrated-tests,types,security}-20261101.log`. Outils exécutés avec priorité CPU/I/O faible ; pas de build Windows/APK.
+- E : route santé HTTP read-only `observe`, observations horodatées et lien Plus ; statut OBS/audio/DJI/sync peut rester UNKNOWN. F : contrat mixeur et aperçu sans toucher à OBS réel ; pas encore de retour mesuré/sortie matérielle. G : suggestion/duplication en brouillon uniquement ; aucune publication Google. H : plan transactionnel/migration sur copie avec refus live/UNKNOWN, mais stockage fiable/verrou crypto/installeur/rollback physique absents.
+- **G2 reste in_progress**, G3–G5 ouverts. Les onze F00–F10 restent partial. Les modules E/F/G/H ne justifient aucune qualification matérielle, Android signé ou release finale. RC2 repli intact.
+- Disque NVMe au contrôle : 199G utilisés, 12G libres sur 221G (95 %). Éviter builds concurrents et copies d'artefacts.
