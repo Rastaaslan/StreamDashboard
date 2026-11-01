@@ -1,5 +1,6 @@
 import { createHealthRouter } from './streamcockpit-health/index.js';
 import { mapHostHealth } from './streamcockpit-health/host-adapter.js';
+import { ObsHealthObservation } from './streamcockpit-health/obs-observation.js';
 import { registerPairingRequests } from './pairing-requests.js';
 import {createPlatformObserver} from './platform-observer.js';
 import { AudioDestinations, RoleAudioPlayback } from './audio-destinations.js';
@@ -657,6 +658,7 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
   let discordPublic = { configured: Boolean(discordToken), connected: false, guildName: null as string | null, channelName: null as string | null, error: null as string | null };
   const discordClient = () => new DiscordClient(discordToken, options.discordFetch ?? fetch);
   const obs = new ObsClient(local.settings.obsUrl, currentObsPassword, { logger });
+  const obsHealthObservation = new ObsHealthObservation();
   const savedTokens = await secrets.getTwitchTokens() ?? {};
   const twitchClientId = options.twitchClientId ?? process.env.TWITCH_CLIENT_ID ?? '';
   const twitch = new TwitchClient({
@@ -1929,6 +1931,7 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
       device: options.obsEnabled === false || options.timerAuthority === false ? undefined
         : options.deviceDescriptor ? await options.deviceDescriptor() : undefined,
       twitch: platformLive.twitch,
+      obs: obsHealthObservation,
     }, Date.now()),
   }));
 
@@ -3301,6 +3304,7 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
     void obs.setReplayBuffer(true).then(() => { replayAutoStartError = ''; }, error => { replayAutoStartError = error instanceof Error ? error.message : 'Tampon indisponible.'; }).finally(broadcast);
   };
   const unsubscribeObs = obs.onStateChanged(() => {
+    obsHealthObservation.observe(obs.state);
     autoStartReplay();
     const obsPayload = { connected: obs.state.connected, streaming: obs.state.streaming, streamingKnown: obs.state.streamingKnown !== false, scene: obs.state.scene };
     eventCore.publish({ type: 'obs.state.changed', source: 'obs', payload: obsPayload });
