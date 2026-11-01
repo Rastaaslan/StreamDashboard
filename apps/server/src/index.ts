@@ -3,6 +3,9 @@ import { mapHostHealth } from './streamcockpit-health/host-adapter.js';
 import { ObsHealthObservation } from './streamcockpit-health/obs-observation.js';
 import { ObsMixerObservation } from './streamcockpit-mixer-observation.js';
 import { createMixerRouter, mixerHostEligible } from './streamcockpit-mixer-router.js';
+import { createMomentsReadRouter } from './streamcockpit-moments-router.js';
+import { MomentsPipeline } from './streamcockpit-moments.js';
+import { MomentsFileStorage } from './streamcockpit-moments-file.js';
 import { registerPairingRequests } from './pairing-requests.js';
 import {createPlatformObserver} from './platform-observer.js';
 import { AudioDestinations, RoleAudioPlayback } from './audio-destinations.js';
@@ -476,6 +479,21 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
   if (!LOOPBACK_HOSTS.has(host) && host !== '0.0.0.0') throw new Error('Adresse d’écoute LAN invalide.');
 
   const dataDir = path.resolve(options.dataDir ?? process.env.DATA_DIR ?? path.dirname(process.env.DATA_FILE ?? 'data/dashboard.json'));
+  // F09: read-only journal. On Windows, SQLite's durable transactions replace
+  // the unsupported directory fsync; older JSON journals require migration.
+  // Lazy import: an unavailable backend must not stop the main cockpit server.
+  const readMoments = async (sessionId: string) => {
+    if (process.platform === 'win32') {
+      const { MomentsSqliteStorage } = await import('./streamcockpit-moments-sqlite.js');
+      return new MomentsPipeline(new MomentsSqliteStorage(
+        path.join(dataDir, 'streamcockpit-moments.sqlite'),
+        path.join(dataDir, 'streamcockpit-moments.json'),
+      )).exportObserved(sessionId);
+    }
+    return new MomentsPipeline(new MomentsFileStorage(
+      path.join(dataDir, 'streamcockpit-moments.json'),
+    )).exportObserved(sessionId);
+  };
   const dataFile = path.resolve(process.env.DATA_FILE ?? path.join(dataDir, 'dashboard.json'));
   const soundLibraryDir = path.resolve(options.soundLibraryDir ?? path.join(dataDir, 'soundboard'));
   const profileFile = path.resolve(options.profileFile ?? path.join(dataDir, 'streamdashboard.yaml'));
@@ -1953,6 +1971,21 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
       return Boolean(id && remoteAuth.permits(id, ['observe']));
     },
     readSnapshot: () => obsMixerObservation.read(Date.now()),
+  }));
+
+  // F09: existing durable marker sessions may be inspected by the FIXE host
+  // and paired observers, never synthesized from browser history or laptop.
+  app.use('/api/v1/streamcockpit-moments', createMomentsReadRouter({
+    canRead: async request => {
+      if (options.obsEnabled === false || options.timerAuthority === false) return false;
+      const device = await options.deviceDescriptor?.().catch(() => undefined);
+      if (!mixerHostEligible(device)) return false;
+      if (isLocalRequest(request)) return true;
+      const credential = request.headers.authorization?.match(/^Device (\S+)$/)?.[1];
+      const id = credential ? remoteAuth.authenticate(credential) : null;
+      return Boolean(id && remoteAuth.permits(id, ['observe']));
+    },
+    readExport: sessionId => readMoments(sessionId),
   }));
 
   const health = (_req: express.Request, res: express.Response) => res.json({
