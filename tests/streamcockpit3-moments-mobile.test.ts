@@ -1,4 +1,4 @@
-import { expect, it } from 'vitest';
+import { expect, it, vi } from 'vitest';
 // @ts-expect-error Isolated browser JS module has no declaration file.
 import { mountMomentsTimeline } from '../apps/mobile/control/streamcockpit-moments.js';
 
@@ -20,7 +20,7 @@ class Element {
   remove() { this.removed = true; }
 }
 const data = (title = '<img src=x onerror=alert(1)>') => ({
-  schemaVersion: 1, kind: 'streamcockpit-markers', timebase: 'unix-ms', sessionId: 'session',
+  schemaVersion: 1, kind: 'streamcockpit-markers', timebase: 'unix-ms', readOnly: true, sessionId: 'session',
   markers: [{ sessionId: 'session', instant: 1000, sequence: 1, source: 'manual', status: 'uncertain', title }],
 });
 it('renders read-only text, empty and unavailable states; removes stale data on failure', async () => {
@@ -84,6 +84,74 @@ it('offers factual observed-marker summaries and local source/status filters wit
   expect(summary.textContent).toBe('');
   expect(list.children).toEqual([]);
   expect(filters.hidden).toBe(true);
+});
+
+it('exports an explicit sanitized F09 host-observed JSON report via the Android bridge, never a fake stream duration', async () => {
+  const previous = (globalThis as any).StreamDashboardNative;
+  const shared: { name: string; report: any }[] = [];
+  (globalThis as any).StreamDashboardNative = {
+    shareDocument: async (text: string, name: string) => { shared.push({ name, report: JSON.parse(text) }); },
+  };
+  try {
+    let reads = 0;
+    const root = new Element(), snapshot = { ...data(), markers: [
+      { ...data().markers[0], correlationId: 'actor-private-id', sourceEventId: 'provider-private-id',
+        title: '<img onerror=alert(1)> marker', instant: 2000 },
+      { sessionId: 'session', source: 'obs', status: 'confirmed', title: 'Fin de scène',
+        instant: 62000, sequence: 2 },
+    ] };
+    const component = mountMomentsTimeline(root, { sessionId: 'session', read: async () => { reads++; return snapshot; } });
+    await component.refresh();
+    const [status, list, filters, , exportButton] = root.children[0].children;
+    expect(exportButton.hidden).toBe(false);
+    filters.children[0].children[0].value = 'obs';
+    filters.children[0].children[0].dispatch('change');
+    expect(list.children).toHaveLength(1);
+    expect(reads).toBe(2); // the explicit refresh + initial mount
+    exportButton.dispatch('click');
+    await vi.waitFor(() => expect(shared).toHaveLength(1));
+    expect(shared[0].name).toBe('StreamCockpit-bilan-session.json');
+    expect(shared[0].report).toMatchObject({
+      schemaVersion: 1, kind: 'streamcockpit-moments-report', readOnly: true,
+      source: 'fixe-observed-journal', sessionId: 'session', timebase: 'unix-ms',
+      markerCount: 2, firstMarkerAt: 2000, lastMarkerAt: 62000, liveDurationKnown: false,
+      bySource: {manual: 1, obs: 1, twitch: 0, streamlabs: 0},
+      byStatus: {uncertain: 1, confirmed: 1, observed: 0, failed: 0},
+    });
+    expect(shared[0].report.markers).toHaveLength(2); // full report, not filtered list
+    expect(shared[0].report.markers[0].title).toContain('<img');
+    expect(JSON.stringify(shared[0].report)).not.toContain('actor-private-id');
+    expect(JSON.stringify(shared[0].report)).not.toContain('provider-private-id');
+    expect(reads).toBe(2); // exporting does not read/poll/command the FIXE
+    await vi.waitFor(() => expect(status.textContent).toContain('pas la durée du live'));
+    component.destroy();
+    expect(exportButton.hidden).toBe(true);
+    exportButton.dispatch('click');
+    expect(shared).toHaveLength(1);
+  } finally { (globalThis as any).StreamDashboardNative = previous; }
+});
+
+it('does not export a missing or unverified host snapshot and masks native errors', async () => {
+  const previous = (globalThis as any).StreamDashboardNative;
+  const shared = vi.fn(async () => 'private native failure token');
+  (globalThis as any).StreamDashboardNative = { shareDocument: shared };
+  try {
+    const root = new Element();
+    let snapshot: any = { ...data(), readOnly: false };
+    const component = mountMomentsTimeline(root, { sessionId: 'session', read: async () => snapshot });
+    await component.refresh();
+    const [status, , , , button] = root.children[0].children;
+    expect(button.hidden).toBe(true);
+    button.dispatch('click');
+    expect(shared).not.toHaveBeenCalled();
+    snapshot = data();
+    await component.refresh();
+    button.dispatch('click');
+    await vi.waitFor(() => expect(status.textContent).toContain('Export indisponible'));
+    expect(status.textContent).not.toContain('private native failure token');
+    component.destroy();
+    expect(button.hidden).toBe(true);
+  } finally { (globalThis as any).StreamDashboardNative = previous; }
 });
 
 it('fails closed on an oversized or invalid feed and never keeps a prior marker after a bad refresh', async () => {

@@ -66,6 +66,22 @@ it.skipIf(process.env.MOMENTS_BROWSER_TEST !== '1')('F09 Plus timeline is readab
     await page.getByLabel('Filtrer par source').selectOption('obs');
     expect(await page.locator('section[aria-label="Moments marquants"] li').count()).toBe(1);
     expect(await page.evaluate(() => (window as any).calls)).toHaveLength(2); // Filters never refetch.
+    await page.evaluate(() => {
+      const w = window as any;
+      w.exported = [];
+      w.StreamDashboardNative = { shareDocument: async (json: string, name: string) => {
+        w.exported.push({ name, report: JSON.parse(json) });
+      } };
+    });
+    await page.getByRole('button', { name: 'Exporter le bilan complet (JSON)' }).click();
+    await expect.poll(() => page.evaluate(() => (window as any).exported.length)).toBe(1);
+    expect(await page.evaluate(() => (window as any).exported[0])).toMatchObject({
+      name: 'StreamCockpit-bilan-sess_1.json',
+      report: { kind: 'streamcockpit-moments-report', sessionId: 'sess_1',
+        markerCount: 1, liveDurationKnown: false, bySource: { obs: 1 },
+        markers: [{ source: 'obs', status: 'observed' }] },
+    });
+    expect(await page.evaluate(() => (window as any).calls)).toHaveLength(2); // Export never refetches.
     await page.evaluate(() => (window as any).presenter.unavailable());
     expect(await page.locator('section[aria-label="Moments marquants"]').count()).toBe(0);
     expect(await page.locator('main').textContent()).not.toContain('Marker réel');
