@@ -1,0 +1,38 @@
+/* StreamCockpit mobile timer: one remote authority, visible on all compact screens. */
+.mobile-timer-strip { display:none; }
+.compact-app .mobile-timer-strip:not([hidden]) {
+  display:block; position:sticky; top:0; z-index:4;
+  padding:7px max(12px,env(safe-area-inset-right)) 7px max(12px,env(safe-area-inset-left));
+  background:rgba(15,13,23,.97); border-bottom:1px solid #574376;
+  backdrop-filter:blur(14px);
+}
+.compact-app.mobile-panes-active .mobile-timer-strip:not([hidden]) {
+  top:calc(var(--compact-status-height,55px) + env(safe-area-inset-top));
+}
+.mobile-timer-strip-action {
+  display:flex; align-items:center; justify-content:space-between; gap:10px;
+  width:100%; min-height:46px; padding:6px 12px; border-radius:11px;
+  border:1px solid #735797; background:#282036; color:#eee6fc;
+  text-align:left;
+}
+.timer-strip-caption { display:flex; flex-direction:column; gap:3px; min-width:0; }
+.timer-strip-kicker { font-weight:700; font-size:10px; letter-spacing:.06em; color:#d8c4f8; }
+.timer-strip-detail { font-size:10px; color:#c2b6d4; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; max-width:180px; }
+.mobile-timer-strip-action strong {
+  font-variant-numeric:tabular-nums; font-size:22px; font-weight:750; letter-spacing:.035em;
+  white-space:nowrap;
+}
+.timer-strip-chevron { font-size:22px; color:#cbb0ef; }
+.timer-strip-offline .timer-strip-detail { color:#f2c477; }
+.compact-app .mobile-timer-panel {
+  margin:12px 0 14px; border:1px solid #745396;
+  background:linear-gradient(155deg,#30213e,#1c182b 75%);
+}
+.mobile-timer-panel-title { display:flex; align-items:center; justify-content:space-between; gap:8px; font-size:14px; font-weight:700; }
+.mobile-timer-clock { font-size:clamp(31px,9vw,43px); letter-spacing:.06em; font-weight:750; font-variant-numeric:tabular-nums; margin:13px 0 4px; }
+.mobile-timer-controls { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:8px; margin:12px 0; }
+.mobile-timer-controls button { min-width:0; padding:11px 6px; font-size:12px; }
+@media(max-width:350px) {
+  .timer-strip-detail { max-width:125px; }
+  .mobile-timer-strip-action strong { font-size:19px; }
+}

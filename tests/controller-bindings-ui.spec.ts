@@ -46,6 +46,7 @@ async function setup(page: Page, rejectNative = false) {
         catch{return {ok:false,error:{message:'synthetic transport unavailable'}};}
       },
       getDeviceProfile: async () => ({ configured: true, name: 'PC jeu de test', role: 'control' }),
+      getInstallation: async () => ({runtimeProfile:'device-runtime',localDeviceId:'pc-jeu',devices:[{id:'pc-jeu',roles:['controller'],capabilities:['global-keys','audio'],enabled:true},{id:'regie-fixe',roles:['obs-executor'],capabilities:['obs','clips','audio','chat','cloud','planning','viewer','storage'],enabled:true,endpoint:regie}],routes:{obs:'regie-fixe'}}),
       getControllerCredential: async () => win.credential,
       getDeviceCredential: async (server:string) => win.deviceCredentials[server]||'',
       setDeviceCredential: async (server:string,value:string) => { win.deviceCredentials[server]=value; },
@@ -249,6 +250,12 @@ test('displays the contextual four-pane mobile destinations and persistent DJI m
   await page.setViewportSize({width:390,height:800});
   await page.locator('nav button[data-page="live"]').click();
   await expect(page.locator('#mobile-pane-nav')).toBeVisible();
+  await expect(page.locator('#mobile-timer-strip')).toBeVisible();
+  await expect(page.locator('#mobile-timer-strip [data-timer-clock]')).toHaveText('00:05:00');
+  await page.locator('#mobile-timer-strip button').click();
+  await expect(page.locator('[data-mobile-pane="control"] #mobile-live-timer')).toBeVisible();
+  await expect(page.locator('#mobile-live-timer [data-command="timer.start"]')).toBeVisible();
+  await page.locator('#mobile-pane-nav [data-pane-tab="chat"]').click();
   await expect(page.locator('[data-mobile-pane="chat"]')).toBeVisible();
   await expect(page.locator('#floating-mic-battery')).toBeVisible();
   await expect(page.locator('#floating-mic-battery strong')).toContainText('DJI');
@@ -628,4 +635,25 @@ test('Planning and Deck follow a horizontal drag and animate on the new pane aft
   expect(animations.some((v:any)=>v.panel==='events'&&v.duration===180)).toBe(true);
   expect(animations.some((v:any)=>v.panel==='actions'&&v.duration===180)).toBe(true);
   expect(animations.some((v:any)=>v.panel==='sounds'&&v.first?.transform?.includes('-26px'))).toBe(true);
+});
+
+
+test('StreamCockpit mobile timer follows the remote host deadline and never starts a local clock',async({page})=>{
+  const {backend,errors}=await setup(page);
+  await page.setViewportSize({width:390,height:800});
+  Object.assign(backend.snapshot.bundle.data.host.state.timer,{
+    running:true,duration:90,remaining:90,deadline:Date.now()+90_000,
+  });
+  await page.evaluate(()=>{
+    const callbacks=(window as any).intervals;
+    callbacks.find((item:any)=>item.ms===2500).callback();
+  });
+  await expect(page.locator('#mobile-timer-strip')).toBeVisible();
+  await expect(page.locator('#mobile-timer-strip [data-timer-clock]')).toHaveText(/^00:01:/);
+  await page.locator('#mobile-timer-strip button').click();
+  await expect(page.locator('[data-mobile-pane="control"] #mobile-live-timer')).toBeVisible();
+  await expect(page.locator('#mobile-live-timer [data-timer-clock]')).toHaveText(/^00:01:/);
+  await expect(page.locator('#mobile-live-timer [data-command="timer.start"]')).toBeDisabled();
+  await expect(page.locator('#mobile-live-timer [data-command="timer.pause"]')).toBeEnabled();
+  expect(errors).toEqual([]);
 });

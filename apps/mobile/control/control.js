@@ -83,14 +83,14 @@ let server=localStorage.getItem('sd2.workspace-mode')==='local'?(workspaceEndpoi
 if(installationProfile?.routes.obs===installationProfile?.localDeviceId&&localObs&&localStorage.getItem('sd2.workspace-mode')!=='local')server=localEndpoint;
 // Windows client bootstrap is host-first. Never recover from a missing pairing
 // by interpreting the client's local runtime as the stream regie.
+const peers=createPeerRequest();
+const credentials=createDeviceCredentials();
+let credential=await credentials.initialize();
 if(clientRole){
  const authority=clientAuthorityEndpoint(installationProfile);
  server=authority||'';
  credential=server?await credentials.get(server):'';
 }
-const peers=createPeerRequest();
-const credentials=createDeviceCredentials();
-let credential=await credentials.initialize();
 const dialog=$('#dialog');
 function toast(message) { $('#notice').textContent=message; $('#notice').style.display='block'; clearTimeout(noticeTimer);noticeTimer=setTimeout(()=>{$('#notice').style.display='none';},7000); }
 function normalizeServer(value) { const url=new URL(value);if(!['http:','https:'].includes(url.protocol)||url.username||url.password)throw new Error('Adresse HTTP du PC de stream attendue.'); return url.origin; }
@@ -206,6 +206,17 @@ function syncDialog(){
  modal(`<h2>Synchronisation de cet appareil</h2><p>${esc(storageError||autonomy?.lastError||localSaveMessage())}</p><p class="small">Dernière connexion : ${record?.lastSync?new Date(record.lastSync).toLocaleString('fr-FR'):'aucune'}. Les données restent disponibles après fermeture de l’application.</p>${server?'<button data-task="sync-now">Synchroniser maintenant</button>':'<button data-task="connection">Associer une régie</button>'}<button class="secondary" data-task="sync-export">Exporter ma copie locale</button>${(record?.pending||[]).filter((x,i,all)=>all.findIndex(v=>v.key===x.key)===i).map(op=>{const last=record.pending.filter(x=>x.key===op.key).at(-1);return `<section class="panel spacer"><b>${esc(op.key)}</b><p>${esc(op.issue?.message||'En attente de connexion')}</p>${op.issue?`<p>Champs : ${esc(op.issue.fields?.join(', ')||'élément complet')}</p><div class="form-grid"><label>Ma version<textarea readonly rows="6">${esc(JSON.stringify(last.value,null,2))}</textarea></label><label>Version de la régie<textarea readonly rows="6">${esc(JSON.stringify(resources(record.bundle)[op.key]??null,null,2))}</textarea></label></div><button data-sync-keep="${esc(op.key)}">Conserver ma version</button><button class="secondary" data-sync-remote="${esc(op.key)}">Utiliser la version de la régie</button>`:''}</section>`;}).join('')}`);
 }
 const djiBatteryWarningTracker=createDjiBatteryWarningTracker();
+function updateMobileTimerStrip(){
+ const strip=$('#mobile-timer-strip');
+ if(!strip)return;
+ const timer=data?.host?.state?.timer;
+ strip.hidden=!compact||!server||!timer;
+ if(strip.hidden)return;
+ const seconds=online&&timer.running&&timer.deadline?Math.max(0,(timer.deadline-Date.now())/1000):timer.remaining??0;
+ strip.querySelector('[data-timer-clock]').textContent=timerClock(seconds);
+ strip.querySelector('[data-timer-status]').textContent=timerStatus(timer);
+ strip.classList.toggle('timer-strip-offline',!online);
+}
 function shell() {
   const active=online&&data?.host?.state?.obs?.streaming===true;
   // The OBS silence toast is permanently retired: it caused false alarms
@@ -236,6 +247,7 @@ function shell() {
   const count=autonomy?.store.record.pending.length||0,issues=autonomy?.store.record.pending.filter(x=>x.issue).length||0;
   $('#connection').textContent=storageError||`${!server?'Espace de cet appareil':online?'Régie connectée':globalThis.streamDashboardDesktop?'Régie non confirmée · boutons suspendus':'Mode local · commandes suspendues'} · ${issues?issues+' modification(s) à résoudre':count?(server?count+' modification(s) en attente':'données sauvegardées localement'):'copie locale à jour'}`;
   $('#sync-status').textContent=issues?'Résoudre les conflits':count?'Synchronisation ('+count+')':'Synchronisation';
+  updateMobileTimerStrip();
 }
 function actionAvailability(action){
  const routed=actionRouter?.status(action);if(routed)return routed;
@@ -309,7 +321,18 @@ function compactLivePage(){
  <div class="mobile-spontaneous-row"><button type="button" class="secondary" data-task="spontaneous-live">⚡ Live spontané</button><small>Démarrer sans événement planifié, après confirmation.</small></div><div class="simple-live-actions"><button data-action="live.start" ${!live.canStartBoth||busy?'disabled':''}>◉ Lancer Twitch</button><button class="danger" data-action="live.stop" ${!online||busy?'disabled':''}>■ Arrêter Twitch</button></div>
  ${lastStop?.status==='uncertain'?`<p class="warn">Dernier arrêt non confirmé. Vérifiez OBS et Twitch avant de réessayer.</p>`:''}
  </section>
- <section class="panel simple-mic-health" aria-live="polite"><div class="simple-health-row"><b>🎙️ Micro</b><span class="${micWarn?'warn':'succeeded'}">${esc(micStatus)}</span></div>
+ <section class="panel mobile-timer-panel" id="mobile-live-timer" aria-label="Minuteur partagé du stream">
+ <div class="mobile-timer-panel-title"><span>⏱ Minuteur du stream</span><span class="pill">Régie fixe</span></div>
+ <div class="mobile-timer-clock" data-timer-clock>${timerClock(online&&state.timer.running&&state.timer.deadline?Math.max(0,(state.timer.deadline-Date.now())/1000):state.timer.remaining??0)}</div>
+ <p class="small muted" data-timer-status>${timerStatus(state.timer)}</p>
+ <div class="mobile-timer-controls">
+ <button type="button" data-command="timer.start" ${!online||busy||state.timer.running?'disabled':''}>${state.timer.remaining>0&&state.timer.remaining<state.timer.duration?'Reprendre':'Démarrer'}</button>
+ <button type="button" class="secondary" data-command="timer.pause" ${!online||busy||!state.timer.running?'disabled':''}>Pause</button>
+ <button type="button" class="secondary" data-command="timer.reset" ${!online||busy?'disabled':''}>Réinitialiser</button>
+ <button type="button" class="secondary" data-task="timer-duration" ${!online||busy?'disabled':''}>Choisir la durée</button>
+ </div><p class="small muted">Le minuteur appartient au PC stream : aucune copie locale ne peut le démarrer.</p>
+ </section>
+ <section class="panel simple-mic-health"  aria-live="polite"><div class="simple-health-row"><b>🎙️ Micro</b><span class="${micWarn?'warn':'succeeded'}">${esc(micStatus)}</span></div>
  <p class="small muted">${esc(meterLabel)}</p><p class="small muted">Batterie DJI : inconnue. Consultez le récepteur ou DJI Mimo ; aucune estimation à partir du son.</p>
  <button class="secondary" data-page="settings">Vérifier la source OBS</button></section>
  <section class="simple-shortcuts">
@@ -809,6 +832,7 @@ async function runAction(action,platform,soundId){
 async function openAuthorization(value){const url=value.url||value.authorizationUrl||value.verification_uri||value.verificationUri; if(!url){toast(JSON.stringify(value));return;}if(data.host.local&&globalThis.streamDashboardDesktop?.openExternalAuth)await globalThis.streamDashboardDesktop.openExternalAuth(url);modal(`<h2>Autorisation du service</h2><p class="small">${value.user_code||value.userCode?'Code : <b>'+esc(value.user_code||value.userCode)+'</b>':'Terminez cette autorisation dans le navigateur du PC de stream.'}</p><p><a href="${esc(url)}" target="_blank" rel="noopener">Ouvrir l’autorisation</a></p><label>Lien à ouvrir sur le PC de stream<textarea readonly>${esc(url)}</textarea></label>`);}
 async function jsonEditor(title,path,key,method='PUT'){const response=await api(path);profileDraft=response;modal(`<h2>${esc(title)}</h2><form id="json-form" data-path="${esc(path)}" data-key="${esc(key||'')}" data-method="${method}"><label>Configuration JSON<textarea name="value" rows="16">${esc(JSON.stringify(key?response[key]:response,null,2))}</textarea></label><div class="form-actions"><button>Enregistrer</button></div></form>`);}
 async function task(name,b){
+ if(name==='open-mobile-timer'){page='live';localStorage.setItem('sd2.page',page);mobilePanes.select('live','control',{notify:false});render();return;}
  if(['storage','storage-purge','storage-restore'].includes(name)){storageUI??=(await import('./audio-storage.js')).createStorageUI({getStore:()=>autonomy.store,isLocal:()=>!server,modal,esc,toast});return name==='storage'?storageUI.open():name==='storage-restore'?storageUI.restore():storageUI.purge();}
 
  if(name==='close-dialog'){dialog.close();return;}
@@ -1067,6 +1091,6 @@ globalThis.addEventListener('pagehide',()=>{void metadataDrafts.flush();});
 // Do not replace a pressed control between pointerdown and click during a poll.
 document.addEventListener('pointerdown',()=>{pointerHeld=true;});
 for(const name of ['pointerup','pointercancel'])document.addEventListener(name,()=>{setTimeout(()=>{pointerHeld=false;},0);});
-setInterval(()=>{const t=data?.host.state.timer;if(!t)return;const clock=$('[data-timer-clock]');if(clock)clock.textContent=timerClock(online&&t.running&&t.deadline?Math.max(0,(t.deadline-Date.now())/1000):t.remaining);const status=$('[data-timer-status]');if(status)status.textContent=timerStatus(t);},250);
+setInterval(()=>{const t=data?.host.state.timer;if(!t)return;const value=timerClock(online&&t.running&&t.deadline?Math.max(0,(t.deadline-Date.now())/1000):t.remaining);document.querySelectorAll('[data-timer-clock]').forEach(clock=>{clock.textContent=value;});document.querySelectorAll('[data-timer-status]').forEach(status=>{status.textContent=timerStatus(t);});},250);
 
 if(globalThis.isSecureContext&&'serviceWorker' in navigator)void navigator.serviceWorker.register(new URL('../control-sw.js',import.meta.url)).catch(()=>{});
