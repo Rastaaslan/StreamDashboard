@@ -472,7 +472,7 @@ const input=(label,name,value='',type='text',extra='')=>`<label>${label}<input n
 const select=(label,name,items,value)=>`<label>${esc(label)}<select name="${esc(name)}" aria-label="${esc(label)}">${items.map(([id,text])=>`<option value="${esc(id)}" ${id===value?'selected':''}>${esc(text)}</option>`).join('')}</select></label>`;
 const check=(label,name,value)=>`<label class="check"><input type="checkbox" name="${name}" ${value?'checked':''}>${label}</label>`;
 const wizebotManagement=createWizebotManagement({api,esc,modal,getData:()=>!server?{...data,host:{...data.host,chat:autonomy?.store.record.drafts.deviceChat}}:data,refresh,toast,uuid,isOnline:()=>!server||online,getDraft:(channel,id)=>autonomy?.store.record.drafts['wizebot/'+channel+'/'+id],saveDraft:(channel,id,value)=>autonomy.store.draft('wizebot/'+channel+'/'+id,value)});
-const planning=createPlanning({getData:()=>data,api,esc,input,select,check,modal,close:()=>dialog.close(),toast,refresh,render,prepare:metadataDialog});
+const planning=createPlanning({getData:()=>data,api,esc,input,select,check,modal,close:()=>dialog.close(),toast,refresh,render,prepare:metadataDialog,getConnection:()=>online});
 
 const mobilePanes=createMobilePanes($('#mobile-pane-nav'),{
  root:$('#content'),storage:localStorage,
