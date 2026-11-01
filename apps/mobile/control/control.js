@@ -5,6 +5,7 @@ import { mountMomentsPage } from './streamcockpit-moments-page.js';
 let healthPage, mixerPage, momentsPage;
 import {createLazyTask,createLazyPlanning} from './lazy-features.js';
 import {clientAuthorityEndpoint,clientMustDelegateCommand} from './client-authority.js';
+import {sampleMasterClock,estimateMasterNow,masterTimerSeconds as projectMasterTimerSeconds} from './streamcockpit-master-clock.js';
 import {createSpotifyPanel} from './spotify-panel.js';
 import {createDjiMic3BatteryPanel} from './dji-battery-panel.js';
 import {djiRelayTarget} from './dji-relay-target.js';
@@ -77,6 +78,7 @@ if(compact&&!localStorage.getItem('sd2.mobile-five-tabs-v1')){
  else if(['manage','settings','actions'].includes(previous))localStorage.setItem('sd2.page','plus');
  localStorage.setItem('sd2.mobile-five-tabs-v1','1');
 }
+let masterClockSample=null;
 let data, sounds, replay, soundError='', soundCategory='', deckCategory='all', online=false, page=localStorage.getItem('sd2.page') || (compact?'home':'live'), tab='obs', busy=false, refreshFlight, pointerHeld=false, configurationDraft, profileDraft, noticeTimer;
 let deckScope, deckPreferences, deckEditing=false, deckEditBank='all', activeCommands=0;
 const clientRole=new URL(location.href).searchParams.get('role')==='client';
@@ -114,6 +116,10 @@ async function network(path, body, method=body===undefined?'GET':'POST',target=s
   if(response.status===204)return {};
   let value;
   try{value=await response.json();}catch(cause){const error=new Error(response.ok?'Réponse invalide de la régie.':`Erreur ${response.status}`,{cause});error.status=response.status;error.transportUnavailable=cause instanceof TypeError||['AbortError','TimeoutError'].includes(cause?.name);throw error;}
+  // Capture the FIXE wall clock only from a fresh, successful authenticated
+  // autonomy response. Never calibrate from an IndexedDB/offline replica.
+  if(response.ok&&path==='/api/v2/autonomy'&&method==='GET'&&target===server)
+    masterClockSample=sampleMasterClock(value?.bundle?.data?.host?.timerObservedAt,performance.now(),target);
   if(!response.ok) { const error=new Error(value.error?.message || value.error || `Erreur ${response.status}`); error.status=response.status;error.body=value;throw error; }
   return value;
 }
@@ -217,13 +223,20 @@ function syncDialog(){
  modal(`<h2>Synchronisation de cet appareil</h2><p>${esc(storageError||autonomy?.lastError||localSaveMessage())}</p><p class="small">Dernière connexion : ${record?.lastSync?new Date(record.lastSync).toLocaleString('fr-FR'):'aucune'}. Les données restent disponibles après fermeture de l’application.</p>${server?'<button data-task="sync-now">Synchroniser maintenant</button>':'<button data-task="connection">Associer une régie</button>'}<button class="secondary" data-task="sync-export">Exporter ma copie locale</button>${(record?.pending||[]).filter((x,i,all)=>all.findIndex(v=>v.key===x.key)===i).map(op=>{const last=record.pending.filter(x=>x.key===op.key).at(-1);return `<section class="panel spacer"><b>${esc(op.key)}</b><p>${esc(op.issue?.message||'En attente de connexion')}</p>${op.issue?`<p>Champs : ${esc(op.issue.fields?.join(', ')||'élément complet')}</p><div class="form-grid"><label>Ma version<textarea readonly rows="6">${esc(JSON.stringify(last.value,null,2))}</textarea></label><label>Version de la régie<textarea readonly rows="6">${esc(JSON.stringify(resources(record.bundle)[op.key]??null,null,2))}</textarea></label></div><button data-sync-keep="${esc(op.key)}">Conserver ma version</button><button class="secondary" data-sync-remote="${esc(op.key)}">Utiliser la version de la régie</button>`:''}</section>`;}).join('')}`);
 }
 const djiBatteryWarningTracker=createDjiBatteryWarningTracker();
+// A display projection only: no second timer or local command authority.
+function observedHostTime(){
+ return online&&server?estimateMasterNow(masterClockSample,performance.now(),server):null;
+}
+function hostTimerSeconds(timer){
+ return projectMasterTimerSeconds(timer,masterClockSample,performance.now(),server,online);
+}
 function updateMobileTimerStrip(){
  const strip=$('#mobile-timer-strip');
  if(!strip)return;
  const timer=data?.host?.state?.timer;
  strip.hidden=!compact||!server||!timer;
  if(strip.hidden)return;
- const seconds=online&&timer.running&&timer.deadline?Math.max(0,(timer.deadline-Date.now())/1000):timer.remaining??0;
+ const seconds=hostTimerSeconds(timer);
  const display=timerClock(seconds),status=timerStatus(timer);
  strip.querySelector('[data-timer-clock]').textContent=display;
  strip.querySelector('[data-timer-status]').textContent=status;
@@ -343,7 +356,7 @@ function compactLivePage(){
  </section>
  <section class="panel mobile-timer-panel" id="mobile-live-timer" aria-label="Minuteur partagé du stream">
  <div class="mobile-timer-panel-title"><span>⏱ Minuteur du stream</span><span class="pill">Régie fixe</span></div>
- <div class="mobile-timer-clock" data-timer-clock>${timerClock(online&&state.timer.running&&state.timer.deadline?Math.max(0,(state.timer.deadline-Date.now())/1000):state.timer.remaining??0)}</div>
+ <div class="mobile-timer-clock" data-timer-clock>${timerClock(hostTimerSeconds(state.timer))}</div>
  <p class="small muted" data-timer-status>${timerStatus(state.timer)}</p>
  <div class="mobile-timer-controls">
  <button type="button" data-command="timer.start" ${!online||busy||state.timer.running?'disabled':''}>${state.timer.remaining>0&&state.timer.remaining<state.timer.duration?'Reprendre':'Démarrer'}</button>
@@ -363,7 +376,7 @@ function livePage() {
  if(compact)return compactLivePage();
  const state=data.host.state, remaining=state.timer.remaining??0, live=liveControlState(data,online);
  if(!server&&native)return `<div id="live-overview"><h1>Mon live · services du téléphone</h1><p class="subtitle">Chats, comptes et préparation fonctionnent sur cet appareil.</p><div class="form-actions"><button data-task="metadata">Informations du live</button><button data-task="configure-platforms">Diffusion Twitch</button><button class="secondary" data-task="device-accounts">Mes comptes</button></div></div><div id="live-monitor"></div><div id="streamlabs-feed"></div><section class="panel" id="live-controls"><h2>Dernières actions</h2><button class="secondary" data-page="activity">Toute l’activité</button>${resultRows()}</section>`;
- return `<div id="live-overview"><h1>${esc(live.heading)}</h1><p class="subtitle">Votre live, vos scènes et vos interactions. Une régie pour tous vos appareils.</p><div class="grid statuses">${platformCard('obs','OBS Studio','◉')}${platformCard('twitch','Twitch','T')}</div></div><div id="dji-battery-panel"></div><div id="spotify-panel"></div><div id="live-monitor"></div><div id="streamlabs-feed"></div><div id="live-controls"><div class="grid columns"><section class="panel live-hero"><div class="hero-top"><span class="eyebrow">TWITCH</span><span class="pill">${!online?'RÉGIE DÉCONNECTÉE':live.running?'COMMANDE EN COURS':live.anyActive?'DIFFUSION EN COURS':live.unconfirmed?'ÉTAT À VÉRIFIER':'PRÉPARATION'}</span></div><div class="hero-title">${esc(data.configuration.metadata.title||'Votre prochain live commence ici')}</div><p class="scene-label">${online?'Scène actuelle':'Dernière scène connue'} · <b>${esc(state.obs.scene||'OBS non connecté')}</b></p><div class="row-actions"><button class="secondary" data-task="metadata">Modifier les informations du live</button><button class="secondary" data-task="replay-config">✂ Clips OBS</button></div><div class="live-tools"><button data-action="live.start" ${!live.canStartBoth||busy?'disabled':''}>◉ ${live.running?'Commande en cours':live.bothLive?'Live déjà lancé':live.anyActive?'Diffusion en cours':'Lancer Twitch'}</button><button class="danger" data-action="live.stop" ${!online?'disabled':''}>■ Arrêter Twitch</button></div>${liveDestinationControls(live)}<p class="small muted">Le signal OBS et la confirmation Twitch sont suivis séparément.</p></section><section class="panel"><span class="eyebrow">MINUTEUR DU STREAM</span><div class="timer" data-timer-clock>${timerClock(remaining)}</div><p data-timer-status class="small ${state.timer.running?'succeeded':'muted'}">${timerStatus(state.timer)}</p><div class="timer-buttons"><button class="secondary" data-command="timer.start" ${!online||busy||state.timer.running?'disabled':''}>${remaining>0&&remaining<state.timer.duration?'Reprendre':'Démarrer'}</button><button class="secondary" data-command="timer.pause" ${!online||busy||!state.timer.running?'disabled':''}>Pause</button><button class="secondary" data-command="timer.reset" ${!online||busy?'disabled':''}>Remettre à 5 min</button><button class="secondary" data-task="timer-duration">Choisir la durée</button></div><p class="small muted">L’overlay affiche le compteur en mode Introduction ou Pause.</p><button class="secondary" data-task="timer-overlay">Vérifier le minuteur dans OBS</button><div class="checklist">${state.checklist.map(c=>`<label class="check"><input type="checkbox" data-check="${esc(c.id)}" ${c.done?'checked':''}>${esc(c.label)}</label>`).join('')}</div></section></div><section class="spacer"><div class="section-heading"><h2>À portée de main</h2><button class="secondary" data-page="deck">Ouvrir mon Deck ↗</button></div><div class="deck">${data.configuration.actions.slice(0,6).map(actionButton).join('')}</div></section><section class="panel spacer"><div class="section-heading"><h2>Dernières actions</h2><button class="secondary" data-page="activity">Toute l’activité</button><span class="small muted">Exécution sur ${esc(data.host.hostname)}</span></div>${resultRows()}</section></div>`;
+ return `<div id="live-overview"><h1>${esc(live.heading)}</h1><p class="subtitle">Votre live, vos scènes et vos interactions. Une régie pour tous vos appareils.</p><div class="grid statuses">${platformCard('obs','OBS Studio','◉')}${platformCard('twitch','Twitch','T')}</div></div><div id="dji-battery-panel"></div><div id="spotify-panel"></div><div id="live-monitor"></div><div id="streamlabs-feed"></div><div id="live-controls"><div class="grid columns"><section class="panel live-hero"><div class="hero-top"><span class="eyebrow">TWITCH</span><span class="pill">${!online?'RÉGIE DÉCONNECTÉE':live.running?'COMMANDE EN COURS':live.anyActive?'DIFFUSION EN COURS':live.unconfirmed?'ÉTAT À VÉRIFIER':'PRÉPARATION'}</span></div><div class="hero-title">${esc(data.configuration.metadata.title||'Votre prochain live commence ici')}</div><p class="scene-label">${online?'Scène actuelle':'Dernière scène connue'} · <b>${esc(state.obs.scene||'OBS non connecté')}</b></p><div class="row-actions"><button class="secondary" data-task="metadata">Modifier les informations du live</button><button class="secondary" data-task="replay-config">✂ Clips OBS</button></div><div class="live-tools"><button data-action="live.start" ${!live.canStartBoth||busy?'disabled':''}>◉ ${live.running?'Commande en cours':live.bothLive?'Live déjà lancé':live.anyActive?'Diffusion en cours':'Lancer Twitch'}</button><button class="danger" data-action="live.stop" ${!online?'disabled':''}>■ Arrêter Twitch</button></div>${liveDestinationControls(live)}<p class="small muted">Le signal OBS et la confirmation Twitch sont suivis séparément.</p></section><section class="panel"><span class="eyebrow">MINUTEUR DU STREAM</span><div class="timer" data-timer-clock>${timerClock(hostTimerSeconds(state.timer))}</div><p data-timer-status class="small ${state.timer.running?'succeeded':'muted'}">${timerStatus(state.timer)}</p><div class="timer-buttons"><button class="secondary" data-command="timer.start" ${!online||busy||state.timer.running?'disabled':''}>${remaining>0&&remaining<state.timer.duration?'Reprendre':'Démarrer'}</button><button class="secondary" data-command="timer.pause" ${!online||busy||!state.timer.running?'disabled':''}>Pause</button><button class="secondary" data-command="timer.reset" ${!online||busy?'disabled':''}>Remettre à 5 min</button><button class="secondary" data-task="timer-duration">Choisir la durée</button></div><p class="small muted">L’overlay affiche le compteur en mode Introduction ou Pause.</p><button class="secondary" data-task="timer-overlay">Vérifier le minuteur dans OBS</button><div class="checklist">${state.checklist.map(c=>`<label class="check"><input type="checkbox" data-check="${esc(c.id)}" ${c.done?'checked':''}>${esc(c.label)}</label>`).join('')}</div></section></div><section class="spacer"><div class="section-heading"><h2>À portée de main</h2><button class="secondary" data-page="deck">Ouvrir mon Deck ↗</button></div><div class="deck">${data.configuration.actions.slice(0,6).map(actionButton).join('')}</div></section><section class="panel spacer"><div class="section-heading"><h2>Dernières actions</h2><button class="secondary" data-page="activity">Toute l’activité</button><span class="small muted">Exécution sur ${esc(data.host.hostname)}</span></div>${resultRows()}</section></div>`;
 }
 function canRetryPlatform(receipt,platform){
  if(!receipt.action.startsWith('live.'))return true;
@@ -468,8 +481,8 @@ function soundsPage(){
 }
 function actionsPage(){return `<div class="section-heading"><div><h1>Boutons & macros</h1><p class="subtitle">Les associations sont partagées par le Deck et le clavier.</p></div><button data-task="new-action">+ Ajouter</button></div><section class="panel"><div class="table-wrap"><table><thead><tr><th>Bouton</th><th>Raccourci clavier</th><th></th></tr></thead><tbody>${data.configuration.actions.map(a=>`<tr><td>${esc(a.label)}</td><td>${esc(a.shortcut||'—')}</td><td><button class="secondary" data-edit-action="${esc(a.id)}">Modifier</button><button class="secondary" data-task="action-route" data-action-id="${esc(a.id)}">Destination</button></td></tr>`).join('')}</tbody></table></div></section>`;}
 function managePage(){return `<h1>Gestion</h1><p class="subtitle">Votre planning, vos contenus et tous les réglages de la régie.</p><div class="management-grid"><button class="secondary" data-page="planning"><span>▤</span>Planning & événements<small>Agenda, séries, publications, export</small></button><button class="secondary" data-page="actions"><span>▦</span>Boutons & macros<small>Clavier, scènes, alertes et messages</small></button><button class="secondary" data-task="sounds"><span>♫</span>Bibliothèque audio<small>Importer, renommer, volume et destinations</small></button><button class="secondary" data-page="settings"><span>⚙</span>Configuration<small>OBS, comptes, appareils et intégrations</small></button></div>`;}
-function timerClock(value){const r=Math.max(0,Math.ceil(value));return [Math.floor(r/3600),Math.floor(r/60)%60,r%60].map(x=>String(x).padStart(2,'0')).join(':');}
-function timerStatus(t){return !online?'Hôte indisponible · dernier état reçu':t.running?'En cours sur la régie':t.remaining<=0?'Terminé':t.remaining<t.duration?'En pause':'Prêt à démarrer';}
+function timerClock(value){if(!Number.isFinite(value))return '--:--:--';const r=Math.max(0,Math.ceil(value));return [Math.floor(r/3600),Math.floor(r/60)%60,r%60].map(x=>String(x).padStart(2,'0')).join(':');}
+function timerStatus(t){return !online?'Hôte indisponible · dernier état reçu':t.running&&hostTimerSeconds(t)===null?'Horloge du fixe à resynchroniser':t.running?'En cours sur la régie':t.remaining<=0?'Terminé':t.remaining<t.duration?'En pause':'Prêt à démarrer';}
 const input=(label,name,value='',type='text',extra='')=>`<label>${label}<input name="${name}" type="${type}" value="${esc(value)}" ${extra}></label>`;
 const select=(label,name,items,value)=>`<label>${esc(label)}<select name="${esc(name)}" aria-label="${esc(label)}">${items.map(([id,text])=>`<option value="${esc(id)}" ${id===value?'selected':''}>${esc(text)}</option>`).join('')}</select></label>`;
 const check=(label,name,value)=>`<label class="check"><input type="checkbox" name="${name}" ${value?'checked':''}>${label}</label>`;
@@ -589,7 +602,7 @@ function render({passive=false}={}){
     $('#content').dataset.renderedPage===page&&Boolean($('#streamlabs-feed'));
   if(!retainStreamlabs){
     streamlabsFeed?.destroy();streamlabsFeed=undefined;streamlabsFeedRoot=undefined;
-    replaceMarkup($('#content'),page==='home'?renderMobileHome({data,online,server,live:liveControlState(data,online),esc}):
+    replaceMarkup($('#content'),page==='home'?renderMobileHome({data,online,server,live:liveControlState(data,online),esc,timerNow:observedHostTime()??Number.NaN}):
       page==='plus'?renderMobilePlus({data,online,server,esc}):
       page==='deck'?deckPage():page==='sounds'?(compact?compactDeckPage('sounds'):soundsPage()):
       page==='planning'?(compact?planning.mobilePage(mobilePanes.get('planning')):planning.page()):
@@ -1159,6 +1172,6 @@ globalThis.addEventListener('pagehide',()=>{void metadataDrafts.flush();});
 // Do not replace a pressed control between pointerdown and click during a poll.
 document.addEventListener('pointerdown',()=>{pointerHeld=true;});
 for(const name of ['pointerup','pointercancel'])document.addEventListener(name,()=>{setTimeout(()=>{pointerHeld=false;},0);});
-setInterval(()=>{const t=data?.host.state.timer;if(!t)return;const value=timerClock(online&&t.running&&t.deadline?Math.max(0,(t.deadline-Date.now())/1000):t.remaining);document.querySelectorAll('[data-timer-clock]').forEach(clock=>{clock.textContent=value;});document.querySelectorAll('[data-timer-status]').forEach(status=>{status.textContent=timerStatus(t);});},250);
+setInterval(()=>{const t=data?.host.state.timer;if(!t)return;const value=timerClock(hostTimerSeconds(t));document.querySelectorAll('[data-timer-clock]').forEach(clock=>{clock.textContent=value;});document.querySelectorAll('[data-timer-status]').forEach(status=>{status.textContent=timerStatus(t);});},250);
 
 if(globalThis.isSecureContext&&'serviceWorker' in navigator)void navigator.serviceWorker.register(new URL('../control-sw.js',import.meta.url)).catch(()=>{});

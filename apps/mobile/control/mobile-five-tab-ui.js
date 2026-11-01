@@ -8,7 +8,7 @@ const service=(name,value,detail,state='neutral')=>
 const link=(title,caption,attrs)=>
   `<button type="button" class="secondary" ${attrs}><span>${title}<small>${caption}</small></span></button>`;
 
-export function renderMobileHome({data,online,server,live,esc,now=Date.now()}){
+export function renderMobileHome({data,online,server,live,esc,now=Date.now(),timerNow=now}){
   const host=data?.host||{},state=host.state||{},obs=state.obs||{};
   const connected=Boolean(online&&server);
   const twitch=live.destinations?.twitch||{};
@@ -19,13 +19,16 @@ export function renderMobileHome({data,online,server,live,esc,now=Date.now()}){
   const streamState=!connected?'Indisponible':twitchConfirmed?'Twitch en direct':
     obsEmitting?'OBS diffuse · Twitch à vérifier':uncertain?'À confirmer':'Hors ligne';
   const timer=state.timer||{};
-  const timerSeconds=connected&&timer.running&&timer.deadline?
-    Math.max(0,(timer.deadline-now)/1000):timer.remaining??0;
-  const timerValue=Math.max(0,Math.ceil(Number.isFinite(timerSeconds)?timerSeconds:0));
-  const timerClock=[Math.floor(timerValue/3600),Math.floor(timerValue/60)%60,timerValue%60]
-    .map(value=>String(value).padStart(2,'0')).join(':');
+  const timerSeconds=connected&&timer.running?
+    (Number.isFinite(timerNow)&&Number.isSafeInteger(timer.deadline)?
+      Math.max(0,(timer.deadline-timerNow)/1000):null):timer.remaining??null;
+  const timerValue=Number.isFinite(timerSeconds)?Math.max(0,Math.ceil(timerSeconds)):null;
+  const timerClock=timerValue===null?'--:--:--':
+    [Math.floor(timerValue/3600),Math.floor(timerValue/60)%60,timerValue%60]
+      .map(value=>String(value).padStart(2,'0')).join(':');
   const timerLabel=!server?'Régie non associée':!online?'Hôte indisponible':
-    timer.running?'En cours sur la régie':timer.remaining<=0?'Terminé':
+    timer.running&&timerValue===null?'Horloge du fixe à resynchroniser':
+      timer.running?'En cours sur la régie':timer.remaining<=0?'Terminé':
       timer.remaining<timer.duration?'En pause':'Prêt à démarrer';
   const twitchState=!connected?'Non vérifié':twitch.live===true?'Confirmé en direct':
     twitch.live===false?'Hors ligne confirmé':'État non confirmé';

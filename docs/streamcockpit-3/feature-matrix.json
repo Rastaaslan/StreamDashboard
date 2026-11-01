@@ -41,6 +41,22 @@
         {
           "path": "apps/agent/src/windows-sqlite-receipts.ts",
           "kind": "2026-11-01 FIXE Windows transactional SQLite EXTRA receipts and monotonic authority epoch; targeted simulated OBS and crash tests, no live hardware or power-loss validation"
+        },
+        {
+          "path": "apps/mobile/control/client-authority.js",
+          "kind": "2026-11-01 FIXE refuses stale, self-owned or duplicate pinned OBS host identity, no implicit replacement by laptop"
+        },
+        {
+          "path": "apps/mobile/control/streamcockpit-master-clock.js",
+          "kind": "2026-11-01 FIXE authenticated server clock sampled via monotonic client time for display only, 15-second fail-closed expiry; no second local timer"
+        },
+        {
+          "path": "apps/server/src/index.ts",
+          "kind": "2026-11-01 F00 host timerObservedAt published on existing authenticated autonomy snapshot, no new timer owner or command"
+        },
+        {
+          "path": "apps/server/src/autonomy-routes.ts",
+          "kind": "2026-11-01 F00 GET /api/v2/autonomy sets Cache-Control private, no-store so old HTTP timer samples cannot be reused"
         }
       ],
       "verifiedTests": [
@@ -49,17 +65,22 @@
         "tests/streamcockpit3-health-integration.test.ts",
         "tests/streamcockpit3-agent-fencing.test.ts",
         "tests/streamcockpit3-agent-windows-sqlite.test.ts",
-        "tests/streamcockpit-production-obs-writer.test.ts"
+        "tests/streamcockpit-production-obs-writer.test.ts",
+        "tests/streamcockpit-client-authority.test.ts",
+        "tests/streamcockpit-timer-authority.test.ts",
+        "tests/streamcockpit3-master-clock.test.ts",
+        "tests/streamcockpit3-master-clock-browser.test.ts"
       ],
       "hardwareEvidence": [],
       "blockers": [
         "Agent real OBS production execution on FIXE and hardware power-loss behavior of SQLite rollback journal not qualified",
         "Legacy JSON receipt or epoch history intentionally blocks Windows startup pending explicit reconciliation/migration",
-        "Node 22 node:sqlite experimental; no packaged Windows service and no FIXE/laptop/Android timer-master hardware evidence"
+        "Node 22 node:sqlite experimental; no packaged Windows service and no FIXE/laptop/Android timer-master hardware evidence",
+        "Monotonic browser countdown and strict pinned-host fallback validated only by Windows loopback and synthetic Edge 320px; no physical Android or laptop clock/reconnect qualification"
       ],
       "ownerJob": "streamcockpit/3.0-lot-a",
       "integrationJob": "streamcockpit/3.0-lot-e",
-      "integrationNote": "Wave3 OBS fencing retained. 2026-11-01 FIXE F00 Windows SQLite receipts, epoch and fail-closed legacy guards integrated with simulated writer; 38/38 targeted PASS (5 suites), TypeScript and security 803 files PASS. Full Windows Vitest after F00: 1945 PASS / 55 skipped; Node: 349 PASS / 6 skipped, both exit 0. No real OBS write, packaged service, power-loss or G3 tests."
+      "integrationNote": "Wave3 OBS fencing retained; F00 Windows SQLite transactional receipts qualified in simulator only. 2026-11-01 FIXE pinned OBS host and read-only master-clock projection from authenticated timerObservedAt with no-store HTTP, monotonic client time and 15s expiry. After convergence with separate F09 manual commits: 12/12 targeted Vitest (2 real Edge 320px and 2-server HTTP), full Vitest before final no-store header 1977 PASS/54 skipped/0 failures, Node after header/build 349 PASS/6 skipped, TypeScript/browser types, build (127 public assets), shipped JS (134 files), security (814 files) PASS. No physical FIXE/laptop/Android synchronization or real OBS write; gates unchanged."
     },
     {
       "id": "F01",

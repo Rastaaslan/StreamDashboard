@@ -9,7 +9,7 @@ export function registerAutonomyRoutes(app:express.Application, service:Autonomy
  apply(key:string,value:any,req:express.Request):Promise<void>;
 }){
  const allowed=new Set(['actionSet','settings','planning','planningTransfer','action','output','preferences','profile','template','sound','automation','discord','google']);
- app.get('/api/v2/autonomy', (req,res)=>{void options.observe().catch(()=>{});res.json({workspace:service.workspace,bundle:options.bundle(req),configurationTransfer:configurationTransferSupport('windows')});});
+ app.get('/api/v2/autonomy', (req,res)=>{res.setHeader('Cache-Control','private, no-store');void options.observe().catch(()=>{});res.json({workspace:service.workspace,bundle:options.bundle(req),configurationTransfer:configurationTransferSupport('windows')});});
  app.post('/api/v2/autonomy/sync',async(req,res,next)=>{
   try{
    const edit=req.body?.edit, [kind,id]=String(edit?.key||'').split('/');

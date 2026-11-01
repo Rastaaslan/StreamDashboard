@@ -3,6 +3,8 @@ import {mkdtemp,rm} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import path from 'node:path';
 import {startDashboardServer,type DashboardServerHandle} from '../apps/server/src/index.js';
+// @ts-expect-error Display-only browser JS helper.
+import {sampleMasterClock,masterTimerSeconds} from '../apps/mobile/control/streamcockpit-master-clock.js';
 
 const ports:DashboardServerHandle[]=[],folders:string[]=[];
 async function make(timerAuthority:boolean){
@@ -30,6 +32,19 @@ describe('FC1: one timer authority over two independent server instances',()=>{
    expect(response.state.timer.duration).toBe(600);
    const hostState=await fetch(host.url+'/api/v1/state').then(r=>r.json());
    expect(hostState.timer.deadline).toBe(response.state.timer.deadline);
+   // GET /api/v2/autonomy returns the current FIXE clock alongside its timer
+   // in a real loopback HTTP response, not a local Android/PC-game clock.
+   const replicaResponse=await fetch(host.url+'/api/v2/autonomy');
+   expect(replicaResponse.status).toBe(200);
+   expect(replicaResponse.headers.get('cache-control')).toContain('no-store');
+   const replica=await replicaResponse.json();
+   const observed=replica.bundle.data.host.timerObservedAt;
+   expect(Number.isSafeInteger(observed)).toBe(true);
+   const sample=sampleMasterClock(observed,1000,host.url);
+   const seconds=masterTimerSeconds(replica.bundle.data.host.state.timer,sample,1250,host.url,true);
+   expect(seconds).toBeGreaterThan(598);
+   expect(seconds).toBeLessThanOrEqual(600);
+   expect(masterTimerSeconds(replica.bundle.data.host.state.timer,sample,1250,client.url,true)).toBeNull();
    expect((await fetch(client.url+'/api/v1/state').then(r=>r.json())).timer.running).toBe(false);
    const pause=await command(host.url,'timer.pause','host_pause_'+Date.now());
    expect(pause.status).toBe(200);

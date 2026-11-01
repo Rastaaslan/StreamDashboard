@@ -8,12 +8,26 @@ function safeRemoteEndpoint(value) {
   } catch {return ''}
 }
 export function clientAuthorityEndpoint(installation) {
-  if(!installation||installation.runtimeProfile!=='device-runtime')return '';
-  const candidates=(installation.devices||[]).filter(d=>d&&d.enabled===true&&d.id!==installation.localDeviceId&&
+  if(!installation||installation.runtimeProfile!=='device-runtime'||
+    typeof installation.localDeviceId!=='string'||!installation.localDeviceId)return '';
+  const devices=Array.isArray(installation.devices)?installation.devices:[];
+  const candidates=devices.filter(d=>d&&typeof d.id==='string'&&d.id.length>0&&
+    d.enabled===true&&d.id!==installation.localDeviceId&&
     Array.isArray(d.roles)&&d.roles.includes('obs-executor')&&safeRemoteEndpoint(d.endpoint));
-  const designated=candidates.find(d=>d.id===installation.routes?.obs);
-  const host=designated||(candidates.length===1?candidates[0]:undefined);
-  return host?safeRemoteEndpoint(host.endpoint):'';
+  const route=installation.routes?.obs;
+  // A configured authority is a pin, not a preference. If the FIXE entry
+  // disappears or becomes invalid, never redirect timer/OBS commands to
+  // another candidate merely because it is the only one remaining.
+  if(route!==undefined&&route!==null){
+    if(typeof route!=='string'||!route||route===installation.localDeviceId)return '';
+    const matches=candidates.filter(d=>d.id===route);
+    return matches.length===1&&devices.filter(d=>d?.id===route).length===1?
+      safeRemoteEndpoint(matches[0].endpoint):'';
+  }
+  // Legacy profiles without an explicit route can use exactly one eligible
+  // external OBS authority, with an unambiguous device identity.
+  if(candidates.length!==1||devices.filter(d=>d?.id===candidates[0].id).length!==1)return '';
+  return safeRemoteEndpoint(candidates[0].endpoint);
 }
 export function clientMustDelegateCommand(clientRole,path,body) {
   return clientRole&&path==='/api/v1/commands'&&typeof body?.type==='string'&&
