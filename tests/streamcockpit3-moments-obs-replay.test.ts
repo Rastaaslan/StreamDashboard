@@ -6,7 +6,7 @@ import { MomentsPipeline } from '../apps/server/src/streamcockpit-moments.js';
 import { MomentsSqliteStorage } from '../apps/server/src/streamcockpit-moments-sqlite.js';
 import { ObsReplayMomentProducer } from '../apps/server/src/streamcockpit-moments-obs-replay.js';
 
-const event = { sourceEventId: 'obs_replay_' + 'a'.repeat(64), observedAt: 1762050000000, connectionGeneration: 7 };
+const event = { sourceEventId: 'obs_replay_' + 'a'.repeat(64), observedAt: 1762050000000, connectionGeneration: 7, streamEpoch: 3 };
 function fixture() {
   let raw: string | null = null;
   const pipeline = new MomentsPipeline({
@@ -16,7 +16,7 @@ function fixture() {
       raw = replacement; return true;
     },
   });
-  const state = { connected: true, streamingKnown: true, streaming: true, connectionGeneration: 7 };
+  const state = { connected: true, streamingKnown: true, streaming: true, connectionGeneration: 7, streamEpoch: 3 };
   let session: string | undefined = 'unplanned_1';
   let host = true;
   const record = vi.fn(input => pipeline.record(input));
@@ -44,7 +44,7 @@ it('writes only a host-witnessed OBS save into the single journal, without path 
 
 it('does not create OBS moments for unknown/stopped/disconnected outputs or foreign generations', async () => {
   for (const change of [
-    { connected: false }, { streaming: false }, { streamingKnown: false }, { connectionGeneration: 8 },
+    { connected: false }, { streaming: false }, { streamingKnown: false }, { connectionGeneration: 8 }, { streamEpoch: 4 },
   ]) {
     const f = fixture();
     Object.assign(f.state, change);
@@ -69,6 +69,28 @@ it('drops the event if OBS stops during an awaited host check', async () => {
   expect(f.record).not.toHaveBeenCalled();
 });
 
+it('drops replay if OBS stops and restarts during an await, even with unchanged connection and session ID', async () => {
+  const f = fixture();
+  f.hostEligible.mockImplementation(async () => {
+    // Another OBS live may resume before the await returns. A boolean
+    // streaming snapshot and WebSocket generation alone cannot detect it.
+    f.state.streaming = false;
+    f.state.streamEpoch++;
+    f.state.streaming = true;
+    f.state.streamEpoch++;
+    return true;
+  });
+  expect(await f.producer.observe(event)).toBe('ignored');
+  expect(f.record).not.toHaveBeenCalled();
+});
+
+it('rejects a replay lacking a trustworthy stream-transition epoch', async () => {
+  const f = fixture();
+  expect(await f.producer.observe({ ...event, streamEpoch: NaN })).toBe('ignored');
+  expect(await f.producer.observe({ ...event, streamEpoch: -1 })).toBe('ignored');
+  expect(f.record).not.toHaveBeenCalled();
+});
+
 it('drops the event if the authoritative FIXE session changed during checks', async () => {
   const f = fixture();
   f.activeSessionId.mockResolvedValueOnce('unplanned_1').mockResolvedValueOnce('unplanned_2');
@@ -90,7 +112,7 @@ onWindows('reopens the automatically observed OBS marker from Windows SQLite EXT
   try {
     const sqlite = join(directory, 'moments.sqlite'), legacy = join(directory, 'moments.json');
     const pipeline = new MomentsPipeline(new MomentsSqliteStorage(sqlite, legacy));
-    const obs = { connected: true, streamingKnown: true, streaming: true, connectionGeneration: 7 };
+    const obs = { connected: true, streamingKnown: true, streaming: true, connectionGeneration: 7, streamEpoch: 3 };
     const producer = new ObsReplayMomentProducer({
       snapshot: () => obs,
       hostEligible: async () => true,

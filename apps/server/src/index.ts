@@ -1998,7 +1998,8 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
   };
   const replayMomentProducer = new ObsReplayMomentProducer({
     snapshot: () => ({ connected: obs.state.connected, streamingKnown: obs.state.streamingKnown === true,
-      streaming: obs.state.streaming, connectionGeneration: obs.connectionGeneration }),
+      streaming: obs.state.streaming, connectionGeneration: obs.connectionGeneration,
+      streamEpoch: obs.streamTransitionEpoch }),
     activeSessionId: activeMomentsSessionId,
     hostEligible: async () => {
       if (backgroundStopped || options.obsEnabled === false || options.timerAuthority === false) return false;

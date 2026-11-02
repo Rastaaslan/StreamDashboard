@@ -456,11 +456,11 @@
         },
         {
           "path": "integrations/obs/src/client.ts",
-          "kind": "2026-11-02 FIXE F09 OBS ReplayBufferSaved observation while connected and confirmed streaming; requires absolute path and nonempty regular-file metadata, rechecks stream/generation AND stop-start epoch after async lstat; filename HMACed with runtime-only key, never disclosed; metadata is not proof of durable video or immutable file identity; no OBS command issued"
+          "kind": "2026-11-02 FIXE F09 ReplayBufferSaved observation while connected and streaming: requires absolute path and nonempty regular-file metadata; checks generation and stop-start stream epoch after async lstat, then forwards both epochs without private path; runtime-only HMAC digest, no OBS command; actual file/codec/durability unqualified"
         },
         {
           "path": "apps/server/src/streamcockpit-moments-obs-replay.ts",
-          "kind": "2026-11-02 FIXE F09 automatic replay-save marker written only after verified host role and OBS live session preconditions; same durable journal, no duplicate input replay or silent retry on uncertain storage; hardware not validated"
+          "kind": "2026-11-02 FIXE F09 replay-save marker uses FIXE host role, checked OBS session, connection generation AND stream-transition epoch before/after async checks: a stop-start on the same WebSocket and same session ID during an await is now rejected without journal write. Same durable SQLite journal, no silent retry on uncertain storage; no OBS/SQLite atomicity or hardware qualification"
         },
         {
           "path": "apps/server/src/streamcockpit-moments.ts",
@@ -509,7 +509,7 @@
       "blockers": [
         "F09 planned live manual marker binding exists only after a witnessed FIXE OBS start and a separate explicit choice, in runtime memory; already-running live at initial connection, reconnect, unknown OBS state, conflicting/excessive planning remain intentionally unbound; no real OBS/Android/laptop qualification; OBS ReplayBufferSaved automatic marker now exists in development but Twitch/Streamlabs producers and actual ClipForge remain unimplemented",
         "Node 22 node:sqlite experimental; power-loss hardware durability and legacy JSON migration unqualified",
-        "FIXE 2026-11-02 full Vitest 2016 PASS / 55 skipped / 0 FAIL (246 files), Node 349 PASS / 6 skipped / 0 FAIL; 7 new OBS replay producer tests plus OBS runtime event regression passed, F09 manual+scheduled baseline 36/36 PASS; 42 Linux-only ClipForge checks remain unqualified and Windows encoding/hardware still blocked",
+        "FIXE 2026-11-02 replay epoch forwarding: 31/31 targeted OBS/F09/roadmap, 2015 PASS / 60 skipped / 0 FAIL full Vitest (246 files) with Git OpenSSL PATH, Node 349 PASS / 6 skipped / 0 FAIL; first full run had 2 TLS suites failing solely because openssl was absent from process PATH, 12/12 TLS targeted PASS with PATH fixed. Skips nonqualified; ClipForge Windows/hardware blocked",
         "Android native report sharing is exercised with a simulated bridge and real Edge UI, not an actual paired Android device; report interval is NOT a live duration",
         "2026-11-02 FIXE OBS ReplayBufferSaved producer: OBS streaming and host/session remain checked across awaits; raw path NEVER stored/exposed; local absolute nonempty regular-file lstat checked before marker emission, with no retry if missing/stopped/reconnected or if the same OBS connection stopped and restarted; real OBS file validity, handle pinning and power-loss durability NOT proven"
       ],

@@ -6,6 +6,7 @@ import { momentIdentifier } from '../../../packages/core/src/streamcockpit-momen
 export interface ObsSavedReplayEvent {
   sourceEventId: string;
   connectionGeneration: number;
+  streamEpoch: number;
   observedAt: number;
 }
 
@@ -14,6 +15,7 @@ interface ObsSnapshot {
   streamingKnown: boolean;
   streaming: boolean;
   connectionGeneration: number;
+  streamEpoch: number;
 }
 
 export class ObsReplayMomentProducer {
@@ -31,11 +33,12 @@ export class ObsReplayMomentProducer {
    * This is not an atomic transaction with OBS during the final journal commit. */
   async observe(event: ObsSavedReplayEvent): Promise<'ignored' | 'recorded'> {
     if (!event || !Number.isSafeInteger(event.observedAt) || event.observedAt < 0 ||
-        !Number.isSafeInteger(event.connectionGeneration) || event.connectionGeneration < 0)
+        !Number.isSafeInteger(event.connectionGeneration) || event.connectionGeneration < 0 ||
+        !Number.isSafeInteger(event.streamEpoch) || event.streamEpoch < 0)
       return 'ignored';
     try { momentIdentifier(event.sourceEventId); } catch { return 'ignored'; }
     if (!event.sourceEventId.startsWith('obs_replay_')) return 'ignored';
-    const key = event.connectionGeneration + ':' + event.sourceEventId;
+    const key = event.connectionGeneration + ':' + event.streamEpoch + ':' + event.sourceEventId;
     if (this.attempted.has(key)) return 'ignored';
     this.attempted.add(key);
     if (this.attempted.size > 512) this.attempted.delete(this.attempted.values().next().value!);
@@ -43,7 +46,7 @@ export class ObsReplayMomentProducer {
     const valid = () => {
       const state = this.options.snapshot();
       return state.connected && state.streamingKnown && state.streaming &&
-        state.connectionGeneration === event.connectionGeneration;
+        state.connectionGeneration === event.connectionGeneration && state.streamEpoch === event.streamEpoch;
     };
     if (!valid()) return 'ignored';
     const first = await this.options.activeSessionId();

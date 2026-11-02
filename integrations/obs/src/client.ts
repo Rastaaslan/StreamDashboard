@@ -210,6 +210,8 @@ export class ObsClient {
   private streamPending = false;
   private heartbeat?: NodeJS.Timeout;
   get connectionGeneration() { return this.generation; }
+  /** Monotonic within this OBS client: changes on every witnessed stream transition. */
+  get streamTransitionEpoch() { return this.replayStreamEpoch; }
 
   private async bounded<T>(operation: Promise<T>): Promise<T> {
     let timer: NodeJS.Timeout | undefined;
@@ -294,7 +296,7 @@ export class ObsClient {
         if (!this.ready || !this.state.connected || !this.state.streamingKnown || !this.state.streaming ||
             (connectionGeneration !== this.generation || streamEpoch !== this.replayStreamEpoch)) return;
         const event = { sourceEventId: 'obs_replay_' + createHmac('sha256', this.replayEventSalt).update(savedReplayPath).digest('hex'),
-          connectionGeneration, observedAt };
+          connectionGeneration, streamEpoch, observedAt };
         for (const listener of this.replaySavedListeners) {
           try { listener(event); } catch { /* An observer must never disrupt OBS. */ }
         }
@@ -323,7 +325,7 @@ export class ObsClient {
   state: ObsState = { connectionStatus: 'offline', connected: false, streaming: false, streamingKnown: false, recording: false, scene: null, scenes: [], inputs: {}, activeAudioInputs: [], mediaInputs: [], browserInputs: [], error: null, obsVersion: null, websocketVersion: null };
   private listeners = new Set<() => void>();
   private mediaEndedListeners = new Set<(inputName: string) => void>();
-  private replaySavedListeners = new Set<(event: { sourceEventId: string; connectionGeneration: number; observedAt: number }) => void>();
+  private replaySavedListeners = new Set<(event: { sourceEventId: string; connectionGeneration: number; streamEpoch: number; observedAt: number }) => void>();
   private refreshTimer?: NodeJS.Timeout;
   private refreshPromise?: Promise<void>;
   private refreshRequested = false;
@@ -505,7 +507,7 @@ export class ObsClient {
   }
 
   onStateChanged(listener: () => void) { this.listeners.add(listener); return () => this.listeners.delete(listener); }
-  onReplaySaved(listener: (event: { sourceEventId: string; connectionGeneration: number; observedAt: number }) => void) {
+  onReplaySaved(listener: (event: { sourceEventId: string; connectionGeneration: number; streamEpoch: number; observedAt: number }) => void) {
     this.replaySavedListeners.add(listener);
     return () => this.replaySavedListeners.delete(listener);
   }

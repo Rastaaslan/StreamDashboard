@@ -197,6 +197,7 @@ describe('confirmed replay saves',()=>{
     expect(JSON.stringify(payload)).not.toContain('private');
     expect(JSON.stringify(payload)).not.toContain(folder);
     expect(payload.connectionGeneration).toBe(obs.connectionGeneration);
+    expect(payload.streamEpoch).toBe(obs.streamTransitionEpoch);
     socket().emit('ReplayBufferSaved',{savedReplayPath:file});
     await vi.waitFor(()=>expect(observed).toHaveBeenCalledTimes(2));
     expect(observed.mock.calls[1][0].sourceEventId).toBe(payload.sourceEventId);
