@@ -166,6 +166,27 @@ it('includes global OBS audio devices even outside scene items', async () => {
 
 
 describe('confirmed replay saves',()=>{
+ it('publishes only a verified OBS replay-save observation while streaming, never the file path',async()=>{
+  const observed=vi.fn(); const off=obs.onReplaySaved(observed);
+  await obs.connect();
+  socket().emit('ReplayBufferSaved',{savedReplayPath:'C:/private/offline-clip.mkv'});
+  expect(observed).not.toHaveBeenCalled();
+  await obs.stream(true);
+  socket().emit('ReplayBufferSaved',{savedReplayPath:''});
+  expect(observed).not.toHaveBeenCalled();
+  socket().emit('ReplayBufferSaved',{savedReplayPath:'C:/private/live-clip.mkv'});
+  expect(observed).toHaveBeenCalledTimes(1);
+  const payload=observed.mock.calls[0][0];
+  expect(payload.sourceEventId).toMatch(/^obs_replay_[a-f0-9]{64}$/);
+  expect(JSON.stringify(payload)).not.toContain('private');
+  expect(payload.connectionGeneration).toBe(obs.connectionGeneration);
+  socket().emit('ReplayBufferSaved',{savedReplayPath:'C:/private/live-clip.mkv'});
+  expect(observed.mock.calls[1][0].sourceEventId).toBe(payload.sourceEventId);
+  await obs.stream(false);
+  socket().emit('ReplayBufferSaved',{savedReplayPath:'C:/private/stopped.mkv'});
+  expect(observed).toHaveBeenCalledTimes(2);
+  off();
+ });
  it('refuses an inactive buffer without saving or silently starting it',async()=>{
   await obs.connect();const original=socket().call.getMockImplementation()!;
   socket().call.mockImplementation(async(type,args)=>type==='GetReplayBufferStatus'?{outputActive:false}:original(type,args));
@@ -174,13 +195,13 @@ describe('confirmed replay saves',()=>{
  it('subscribes before saving, accepts the completion event and removes its listener',async()=>{
   await obs.connect();const original=socket().call.getMockImplementation()!;
   socket().call.mockImplementation(async(type,args)=>{if(type==='GetReplayBufferStatus')return {outputActive:true};if(type==='GetLastReplayBufferReplay')return {savedReplayPath:'old.mkv'};if(type==='SaveReplayBuffer'){socket().emit('ReplayBufferSaved',{savedReplayPath:'new.mkv'});return {};}return original(type,args);});
-  expect(await obs.saveReplay()).toBe('new.mkv');expect(socket().listenerCount('ReplayBufferSaved')).toBe(0);
+  expect(await obs.saveReplay()).toBe('new.mkv');expect(socket().listenerCount('ReplayBufferSaved')).toBe(1); // Only the persistent read-only OBS observer remains.
  });
  it('never mistakes an old file or an acknowledgement for a new clip',async()=>{
   await obs.connect();const original=socket().call.getMockImplementation()!;
   socket().call.mockImplementation(async(type,args)=>type==='GetReplayBufferStatus'?{outputActive:true}:type==='GetLastReplayBufferReplay'?{savedReplayPath:'old.mkv'}:original(type,args));
   const promise=obs.saveReplay();const check=expect(promise).rejects.toMatchObject({name:'ACTION_UNCERTAIN'});await vi.advanceTimersByTimeAsync(11000);await check;
-  expect(socket().call.mock.calls.filter(([type])=>type==='SaveReplayBuffer')).toHaveLength(1);expect(socket().listenerCount('ReplayBufferSaved')).toBe(0);
+  expect(socket().call.mock.calls.filter(([type])=>type==='SaveReplayBuffer')).toHaveLength(1);expect(socket().listenerCount('ReplayBufferSaved')).toBe(1);
  });
  it('rejects a concurrent save and rejects a connection change after dispatch as uncertain',async()=>{
   await obs.connect();const original=socket().call.getMockImplementation()!;let dispatched=false;

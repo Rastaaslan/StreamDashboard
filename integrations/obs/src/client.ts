@@ -1,4 +1,5 @@
 import OBSWebSocket, { EventSubscription } from 'obs-websocket-js';
+import { createHmac, randomBytes } from 'node:crypto';
 import { MicHealthWatch } from './mic-health.js';
 import { AitumSuiteOutputs } from './aitum-suite.js';
 import { isObsRequestRejection, uncertainOutput } from './output-result.js';
@@ -26,6 +27,9 @@ export async function collectActiveSceneSources(sceneName: string, sceneItems: (
 }
 
 export class ObsClient {
+  // Per-runtime secret prevents clients from guessing local replay filenames
+  // from the opaque journal event identifier; never exported or persisted.
+  private readonly replayEventSalt = randomBytes(32);
   private replaySaving = false;
   private replayChanging = false;
   async replayStatus() {
@@ -268,6 +272,17 @@ export class ObsClient {
       if (now - this.micChangeAt > 2_500) { this.micChangeAt = now; this.notify(); }
     });
     on('RecordStateChanged', ({ outputActive }) => { if (!this.ready) return; this.state.recording = outputActive; this.notify(); });
+    // A genuine OBS replay-save event, not a request acknowledgement. Never
+    // publish the local filename to remote clients or the moments journal.
+    on('ReplayBufferSaved', ({ savedReplayPath }) => {
+      if (!this.ready || !this.state.connected || !this.state.streamingKnown || !this.state.streaming ||
+          typeof savedReplayPath !== 'string' || !savedReplayPath.trim()) return;
+      const event = { sourceEventId: 'obs_replay_' + createHmac('sha256', this.replayEventSalt).update(savedReplayPath).digest('hex'),
+        connectionGeneration: this.generation, observedAt: Date.now() };
+      for (const listener of this.replaySavedListeners) {
+        try { listener(event); } catch { /* An observer must never disrupt OBS. */ }
+      }
+    });
     on('InputMuteStateChanged', ({ inputName, inputMuted }) => {
       if (!this.ready) return;
       this.state.inputs[inputName] = { ...(this.state.inputs[inputName] ?? { volume: 1, volumeDb: 0 }), muted: inputMuted };
@@ -291,6 +306,7 @@ export class ObsClient {
   state: ObsState = { connectionStatus: 'offline', connected: false, streaming: false, streamingKnown: false, recording: false, scene: null, scenes: [], inputs: {}, activeAudioInputs: [], mediaInputs: [], browserInputs: [], error: null, obsVersion: null, websocketVersion: null };
   private listeners = new Set<() => void>();
   private mediaEndedListeners = new Set<(inputName: string) => void>();
+  private replaySavedListeners = new Set<(event: { sourceEventId: string; connectionGeneration: number; observedAt: number }) => void>();
   private refreshTimer?: NodeJS.Timeout;
   private refreshPromise?: Promise<void>;
   private refreshRequested = false;
@@ -472,6 +488,10 @@ export class ObsClient {
   }
 
   onStateChanged(listener: () => void) { this.listeners.add(listener); return () => this.listeners.delete(listener); }
+  onReplaySaved(listener: (event: { sourceEventId: string; connectionGeneration: number; observedAt: number }) => void) {
+    this.replaySavedListeners.add(listener);
+    return () => this.replaySavedListeners.delete(listener);
+  }
   private notify() { for (const listener of this.listeners) listener(); }
 
   async waitForStreaming(expected: boolean, timeoutMs = 10_000) {

@@ -6,6 +6,7 @@ import { createMixerRouter, mixerHostEligible } from './streamcockpit-mixer-rout
 import { createMomentsReadRouter } from './streamcockpit-moments-router.js';
 import { createMomentsManualRouter } from './streamcockpit-moments-manual-router.js';
 import { ScheduledMomentBinding } from './streamcockpit-moments-scheduled.js';
+import { ObsReplayMomentProducer } from './streamcockpit-moments-obs-replay.js';
 import { MomentsPipeline } from './streamcockpit-moments.js';
 import { MomentsFileStorage } from './streamcockpit-moments-file.js';
 import { registerPairingRequests } from './pairing-requests.js';
@@ -1983,6 +1984,36 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
     readSnapshot: () => obsMixerObservation.read(Date.now()),
   }));
 
+  // F09: FIXE is the single source of live identities for both paired manual
+  // actions and observed OBS replay-save events. Calendar proximity alone is
+  // never sufficient, and an OBS reconnect invalidates scheduled bindings.
+  const activeMomentsSessionId = async () => {
+    if (!obs.state.connected || obs.state.streamingKnown !== true || !obs.state.streaming) return undefined;
+    await streamTrackingQueue;
+    if (!obs.state.connected || obs.state.streamingKnown !== true || !obs.state.streaming) return undefined;
+    const tracked = findTrackedDraft();
+    const scheduled = scheduledMomentBinding.snapshot();
+    if (scheduled.available && scheduled.candidates.length) return scheduled.sessionId;
+    return tracked && tracked.id === trackedUnplannedLiveId ? tracked.id : undefined;
+  };
+  const replayMomentProducer = new ObsReplayMomentProducer({
+    snapshot: () => ({ connected: obs.state.connected, streamingKnown: obs.state.streamingKnown === true,
+      streaming: obs.state.streaming, connectionGeneration: obs.connectionGeneration }),
+    activeSessionId: activeMomentsSessionId,
+    hostEligible: async () => {
+      if (backgroundStopped || options.obsEnabled === false || options.timerAuthority === false) return false;
+      const device = await options.deviceDescriptor?.().catch(() => undefined);
+      return mixerHostEligible(device);
+    },
+    record: input => observedMomentsPipeline().then(pipeline => pipeline.record(input)),
+  });
+  // Read-only OBS event observer: never calls SaveReplayBuffer, never stores a
+  // local clip path and never retries an uncertain journal write.
+  const unsubscribeObsReplaySaved = obs.onReplaySaved(event => {
+    void replayMomentProducer.observe(event).catch(() => {
+      void Promise.resolve(logger.warn('F09 : enregistrement du replay OBS incertain ; aucune répétition automatique.')).catch(() => undefined);
+    });
+  });
   // F09: explicit manual marker, with FIXE-owned live identity and clock.
   // Never start/stop OBS, infer a session from mobile, or retry a write.
   app.use('/api/v1/streamcockpit-moments/manual', createMomentsManualRouter({
@@ -1996,19 +2027,7 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
       const id = credential ? remoteAuth.authenticate(credential) : null;
       return id && remoteAuth.permits(id, ['observe', 'clips']) ? id : undefined;
     },
-    activeSessionId: async () => {
-      if (!obs.state.connected || obs.state.streamingKnown !== true || !obs.state.streaming) return undefined;
-      await streamTrackingQueue;
-      if (!obs.state.connected || obs.state.streamingKnown !== true || !obs.state.streaming) return undefined;
-      const tracked = findTrackedDraft();
-      // Scheduled identity exists ONLY after a locally witnessed OBS start
-      // AND explicit paired selection; never from calendar proximity alone.
-      const scheduled = scheduledMomentBinding.snapshot();
-      // If OBS started beside a real scheduled candidate, NEVER silently use
-      // an old unplanned draft while the user has not chosen the scheduled live.
-      if (scheduled.available && scheduled.candidates.length) return scheduled.sessionId;
-      return tracked && tracked.id === trackedUnplannedLiveId ? tracked.id : undefined;
-    },
+    activeSessionId: activeMomentsSessionId,
     listScheduled: async () => {
       await streamTrackingQueue;
       return scheduledMomentBinding.snapshot();
@@ -3479,6 +3498,7 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
   const stop = () => stopPromise ??= (async () => {
     discovery?.close();
     unsubscribeObs();
+    unsubscribeObsReplaySaved();
     clearTimeout(googleOAuthTimeout);
     clearInterval(validator);
     backgroundStopped = true;
