@@ -445,6 +445,18 @@
         {
           "path": "apps/mobile/control/streamcockpit-twitch-shoutout.js",
           "kind": "2026-11-02 F08 Live Monitor: voluntary target lookup, public confirmation checkbox, fail-closed on disconnect and uncertain write; real Microsoft Edge touch 320px tests; Android physical not qualified"
+        },
+        {
+          "path": "integrations/twitch/src/streamcockpit-raid.ts",
+          "kind": "2026-11-02 FIXE F08: channel:manage:raids OAuth owner and exact target preflight, token-bound preview identity and one guarded POST /helix/raids; Twitch 200 queues only, actual transfer never claimed; provider outcome uncertainty never retried"
+        },
+        {
+          "path": "apps/server/src/streamcockpit-twitch-raid-router.ts",
+          "kind": "2026-11-02 FIXE F08: management paired chat+cloud preview/consent, 45s single-use memory receipt, OBS stream-epoch fencing and post-send UNCERTAIN; local HTTP and mocked Twitch tests, not hardware qualified"
+        },
+        {
+          "path": "apps/mobile/control/streamcockpit-twitch-raid.js",
+          "kind": "2026-11-02 FIXE F08: Live Monitor paired-host raid preview and separate explicit checkbox, 90s transfer warning and manual Twitch verification, no OBS stop or queue; Edge 320px real browser tests only"
         }
       ],
       "verifiedTests": [
@@ -455,15 +467,18 @@
         "tests/streamcockpit3-twitch-poll-http.test.ts",
         "tests/streamcockpit3-twitch-poll-browser.test.ts",
         "tests/streamcockpit3-twitch-shoutout-http.test.ts",
-        "tests/streamcockpit3-twitch-shoutout-browser.test.ts"
+        "tests/streamcockpit3-twitch-shoutout-browser.test.ts",
+        "tests/streamcockpit3-twitch-raid-http.test.ts",
+        "tests/streamcockpit3-twitch-raid-browser.test.ts"
       ],
       "hardwareEvidence": [],
       "blockers": [
-        "F08 polls and explicit shoutout preview/confirmation implemented only in development and simulated Twitch/Edge; production OAuth, live broadcasts, actual accepted/audience-visible shoutout and FIXE/Android physical tests are not qualified; predictions and raids remain unimplemented",
-        "Twitch poll/shoutout POST is not atomic with OBS state, and a lost provider receipt requires explicit Twitch reconciliation; no automatic retry. Shoutout cooldown/visibility and token scope not qualified on a real channel"
+        "F08 polls, shoutouts and raid consent in development with mocked Twitch providers and real Edge only. Production Twitch OAuth, actual FIXE OBS live, raid 90s transfer/Cancel/EventSub, Android/laptop physical and viewer outcome not qualified; predictions remain unimplemented.",
+        "Twitch poll/shoutout POST is not atomic with OBS state, and a lost provider receipt requires explicit Twitch reconciliation; no automatic retry. Shoutout cooldown/visibility and token scope not qualified on a real channel",
+        "Raid POST is not atomic with Twitch or OBS; a 200 only queues the 90-second raid, not a completed transfer. No actual raid sent, no Twitch EventSub receipt/cancel UI or verified production scope; an ambiguous POST must be reconciled manually, never replayed."
       ],
       "ownerJob": "streamcockpit/3.0-lot-b",
-      "integrationNote": "2026-11-02 FIXE: existing AdvancedTwitch poll preflight and consumed one-shot confirmation exposed via management-paired chat+cloud POST routes, only while OBS+Twitch are freshly confirmed live on the sole Windows OBS executor. Reauth and host live rechecked before provider POST, no unattended requests. Mobile Live Monitor draft/preview/explicit checkbox/public confirmation, fail-closed on disconnect or uncertain HTTP outcome, no outbox. HTTP mocked Twitch API and real Edge touch 320px tests. 2026-11-02 FIXE shoutouts: verified channel via owner OAuth moderator:manage:shoutouts, 45s in-memory one-use preview tied to the FIXE OBS stream transition, explicit public confirmation, single POST 204 accepted without delivery claim; actor+host rechecks, uncertain receipts never auto-retried. 13 HTTP simulated tests and 3 real Edge touch 320px scenarios PASS; full Vitest 2045 PASS / 73 skipped / 0 fail (251 files) before matrix update. F08 remains partial, real OAuth/Android/OBS and other Twitch interactions unqualified."
+      "integrationNote": "2026-11-02 FIXE: existing AdvancedTwitch poll preflight and consumed one-shot confirmation exposed via management-paired chat+cloud POST routes, only while OBS+Twitch are freshly confirmed live on the sole Windows OBS executor. Reauth and host live rechecked before provider POST, no unattended requests. Mobile Live Monitor draft/preview/explicit checkbox/public confirmation, fail-closed on disconnect or uncertain HTTP outcome, no outbox. HTTP mocked Twitch API and real Edge touch 320px tests. 2026-11-02 FIXE shoutouts: verified channel via owner OAuth moderator:manage:shoutouts, 45s in-memory one-use preview tied to the FIXE OBS stream transition, explicit public confirmation, single POST 204 accepted without delivery claim; actor+host rechecks, uncertain receipts never auto-retried. 13 HTTP simulated tests and 3 real Edge touch 320px scenarios PASS; full Vitest 2045 PASS / 73 skipped / 0 fail (251 files) before matrix update. F08 remains partial, real OAuth/Android/OBS and other Twitch interactions unqualified. 2026-11-02 FIXE F08 raid: OAuth channel:manage:raids, bounded one-use actor/OBS-epoch/token-bound preview (45s), revalidated Twitch target + scope and one /helix/raids POST only after second voluntary Android/desktop Live Monitor confirmation; 200 maps to queued, transferVerified=false with 90s warning, no live stop. 12 mocked HTTP including real mounted server, 4 actual Edge headless touch 320px tests; zero public Twitch calls. An in-flight raid POST interrupted by source disconnect or reconnection now keeps an uncertain lock on the mounted mobile view until explicit user acknowledgement of external Twitch verification; no automatic resend. This memory-only state is not durable across app restart. F08 stays partial, G2 ongoing and G3-G5 open."
     },
     {
       "id": "F09",

@@ -5,6 +5,7 @@ import {createTwitchChat} from './twitch-chat.js';
 import {mountTwitchAdvanced} from './streamcockpit-twitch-advanced.js';
 import {mountTwitchPoll} from './streamcockpit-twitch-poll.js';
 import {mountTwitchShoutout} from './streamcockpit-twitch-shoutout.js';
+import {mountTwitchRaid} from './streamcockpit-twitch-raid.js';
 export function createLiveMonitor(root,{native=false,configure=()=>{},request,activityRoot}={}){
  let enabled=localStorage.getItem('sd2.monitor-enabled')===null?matchMedia('(min-width:701px)').matches:localStorage.getItem('sd2.monitor-enabled')==='true';
  let state,context={},disposed=false,viewerFlight,viewerRevision=0,viewerMessage='';
@@ -33,6 +34,7 @@ export function createLiveMonitor(root,{native=false,configure=()=>{},request,ac
  const twitchAdvanced=mountTwitchAdvanced(get('.monitor-chat'),{request});
  const twitchPoll=mountTwitchPoll(get('.monitor-chat'),{request});
  const twitchShoutout=mountTwitchShoutout(get('.monitor-chat'),{request});
+ const twitchRaid=mountTwitchRaid(get('.monitor-chat'),{request});
  const twitchChat=createTwitchChat(get('[data-twitch-native]'),{request:native?nativeRequest:request,configure});
  function twitchLogin(){const login=localStorage.getItem('sd2.monitor-channel')||state?.host?.monitor?.twitchLogin||'';return /^[a-zA-Z0-9_]{1,25}$/.test(login)?login.toLowerCase():'';}
  function link(key,url){const a=get('[data-monitor-link="'+key+'"]');a.hidden=!url;if(url)a.href=url;else a.removeAttribute('href');}
@@ -65,6 +67,7 @@ export function createLiveMonitor(root,{native=false,configure=()=>{},request,ac
   twitchAdvanced.update({sourceKey:context.sourceKey,accountKey:state?.host?.monitor?.twitchLogin,online:context.online===true&&(enabled||chatOnly)});
   twitchPoll.update({sourceKey:context.sourceKey,accountKey:state?.host?.monitor?.twitchLogin,online:context.online===true&&(enabled||chatOnly)});
   twitchShoutout.update({sourceKey:context.sourceKey,accountKey:state?.host?.monitor?.twitchLogin,online:context.online===true&&(enabled||chatOnly)});
+  twitchRaid.update({sourceKey:context.sourceKey,accountKey:state?.host?.monitor?.twitchLogin,online:context.online===true&&(enabled||chatOnly)});
   twitchChat.update({...context,online:(native||context.online===true)&&(enabled||chatOnly),sourceLabel:state?.host?.hostname||''});
   if(!enabled||chatOnly){slot.replaceChildren();delete slot.dataset.identity;return;}
   const login=twitchLogin(),parent=encodeURIComponent(location.hostname);
@@ -75,5 +78,5 @@ export function createLiveMonitor(root,{native=false,configure=()=>{},request,ac
  get('[data-monitor-targets]').addEventListener('submit',event=>{event.preventDefault();event.stopPropagation();const channel=get('[name="channel"]').value.trim();if(channel&&!/^[a-zA-Z0-9_]{1,25}$/.test(channel)){get('[data-monitor-targets-status]').textContent='Nom Twitch invalide.';return;}localStorage.setItem('sd2.monitor-channel',channel);viewerRevision++;viewerMessage='';delete slot.dataset.identity;draw();get('[data-monitor-targets-status]').textContent='Chaîne Twitch enregistrée.';});
  root.addEventListener('click',event=>{if(disposed)return;const b=event.target.closest('button');if(!b)return;if(b.hasAttribute('data-monitor-toggle')){enabled=!enabled;viewerRevision++;localStorage.setItem('sd2.monitor-enabled',String(enabled));draw();}if(b.dataset.monitorConnect==='twitch')void connectViewer();if(b.dataset.monitorReload==='video'){delete slot.dataset.identity;draw();}});
  const stop=globalThis.streamDashboardDesktop?.onTwitchViewerSessionClosed?.(()=>{if(disposed||!enabled||!twitchLogin())return;delete slot.dataset.identity;viewerMessage='Visionneuse Twitch rechargée.';draw();});
- return {update(value,options={}){if(disposed)return;if(context.sourceKey!==options.sourceKey||state?.host?.monitor?.twitchLogin!==value?.host?.monitor?.twitchLogin){viewerRevision++;viewerMessage='';}state=value;context=options;draw();},destroy(){disposed=true;agentStatus.destroy();viewerRevision++;if(typeof stop==='function')stop();twitchChat.destroy();twitchAdvanced.destroy();twitchPoll.destroy();twitchShoutout.destroy();slot.replaceChildren();}};
+ return {update(value,options={}){if(disposed)return;if(context.sourceKey!==options.sourceKey||state?.host?.monitor?.twitchLogin!==value?.host?.monitor?.twitchLogin){viewerRevision++;viewerMessage='';}state=value;context=options;draw();},destroy(){disposed=true;agentStatus.destroy();viewerRevision++;if(typeof stop==='function')stop();twitchChat.destroy();twitchAdvanced.destroy();twitchPoll.destroy();twitchShoutout.destroy();twitchRaid.destroy();slot.replaceChildren();}};
 }

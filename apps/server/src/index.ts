@@ -50,6 +50,9 @@ import { createTwitchPollRouter, twitchPollActor } from './streamcockpit-twitch-
 import { ShoutoutTwitch } from '../../../integrations/twitch/src/streamcockpit-shoutout.js';
 import { StreamcockpitShoutoutService } from './streamcockpit-twitch-shoutout-service.js';
 import { createTwitchShoutoutRouter } from './streamcockpit-twitch-shoutout-router.js';
+import { RaidTwitch } from '../../../integrations/twitch/src/streamcockpit-raid.js';
+import { StreamcockpitRaidService } from './streamcockpit-twitch-raid-service.js';
+import { createTwitchRaidRouter } from './streamcockpit-twitch-raid-router.js';
 import { TwitchClient, TwitchHttpError } from '../../../integrations/twitch/src/client.js';
 import { TwitchPreflight } from '../../../integrations/twitch/src/preflight.js';
 import { TwitchEventSub, type TwitchChatMessage, type TwitchRewardRedemption } from '../../../integrations/twitch/src/eventsub.js';
@@ -710,6 +713,7 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
   });
   const advancedTwitch = new StreamcockpitTwitchService(new AdvancedTwitch(advancedTwitchCredentials, runtimeFetch()));
   const shoutoutTwitch = new StreamcockpitShoutoutService(new ShoutoutTwitch(advancedTwitchCredentials, runtimeFetch()));
+  const raidTwitch = new StreamcockpitRaidService(new RaidTwitch(advancedTwitchCredentials, runtimeFetch()));
   const tagIntelligence = new TwitchTagIntelligence((gameId, signal) => twitch.getStreamsForGame(gameId, signal), () => local.planning, Date.now, undefined, undefined, () => local.settings.tagPreferences ?? {});
   const googleClientId = options.googleClientId ?? process.env.GOOGLE_CLIENT_ID ?? '';
   const google = new GoogleCalendarClient(
@@ -1989,6 +1993,9 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
   app.use('/api/v1/twitch/advanced/shoutout', createTwitchShoutoutRouter({
     service: shoutoutTwitch, actor: pairedF08Actor,
     hostLive: confirmedF08HostEpoch,
+  }));
+  app.use('/api/v1/twitch/advanced/raid', createTwitchRaidRouter({
+    service: raidTwitch, actor: pairedF08Actor, hostLive: confirmedF08HostEpoch,
   }));
 
   app.use('/api/v1/streamcockpit-health', createHealthRouter({
