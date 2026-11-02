@@ -476,6 +476,18 @@
         {
           "path": "apps/mobile/control/streamcockpit-twitch-raid.js",
           "kind": "2026-11-02 FIXE F08: Live Monitor paired-host raid preview and separate explicit checkbox, 90s transfer warning and manual Twitch verification, no OBS stop or queue; Edge 320px real browser tests only"
+        },
+        {
+          "path": "integrations/twitch/src/streamcockpit-prediction.ts",
+          "kind": "2026-11-02 FIXE F08: voluntary READ-ONLY GET /helix/predictions with owner-bound OAuth scope, sanitized ACTIVE/LOCKED/NONE, token freshness and no Twitch writes; mocked provider only"
+        },
+        {
+          "path": "apps/server/src/streamcockpit-twitch-prediction-router.ts",
+          "kind": "2026-11-02 FIXE F08: GET only paired management/chat+cloud, verified FIXE OBS/Twitch stream epoch before/after provider read; no-store and deny stale/unauthorized responses"
+        },
+        {
+          "path": "apps/mobile/control/streamcockpit-twitch-prediction.js",
+          "kind": "2026-11-02 FIXE F08 Live Monitor: explicit read-only prediction snapshot, no auto-poll, clears on offline/account/visibility, expires after 30s; real Edge touch 320px simulated provider, NOT physical Android"
         }
       ],
       "verifiedTests": [
@@ -488,11 +500,13 @@
         "tests/streamcockpit3-twitch-shoutout-http.test.ts",
         "tests/streamcockpit3-twitch-shoutout-browser.test.ts",
         "tests/streamcockpit3-twitch-raid-http.test.ts",
-        "tests/streamcockpit3-twitch-raid-browser.test.ts"
+        "tests/streamcockpit3-twitch-raid-browser.test.ts",
+        "tests/streamcockpit3-twitch-prediction-http.test.ts",
+        "tests/streamcockpit3-twitch-prediction-browser.test.ts"
       ],
       "hardwareEvidence": [],
       "blockers": [
-        "F08 polls, shoutouts and raid consent in development with mocked Twitch providers and real Edge only. Production Twitch OAuth, actual FIXE OBS live, raid 90s transfer/Cancel/EventSub, Android/laptop physical and viewer outcome not qualified; predictions remain unimplemented.",
+        "F08 polls, shoutouts and raid consent in development with mocked Twitch providers and real Edge only. Prediction read-only ACTIVE/LOCKED/NONE now wired and locally tested, but prediction creation/lock/resolution remain unimplemented. Production Twitch OAuth, actual FIXE OBS live, raid 90s transfer/Cancel/EventSub, Android/laptop physical and viewer outcome not qualified.",
         "Twitch poll/shoutout POST is not atomic with OBS state, and a lost provider receipt requires explicit Twitch reconciliation; no automatic retry. Shoutout cooldown/visibility and token scope not qualified on a real channel",
         "Raid POST is not atomic with Twitch or OBS; a 200 only queues the 90-second raid, not a completed transfer. No actual raid sent, no Twitch EventSub receipt/cancel UI or verified production scope; an ambiguous POST must be reconciled manually, never replayed."
       ],

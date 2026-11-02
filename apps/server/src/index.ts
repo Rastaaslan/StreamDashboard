@@ -54,6 +54,8 @@ import { createTwitchShoutoutRouter } from './streamcockpit-twitch-shoutout-rout
 import { RaidTwitch } from '../../../integrations/twitch/src/streamcockpit-raid.js';
 import { StreamcockpitRaidService } from './streamcockpit-twitch-raid-service.js';
 import { createTwitchRaidRouter } from './streamcockpit-twitch-raid-router.js';
+import { PredictionTwitch } from '../../../integrations/twitch/src/streamcockpit-prediction.js';
+import { createTwitchPredictionRouter } from './streamcockpit-twitch-prediction-router.js';
 import { TwitchClient, TwitchHttpError } from '../../../integrations/twitch/src/client.js';
 import { TwitchPreflight } from '../../../integrations/twitch/src/preflight.js';
 import { TwitchEventSub, type TwitchChatMessage, type TwitchRewardRedemption } from '../../../integrations/twitch/src/eventsub.js';
@@ -715,6 +717,7 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
   const advancedTwitch = new StreamcockpitTwitchService(new AdvancedTwitch(advancedTwitchCredentials, runtimeFetch()));
   const shoutoutTwitch = new StreamcockpitShoutoutService(new ShoutoutTwitch(advancedTwitchCredentials, runtimeFetch()));
   const raidTwitch = new StreamcockpitRaidService(new RaidTwitch(advancedTwitchCredentials, runtimeFetch()));
+  const predictionTwitch = new PredictionTwitch(advancedTwitchCredentials, runtimeFetch());
   const tagIntelligence = new TwitchTagIntelligence((gameId, signal) => twitch.getStreamsForGame(gameId, signal), () => local.planning, Date.now, undefined, undefined, () => local.settings.tagPreferences ?? {});
   const googleClientId = options.googleClientId ?? process.env.GOOGLE_CLIENT_ID ?? '';
   const google = new GoogleCalendarClient(
@@ -1997,6 +2000,10 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
   }));
   app.use('/api/v1/twitch/advanced/raid', createTwitchRaidRouter({
     service: raidTwitch, actor: pairedF08Actor, hostLive: confirmedF08HostEpoch,
+  }));
+  // F08: voluntary read-only snapshot; owner OAuth + same FIXE OBS epoch fenced.
+  app.use('/api/v1/twitch/advanced/prediction', createTwitchPredictionRouter({
+    api: predictionTwitch, actor: pairedF08Actor, hostLive: confirmedF08HostEpoch,
   }));
 
   app.use('/api/v1/streamcockpit-health', createHealthRouter({
