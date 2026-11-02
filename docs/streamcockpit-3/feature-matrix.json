@@ -227,7 +227,11 @@
         },
         {
           "path": "apps/server/src/streamcockpit-clipforge-windows.ts",
-          "kind": "2026-11-02 FIXE isolated Windows OFFLINE lab: synthetic FFmpeg 360x640 and SHA-256; synchronous immutable grant/segment snapshot and uncertain intent write fail-closed, no production route/hardware claim"
+          "kind": "2026-11-02 FIXE isolated Windows OFFLINE lab: FFmpeg/ffprobe now require native Job Object supervisor, no direct-spawn fallback; 360x640 synthetic verified, not a production route/hardware claim"
+        },
+        {
+          "path": "scripts/streamcockpit-windows-clip-job.cs",
+          "kind": "2026-11-02 FIXE compiled-in-test C# Win32 Job Object CREATE_SUSPENDED/Assign/Resume, kill-on-close, process count, idle priority, CPU and memory limits; unsigned native helper not installed"
         },
         {
           "path": "docs/streamcockpit-3/F04_WINDOWS_OFFLINE_LAB_20261102.md",
@@ -245,11 +249,11 @@
       "hardwareEvidence": [],
       "blockers": [
         "Production ClipForge pipeline and resource launcher still require Linux /proc and O_NOFOLLOW; isolated Windows FFmpeg lab is NOT mounted or production-qualified",
-        "Windows Job Object kill-on-close, CPU/memory limits, staging ACLs and power-loss durability of intent/manifest absent",
-        "42 Linux-only ClipForge tests remain explicitly skipped; Windows lab 11/11 PASS on synthetic NTFS/FFmpeg only (includes mutable-grant race and failed encoder UNKNOWN), no real OBS replay or signed distribution qualified"
+        "Native Job Object lab tests confirm pre-resume assignment, child-count refusal, timeout and kill-on-close; unsigned helper packaging, independent CPU/memory stress verification, NTFS adversarial ACLs and power-loss durability remain absent",
+        "42 Linux-only ClipForge tests remain explicitly skipped; Windows native Job Object lab 15/15 PASS on synthetic NTFS/FFmpeg only, no real OBS replay or signed distribution qualified"
       ],
       "ownerJob": "streamcockpit/3.0-lot-d",
-      "integrationNote": "2026-11-01 Linux-only ClipForge guarded and real OBS ReplayBufferSaved read-only observer integrated. 2026-11-02 FIXE isolated Windows OFFLINE lab: real FFmpeg synthetic MP4 to verified 360x640, SHA-256 and VTT, no overwrite/collision, NTFS junction/hardlink rejection. Caller grant/segment captured synchronously before any async IO; unknown intent write never claims failure/retries; failed encoder retains forensic intent/stage. Windows lab 11/11 PASS, 4 suites F04/roadmap 30 PASS/42 Linux skips, types+browser types PASS, security 827 files PASS in coexisting F08 tree. No global test qualification specifically for this F04 commit, Job Object, power-loss guarantee, production API, real OBS replay, or Android hardware evidence. F04 partial, G2 in progress."
+      "integrationNote": "2026-11-01 Linux-only ClipForge guarded; 2026-11-02 isolated Windows OFFLINE lab with real synthetic 360x640 H.264/AAC, SHA-256 and VTT, no source overwrite, fail-closed uncertain intent and source grants pinned before await. Native C# Job Object helper compiled ONLY in temporary Windows test folder; suspended process assigned before resume, kill-on-close, active-child count, low-priority/memory/CPU limits, no bare FFmpeg fallback. Windows lab 15/15 PASS including observed timeout, descendant process refusal and kill-on-close; four targeted suites 34 PASS / 42 Linux skips / 0 FAIL, TypeScript/browser types PASS, security 833 files PASS. No unsigned native helper in release, hardware power-loss/ACL or real OBS replay proof, API, Windows EXE/APK; F04 partial, G2 in progress."
     },
     {
       "id": "F05",

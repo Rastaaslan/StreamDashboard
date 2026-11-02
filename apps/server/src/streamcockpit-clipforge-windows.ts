@@ -7,13 +7,15 @@ import { check, CLIP_LIMITS, metrics, planClip, type ClipSegment, type MediaMetr
 import type { ClipResult, SourceGrant } from './streamcockpit-clipforge-pipeline.js';
 
 /** F04 Windows laboratory pipeline only, NOT mounted in the production API.
- * Windows does not provide the Linux fd-directory + prlimit guarantees here.
+ * Windows does not provide the Linux fd-directory guarantees. A separate,
+ * host-provisioned native Job Object runner creates codec children suspended
+ * and attaches limits before resuming; no direct-spawn fallback is allowed.
  * An explicit opt-in permits OFFLINE synthetic tests, not production readiness.
- * An immutable-by-convention private staging copy is passed to FFmpeg by name.
- * No source or absolute path is ever returned in the manifest.
+ * Untrusted media is staged privately; the manifest exposes relative names only.
+ * Runner signing, ACLs, codec sandboxing and NTFS power-loss still need G2/G3.
  */
 export const windowsClipLabOptIn = 'I_ACCEPT_WINDOWS_CLIPFORGE_OFFLINE_LAB' as const;
-type WinBinaries = { ffmpeg:string; ffprobe:string };
+type WinBinaries = { ffmpeg:string; ffprobe:string; supervisor:string };
 type Probe = { streams?:Array<{width?:unknown;height?:unknown}>; format?:{duration?:unknown} };
 const validPart=/^[A-Za-z0-9_-][A-Za-z0-9_.-]*$/;
 const safeJob=/^[A-Za-z0-9_-]{1,64}$/;
@@ -55,17 +57,22 @@ async function digestFile(file:string,signal:AbortSignal,cap=CLIP_LIMITS.sourceB
     return hash.digest('hex');
   }finally{signal.removeEventListener('abort',abort)}
 }
-async function binary(file:string,name:'ffmpeg.exe'|'ffprobe.exe'):Promise<string>{
+async function binary(file:string,name:'ffmpeg.exe'|'ffprobe.exe'|'streamcockpitclipjob.exe'):Promise<string>{
   check(localAbsolute(file)&&path.win32.basename(file).toLowerCase()===name,'BINARIES');
   const resolved=await realpath(file),stats=await lstat(file);
   check(stats.isFile()&&!stats.isSymbolicLink()&&resolved.toLowerCase()===path.win32.normalize(file).toLowerCase(),'BINARIES');
   return resolved;
 }
-async function run(binaryPath:string,args:string[],signal:AbortSignal,limit=MAX_STDOUT):Promise<{code:number|null;stdout:string}>{
+async function run(binaryPath:string,args:string[],signal:AbortSignal,supervisor:string,workingDirectory:string,limit=MAX_STDOUT):Promise<{code:number|null;stdout:string}>{
   check(!signal.aborted,'CANCELLED');
   return new Promise((resolve,reject)=>{
     let text='',overflow=false,error=false,terminated=false;
-    const child=spawn(binaryPath,args,{shell:false,windowsHide:true,detached:false,
+    // Every codec subprocess is created SUSPENDED by the native supervisor,
+    // attached to a kill-on-close Windows Job Object before ResumeThread.
+    // No bare FFmpeg fallbacks on helper failure or helper absence.
+    const child=spawn(supervisor,[binaryPath,String(timeoutMs),
+      String(CLIP_LIMITS.memoryBytes),String(CLIP_LIMITS.cpuSeconds),workingDirectory,...args],{
+      shell:false,windowsHide:true,detached:false,
       env:{SystemRoot:process.env.SystemRoot||'C:\\Windows',WINDIR:process.env.WINDIR||'C:\\Windows'},
       stdio:['ignore','pipe','ignore']});
     const kill=()=>{terminated=true;child.kill()};
@@ -85,10 +92,10 @@ async function run(binaryPath:string,args:string[],signal:AbortSignal,limit=MAX_
     });
   });
 }
-async function probe(ffprobe:string,file:string,signal:AbortSignal):Promise<MediaMetrics> {
+async function probe(ffprobe:string,file:string,signal:AbortSignal,supervisor:string):Promise<MediaMetrics> {
   const result=await run(ffprobe,['-v','error','-threads','1','-protocol_whitelist','file,pipe',
     '-format_whitelist','mov,matroska,webm','-select_streams','v:0',
-    '-show_entries','stream=width,height:format=duration','-of','json',file],signal);
+    '-show_entries','stream=width,height:format=duration','-of','json',file],signal,supervisor,path.dirname(file));
   check(result.code===0,'PROBE_FAILED');
   let parsed:Probe;
   try{parsed=JSON.parse(result.stdout) as Probe}catch{throw Error('CLIPFORGE_PROBE_FAILED')}
@@ -179,12 +186,13 @@ export class WindowsOfflineClipForge {
       check(space.bavail*space.bsize>=bytes+CLIP_LIMITS.outputBytes*2+1024*1024,'DISK');
       const ffprobe=await binary(this.executables.ffprobe,'ffprobe.exe');
       const ffmpeg=await binary(this.executables.ffmpeg,'ffmpeg.exe');
+      const supervisor=await binary(this.executables.supervisor,'streamcockpitclipjob.exe');
       stage=path.join(outputRoot,'.sc3-stage-'+randomUUID());
       await mkdir(stage,{mode:0o700});
       const stagedSource=path.join(stage,'input.mp4'),stagedOutput=path.join(stage,'output.mp4');
       await snapshot(source,stagedSource,authorized.sha256,controller.signal);
       check(await digestFile(stagedSource,controller.signal)===authorized.sha256,'SOURCE_CHANGED');
-      const plan=planClip(requested,await probe(ffprobe,stagedSource,controller.signal));
+      const plan=planClip(requested,await probe(ffprobe,stagedSource,controller.signal,supervisor));
       check(!controller.signal.aborted,'CANCELLED');
       // Even a failed FlushFileBuffers after 'wx' may leave an intent: never
       // advertise FAILED or erase the forensic snapshot after an uncertain write.
@@ -201,13 +209,13 @@ export class WindowsOfflineClipForge {
       const args=plan.args.map(arg=>arg==='/proc/self/fd/3'?stagedSource:arg==='pipe:4'?stagedOutput:arg);
       args.unshift('-n');
       executing=true;
-      const result=await run(ffmpeg,args,controller.signal);
+      const result=await run(ffmpeg,args,controller.signal,supervisor,stage);
       executing=false;
       if(controller.signal.aborted||result.code===null)return {status:'UNKNOWN',code:'ENCODER_INTERRUPTED'};
       check(result.code===0,'ENCODER_EXIT');
       const outputStats=await lstat(stagedOutput);
       check(outputStats.isFile()&&outputStats.size>0&&outputStats.size<CLIP_LIMITS.outputBytes,'OUTPUT_SIZE');
-      const measured=await probe(ffprobe,stagedOutput,controller.signal);
+      const measured=await probe(ffprobe,stagedOutput,controller.signal,supervisor);
       check(measured.width===plan.width&&measured.height===plan.height&&
         Math.abs(measured.durationMs-(plan.segment.endMs-plan.segment.startMs))<=250,'OUTPUT_METRICS');
       check(await digestFile(stagedSource,controller.signal)===authorized.sha256,'SOURCE_CHANGED');

@@ -1,7 +1,7 @@
 # F04 — Laboratoire ClipForge Windows / FFmpeg (2026-11-02)
 
 ## Portée réelle
-Machine de développement : FIXE Windows 11 uniquement, branche `streamcockpit/3.0-full-experience`. Le code `apps/server/src/streamcockpit-clipforge-windows.ts` est **isolé** : aucune route HTTP, aucun bouton Android/Desktop, aucun lancement automatique de fournisseur/OBS et aucun changement du pipeline Linux. Il exige explicitement `I_ACCEPT_WINDOWS_CLIPFORGE_OFFLINE_LAB` et un chemin absolu vers les binaires FFmpeg/FFprobe **provisionnés par l'hôte**. Il ne doit pas servir de contrat de livraison/production.
+Machine de développement : FIXE Windows 11 uniquement, branche `streamcockpit/3.0-full-experience`. Le code `apps/server/src/streamcockpit-clipforge-windows.ts` est **isolé** : aucune route HTTP, aucun bouton Android/Desktop, aucun lancement automatique de fournisseur/OBS et aucun changement du pipeline Linux. Il exige explicitement `I_ACCEPT_WINDOWS_CLIPFORGE_OFFLINE_LAB` et des chemins absolus vers FFmpeg/FFprobe **et un superviseur Job Object natif provisionnés par l'hôte**. L'absence du superviseur empêche désormais tout encodage ; il n'existe plus de repli vers un lancement direct de FFmpeg. Il ne doit pas servir de contrat de livraison/production.
 
 ## Fonction démontrée
 Sur FIXE (NTFS), un fichier vidéo **synthétique** créé localement par FFmpeg a été transcodé en MP4 vertical **360 × 640 / 1 seconde** par un processus sans shell et mono-thread. FFprobe contrôle dimensions et durée ; le manifest JSON contient empreintes SHA-256 entrée/sortie, mesures, géométrie et noms relatifs uniquement ; VTT de sous-titrage écrit séparément. Pas de vidéo OBS, replay utilisateur, API distante ni clé de compte manipulés.
@@ -16,12 +16,12 @@ Le processus utilise un cliché local privé (copie depuis un descripteur ouvert
 
 ## Gates strictement ouverts
 **F04 reste PARTIAL ; G2 en cours ; G3–G5 ouverts.** Le laboratoire ne fournit pas encore :
-- de **Windows Job Object** kill-on-close + plafonds effectifs CPU/mémoire/espace disque, ni des ACL de répertoire staging qualifiées contre un processus local adversarial ;
+- de **binaire superviseur signé et intégré au paquet** (le Job Object natif a désormais des limites CPU/mémoire et kill-on-close testés localement, mais ne prouve ni une isolation complète du codec ni la résistance à une machine compromise) ; les ACL de staging restent à qualifier contre un processus local adversarial ;
 - de preuve de durabilité de l'intent/manifest en coupure électrique NTFS, ni d'atomicité de finalisation au sens matériel ;
 - de liaison sûre avec un vrai fichier replay OBS via identité durable, ni d'encodage de replays Minecraft utilisateurs, ni de confirmation Android/FFmpeg sous charge de stream ;
 - de service API/UX avec permissions authentifiées, confirmation explicite, rollback/migration validés ; ni d'artefacts signés Windows + APK identiques.
 
-La priorité suivante est l'isolation Windows + durabilité et la source OBS effectivement autorisée. **Ne pas monter ce laboratoire en production, ne pas publier de RC et ne pas traiter les tests Linux skipped comme validés.**
+La priorité suivante est la signature/provenance du superviseur, les ACL Windows, la durabilité et la source OBS effectivement autorisée. **Ne pas monter ce laboratoire en production, ne pas publier de RC et ne pas traiter les tests Linux skipped comme validés.**
 
 ## Addendum FIXE ~07:50 CET — transaction et autorisation de l'entrée
 Dans le laboratoire Windows isolé, le `SourceGrant` et la demande `ClipSegment` sont maintenant **capturés synchroniquement avant le premier accès disque asynchrone**. Une mutation ultérieure de l'objet partagé par l'appelant ne peut plus remplacer `relativePath`, SHA-256, paramètres de coupe ni légendes. Le test de non-régression essaie explicitement d'injecter `../outside.mp4` et de changer l'empreinte et la durée pendant `lstat/realpath` ; l'export réel FFmpeg reste lié au fichier et au segment initialement autorisés.
@@ -31,3 +31,15 @@ La création exclusive de `.intent` a un nouvel état intermédiaire `reservatio
 Résultat local du lot : **11/11 PASS** sur FIXE avec FFmpeg/FFprobe WinGet réellement exécutés (9 précédents + 2 cas de sécurité), puis `build:types` PASS, `check:browser-types` PASS, `security:check` PASS (827 fichiers dans l'arbre comprenant aussi le F08 non committé d'un autre propriétaire), `git diff --check` PASS. Aucun test matériel OBS/Android ni build installable. F04 reste `partial` et G2 `in_progress`, G3–G5 `open`. Le code reste inaccessible aux routes de production.
 
 Revalidation de régression **après** ces deux corrections : quatre suites ClipForge+roadmap sur FIXE avec option laboratoire explicite : **30 PASS / 42 skipped / 0 FAIL** (72 cas, exit 0). Les 42 skips concernent notamment le comportement POSIX/Linux et ne constituent pas une preuve d'exécution Windows.
+
+## Addendum FIXE ~08:12–08:24 CET — vrai superviseur Windows Job Object (laboratoire)
+
+Le nouvel utilitaire **source C# uniquement**, `scripts/streamcockpit-windows-clip-job.cs`, utilise les API Win32 `CreateProcessW(CREATE_SUSPENDED)`, `SetInformationJobObject`, `AssignProcessToJobObject` et `ResumeThread`. Le processus enfant ne peut pas commencer le décodage avant son admission dans un Job Object. Si l'attachement échoue, le processus encore suspendu est arrêté. Le Job Object est configuré avec **KILL_ON_JOB_CLOSE**, **un seul processus actif**, **priorité IDLE**, **plafond mémoire 1 GiB** et **120 secondes de CPU** (valeurs plafonnées côté helper) ; la durée murale de chaque appel FFmpeg/FFprobe reste limitée à **60 secondes** côté laboratoire. Ce sont des limites d'exécution, **pas une sandbox de sécurité pour le décodage de médias hostiles**.
+
+Le test compile le source avec le compilateur Windows préexistant `C:\Windows\Microsoft.NET\Framework64\v4.0.30319\csc.exe`, dans **un dossier temporaire propre aux tests**. Aucun .exe natif n'est ajouté au dépôt ou installé sur la machine. L'adaptateur `WindowsOfflineClipForge` refuse les traitements sans chemin absolu vers un `StreamCockpitClipJob.exe` non symlinké et utilise exclusivement le superviseur pour **tous** les `ffprobe` et `ffmpeg`. Les arguments passent sans shell et le processus reçoit un environnement minimal ; l'absence du helper n'a jamais de fallback non supervisé.
+
+**Mesures sur FIXE** : clip rouge synthétique 320×180 converti en MP4 360×640 avec FFmpeg/FFprobe réels, hash et VTT vérifiés ; refus d'un helper absent ; code 124 au dépassement du délai sur un véritable processus Node ; refus vérifié de la création d'un processus enfant additionnel (`JOB_OBJECT_LIMIT_ACTIVE_PROCESS`) ; et extinction du processus enfant quand son superviseur est tué (`KILL_ON_JOB_CLOSE`). Le dernier test de fermeture révélait un délai transitoire de libération du répertoire de travail NTFS (`EBUSY`) dans le **nettoyage de fixture uniquement** ; le nettoyage retente uniquement ce dossier de test pendant au plus 1,25 s, et échoue si les handles persistent. Aucun retry d'encodage/commande.
+
+**Suite locale finale : 15/15 PASS**, 0 échec, avec option laboratoire explicite. Les premières variantes des tests de commande imbriquée avaient une erreur de quoting ou de gestion de l'exception `spawn UNKNOWN`, corrigées sans supprimer le contrôle ; ces essais initialement rouges ne sont pas présentés comme réussis. Ne pas compter comme validation les 42 cas Linux/POSIX sautés sur Windows.
+
+**Restent à qualifier** : signature/provenance du helper et de FFmpeg dans une vraie release Windows, ACL NTFS adversariales, robustesse en sortie électrique et atomisation du manifest, vérification indépendante des plafonds mémoire/CPU en charge, tests vrais replays OBS et pipeline Desktop/Android avec permissions, non-réessaie et migration/rollback. Aucun installateur, APK ni RC n'a été produit. G2 demeure partiel et G3–G5 ouverts.

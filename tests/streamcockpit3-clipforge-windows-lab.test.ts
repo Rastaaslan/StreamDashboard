@@ -1,16 +1,30 @@
-import { afterEach,describe,expect,it } from 'vitest';
+import { afterAll,afterEach,beforeAll,describe,expect,it } from 'vitest';
 import { mkdtemp,mkdir,readFile,readdir,rm,stat,writeFile,symlink,link,copyFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { createHash } from 'node:crypto';
-import { spawnSync } from 'node:child_process';
+import { spawn,spawnSync } from 'node:child_process';
+import { setTimeout as delay } from 'node:timers/promises';
 import { WindowsOfflineClipForge,windowsClipLabOptIn } from '../apps/server/src/streamcockpit-clipforge-windows.js';
 
 const onlyWindows=process.platform==='win32'?it:it.skip;
 const mediaTest=process.platform==='win32'&&process.env.SC3_CLIPFORGE_WINDOWS_LAB_TEST==='1'&&
   Boolean(process.env.SC3_FFMPEG&&process.env.SC3_FFPROBE)?it:it.skip;
 const folders:string[]=[];
-type Lab={root:string;src:string;out:string;file:string;exe:{ffmpeg:string;ffprobe:string}};
+let compiledRunner='',runnerFolder='';
+beforeAll(async()=>{
+  if(process.platform!=='win32'||process.env.SC3_CLIPFORGE_WINDOWS_LAB_TEST!=='1')return;
+  runnerFolder=await mkdtemp(path.join(tmpdir(),'sc3-native-job-runner-'));
+  compiledRunner=path.join(runnerFolder,'StreamCockpitClipJob.exe');
+  const csc='C:\\Windows\\Microsoft.NET\\Framework64\\v4.0.30319\\csc.exe';
+  const source=path.join(process.cwd(),'scripts','streamcockpit-windows-clip-job.cs');
+  const result=spawnSync(csc,['/nologo','/target:exe','/platform:x64','/optimize+',
+    '/out:'+compiledRunner,source],{shell:false,windowsHide:true,timeout:20000,encoding:'utf8'});
+  expect(result.error).toBeUndefined();
+  expect(result.status,result.stdout+' '+result.stderr).toBe(0);
+});
+afterAll(async()=>{if(runnerFolder)await rm(runnerFolder,{recursive:true,force:true})});
+type Lab={root:string;src:string;out:string;file:string;exe:{ffmpeg:string;ffprobe:string;supervisor:string}};
 const sha=(value:Buffer|string)=>createHash('sha256').update(value).digest('hex');
 async function fixture():Promise<Lab>{
   const root=await mkdtemp(path.join(tmpdir(),'sc3-clip-win-'));folders.push(root);
@@ -18,9 +32,22 @@ async function fixture():Promise<Lab>{
   await mkdir(src);await mkdir(out);
   return {root,src,out,file:path.join(src,'source.mp4'),
     exe:{ffmpeg:process.env.SC3_FFMPEG??'C:\\untrusted\\ffmpeg.exe',
-      ffprobe:process.env.SC3_FFPROBE??'C:\\untrusted\\ffprobe.exe'}};
+      ffprobe:process.env.SC3_FFPROBE??'C:\\untrusted\\ffprobe.exe',
+      supervisor:compiledRunner||'C:\\untrusted\\StreamCockpitClipJob.exe'}};
 }
-afterEach(async()=>{for(const folder of folders.splice(0))await rm(folder,{recursive:true,force:true})});
+afterEach(async()=>{
+  for(const folder of folders.splice(0)){
+    // Windows can release the terminated Job child directory handle slightly
+    // after process liveness reports ESRCH. Retry only our fixture cleanup.
+    for(let attempt=0;attempt<25;attempt++){
+      try{await rm(folder,{recursive:true,force:true});break}
+      catch(error){
+        if(!['EBUSY','EPERM'].includes((error as NodeJS.ErrnoException).code??'')||attempt===24)throw error;
+        await delay(50);
+      }
+    }
+  }
+});
 async function generateVideo(lab:Lab){
   const result=spawnSync(lab.exe.ffmpeg,['-nostdin','-hide_banner','-loglevel','error',
     '-f','lavfi','-i','color=c=red:s=320x180:r=15','-t','2',
@@ -159,6 +186,73 @@ describe('F04 Windows ClipForge offline laboratory, NOT a production API',()=>{
     expect(await readdir(lab.out)).toContain('contested.intent');
     expect((await readdir(lab.out)).filter(x=>x==='contested.mp4')).toHaveLength(1);
   },45000);
+  mediaTest('native Windows Job Object supervises child timeout and denies an extra child process',async()=>{
+    const lab=await fixture();
+    const sleep=path.join(lab.root,'sleep.js');
+    await writeFile(sleep,'setTimeout(()=>{},10000);');
+    const started=Date.now();
+    const timed=spawnSync(compiledRunner,[process.execPath,'400','268435456','5',lab.root,
+      sleep],{shell:false,windowsHide:true,timeout:5000,encoding:'utf8'});
+    expect(timed.error).toBeUndefined();
+    expect(timed.status,timed.stdout+' '+timed.stderr).toBe(124);
+    expect(Date.now()-started).toBeLessThan(4500);
+    const attempt=path.join(lab.root,'spawn-child.js');
+    await writeFile(attempt,`const cp=require('node:child_process');
+let child;
+try{child=cp.spawn(process.execPath,['-e','process.exit(0)'],{stdio:'ignore'});}
+catch(error){process.exit(error.code==='UNKNOWN'?0:10);}
+child.once('error',()=>process.exit(0));
+child.once('exit',()=>process.exit(8));
+setTimeout(()=>process.exit(9),3000);`);
+    const denied=spawnSync(compiledRunner,[process.execPath,'6000','268435456','10',
+      lab.root,attempt],{shell:false,windowsHide:true,timeout:10000,encoding:'utf8'});
+    expect(denied.error).toBeUndefined();
+    // A single active process is allowed in the job; a second is rejected.
+    expect(denied.status,denied.stdout+' '+denied.stderr).toBe(0);
+  },18000);
+  mediaTest('closing the supervisor kills its running child before the child timer expires',async()=>{
+    const lab=await fixture(),script=path.join(lab.root,'child-wait.js');
+    const marker=path.join(lab.root,'child-pid.txt');
+    await writeFile(script,`const fs=require('node:fs');
+fs.writeFileSync(process.argv[2],String(process.pid));
+setTimeout(()=>{},7000);`);
+    const supervisor=spawn(compiledRunner,[process.execPath,'15000','268435456','10',
+      lab.root,script,marker],{shell:false,windowsHide:true,stdio:'ignore'});
+    try{
+      let pid=0;
+      for(let i=0;i<100;i++){
+        try{pid=Number(await readFile(marker,'utf8'));break}
+        catch{await delay(20)}
+      }
+      expect(pid).toBeGreaterThan(0);
+      supervisor.kill();
+      await new Promise<void>(resolve=>supervisor.once('close',()=>resolve()));
+      let dead=false;
+      for(let i=0;i<100;i++){
+        try{process.kill(pid,0)}catch{dead=true;break}
+        await delay(20);
+      }
+      expect(dead).toBe(true);
+    }finally{supervisor.kill()}
+  },14000);
+  mediaTest('refuses invalid supervisor resource limits before spawning its child',async()=>{
+    const lab=await fixture(),script=path.join(lab.root,'must-not-run.js');
+    const marker=path.join(lab.root,'bad-limit-marker.txt');
+    await writeFile(script,"require('node:fs').writeFileSync(process.argv[2],'ran')");
+    const rejected=spawnSync(compiledRunner,[process.execPath,'0','1','0',
+      lab.root,script,marker],{shell:false,windowsHide:true,timeout:3000});
+    expect(rejected.error).toBeUndefined();
+    expect(rejected.status).toBe(70);
+    expect(await readdir(lab.root)).not.toContain('bad-limit-marker.txt');
+  });
+  mediaTest('refuses missing native Job Object supervisor without reserving or encoding',async()=>{
+    const lab=await fixture(),grant=await generateVideo(lab);
+    lab.exe.supervisor=path.join(lab.root,'missing','StreamCockpitClipJob.exe');
+    const result=await new WindowsOfflineClipForge(lab.src,lab.out,lab.exe,windowsClipLabOptIn)
+      .prepare('no_supervisor',grant,segment);
+    expect(result.status).toBe('FAILED');
+    expect((await readdir(lab.out)).some(name=>name.endsWith('.intent'))).toBe(false);
+  },30000);
   onlyWindows('handles an already-aborted request without FFmpeg or a forged manifest',async()=>{
     const lab=await fixture(),signal=new AbortController();signal.abort();
     const forge=new WindowsOfflineClipForge(lab.src,lab.out,lab.exe,windowsClipLabOptIn);
