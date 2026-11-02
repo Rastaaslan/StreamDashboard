@@ -101,7 +101,24 @@ async function fixture(provider: 'twitch' | 'google', initialPlanning?: Calendar
     return Response.json(google ? current : { data: { segments: [current] } });
   };
   const options = { port: 0, dataDir: folder, secretStore: secrets, twitchClientId: 'client', googleClientId: 'client', googleFetch: http, logger: { info() {}, warn() {}, error() {} } };
-  server = await timed('bootstrap', () => startDashboardServer(options)); await timed('bootstrap stop', () => server!.stop());
+  // On Windows an ephemeral test port can land in the Fetch forbidden-port
+  // list. Probe the local temporary server, resample ONLY on "bad port".
+  // This is a test-only guard and never changes production listen behavior.
+  const safeStart = async () => {
+    for (let attempt = 0; attempt < 8; attempt++) {
+      const candidate = await startDashboardServer(options);
+      try {
+        const response = await nativeFetch(candidate.url + '/api/v1/health');
+        if (!response.ok) throw new Error('LOCAL_TEST_HEALTH_UNAVAILABLE');
+        return candidate;
+      } catch (error) {
+        await candidate.stop();
+        if ((error as {cause?: {message?: string}})?.cause?.message !== 'bad port') throw error;
+      }
+    }
+    throw new Error('NO_SAFE_LOCAL_TEST_PORT');
+  };
+  server = await timed('bootstrap', safeStart); await timed('bootstrap stop', () => server!.stop());
   const file = join(folder, 'dashboard.json');
   const state = JSON.parse(await readFile(file, 'utf8'));
   state.twitch = { broadcasterId: '42', userName: 'u', displayName: 'U' };
@@ -110,7 +127,7 @@ async function fixture(provider: 'twitch' | 'google', initialPlanning?: Calendar
   if (provider === 'twitch') await secrets.setTwitchTokens({ accessToken: 'token', refreshToken: '' });
   else await secrets.setGoogleTokens({ accessToken: 'token', refreshToken: 'refresh', expiresAt: String(Date.now() + 365 * 86400000) });
   vi.stubGlobal('fetch', http);
-  server = await timed('startup', () => startDashboardServer(options));
+  server = await timed('startup', safeStart);
   await timed('providersReady', () => server!.providersReady);
   const request = async (route: string, body: unknown = {}, method = 'POST', ok = true) => {
     const response = await timed(`${method} ${route.replace(/planning\/[^/]+/, 'planning/:id')}`, () => nativeFetch(server!.url + '/api/v1/' + route, { method, headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) }));
@@ -126,7 +143,7 @@ async function fixture(provider: 'twitch' | 'google', initialPlanning?: Calendar
     loseCreateResponse: () => { loseCreateResponse = true; },
     rejectCreate: (value: boolean) => { rejectCreate = value; },
     active: () => [...remote.values()].filter(event => event.status !== 'cancelled'),
-    restart: async () => { await timed('restart stop', () => server!.stop()); server = await timed('startup', () => startDashboardServer(options)); await timed('providersReady', () => server!.providersReady); },
+    restart: async () => { await timed('restart stop', () => server!.stop()); server = await timed('startup', safeStart); await timed('providersReady', () => server!.providersReady); },
     disk: async () => JSON.parse(await readFile(file, 'utf8')).planning as CalendarItem[],
   };
 }

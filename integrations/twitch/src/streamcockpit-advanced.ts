@@ -93,10 +93,15 @@ export class AdvancedTwitch {
     return s;
   }
   /** Only call through the server confirmation service. Rechecks permissions immediately. */
-  async createConfirmedPoll(value: unknown, expectedBroadcaster: string, confirmed: boolean) {
+  async createConfirmedPoll(value: unknown, expectedBroadcaster: string, confirmed: boolean,
+    stillAuthorized?: () => Promise<boolean> | boolean) {
     if (confirmed !== true) throw new AdvancedTwitchError('precondition');
     const draft = normalizePoll(value), s = await this.pollPreflight();
     if (s.c.broadcasterId !== expectedBroadcaster) throw new AdvancedTwitchError('precondition');
+    // The paired actor, OBS and Twitch live state may change while the
+    // Twitch preflight awaits. Recheck immediately before the sole POST.
+    if (stillAuthorized && !await stillAuthorized()) throw new AdvancedTwitchError('forbidden');
+    this.assertCurrent(s);
     const v = await this.request(s.c, '/polls', { broadcaster_id: s.c.broadcasterId, ...draft, choices: draft.choices.map(title => ({ title })), channel_points_voting_enabled: false });
     try { this.assertCurrent(s); } catch { throw new AdvancedTwitchError('uncertain'); }
     const poll = object(Array.isArray(v.data) ? v.data[0] : null);

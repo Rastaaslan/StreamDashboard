@@ -46,6 +46,7 @@ import { ObsClient } from '../../../integrations/obs/src/client.js';
 import { AdvancedTwitch } from '../../../integrations/twitch/src/streamcockpit-advanced.js';
 import { StreamcockpitTwitchService } from './streamcockpit-twitch-service.js';
 import { createTwitchCapabilitiesRouter, twitchReadActor } from './streamcockpit-twitch-router.js';
+import { createTwitchPollRouter, twitchPollActor } from './streamcockpit-twitch-poll-router.js';
 import { TwitchClient, TwitchHttpError } from '../../../integrations/twitch/src/client.js';
 import { TwitchPreflight } from '../../../integrations/twitch/src/preflight.js';
 import { TwitchEventSub, type TwitchChatMessage, type TwitchRewardRedemption } from '../../../integrations/twitch/src/eventsub.js';
@@ -1949,6 +1950,26 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
     actor: async req => {
       await assertRole('chat');
       return twitchReadActor(req, remoteAuth, isLocalRequest(req), remoteRuntimeEnabled);
+    },
+  }));
+
+  // F08 poll publication: separate paired-management preview + confirmation.
+  // Host LIVE observations must be fresh; calendar or client state is never
+  // treated as evidence of a live broadcast. No automatic poll creation.
+  app.use('/api/v1/twitch/advanced/poll', createTwitchPollRouter({
+    service: advancedTwitch,
+    actor: async req => {
+      await assertRole('chat');
+      return twitchPollActor(req, remoteAuth, isLocalRequest(req), remoteRuntimeEnabled);
+    },
+    hostLive: async () => {
+      if (options.obsEnabled === false || options.timerAuthority === false) return false;
+      const device = await options.deviceDescriptor?.().catch(() => undefined);
+      const observation = platformLive.twitch;
+      const age = observation ? Date.now() - Date.parse(observation.observedAt) : NaN;
+      return mixerHostEligible(device) && obs.state.connected && obs.state.streamingKnown === true &&
+        obs.state.streaming === true && twitch.state.connected === true &&
+        observation?.live === true && Number.isFinite(age) && age >= 0 && age < 30_000;
     },
   }));
 

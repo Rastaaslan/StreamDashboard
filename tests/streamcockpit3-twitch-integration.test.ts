@@ -76,6 +76,10 @@ it.each(['offline','401','revoke','disconnect','403','429','503','malformed','mi
   if (['offline','401','missing'].includes(mode)) expect(f.transport).toHaveBeenCalledTimes(1);
 }));
 
-it('poll preview/confirm are not remote-allowlisted in any method',()=>{
-  for(const suffix of ['poll/preview','poll/confirm']) for(const method of ['GET','HEAD','POST']) expect(isRemoteApiAllowed(method,'/v1/twitch/advanced/'+suffix)).toBe(false);
+it('poll preview/confirm allow only paired POST with chat+cloud permissions',()=>{
+  for(const suffix of ['poll/preview','poll/confirm']){
+    const route='/v1/twitch/advanced/'+suffix;
+    expect(isRemoteApiAllowed('POST',route)).toBe(true);
+    for(const method of ['GET','HEAD','PUT','DELETE'])expect(isRemoteApiAllowed(method,route)).toBe(false);
+  }
 });

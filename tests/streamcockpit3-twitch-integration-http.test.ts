@@ -72,11 +72,16 @@ it.each(['offline','401','revoke','disconnect','403','429','503','malformed','mi
   if (['offline','401','missing'].includes(mode)) expect(f.transport).toHaveBeenCalledTimes(1);
 }));
 
-it('poll preview/confirm are not remote-allowlisted in any method',()=>{
-  for(const suffix of ['poll/preview','poll/confirm']) for(const method of ['GET','HEAD','POST']) expect(isRemoteApiAllowed(method,'/v1/twitch/advanced/'+suffix)).toBe(false);
+it('poll preview/confirm permit POST only with chat+cloud pairing while forbidding reads',()=>{
+  for(const suffix of ['poll/preview','poll/confirm']) {
+    const path='/v1/twitch/advanced/'+suffix;
+    for(const method of ['GET','HEAD','PUT','DELETE'])expect(isRemoteApiAllowed(method,path)).toBe(false);
+    expect(isRemoteApiAllowed('POST',path)).toBe(true);
+    expect(requiredDevicePermissions('POST',path,{})).toEqual(['chat','cloud']);
+  }
 });
 
-it('real server mounts read route behind origin guard and leaves poll mutations absent',async()=>{
+it('real server mounts read route behind origin guard and rejects anonymous poll mutations',async()=>{
   const {startDashboardServer}=await import('../apps/server/src/index.js');
   const {mkdtemp,rm}=await import('node:fs/promises');
   const dir=await mkdtemp(join(tmpdir(),'lot-j-server-'));
@@ -87,6 +92,9 @@ it('real server mounts read route behind origin guard and leaves poll mutations 
     expect(response.status).toBe(401); expect(await response.json()).toMatchObject({status:'unknown',error:{code:'unauthorized'}});
     expect((await fetch(server.url+'/api'+path,{headers:{origin:'https://untrusted.invalid'}})).status).toBe(403);
     expect((await fetch(server.url+'/api'+path,{method:'POST'})).status).toBe(405);
-    for(const action of ['preview','confirm']) expect((await fetch(server.url+'/api/v1/twitch/advanced/poll/'+action,{method:'POST'})).status).toBe(404);
+    for(const action of ['preview','confirm']) {
+      const attempt=await fetch(server.url+'/api/v1/twitch/advanced/poll/'+action,{method:'POST'});
+      expect(attempt.status).toBeGreaterThanOrEqual(400); // No management pairing and no host OBS: fail closed.
+    }
   } finally { await server?.stop(); await rm(dir,{recursive:true,force:true}); }
 },30000);

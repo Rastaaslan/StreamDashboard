@@ -31,12 +31,30 @@ async function fixture(recurrence: string[], allDay = false) {
     return Response.json({ items: new URL(url).searchParams.get('singleEvents') === 'false' ? [master] : instances });
   };
   const options = { port: 0, dataDir, secretStore: secrets, googleClientId: 'client', googleFetch, logger: { info() {}, warn() {}, error() {} } };
-  let server = await startDashboardServer(options);
+  // Windows ephemeral ports may fall within Fetch's forbidden-port list.
+  // Probe each temporary local server with a read-only health GET, and resample
+  // ONLY when Undici explicitly reports "bad port". Never change product ports.
+  const boot = async () => {
+    for (let attempt = 0; attempt < 8; attempt++) {
+      const candidate = await startDashboardServer(options);
+      try {
+        const response = await fetch(candidate.url + '/api/v1/health');
+        if (!response.ok) throw new Error('LOCAL_HEALTH_UNAVAILABLE');
+        return candidate;
+      } catch (error) {
+        await candidate.stop();
+        const cause = (error as {cause?: {message?: string}})?.cause?.message;
+        if (cause !== 'bad port') throw error;
+      }
+    }
+    throw new Error('NO_SAFE_LOCAL_TEST_PORT');
+  };
+  let server = await boot();
   const request = (route: string, body: unknown = {}, method = 'POST') => fetch(server.url + '/api/v1/' + route, { method, headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) });
   const snapshot = () => fetch(server.url + '/api/v1/companion/snapshot').then(r => r.json());
   await request('google/target', { calendarId: 'calendar' }, 'PUT');
   return { request, snapshot, writes, remote: () => master,
-    restart: async () => { await server.stop(); server = await startDashboardServer(options); },
+    restart: async () => { await server.stop(); server = await boot(); },
     close: async () => { await server.stop(); await rm(dataDir, { recursive: true, force: true }); } };
 }
 

@@ -23,11 +23,12 @@ export class StreamcockpitTwitchService {
     this.pending.set(confirmationId, entry);
     return { confirmationId, expiresAt, broadcasterId: entry.broadcasterId, draft: structuredClone(draft), warning: 'Le sondage démarre immédiatement après confirmation.' };
   }
-  async confirmPoll(actor: TwitchActor, confirmationId: string, confirmed: boolean) {
+  async confirmPoll(actor: TwitchActor, confirmationId: string, confirmed: boolean,
+    stillAuthorized?: () => Promise<boolean> | boolean) {
     this.authorize(actor, true);
     const entry = this.pending.get(confirmationId);
     if (confirmed !== true || !entry || entry.actor !== actor.id || entry.expiresAt <= this.now()) throw new AdvancedTwitchError('precondition');
     this.pending.delete(confirmationId); // Consume before any await: concurrent calls cannot replay.
-    return this.api.createConfirmedPoll(entry.draft, entry.broadcasterId, true);
+    return this.api.createConfirmedPoll(entry.draft, entry.broadcasterId, true, stillAuthorized);
   }
 }

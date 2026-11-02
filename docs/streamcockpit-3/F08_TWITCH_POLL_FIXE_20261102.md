@@ -1,0 +1,16 @@
+# F08 — Premier parcours de sondage Twitch depuis FIXE (02/11/2026)
+
+## Source de vérité et limites
+- Machine de développement unique : FIXE Windows 11, branche `streamcockpit/3.0-full-experience`. Aucun accès aux anciens worktrees dam-server ni aux installations OBS/Android/Windows de l'utilisateur.
+- Périmètre de ce lot : sondage Twitch **uniquement**, à partir du moteur existant `AdvancedTwitch`. Les prédictions, raids et shoutouts restent non implémentés. Les tests sont entièrement simulés côté Twitch et n'ont pas créé de sondage public.
+- Route `POST /api/v1/twitch/advanced/poll/preview` : valide le brouillon (question, 2–5 choix, durée), les scopes OAuth, l'identité du diffuseur, l'éligibilité Affiliate/Partner et l'absence de sondage actif, sans mutation Twitch. Retourne un identifiant de confirmation à usage unique, valable au maximum 60 secondes.
+- Route `POST /api/v1/twitch/advanced/poll/confirm` : exige `confirmed:true` et cet identifiant, lié au même appareil/compte. La confirmation est **consommée avant** toute attente réseau, sans retry automatique. Le moteur recalcule les préconditions Twitch et réévalue le pairing/état du live **juste avant** le seul POST fournisseur.
+- Toutes les mutations nécessitent une paire de gestion valide (pas seulement chat/cloud), les permissions `chat` + `cloud`, un FIXE Windows hôte OBS-executor activé et une observation récente (< 30 s) d'OBS **et** Twitch réellement en direct. Ni calendrier ni client ne déclare un live. Même `127.0.0.1` n'accorde pas une autorisation de gestion implicite.
+- Une perte de réponse après déclenchement d'un POST peut masquer un sondage créé. Code `POLL_OUTCOME_UNCERTAIN`, `retryable:false`; l'interface bloque toute nouvelle action jusqu'à vérification manuelle côté Twitch. Aucun état « confirmé » n'est inventé en cas d'erreur.
+- Front mobile dans Live Monitor Chat : formulaire éphémère, aperçu non publiant, case « créer un sondage public » et bouton de confirmation séparé. Rien n'est envoyé à l'ouverture ; tous les champs/IDs sont invalidés quand l'appareil se déconnecte, quand la source ou le compte change, à la mise en arrière-plan et à la fermeture. Aucune seconde régie ni base de sondages locale.
+
+## Sécurité et limitations non couvertes
+- Révocation pré-POST : garde après les GET/await Twitch, testée. Une transition Twitch/OBS exactement entre ce dernier contrôle et le POST du fournisseur **ne peut pas être rendue atomique** par notre API.
+- Une réponse HTTP 200 Twitch est insuffisante : seule la réponse de création vérifiée du fournisseur autorise un état confirmé. Après le point de possible POST, même une réponse 400/403 ne prouve pas l'absence d'un sondage : toute erreur reste `POLL_OUTCOME_UNCERTAIN`, sans retry. Si la garde hôte/acteur échoue AVANT ce point, aucun POST n'est envoyé. En cas de perte d'accusé, vérification manuelle requise.
+- Aucun essai physique FIXE/laptop/Android, scope OAuth de production, vrai live, vrai sondage public, coupure réseau matérielle, migrations ni signature Android. F08 reste `partial`, G2 `in_progress`, G3–G5 `open`.
+- F04 ClipForge Windows s'exécute dans un lot concurrent indépendant ; aucun fichier F04 n'a été retouché dans ce sous-lot.

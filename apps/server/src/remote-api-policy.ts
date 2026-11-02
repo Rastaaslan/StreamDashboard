@@ -33,6 +33,7 @@ const POST_EXACT = new Set([
   '/v1/twitch/device','/v1/twitch/disconnect','/v1/google/disconnect',
   '/v1/automations','/v1/automations/test',
   '/v1/twitch/channel','/v1/twitch/tags/suggest','/v1/twitch/chat/messages','/v1/twitch/clips','/v1/twitch/moderation/bans',
+  '/v1/twitch/advanced/poll/preview','/v1/twitch/advanced/poll/confirm',
   '/v1/planning','/v1/companion/sync','/v1/discord/planning','/v1/streamer-pings/ack-all',
 ]);
 
@@ -84,6 +85,7 @@ export const remoteApiPolicySnapshot = {
 /** Explicit permissions supplement the existing legacy/management allowlists. */
 export function requiredDevicePermissions(method:string,path:string,body:unknown,actions:DeckAction[]=[]):DevicePermission[] {
   if(path==='/v1/twitch/advanced/capabilities')return ['chat'];
+  if(method==='POST'&&['/v1/twitch/advanced/poll/preview','/v1/twitch/advanced/poll/confirm'].includes(path))return ['chat','cloud'];
   if(path==='/v1/streamcockpit-health'||path==='/v1/streamcockpit-mixer')return ['observe'];
   if(method==='GET'&&['/v1/streamcockpit-moments/manual/context','/v1/streamcockpit-moments/manual/scheduled'].includes(path))return ['observe','clips'];
   if(method==='POST'&&path==='/v1/streamcockpit-moments/manual/scheduled/select')return ['observe','clips'];
