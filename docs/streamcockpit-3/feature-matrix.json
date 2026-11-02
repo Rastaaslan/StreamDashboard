@@ -224,6 +224,14 @@
         {
           "path": "apps/server/src/streamcockpit-moments-obs-replay.ts",
           "kind": "2026-11-02 FIXE ReplayBufferSaved marker now requires a point-in-time nonempty regular-file lstat on FIXE (synthetic OBS plus temporary NTFS file tests); no real OBS clip, immutable file binding, file durability or clip-link export qualified"
+        },
+        {
+          "path": "apps/server/src/streamcockpit-clipforge-windows.ts",
+          "kind": "2026-11-02 FIXE isolated opt-in Windows OFFLINE lab: real synthetic FFmpeg 360x640, SHA-256 and FFprobe validation, no production routes or hardware claim"
+        },
+        {
+          "path": "docs/streamcockpit-3/F04_WINDOWS_OFFLINE_LAB_20261102.md",
+          "kind": "2026-11-02 lab scope, measured tests, Windows security and durability blockers"
         }
       ],
       "verifiedTests": [
@@ -231,15 +239,17 @@
         "tests/streamcockpit3-moments-mobile.test.ts",
         "tests/streamcockpit3-clipforge.test.ts",
         "tests/streamcockpit3-clipforge-executor.test.ts",
+        "tests/streamcockpit3-clipforge-windows-lab.test.ts",
         "tests/streamcockpit3-moments-obs-replay.test.ts"
       ],
       "hardwareEvidence": [],
       "blockers": [
-        "ClipForge pipeline and resource launcher require Linux /proc and O_NOFOLLOW; FIXE Windows correctly refuses before encoding, no Windows implementation yet",
-        "42 Linux-only ClipForge tests explicitly skipped on FIXE; two Windows fail-closed tests passed, no real FFmpeg/vertical export or OBS/Twitch marker producer qualified"
+        "Production ClipForge pipeline and resource launcher still require Linux /proc and O_NOFOLLOW; isolated Windows FFmpeg lab is NOT mounted or production-qualified",
+        "Windows Job Object kill-on-close, CPU/memory limits, staging ACLs and power-loss durability of intent/manifest absent",
+        "42 Linux-only ClipForge tests remain explicitly skipped; Windows lab 9/9 PASS on synthetic NTFS/FFmpeg only, no real OBS replay or signed distribution qualified"
       ],
       "ownerJob": "streamcockpit/3.0-lot-d",
-      "integrationNote": "2026-11-01 FIXE Windows: Linux-only ClipForge assertions not applicable; pure geometry/planning tests remain active; two Windows fail-closed checks pass. F04 not qualified until Windows-safe pipeline, resource isolation and real encoding tested. 2026-11-02 OBS ReplayBufferSaved read-only observation and marker journal now wired in dev; no validated file link or FFmpeg export, no hardware OBS qualification."
+      "integrationNote": "2026-11-01 Linux-only ClipForge guarded and real OBS ReplayBufferSaved read-only observer integrated. 2026-11-02 FIXE isolated Windows offline lab with real FFmpeg transcoding synthetic MP4 to verified 360x640, manifest/source/output SHA-256, VTT, no-overwrite & collision guards, NTFS junction/hardlink refusals. Windows lab 9/9 PASS; 4 suites F04/roadmap 28 PASS/42 Linux skips; types PASS and security 824 files PASS. No Job Object, power-loss guarantee, production API, real OBS replay or Android hardware evidence; F04 remains partial, G2 in progress."
     },
     {
       "id": "F05",
