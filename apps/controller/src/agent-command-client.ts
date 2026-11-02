@@ -5,7 +5,7 @@ import {observationFreshness,type AgentCommand,type AgentReceipt,type AgentObser
 
 const validId=(id:unknown):id is string=>typeof id==='string'&&/^[A-Za-z0-9_-]{1,96}$/.test(id);
 /** No retry: a timed-out write is uncertain until explicitly reconciled. */
-async function pinnedRequest(peer:ReadOnlyAgentPeer,route:'/v2/obs/authority'|'/v2/obs/command',
+async function pinnedRequest(peer:ReadOnlyAgentPeer,route:'/v2/obs/authority'|'/v2/obs/command'|`/v2/obs/receipt/${string}`,
   body?:unknown):Promise<{status:number;value:unknown}>{
   const uri=checkedEndpoint(peer.url),fingerprint=peer.serverFingerprint.replaceAll(':','').toLowerCase();
   if(!validId(peer.expectedDeviceId)||!peer.serverCertificate||!peer.clientCertificate||
@@ -79,4 +79,27 @@ export async function sendPinnedAgentCommand(peer:ReadOnlyAgentPeer,command:Agen
      ((status===409)!==(receipt.result==='refused')))
     throw Error('INVALID_AGENT_RECEIPT');
   return receipt;
+}
+
+export type AgentReceiptLookup={commandId:string;status:'unknown'}|
+  {commandId:string;status:'recorded';receipt:AgentReceipt};
+/** Explicit read-only reconciliation. UNKNOWN (including no durable record) is
+ * not evidence that an OBS effect did not happen and never authorises a retry. */
+export async function readPinnedAgentReceipt(peer:ReadOnlyAgentPeer,commandId:string):Promise<AgentReceiptLookup>{
+  if(!validId(commandId))throw Error('INVALID_AGENT_COMMAND_ID');
+  const {status,value}=await pinnedRequest(peer,`/v2/obs/receipt/${commandId}`);
+  if(status!==200||!value||typeof value!=='object'||Array.isArray(value))
+    throw Error('INVALID_AGENT_RECEIPT_LOOKUP');
+  const data=value as Partial<AgentReceiptLookup>;
+  if(data.commandId!==commandId)throw Error('INVALID_AGENT_RECEIPT_LOOKUP');
+  if(data.status==='unknown'&&Object.keys(data).length===2)return {commandId,status:'unknown'};
+  if(data.status!=='recorded'||!data.receipt||typeof data.receipt!=='object')
+    throw Error('INVALID_AGENT_RECEIPT_LOOKUP');
+  const receipt=data.receipt;
+  if(receipt.commandId!==commandId||!['confirmed','uncertain','refused'].includes(receipt.result)||
+     !Number.isFinite(receipt.observedAt)||receipt.observedAt<0||
+     (receipt.reason!==undefined&&!/^[A-Z0-9_]{1,96}$/.test(receipt.reason)))
+    throw Error('INVALID_AGENT_RECEIPT_LOOKUP');
+  return {commandId,status:'recorded',receipt:{commandId,result:receipt.result,
+    observedAt:receipt.observedAt,...(receipt.reason?{reason:receipt.reason}:{})}};
 }

@@ -50,6 +50,7 @@ export class ProductionObsWriter {
   private readonly epoch=randomUUID();
   private snapshot:AgentObservation<{active:boolean;scene?:string}>|null=null;
   private inFlight:Promise<AgentReceipt>|null=null;
+  private refreshing:Promise<AgentObservation<{active:boolean}>>|null=null;
   private closing=false;
   private faulted=false;
   private closeTask:Promise<void>|null=null;
@@ -98,12 +99,16 @@ export class ProductionObsWriter {
     }catch(error){signal.abort();await peer?.close().catch(()=>{});
       await journal?.close?.();await authority.close();await rm(lockFile,{force:true});throw error}
   }
-  private publish(active:boolean,scene:string):void{
+  private publish(active:boolean,scene:string,retainUnchangedRevision=false):void{
     this.signal.signal.throwIfAborted();
     if(typeof active!=='boolean'||typeof scene!=='string'||!scene.trim())
       throw Error('REAL_OBS_STATE_INVALID');
-    const now=this.now(),revision=(this.snapshot?.revision??this.revisionBase)+1;
-    if(!Number.isFinite(now)||revision>=this.revisionBase+revisionBlock)
+    const now=this.now();
+    const unchanged=retainUnchangedRevision&&this.snapshot?.payload.active===active&&
+      this.snapshot?.payload.scene===scene;
+    const revision=unchanged?this.snapshot!.revision:(this.snapshot?.revision??this.revisionBase)+1;
+    if(!Number.isFinite(now)||(this.snapshot&&now<this.snapshot.observedAt)||
+       revision>=this.revisionBase+revisionBlock)
       throw Error('REAL_OBS_REVISION_EXHAUSTED');
     this.snapshot={sourceDeviceId:this.options.localDeviceId,revision,
       observedAt:now,staleAt:now+5000,payload:{active,scene}};
@@ -121,7 +126,7 @@ export class ProductionObsWriter {
   private precheck(command:AgentCommand,actor:string,confirmed:boolean):string|null{
     if(this.closing)return 'WRITER_CLOSED';
     if(this.faulted)return 'RECONCILIATION_REQUIRED';
-    if(this.inFlight)return 'WRITER_BUSY';
+    if(this.inFlight||this.refreshing)return 'WRITER_BUSY';
     if(!command||!validId(command.commandId))return 'INVALID_COMMAND';
     if(actor!==this.options.controllerDeviceId||command.actorDeviceId!==actor)
       return 'ACTOR_IDENTITY_MISMATCH';
@@ -141,10 +146,26 @@ export class ProductionObsWriter {
     if(this.journal.find(command.commandId))return 'DUPLICATE_PERSISTENT';
     return null;
   }
-  async refresh():Promise<AgentObservation<{active:boolean}>>{
-    if(this.closing||this.faulted||this.inFlight)throw Error('REAL_OBS_UNAVAILABLE');
-    try{this.publish(await this.peer.read(),await this.peer.readScene());return this.observation()!}
-    catch{this.faulted=true;throw Error('REAL_OBS_UNAVAILABLE')}
+  refresh():Promise<AgentObservation<{active:boolean}>>{
+    if(this.closing||this.faulted)return Promise.reject(Error('REAL_OBS_UNAVAILABLE'));
+    if(this.inFlight)return Promise.reject(Error('REAL_OBS_WRITER_BUSY'));
+    if(this.refreshing)return this.refreshing;
+    // Acquire the read reservation before the first asynchronous RPC. A command
+    // cannot be admitted against an observation being replaced underneath it.
+    const job=Promise.resolve().then(async()=>{
+      try{
+        this.signal.signal.throwIfAborted();
+        const [active,scene]=await Promise.all([this.peer.read(),this.peer.readScene()]);
+        if(this.closing||this.faulted)throw Error('REAL_OBS_UNAVAILABLE');
+        this.publish(active,scene,true);
+        const observation=this.observation();
+        if(!observation)throw Error('REAL_OBS_UNAVAILABLE');
+        return observation;
+      }catch{this.faulted=true;throw Error('REAL_OBS_UNAVAILABLE')}
+    });
+    this.refreshing=job;
+    void job.finally(()=>{if(this.refreshing===job)this.refreshing=null}).catch(()=>{});
+    return job;
   }
   submit(command:AgentCommand,authenticatedActorId:string,confirmedCriticalAction=false):Promise<AgentReceipt>{
     const reason=this.precheck(command,authenticatedActorId,confirmedCriticalAction);
@@ -206,7 +227,8 @@ export class ProductionObsWriter {
     this.closing=true;this.signal.abort();
     this.closeTask=(async()=>{
       try{
-        await this.inFlight?.catch(()=>{});await this.peer.close();
+        await Promise.all([this.inFlight?.catch(()=>{}),this.refreshing?.catch(()=>{})]);
+        await this.peer.close();
       }finally{
         try{await this.journal.close?.()}
         finally{await this.authority.close();await rm(this.lockFile,{force:true})}

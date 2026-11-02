@@ -11,6 +11,7 @@ import {listenManagedReadOnlyGateway,stopManagedReadOnlyGateway} from './readonl
 import {AgentHealthSnapshotCache} from './health-snapshot-cache.js';
 import {ProductionObsWriter} from './production-obs-writer.js';
 import {realObsWriterOptIn} from './real-obs-transport.js';
+import {runObsAuthorityMonitor} from './authority-monitor.js';
 import type {AgentCapability} from '../../../packages/contracts/src/agent-v2.js';
 import type {Server as HttpsServer} from 'node:https';
 
@@ -183,6 +184,7 @@ export async function main(
   const options=parseReadOnlyStartup(argv,env),signal=new AbortController();
   const cache=new AgentHealthSnapshotCache(options.deviceId);
   let network:ManagedAgentNetwork|undefined,server:HttpsServer|undefined,writer:ProductionObsWriter|undefined;
+  let authorityMonitor:Promise<void>|undefined;
   const stop=()=>signal.abort();
   process.once('SIGINT',stop);process.once('SIGTERM',stop);
   try{
@@ -209,10 +211,14 @@ export async function main(
             authorizedControllerDeviceId:options.productionWriter.controllerDeviceId,
             authorityObservation:()=>writer!.observation(),
             executeObsCommand:(command,actor,confirmed)=>writer!.submit(command,actor,confirmed),
+            commandReceipt:commandId=>writer!.receipt(commandId),
           }:{}),
         },network.binding);
         server.once('error',()=>signal.abort());
       }
+      if(writer)authorityMonitor=runObsAuthorityMonitor({writer,signal:signal.signal,
+        unavailable:()=>process.stderr.write('OBS_AUTHORITY_RECONCILIATION_REQUIRED\n'),
+      });
       await runManagedReadOnlyAgent({deviceId:options.deviceId,signal:signal.signal,
         connect:active=>openObsReadOnlyConnection(options,active),
         emit:snapshot=>{cache.accept(snapshot,Date.now());process.stdout.write(JSON.stringify(snapshot)+'\n')},
@@ -230,6 +236,7 @@ export async function main(
     process.stderr.write('READ_ONLY_AGENT_START_FAILED\n');process.exitCode=1;
   }finally{
     signal.abort();cache.invalidate();
+    await authorityMonitor;
     if(server)await stopManagedReadOnlyGateway(server);
     if(writer)await writer.close();
     network?.dispose();

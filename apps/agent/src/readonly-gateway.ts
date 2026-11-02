@@ -24,6 +24,7 @@ export interface ReadOnlyGatewayConfig {
   authorizedControllerDeviceId?:string;
   authorityObservation?:()=>AgentObservation<{active:boolean}>|null;
   executeObsCommand?:(command:AgentCommand,authenticatedActorId:string,confirmed:boolean)=>Promise<AgentReceipt>;
+  commandReceipt?:(commandId:string)=>AgentReceipt|undefined;
 }
 export function createReadOnlyGateway(config:ReadOnlyGatewayConfig):HttpsServer {
   const fingerprint=config.authorizedClientFingerprint.replace(/:/g,'').toLowerCase();
@@ -32,6 +33,7 @@ export function createReadOnlyGateway(config:ReadOnlyGatewayConfig):HttpsServer 
   if(!config.serverKey||!config.serverCertificate)throw new Error('TLS_CERT_REQUIRED');
   if(Boolean(config.authorityObservation)!==Boolean(config.executeObsCommand)||
      Boolean(config.executeObsCommand)!==Boolean(config.authorizedControllerDeviceId)||
+     (config.commandReceipt&&!config.executeObsCommand)||
      (config.authorizedControllerDeviceId&&!/^[A-Za-z0-9_-]{1,96}$/.test(config.authorizedControllerDeviceId)))
     throw Error('AGENT_WRITER_AUTH_CONFIGURATION_REQUIRED');
   return createServer({
@@ -70,6 +72,29 @@ export function createReadOnlyGateway(config:ReadOnlyGatewayConfig):HttpsServer 
           'X-Content-Type-Options':'nosniff','Content-Length':Buffer.byteLength(body)});
         response.end(body);
       }catch{reject(503,'UNAVAILABLE')}
+      return;
+    }
+    if(request.method==='GET'&&request.url?.startsWith('/v2/obs/receipt/')) {
+      if(!config.commandReceipt){reject(404,'NOT_FOUND');return}
+      const match=/^\/v2\/obs\/receipt\/([A-Za-z0-9_-]{1,96})$/.exec(request.url);
+      if(!match){reject(400,'INVALID_COMMAND_ID');return}
+      try{
+        const commandId=match[1],receipt=config.commandReceipt(commandId);
+        if(receipt&&(receipt.commandId!==commandId||
+           !['confirmed','uncertain','refused'].includes(receipt.result)||
+           !Number.isFinite(receipt.observedAt)||receipt.observedAt<0||
+           (receipt.reason!==undefined&&!/^[A-Z0-9_]{1,96}$/.test(receipt.reason)))){
+          reject(503,'RECEIPT_UNAVAILABLE');return;
+        }
+        // An absent record is UNKNOWN, never permission to replay a mutation.
+        const body=JSON.stringify(receipt?{commandId,status:'recorded',receipt:{
+          commandId,result:receipt.result,observedAt:receipt.observedAt,
+          ...(receipt.reason?{reason:receipt.reason}:{}),
+        }}:{commandId,status:'unknown'});
+        response.writeHead(200,{'Content-Type':'application/json','Cache-Control':'no-store',
+          'X-Content-Type-Options':'nosniff','Content-Length':Buffer.byteLength(body)});
+        response.end(body);
+      }catch{reject(503,'RECEIPT_UNAVAILABLE')}
       return;
     }
     if(request.method==='POST'&&request.url==='/v2/obs/command') {

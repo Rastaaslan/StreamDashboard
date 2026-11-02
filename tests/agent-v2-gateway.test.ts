@@ -224,6 +224,69 @@ describe('pinned mutual-TLS read-only Agent gateway (isolated loopback LAB)',()=
     }finally{await new Promise<void>(resolve=>server.close(()=>resolve()))}
   });
 
+  it.each(['confirmed','uncertain'] as const)('reconciles a lost HTTP response as %s from the Windows receipt journal without a second OBS dispatch',async expected=>{
+    const {ProductionObsWriter}=await import('../apps/agent/src/production-obs-writer.js');
+    const {realObsWriterOptIn}=await import('../apps/agent/src/real-obs-transport.js');
+    const {readPinnedAgentAuthority,sendPinnedAgentCommand,readPinnedAgentReceipt}=await import('../apps/controller/src/agent-command-client.js');
+    const directory=await mkdtemp(path.join(tmpdir(),'sc3-receipt-tls-'));
+    let active=false,writes=0,lookups=0;
+    const writer=await ProductionObsWriter.open({optIn:realObsWriterOptIn,url:'ws://127.0.0.1:4555',
+      password:'SYNTHETIC_ONLY',journalFile:path.join(directory,'receipts.json'),
+      localDeviceId:'FIXE',controllerDeviceId:'controllerX',grants:new Set(['obs.stream.start'])},async()=>({
+      disconnected:new AbortController(),read:async()=>active,readScene:async()=>'MAIN',
+      sceneNames:async()=>['MAIN'],writeScene:async()=>{},close:async()=>{},
+      write:async()=>{writes++;active=true;if(expected==='uncertain')throw Error('SIMULATED_LOST_OBS_ACK')},
+    }));
+    const server=await listenReadOnlyLoopback({serverKey:key,serverCertificate:cert,
+      authorizedClientFingerprint:clientFingerprint,now:Date.now,snapshot:()=>null,
+      authorizedControllerDeviceId:'controllerX',authorityObservation:()=>writer.observation(),
+      executeObsCommand:async(command,actor,confirmed)=>{
+        await writer.submit(command,actor,confirmed);throw Error('SIMULATED_LOST_HTTP_RECEIPT');
+      },
+      commandReceipt:id=>{lookups++;return writer.receipt(id)},
+    });
+    try{
+      const port=(server.address() as AddressInfo).port;
+      const peer={url:'https://127.0.0.1:'+port+'/v2/obs/health',expectedDeviceId:'FIXE',
+        serverCertificate:cert,serverFingerprint:createHash('sha256').update(new X509Certificate(cert).raw).digest('hex'),
+        clientCertificate:controllerCert,clientKey:controllerKey};
+      const observation=await readPinnedAgentAuthority(peer);
+      const command={protocol:2 as const,commandId:'lost_receipt',actorDeviceId:'controllerX',
+        targetDeviceId:'FIXE',capability:'obs.stream.start' as const,issuedAt:Date.now(),
+        preconditionRevision:observation.revision,payload:{}};
+      await expect(sendPinnedAgentCommand(peer,command,true)).rejects.toThrow('AGENT_COMMAND_ENDPOINT_UNAVAILABLE');
+      expect(writes).toBe(1);
+      expect((await fetchFromLab(port,'none','/v2/obs/receipt/lost_receipt')).code).toBe(403);
+      expect((await fetchFromLab(port,'other','/v2/obs/receipt/lost_receipt')).code).toBe(403);
+      expect(lookups).toBe(0);
+      expect(await readPinnedAgentReceipt(peer,'lost_receipt')).toMatchObject({
+        commandId:'lost_receipt',status:'recorded',receipt:{commandId:'lost_receipt',result:expected},
+      });
+      expect(await readPinnedAgentReceipt(peer,'not_recorded')).toEqual({commandId:'not_recorded',status:'unknown'});
+      await expect(readPinnedAgentReceipt(peer,'../private')).rejects.toThrow('INVALID_AGENT_COMMAND_ID');
+      expect((await fetchFromLab(port,'valid','/v2/obs/receipt/lost_receipt?unsafe=1')).code).toBe(400);
+      expect(writes).toBe(1);expect(lookups).toBe(2);
+    }finally{
+      await new Promise<void>(resolve=>server.close(()=>resolve()));await writer.close();
+      await rm(directory,{recursive:true,force:true});
+    }
+  });
+  it('refuses invalid or private durable receipt data rather than exposing it',async()=>{
+    let invalid={commandId:'lookup',result:'confirmed' as const,observedAt:Date.now(),reason:'C:/private/obs/file.mkv'};
+    const server=await listenReadOnlyLoopback({serverKey:key,serverCertificate:cert,
+      authorizedClientFingerprint:clientFingerprint,now:Date.now,snapshot:()=>null,
+      authorizedControllerDeviceId:'controllerX',authorityObservation:()=>null,
+      executeObsCommand:async()=>invalid,commandReceipt:()=>invalid,
+    });
+    try{
+      const port=(server.address() as AddressInfo).port;
+      const result=await fetchFromLab(port,'valid','/v2/obs/receipt/lookup');
+      expect(result.code).toBe(503);expect(result.body).not.toContain('private');
+      invalid={...invalid,commandId:'another',reason:'OBS_STATE_VERIFIED'};
+      expect((await fetchFromLab(port,'valid','/v2/obs/receipt/lookup')).code).toBe(503);
+    }finally{await new Promise<void>(resolve=>server.close(()=>resolve()))}
+  });
+
   it('refuses unmanaged, wildcard, public, and nonlocal service bindings before opening a port',async()=>{
     const {listenManagedReadOnlyGateway}=await import('../apps/agent/src/readonly-gateway.js');
     const config={serverKey:key,serverCertificate:cert,authorizedClientFingerprint:clientFingerprint,
