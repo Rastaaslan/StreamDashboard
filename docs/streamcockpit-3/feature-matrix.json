@@ -428,6 +428,14 @@
         {
           "path": "apps/mobile/control/streamcockpit-twitch-poll.js",
           "kind": "2026-11-02 F08 Live Monitor: explicit draft, preview, acknowledgement and publication; no offline queue; real Edge tactile 320px simulated Twitch tests"
+        },
+        {
+          "path": "apps/server/src/streamcockpit-twitch-shoutout-router.ts",
+          "kind": "2026-11-02 F08 FIXE: management-paired, chat+cloud, current Twitch/OBS live epoch pinned POST preview+one-shot confirm; verified OAuth owner, moderator:manage:shoutouts and exact target identity; 204 means Twitch accepted, not audience delivery; no automatic retry"
+        },
+        {
+          "path": "apps/mobile/control/streamcockpit-twitch-shoutout.js",
+          "kind": "2026-11-02 F08 Live Monitor: voluntary target lookup, public confirmation checkbox, fail-closed on disconnect and uncertain write; real Microsoft Edge touch 320px tests; Android physical not qualified"
         }
       ],
       "verifiedTests": [
@@ -436,15 +444,17 @@
         "tests/streamcockpit3-twitch-integration-http.test.ts",
         "tests/streamcockpit3-twitch-mobile.test.ts",
         "tests/streamcockpit3-twitch-poll-http.test.ts",
-        "tests/streamcockpit3-twitch-poll-browser.test.ts"
+        "tests/streamcockpit3-twitch-poll-browser.test.ts",
+        "tests/streamcockpit3-twitch-shoutout-http.test.ts",
+        "tests/streamcockpit3-twitch-shoutout-browser.test.ts"
       ],
       "hardwareEvidence": [],
       "blockers": [
-        "F08 Twitch poll preview/confirmation implemented but no real channel OAuth/live/public poll or physical FIXE/Android tests; predictions, raids and shoutouts missing",
-        "Twitch poll POST is not atomic with OBS status changes; lost creation receipts require manual Twitch reconciliation, never automatic retry"
+        "F08 polls and explicit shoutout preview/confirmation implemented only in development and simulated Twitch/Edge; production OAuth, live broadcasts, actual accepted/audience-visible shoutout and FIXE/Android physical tests are not qualified; predictions and raids remain unimplemented",
+        "Twitch poll/shoutout POST is not atomic with OBS state, and a lost provider receipt requires explicit Twitch reconciliation; no automatic retry. Shoutout cooldown/visibility and token scope not qualified on a real channel"
       ],
       "ownerJob": "streamcockpit/3.0-lot-b",
-      "integrationNote": "2026-11-02 FIXE: existing AdvancedTwitch poll preflight and consumed one-shot confirmation exposed via management-paired chat+cloud POST routes, only while OBS+Twitch are freshly confirmed live on the sole Windows OBS executor. Reauth and host live rechecked before provider POST, no unattended requests. Mobile Live Monitor draft/preview/explicit checkbox/public confirmation, fail-closed on disconnect or uncertain HTTP outcome, no outbox. HTTP mocked Twitch API and real Edge touch 320px tests; F08 remains partial, real OAuth/hardware and other interactions unqualified."
+      "integrationNote": "2026-11-02 FIXE: existing AdvancedTwitch poll preflight and consumed one-shot confirmation exposed via management-paired chat+cloud POST routes, only while OBS+Twitch are freshly confirmed live on the sole Windows OBS executor. Reauth and host live rechecked before provider POST, no unattended requests. Mobile Live Monitor draft/preview/explicit checkbox/public confirmation, fail-closed on disconnect or uncertain HTTP outcome, no outbox. HTTP mocked Twitch API and real Edge touch 320px tests. 2026-11-02 FIXE shoutouts: verified channel via owner OAuth moderator:manage:shoutouts, 45s in-memory one-use preview tied to the FIXE OBS stream transition, explicit public confirmation, single POST 204 accepted without delivery claim; actor+host rechecks, uncertain receipts never auto-retried. 13 HTTP simulated tests and 3 real Edge touch 320px scenarios PASS; full Vitest 2045 PASS / 73 skipped / 0 fail (251 files) before matrix update. F08 remains partial, real OAuth/Android/OBS and other Twitch interactions unqualified."
     },
     {
       "id": "F09",

@@ -47,6 +47,9 @@ import { AdvancedTwitch } from '../../../integrations/twitch/src/streamcockpit-a
 import { StreamcockpitTwitchService } from './streamcockpit-twitch-service.js';
 import { createTwitchCapabilitiesRouter, twitchReadActor } from './streamcockpit-twitch-router.js';
 import { createTwitchPollRouter, twitchPollActor } from './streamcockpit-twitch-poll-router.js';
+import { ShoutoutTwitch } from '../../../integrations/twitch/src/streamcockpit-shoutout.js';
+import { StreamcockpitShoutoutService } from './streamcockpit-twitch-shoutout-service.js';
+import { createTwitchShoutoutRouter } from './streamcockpit-twitch-shoutout-router.js';
 import { TwitchClient, TwitchHttpError } from '../../../integrations/twitch/src/client.js';
 import { TwitchPreflight } from '../../../integrations/twitch/src/preflight.js';
 import { TwitchEventSub, type TwitchChatMessage, type TwitchRewardRedemption } from '../../../integrations/twitch/src/eventsub.js';
@@ -700,11 +703,13 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
     if (tokens) await secrets.setTwitchTokens(tokens);
     else await secrets.clearTwitchTokens();
   }, runtimeFetch());
-  const advancedTwitch = new StreamcockpitTwitchService(new AdvancedTwitch(() => ({
+  const advancedTwitchCredentials = () => ({
     clientId: twitchClientId,
     accessToken: twitch.exportTokens().accessToken ?? '',
     broadcasterId: twitch.publicIdentity().broadcasterId,
-  }), runtimeFetch()));
+  });
+  const advancedTwitch = new StreamcockpitTwitchService(new AdvancedTwitch(advancedTwitchCredentials, runtimeFetch()));
+  const shoutoutTwitch = new StreamcockpitShoutoutService(new ShoutoutTwitch(advancedTwitchCredentials, runtimeFetch()));
   const tagIntelligence = new TwitchTagIntelligence((gameId, signal) => twitch.getStreamsForGame(gameId, signal), () => local.planning, Date.now, undefined, undefined, () => local.settings.tagPreferences ?? {});
   const googleClientId = options.googleClientId ?? process.env.GOOGLE_CLIENT_ID ?? '';
   const google = new GoogleCalendarClient(
@@ -1953,23 +1958,36 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
     },
   }));
 
-  // F08 poll publication: separate paired-management preview + confirmation.
-  // Host LIVE observations must be fresh; calendar or client state is never
-  // treated as evidence of a live broadcast. No automatic poll creation.
+  // F08: both public Twitch mutations share the single authoritative FIXE
+  // OBS/Twitch observation and management pairing. Never trust a client clock
+  // or derive a public live from the planning.
+  const confirmedF08HostLive = async () => {
+    if (options.obsEnabled === false || options.timerAuthority === false) return false;
+    const device = await options.deviceDescriptor?.().catch(() => undefined);
+    const observation = platformLive.twitch;
+    const age = observation ? Date.now() - Date.parse(observation.observedAt) : NaN;
+    return mixerHostEligible(device) && obs.state.connected && obs.state.streamingKnown === true &&
+      obs.state.streaming === true && twitch.state.connected === true &&
+      observation?.live === true && Number.isFinite(age) && age >= 0 && age < 30_000;
+  };
+  const pairedF08Actor = async (req: express.Request) => {
+    await assertRole('chat');
+    return twitchPollActor(req, remoteAuth, isLocalRequest(req), remoteRuntimeEnabled);
+  };
   app.use('/api/v1/twitch/advanced/poll', createTwitchPollRouter({
-    service: advancedTwitch,
-    actor: async req => {
-      await assertRole('chat');
-      return twitchPollActor(req, remoteAuth, isLocalRequest(req), remoteRuntimeEnabled);
-    },
+    service: advancedTwitch, actor: pairedF08Actor, hostLive: confirmedF08HostLive,
+  }));
+  // Only an explicit preview + separate one-use confirmation can send a public
+  // shoutout. A POST error after dispatch is uncertain and never auto-retried.
+  app.use('/api/v1/twitch/advanced/shoutout', createTwitchShoutoutRouter({
+    service: shoutoutTwitch, actor: pairedF08Actor,
     hostLive: async () => {
-      if (options.obsEnabled === false || options.timerAuthority === false) return false;
-      const device = await options.deviceDescriptor?.().catch(() => undefined);
-      const observation = platformLive.twitch;
-      const age = observation ? Date.now() - Date.parse(observation.observedAt) : NaN;
-      return mixerHostEligible(device) && obs.state.connected && obs.state.streamingKnown === true &&
-        obs.state.streaming === true && twitch.state.connected === true &&
-        observation?.live === true && Number.isFinite(age) && age >= 0 && age < 30_000;
+      if (!await confirmedF08HostLive()) return undefined;
+      // Pin previews and confirmations to one FIXE OBS stream transition.
+      // A stop/start even on the same WebSocket invalidates the consent.
+      const connection = obs.connectionGeneration, epoch = obs.streamTransitionEpoch;
+      return Number.isSafeInteger(connection) && Number.isSafeInteger(epoch) &&
+        connection >= 0 && epoch >= 0 ? connection + ':' + epoch : undefined;
     },
   }));
 
