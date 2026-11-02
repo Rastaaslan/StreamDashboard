@@ -4,6 +4,7 @@ import {
   PredictionCreateTwitch, normalizePredictionCreate, type PredictionCreateDraft,
 } from '../../../integrations/twitch/src/streamcockpit-prediction-create.js';
 import type { TwitchActor } from './streamcockpit-twitch-service.js';
+import type { PredictionCreationFence } from './streamcockpit-prediction-intent-sqlite.js';
 
 /** In-memory one-use confirmation: lost receipts are NEVER replayed automatically. */
 export class StreamcockpitPredictionCreateService {
@@ -12,10 +13,11 @@ export class StreamcockpitPredictionCreateService {
     draft: PredictionCreateDraft; expiresAt: number;
   }>();
   // A second consent must not race the first, even when it has a different UUID.
-  // Keep the fence after a successful or uncertain POST until explicit reconciliation
-  // is implemented. A process restart loses this in-memory fence (G4 blocker).
+  // Keep the fence after a successful or uncertain POST until explicit reconciliation.
+  // On FIXE, the injected SQLite reservation also survives a process restart.
   private readonly blockedBroadcasters = new Set<string>();
-  constructor(private readonly api: PredictionCreateTwitch, private readonly now = Date.now) {}
+  constructor(private readonly api: PredictionCreateTwitch, private readonly now = Date.now,
+    private readonly durableFence?: PredictionCreationFence) {}
 
   private checkActor(actor: TwitchActor, epoch: string) {
     if (!actor?.id || !actor.canRead || !actor.canInteract)
@@ -29,6 +31,13 @@ export class StreamcockpitPredictionCreateService {
     const preflight = await this.api.preflight();
     if (this.blockedBroadcasters.has(preflight.broadcasterId))
       throw new AdvancedTwitchError('precondition');
+    try {
+      if (this.durableFence?.isBlocked(preflight.broadcasterId))
+        throw new AdvancedTwitchError('precondition');
+    } catch (error) {
+      if (error instanceof AdvancedTwitchError) throw error;
+      throw new AdvancedTwitchError('unavailable'); // Unknown journal: fail closed.
+    }
     for (const [key, p] of this.pending) if (p.expiresAt <= this.now()) this.pending.delete(key);
     if (this.pending.size >= 100) throw new AdvancedTwitchError('unavailable');
     const confirmationId = randomUUID();
@@ -52,12 +61,27 @@ export class StreamcockpitPredictionCreateService {
       throw new AdvancedTwitchError('precondition');
     this.blockedBroadcasters.add(entry.broadcasterId); // Acquire before first await.
     try {
-      // Pre-POST failures have a known absence of write; uncertain outcomes do not.
+      if (this.durableFence && !this.durableFence.reserve(entry.broadcasterId))
+        throw new AdvancedTwitchError('precondition');
+    } catch (error) {
+      if (error instanceof AdvancedTwitchError) throw error;
+      // An unclear SQLite commit must NEVER permit an outbound Twitch POST.
+      throw new AdvancedTwitchError('unavailable');
+    }
+    try {
+      // Reservation COMMIT precedes every possible external Twitch write.
       return await this.api.createConfirmed(entry.draft, entry.broadcasterId,
         entry.fingerprint, beforeSend);
     } catch (error) {
-      if (error instanceof AdvancedTwitchError && error.code !== 'uncertain')
-        this.blockedBroadcasters.delete(entry.broadcasterId);
+      if (error instanceof AdvancedTwitchError && error.code !== 'uncertain') {
+        try {
+          this.durableFence?.releaseBeforePost(entry.broadcasterId);
+          this.blockedBroadcasters.delete(entry.broadcasterId);
+        } catch {
+          // Uncertain release remains blocked; caller must not infer retry safety.
+          throw new AdvancedTwitchError('unavailable');
+        }
+      }
       throw error;
     }
   }

@@ -58,6 +58,7 @@ import { PredictionTwitch } from '../../../integrations/twitch/src/streamcockpit
 import { createTwitchPredictionRouter } from './streamcockpit-twitch-prediction-router.js';
 import { PredictionCreateTwitch } from '../../../integrations/twitch/src/streamcockpit-prediction-create.js';
 import { StreamcockpitPredictionCreateService } from './streamcockpit-twitch-prediction-create-service.js';
+import { PredictionIntentSqlite } from './streamcockpit-prediction-intent-sqlite.js';
 import { createTwitchPredictionCreateRouter } from './streamcockpit-twitch-prediction-create-router.js';
 import { TwitchClient, TwitchHttpError } from '../../../integrations/twitch/src/client.js';
 import { TwitchPreflight } from '../../../integrations/twitch/src/preflight.js';
@@ -722,7 +723,8 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
   const raidTwitch = new StreamcockpitRaidService(new RaidTwitch(advancedTwitchCredentials, runtimeFetch()));
   const predictionTwitch = new PredictionTwitch(advancedTwitchCredentials, runtimeFetch());
   const predictionCreate = new StreamcockpitPredictionCreateService(
-    new PredictionCreateTwitch(advancedTwitchCredentials, runtimeFetch()));
+    new PredictionCreateTwitch(advancedTwitchCredentials, runtimeFetch()), Date.now,
+    new PredictionIntentSqlite(path.join(dataDir, 'streamcockpit-prediction-intents.sqlite')));
   const tagIntelligence = new TwitchTagIntelligence((gameId, signal) => twitch.getStreamsForGame(gameId, signal), () => local.planning, Date.now, undefined, undefined, () => local.settings.tagPreferences ?? {});
   const googleClientId = options.googleClientId ?? process.env.GOOGLE_CLIENT_ID ?? '';
   const google = new GoogleCalendarClient(
