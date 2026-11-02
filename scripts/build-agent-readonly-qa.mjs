@@ -11,14 +11,21 @@ import {fileURLToPath} from 'node:url';
 
 const root=path.resolve(path.dirname(fileURLToPath(import.meta.url)),'..');
 const source=path.join(root,'apps/agent/src/windows-readonly-service.ts');
-const output=path.join(root,'dist/agent-readonly-qa');
+const args=process.argv.slice(2);
+if(args.length&&!(args.length===2&&args[0]==='--output-dir'&&path.isAbsolute(args[1])))
+  throw Error('QA_BUILD_OUTPUT_ARGUMENT_REFUSED');
+const output=args.length?path.resolve(args[1]):path.join(root,'dist/agent-readonly-qa');
 const executable=path.join(output,'StreamAgent-ReadOnly.mjs');
 await mkdir(output,{recursive:true});
 await build({
   entryPoints:[source],outfile:executable,
   bundle:true,platform:'node',format:'esm',target:'node22',minify:true,
   sourcemap:false,legalComments:'none',
-  banner:{js:'import {createRequire} from "node:module"; const require=createRequire(import.meta.url);'},
+  // Execute before the bundled service's direct-entry guard. An imported
+  // wrapper is insufficient: esbuild gives every module the bundle meta URL.
+  banner:{js:'import {createRequire} from "node:module"; const require=createRequire(import.meta.url); '+
+    'if(Object.keys(process.env).some(key=>key.startsWith("SD_AGENT_OBS_WRITER_"))){'+
+    'process.stderr.write("READ_ONLY_QA_WRITER_CONFIG_REFUSED\\n");process.exit(1);}'},
   logLevel:'silent',
 });
 const files=['StreamAgent-ReadOnly.mjs','Start-Agent-ReadOnly.ps1',
@@ -31,6 +38,7 @@ const manifest={
   requiredNodeMajor:22,
   obsRpcAllowlist:['GetStats','GetStreamStatus'],
   obsRpcMutations:[],
+  inheritedObsWriterConfiguration:'REFUSED_BEFORE_STARTUP',
   listenerByDefault:false,
   autoInstall:false,
   secretsIncluded:false,
