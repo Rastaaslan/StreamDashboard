@@ -112,12 +112,58 @@ it.skipIf(process.env.MOMENTS_BROWSER_TEST !== '1')('F09 Edge touch 320px explic
     });
     expect(await page.evaluate(()=>(window as any).calls)).toEqual([]);
     await page.getByRole('button',{name:/Vérifier la session OBS sur le fixe/}).click();
-    await expect.poll(()=>page.getByRole('status').last().textContent()).toContain('from_FIXE_1');
+    await expect.poll(()=>page.locator('.cockpit-moments-manual [role="status"]').nth(1).textContent()).toContain('from_FIXE_1');
     expect(await page.evaluate(()=>(window as any).calls)).toEqual(['/api/v1/streamcockpit-moments/manual/context']);
     expect(await page.evaluate(()=>document.documentElement.scrollWidth<=320)).toBe(true);
     await page.evaluate(()=>(window as any).view.unavailable());
-    expect(await page.getByRole('status').last().textContent()).not.toContain('from_FIXE_1');
+    expect(await page.locator('.cockpit-moments-manual [role="status"]').nth(1).textContent()).not.toContain('from_FIXE_1');
     expect(await page.getByRole('button',{name:/Vérifier la session OBS sur le fixe/}).isDisabled()).toBe(true);
+    expect(external).toEqual([]);
+  } finally {await browser.close();}
+},30000);
+
+it.skipIf(process.env.MOMENTS_BROWSER_TEST !== '1')('F09 Edge touch 320px binds a scheduled live only after explicit two-step selection',async()=>{
+  const bundle=await build({stdin:{contents:"import {mountManualMomentForm} from './apps/mobile/control/streamcockpit-moments-manual.js';globalThis.mountManualMomentForm=mountManualMomentForm;",resolveDir:process.cwd()},
+    bundle:true,write:false,format:'iife',platform:'browser'});
+  const browser=await chromium.launch({channel:'msedge',headless:true});
+  try{
+    const page=await browser.newPage({viewport:{width:320,height:720},hasTouch:true});
+    const external:string[]=[];
+    await page.route('**/*',route=>{external.push(route.request().url());return route.abort();});
+    await page.setContent('<meta name="viewport" content="width=device-width,initial-scale=1"><main id="root" class="compact-app" style="width:100%;min-width:0"></main>');
+    await page.addStyleTag({content:readFileSync('apps/mobile/control/streamcockpit-mobile-v2.css','utf8')});
+    await page.addScriptTag({content:bundle.outputFiles[0].text});
+    await page.evaluate(()=>{
+      const w=window as any;
+      w.calls=[];
+      w.view=w.mountManualMomentForm(document.getElementById('root'),{online:true,
+        request:async(path:string,body?:unknown)=>{
+          w.calls.push({path,body});
+          if(path.endsWith('/manual/scheduled'))return {schemaVersion:1,
+            kind:'streamcockpit-scheduled-candidates',available:true,
+            candidates:[{id:'series::20300101',title:'Live prévu',startAtUtc:'2030-01-01T20:00:00Z'}]};
+          if(path.endsWith('/manual/scheduled/select'))return {schemaVersion:1,
+            kind:'streamcockpit-scheduled-binding',sessionId:'scheduled_'+'b'.repeat(64)};
+          throw new Error('Unexpected provider or marker call');
+        }});
+    });
+    expect(await page.evaluate(()=>(window as any).calls)).toEqual([]);
+    await page.getByRole('button',{name:/Choisir explicitement un live planifié/}).click();
+    const choice=page.getByRole('button',{name:/Live prévu/});
+    await expect.poll(()=>choice.isVisible()).toBe(true);
+    expect(await page.evaluate(()=>(window as any).calls.length)).toBe(1);
+    await choice.click();
+    await expect.poll(()=>page.locator('.cockpit-moments-manual [role="status"]').last().textContent())
+      .toContain('scheduled_');
+    const calls=await page.evaluate(()=>(window as any).calls);
+    expect(calls).toHaveLength(2);
+    expect(calls[0].path).toBe('/api/v1/streamcockpit-moments/manual/scheduled');
+    expect(calls[1]).toMatchObject({path:'/api/v1/streamcockpit-moments/manual/scheduled/select',
+      body:{scheduleId:'series::20300101'}});
+    expect(await page.evaluate(()=>document.documentElement.scrollWidth<=320)).toBe(true);
+    await page.evaluate(()=>(window as any).view.unavailable());
+    expect(await page.locator('main').textContent()).not.toContain('series::20300101');
+    expect(await page.locator('main').textContent()).not.toContain('scheduled_');
     expect(external).toEqual([]);
   } finally {await browser.close();}
 },30000);

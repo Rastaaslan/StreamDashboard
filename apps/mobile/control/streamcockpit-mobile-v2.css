@@ -210,3 +210,10 @@
 .compact-app .cockpit-moments-browse button { max-width:100%; white-space:normal; overflow-wrap:anywhere; }
 .compact-app .cockpit-moments-browse select { box-sizing:border-box; width:100%; max-width:100%; min-width:0; min-height:44px; }
 .compact-app .cockpit-moments-browse select[hidden] { display:none!important; }
+
+/* F09: explicit planned-event binding; every choice stays tappable at 320px. */
+.compact-app .cockpit-moments-scheduled-choices {display:grid;gap:8px;min-width:0;max-width:100%;}
+.compact-app .cockpit-moments-scheduled-choices button {min-height:44px;min-width:0;max-width:100%;white-space:normal;overflow-wrap:anywhere;text-align:left;}
+.compact-app .cockpit-moments-manual>button {max-width:100%;white-space:normal;overflow-wrap:anywhere;}
+.compact-app .cockpit-moments-manual {box-sizing:border-box;min-width:0;max-width:100%;overflow-wrap:anywhere;}
+.compact-app .cockpit-moments-manual [role="status"] {max-width:100%;min-width:0;overflow-wrap:anywhere;white-space:normal;}

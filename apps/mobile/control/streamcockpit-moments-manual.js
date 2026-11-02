@@ -41,18 +41,33 @@ export function mountManualMomentForm(root, { online, request, onRecorded }) {
   const contextStatus = doc.createElement('p');
   contextStatus.setAttribute('role', 'status');
   contextStatus.textContent = 'Session active non vérifiée. Contrôle volontaire, sans commande OBS.';
+  const scheduled = doc.createElement('button');
+  scheduled.setAttribute('type', 'button');
+  scheduled.textContent = 'Choisir explicitement un live planifié sur le fixe';
+  const scheduledStatus = doc.createElement('p');
+  scheduledStatus.setAttribute('role', 'status');
+  scheduledStatus.textContent = 'Aucun live planifié associé. Il faut avoir observé son démarrage OBS sur le fixe.';
+  const scheduledChoices = doc.createElement('div');
+  scheduledChoices.setAttribute('class', 'cockpit-moments-scheduled-choices');
   form.append(label, submit);
-  section.append(heading, description, form, status, verify, context, contextStatus);
+  section.append(heading, description, form, status, verify, context, contextStatus,
+    scheduled, scheduledStatus, scheduledChoices);
   root.append(section);
 
   let connected = Boolean(online), disposed = false, inFlight = false, generation = 0, uncertain = false;
   let pendingRequestId = null, verifying = false, checkingContext = false;
+  let checkingScheduled = false, bindingScheduled = false;
+  const clearScheduled = () => {
+    for (const child of Array.from(scheduledChoices.children)) child.textContent = '';
+    scheduledChoices.replaceChildren();
+  };
   const update = () => {
-    input.disabled = disposed || !connected || inFlight || uncertain || verifying;
-    submit.disabled = disposed || !connected || inFlight || uncertain || verifying;
+    input.disabled = disposed || !connected || inFlight || uncertain || verifying || bindingScheduled;
+    submit.disabled = disposed || !connected || inFlight || uncertain || verifying || bindingScheduled;
     verify.hidden = disposed || !connected || !uncertain || !pendingRequestId;
     verify.disabled = verify.hidden || verifying || inFlight;
-    context.disabled = disposed || !connected || inFlight || verifying || uncertain || checkingContext;
+    context.disabled = disposed || !connected || inFlight || verifying || uncertain || checkingContext || bindingScheduled;
+    scheduled.disabled = disposed || !connected || inFlight || verifying || uncertain || checkingScheduled || bindingScheduled;
   };
   update();
   form.addEventListener('submit', async event => {
@@ -133,6 +148,80 @@ export function mountManualMomentForm(root, { online, request, onRecorded }) {
       if (!disposed && connected && current === generation) update();
     }
   });
+  scheduled.addEventListener('click', async () => {
+    if (disposed || !connected || inFlight || verifying || uncertain || checkingScheduled || bindingScheduled) return;
+    clearScheduled();
+    checkingScheduled = true;
+    update();
+    const current = generation;
+    scheduledStatus.textContent = 'Lecture volontaire des choix planifiés depuis le FIXE…';
+    try {
+      const data = await request('/api/v1/streamcockpit-moments/manual/scheduled');
+      if (disposed || !connected || current !== generation) return;
+      if (data?.schemaVersion !== 1 || data.kind !== 'streamcockpit-scheduled-candidates' ||
+          typeof data.available !== 'boolean' || !Array.isArray(data.candidates) ||
+          data.candidates.length > 20) throw new Error('UNVERIFIED_SCHEDULES');
+      if (data.sessionId !== undefined && !validSession.test(data.sessionId))
+        throw new Error('UNVERIFIED_SCHEDULES');
+      if (!data.available) {
+        if (data.candidates.length || data.sessionId) throw new Error('UNVERIFIED_SCHEDULES');
+        scheduledStatus.textContent = 'Aucun départ OBS observé par le FIXE : association refusée (live déjà démarré ou reconnexion).';
+        return;
+      }
+      const seen = new Set();
+      for (const candidate of data.candidates) {
+        if (!candidate || typeof candidate.id !== 'string' || !candidate.id.length ||
+            candidate.id.length > 256 || seen.has(candidate.id) ||
+            typeof candidate.title !== 'string' || !candidate.title.length || candidate.title.length > 140 ||
+            typeof candidate.startAtUtc !== 'string' || !Number.isFinite(Date.parse(candidate.startAtUtc)))
+          throw new Error('UNVERIFIED_SCHEDULES');
+        seen.add(candidate.id);
+      }
+      if (data.sessionId) {
+        scheduledStatus.textContent = 'Live planifié déjà associé sur le FIXE : ' + data.sessionId +
+          '. Chaque repère contrôle de nouveau la diffusion OBS.';
+        return;
+      }
+      scheduledStatus.textContent = data.candidates.length
+        ? 'Choisissez manuellement le bon événement. Cette association ne crée aucun repère ni commande OBS.'
+        : 'Aucun événement planifié éligible au démarrage OBS observé. Aucun live inventé.';
+      for (const candidate of data.candidates) {
+        const button = doc.createElement('button');
+        button.setAttribute('type', 'button');
+        button.textContent = candidate.title + ' — ' + candidate.startAtUtc;
+        button.addEventListener('click', async () => {
+          if (disposed || !connected || generation !== current || inFlight || uncertain || bindingScheduled) return;
+          bindingScheduled = true;
+          update();
+          clearScheduled();
+          scheduledStatus.textContent = 'Association volontaire demandée au FIXE, sans modifier OBS…';
+          try {
+            const receipt = await request('/api/v1/streamcockpit-moments/manual/scheduled/select',
+              { scheduleId: candidate.id });
+            if (disposed || !connected || current !== generation) return;
+            if (receipt?.schemaVersion !== 1 || receipt.kind !== 'streamcockpit-scheduled-binding' ||
+                !validSession.test(receipt.sessionId)) throw new Error('UNVERIFIED_SCHEDULE_BINDING');
+            scheduledStatus.textContent = 'Live planifié associé par le FIXE : ' + receipt.sessionId +
+              '. Vérifiez ensuite la session avant votre repère manuel.';
+          } catch {
+            if (disposed || !connected || current !== generation) return;
+            scheduledStatus.textContent = 'Association non confirmée. Vérifiez le contexte OBS ; aucun renvoi automatique.';
+          } finally {
+            bindingScheduled = false;
+            if (!disposed && connected && current === generation) update();
+          }
+        });
+        scheduledChoices.append(button);
+      }
+    } catch {
+      if (disposed || !connected || current !== generation) return;
+      clearScheduled();
+      scheduledStatus.textContent = 'Choix planifiés indisponibles ou invalides : aucune association inventée.';
+    } finally {
+      checkingScheduled = false;
+      if (!disposed && connected && current === generation) update();
+    }
+  });
   verify.addEventListener('click', async () => {
     if (disposed || !connected || inFlight || verifying || !uncertain || !pendingRequestId) return;
     verifying = true;
@@ -168,11 +257,13 @@ export function mountManualMomentForm(root, { online, request, onRecorded }) {
       input.value = '';
       status.textContent = 'Fixe déconnecté : aucun renvoi. Vérifiez son journal après reconnexion.';
       contextStatus.textContent = 'Fixe déconnecté : contexte OBS effacé.';
+      clearScheduled(); scheduledStatus.textContent = 'Fixe déconnecté : choix planifiés effacés.';
       update();
     },
     destroy() {
       if (disposed) return;
-      disposed = true; generation++; pendingRequestId = null; input.value = ''; contextStatus.textContent = ''; update();
+      disposed = true; generation++; pendingRequestId = null; input.value = '';
+      clearScheduled(); scheduledStatus.textContent = ''; contextStatus.textContent = ''; update();
       section.remove();
     },
   };

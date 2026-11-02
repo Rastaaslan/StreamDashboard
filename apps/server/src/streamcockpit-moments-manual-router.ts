@@ -14,6 +14,8 @@ export function createMomentsManualRouter(options: {
   activeSessionId(): string | undefined | Promise<string | undefined>;
   recordManual(value: { sessionId: string; correlationId: string; title: string; instant: number }): Promise<ManualResult>;
   lookupManual(correlationId: string): Promise<{ journalObserved: boolean; moment?: Moment }>;
+  listScheduled?: () => Promise<{ available: boolean; candidates: Array<{ id: string; title: string; startAtUtc: string }>; sessionId?: string }>;
+  selectScheduled?: (id: string) => Promise<string>;
   now?: () => number;
 }) {
   const router = Router();
@@ -55,6 +57,87 @@ export function createMomentsManualRouter(options: {
     }
     response.json({ schemaVersion: 1, kind: 'streamcockpit-manual-context',
       writable: true, sessionId });
+  });
+  // A schedule is not a stream. Offer only candidates captured on an actual
+  // FIXE OBS idle->streaming transition, and require a SECOND explicit action
+  // to bind one. Neither route sends provider commands or records a marker.
+  router.all('/scheduled', async (request, response) => {
+    response.set('Cache-Control', 'private, no-store');
+    if (request.method !== 'GET') {
+      response.set('Allow', 'GET').status(405).json({ error: { code: 'METHOD_NOT_ALLOWED' } });
+      return;
+    }
+    let actor: string | undefined;
+    try { actor = await options.authorize(request); } catch { /* deny */ }
+    if (!actor) {
+      response.status(403).json({ error: { code: 'MOMENTS_READ_FORBIDDEN' } });
+      return;
+    }
+    let result: Awaited<ReturnType<NonNullable<typeof options.listScheduled>>> | undefined;
+    let failed = false;
+    try { result = await options.listScheduled?.(); } catch { failed = true; }
+    let reauthorized: string | undefined;
+    try { reauthorized = await options.authorize(request); } catch { /* deny */ }
+    if (reauthorized !== actor) {
+      response.status(403).json({ error: { code: 'MOMENTS_READ_FORBIDDEN' } });
+      return;
+    }
+    if (failed || !result || typeof result.available !== 'boolean' || !Array.isArray(result.candidates) ||
+        result.candidates.length > 20) {
+      response.status(503).json({ error: { code: 'MOMENTS_UNAVAILABLE' } });
+      return;
+    }
+    response.json({ schemaVersion: 1, kind: 'streamcockpit-scheduled-candidates',
+      available: result.available, candidates: result.candidates,
+      ...(result.sessionId ? { sessionId: result.sessionId } : {}) });
+  });
+  router.all('/scheduled/select', async (request, response) => {
+    response.set('Cache-Control', 'private, no-store');
+    if (request.method !== 'POST') {
+      response.set('Allow', 'POST').status(405).json({ error: { code: 'METHOD_NOT_ALLOWED' } });
+      return;
+    }
+    let actor: string | undefined;
+    try { actor = await options.authorize(request); } catch { /* deny */ }
+    if (!actor) {
+      response.status(403).json({ error: { code: 'MOMENTS_WRITE_FORBIDDEN' } });
+      return;
+    }
+    const body: unknown = request.body;
+    if (!body || typeof body !== 'object' || Array.isArray(body) ||
+        Object.keys(body).join() !== 'scheduleId' ||
+        typeof (body as Record<string, unknown>).scheduleId !== 'string' ||
+        !(body as { scheduleId: string }).scheduleId ||
+        (body as { scheduleId: string }).scheduleId.length > 256) {
+      response.status(400).json({ error: { code: 'INVALID_SCHEDULE_SELECTION' } });
+      return;
+    }
+    let reauthorized: string | undefined;
+    try { reauthorized = await options.authorize(request); } catch { /* deny */ }
+    if (reauthorized !== actor) {
+      response.status(403).json({ error: { code: 'MOMENTS_WRITE_FORBIDDEN' } });
+      return;
+    }
+    let sessionId: string | undefined, code = 'MOMENTS_SCHEDULE_NOT_VERIFIED';
+    try {
+      sessionId = await options.selectScheduled?.((body as { scheduleId: string }).scheduleId);
+      momentIdentifier(sessionId);
+    } catch (error) {
+      sessionId = undefined; // a malformed host result cannot be a successful receipt
+      if (error instanceof Error && error.message === 'MOMENTS_SCHEDULE_ALREADY_BOUND')
+        code = 'MOMENTS_SCHEDULE_ALREADY_BOUND';
+    }
+    reauthorized = undefined;
+    try { reauthorized = await options.authorize(request); } catch { /* deny */ }
+    if (reauthorized !== actor) {
+      response.status(403).json({ error: { code: 'MOMENTS_WRITE_FORBIDDEN' } });
+      return;
+    }
+    if (!sessionId) {
+      response.status(409).json({ error: { code, retryable: false } });
+      return;
+    }
+    response.json({ schemaVersion: 1, kind: 'streamcockpit-scheduled-binding', sessionId });
   });
   router.all('/add', async (request, response) => {
     response.set('Cache-Control', 'no-store');

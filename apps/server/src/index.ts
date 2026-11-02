@@ -5,6 +5,7 @@ import { ObsMixerObservation } from './streamcockpit-mixer-observation.js';
 import { createMixerRouter, mixerHostEligible } from './streamcockpit-mixer-router.js';
 import { createMomentsReadRouter } from './streamcockpit-moments-router.js';
 import { createMomentsManualRouter } from './streamcockpit-moments-manual-router.js';
+import { ScheduledMomentBinding } from './streamcockpit-moments-scheduled.js';
 import { MomentsPipeline } from './streamcockpit-moments.js';
 import { MomentsFileStorage } from './streamcockpit-moments-file.js';
 import { registerPairingRequests } from './pairing-requests.js';
@@ -1632,6 +1633,9 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
   const initializeGoogle = () => !capabilityEnabled('planning') ? Promise.resolve() : googleInitialization ??= refreshGoogleCalendars().catch(logError).finally(broadcast);
 
   let trackedUnplannedLiveId = findUnplannedDraft(local.planning)?.id ?? null;
+  // F09: only a witnessed OBS idle->streaming edge and explicit user choice
+  // can bind a scheduled event. No planner clock or remote client owns a live.
+  const scheduledMomentBinding = new ScheduledMomentBinding();
   let observedObsStreaming = false;
   let obsConnectionObserved = false;
   let streamTrackingQueue: Promise<void> = Promise.resolve();
@@ -1997,8 +2001,23 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
       await streamTrackingQueue;
       if (!obs.state.connected || obs.state.streamingKnown !== true || !obs.state.streaming) return undefined;
       const tracked = findTrackedDraft();
-      // Scheduled lives are deliberately not guessed from the planning.
+      // Scheduled identity exists ONLY after a locally witnessed OBS start
+      // AND explicit paired selection; never from calendar proximity alone.
+      const scheduled = scheduledMomentBinding.snapshot();
+      // If OBS started beside a real scheduled candidate, NEVER silently use
+      // an old unplanned draft while the user has not chosen the scheduled live.
+      if (scheduled.available && scheduled.candidates.length) return scheduled.sessionId;
       return tracked && tracked.id === trackedUnplannedLiveId ? tracked.id : undefined;
+    },
+    listScheduled: async () => {
+      await streamTrackingQueue;
+      return scheduledMomentBinding.snapshot();
+    },
+    selectScheduled: async id => {
+      await streamTrackingQueue;
+      if (!obs.state.connected || obs.state.streamingKnown !== true || !obs.state.streaming)
+        throw new Error('MOMENTS_SCHEDULE_NOT_VERIFIED');
+      return scheduledMomentBinding.select(id);
     },
     recordManual: input => recordManualMoment(input),
     lookupManual: correlationId => lookupManualMoment(correlationId),
@@ -3396,6 +3415,11 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
     eventCore.publish({ type: 'obs.state.changed', source: 'obs', payload: obsPayload });
     if (!obs.state.connected) eventCore.publish({ type: 'obs.disconnected', source: 'obs', payload: obsPayload });
     const currentStreaming = obs.state.streaming;
+    scheduledMomentBinding.observe({
+      connected: obs.state.connected, streamingKnown: obs.state.streamingKnown === true,
+      streaming: currentStreaming, connectionGeneration: obs.connectionGeneration,
+      observedAt: Date.now(), planning: () => temporalPlanning(Date.now() - DAY_MS, Date.now() + DAY_MS),
+    });
     if (obs.state.connected) {
       if (!obsConnectionObserved) {
         obsConnectionObserved = true;

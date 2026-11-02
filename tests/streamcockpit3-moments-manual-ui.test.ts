@@ -9,6 +9,7 @@ class Node {
   ownerDocument = {createElement: () => new Node()};
   setAttribute(key:string,value:string) {this.attributes[key]=value;}
   append(...children:Node[]) {this.children.push(...children);}
+  replaceChildren(...children:Node[]) {this.children=children;}
   remove(){this.removed=true;}
   addEventListener(event:string,handler:(event?: {preventDefault():void})=>void){this.listeners.set(event,handler);}
   dispatch(event:string){this.listeners.get(event)?.({preventDefault(){}});}
@@ -19,7 +20,8 @@ const success = {schemaVersion:1,kind:'streamcockpit-manual-marker',
   instant:1800000000000,sequence:1,source:'manual',status:'observed'};
 const controls = (root:Node) => {
   const section=root.children[0],form=section.children[2],label=form.children[0],input=label.children[0],button=form.children[1],status=section.children[3],verify=section.children[4];
-  return {section,form,input,button,status,verify,context:section.children[5],contextStatus:section.children[6]};
+  return {section,form,input,button,status,verify,context:section.children[5],contextStatus:section.children[6],
+    scheduled:section.children[7],scheduledStatus:section.children[8],choices:section.children[9]};
 };
 afterEach(()=>vi.unstubAllGlobals());
 
@@ -207,5 +209,53 @@ it('F09 mobile reports absent trusted live without inventing one',async()=>{
   await vi.waitFor(()=>expect(c.contextStatus.textContent).toContain('Aucune session OBS certaine'));
   expect(c.button.disabled).toBe(false);
   expect(request).toHaveBeenCalledExactlyOnceWith('/api/v1/streamcockpit-moments/manual/context');
+  view.destroy();
+});
+
+it('F09 planned live needs explicit two-click FIXE selection before a later manual marker',async()=>{
+  vi.stubGlobal('crypto',{randomUUID:()=>uuid});
+  const sessionId='scheduled_'+'a'.repeat(64);
+  const list={schemaVersion:1,kind:'streamcockpit-scheduled-candidates',available:true,
+    candidates:[{id:'series::20300101',title:'Live prévu',startAtUtc:'2030-01-01T20:00:00.000Z'}]};
+  const request=vi.fn(async(path:string,body?:unknown)=>{
+    if(path.endsWith('/manual/scheduled'))return list;
+    if(path.endsWith('/manual/scheduled/select')){
+      expect(body).toEqual({scheduleId:'series::20300101'});
+      return {schemaVersion:1,kind:'streamcockpit-scheduled-binding',sessionId};
+    }
+    if(path.endsWith('/manual/add'))return {...success,sessionId};
+    throw new Error('Unexpected network action');
+  });
+  const root=new Node(),view=mountManualMomentForm(root,{online:true,request});
+  const c=controls(root);
+  expect(request).not.toHaveBeenCalled();
+  c.scheduled.dispatch('click');
+  await vi.waitFor(()=>expect(c.choices.children).toHaveLength(1));
+  expect(request).toHaveBeenCalledExactlyOnceWith('/api/v1/streamcockpit-moments/manual/scheduled');
+  expect(request.mock.calls.some(([path])=>path.endsWith('/manual/add'))).toBe(false);
+  c.choices.children[0].dispatch('click');
+  await vi.waitFor(()=>expect(c.scheduledStatus.textContent).toContain(sessionId));
+  expect(request).toHaveBeenCalledTimes(2);
+  expect(c.choices.children).toHaveLength(0);
+  c.input.value='Moment associé';c.form.dispatch('submit');
+  await vi.waitFor(()=>expect(request).toHaveBeenCalledTimes(3));
+  expect(request).toHaveBeenNthCalledWith(3,'/api/v1/streamcockpit-moments/manual/add',
+    {requestId:uuid,title:'Moment associé'});
+  view.destroy();
+});
+
+it('F09 scheduled selections clear private candidate DOM and reject late pairing responses',async()=>{
+  let resolve!: (value:unknown)=>void;
+  const request=vi.fn(()=>new Promise(r=>{resolve=r;}));
+  const root=new Node(),view=mountManualMomentForm(root,{online:true,request});
+  const c=controls(root);
+  c.scheduled.dispatch('click');
+  view.unavailable();
+  resolve({schemaVersion:1,kind:'streamcockpit-scheduled-candidates',available:true,
+    candidates:[{id:'planned_secret',title:'Secret titre',startAtUtc:'2030-01-01T20:00:00Z'}]});
+  await Promise.resolve();await Promise.resolve();
+  expect(c.choices.children).toHaveLength(0);
+  expect(c.scheduledStatus.textContent).not.toContain('Secret');
+  expect(c.scheduled.disabled).toBe(true);
   view.destroy();
 });
