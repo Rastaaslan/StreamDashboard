@@ -35,3 +35,43 @@ export function masterTimerSeconds(timer,sample,receivedAt,endpoint,online){
   const now=estimateMasterNow(sample,receivedAt,endpoint);
   return now===null?null:Math.max(0,(timer.deadline-now)/1000);
 }
+
+/** A visibility or pairing transition invalidates the whole observation,
+ * including a suspended mobile browser's monotonic elapsed time. A fresh
+ * authenticated FIXE snapshot is required to resume a running projection.
+ * No local timer, persistence, retry, interval or independent clock owner.
+ */
+export function createMasterClockProjection(){
+  let sample=null,revision=0;
+  const observe=(serverAt,receivedAt,endpoint)=>{
+    const fresh=sampleMasterClock(serverAt,receivedAt,endpoint);
+    if(!fresh){sample=null;revision++;return false;}
+    // Two overlapping GETs must not let a late, older observation replace
+    // the latest FIXE timestamp after its fresher response arrived.
+    if(sample&&sample.endpoint===endpoint){
+      if(receivedAt<sample.receivedAt)return false;
+      if(serverAt<sample.serverAt){
+        // A delayed older reply or an unexpected FIXE clock rollback makes
+        // the display uncertain until another authenticated observation.
+        sample=null;
+        revision++; // Revoke every older in-flight HTTP ticket, not just the sample.
+        return false;
+      }
+    }
+    sample=fresh;
+    return true;
+  };
+  return Object.freeze({
+    revision(){return revision;},
+    observe,
+    observeIfCurrent(ticket,serverAt,receivedAt,endpoint){
+      if(!Number.isSafeInteger(ticket)||ticket!==revision)return false;
+      return observe(serverAt,receivedAt,endpoint);
+    },
+    invalidate(){sample=null;revision++;},
+    now(receivedAt,endpoint){return estimateMasterNow(sample,receivedAt,endpoint);},
+    seconds(timer,receivedAt,endpoint,online){
+      return masterTimerSeconds(timer,sample,receivedAt,endpoint,online);
+    },
+  });
+}

@@ -5,7 +5,7 @@ import { mountMomentsPage } from './streamcockpit-moments-page.js';
 let healthPage, mixerPage, momentsPage;
 import {createLazyTask,createLazyPlanning} from './lazy-features.js';
 import {clientAuthorityEndpoint,clientMustDelegateCommand} from './client-authority.js';
-import {sampleMasterClock,estimateMasterNow,masterTimerSeconds as projectMasterTimerSeconds} from './streamcockpit-master-clock.js';
+import {createMasterClockProjection} from './streamcockpit-master-clock.js';
 import {createSpotifyPanel} from './spotify-panel.js';
 import {createDjiMic3BatteryPanel} from './dji-battery-panel.js';
 import {djiRelayTarget} from './dji-relay-target.js';
@@ -78,7 +78,7 @@ if(compact&&!localStorage.getItem('sd2.mobile-five-tabs-v1')){
  else if(['manage','settings','actions'].includes(previous))localStorage.setItem('sd2.page','plus');
  localStorage.setItem('sd2.mobile-five-tabs-v1','1');
 }
-let masterClockSample=null;
+const masterClock=createMasterClockProjection();
 let data, sounds, replay, soundError='', soundCategory='', deckCategory='all', online=false, page=localStorage.getItem('sd2.page') || (compact?'home':'live'), tab='obs', busy=false, refreshFlight, pointerHeld=false, configurationDraft, profileDraft, noticeTimer;
 let deckScope, deckPreferences, deckEditing=false, deckEditBank='all', activeCommands=0;
 const clientRole=new URL(location.href).searchParams.get('role')==='client';
@@ -110,6 +110,7 @@ function normalizeServer(value) { const url=new URL(value);if(!['http:','https:'
 function soundDestinationId(){const current=installationUI.current,id=server===localEndpoint?current.localDeviceId:current.devices.find(value=>value.endpoint===server)?.id;return id?.startsWith('legacy-')?undefined:id;}
 async function network(path, body, method=body===undefined?'GET':'POST',target=server,token=target===localEndpoint?'':credential) {
   if(!target)throw new Error('Renseignez l’adresse du PC de stream.');
+  const clockTicket=masterClock.revision();
   let response;
   try{response=await peers.request(target+path,{method,token,body,timeoutMs:(path==='/api/v2/actions'||path==='/api/v2/sounds/export')?120_000:path.startsWith('/api/v2/wizebot/')||path.startsWith('/api/v2/youtube/')||path==='/api/v2/autonomy/sync'?65_000:path.startsWith('/api/v1/streamlabs/events')||path.startsWith('/api/v1/supports/streamlabs/history/')?20_000:8_000});}
   catch(cause){const error=new Error(cause?.message||'Connexion à la régie interrompue ou délai dépassé.',{cause});error.transportUnavailable=true;throw error;}
@@ -119,7 +120,7 @@ async function network(path, body, method=body===undefined?'GET':'POST',target=s
   // Capture the FIXE wall clock only from a fresh, successful authenticated
   // autonomy response. Never calibrate from an IndexedDB/offline replica.
   if(response.ok&&path==='/api/v2/autonomy'&&method==='GET'&&target===server)
-    masterClockSample=sampleMasterClock(value?.bundle?.data?.host?.timerObservedAt,performance.now(),target);
+    masterClock.observeIfCurrent(clockTicket,value?.bundle?.data?.host?.timerObservedAt,performance.now(),target);
   if(!response.ok) { const error=new Error(value.error?.message || value.error || `Erreur ${response.status}`); error.status=response.status;error.body=value;throw error; }
   return value;
 }
@@ -225,10 +226,10 @@ function syncDialog(){
 const djiBatteryWarningTracker=createDjiBatteryWarningTracker();
 // A display projection only: no second timer or local command authority.
 function observedHostTime(){
- return online&&server?estimateMasterNow(masterClockSample,performance.now(),server):null;
+ return online&&server?masterClock.now(performance.now(),server):null;
 }
 function hostTimerSeconds(timer){
- return projectMasterTimerSeconds(timer,masterClockSample,performance.now(),server,online);
+ return masterClock.seconds(timer,performance.now(),server,online);
 }
 function updateMobileTimerStrip(){
  const strip=$('#mobile-timer-strip');
@@ -725,7 +726,7 @@ async function selectInstallationDevice(target,commit){
   await linkReplicaEndpoint(endpoint,replica,descriptor?.id,installationUI.current.devices);
   if(endpoint!==localEndpoint)await credentials.set(token,endpoint);
   await commit();
-  server=endpoint;credential=token;online=false;
+  masterClock.invalidate();server=endpoint;credential=token;online=false;
   localStorage.setItem('sd2.server',endpoint);localStorage.setItem('sd2.workspace-mode','paired');
   await openLocal();dialog.close();
  }finally{macroContextChanging--;await refresh();render();}
@@ -811,7 +812,7 @@ async function switchWorkspace(local){
  if(local&&page==='live')page='deck';
  // Invalidate immediately; a previous poll must not rearm keys while the source changes.
  macroContextChanging++;
- try{await configureMacros({suspend:true,required:true});if(refreshFlight)await refreshFlight;server=local?(workspaceEndpoint||''):(localStorage.getItem('sd2.server')||'');localStorage.setItem('sd2.workspace-mode',local?'local':'paired');online=false;await openLocal();dialog.close();render();}
+ try{await configureMacros({suspend:true,required:true});if(refreshFlight)await refreshFlight;masterClock.invalidate();server=local?(workspaceEndpoint||''):(localStorage.getItem('sd2.server')||'');localStorage.setItem('sd2.workspace-mode',local?'local':'paired');online=false;await openLocal();dialog.close();render();}
  finally{macroContextChanging--;}
  await refresh();
 }
@@ -832,7 +833,7 @@ async function refresh(force=false){
    if(audio){sounds={...audio,sounds:sounds.sounds.map(s=>({...s,sourceAvailable:audio.sounds.find(x=>x.id===s.id)?.sourceAvailable===true}))};}soundError='';const reconnect=!online;online=true;shell();updateLiveMonitor();
    if(force||reconnect||(!dialog.open&&['home','plus','health','mixer','moments','live','activity','deck','sounds','planning'].includes(page)&&!pointerHeld&&!document.activeElement?.matches('input, textarea, select, [contenteditable]')))render({passive:!force});
    void configureMacros({synchronized:true});
-  }catch(e){online=false;void configureMacros({suspend:!isTemporaryControllerFailure(e)});replay={active:null,error:'Régie déconnectée'};if(sounds){sounds.currentPlayback=null;sounds.activePlaybacks=[];}shell();updateLiveMonitor();if(!dialog.open)render({passive:!force});if(force)toast(e.message);}
+  }catch(e){online=false;masterClock.invalidate();void configureMacros({suspend:!isTemporaryControllerFailure(e)});replay={active:null,error:'Régie déconnectée'};if(sounds){sounds.currentPlayback=null;sounds.activePlaybacks=[];}shell();updateLiveMonitor();if(!dialog.open)render({passive:!force});if(force)toast(e.message);}
  })().finally(()=>{refreshFlight=undefined;});
  return refreshFlight;
 }
@@ -1127,7 +1128,7 @@ document.addEventListener('submit',async event=>{const f=event.target;submitting
    await linkReplicaEndpoint(nextServer,replica,descriptor?.id,installationUI.current.devices);
    await installationUI.remember(nextServer,descriptor);
    await credentials.set(nextCredential,nextServer);associationSaved=true;
-   credential=nextCredential;server=nextServer;online=false;
+   masterClock.invalidate();credential=nextCredential;server=nextServer;online=false;
    localStorage.setItem('sd2.server',server);localStorage.setItem('sd2.workspace-mode','paired');
    await openLocal();
   }finally{if(pinChanged&&!associationSaved)await peers.trust(nextServer,previousPin,nextPin).catch(()=>{toast('L’identité a changé pendant l’association. Vérifiez-la avant de réutiliser cet agent.');});macroContextChanging--;await refresh();}
@@ -1166,7 +1167,20 @@ compactViewport.addEventListener('change',()=>{
 });
 globalThis.addEventListener('native-pairing',event=>{const u=new URL(event.detail);connectionDialog();$('#connection-form').elements.link.value=event.detail;$('#connection-form').elements.server.value=u.searchParams.get('server')||'';$('#connection-form').elements.pair.value=u.searchParams.get('id')||'';$('#connection-form').elements.code.value=u.searchParams.get('code')||'';});
 await openLocal();void navigator.storage?.persist?.().catch(()=>{});render();await refresh(true);if(firstUse&&!dialog.open&&(!data?.host.planning.length)&&(!data?.host.settings.streamerName||data.host.settings.streamerName==='Streamer'))deviceSetup();setInterval(()=>{if(!document.hidden)void refresh();},2500);setInterval(()=>{if(!document.hidden)void deviceAccounts.poll();},5000);
-document.addEventListener('visibilitychange',()=>{void metadataDrafts.flush();if(!document.hidden)void refresh();});
+// Android sleep/resume and background tabs may stop advancing performance.now().
+ // Discard the prior FIXE timestamp before displaying a running countdown again.
+document.addEventListener('visibilitychange',()=>{
+ masterClock.invalidate();
+ updateMobileTimerStrip();
+ void metadataDrafts.flush();
+ if(!document.hidden)void refresh(true);
+});
+globalThis.addEventListener('pageshow',event=>{
+ if(!event.persisted)return;
+ masterClock.invalidate();
+ updateMobileTimerStrip();
+ void refresh(true);
+});
 globalThis.addEventListener('pagehide',()=>{void metadataDrafts.flush();});
 
 // Do not replace a pressed control between pointerdown and click during a poll.
