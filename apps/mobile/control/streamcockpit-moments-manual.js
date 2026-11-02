@@ -109,6 +109,9 @@ export function mountManualMomentForm(root, { online, request, onRecorded }) {
       if (code === 'MOMENTS_NO_TRUSTED_LIVE_SESSION') {
         pendingRequestId = null;
         status.textContent = 'Aucune session OBS active et certaine sur le fixe : rien envoyé.';
+      } else if (code === 'MOMENTS_LIVE_SESSION_CHANGED') {
+        pendingRequestId = null;
+        status.textContent = 'La session OBS a changé ou n’est plus confirmée avant l’écriture : aucun repère envoyé. Revérifiez la session.';
       } else if (code === 'INVALID_MANUAL_MARKER') {
         pendingRequestId = null;
         status.textContent = 'Nom refusé par le fixe : aucun repère confirmé.';

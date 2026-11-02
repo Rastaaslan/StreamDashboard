@@ -273,3 +273,41 @@ it('F09 context observation failure returns 503, never a guessed session', () =>
   expect(response.status).toBe(503);
   expect(await response.text()).not.toContain('secrets');
 }));
+
+
+it('F09 rejects a manual marker if OBS ends or changes sessions between authorization and commit', () => fixture(async f => {
+  let attempts = 0;
+  f.setWriter(async input => { attempts++; return f.pipeline.recordHostManual(input); });
+  for (const replacedBy of [undefined, 'session_2']) {
+    let reads = 0;
+    f.setSessionReader(async () => ++reads === 1 ? 'session_1' : replacedBy);
+    const response = await call(f.url, f.credential);
+    expect(response.status).toBe(409);
+    expect(await response.json()).toEqual({error:{code:'MOMENTS_LIVE_SESSION_CHANGED',retryable:false}});
+    expect(reads).toBe(2);
+    expect(attempts).toBe(0);
+  }
+  expect(await f.pipeline.listObservedSessions()).toBeUndefined();
+}));
+
+it('F09 revocation during the second OBS observation denies write without leaking its identity', () => fixture(async f => {
+  let reads = 0, writes = 0;
+  let entered!: () => void, release!: () => void;
+  const began = new Promise<void>(resolve => { entered = resolve; });
+  const gate = new Promise<void>(resolve => { release = resolve; });
+  f.setSessionReader(async () => {
+    if (++reads === 2) { entered(); await gate; }
+    return 'session_1';
+  });
+  f.setWriter(async input => { writes++; return f.pipeline.recordHostManual(input); });
+  const pending = call(f.url, f.credential);
+  await began;
+  f.auth.revoke(f.id);
+  release();
+  const response = await pending;
+  expect(response.status).toBe(403);
+  expect(await response.text()).not.toContain('session_1');
+  expect(reads).toBe(2);
+  expect(writes).toBe(0);
+  expect(await f.pipeline.listObservedSessions()).toBeUndefined();
+}));

@@ -176,11 +176,26 @@ export function createMomentsManualRouter(options: {
       response.status(503).json({ error: { code: 'MOMENTS_HOST_SESSION_INVALID', retryable: false } });
       return;
     }
-    // Prevent a revoked device from starting a write after session discovery.
+    // The first OBS snapshot can become stale while authorization awaits.
+    // Reobserve after authorization, then reauthorize after that await. This
+    // prevents a marker being started against a run already replaced/stopped
+    // during these pre-write checks; it cannot roll back an in-flight COMMIT.
     let reauthorized: string | undefined;
     try { reauthorized = await options.authorize(request); } catch { /* deny */ }
     if (reauthorized !== actor) {
       response.status(403).json({ error: { code: 'MOMENTS_WRITE_FORBIDDEN' } });
+      return;
+    }
+    let currentSessionId: string | undefined;
+    try { currentSessionId = await options.activeSessionId(); } catch { /* fail closed */ }
+    reauthorized = undefined;
+    try { reauthorized = await options.authorize(request); } catch { /* deny */ }
+    if (reauthorized !== actor) {
+      response.status(403).json({ error: { code: 'MOMENTS_WRITE_FORBIDDEN' } });
+      return;
+    }
+    if (currentSessionId !== sessionId) {
+      response.status(409).json({ error: { code: 'MOMENTS_LIVE_SESSION_CHANGED', retryable: false } });
       return;
     }
     let result: ManualResult;

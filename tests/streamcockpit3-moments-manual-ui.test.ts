@@ -259,3 +259,18 @@ it('F09 scheduled selections clear private candidate DOM and reject late pairing
   expect(c.scheduled.disabled).toBe(true);
   view.destroy();
 });
+
+
+it('F09 mobile handles a definitive pre-write OBS session change without blocking on a false uncertain receipt', async () => {
+  vi.stubGlobal('crypto', {randomUUID: () => uuid});
+  const request = vi.fn(async () => {throw {body:{error:{code:'MOMENTS_LIVE_SESSION_CHANGED',retryable:false}}};});
+  const root = new Node(), view = mountManualMomentForm(root,{online:true,request});
+  const c = controls(root);
+  c.input.value = 'Un instant à conserver'; c.form.dispatch('submit');
+  await vi.waitFor(() => expect(c.status.textContent).toContain('avant l’écriture'));
+  expect(c.status.textContent).toContain('aucun repère envoyé');
+  expect(c.verify.hidden).toBe(true);
+  expect(c.button.disabled).toBe(false);
+  expect(request).toHaveBeenCalledTimes(1);
+  view.destroy();
+});
