@@ -65,58 +65,69 @@ describe('Lot B isolated Twitch contracts', () => {
   });
   it.each([{ scopes: [] }, { userId: '456' }, { active: true }, { eligible: false }])('blocks preconditions before any mutation %j', async options => {
     const s = setup(options);
-    await expect(s.service.previewPoll(actor, draft)).rejects.toThrow();
+    await expect(s.service.previewPoll(actor, draft, '1:1')).rejects.toThrow();
     expect(s.writes()).toHaveLength(0);
   });
   it('requires authorization and explicit confirmation; binds actor and draft; consumes concurrently', async () => {
     const s = setup();
     expect(() => s.service.capabilities({ ...actor, canRead: false })).toThrow('forbidden');
-    await expect(s.service.previewPoll({ ...actor, canInteract: false }, draft)).rejects.toThrow('forbidden');
-    const p = await s.service.previewPoll(actor, draft);
+    await expect(s.service.previewPoll({ ...actor, canInteract: false }, draft, '1:1')).rejects.toThrow('forbidden');
+    const p = await s.service.previewPoll(actor, draft, '1:1');
     p.draft.title = 'tampered';
-    await expect(s.service.confirmPoll(actor, p.confirmationId, false)).rejects.toThrow('precondition');
-    await expect(s.service.confirmPoll({ ...actor, id: 'other' }, p.confirmationId, true)).rejects.toThrow('precondition');
+    await expect(s.service.confirmPoll(actor, p.confirmationId, false, '1:1')).rejects.toThrow('precondition');
+    await expect(s.service.confirmPoll({ ...actor, id: 'other' }, p.confirmationId, true, '1:1')).rejects.toThrow('precondition');
     expect(s.writes()).toHaveLength(0);
-    const results = await Promise.allSettled([s.service.confirmPoll(actor, p.confirmationId, true), s.service.confirmPoll(actor, p.confirmationId, true)]);
+    const results = await Promise.allSettled([s.service.confirmPoll(actor, p.confirmationId, true, '1:1'), s.service.confirmPoll(actor, p.confirmationId, true, '1:1')]);
     expect(results.map(r => r.status)).toEqual(['fulfilled', 'rejected']);
     expect(s.writes()).toHaveLength(1);
     expect(JSON.parse(String(s.writes()[0][1]?.body)).title).toBe(draft.title);
     expect(s.fetchApi.mock.calls.filter(c => String(c[0]).endsWith('/validate'))).toHaveLength(2);
   });
+  it('F08 binds poll consent to an explicit FIXE OBS stream epoch', async () => {
+    const s = setup();
+    await expect(s.service.previewPoll(actor, draft, '')).rejects.toThrow('precondition');
+    const p = await s.service.previewPoll(actor, draft, '1:3');
+    await expect(s.service.confirmPoll(actor, p.confirmationId, true, '1:4'))
+      .rejects.toThrow('precondition');
+    expect(s.writes()).toHaveLength(0);
+    await expect(s.service.confirmPoll(actor, p.confirmationId, true, ''))
+      .rejects.toThrow('precondition');
+    expect(s.writes()).toHaveLength(0);
+  });
   it('rejects expired confirmation and changed broadcaster', async () => {
-    const s = setup(); const p = await s.service.previewPoll(actor, draft); s.advance();
-    await expect(s.service.confirmPoll(actor, p.confirmationId, true)).rejects.toThrow('precondition');
-    const other = setup(); const p2 = await other.service.previewPoll(actor, draft); other.credentials.broadcasterId = '999';
-    await expect(other.service.confirmPoll(actor, p2.confirmationId, true)).rejects.toThrow();
+    const s = setup(); const p = await s.service.previewPoll(actor, draft, '1:1'); s.advance();
+    await expect(s.service.confirmPoll(actor, p.confirmationId, true, '1:1')).rejects.toThrow('precondition');
+    const other = setup(); const p2 = await other.service.previewPoll(actor, draft, '1:1'); other.credentials.broadcasterId = '999';
+    await expect(other.service.confirmPoll(actor, p2.confirmationId, true, '1:1')).rejects.toThrow();
     expect(other.writes()).toHaveLength(0);
   });
   it.each([[401, 'unauthorized'], [403, 'forbidden'], [429, 'rate-limited'], [503, 'uncertain'], [200, 'uncertain']] as const)('never retries POST HTTP %s', async (status, code) => {
-    const s = setup(); const p = await s.service.previewPoll(actor, draft);
+    const s = setup(); const p = await s.service.previewPoll(actor, draft, '1:1');
     const normal = s.fetchApi.getMockImplementation()!;
     s.fetchApi.mockImplementation(async (url, init) => init?.method === 'POST' ? new Response('{}', { status }) : normal(url, init));
-    await expect(s.service.confirmPoll(actor, p.confirmationId, true)).rejects.toMatchObject({ code });
-    await expect(s.service.confirmPoll(actor, p.confirmationId, true)).rejects.toThrow('precondition');
+    await expect(s.service.confirmPoll(actor, p.confirmationId, true, '1:1')).rejects.toMatchObject({ code });
+    await expect(s.service.confirmPoll(actor, p.confirmationId, true, '1:1')).rejects.toThrow('precondition');
     expect(s.writes()).toHaveLength(1);
   });
   it('redacts network exceptions and treats write disconnect as uncertain', async () => {
-    const s = setup(); const p = await s.service.previewPoll(actor, draft);
+    const s = setup(); const p = await s.service.previewPoll(actor, draft, '1:1');
     const normal = s.fetchApi.getMockImplementation()!;
     s.fetchApi.mockImplementation(async (url, init) => { if (init?.method === 'POST') throw new Error('fake-token'); return normal(url, init); });
-    await expect(s.service.confirmPoll(actor, p.confirmationId, true)).rejects.toThrow('uncertain');
+    await expect(s.service.confirmPoll(actor, p.confirmationId, true, '1:1')).rejects.toThrow('uncertain');
     await expect(setup({ failPath: '/validate', network: true }).api.capabilities()).rejects.toThrow('unavailable');
   });
   it('revalidates revoked scopes at confirmation without POST', async () => {
-    const s = setup(); const p = await s.service.previewPoll(actor, draft);
+    const s = setup(); const p = await s.service.previewPoll(actor, draft, '1:1');
     const normal = s.fetchApi.getMockImplementation()!;
     s.fetchApi.mockImplementation(async (url, init) => String(url).endsWith('/validate') ? Response.json({ client_id: 'client', user_id: '123', expires_in: 3600, scopes: [] }) : normal(url, init));
-    await expect(s.service.confirmPoll(actor, p.confirmationId, true)).rejects.toThrow('forbidden');
+    await expect(s.service.confirmPoll(actor, p.confirmationId, true, '1:1')).rejects.toThrow('forbidden');
     expect(s.writes()).toHaveLength(0);
   });
   it('reports uncertainty when account changes while POST is in flight', async () => {
-    const s = setup(); const p = await s.service.previewPoll(actor, draft);
+    const s = setup(); const p = await s.service.previewPoll(actor, draft, '1:1');
     const normal = s.fetchApi.getMockImplementation()!;
     s.fetchApi.mockImplementation(async (url, init) => { const result = await normal(url, init); if (init?.method === 'POST') s.credentials.accessToken = 'changed'; return result; });
-    await expect(s.service.confirmPoll(actor, p.confirmationId, true)).rejects.toThrow('uncertain');
+    await expect(s.service.confirmPoll(actor, p.confirmationId, true, '1:1')).rejects.toThrow('uncertain');
   });
   it('renders read-only capabilities, escapes data and drops expired observations', async () => {
     const s = setup(); const snapshot = await s.api.capabilities();

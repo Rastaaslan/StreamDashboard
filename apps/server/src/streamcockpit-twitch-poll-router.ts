@@ -28,7 +28,8 @@ export function twitchPollActor(request: Request, auth: RemoteAuth, local: boole
 export function createTwitchPollRouter(options: {
   service: StreamcockpitTwitchService;
   actor(request: Request): TwitchActor | Promise<TwitchActor>;
-  hostLive(): boolean | Promise<boolean>;
+  /** Single pinned OBS connection + stream-transition epoch on FIXE. */
+  hostLive(): string | undefined | Promise<string | undefined>;
 }) {
   const router = Router();
   router.use((_req, response, next) => {
@@ -53,20 +54,22 @@ export function createTwitchPollRouter(options: {
     response.set('Allow', 'POST').status(405).json({ error: { code: 'METHOD_NOT_ALLOWED' } });
     return true;
   };
-  const check = async (request: Request, id?: string) => {
+  const check = async (request: Request, original?: { actor: string; hostEpoch: string }) => {
     const actor = await options.actor(request);
-    if (!actor.canRead || !actor.canInteract || (id && actor.id !== id))
+    if (!actor?.id || !actor.canRead || !actor.canInteract || (original && actor.id !== original.actor))
       throw new AdvancedTwitchError('forbidden');
-    if (!await options.hostLive()) throw new AdvancedTwitchError('precondition');
-    return actor;
+    const hostEpoch = await options.hostLive();
+    if (typeof hostEpoch !== 'string' || !/^[0-9]{1,16}:[0-9]{1,16}$/.test(hostEpoch) ||
+        (original && original.hostEpoch !== hostEpoch)) throw new AdvancedTwitchError('precondition');
+    return { actor, hostEpoch };
   };
   router.all('/preview', async (request, response) => {
     if (restricted(request.method, response)) return;
     try {
-      const actor = await check(request);
+      const context = await check(request);
       if (!exactKeys(request.body, ['draft'])) throw new AdvancedTwitchError('invalid');
-      const preview = await options.service.previewPoll(actor, request.body.draft);
-      await check(request, actor.id);
+      const preview = await options.service.previewPoll(context.actor, request.body.draft, context.hostEpoch);
+      await check(request, { actor: context.actor.id, hostEpoch: context.hostEpoch });
       response.status(200).json({ schemaVersion: 1, kind: 'streamcockpit-poll-preview',
         confirmationId: preview.confirmationId, expiresAt: preview.expiresAt,
         draft: preview.draft, warning: preview.warning });
@@ -76,20 +79,22 @@ export function createTwitchPollRouter(options: {
     if (restricted(request.method, response)) return;
     let mutationStarted = false;
     try {
-      const actor = await check(request);
+      const context = await check(request);
       if (!exactKeys(request.body, ['confirmed', 'confirmationId']) ||
           request.body.confirmed !== true || typeof request.body.confirmationId !== 'string' ||
           !uuid.test(request.body.confirmationId)) throw new AdvancedTwitchError('invalid');
       // Revalidate after the preflight, before Twitch's POST, not just on entry.
+      const expected = { actor: context.actor.id, hostEpoch: context.hostEpoch };
       const permitted = async () => {
-        await check(request, actor.id);
+        await check(request, expected);
         // The callback runs only after the Twitch GET preflight. From this
         // point the provider POST may occur: errors are always uncertain.
         mutationStarted = true;
         return true;
       };
-      const receipt = await options.service.confirmPoll(actor, request.body.confirmationId, true, permitted);
-      await check(request, actor.id); // A revoked device must not receive poll identity.
+      const receipt = await options.service.confirmPoll(context.actor, request.body.confirmationId,
+        true, context.hostEpoch, permitted);
+      await check(request, expected); // A revoked device or replaced stream must not receive poll identity.
       response.status(200).json({ schemaVersion: 1, kind: 'streamcockpit-poll-confirmation',
         status: 'confirmed', pollId: receipt.pollId });
     } catch (cause) { error(response, cause, mutationStarted); }

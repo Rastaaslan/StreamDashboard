@@ -1974,21 +1974,21 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
     await assertRole('chat');
     return twitchPollActor(req, remoteAuth, isLocalRequest(req), remoteRuntimeEnabled);
   };
+  const confirmedF08HostEpoch = async () => {
+    if (!await confirmedF08HostLive()) return undefined;
+    // Stop/start or reconnect on the same FIXE host revokes earlier consent.
+    const connection = obs.connectionGeneration, epoch = obs.streamTransitionEpoch;
+    return Number.isSafeInteger(connection) && Number.isSafeInteger(epoch) &&
+      connection >= 0 && epoch >= 0 ? connection + ':' + epoch : undefined;
+  };
   app.use('/api/v1/twitch/advanced/poll', createTwitchPollRouter({
-    service: advancedTwitch, actor: pairedF08Actor, hostLive: confirmedF08HostLive,
+    service: advancedTwitch, actor: pairedF08Actor, hostLive: confirmedF08HostEpoch,
   }));
   // Only an explicit preview + separate one-use confirmation can send a public
   // shoutout. A POST error after dispatch is uncertain and never auto-retried.
   app.use('/api/v1/twitch/advanced/shoutout', createTwitchShoutoutRouter({
     service: shoutoutTwitch, actor: pairedF08Actor,
-    hostLive: async () => {
-      if (!await confirmedF08HostLive()) return undefined;
-      // Pin previews and confirmations to one FIXE OBS stream transition.
-      // A stop/start even on the same WebSocket invalidates the consent.
-      const connection = obs.connectionGeneration, epoch = obs.streamTransitionEpoch;
-      return Number.isSafeInteger(connection) && Number.isSafeInteger(epoch) &&
-        connection >= 0 && epoch >= 0 ? connection + ':' + epoch : undefined;
-    },
+    hostLive: confirmedF08HostEpoch,
   }));
 
   app.use('/api/v1/streamcockpit-health', createHealthRouter({

@@ -3,7 +3,7 @@ import { AdvancedTwitch, AdvancedTwitchError, normalizePoll, type PollDraft } fr
 export interface TwitchActor { id: string; canRead: boolean; canInteract: boolean }
 /** Actor must come from authenticated server authority, never from request JSON. */
 export class StreamcockpitTwitchService {
-  private pending = new Map<string, { actor: string; broadcasterId: string; draft: PollDraft; expiresAt: number }>();
+  private pending = new Map<string, { actor: string; hostEpoch: string; broadcasterId: string; draft: PollDraft; expiresAt: number }>();
   constructor(private readonly api: AdvancedTwitch, private readonly now = Date.now) {}
   capabilities(actor: TwitchActor) {
     this.authorize(actor, false);
@@ -12,22 +12,25 @@ export class StreamcockpitTwitchService {
   private authorize(actor: TwitchActor, write: boolean) {
     if (!actor?.id || actor.canRead !== true || write && actor.canInteract !== true) throw new AdvancedTwitchError('forbidden');
   }
-  async previewPoll(actor: TwitchActor, input: unknown) {
+  async previewPoll(actor: TwitchActor, input: unknown, hostEpoch: string) {
     this.authorize(actor, true);
+    if (typeof hostEpoch !== 'string' || !/^[0-9]{1,16}:[0-9]{1,16}$/.test(hostEpoch))
+      throw new AdvancedTwitchError('precondition');
     const draft = normalizePoll(input);
     const session = await this.api.pollPreflight();
     for (const [id, p] of this.pending) if (p.expiresAt <= this.now()) this.pending.delete(id);
     if (this.pending.size >= 100) throw new AdvancedTwitchError('unavailable');
     const confirmationId = randomUUID(), expiresAt = Math.min(this.now() + 60_000, session.validUntil);
-    const entry = { actor: actor.id, broadcasterId: session.c.broadcasterId, draft, expiresAt };
+    const entry = { actor: actor.id, hostEpoch, broadcasterId: session.c.broadcasterId, draft, expiresAt };
     this.pending.set(confirmationId, entry);
     return { confirmationId, expiresAt, broadcasterId: entry.broadcasterId, draft: structuredClone(draft), warning: 'Le sondage démarre immédiatement après confirmation.' };
   }
   async confirmPoll(actor: TwitchActor, confirmationId: string, confirmed: boolean,
-    stillAuthorized?: () => Promise<boolean> | boolean) {
+    hostEpoch: string, stillAuthorized?: () => Promise<boolean> | boolean) {
     this.authorize(actor, true);
     const entry = this.pending.get(confirmationId);
-    if (confirmed !== true || !entry || entry.actor !== actor.id || entry.expiresAt <= this.now()) throw new AdvancedTwitchError('precondition');
+    if (confirmed !== true || !entry || entry.actor !== actor.id || entry.hostEpoch !== hostEpoch ||
+        entry.expiresAt <= this.now()) throw new AdvancedTwitchError('precondition');
     this.pending.delete(confirmationId); // Consume before any await: concurrent calls cannot replay.
     return this.api.createConfirmedPoll(entry.draft, entry.broadcasterId, true, stillAuthorized);
   }

@@ -428,7 +428,11 @@
         },
         {
           "path": "apps/server/src/streamcockpit-twitch-poll-router.ts",
-          "kind": "2026-11-02 F08 FIXE: paired management-only Twitch poll POST preview and separate single-use confirm with fresh OBS/Twitch host live gate; no automatic POST/retry"
+          "kind": "2026-11-02 FIXE F08: paired management-only Twitch poll preview and single-use confirm now pinned to one observed OBS connection + stream-transition epoch; refuses stop/restart before POST even if the new stream is LIVE"
+        },
+        {
+          "path": "apps/server/src/streamcockpit-twitch-service.ts",
+          "kind": "2026-11-02 FIXE F08: confirmation retains host stream epoch in memory and refuses a different epoch; no replay after provider uncertainty or automatic Twitch POST"
         },
         {
           "path": "apps/mobile/control/streamcockpit-twitch-poll.js",

@@ -11,12 +11,12 @@ const draft = { title:'Quel jeu ensuite ?', choices:['Minecraft','Autre jeu'], d
 async function fixture(run:(f:{
   url:string; token:string; auth:RemoteAuth; id:string; request:(route:string,body:unknown,token?:string)=>Promise<Response>;
   writes:ReturnType<typeof vi.fn>; calls:ReturnType<typeof vi.fn>;
-  setLive:(value:boolean)=>void; setMode:(value:string)=>void; setDuringPreflight:(f:()=>void)=>void;
+  setLive:(value:boolean)=>void; rotateStream:()=>void; setMode:(value:string)=>void; setDuringPreflight:(f:()=>void)=>void;
 })=>Promise<void>) {
   const auth = new RemoteAuth();
   const management = auth.createPairing(undefined,true);
   const paired = auth.pair(management.id,management.code,'Manage fixture');
-  let live = true, mode = 'ok', duringPreflight = () => {};
+  let live = true, epoch = 1, mode = 'ok', duringPreflight = () => {};
   const creds = {clientId:'client',accessToken:'TEST_ONLY_TOKEN',broadcasterId:'123'};
   const writes = vi.fn();
   const calls = vi.fn(async (url:string | URL | Request, init?:RequestInit) => {
@@ -43,14 +43,14 @@ async function fixture(run:(f:{
   app.use('/api/v1/twitch/advanced/poll',createTwitchPollRouter({
     service,
     actor:(req:Request)=>twitchPollActor(req,auth,false,true),
-    hostLive:()=>live,
+    hostLive:()=>live ? '1:'+epoch : undefined,
   }));
   const server=app.listen(0,'127.0.0.1');
   await new Promise<void>((resolve,reject)=>{server.once('listening',resolve);server.once('error',reject)});
   try {
     const url='http://127.0.0.1:'+(server.address() as AddressInfo).port+'/api/v1/twitch/advanced/poll';
     await run({url,token:paired.credential,auth,id:paired.deviceId,writes,calls,
-      setLive:value=>{live=value},setMode:value=>{mode=value},
+      setLive:value=>{live=value},rotateStream:()=>{epoch++},setMode:value=>{mode=value},
       setDuringPreflight:fn=>{duringPreflight=fn},
       request:(route,body,token=paired.credential)=>fetch(url+route,{
         method:'POST',headers:{Authorization:'Device '+token,'Content-Type':'application/json'},
@@ -122,6 +122,30 @@ it('F08 host OBS/Twitch live lost during confirm preflight stops BEFORE provider
   expect(f.writes).not.toHaveBeenCalled();
   f.setLive(true);
   expect((await f.request('/confirm',{confirmationId:preview.confirmationId,confirmed:true})).status).toBe(409);
+}));
+it('F08 refuses consent from a previous FIXE stream after stop and restart',()=>fixture(async f=>{
+  const preview=await(await f.request('/preview',{draft})).json();
+  f.rotateStream(); // OBS was live, stopped, then restarted on the same connection.
+  const response=await f.request('/confirm',{confirmationId:preview.confirmationId,confirmed:true});
+  expect(response.status).toBe(409);
+  expect(await response.json()).toMatchObject({error:{code:'POLL_PRECONDITION',retryable:false}});
+  expect(f.writes).not.toHaveBeenCalled();
+}));
+it('F08 detects a stop/restart during provider preflight despite current LIVE=true',()=>fixture(async f=>{
+  const preview=await(await f.request('/preview',{draft})).json();
+  f.setDuringPreflight(()=>f.rotateStream());
+  const response=await f.request('/confirm',{confirmationId:preview.confirmationId,confirmed:true});
+  expect(response.status).toBe(409);
+  expect(await response.json()).toMatchObject({error:{code:'POLL_PRECONDITION',retryable:false}});
+  expect(f.writes).not.toHaveBeenCalled();
+  expect((await f.request('/confirm',{confirmationId:preview.confirmationId,confirmed:true})).status).toBe(409);
+}));
+it('F08 preview becomes invalid if OBS restarts during its Twitch read',()=>fixture(async f=>{
+  f.setDuringPreflight(()=>f.rotateStream());
+  const response=await f.request('/preview',{draft});
+  expect(response.status).toBe(409);
+  expect(await response.text()).not.toContain('confirmationId');
+  expect(f.writes).not.toHaveBeenCalled();
 }));
 it('F08 pairing revocation mid-confirm preflight stops BEFORE provider POST',()=>fixture(async f=>{
   const preview=await(await f.request('/preview',{draft})).json();
