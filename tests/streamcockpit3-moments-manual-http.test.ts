@@ -16,6 +16,7 @@ const requestId = 'b467019c-3fbb-4ccb-a499-3c459d5ad173';
 async function fixture(run: (f: {
   url: string; auth: RemoteAuth; id: string; credential: string; pipeline: MomentsPipeline;
   setSession: (id: string | undefined) => void;
+  setSessionReader: (reader: (() => Promise<string | undefined>) | undefined) => void;
   setHost: (value: boolean) => void;
   setTime: (value: number) => void;
   setWriter: (writer: ((input: {sessionId: string; correlationId: string; title: string; instant: number}) => ReturnType<MomentsPipeline['recordHostManual']>) | undefined) => void;
@@ -27,6 +28,7 @@ async function fixture(run: (f: {
   const pairing = auth.createPairing(undefined, false, ['observe', 'clips']);
   const paired = auth.pair(pairing.id, pairing.code, 'Android test');
   let session: string | undefined = 'session_1', host = true, time = 1_800_000_000_000;
+  let sessionReader: (() => Promise<string | undefined>) | undefined;
   let writer: ((input: { sessionId: string; correlationId: string; title: string; instant: number }) => ReturnType<MomentsPipeline['recordHostManual']>) | undefined;
   let reader: ((correlationId: string) => ReturnType<MomentsPipeline['lookupHostManual']>) | undefined;
   const app = express();
@@ -37,7 +39,7 @@ async function fixture(run: (f: {
       const id = credential ? auth.authenticate(credential) : null;
       return host && id && auth.permits(id, ['observe', 'clips']) ? id : undefined;
     },
-    activeSessionId: async () => session,
+    activeSessionId: async () => sessionReader ? sessionReader() : session,
     recordManual: input => (writer ?? (value => pipeline.recordHostManual(value)))(input),
     lookupManual: correlationId => (reader ?? (id => pipeline.lookupHostManual(id)))(correlationId),
     now: () => time,
@@ -50,7 +52,7 @@ async function fixture(run: (f: {
     });
     const url = `http://127.0.0.1:${(server.address() as AddressInfo).port}/api/v1/streamcockpit-moments/manual/add`;
     await run({ url, auth, id: paired.deviceId, credential: paired.credential, pipeline,
-      setSession: id => {session = id;}, setHost: value => {host = value;},
+      setSession: id => {session = id;}, setSessionReader: reader => {sessionReader = reader;}, setHost: value => {host = value;},
       setTime: value => {time = value;}, setWriter: value => {writer = value;},
       setReader: value => {reader = value;},
     });
@@ -220,4 +222,54 @@ it('F09 status prioritizes revocation even after a failed or unreadable journal'
   const response = await pending;
   expect(response.status).toBe(403);
   expect(await response.text()).not.toContain('secret from disk');
+}));
+
+const contextUrl = (url: string) => url.replace('/manual/add', '/manual/context');
+
+it('F09 context is an explicit, paired read-only snapshot with no marker or provider action', () => fixture(async f => {
+  expect(isRemoteApiAllowed('GET', '/v1/streamcockpit-moments/manual/context')).toBe(true);
+  expect(isRemoteApiAllowed('POST', '/v1/streamcockpit-moments/manual/context')).toBe(false);
+  expect(isRemoteApiAllowed('HEAD', '/v1/streamcockpit-moments/manual/context')).toBe(false);
+  expect(requiredDevicePermissions('GET', '/v1/streamcockpit-moments/manual/context', {})).toEqual(['observe','clips']);
+  expect((await call(contextUrl(f.url), f.credential, {}, 'POST')).status).toBe(405);
+  expect((await call(contextUrl(f.url), 'invalid', undefined, 'GET')).status).toBe(403);
+  f.auth.setPermissions(f.id, ['observe']);
+  expect((await call(contextUrl(f.url), f.credential, undefined, 'GET')).status).toBe(403);
+  f.auth.setPermissions(f.id, ['observe', 'clips']);
+  const present = await call(contextUrl(f.url), f.credential, undefined, 'GET');
+  expect(present.headers.get('cache-control')).toContain('no-store');
+  expect(await present.json()).toEqual({schemaVersion:1,kind:'streamcockpit-manual-context',
+    writable:true, sessionId:'session_1'});
+  f.setSession(undefined);
+  expect(await (await call(contextUrl(f.url),f.credential,undefined,'GET')).json())
+    .toEqual({schemaVersion:1,kind:'streamcockpit-manual-context',
+      writable:false,reason:'NO_TRUSTED_LIVE_SESSION'});
+  f.setSession('invalid/host');
+  expect((await call(contextUrl(f.url),f.credential,undefined,'GET')).status).toBe(503);
+  expect(await f.pipeline.listObservedSessions()).toBeUndefined();
+}));
+
+it('F09 context revocation during OBS observation hides session even on observation failure', () => fixture(async f => {
+  let started!: () => void, release!: () => void;
+  const entered = new Promise<void>(r => { started = r; });
+  const gate = new Promise<void>(r => { release = r; });
+  f.setSessionReader(async () => { started(); await gate; return 'private_session'; });
+  const pending = call(contextUrl(f.url), f.credential, undefined, 'GET');
+  await entered;
+  f.auth.revoke(f.id);
+  release();
+  const response = await pending;
+  expect(response.status).toBe(403);
+  expect(await response.text()).not.toContain('private_session');
+  f.setSessionReader(async () => { throw new Error('OBS secret'); });
+  const failed = await call(contextUrl(f.url),f.credential,undefined,'GET');
+  expect(failed.status).toBe(403);
+  expect(await failed.text()).not.toContain('OBS secret');
+}));
+
+it('F09 context observation failure returns 503, never a guessed session', () => fixture(async f => {
+  f.setSessionReader(async () => {throw new Error('OBS unavailable secrets');});
+  const response = await call(contextUrl(f.url),f.credential,undefined,'GET');
+  expect(response.status).toBe(503);
+  expect(await response.text()).not.toContain('secrets');
 }));

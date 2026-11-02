@@ -39,6 +39,7 @@ const POST_EXACT = new Set([
 export function isRemoteApiAllowed(method: string, pathName: string) {
   const verb = method.toUpperCase();
   if (verb === 'HEAD' && ['/v1/streamcockpit-health', '/v1/streamcockpit-mixer', '/v1/twitch/advanced/capabilities'].includes(pathName)) return true;
+  if (verb === 'GET' && pathName === '/v1/streamcockpit-moments/manual/context') return true;
   if (verb === 'POST' && pathName === '/v1/streamcockpit-moments/manual/add') return true;
   if (verb === 'GET' && /^\/v1\/streamcockpit-moments\/manual\/status\/[0-9a-f-]{36}$/i.test(pathName)) return true;
   if (['GET','HEAD'].includes(verb) && (pathName === '/v1/streamcockpit-moments' ||
@@ -83,6 +84,7 @@ export const remoteApiPolicySnapshot = {
 export function requiredDevicePermissions(method:string,path:string,body:unknown,actions:DeckAction[]=[]):DevicePermission[] {
   if(path==='/v1/twitch/advanced/capabilities')return ['chat'];
   if(path==='/v1/streamcockpit-health'||path==='/v1/streamcockpit-mixer')return ['observe'];
+  if(method==='GET'&&path==='/v1/streamcockpit-moments/manual/context')return ['observe','clips'];
   if(method==='POST'&&path==='/v1/streamcockpit-moments/manual/add')return ['observe','clips'];
   if(method==='GET'&&/^\/v1\/streamcockpit-moments\/manual\/status\/[0-9a-f-]{36}$/i.test(path))return ['observe','clips'];
   if(path==='/v1/streamcockpit-moments'||/^\/v1\/streamcockpit-moments\/[A-Za-z0-9_-]{1,128}$/.test(path))return ['observe'];

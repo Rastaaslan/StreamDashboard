@@ -35,17 +35,24 @@ export function mountManualMomentForm(root, { online, request, onRecorded }) {
   verify.setAttribute('type', 'button');
   verify.textContent = 'Vérifier le repère incertain (lecture seule)';
   verify.hidden = true;
+  const context = doc.createElement('button');
+  context.setAttribute('type', 'button');
+  context.textContent = 'Vérifier la session OBS sur le fixe (lecture seule)';
+  const contextStatus = doc.createElement('p');
+  contextStatus.setAttribute('role', 'status');
+  contextStatus.textContent = 'Session active non vérifiée. Contrôle volontaire, sans commande OBS.';
   form.append(label, submit);
-  section.append(heading, description, form, status, verify);
+  section.append(heading, description, form, status, verify, context, contextStatus);
   root.append(section);
 
   let connected = Boolean(online), disposed = false, inFlight = false, generation = 0, uncertain = false;
-  let pendingRequestId = null, verifying = false;
+  let pendingRequestId = null, verifying = false, checkingContext = false;
   const update = () => {
     input.disabled = disposed || !connected || inFlight || uncertain || verifying;
     submit.disabled = disposed || !connected || inFlight || uncertain || verifying;
     verify.hidden = disposed || !connected || !uncertain || !pendingRequestId;
     verify.disabled = verify.hidden || verifying || inFlight;
+    context.disabled = disposed || !connected || inFlight || verifying || uncertain || checkingContext;
   };
   update();
   form.addEventListener('submit', async event => {
@@ -62,6 +69,7 @@ export function mountManualMomentForm(root, { online, request, onRecorded }) {
       return;
     }
     pendingRequestId = requestId;
+    contextStatus.textContent = 'État précédent non garanti : le fixe revérifie la session à chaque enregistrement.';
     inFlight = true;
     update();
     const current = ++generation;
@@ -100,6 +108,31 @@ export function mountManualMomentForm(root, { online, request, onRecorded }) {
       if (!disposed && connected && current === generation) update();
     }
   });
+  context.addEventListener('click', async () => {
+    if (disposed || !connected || inFlight || verifying || uncertain || checkingContext) return;
+    checkingContext = true;
+    update();
+    const current = generation;
+    contextStatus.textContent = 'Lecture volontaire de la session OBS sur le fixe…';
+    try {
+      const data = await request('/api/v1/streamcockpit-moments/manual/context');
+      if (disposed || !connected || current !== generation) return;
+      if (data?.schemaVersion !== 1 || data.kind !== 'streamcockpit-manual-context')
+        throw new Error('UNVERIFIED_CONTEXT');
+      if (data.writable === true && validSession.test(data.sessionId)) {
+        contextStatus.textContent = 'Session OBS reconnue par le fixe : ' + data.sessionId +
+          '. État instantané, revérifié lors de chaque enregistrement.';
+      } else if (data.writable === false && data.reason === 'NO_TRUSTED_LIVE_SESSION') {
+        contextStatus.textContent = 'Aucune session OBS certaine sur le fixe : live planifié ou état inconnu, écriture refusée sans session.';
+      } else throw new Error('UNVERIFIED_CONTEXT');
+    } catch {
+      if (disposed || !connected || current !== generation) return;
+      contextStatus.textContent = 'Session non vérifiable : aucune session ni commande inventée.';
+    } finally {
+      checkingContext = false;
+      if (!disposed && connected && current === generation) update();
+    }
+  });
   verify.addEventListener('click', async () => {
     if (disposed || !connected || inFlight || verifying || !uncertain || !pendingRequestId) return;
     verifying = true;
@@ -134,11 +167,12 @@ export function mountManualMomentForm(root, { online, request, onRecorded }) {
       generation++; connected = false; uncertain = true; pendingRequestId = null;
       input.value = '';
       status.textContent = 'Fixe déconnecté : aucun renvoi. Vérifiez son journal après reconnexion.';
+      contextStatus.textContent = 'Fixe déconnecté : contexte OBS effacé.';
       update();
     },
     destroy() {
       if (disposed) return;
-      disposed = true; generation++; pendingRequestId = null; input.value = ''; update();
+      disposed = true; generation++; pendingRequestId = null; input.value = ''; contextStatus.textContent = ''; update();
       section.remove();
     },
   };

@@ -19,7 +19,7 @@ const success = {schemaVersion:1,kind:'streamcockpit-manual-marker',
   instant:1800000000000,sequence:1,source:'manual',status:'observed'};
 const controls = (root:Node) => {
   const section=root.children[0],form=section.children[2],label=form.children[0],input=label.children[0],button=form.children[1],status=section.children[3],verify=section.children[4];
-  return {section,form,input,button,status,verify};
+  return {section,form,input,button,status,verify,context:section.children[5],contextStatus:section.children[6]};
 };
 afterEach(()=>vi.unstubAllGlobals());
 
@@ -151,5 +151,61 @@ it('F09 late status never exposes a receipt after disconnection',async()=>{
   expect(c.verify.hidden).toBe(true);
   expect(c.button.disabled).toBe(true);
   expect(c.input.value).toBe('');
+  view.destroy();
+});
+
+it('F09 mobile checks trusted FIXE session on explicit GET, never auto-writes or trusts the read as a POST', async () => {
+  const request = vi.fn(async (path:string) => {
+    if (path.endsWith('/manual/context'))return {schemaVersion:1,kind:'streamcockpit-manual-context',
+      writable:true,sessionId:'verified_session'};
+    throw new Error('Unexpected write');
+  });
+  const root=new Node(),view=mountManualMomentForm(root,{online:true,request});
+  const c=controls(root);
+  expect(request).not.toHaveBeenCalled();
+  c.context.dispatch('click');
+  await vi.waitFor(()=>expect(c.contextStatus.textContent).toContain('verified_session'));
+  expect(request).toHaveBeenCalledExactlyOnceWith('/api/v1/streamcockpit-moments/manual/context');
+  expect(c.button.disabled).toBe(false);
+  expect(c.contextStatus.textContent).toContain('revérifié');
+  view.unavailable();
+  expect(c.contextStatus.textContent).not.toContain('verified_session');
+  expect(c.context.disabled).toBe(true);
+  view.destroy();
+});
+
+it('F09 mobile never displays invalid context nor late session after disconnection', async () => {
+  let resolve!: (v:unknown) => void;
+  const request=vi.fn(()=>new Promise(r=>{resolve=r;}));
+  const root=new Node(),view=mountManualMomentForm(root,{online:true,request});
+  const c=controls(root);
+  c.context.dispatch('click');
+  expect(c.context.disabled).toBe(true);
+  view.unavailable();
+  resolve({schemaVersion:1,kind:'streamcockpit-manual-context',writable:true,sessionId:'private_123'});
+  await Promise.resolve();await Promise.resolve();
+  expect(c.contextStatus.textContent).not.toContain('private_123');
+  expect(c.context.disabled).toBe(true);
+  view.destroy();
+  const badRequest=vi.fn(async()=>({schemaVersion:1,kind:'streamcockpit-manual-context',
+    writable:true,sessionId:'<script>alert(1)</script>'}));
+  const otherRoot=new Node(),other=mountManualMomentForm(otherRoot,{online:true,request:badRequest});
+  const bad=controls(otherRoot);
+  bad.context.dispatch('click');
+  await vi.waitFor(()=>expect(bad.contextStatus.textContent).toContain('non vérifiable'));
+  expect(bad.contextStatus.textContent).not.toContain('script');
+  expect(badRequest).toHaveBeenCalledTimes(1);
+  other.destroy();
+});
+
+it('F09 mobile reports absent trusted live without inventing one',async()=>{
+  const request=vi.fn(async()=>({schemaVersion:1,kind:'streamcockpit-manual-context',
+    writable:false,reason:'NO_TRUSTED_LIVE_SESSION'}));
+  const root=new Node(),view=mountManualMomentForm(root,{online:true,request});
+  const c=controls(root);
+  c.context.dispatch('click');
+  await vi.waitFor(()=>expect(c.contextStatus.textContent).toContain('Aucune session OBS certaine'));
+  expect(c.button.disabled).toBe(false);
+  expect(request).toHaveBeenCalledExactlyOnceWith('/api/v1/streamcockpit-moments/manual/context');
   view.destroy();
 });

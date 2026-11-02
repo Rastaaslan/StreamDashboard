@@ -91,3 +91,33 @@ it.skipIf(process.env.MOMENTS_BROWSER_TEST !== '1')('F09 Edge 320px recovers an 
     expect(external).toEqual([]);
   }finally{await browser.close();}
 },30000);
+
+it.skipIf(process.env.MOMENTS_BROWSER_TEST !== '1')('F09 Edge touch 320px explicitly verifies host OBS context without writing a marker',async()=>{
+  const bundle=await build({stdin:{contents:"import {mountManualMomentForm} from './apps/mobile/control/streamcockpit-moments-manual.js';globalThis.mountManualMomentForm=mountManualMomentForm;",resolveDir:process.cwd()},
+    bundle:true,write:false,format:'iife',platform:'browser'});
+  const browser=await chromium.launch({channel:'msedge',headless:true});
+  try {
+    const page=await browser.newPage({viewport:{width:320,height:720},hasTouch:true});
+    const external:string[]=[];
+    await page.route('**/*',route=>{external.push(route.request().url());return route.abort();});
+    await page.setContent('<meta name="viewport" content="width=device-width,initial-scale=1"><main id="root" class="compact-app" style="width:100%;min-width:0"></main>');
+    await page.addStyleTag({content:readFileSync('apps/mobile/control/streamcockpit-mobile-v2.css','utf8')});
+    await page.addScriptTag({content:bundle.outputFiles[0].text});
+    await page.evaluate(()=>{
+      const w=window as any;
+      w.calls=[];
+      w.view=w.mountManualMomentForm(document.getElementById('root'),{online:true,
+        request:async (path:string)=>{w.calls.push(path);return {schemaVersion:1,
+          kind:'streamcockpit-manual-context',writable:true,sessionId:'from_FIXE_1'};}});
+    });
+    expect(await page.evaluate(()=>(window as any).calls)).toEqual([]);
+    await page.getByRole('button',{name:/Vérifier la session OBS sur le fixe/}).click();
+    await expect.poll(()=>page.getByRole('status').last().textContent()).toContain('from_FIXE_1');
+    expect(await page.evaluate(()=>(window as any).calls)).toEqual(['/api/v1/streamcockpit-moments/manual/context']);
+    expect(await page.evaluate(()=>document.documentElement.scrollWidth<=320)).toBe(true);
+    await page.evaluate(()=>(window as any).view.unavailable());
+    expect(await page.getByRole('status').last().textContent()).not.toContain('from_FIXE_1');
+    expect(await page.getByRole('button',{name:/Vérifier la session OBS sur le fixe/}).isDisabled()).toBe(true);
+    expect(external).toEqual([]);
+  } finally {await browser.close();}
+},30000);

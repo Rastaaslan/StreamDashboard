@@ -17,6 +17,45 @@ export function createMomentsManualRouter(options: {
   now?: () => number;
 }) {
   const router = Router();
+  // Explicit, read-only check of the OBS-backed session currently trusted by
+  // FIXE. This is a snapshot, NEVER a reservation or a promise that a later
+  // write will succeed. The POST independently rechecks the live identity.
+  router.all('/context', async (request, response) => {
+    response.set('Cache-Control', 'private, no-store');
+    if (request.method !== 'GET') {
+      response.set('Allow', 'GET').status(405).json({ error: { code: 'METHOD_NOT_ALLOWED' } });
+      return;
+    }
+    let actor: string | undefined;
+    try { actor = await options.authorize(request); } catch { /* deny */ }
+    if (!actor) {
+      response.status(403).json({ error: { code: 'MOMENTS_READ_FORBIDDEN' } });
+      return;
+    }
+    let sessionId: string | undefined, failed = false;
+    try { sessionId = await options.activeSessionId(); } catch { failed = true; }
+    let reauthorized: string | undefined;
+    try { reauthorized = await options.authorize(request); } catch { /* deny */ }
+    if (reauthorized !== actor) {
+      response.status(403).json({ error: { code: 'MOMENTS_READ_FORBIDDEN' } });
+      return;
+    }
+    if (failed) {
+      response.status(503).json({ error: { code: 'MOMENTS_UNAVAILABLE' } });
+      return;
+    }
+    if (!sessionId) {
+      response.json({ schemaVersion: 1, kind: 'streamcockpit-manual-context',
+        writable: false, reason: 'NO_TRUSTED_LIVE_SESSION' });
+      return;
+    }
+    try { momentIdentifier(sessionId); } catch {
+      response.status(503).json({ error: { code: 'MOMENTS_HOST_SESSION_INVALID' } });
+      return;
+    }
+    response.json({ schemaVersion: 1, kind: 'streamcockpit-manual-context',
+      writable: true, sessionId });
+  });
   router.all('/add', async (request, response) => {
     response.set('Cache-Control', 'no-store');
     if (request.method !== 'POST') {
