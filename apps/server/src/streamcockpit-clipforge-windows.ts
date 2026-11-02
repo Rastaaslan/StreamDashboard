@@ -141,7 +141,7 @@ export class WindowsOfflineClipForge {
   async prepare(jobId:string,grant:SourceGrant,segment:ClipSegment,
     signal=new AbortController().signal):Promise<ClipResult> {
     if(this.busy)return {status:'FAILED',code:'BUSY'};
-    this.busy=true;let reserved=false,executing=false,prepared=false,stage='';
+    this.busy=true;let reservationAttempted=false,reserved=false,executing=false,prepared=false,stage='';
     const controller=new AbortController(),abort=()=>controller.abort();
     signal.addEventListener('abort',abort,{once:true});
     if(signal.aborted)abort();
@@ -151,6 +151,10 @@ export class WindowsOfflineClipForge {
       check(safeJob.test(jobId),'JOB');
       check(grant&&sha256.test(grant.sha256)&&typeof grant.relativePath==='string'&&
         grant.relativePath.length<=512&&grant.relativePath.split('/').every(part=>validPart.test(part)),'GRANT');
+      // Pin all caller-controlled inputs before the first asynchronous filesystem
+      // call: a shared grant/segment object must never change authorization mid-job.
+      const authorized:SourceGrant={relativePath:grant.relativePath,sha256:grant.sha256};
+      const requested=structuredClone(segment);
       // Never allow URLs, UNC paths, reparse points or an output dir nested in the input.
       const sourceRoot=await strictRoot(this.sourceRoot),outputRoot=await strictRoot(this.outputRoot);
       check(nonoverlapping(sourceRoot,outputRoot),'ROOT_OVERLAP');
@@ -161,7 +165,7 @@ export class WindowsOfflineClipForge {
         try{await lstat(base+suffix);return {status:'UNKNOWN',code:'EXISTING_JOB'}}
         catch(error){if((error as NodeJS.ErrnoException).code!=='ENOENT')throw error}
       }
-      const parts=grant.relativePath.split('/');let source=sourceRoot;
+      const parts=authorized.relativePath.split('/');let source=sourceRoot;
       for(const [i,part] of parts.entries()){
         source=path.join(source,part);
         const stat=await lstat(source);
@@ -178,12 +182,21 @@ export class WindowsOfflineClipForge {
       stage=path.join(outputRoot,'.sc3-stage-'+randomUUID());
       await mkdir(stage,{mode:0o700});
       const stagedSource=path.join(stage,'input.mp4'),stagedOutput=path.join(stage,'output.mp4');
-      await snapshot(source,stagedSource,grant.sha256,controller.signal);
-      check(await digestFile(stagedSource,controller.signal)===grant.sha256,'SOURCE_CHANGED');
-      const plan=planClip(structuredClone(segment),await probe(ffprobe,stagedSource,controller.signal));
+      await snapshot(source,stagedSource,authorized.sha256,controller.signal);
+      check(await digestFile(stagedSource,controller.signal)===authorized.sha256,'SOURCE_CHANGED');
+      const plan=planClip(requested,await probe(ffprobe,stagedSource,controller.signal));
       check(!controller.signal.aborted,'CANCELLED');
-      try{await writeDurable(base+'.intent',JSON.stringify({version:1,state:'UNKNOWN',sourceSha256:grant.sha256})+'\n')}
-      catch(error){if((error as NodeJS.ErrnoException).code==='EEXIST')return {status:'UNKNOWN',code:'EXISTING_JOB'};throw error}
+      // Even a failed FlushFileBuffers after 'wx' may leave an intent: never
+      // advertise FAILED or erase the forensic snapshot after an uncertain write.
+      reservationAttempted=true;
+      try{await writeDurable(base+'.intent',JSON.stringify({version:1,state:'UNKNOWN',sourceSha256:authorized.sha256})+'\n')}
+      catch(error){
+        if((error as NodeJS.ErrnoException).code==='EEXIST'){
+          reservationAttempted=false;
+          return {status:'UNKNOWN',code:'EXISTING_JOB'};
+        }
+        throw error;
+      }
       reserved=true;
       const args=plan.args.map(arg=>arg==='/proc/self/fd/3'?stagedSource:arg==='pipe:4'?stagedOutput:arg);
       args.unshift('-n');
@@ -197,7 +210,7 @@ export class WindowsOfflineClipForge {
       const measured=await probe(ffprobe,stagedOutput,controller.signal);
       check(measured.width===plan.width&&measured.height===plan.height&&
         Math.abs(measured.durationMs-(plan.segment.endMs-plan.segment.startMs))<=250,'OUTPUT_METRICS');
-      check(await digestFile(stagedSource,controller.signal)===grant.sha256,'SOURCE_CHANGED');
+      check(await digestFile(stagedSource,controller.signal)===authorized.sha256,'SOURCE_CHANGED');
       check(!controller.signal.aborted,'CANCELLED');
       // File creation is exclusive: no overwrites and no inferred success on retry.
       await copyFile(stagedOutput,base+'.mp4',constants.COPYFILE_EXCL);
@@ -206,7 +219,7 @@ export class WindowsOfflineClipForge {
       try{await fd.sync()}finally{await fd.close()}
       const outHash=await digestFile(base+'.mp4',controller.signal,CLIP_LIMITS.outputBytes);
       const manifest=JSON.stringify({schemaVersion:1,kind:'streamcockpit-clipforge',
-        sourceSha256:grant.sha256,source:plan.source,segment:plan.segment,
+        sourceSha256:authorized.sha256,source:plan.source,segment:plan.segment,
         output:{file:jobId+'.mp4',width:plan.width,height:plan.height,
           bytes:outputStats.size,sha256:outHash},
         captions:plan.vtt?jobId+'.vtt':null,markers:'not-created-or-confirmed'},null,2)+'\n';
@@ -216,14 +229,14 @@ export class WindowsOfflineClipForge {
       prepared=true;
       return {status:'PREPARED',code:'OFFLINE_WINDOWS_OUTPUT_UNQUALIFIED',manifest};
     }catch(error){
-      return {status:executing||reserved?'UNKNOWN':controller.signal.aborted?'CANCELLED':'FAILED',
+      return {status:executing||reserved||reservationAttempted?'UNKNOWN':controller.signal.aborted?'CANCELLED':'FAILED',
         code:safeError(error)};
     }finally{
       clearTimeout(timer);signal.removeEventListener('abort',abort);
       // Once the verified final files exist, remove only the private staging
       // snapshot created by this invocation. On any post-intent uncertainty,
       // retain staging and intent for explicit operator recovery, never replay.
-      if(stage&&(!reserved||prepared))await rm(stage,{recursive:true,force:true}).catch(()=>{});
+      if(stage&&(!reservationAttempted||prepared))await rm(stage,{recursive:true,force:true}).catch(()=>{});
       this.busy=false;
     }
   }

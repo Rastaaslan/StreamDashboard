@@ -227,7 +227,7 @@
         },
         {
           "path": "apps/server/src/streamcockpit-clipforge-windows.ts",
-          "kind": "2026-11-02 FIXE isolated opt-in Windows OFFLINE lab: real synthetic FFmpeg 360x640, SHA-256 and FFprobe validation, no production routes or hardware claim"
+          "kind": "2026-11-02 FIXE isolated Windows OFFLINE lab: synthetic FFmpeg 360x640 and SHA-256; synchronous immutable grant/segment snapshot and uncertain intent write fail-closed, no production route/hardware claim"
         },
         {
           "path": "docs/streamcockpit-3/F04_WINDOWS_OFFLINE_LAB_20261102.md",
@@ -246,10 +246,10 @@
       "blockers": [
         "Production ClipForge pipeline and resource launcher still require Linux /proc and O_NOFOLLOW; isolated Windows FFmpeg lab is NOT mounted or production-qualified",
         "Windows Job Object kill-on-close, CPU/memory limits, staging ACLs and power-loss durability of intent/manifest absent",
-        "42 Linux-only ClipForge tests remain explicitly skipped; Windows lab 9/9 PASS on synthetic NTFS/FFmpeg only, no real OBS replay or signed distribution qualified"
+        "42 Linux-only ClipForge tests remain explicitly skipped; Windows lab 11/11 PASS on synthetic NTFS/FFmpeg only (includes mutable-grant race and failed encoder UNKNOWN), no real OBS replay or signed distribution qualified"
       ],
       "ownerJob": "streamcockpit/3.0-lot-d",
-      "integrationNote": "2026-11-01 Linux-only ClipForge guarded and real OBS ReplayBufferSaved read-only observer integrated. 2026-11-02 FIXE isolated Windows offline lab with real FFmpeg transcoding synthetic MP4 to verified 360x640, manifest/source/output SHA-256, VTT, no-overwrite & collision guards, NTFS junction/hardlink refusals. Windows lab 9/9 PASS; 4 suites F04/roadmap 28 PASS/42 Linux skips; types PASS and security 824 files PASS. No Job Object, power-loss guarantee, production API, real OBS replay or Android hardware evidence; F04 remains partial, G2 in progress."
+      "integrationNote": "2026-11-01 Linux-only ClipForge guarded and real OBS ReplayBufferSaved read-only observer integrated. 2026-11-02 FIXE isolated Windows OFFLINE lab: real FFmpeg synthetic MP4 to verified 360x640, SHA-256 and VTT, no overwrite/collision, NTFS junction/hardlink rejection. Caller grant/segment captured synchronously before any async IO; unknown intent write never claims failure/retries; failed encoder retains forensic intent/stage. Windows lab 11/11 PASS, 4 suites F04/roadmap 30 PASS/42 Linux skips, types+browser types PASS, security 827 files PASS in coexisting F08 tree. No global test qualification specifically for this F04 commit, Job Object, power-loss guarantee, production API, real OBS replay, or Android hardware evidence. F04 partial, G2 in progress."
     },
     {
       "id": "F05",

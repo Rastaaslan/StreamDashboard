@@ -22,3 +22,12 @@ Le processus utilise un cliché local privé (copie depuis un descripteur ouvert
 - de service API/UX avec permissions authentifiées, confirmation explicite, rollback/migration validés ; ni d'artefacts signés Windows + APK identiques.
 
 La priorité suivante est l'isolation Windows + durabilité et la source OBS effectivement autorisée. **Ne pas monter ce laboratoire en production, ne pas publier de RC et ne pas traiter les tests Linux skipped comme validés.**
+
+## Addendum FIXE ~07:50 CET — transaction et autorisation de l'entrée
+Dans le laboratoire Windows isolé, le `SourceGrant` et la demande `ClipSegment` sont maintenant **capturés synchroniquement avant le premier accès disque asynchrone**. Une mutation ultérieure de l'objet partagé par l'appelant ne peut plus remplacer `relativePath`, SHA-256, paramètres de coupe ni légendes. Le test de non-régression essaie explicitement d'injecter `../outside.mp4` et de changer l'empreinte et la durée pendant `lstat/realpath` ; l'export réel FFmpeg reste lié au fichier et au segment initialement autorisés.
+
+La création exclusive de `.intent` a un nouvel état intermédiaire `reservationAttempted` : si une erreur se produit après une tentative de création (y compris erreur possible de `FlushFileBuffers` NTFS), elle est rapportée **UNKNOWN**, sans réessai et sans suppression du staging. Un `EEXIST` connu garde le contrat `EXISTING_JOB` et nettoie seulement le staging du prétendant perdant. Le test d'échec de code retour de l'encodeur utilise un vrai exécutable PE FFprobe sous le nom privé `ffmpeg.exe` et vérifie conservation de l'intent/staging et absence de deuxième encodage. Cela **ne constitue pas** une preuve de durabilité électrique ou de confinement Windows Job Object.
+
+Résultat local du lot : **11/11 PASS** sur FIXE avec FFmpeg/FFprobe WinGet réellement exécutés (9 précédents + 2 cas de sécurité), puis `build:types` PASS, `check:browser-types` PASS, `security:check` PASS (827 fichiers dans l'arbre comprenant aussi le F08 non committé d'un autre propriétaire), `git diff --check` PASS. Aucun test matériel OBS/Android ni build installable. F04 reste `partial` et G2 `in_progress`, G3–G5 `open`. Le code reste inaccessible aux routes de production.
+
+Revalidation de régression **après** ces deux corrections : quatre suites ClipForge+roadmap sur FIXE avec option laboratoire explicite : **30 PASS / 42 skipped / 0 FAIL** (72 cas, exit 0). Les 42 skips concernent notamment le comportement POSIX/Linux et ne constituent pas une preuve d'exécution Windows.

@@ -1,5 +1,5 @@
 import { afterEach,describe,expect,it } from 'vitest';
-import { mkdtemp,mkdir,readFile,readdir,rm,stat,writeFile,symlink,link } from 'node:fs/promises';
+import { mkdtemp,mkdir,readFile,readdir,rm,stat,writeFile,symlink,link,copyFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { createHash } from 'node:crypto';
@@ -67,6 +67,27 @@ describe('F04 Windows ClipForge offline laboratory, NOT a production API',()=>{
     expect((await readdir(lab.out)).some(file=>file.endsWith('.intent'))).toBe(true);
     expect((await readdir(lab.out)).some(file=>file.startsWith('.sc3-stage-'))).toBe(false);
   },45000);
+  mediaTest('pins the original grant and clip request despite caller mutations during async filesystem work',async()=>{
+    const lab=await fixture(),grant=await generateVideo(lab);
+    const outsider=path.join(lab.root,'outside.mp4');
+    await writeFile(outsider,'never-authorized-outside-the-source-root');
+    const mutableGrant={...grant};
+    const mutableSegment={...segment,captions:segment.captions.map(c=>({...c}))};
+    const pending=new WindowsOfflineClipForge(lab.src,lab.out,lab.exe,windowsClipLabOptIn)
+      .prepare('frozen_inputs',mutableGrant,mutableSegment);
+    // This happens after validation, but before the first lstat/realpath await completes.
+    // Without a synchronous capture it can redirect a trusted path outside the root.
+    mutableGrant.relativePath='../outside.mp4';
+    mutableGrant.sha256='0'.repeat(64);
+    mutableSegment.endMs=200_000;
+    mutableSegment.captions[0].text='MUTATED BY CALLER';
+    const result=await pending;
+    expect(result.status).toBe('PREPARED');
+    const manifest=JSON.parse(result.manifest!);
+    expect(manifest.sourceSha256).toBe(grant.sha256);
+    expect(manifest.segment).toMatchObject({endMs:1000,fit:'pad',captions:[{text:'Bonjour OBS'}]});
+    expect(await readdir(lab.out)).toContain('frozen_inputs.mp4');
+  },45000);
   mediaTest('refuses repeat or changed SHA without overwriting a confirmed artifact',async()=>{
     const lab=await fixture(),grant=await generateVideo(lab);
     const forge=new WindowsOfflineClipForge(lab.src,lab.out,lab.exe,windowsClipLabOptIn);
@@ -79,6 +100,22 @@ describe('F04 Windows ClipForge offline laboratory, NOT a production API',()=>{
     const changed=await forge.prepare('wrong_sha',{...grant,sha256:'f'.repeat(64)},segment);
     expect(changed.status).toBe('FAILED');
     expect(await readdir(lab.out)).not.toContain('wrong_sha.intent');
+  },45000);
+  mediaTest('keeps a failed encoder reservation UNKNOWN and never retries or deletes forensic staging',async()=>{
+    const lab=await fixture(),grant=await generateVideo(lab);
+    const fakeEncoder=path.join(lab.root,'ffmpeg.exe');
+    // An actual PE binary that exits nonzero on FFmpeg arguments, with no shell involved.
+    await copyFile(lab.exe.ffprobe,fakeEncoder);
+    const forge=new WindowsOfflineClipForge(lab.src,lab.out,{...lab.exe,ffmpeg:fakeEncoder},windowsClipLabOptIn);
+    const first=await forge.prepare('failed_encoder',grant,segment);
+    expect(first).toEqual({status:'UNKNOWN',code:'ENCODER_EXIT'});
+    const files=await readdir(lab.out);
+    expect(files).toContain('failed_encoder.intent');
+    expect(files).not.toContain('failed_encoder.mp4');
+    expect(files).not.toContain('failed_encoder.json');
+    expect(files.some(file=>file.startsWith('.sc3-stage-'))).toBe(true);
+    expect(await forge.prepare('failed_encoder',grant,segment))
+      .toEqual({status:'UNKNOWN',code:'EXISTING_JOB'});
   },45000);
   mediaTest('rejects a bad clip segment before reserving an output',async()=>{
     const lab=await fixture(),grant=await generateVideo(lab);
