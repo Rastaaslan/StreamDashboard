@@ -1,4 +1,5 @@
 import { renderPlanningAssistant } from './streamcockpit-planning.js';
+import { prepareAssistedLocalDraft } from './streamcockpit-planning-draft.js';
 import { expandEditableRecurringItems, recurrenceSummary } from '../shared/recurrence.js';
 import { filterPlanningTemporal, paginatePlanning, periodBounds } from '../planning-model.js';
 import { localDate } from '../shared/planning-editor.js';
@@ -11,6 +12,7 @@ const statusNames={synced:'Synchronisé',error:'Échec',conflict:'Conflit',pendi
 
 export function createPlanning({getData,api,esc,input,select,check,modal,close,toast,refresh,render,prepare,getConnection=()=>false}) {
  let temporal='upcoming',period='',category='',query='',number=1,visible=[],draft,master,revision,scope,exportPreview,bulkPreview,templates=[];
+ let assistedSession=null,assistFlight=false;
  const find=id=>getData().host.planning.find(x=>x.id===id);
  const button=(label,task,extra='',style='secondary')=>`<button type="button" class="${style}" data-planning="${task}" ${extra}>${label}</button>`;
  const canonicalId=item=>item.seriesId||item.id;
@@ -90,6 +92,7 @@ export function createPlanning({getData,api,esc,input,select,check,modal,close,t
   return `<section class="provider-details">${providerStatus(item)}${Object.entries(item.providers||{}).map(([provider,v])=>`${['error','conflict'].includes(v.status)?button('Réessayer '+providerNames[provider],'retry',`data-provider="${provider}"`):''}${v.status==='conflict'&&!item.deletionPending?['local','remote'].map(strategy=>button(strategy==='local'?'Garder StreamDashboard':'Garder '+providerNames[provider],'conflict',`data-provider="${provider}" data-strategy="${strategy}"`)).join(''):''}${Object.entries(v.projections||{}).filter(([,p])=>p.status==='conflict').map(([key,p])=>`<p>${esc(key)} · ${esc(p.lastError||'Conflit sur cette occurrence')}</p>${['local','remote'].map(strategy=>button(strategy==='local'?'Garder StreamDashboard':'Garder la version distante','conflict',`data-provider="${provider}" data-strategy="${strategy}" data-key="${esc(key)}"`)).join('')}`).join('')}`).join('')}</section>`;
  }
  function open(item,requestedScope,duplicate=false){
+  assistedSession=null;
   master=item?find(canonicalId(item)):undefined;
   scope=requestedScope||(item?.occurrenceKey?'occurrence':'series');
   draft=structuredClone(scope==='series'&&master?master:item||{});
@@ -115,11 +118,32 @@ export function createPlanning({getData,api,esc,input,select,check,modal,close,t
   try{
    if(form.id==='planning-event-form'){
     const value=read(form);let result;
+    if(assistedSession){
+      if(assistedSession.writeAttempted)
+        throw new Error('Résultat de création potentiellement incertain : vérifiez le planning sur FIXE avant toute nouvelle demande.');
+      // The user explicitly chose a local-only assisted draft. A provider
+      // checkbox is NOT authority to publish an unverified suggestion.
+      if(master || scope!=='series' || value.category!=='live' || value.allDay ||
+         value.recurrence || value.desiredPublication.twitch || value.desiredPublication.google)
+        throw new Error('Brouillon assisté local uniquement : désactivez Twitch/Google et la récurrence, ou créez un événement classique.');
+      if(!getConnection() || getData()?.host?.hostname!==assistedSession.hostname)
+        throw new Error('Régie changée ou déconnectée. Recommencez la proposition.');
+      await refresh(true);
+      if(!getConnection() || getData()?.host?.hostname!==assistedSession.hostname)
+        throw new Error('La régie a changé pendant la relecture. Aucun événement créé.');
+      prepareAssistedLocalDraft(getData()?.host?.planning,
+        {from:value.startAtUtc,to:value.endAtUtc},Date.now());
+    }
     if(scope==='occurrence'){
      const patch=Object.fromEntries(Object.entries(value).filter(([k,v])=>JSON.stringify(v)!==JSON.stringify(draft[k]??(k==='description'?'':k==='allDay'?false:undefined))));
      result=await api(`/api/v2/planning/${encodeURIComponent(master.id)}/occurrence`,{expectedRevision:revision,occurrenceKey:draft.occurrenceKey,patch},'PUT');
-    }else result=await api('/api/v2/planning'+(master?'/'+encodeURIComponent(master.id):''),{...value,confirmRecurring:!!master?.recurrence||!!value.recurrence,...(master?{expectedRevision:revision}:{})},master?'PUT':'POST');
-    await refresh(true);close();
+    }else{
+      // Set BEFORE the first possible write. A lost acknowledgement cannot
+      // trigger a second create from the same assisted editor.
+      if(assistedSession)assistedSession.writeAttempted=true;
+      result=await api('/api/v2/planning'+(master?'/'+encodeURIComponent(master.id):''),{...value,confirmRecurring:!!master?.recurrence||!!value.recurrence,...(master?{expectedRevision:revision}:{})},master?'PUT':'POST');
+    }
+    await refresh(true);close();assistedSession=null;
     const saved=find(master?.id||result.createdItemId),failed=Object.values(saved?.providers||{}).some(x=>['error','conflict'].includes(x.status));
     toast(failed?'Enregistré sur cet appareil ; une publication nécessite votre attention.':'Événement sauvegardé. Chaque destination affiche le résultat réel de sa publication.');
    }else if(form.id==='planning-export-form'){
@@ -136,6 +160,26 @@ export function createPlanning({getData,api,esc,input,select,check,modal,close,t
  async function click(b){
   const task=b.dataset.planning;if(!task)return false;
   const item=visible[Number(b.dataset.index)];
+  if(task==='assist-new'){
+    if(assistFlight)return true;
+    if(!getConnection())throw new Error('Régie FIXE indisponible : aucun brouillon assisté préparé.');
+    const hostname=getData()?.host?.hostname;
+    if(typeof hostname!=='string'||!hostname)throw new Error('Identité de la régie inconnue.');
+    // A DOM suggestion is never authority: refresh the selected FIXE source
+    // and recompute all recurring/local blockers before opening the editor.
+    const slot={from:b.dataset.from,to:b.dataset.to};
+    assistFlight=true;
+    try{
+      await refresh(true);
+      if(!getConnection()||getData()?.host?.hostname!==hostname)
+        throw new Error('Source de planning changée pendant la vérification.');
+      const prepared=prepareAssistedLocalDraft(getData()?.host?.planning,slot,Date.now());
+      open(prepared);
+      assistedSession={hostname};
+      toast('Créneau revérifié sur la copie du FIXE. Brouillon local non sauvegardé ; Google/Twitch restent inconnus.');
+    }finally{assistFlight=false;}
+    return true;
+  }
   if(task==='new')open();
   if(task==='edit')open(item);
   if(task==='duplicate')open(item,undefined,true);

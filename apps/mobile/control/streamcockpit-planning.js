@@ -9,7 +9,9 @@ export function renderPlanningAssistant(items, { esc, online = false, now = Date
   const disabled = '<button type="button" disabled>Dupliquer vers un brouillon (indisponible)</button><p>La duplication assistée attend une confirmation de sauvegarde et une vérification des conflits dans l’éditeur.</p></section>';
   try {
     if (!Array.isArray(items)) throw new Error('Copie locale indisponible.');
-    const from = new Date(Math.ceil(now / 1800000) * 1800000).toISOString();
+    // Leave enough time to review the draft. A slot at exactly 'now' cannot
+    // pass the safety preflight when the user presses the suggestion button.
+    const from = new Date(Math.ceil((now + 15 * 60_000) / 1800000) * 1800000).toISOString();
     const to = new Date(Date.parse(from) + 86400000).toISOString();
     // observedAt dates this synchronous local read only; it does not refresh provider data.
     const snapshot = [{ source: 'local', status: 'observed', observedAt: new Date(now).toISOString(), from, to, items },
@@ -19,7 +21,10 @@ export function renderPlanningAssistant(items, { esc, online = false, now = Date
     const provenance = [...new Set(items.map(item => [item.source || 'origine inconnue', ...Object.keys(item.providers || {})].join(' / ')))];
     return heading + warning + '<p>' + items.length + ' événement(s) de la copie locale pris en compte, sans les filtres de la page. Provenance : ' + esc(provenance.join(', ') || 'aucun événement') + '.</p>' +
       '<p>Créneaux de 60 minutes dans les prochaines 24 heures · Europe/Paris · sans chevauchement connu dans cette copie.</p><ul>' +
-      slots.map(slot => '<li>' + esc(format.format(new Date(slot.from)) + ' → ' + format.format(new Date(slot.to))) + '</li>').join('') +
+      slots.map(slot => '<li>' + esc(format.format(new Date(slot.from)) + ' → ' + format.format(new Date(slot.to))) +
+        ' <button type="button" data-planning="assist-new" data-from="' + esc(slot.from) +
+        '" data-to="' + esc(slot.to) + '"' + (online ? '' : ' disabled') +
+        '>Vérifier et préparer un brouillon local</button></li>').join('') +
       '</ul>' + (slots.length ? '' : '<p>Aucun créneau trouvé dans cette copie.</p>') + disabled;
   } catch (error) {
     return heading + warning + '<p role="status">Calcul indisponible : ' + esc(error instanceof Error ? error.message : String(error)) + '</p>' + disabled;

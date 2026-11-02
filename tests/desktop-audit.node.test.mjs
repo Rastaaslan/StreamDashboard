@@ -70,6 +70,18 @@ test('Desktop audit: guards, thumbnails, chat focus, destinations and overflow',
     await page.locator('[data-view="camp"]').click();
     await page.locator('[data-refresh-prelive]').click();
     await page.waitForFunction(() => document.querySelector('#runtime-status').textContent === 'Runtime PC');
+    // Runtime readiness and the server WebSocket handshake are independent.
+    // Wait for the actual connection event rather than racing its callback.
+    if (!socket) {
+      await new Promise((resolve, reject) => {
+        const onConnected = () => { clearTimeout(deadline); resolve(); };
+        const deadline = setTimeout(() => {
+          sockets.off('connection', onConnected);
+          reject(new Error('Production WebSocket connection timed out'));
+        }, 5000);
+        sockets.once('connection', onConnected);
+      });
+    }
     assert.ok(socket, 'Production WebSocket connected');
     // Wait for the onopen refresh before starting the interaction checks.
     await page.waitForTimeout(100);

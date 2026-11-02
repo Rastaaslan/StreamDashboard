@@ -353,27 +353,41 @@
       "evidence": [
         {
           "path": "apps/mobile/control/planning.js",
-          "kind": "existing partial implementation only"
+          "kind": "2026-11-02 FIXE F06: local-only suggested-slot button opens the existing event editor after selected-host refresh; a second refresh and conflict recheck precede explicit local save. Remote publication and recurrence are refused in assisted flow, no automatic mutation."
         },
         {
           "path": "packages/core/src/streamcockpit-planning.ts",
-          "kind": "2026-11-01 wave2 integrated, tests only; remaining adapters/UI/hardware unqualified"
+          "kind": "2026-11-01 canonical recurrence, DST, conflict and occurrence engine reused unchanged by F06"
         },
         {
           "path": "apps/mobile/control/streamcockpit-planning.js",
-          "kind": "2026-11-01 wave2 integrated, tests only; remaining adapters/UI/hardware unqualified"
+          "kind": "2026-11-02 FIXE: 60-minute suggestions from the local snapshot, minimum 15-minute lead, explicit disabled-offline buttons; Google/Twitch availability remains UNKNOWN"
+        },
+        {
+          "path": "apps/mobile/control/streamcockpit-planning-draft.js",
+          "kind": "2026-11-02 FIXE: pure preflight of the full cached event list including imported Google records, recurrence/exceptions and pending deletion; no writes or second planning owner"
+        },
+        {
+          "path": "docs/streamcockpit-3/F06_ASSISTED_LOCAL_DRAFT_FIXE_20261102.md",
+          "kind": "2026-11-02 F06 scope, manual confirmation, test evidence and remaining provider/hardware/atomicity limitations"
         }
       ],
       "verifiedTests": [
         "tests/streamcockpit3-planning.test.ts",
         "tests/streamcockpit3-planning-ui.test.ts",
         "tests/streamcockpit3-planning-integration.test.ts",
-        "tests/streamcockpit3-planning-integration-browser.test.ts"
+        "tests/streamcockpit3-planning-integration-browser.test.ts",
+        "tests/streamcockpit3-planning-assisted-draft.test.ts",
+        "tests/streamcockpit3-planning-assistant-browser.test.ts"
       ],
       "hardwareEvidence": [],
-      "blockers": [],
+      "blockers": [
+        "Google and Twitch live availability are UNKNOWN; only cached imported events are considered local blockers and no remote publishing is attempted",
+        "No atomic compare-and-create conflict check on the host for local assisted event saves; concurrent changes after the final read can still cause conflicts",
+        "Existing occurrence duplication remains disabled in the assistant; physical Android/FIXE/laptop reconnect and Google publishing/rollback remain unqualified"
+      ],
       "ownerJob": "streamcockpit/3.0-lot-g",
-      "integrationNote": "Wave4 actual Planning page shows local event suggestions, all Google/Twitch remote availability UNKNOWN and no automatic duplicate/publish"
+      "integrationNote": "2026-11-02 FIXE: the existing three local slot suggestions now offer a separate deliberate prefilled local Live draft, not an automatic copy/publish. The selected FIXE host is refreshed and pinned before editor opening and again before explicit POST /api/v2/planning; full local recurrence/imported Google blockers are checked, provider flags stay false and an offline/changed source fails closed. 22 new unit/integration checks and 2 Microsoft Edge real-touch 320px checks PASS. G2 partial, no hardware/remote availability or atomic host commit evidence."
     },
     {
       "id": "F07",
