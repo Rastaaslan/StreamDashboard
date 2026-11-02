@@ -10,6 +10,12 @@
 - Toute erreur après le point où le POST peut partir — même réponse HTTP 400/403, coupure, jeton changé ou reçu illisible — donne `PREDICTION_OUTCOME_UNCERTAIN`, sans retry ou prétention d'échec définitif.
 - Dans le Live Monitor, une question et des issues peuvent être saisies, prévisualisées et publiées seulement après une case de consentement et un clic **distinct**. Un reçu perdu, une déconnexion, une suspension ou un changement de source pendant l'envoi verrouille la vue jusqu'à déclaration volontaire de vérification Twitch ; aucun appel automatique.
 
+## Durcissement de concurrence FIXE (23 h, 02/11)
+- Deux UUIDs de consentement distincts pour une même chaîne **ne peuvent plus déclencher deux POSTs concurrents** : le service central prend une barrière synchrone par `broadcasterId` avant tout `await`. L'UUID perdant est consommé, retourne 409 et n'émet aucun POST.
+- Une erreur `AdvancedTwitchError` survenue **avant** l'envoi Twitch libère la barrière, permettant un nouveau brouillon volontaire. Un POST confirmé ou potentiellement envoyé conserve la barrière fermée : aucune répétition ou deuxième prédiction implicite dans ce processus.
+- **Limitation volontaire** : aucune réconciliation serveur autorisée n'existe encore pour libérer la barrière après une résolution Twitch. La création d'une seconde prédiction dans le même processus est donc bloquée après succès/incertitude ; redémarrer perd au contraire cette protection et n'est pas une procédure de reprise sûre. Ne pas déclarer cette UX complète avant état durable + réconciliation d'un reçu.
+- Preuve simulée : 14 tests HTTP ciblés, dont deux UUID concurrents et libération après refus pré-POST, 7 tests Edge tactile 320 px, types, sécurité 865 fichiers, types navigateur et revue diff. Aucun véritable POST Twitch effectué.
+
 ## Limites de sécurité / gates
 - Tests HTTP en boucle locale et Microsoft Edge tactile 320 px utilisent **Twitch simulé**, jamais le vrai compte Twitch ni OBS de production. Aucun utilisateur public, aucun live et aucun appareil Android/laptop physique testés.
 - Il n'y a PAS d'atomicité entre OBS, Twitch, un réseau interrompu et la confirmation. Un redémarrage de processus ou un redémarrage de l'application après un POST incertain perd le verrou volatil ; une réconciliation/durabilité sûre est requise pour une certification G3/G4.

@@ -186,19 +186,42 @@ it('F08 concurrent confirmation consumes single in-memory consent before any awa
   expect(h.writes).toHaveBeenCalledTimes(1);
 }));
 
-it('F08 lost POST receipt, including HTTP 403, is UNCERTAIN and NEVER re-sent',()=>fixture(async h=>{
-  for(const mode of ['lost-post','post-error']){
-    h.setMode('normal');
-    const preview=await (await h.request('preview',{draft})).json();
-    h.setMode(mode);
-    const confirmation=await h.request('confirm',{confirmed:true,confirmationId:preview.confirmationId});
-    expect(confirmation.status).toBe(503);
-    expect(await confirmation.json()).toMatchObject({error:{
-      code:'PREDICTION_OUTCOME_UNCERTAIN',retryable:false,
-    }});
-    expect((await h.request('confirm',{confirmed:true,confirmationId:preview.confirmationId})).status).toBe(409);
-  }
-  expect(h.writes).toHaveBeenCalledTimes(2);
+it('F08 two DIFFERENT consent IDs for the same channel cannot create twice',()=>fixture(async h=>{
+  const first=await (await h.request('preview',{draft})).json();
+  const second=await (await h.request('preview',{draft})).json();
+  expect(first.confirmationId).not.toBe(second.confirmationId);
+  const [a,b]=await Promise.all([
+    h.request('confirm',{confirmed:true,confirmationId:first.confirmationId}),
+    h.request('confirm',{confirmed:true,confirmationId:second.confirmationId}),
+  ]);
+  expect([a.status,b.status].sort()).toEqual([200,409]);
+  expect(h.writes).toHaveBeenCalledTimes(1);
+  expect((await h.request('preview',{draft})).status).toBe(409);
+}));
+
+it('F08 confirmed NO-POST preflight failure releases channel fence safely',()=>fixture(async h=>{
+  const first=await (await h.request('preview',{draft})).json();
+  h.setMode('wrong-owner');
+  expect((await h.request('confirm',{confirmed:true,confirmationId:first.confirmationId})).status).toBe(403);
+  expect(h.writes).not.toHaveBeenCalled();
+  h.setMode('normal');
+  const second=await (await h.request('preview',{draft})).json();
+  expect((await h.request('confirm',{confirmed:true,confirmationId:second.confirmationId})).status).toBe(200);
+  expect(h.writes).toHaveBeenCalledTimes(1);
+}));
+
+it.each(['lost-post','post-error'])('F08 %s POST receipt is UNCERTAIN, blocks new consents',mode=>fixture(async h=>{
+  const preview=await (await h.request('preview',{draft})).json();
+  h.setMode(mode);
+  const confirmation=await h.request('confirm',{confirmed:true,confirmationId:preview.confirmationId});
+  expect(confirmation.status).toBe(503);
+  expect(await confirmation.json()).toMatchObject({error:{
+    code:'PREDICTION_OUTCOME_UNCERTAIN',retryable:false,
+  }});
+  expect((await h.request('confirm',{confirmed:true,confirmationId:preview.confirmationId})).status).toBe(409);
+  h.setMode('normal');
+  expect((await h.request('preview',{draft})).status).toBe(409);
+  expect(h.writes).toHaveBeenCalledTimes(1);
 }));
 
 it('F08 normalizer strips whitespace but refuses unknown fields and duplicate choices',()=>{
