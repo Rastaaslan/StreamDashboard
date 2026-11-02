@@ -1,5 +1,17 @@
 import { EventEmitter } from 'node:events';
+import { mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+
+const replayFileGate = vi.hoisted(() => ({ wait: null as Promise<void> | null, entered: false }));
+vi.mock('node:fs/promises', async (importOriginal) => {
+  const real = await importOriginal<typeof import('node:fs/promises')>();
+  return { ...real, lstat: async (...args: Parameters<typeof real.lstat>) => {
+    if (replayFileGate.wait) { replayFileGate.entered = true; await replayFileGate.wait; }
+    return real.lstat(...args);
+  } };
+});
 
 const sockets: FakeSocket[] = [];
 let available = true;
@@ -32,7 +44,7 @@ vi.mock('obs-websocket-js', () => ({ default: FakeSocket }));
 const { ObsClient } = await import('../integrations/obs/src/client.js');
 let obs: InstanceType<typeof ObsClient>;
 const socket = () => sockets.at(-1)!;
-beforeEach(() => { vi.useFakeTimers(); sockets.length = 0; available = true; obs = new ObsClient(); });
+beforeEach(() => { vi.useFakeTimers(); replayFileGate.wait = null; replayFileGate.entered = false; sockets.length = 0; available = true; obs = new ObsClient(); });
 afterEach(async () => { await obs.close(); vi.useRealTimers(); });
 
 describe('OBS runtime resilience', () => {
@@ -166,26 +178,85 @@ it('includes global OBS audio devices even outside scene items', async () => {
 
 
 describe('confirmed replay saves',()=>{
- it('publishes only a verified OBS replay-save observation while streaming, never the file path',async()=>{
-  const observed=vi.fn(); const off=obs.onReplaySaved(observed);
-  await obs.connect();
-  socket().emit('ReplayBufferSaved',{savedReplayPath:'C:/private/offline-clip.mkv'});
-  expect(observed).not.toHaveBeenCalled();
-  await obs.stream(true);
-  socket().emit('ReplayBufferSaved',{savedReplayPath:''});
-  expect(observed).not.toHaveBeenCalled();
-  socket().emit('ReplayBufferSaved',{savedReplayPath:'C:/private/live-clip.mkv'});
-  expect(observed).toHaveBeenCalledTimes(1);
-  const payload=observed.mock.calls[0][0];
-  expect(payload.sourceEventId).toMatch(/^obs_replay_[a-f0-9]{64}$/);
-  expect(JSON.stringify(payload)).not.toContain('private');
-  expect(payload.connectionGeneration).toBe(obs.connectionGeneration);
-  socket().emit('ReplayBufferSaved',{savedReplayPath:'C:/private/live-clip.mkv'});
-  expect(observed.mock.calls[1][0].sourceEventId).toBe(payload.sourceEventId);
-  await obs.stream(false);
-  socket().emit('ReplayBufferSaved',{savedReplayPath:'C:/private/stopped.mkv'});
-  expect(observed).toHaveBeenCalledTimes(2);
-  off();
+ it('publishes only a witnessed, non-empty local replay file while streaming, never its path',async()=>{
+  const folder = await mkdtemp(join(tmpdir(), 'sc3-private-replay-'));
+  const file = join(folder, 'private-live-clip.mkv');
+  try {
+    await writeFile(file, 'a genuine local replay fixture');
+    const observed=vi.fn(); const off=obs.onReplaySaved(observed);
+    await obs.connect();
+    socket().emit('ReplayBufferSaved',{savedReplayPath:file});
+    expect(observed).not.toHaveBeenCalled();
+    await obs.stream(true);
+    socket().emit('ReplayBufferSaved',{savedReplayPath:''});
+    expect(observed).not.toHaveBeenCalled();
+    socket().emit('ReplayBufferSaved',{savedReplayPath:file});
+    await vi.waitFor(()=>expect(observed).toHaveBeenCalledTimes(1));
+    const payload=observed.mock.calls[0][0];
+    expect(payload.sourceEventId).toMatch(/^obs_replay_[a-f0-9]{64}$/);
+    expect(JSON.stringify(payload)).not.toContain('private');
+    expect(JSON.stringify(payload)).not.toContain(folder);
+    expect(payload.connectionGeneration).toBe(obs.connectionGeneration);
+    socket().emit('ReplayBufferSaved',{savedReplayPath:file});
+    await vi.waitFor(()=>expect(observed).toHaveBeenCalledTimes(2));
+    expect(observed.mock.calls[1][0].sourceEventId).toBe(payload.sourceEventId);
+    await obs.stream(false);
+    socket().emit('ReplayBufferSaved',{savedReplayPath:file});
+    expect(observed).toHaveBeenCalledTimes(2);
+    off();
+  } finally { await rm(folder, { recursive: true, force: true }); }
+ });
+ it('refuses missing, empty, relative and directory replay paths without ever publishing a marker', async()=>{
+  const folder = await mkdtemp(join(tmpdir(), 'sc3-invalid-replay-'));
+  try {
+    const empty = join(folder, 'empty.mkv');
+    await writeFile(empty, '');
+    const observed = vi.fn(); const off = obs.onReplaySaved(observed);
+    await obs.connect(); await obs.stream(true);
+    for (const savedReplayPath of [empty, join(folder, 'missing.mkv'), folder, 'relative.mkv']) {
+      socket().emit('ReplayBufferSaved', { savedReplayPath });
+    }
+    // Let the real asynchronous NTFS metadata checks settle under fake timers.
+    await vi.advanceTimersByTimeAsync(150);
+    expect(observed).not.toHaveBeenCalled();
+    off();
+  } finally { await rm(folder, { recursive: true, force: true }); }
+ });
+ it('drops a delayed filesystem observation if OBS stops or disconnects before metadata resolves', async()=>{
+  const folder = await mkdtemp(join(tmpdir(), 'sc3-delayed-replay-'));
+  const file = join(folder, 'private-delayed.mkv');
+  try {
+    await writeFile(file, 'video fixture');
+    const observed = vi.fn(); obs.onReplaySaved(observed);
+    await obs.connect(); await obs.stream(true);
+    let release!: () => void;
+    replayFileGate.wait = new Promise<void>(r => { release = r; });
+    socket().emit('ReplayBufferSaved', { savedReplayPath: file });
+    await vi.waitFor(() => expect(replayFileGate.entered).toBe(true));
+    await obs.stream(false);
+    release(); replayFileGate.wait = null;
+    await vi.advanceTimersByTimeAsync(150);
+    expect(observed).not.toHaveBeenCalled();
+    await obs.stream(true);
+    replayFileGate.wait = new Promise<void>(r => { release = r; }); replayFileGate.entered = false;
+    socket().emit('ReplayBufferSaved', { savedReplayPath: file });
+    await vi.waitFor(() => expect(replayFileGate.entered).toBe(true));
+    // Same WebSocket generation, but a DIFFERENT live after a stop/start:
+    // the old replay event must never be attached to that new session.
+    const oldGeneration = obs.connectionGeneration;
+    await obs.stream(false); await obs.stream(true);
+    expect(obs.connectionGeneration).toBe(oldGeneration);
+    release(); replayFileGate.wait = null;
+    await vi.advanceTimersByTimeAsync(150);
+    expect(observed).not.toHaveBeenCalled();
+    replayFileGate.wait = new Promise<void>(r => { release = r; }); replayFileGate.entered = false;
+    socket().emit('ReplayBufferSaved', { savedReplayPath: file });
+    await vi.waitFor(() => expect(replayFileGate.entered).toBe(true));
+    socket().emit('ConnectionClosed');
+    release(); replayFileGate.wait = null;
+    await vi.advanceTimersByTimeAsync(150);
+    expect(observed).not.toHaveBeenCalled();
+  } finally { replayFileGate.wait = null; await rm(folder, { recursive: true, force: true }); }
  });
  it('refuses an inactive buffer without saving or silently starting it',async()=>{
   await obs.connect();const original=socket().call.getMockImplementation()!;

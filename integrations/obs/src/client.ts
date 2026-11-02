@@ -1,5 +1,7 @@
 import OBSWebSocket, { EventSubscription } from 'obs-websocket-js';
 import { createHmac, randomBytes } from 'node:crypto';
+import { lstat } from 'node:fs/promises';
+import { isAbsolute } from 'node:path';
 import { MicHealthWatch } from './mic-health.js';
 import { AitumSuiteOutputs } from './aitum-suite.js';
 import { isObsRequestRejection, uncertainOutput } from './output-result.js';
@@ -30,6 +32,9 @@ export class ObsClient {
   // Per-runtime secret prevents clients from guessing local replay filenames
   // from the opaque journal event identifier; never exported or persisted.
   private readonly replayEventSalt = randomBytes(32);
+  // A stop -> start on the SAME websocket generation must not reassign a late
+  // replay file metadata result to a different live session.
+  private replayStreamEpoch = 0;
   private replaySaving = false;
   private replayChanging = false;
   async replayStatus() {
@@ -262,7 +267,7 @@ export class ObsClient {
       if (!this.suppressReconnect) this.schedule();
     });
     on('CurrentProgramSceneChanged', ({ sceneName }) => { if (!this.ready) return; this.state.scene = sceneName; this.notify(); this.scheduleRefresh(); });
-    on('StreamStateChanged', ({ outputActive }) => { if (!this.ready) return; this.state.streaming = outputActive; this.state.streamingKnown = true; this.micHealthWatch.updateStream(outputActive); void this.updateMicSubscription(); this.notify(); });
+    on('StreamStateChanged', ({ outputActive }) => { if (!this.ready) return; this.replayStreamEpoch++; this.state.streaming = outputActive; this.state.streamingKnown = true; this.micHealthWatch.updateStream(outputActive); void this.updateMicSubscription(); this.notify(); });
     // InputVolumeMeters is a high-volume event. Do not increment the client's
     // revision or trigger a full OBS refresh for each meter frame.
     client.on('InputVolumeMeters', payload => {
@@ -272,16 +277,28 @@ export class ObsClient {
       if (now - this.micChangeAt > 2_500) { this.micChangeAt = now; this.notify(); }
     });
     on('RecordStateChanged', ({ outputActive }) => { if (!this.ready) return; this.state.recording = outputActive; this.notify(); });
-    // A genuine OBS replay-save event, not a request acknowledgement. Never
-    // publish the local filename to remote clients or the moments journal.
+    // A genuine OBS replay-save event, not a request acknowledgement. Do not
+    // claim an existing clip solely from a WebSocket path: check a regular,
+    // non-empty file on the FIXE first. This is point-in-time metadata evidence,
+    // not an immutable file grant or an atomic OBS/filesystem transaction.
+    // Never publish the local filename to remote clients or the moments journal.
     on('ReplayBufferSaved', ({ savedReplayPath }) => {
       if (!this.ready || !this.state.connected || !this.state.streamingKnown || !this.state.streaming ||
-          typeof savedReplayPath !== 'string' || !savedReplayPath.trim()) return;
-      const event = { sourceEventId: 'obs_replay_' + createHmac('sha256', this.replayEventSalt).update(savedReplayPath).digest('hex'),
-        connectionGeneration: this.generation, observedAt: Date.now() };
-      for (const listener of this.replaySavedListeners) {
-        try { listener(event); } catch { /* An observer must never disrupt OBS. */ }
-      }
+          typeof savedReplayPath !== 'string' || !isAbsolute(savedReplayPath)) return;
+      const connectionGeneration = this.generation, streamEpoch = this.replayStreamEpoch, observedAt = Date.now();
+      void (async () => {
+        const file = await lstat(savedReplayPath);
+        if (!file.isFile() || file.isSymbolicLink() || file.size <= 0) return;
+        // A disconnect, stop or reconnect while NTFS/network metadata was read
+        // invalidates the event. No retry or backfill of a missed observation.
+        if (!this.ready || !this.state.connected || !this.state.streamingKnown || !this.state.streaming ||
+            (connectionGeneration !== this.generation || streamEpoch !== this.replayStreamEpoch)) return;
+        const event = { sourceEventId: 'obs_replay_' + createHmac('sha256', this.replayEventSalt).update(savedReplayPath).digest('hex'),
+          connectionGeneration, observedAt };
+        for (const listener of this.replaySavedListeners) {
+          try { listener(event); } catch { /* An observer must never disrupt OBS. */ }
+        }
+      })().catch(() => { /* Missing/inaccessible file means no verified observation; never leak the path. */ });
     });
     on('InputMuteStateChanged', ({ inputName, inputMuted }) => {
       if (!this.ready) return;
