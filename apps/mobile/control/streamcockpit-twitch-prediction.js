@@ -7,7 +7,7 @@ export function mountTwitchPrediction(root, {request} = {}) {
   section.setAttribute('aria-label', 'Prédiction Twitch — lecture seule');
   const title = doc.createElement('h3'); title.textContent = 'Prédiction Twitch';
   const explanation = doc.createElement('p'); explanation.className = 'small muted';
-  explanation.textContent = 'Lecture de la prédiction du live sur la régie FIXE. Création et résolution indisponibles.';
+  explanation.textContent = 'Lecture volontaire sur la régie FIXE. Création séparée ci-dessous ; verrouillage et résolution indisponibles.';
   const status = doc.createElement('p'); status.setAttribute('role', 'status'); status.className = 'small';
   const button = doc.createElement('button'); button.type = 'button';
   button.className = 'secondary'; button.textContent = 'Lire la prédiction en cours';

@@ -34,6 +34,7 @@ const POST_EXACT = new Set([
   '/v1/automations','/v1/automations/test',
   '/v1/twitch/channel','/v1/twitch/tags/suggest','/v1/twitch/chat/messages','/v1/twitch/clips','/v1/twitch/moderation/bans',
   '/v1/twitch/advanced/poll/preview','/v1/twitch/advanced/poll/confirm',
+  '/v1/twitch/advanced/prediction/preview','/v1/twitch/advanced/prediction/confirm',
   '/v1/twitch/advanced/shoutout/preview','/v1/twitch/advanced/shoutout/confirm',
     '/v1/twitch/advanced/raid/preview','/v1/twitch/advanced/raid/confirm',
   '/v1/planning','/v1/companion/sync','/v1/discord/planning','/v1/streamer-pings/ack-all',
@@ -90,6 +91,7 @@ export function requiredDevicePermissions(method:string,path:string,body:unknown
   if(method==='GET'&&path==='/v1/twitch/advanced/prediction')return ['chat','cloud'];
   if(method==='POST'&&[
     '/v1/twitch/advanced/poll/preview','/v1/twitch/advanced/poll/confirm',
+    '/v1/twitch/advanced/prediction/preview','/v1/twitch/advanced/prediction/confirm',
     '/v1/twitch/advanced/shoutout/preview','/v1/twitch/advanced/shoutout/confirm',
     '/v1/twitch/advanced/raid/preview','/v1/twitch/advanced/raid/confirm',
   ].includes(path))return ['chat','cloud'];
