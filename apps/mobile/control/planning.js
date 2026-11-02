@@ -141,7 +141,7 @@ export function createPlanning({getData,api,esc,input,select,check,modal,close,t
       // Set BEFORE the first possible write. A lost acknowledgement cannot
       // trigger a second create from the same assisted editor.
       if(assistedSession)assistedSession.writeAttempted=true;
-      result=await api('/api/v2/planning'+(master?'/'+encodeURIComponent(master.id):''),{...value,confirmRecurring:!!master?.recurrence||!!value.recurrence,...(master?{expectedRevision:revision}:{})},master?'PUT':'POST');
+      result=await api('/api/v2/planning'+(master?'/'+encodeURIComponent(master.id):''),{...value,confirmRecurring:!!master?.recurrence||!!value.recurrence,...(master?{expectedRevision:revision}:{}),...(assistedSession?{assistedLocalSlot:true}:{})},master?'PUT':'POST');
     }
     await refresh(true);close();assistedSession=null;
     const saved=find(master?.id||result.createdItemId),failed=Object.values(saved?.providers||{}).some(x=>['error','conflict'].includes(x.status));

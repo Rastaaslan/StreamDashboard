@@ -370,6 +370,10 @@
         {
           "path": "docs/streamcockpit-3/F06_ASSISTED_LOCAL_DRAFT_FIXE_20261102.md",
           "kind": "2026-11-02 F06 scope, manual confirmation, test evidence and remaining provider/hardware/atomicity limitations"
+        },
+        {
+          "path": "apps/server/src/streamcockpit-planning-assisted.ts",
+          "kind": "2026-11-02 FIXE host rechecks assisted local-only time slot INSIDE serialized planning queue before creating event, using canonical recurrence/imported Google conflict inspector; no remote availability or durable transaction claimed"
         }
       ],
       "verifiedTests": [
@@ -378,16 +382,17 @@
         "tests/streamcockpit3-planning-integration.test.ts",
         "tests/streamcockpit3-planning-integration-browser.test.ts",
         "tests/streamcockpit3-planning-assisted-draft.test.ts",
+        "tests/streamcockpit3-planning-assisted-host.test.ts",
         "tests/streamcockpit3-planning-assistant-browser.test.ts"
       ],
       "hardwareEvidence": [],
       "blockers": [
         "Google and Twitch live availability are UNKNOWN; only cached imported events are considered local blockers and no remote publishing is attempted",
-        "No atomic compare-and-create conflict check on the host for local assisted event saves; concurrent changes after the final read can still cause conflicts",
+        "Host queue now rechecks conflicts just before assisted local creation; no atomic transaction with external Google/Twitch state or durable storage, and post-COMMIT power-loss/reconciliation is unqualified",
         "Existing occurrence duplication remains disabled in the assistant; physical Android/FIXE/laptop reconnect and Google publishing/rollback remain unqualified"
       ],
       "ownerJob": "streamcockpit/3.0-lot-g",
-      "integrationNote": "2026-11-02 FIXE: the existing three local slot suggestions now offer a separate deliberate prefilled local Live draft, not an automatic copy/publish. The selected FIXE host is refreshed and pinned before editor opening and again before explicit POST /api/v2/planning; full local recurrence/imported Google blockers are checked, provider flags stay false and an offline/changed source fails closed. 22 new unit/integration checks and 2 Microsoft Edge real-touch 320px checks PASS. G2 partial, no hardware/remote availability or atomic host commit evidence."
+      "integrationNote": "2026-11-02 FIXE: the existing three local slot suggestions offer a deliberate prefilled local Live draft, not automatic copy/publish. FIXE is refreshed/pinned before editor and POST, local recurrence/imported Google blockers checked, provider flags false. New assistedLocalSlot:true flag makes FIXE server recheck canonical conflicts within its serialized planning queue before the local create; simultaneous competing requests return one 201 / one 409 in loopback. Earlier 22 unit/integration and 2 real Edge touch 320px checks PASSED; new host-focused 7/7, combined focused 37/37 PASS. G2 partial; external Google/Twitch availability, physical devices and atomic durable storage unqualified."
     },
     {
       "id": "F07",

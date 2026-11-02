@@ -174,7 +174,7 @@ describe('F06 actual planning mobile integration',()=>{
     const [path,body,method]=f.api.mock.calls[0];
     expect(path).toBe('/api/v2/planning');
     expect(method).toBe('POST');
-    expect(body).toMatchObject({category:'live',desiredPublication:{local:true,google:false,twitch:false}});
+    expect(body).toMatchObject({category:'live',assistedLocalSlot:true,desiredPublication:{local:true,google:false,twitch:false}});
     expect(body).not.toHaveProperty('providers');
     expect(f.close).toHaveBeenCalledTimes(1);
     expect(f.refresh).toHaveBeenCalledTimes(3);

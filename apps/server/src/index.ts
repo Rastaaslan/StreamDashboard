@@ -18,6 +18,7 @@ import { publicInstallationDevice, deviceRoleAvailable, type InstallationDevice 
 import { WizeBotService } from './wizebot-service.js';
 import { measureSync, syncBatch, syncDiagnostics } from '../../../packages/core/src/sync-performance.js';
 import { bulkDeleteSelection } from '../../../packages/core/src/planning-bulk-delete.js';
+import { assertAssistedLocalSlot } from './streamcockpit-planning-assisted.js';
 import { TwitchTagIntelligence } from '../../../packages/core/src/tag-intelligence.js';
 import { resolveTags, editedTags, tagMetadata, tagPreferences, type TagEngine } from '../../../packages/core/src/tags.js';
 import { googleRecurrence, parseGoogleRecurrence } from '../../../integrations/google-calendar/src/recurrence.js';
@@ -2547,7 +2548,12 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
       } : { local: true, twitch: false, google: false };
       if (desired.twitch && (category !== 'live' || allDay)) throw new Error('La publication Twitch nécessite un événement Live avec des horaires précis.');
       const beforeIds = new Set(local.planning.map(item => item.id));
-      const created = await plan(async () => planning().create({
+      const created = await plan(async () => {
+        if (req.body?.assistedLocalSlot === true) {
+          // Recheck on FIXE inside the same planning queue as mutations.
+          assertAssistedLocalSlot({ ...input, category, allDay, desiredPublication: desired }, local.planning);
+        }
+        return planning().create({
         ...(res.locals.autonomyId ? { id: String(res.locals.autonomyId) } : {}),
         title,
         description: typeof input.description === 'string' ? input.description.slice(0, 4000) : '',
@@ -2562,7 +2568,8 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
         tags: tagMetadata(input.tags),
         tagPreferences: tagPreferences(input.tagPreferences),
         recurrence: input.recurrence ? validateRecurrence(input.recurrence) : undefined,
-      }));
+        });
+      });
       for (const created of local.planning.filter(item => !beforeIds.has(item.id))) {
         local.companion.eventRevisions[created.id] = 1;
         local.companion.eventHistory[created.id] = structuredClone(created) as unknown as Record<string, unknown>;
