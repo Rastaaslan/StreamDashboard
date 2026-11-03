@@ -328,9 +328,30 @@ export class TwitchClient {
     return this.api('/eventsub/subscriptions', { method: 'POST', body: JSON.stringify({ type: 'channel.channel_points_custom_reward_redemption.add', version: '1', condition: { broadcaster_user_id: this.credentials.broadcasterId }, transport: { method: 'websocket', session_id: sessionId } }) });
   }
 
+  automodEventSubRequested() { return this.hasScope('moderator:manage:automod'); }
+
+  private async subscribeAutomodNotifications(sessionId:string) {
+    this.requireScope('moderator:manage:automod');
+    if (!/^[A-Za-z0-9_-]{1,200}$/.test(sessionId)) throw new Error('Session EventSub invalide.');
+    for(const type of ['automod.message.hold','automod.message.update'] as const) {
+      await this.api('/eventsub/subscriptions',{method:'POST',body:JSON.stringify({
+        type,version:'2',
+        condition:{broadcaster_user_id:this.credentials.broadcasterId,moderator_user_id:this.credentials.broadcasterId},
+        transport:{method:'websocket',session_id:sessionId},
+      })});
+    }
+  }
+
   async subscribeEventSub(sessionId: string) {
     if (this.grantedScopes.has(CHAT_READ_SCOPE)) await this.subscribeChat(sessionId);
     if (this.hasScope(REDEMPTIONS_SCOPE)) await this.subscribeRewardRedemptions(sessionId);
+    // AutoMod notifications are optional. Failure must not drop the live chat.
+    let automodSubscribed=false;
+    if (this.automodEventSubRequested()) {
+      try { await this.subscribeAutomodNotifications(sessionId); automodSubscribed=true; }
+      catch { automodSubscribed=false; }
+    }
+    return {automodSubscribed};
   }
 
   async customRewards() {

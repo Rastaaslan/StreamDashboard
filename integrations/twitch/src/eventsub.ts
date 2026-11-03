@@ -1,4 +1,5 @@
 import WebSocket from 'ws';
+import {parseAutomodNotification,type AutomodObservation} from './streamcockpit-automod-queue.js';
 
 const EVENTSUB_URL = 'wss://eventsub.wss.twitch.tv/ws?keepalive_timeout_seconds=30';
 
@@ -79,6 +80,7 @@ export class TwitchEventSub {
     private readonly onStatus: (status: 'CONNECTING' | 'CONNECTED' | 'DEGRADED' | 'DISCONNECTED', error?: string) => void,
     private readonly createSocket = (url: string) => new WebSocket(url),
     private readonly onRewardRedemption: (redemption: TwitchRewardRedemption) => void = () => undefined,
+    private readonly onAutomod: (notice: AutomodObservation) => void = () => undefined,
   ) {}
 
   start() { if (!this.stopped) return; this.stopped = false; this.connect(EVENTSUB_URL, true); }
@@ -119,6 +121,8 @@ export class TwitchEventSub {
       if (message) this.onMessage(message);
       const redemption = parseRewardRedemptionNotification(value);
       if (redemption) this.onRewardRedemption(redemption);
+      const automod=parseAutomodNotification(value);
+      if (automod) this.onAutomod(automod);
     });
     socket.on('error', () => { if (!this.stopped && this.socket === socket) this.onStatus('DEGRADED', 'Connexion EventSub indisponible.'); });
     socket.on('close', () => {

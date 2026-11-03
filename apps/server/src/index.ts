@@ -76,6 +76,7 @@ import { createTwitchPredictionCreateRouter } from './streamcockpit-twitch-predi
 import { TwitchClient, TwitchHttpError } from '../../../integrations/twitch/src/client.js';
 import { TwitchPreflight } from '../../../integrations/twitch/src/preflight.js';
 import { TwitchEventSub, type TwitchChatMessage, type TwitchRewardRedemption } from '../../../integrations/twitch/src/eventsub.js';
+import {ObservedAutoModQueue} from '../../../integrations/twitch/src/streamcockpit-automod-queue.js';
 import { DiscordClient } from '../../../integrations/discord/src/client.js';
 import { expandRecurringItems, expandEditableRecurringItems, mergeOccurrencePatch } from '../../../packages/core/src/recurrence.js';
 import { EventCore } from '../../../packages/core/src/events.js';
@@ -769,6 +770,8 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
   let chatMessages: TwitchChatMessage[] = [];
   let chatStatus: 'CONNECTING' | 'CONNECTED' | 'DEGRADED' | 'DISCONNECTED' = 'DISCONNECTED';
   let twitchEventSubKey = '';
+  let automodSubscribed=false;
+  const observedAutoMod=new ObservedAutoModQueue();
   let googleError: string | null = null;
   let googleOAuthAttempt: GoogleOAuthAttempt | null = null;
   let googleOAuthTimeout: ReturnType<typeof setTimeout> | undefined;
@@ -787,7 +790,11 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
     updateChannel: value => twitch.updateChannelMetadata(value),
   });
   const twitchEventSub = new TwitchEventSub(
-    sessionId => twitch.subscribeEventSub(sessionId),
+    async sessionId => {
+      const result=await twitch.subscribeEventSub(sessionId);
+      automodSubscribed=result.automodSubscribed;
+      return result;
+    },
     message => {
       if (!twitch.controlCapabilities().chatRead || message.broadcasterId !== twitch.publicIdentity().broadcasterId) return;
       if (chatMessages.some(item => item.id === message.id)) return;
@@ -796,6 +803,8 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
       broadcast();
     },
     (status, error) => {
+      observedAutoMod.connection(status, automodSubscribed?twitch.publicIdentity().broadcasterId:'');
+      if(status==='DISCONNECTED')automodSubscribed=false;
       const chatEnabled = twitch.controlCapabilities().chatRead;
       chatStatus = chatEnabled ? status : 'DISCONNECTED';
       if (chatEnabled) eventCore.publish({ type: status === 'CONNECTED' ? 'integration.connected' : status === 'DISCONNECTED' ? 'integration.disconnected' : 'integration.degraded', source: 'twitch-chat', payload: { integration: 'twitch-chat', status, ...(error ? { error } : {}) } });
@@ -823,6 +832,10 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
       eventCore.publish({ type: 'streamer.ping.received', source: 'twitch', occurredAt: ping.createdAt, correlationId: ping.id, payload: ping });
       void save().catch(logError);
       broadcast();
+    },
+    notice=>{
+      if(!automodSubscribed || !twitch.automodEventSubRequested())return;
+      if(observedAutoMod.receive(notice))broadcast();
     },
   );
 
@@ -1613,8 +1626,9 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
   const reconcileTwitchEventSub = () => {
     if (!capabilityEnabled('chat')) { twitchEventSub.stop(); return; }
     const capabilities = twitch.controlCapabilities();
-    const key = twitch.state.connected && (capabilities.chatRead || capabilities.redemptions)
-      ? JSON.stringify([twitch.publicIdentity().broadcasterId, capabilities.chatRead, capabilities.redemptions]) : '';
+    const automodAllowed=twitch.automodEventSubRequested();
+    const key = twitch.state.connected && (capabilities.chatRead || capabilities.redemptions || automodAllowed)
+      ? JSON.stringify([twitch.publicIdentity().broadcasterId, capabilities.chatRead, capabilities.redemptions, automodAllowed]) : '';
     if (key === twitchEventSubKey) return;
     twitchEventSubKey = key;
     twitchEventSub.stop();
@@ -2024,6 +2038,8 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
   app.use('/api/v1/twitch/advanced/moderation', createTwitchModerationRouter({
     api: new ModerationTwitch(advancedTwitchCredentials, runtimeFetch()),
     actor: pairedF08Actor,
+    held:()=>observedAutoMod.snapshot(twitch.publicIdentity().broadcasterId,
+      twitch.state.connected&&twitch.automodEventSubRequested()),
     host: async () => {
       if (options.obsEnabled === false || options.timerAuthority === false) return undefined;
       const device = await options.deviceDescriptor?.().catch(() => undefined);

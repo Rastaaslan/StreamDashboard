@@ -9,6 +9,9 @@ const exact=(v:unknown,keys:string[])=>v!==null&&typeof v==='object'&&!Array.isA
 export function createTwitchModerationRouter(options:{
   api:ModerationTwitch;actor(req:Request):TwitchActor|Promise<TwitchActor>;
   host():string|undefined|Promise<string|undefined>;now?:()=>number;
+  /** Host-only EventSub observations, not a complete Twitch queue. */
+  held?():{schemaVersion:1;kind:'streamcockpit-automod-observed';status:'partial-observation'|'unavailable';
+    observedAt:number|null;messages:unknown[]};
 }){
   const now=options.now??Date.now,pending=new Map<string,{actor:string;host:string;until:number;target:ModerationTarget}>();
   let busy=false;
@@ -20,6 +23,24 @@ export function createTwitchModerationRouter(options:{
     if(!host||expected&&host!==expected.host)throw new AdvancedTwitchError('precondition');
     return {actor:a.id,host};
   };
+  // Manual GET only. A disconnected/incomplete EventSub stream must never
+  // imply that the real Twitch AutoMod queue is empty.
+  router.all('/held',async(req,res)=>{
+    if(req.method!=='GET'){res.set('Allow','GET').status(405).json({error:{code:'METHOD_NOT_ALLOWED'}});return;}
+    try{
+      const context=await check(req);
+      const value=options.held?.()??{schemaVersion:1 as const,
+        kind:'streamcockpit-automod-observed' as const,status:'unavailable' as const,
+        observedAt:null,messages:[]};
+      await check(req,context);
+      res.json(value);
+    }catch(error){
+      const code=error instanceof AdvancedTwitchError?error.code:'unavailable';
+      res.status(code==='unauthorized'?401:code==='forbidden'?403:code==='precondition'?409:503).json({
+        error:{code:'MODERATION_'+code.toUpperCase().replaceAll('-','_'),retryable:false},
+      });
+    }
+  });
   for(const operation of ['preview','confirm']as const)router.all('/'+operation,async(req,res)=>{
     if(req.method!=='POST'){res.set('Allow','POST').status(405).json({error:{code:'METHOD_NOT_ALLOWED'}});return}
     let sent=false,ownsBusy=false;

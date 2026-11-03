@@ -20,16 +20,22 @@ export function mountTwitchModeration(root,{request}={}){
   review.append(description,agreement,confirm);
   const status=doc.createElement('p');status.setAttribute('role','status');
   const reconcile=doc.createElement('button');reconcile.type='button';reconcile.textContent="J’ai vérifié le réglage dans Twitch";reconcile.hidden=true;
-  section.append(title,note,form,review,status,reconcile);root.append(section);
-  let disposed=false,online=false,sourceKey='',accountKey='',revision=0,flight=false,sending=false,uncertain=false,pending;
+  const heldTitle=doc.createElement('h4');heldTitle.textContent='Messages retenus par AutoMod';
+  const heldRefresh=doc.createElement('button');heldRefresh.type='button';heldRefresh.textContent='Lire les retenues observées';
+  const heldStatus=doc.createElement('p');heldStatus.setAttribute('aria-live','polite');
+  const heldList=doc.createElement('ul');heldList.setAttribute('aria-label','Retenues AutoMod observées');
+  section.append(title,note,form,review,status,reconcile,heldTitle,heldRefresh,heldStatus,heldList);root.append(section);
+  let disposed=false,online=false,declaredOnline=false,sourceKey='',accountKey='',revision=0,flight=false,sending=false,uncertain=false,pending;
+  let heldFlight=false,heldRevision=0;
   const connected=()=>!disposed&&root.isConnected&&online&&sourceKey&&view?.navigator?.onLine!==false&&doc.visibilityState!=='hidden';
   const cancel=()=>{pending=undefined;review.hidden=true;agree.checked=false};
   const draw=()=>{
     const enabled=connected()&&!flight&&!uncertain&&typeof request==='function';
     select.disabled=preview.disabled=!enabled;agree.disabled=!enabled||!pending;
     confirm.disabled=!enabled||!pending||!agree.checked||Date.now()>=pending.expiresAt;reconcile.hidden=!uncertain;
+    heldRefresh.disabled=!connected()||heldFlight||typeof request!=='function';
   };
-  const invalidate=message=>{revision++;if(sending)uncertain=true;flight=false;cancel();status.textContent=uncertain?'Issue incertaine. Vérifiez le réglage dans Twitch ; aucun renvoi automatique.':message;draw()};
+  const invalidate=message=>{revision++;heldRevision++;heldList.replaceChildren();heldStatus.textContent='Observations effacées : relecture manuelle nécessaire.';if(sending)uncertain=true;flight=false;cancel();status.textContent=uncertain?'Issue incertaine. Vérifiez le réglage dans Twitch ; aucun renvoi automatique.':message;draw()};
   const change=()=>{
     const [kind,value]=select.value.split(':');
     return {kind,value:kind==='shield'?value==='true':Number(value)};
@@ -66,14 +72,41 @@ export function mountTwitchModeration(root,{request}={}){
     }catch{uncertain=true;status.textContent='Issue incertaine. Vérifiez le réglage dans Twitch avant une nouvelle demande. Aucun renvoi automatique.'}
     finally{sending=false;if(key===revision)flight=false;draw()}
   });
-  const offline=()=>invalidate('Hors ligne : confirmation invalidée.');
-  const resume=()=>invalidate('Connexion ou vue reprise : vérification requise.');
+  // Voluntary read-only refresh; unlike the settings button it never makes
+  // a Twitch write. Data only covers messages witnessed by FIXE EventSub.
+  heldRefresh.addEventListener('click',async()=>{
+    if(!connected()||heldFlight||typeof request!=='function')return;
+    const target=sourceKey,key=++heldRevision;
+    heldFlight=true;heldList.replaceChildren();
+    heldStatus.textContent='Lecture des retenues observées par FIXE…';draw();
+    try{
+      const data=await request('/api/v1/twitch/advanced/moderation/held',undefined,'GET',target);
+      if(key!==heldRevision||target!==sourceKey||!connected())return;
+      if(data?.kind!=='streamcockpit-automod-observed'||data.schemaVersion!==1||
+        !['partial-observation','unavailable'].includes(data.status)||
+        !Array.isArray(data.messages)||data.messages.length>50)throw Error('INVALID_OBSERVATION');
+      for(const item of data.messages){
+        if(typeof item?.id!=='string'||typeof item?.text!=='string'||
+          typeof item?.userName!=='string'||typeof item?.heldAt!=='string')throw Error('INVALID_ITEM');
+        const li=doc.createElement('li');
+        li.textContent=item.userName.slice(0,100)+' : '+item.text.slice(0,500);
+        heldList.append(li);
+      }
+      heldStatus.textContent=data.status==='unavailable'
+        ?'EventSub indisponible ou scope manquant. Rien ne prouve que la file Twitch soit vide.'
+        :'Réception partielle : '+data.messages.length+' message(s) vus depuis la connexion. Cette liste ne remplace pas la file Twitch.';
+    }catch{
+      if(key===heldRevision&&connected())heldStatus.textContent='Lecture AutoMod indisponible ; consultez Twitch. Aucun message supposé approuvé.';
+    }finally{heldFlight=false;if(key===heldRevision)draw();}
+  });
+  const offline=()=>{online=false;invalidate('Hors ligne : confirmation invalidée.');};
+  const resume=event=>{if(event.type==='online')online=declaredOnline;invalidate('Connexion ou vue reprise : vérification requise.');};
   view?.addEventListener('offline',offline);view?.addEventListener('online',resume);doc.addEventListener('visibilitychange',resume);
   status.textContent='Source non associée.';draw();
   return {update(context={}){
     if(disposed)return;
     const next=context.online===true,key=typeof context.sourceKey==='string'?context.sourceKey:'',account=typeof context.accountKey==='string'?context.accountKey:'';
-    const changed=next!==online||key!==sourceKey||account!==accountKey;online=next;sourceKey=key;accountKey=account;
+    const changed=next!==online||key!==sourceKey||account!==accountKey;declaredOnline=next;online=next;sourceKey=key;accountKey=account;
     if(changed)invalidate(online?'Prêt à vérifier un réglage.':'Source déconnectée.');else draw();
   },destroy(){disposed=true;invalidate('Vue fermée.');view?.removeEventListener('offline',offline);view?.removeEventListener('online',resume);doc.removeEventListener('visibilitychange',resume);section.remove()}};
 }
