@@ -34,3 +34,45 @@ export function prepareAssistedLocalDraft(items, slot, now = Date.now()) {
     providers:{},
   };
 }
+
+/** Stable identity check: a duplicate must use the same reviewed live after refresh. */
+export function assistedDuplicateSourceFingerprint(item) {
+  if (!item || typeof item.id !== 'string' || !item.id || item.category !== 'live' ||
+      typeof item.title !== 'string' || !item.title.trim() ||
+      item.allDay || item.recurrence || item.deletionPending || item.conflict ||
+      item.transferId || item.transferredTo ||
+      !Number.isFinite(Date.parse(item.startAtUtc)) ||
+      !Number.isFinite(Date.parse(item.endAtUtc)) ||
+      Date.parse(item.endAtUtc) <= Date.parse(item.startAtUtc) ||
+      Object.values(item.providers || {}).some(p => !p ||
+        ['conflict', 'error', 'pending'].includes(p.status))) {
+    throw new Error('Session à dupliquer indisponible ou incertaine.');
+  }
+  const copy = { id:item.id, title:item.title, description:item.description,
+    startAtUtc:item.startAtUtc, endAtUtc:item.endAtUtc, category:item.category,
+    twitchCategoryId:item.twitchCategoryId, twitchCategoryName:item.twitchCategoryName,
+    tags:item.tags, tagPreferences:item.tagPreferences, providers:item.providers };
+  return JSON.stringify(copy);
+}
+
+/** Duplicate a single reviewed live into an UNSAVED, LOCAL-ONLY editor.
+ * Never clone IDs, recurrence, provider projections or publication authority.
+ */
+export function prepareAssistedLocalDuplicate(items, sourceId, slot, now = Date.now()) {
+  const base = prepareAssistedLocalDraft(items, slot, now);
+  const found = items.filter(item => item?.id === sourceId);
+  if (typeof sourceId !== 'string' || !sourceId || found.length !== 1)
+    throw new Error('Session source introuvable ou ambiguë.');
+  const source = found[0];
+  assistedDuplicateSourceFingerprint(source);
+  if (source.tags && (!Array.isArray(source.tags.values) ||
+      !source.tags.values.every(value => typeof value === 'string')))
+    throw new Error('Tags de la session source invalides.');
+  const title = source.title.slice(0, 132).trimEnd() + ' (copie)';
+  return {...base, title, description: typeof source.description === 'string' ?
+      source.description.slice(0, 4000) : '',
+    twitchCategoryId: typeof source.twitchCategoryId === 'string' ? source.twitchCategoryId : '',
+    twitchCategoryName: typeof source.twitchCategoryName === 'string' ? source.twitchCategoryName : '',
+    ...(source.tags ? {tags:structuredClone(source.tags)} : {}),
+    ...(source.tagPreferences ? {tagPreferences:structuredClone(source.tagPreferences)} : {})};
+}

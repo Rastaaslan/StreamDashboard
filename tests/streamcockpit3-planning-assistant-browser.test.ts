@@ -111,3 +111,85 @@ it.skipIf(process.env.PLANNING_ASSIST_BROWSER_TEST!=='1')(
     expect(await page.evaluate(()=>(window as any).calls)).toEqual([]);
   }finally{await browser.close()}
 },30000);
+
+it.skipIf(process.env.PLANNING_ASSIST_BROWSER_TEST!=='1')(
+  'F06: real Edge 320px duplicates one selected live into a local-only editor then explicit save',async()=>{
+  const bundle=await build({stdin:{contents:
+    "import {createPlanning} from './apps/mobile/control/planning.js'; globalThis.createPlanning=createPlanning;",
+    resolveDir:process.cwd()},bundle:true,write:false,format:'iife',platform:'browser'});
+  const browser=await chromium.launch({channel:'msedge',headless:true});
+  try{
+    const page=await browser.newPage({viewport:{width:320,height:740},hasTouch:true});
+    const external:string[]=[];
+    await page.route('**/*',route=>{external.push(route.request().url());return route.abort()});
+    await page.setContent('<meta name="viewport" content="width=device-width,initial-scale=1">'+
+      '<style>*{box-sizing:border-box}body,main{margin:0;max-width:100%}button,select{max-width:100%;white-space:normal}</style>'+
+      '<main id="screen"></main><section id="editor"></section>');
+    await page.addScriptTag({content:bundle.outputFiles[0].text});
+    await page.evaluate(()=>{
+      const w=window as any;
+      w.calls=[];w.errors=[];w.messages=[];
+      const esc=(s:any)=>String(s??'').replaceAll('&','&amp;').replaceAll('<','&lt;')
+        .replaceAll('>','&gt;').replaceAll('"','&quot;');
+      w.data={host:{hostname:'FIXE',planning:[{
+        id:'old-live',title:'Vagrant Saga',description:'Soirée coop',category:'live',
+        startAtUtc:new Date(Date.now()-86400000).toISOString(),
+        endAtUtc:new Date(Date.now()-82800000).toISOString(),
+        desiredPublication:{local:true,twitch:true,google:true},
+        providers:{twitch:{status:'synced',remoteId:'private-provider-key'}},
+        tags:{values:['coop'],source:'manual'},
+      }],settings:{},planningRevisions:{}}};
+      w.planner=w.createPlanning({
+        getData:()=>w.data,getConnection:()=>true,esc,
+        input:(label:string,name:string,value:any='',type:string='text')=>
+          '<label>'+esc(label)+'<input name="'+name+'" type="'+type+'" value="'+esc(value)+'"></label>',
+        select:(label:string,name:string,options:string[][],selected:string)=>
+          '<label>'+esc(label)+'<select name="'+name+'">'+options.map(([v,t])=>
+          '<option value="'+esc(v)+'"'+(v===selected?' selected':'')+'>'+esc(t)+'</option>'
+          ).join('')+'</select></label>',
+        check:(label:string,name:string,checked:boolean)=>
+          '<label>'+esc(label)+'<input name="'+name+'" type="checkbox"'+
+          (checked?' checked':'')+'></label>',
+        modal:(html:string)=>{document.getElementById('editor')!.innerHTML=html},
+        close:()=>{document.getElementById('editor')!.textContent=''},
+        toast:(m:string)=>w.messages.push(m),refresh:async()=>{},render:()=>{},prepare:()=>{},
+        api:async(path:string,body:any,method:string)=>{
+          w.calls.push({path,body,method});
+          if(path!=='/api/v2/planning'||method!=='POST')throw Error('UNEXPECTED_POST');
+          w.data.host.planning.push({...body,id:'new-local'});
+          return {createdItemId:'new-local'};
+        },
+      });
+      document.getElementById('screen')!.innerHTML=w.planner.mobilePage('next');
+      document.getElementById('screen')!.addEventListener('click',(e:any)=>{
+        const button=e.target.closest('button[data-planning]');
+        if(button)w.planner.click(button).catch((error:any)=>w.errors.push(error.message));
+      });
+      document.getElementById('editor')!.addEventListener('submit',(e:any)=>{
+        e.preventDefault();w.planner.submit(e.target).catch((error:any)=>w.errors.push(error.message));
+      });
+    });
+    const choice=page.locator('[data-planning-assistant] [data-planning-assist-source]');
+    expect(await choice.inputValue()).toBe('old-live');
+    const duplicate=page.getByRole('button',{name:'Dupliquer vers un brouillon local'});
+    expect(await duplicate.count()).toBeGreaterThan(0);
+    await duplicate.first().click();
+    const form=page.locator('#editor #planning-event-form');
+    await expect.poll(()=>form.count()).toBe(1);
+    expect(await form.locator('[name="title"]').inputValue()).toBe('Vagrant Saga (copie)');
+    expect(await form.locator('[name="twitch"]').isChecked()).toBe(false);
+    expect(await form.locator('[name="google"]').isChecked()).toBe(false);
+    expect(await page.evaluate(()=>(window as any).calls)).toEqual([]);
+    await form.locator('button:not([type])').last().click();
+    await expect.poll(()=>page.evaluate(()=>(window as any).calls.length)).toBe(1);
+    const result=await page.evaluate(()=>(window as any).calls[0]);
+    expect(result).toMatchObject({path:'/api/v2/planning',method:'POST',
+      body:{title:'Vagrant Saga (copie)',category:'live',assistedLocalSlot:true,
+        desiredPublication:{local:true,google:false,twitch:false}}});
+    expect(result.body.id).toBeUndefined();
+    expect(result.body.providers).toBeUndefined();
+    expect(await page.evaluate(()=>(window as any).errors)).toEqual([]);
+    expect(external).toEqual([]);
+    expect(await page.evaluate(()=>document.documentElement.scrollWidth<=320)).toBe(true);
+  }finally{await browser.close()}
+},30000);

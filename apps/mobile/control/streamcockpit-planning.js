@@ -6,7 +6,19 @@ export function renderPlanningAssistant(items, { esc, online = false, now = Date
   const heading = '<section class="panel spacer" data-planning-assistant aria-label="Planning assisté"><h2>Planning assisté</h2>';
   const warning = '<p>Suggestion locale non publiée · Google / Twitch : UNKNOWN. Fraîcheur distante inconnue ; aucune disponibilité ni synchronisation garantie.</p>' +
     '<p>' + (online ? 'Connexion régie disponible' : 'Hors ligne / connexion non vérifiée') + ' · calcul sur la copie locale uniquement, sans réservation.</p>';
-  const disabled = '<button type="button" disabled>Dupliquer vers un brouillon (indisponible)</button><p>La duplication assistée attend une confirmation de sauvegarde et une vérification des conflits dans l’éditeur.</p></section>';
+  const sources = Array.isArray(items) ? items.filter(item =>
+    typeof item?.id === 'string' && item.id && item.category === 'live' &&
+    typeof item.title === 'string' && item.title.trim() && !item.recurrence &&
+    !item.allDay && !item.deletionPending && !item.conflict &&
+    Number.isFinite(Date.parse(item.startAtUtc)) && Number.isFinite(Date.parse(item.endAtUtc)) &&
+    Date.parse(item.endAtUtc) > Date.parse(item.startAtUtc) &&
+    !Object.values(item.providers || {}).some(p => !p || ['conflict','error','pending'].includes(p.status))
+  ).slice(0,8) : [];
+  const sourceSelect = sources.length ? '<label>Live à copier <select data-planning-assist-source>' +
+    sources.map(item => '<option value="' + esc(item.id) + '">' + esc(item.title) + '</option>').join('') +
+    '</select></label>' : '';
+  const footer = sources.length ? '<p>Duplication : brouillon local non enregistré, aucune publication automatique.</p></section>' :
+    '<button type="button" disabled>Dupliquer vers un brouillon (indisponible)</button><p>Aucun live simple éligible dans la copie locale.</p></section>';
   try {
     if (!Array.isArray(items)) throw new Error('Copie locale indisponible.');
     // Leave enough time to review the draft. A slot at exactly 'now' cannot
@@ -20,14 +32,18 @@ export function renderPlanningAssistant(items, { esc, online = false, now = Date
     const format = new Intl.DateTimeFormat('fr-FR', { timeZone: PLANNING_ZONE, dateStyle: 'short', timeStyle: 'long' });
     const provenance = [...new Set(items.map(item => [item.source || 'origine inconnue', ...Object.keys(item.providers || {})].join(' / ')))];
     return heading + warning + '<p>' + items.length + ' événement(s) de la copie locale pris en compte, sans les filtres de la page. Provenance : ' + esc(provenance.join(', ') || 'aucun événement') + '.</p>' +
-      '<p>Créneaux de 60 minutes dans les prochaines 24 heures · Europe/Paris · sans chevauchement connu dans cette copie.</p><ul>' +
+      '<p>Créneaux de 60 minutes dans les prochaines 24 heures · Europe/Paris · sans chevauchement connu dans cette copie.</p>' + sourceSelect + '<ul>' +
       slots.map(slot => '<li>' + esc(format.format(new Date(slot.from)) + ' → ' + format.format(new Date(slot.to))) +
         ' <button type="button" data-planning="assist-new" data-from="' + esc(slot.from) +
         '" data-to="' + esc(slot.to) + '"' + (online ? '' : ' disabled') +
-        '>Vérifier et préparer un brouillon local</button></li>').join('') +
-      '</ul>' + (slots.length ? '' : '<p>Aucun créneau trouvé dans cette copie.</p>') + disabled;
+        '>Vérifier et préparer un brouillon local</button>' + (sources.length ?
+        ' <button type="button" data-planning="assist-duplicate" data-from="' + esc(slot.from) +
+        '" data-to="' + esc(slot.to) + '"' + (online ? '' : ' disabled') +
+        '>Dupliquer vers un brouillon local</button>' : '') + '</li>').join('') +
+      '</ul>' + (slots.length ? '' : '<p>Aucun créneau trouvé dans cette copie.</p>') + footer;
   } catch (error) {
-    return heading + warning + '<p role="status">Calcul indisponible : ' + esc(error instanceof Error ? error.message : String(error)) + '</p>' + disabled;
+    return heading + warning + '<p role="status">Calcul indisponible : ' + esc(error instanceof Error ? error.message : String(error)) + '</p>' +
+      '<p>Recommencez après actualisation du planning.</p></section>';
   }
 }
 

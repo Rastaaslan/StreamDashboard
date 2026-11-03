@@ -1,5 +1,6 @@
 import { renderPlanningAssistant } from './streamcockpit-planning.js';
-import { prepareAssistedLocalDraft } from './streamcockpit-planning-draft.js';
+import { prepareAssistedLocalDraft, prepareAssistedLocalDuplicate,
+  assistedDuplicateSourceFingerprint } from './streamcockpit-planning-draft.js';
 import { expandEditableRecurringItems, recurrenceSummary } from '../shared/recurrence.js';
 import { filterPlanningTemporal, paginatePlanning, periodBounds } from '../planning-model.js';
 import { localDate } from '../shared/planning-editor.js';
@@ -131,6 +132,12 @@ export function createPlanning({getData,api,esc,input,select,check,modal,close,t
       await refresh(true);
       if(!getConnection() || getData()?.host?.hostname!==assistedSession.hostname)
         throw new Error('La régie a changé pendant la relecture. Aucun événement créé.');
+      if(assistedSession.sourceId){
+        const sources=getData()?.host?.planning?.filter(x=>x?.id===assistedSession.sourceId)||[];
+        if(sources.length!==1 ||
+           assistedDuplicateSourceFingerprint(sources[0])!==assistedSession.sourceFingerprint)
+          throw new Error('Session source modifiée pendant la relecture. Aucun événement créé.');
+      }
       prepareAssistedLocalDraft(getData()?.host?.planning,
         {from:value.startAtUtc,to:value.endAtUtc},Date.now());
     }
@@ -160,23 +167,38 @@ export function createPlanning({getData,api,esc,input,select,check,modal,close,t
  async function click(b){
   const task=b.dataset.planning;if(!task)return false;
   const item=visible[Number(b.dataset.index)];
-  if(task==='assist-new'){
+  if(task==='assist-new'||task==='assist-duplicate'){
     if(assistFlight)return true;
     if(!getConnection())throw new Error('Régie FIXE indisponible : aucun brouillon assisté préparé.');
     const hostname=getData()?.host?.hostname;
     if(typeof hostname!=='string'||!hostname)throw new Error('Identité de la régie inconnue.');
-    // A DOM suggestion is never authority: refresh the selected FIXE source
-    // and recompute all recurring/local blockers before opening the editor.
+    // A DOM suggestion is not authority. Re-read the selected FIXE host, and
+    // reject a changed source event or an unavailable target before editing.
     const slot={from:b.dataset.from,to:b.dataset.to};
+    let sourceId,sourceFingerprint;
+    if(task==='assist-duplicate'){
+      sourceId=b.dataset.sourceId || (typeof document==='undefined' ? undefined :
+        document.querySelector('[data-planning-assistant] [data-planning-assist-source]')?.value);
+      const sources=getData()?.host?.planning?.filter(x=>x?.id===sourceId)||[];
+      if(!sourceId||sources.length!==1)throw new Error('Session source introuvable ou ambiguë.');
+      sourceFingerprint=assistedDuplicateSourceFingerprint(sources[0]);
+    }
     assistFlight=true;
     try{
       await refresh(true);
       if(!getConnection()||getData()?.host?.hostname!==hostname)
         throw new Error('Source de planning changée pendant la vérification.');
-      const prepared=prepareAssistedLocalDraft(getData()?.host?.planning,slot,Date.now());
+      let prepared;
+      if(sourceId){
+        const sources=getData()?.host?.planning?.filter(x=>x?.id===sourceId)||[];
+        if(sources.length!==1 ||
+           assistedDuplicateSourceFingerprint(sources[0])!==sourceFingerprint)
+          throw new Error('Session source modifiée pendant la vérification.');
+        prepared=prepareAssistedLocalDuplicate(getData()?.host?.planning,sourceId,slot,Date.now());
+      }else prepared=prepareAssistedLocalDraft(getData()?.host?.planning,slot,Date.now());
       open(prepared);
-      assistedSession={hostname};
-      toast('Créneau revérifié sur la copie du FIXE. Brouillon local non sauvegardé ; Google/Twitch restent inconnus.');
+      assistedSession={hostname,...(sourceId?{sourceId,sourceFingerprint}:{})};
+      toast('Créneau et source revérifiés sur FIXE. Brouillon local non sauvegardé ; Google/Twitch restent inconnus.');
     }finally{assistFlight=false;}
     return true;
   }

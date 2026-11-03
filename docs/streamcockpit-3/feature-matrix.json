@@ -467,7 +467,7 @@
       "evidence": [
         {
           "path": "apps/mobile/control/planning.js",
-          "kind": "2026-11-02 FIXE F06: local-only suggested-slot button opens the existing event editor after selected-host refresh; a second refresh and conflict recheck precede explicit local save. Remote publication and recurrence are refused in assisted flow, no automatic mutation."
+          "kind": "2026-11-03 FIXE F06: assisted slot creation and single-live duplication reuse the existing editor; the chosen live is re-fingerprinted after FIXE refresh and again before an explicit single local-only POST. Provider publication/recurrence refused, no automatic mutation; 42 targeted tests PASS including real Edge 320px duplicate UI; no hardware or Google publication claim."
         },
         {
           "path": "packages/core/src/streamcockpit-planning.ts",
@@ -475,11 +475,11 @@
         },
         {
           "path": "apps/mobile/control/streamcockpit-planning.js",
-          "kind": "2026-11-02 FIXE: 60-minute suggestions from the local snapshot, minimum 15-minute lead, explicit disabled-offline buttons; Google/Twitch availability remains UNKNOWN"
+          "kind": "2026-11-03 FIXE: three local 60-minute slots and a selectable list of eligible one-off live sources; duplication buttons disabled while offline; imported cached events remain blockers and Google/Twitch availability remains UNKNOWN"
         },
         {
           "path": "apps/mobile/control/streamcockpit-planning-draft.js",
-          "kind": "2026-11-02 FIXE: pure preflight of the full cached event list including imported Google records, recurrence/exceptions and pending deletion; no writes or second planning owner"
+          "kind": "2026-11-03 FIXE: pure full-list conflict preflight; controlled one-off live copy strips original IDs, recurrence, provider projections and publication settings; source eligibility/fingerprint checked at both FIXE reads; no second planning owner"
         },
         {
           "path": "docs/streamcockpit-3/F06_ASSISTED_LOCAL_DRAFT_FIXE_20261102.md",
@@ -503,10 +503,10 @@
       "blockers": [
         "Google and Twitch live availability are UNKNOWN; only cached imported events are considered local blockers and no remote publishing is attempted",
         "Host queue now rechecks conflicts just before assisted local creation; no atomic transaction with external Google/Twitch state or durable storage, and post-COMMIT power-loss/reconciliation is unqualified",
-        "Existing occurrence duplication remains disabled in the assistant; physical Android/FIXE/laptop reconnect and Google publishing/rollback remain unqualified"
+        "Assisted copy of simple one-off live is now available and tested in Edge 320px; recurring occurrence duplication remains excluded. Physical Android/FIXE/laptop reconnection and real Google publishing/rollback remain unqualified"
       ],
       "ownerJob": "streamcockpit/3.0-lot-g",
-      "integrationNote": "2026-11-02 FIXE: the existing three local slot suggestions offer a deliberate prefilled local Live draft, not automatic copy/publish. FIXE is refreshed/pinned before editor and POST, local recurrence/imported Google blockers checked, provider flags false. New assistedLocalSlot:true flag makes FIXE server recheck canonical conflicts within its serialized planning queue before the local create; simultaneous competing requests return one 201 / one 409 in loopback. Earlier 22 unit/integration and 2 real Edge touch 320px checks PASSED; new host-focused 7/7, combined focused 37/37 PASS. G2 partial; external Google/Twitch availability, physical devices and atomic durable storage unqualified."
+      "integrationNote": "2026-11-03 FIXE: assisted new slot and one-off live copy both open the same local-only editor, with pre-open and pre-POST selected-host/source revalidation. A lost POST receipt is never retried; existing host assistedLocalSlot:true queue conflict guard unchanged. 42/42 targeted PASS across 4 suites, including 3 real Edge 320px tests and Chromium. TypeScript/browser/security 1399 files PASS. Recurring occurrences, external Google/Twitch availability, physical devices and durable atomic storage remain unqualified; F06 partial, G2 in_progress."
     },
     {
       "id": "F07",
