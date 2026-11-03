@@ -291,10 +291,46 @@ describe('confirmed replay saves',()=>{
   socket().call.mockImplementation(async(type,args)=>type==='GetReplayBufferStatus'?{outputActive:false}:original(type,args));
   await expect(obs.saveReplay()).rejects.toThrow('Tampon arrêté');expect(socket().call.mock.calls.some(([type])=>['SaveReplayBuffer','StartReplayBuffer'].includes(type))).toBe(false);
  });
- it('subscribes before saving, accepts the completion event and removes its listener',async()=>{
-  await obs.connect();const original=socket().call.getMockImplementation()!;
-  socket().call.mockImplementation(async(type,args)=>{if(type==='GetReplayBufferStatus')return {outputActive:true};if(type==='GetLastReplayBufferReplay')return {savedReplayPath:'old.mkv'};if(type==='SaveReplayBuffer'){socket().emit('ReplayBufferSaved',{savedReplayPath:'new.mkv'});return {};}return original(type,args);});
-  expect(await obs.saveReplay()).toBe('new.mkv');expect(socket().listenerCount('ReplayBufferSaved')).toBe(1); // Only the persistent read-only OBS observer remains.
+ it('accepts a confirmed replay event only when its nonempty regular file exists on FIXE',async()=>{
+  const root=await mkdtemp(join(tmpdir(),'sc3-confirmed-save-'));
+  const file=join(root,'new.mkv');
+  try {
+    await writeFile(file,'synthetic replay');
+    await obs.connect();const original=socket().call.getMockImplementation()!;
+    socket().call.mockImplementation(async(type,args)=>{if(type==='GetReplayBufferStatus')return {outputActive:true};if(type==='GetLastReplayBufferReplay')return {savedReplayPath:'old.mkv'};if(type==='SaveReplayBuffer'){socket().emit('ReplayBufferSaved',{savedReplayPath:file});return {};}return original(type,args);});
+    expect(await obs.saveReplay()).toBe(file);
+    expect(socket().listenerCount('ReplayBufferSaved')).toBe(1); // Only the persistent read-only OBS observer remains.
+  } finally { await rm(root,{recursive:true,force:true}); }
+ });
+ it('never calls a phantom or empty replay clip successful after OBS acknowledges the request',async()=>{
+  const root=await mkdtemp(join(tmpdir(),'sc3-phantom-save-'));
+  try {
+    const missing=join(root,'missing.mkv'),empty=join(root,'empty.mkv');
+    await writeFile(empty,'');
+    // Validate every fail-closed path class in the save command, not just the read-only observer.
+    for(const path of [missing,empty,root,'relative-replay.mkv']) {
+      await obs.connect();const original=socket().call.getMockImplementation()!;
+      let reads=0;
+      socket().call.mockImplementation(async(type,args)=>{
+        if(type==='GetReplayBufferStatus')return {outputActive:true};
+        if(type==='GetLastReplayBufferReplay') {
+          // The second read only happens after the event path is checked.
+          // Simulate transport loss then: the unverified file is still uncertain.
+          if(++reads===2) socket().emit('ConnectionClosed');
+          return {savedReplayPath:'old.mkv'};
+        }
+        if(type==='SaveReplayBuffer'){socket().emit('ReplayBufferSaved',{savedReplayPath:path});return {};}
+        return original(type,args);
+      });
+      await expect(obs.saveReplay()).rejects.toMatchObject({name:'ACTION_UNCERTAIN'});
+      expect(reads).toBe(2);
+      expect(socket().call.mock.calls.filter(([type])=>type==='SaveReplayBuffer')).toHaveLength(1);
+      // A separate local OBS adapter simulates a new connection; no
+      // real OBS command or filesystem installation is ever made.
+      await obs.close();
+      obs=new ObsClient();
+    }
+  } finally { await rm(root,{recursive:true,force:true}); }
  });
  it('never mistakes an old file or an acknowledgement for a new clip',async()=>{
   await obs.connect();const original=socket().call.getMockImplementation()!;

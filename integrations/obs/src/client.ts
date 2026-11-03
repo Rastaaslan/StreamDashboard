@@ -130,15 +130,34 @@ export class ObsClient {
         if (isObsRequestRejection(error)) dispatched = false;
         throw error;
       }
-      // The request acknowledgement alone is not a saved clip. Wait for the event
-      // or a new path; a stale previous replay must never count as success.
+      // An OBS event or a changed GetLastReplayBufferReplay path is only a
+      // notification, not proof of a usable clip on FIXE. A missing/empty,
+      // relative, directory or symlink path must never be reported as success.
+      // Keep polling within the existing bound: never issue SaveReplayBuffer twice.
+      const verifiedFile = async (candidate: string): Promise<boolean> => {
+        if (!candidate || !isAbsolute(candidate)) return false;
+        try {
+          const file = await lstat(candidate);
+          return file.isFile() && !file.isSymbolicLink() && file.size > 0;
+        } catch { return false; }
+      };
       for (let n = 0; n < 40; n++) {
         if (generation !== this.generation) throw new Error('Connexion OBS interrompue pendant la sauvegarde.');
-        if (savedPath) return savedPath;
+        if (savedPath) {
+          const verified = await verifiedFile(savedPath);
+          this.requireConnected();
+          if (generation !== this.generation) throw new Error('Connexion OBS interrompue pendant la sauvegarde.');
+          if (verified) return savedPath;
+        }
         const current = await this.call('GetLastReplayBufferReplay').then(value => value.savedReplayPath, () => '');
         this.requireConnected();
         if (generation !== this.generation) throw new Error('Connexion OBS interrompue pendant la sauvegarde.');
-        if (current && current !== previous) return current;
+        if (current && current !== previous) {
+          const verified = await verifiedFile(current);
+          this.requireConnected();
+          if (generation !== this.generation) throw new Error('Connexion OBS interrompue pendant la sauvegarde.');
+          if (verified) return current;
+        }
         await new Promise(resolve => setTimeout(resolve, 250));
       }
       throw new Error('OBS n’a pas confirmé de nouveau fichier. Vérifiez le dossier de clips avant de réessayer.');

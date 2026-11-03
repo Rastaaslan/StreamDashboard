@@ -271,6 +271,10 @@
           "kind": "2026-11-03 FIXE OBS adapter retains at most 64 local file witnesses privately and clears on stop/reconnect; host-only callback exposes actual saved replay file exclusively to F04 attestation, never mobile or moments journal"
         },
         {
+          "path": "docs/streamcockpit-3/F04_REPLAY_SAVE_FILE_CHECK_FIXE_20261103.md",
+          "kind": "2026-11-03 FIXE: saveReplay requires an observed absolute nonempty regular file before reporting success; missing/empty/directory/relative replay evidence remains uncertain. 56 targeted software tests PASS on combined F04/F05 source; no real OBS replay or storage durability evidence."
+        },
+        {
           "path": "integrations/twitch/src/streamcockpit-simple-moments.ts",
           "kind": "SC3-FINAL-DELIVERY-001: source integration and targeted software qualification only; hardware remains unqualified"
         },
