@@ -7,14 +7,14 @@ import {createTwitchMomentRouter,twitchMomentActor} from '../apps/server/src/str
 import {requiredDevicePermissions} from '../apps/server/src/remote-api-policy.js';
 import {RemoteAuth} from '../apps/server/src/remote-auth.js';
 async function fixture(run:(f:any)=>Promise<void>){
-  let mode='ok',host='1:1',count=0;
+  let mode='ok',host='1:1',streamId='123456',count=0;
   const auth=new RemoteAuth(),p=auth.createPairing(undefined,true,['chat','cloud','clips']),paired=auth.pair(p.id,p.code,'Phone');
   const credentials={clientId:'client',accessToken:'PRIVATE',broadcasterId:'42'},record=vi.fn(async()=> 'recorded' as const);
   const transport=vi.fn(async(url:any,init?:RequestInit)=>{
     if(String(url).includes('/validate'))return Response.json({client_id:'client',user_id:'42',scopes:mode==='scope'?[]:['clips:edit','channel:manage:broadcast'],expires_in:300});
     if(String(url).includes('/streams?')){
       if(mode==='revoke')auth.revoke(paired.deviceId);
-      return Response.json({data:mode==='offline'?[]:[{user_id:'42',type:'live'}]});
+      return Response.json({data:mode==='offline'?[]:[{id:streamId,user_id:'42',type:'live'}]});
     }
     if(init?.method==='POST'){
       count++;if(mode==='lost')throw Error('PRIVATE');
@@ -32,7 +32,7 @@ async function fixture(run:(f:any)=>Promise<void>){
       const chunks:Buffer[]=[];res.on('data',c=>chunks.push(c));res.on('error',reject);res.on('end',()=>{try{resolve({status:res.statusCode,body:JSON.parse(Buffer.concat(chunks).toString())})}catch(e){reject(e)}});
     });req.on('error',reject);req.setTimeout(5000,()=>req.destroy(Error('TIMEOUT')));req.end(JSON.stringify(body));
   });
-  try{await run({call,record,transport,setMode:(v:string)=>{mode=v},setHost:(v:string)=>{host=v},writes:()=>count})}
+  try{await run({call,record,transport,setMode:(v:string)=>{mode=v},setHost:(v:string)=>{host=v},setStreamId:(v:string)=>{streamId=v},writes:()=>count})}
   finally{server.closeAllConnections();await new Promise<void>(resolve=>server.close(()=>resolve()))}
 }
 it.each(['marker','clip'])('F04 paired HTTP %s: source live proof, exact receipt, one POST and F09 observation',async kind=>fixture(async f=>{
@@ -58,6 +58,26 @@ it('F04 invalidates consent on host epoch change and distinguishes journal failu
   f.record.mockRejectedValueOnce(Error('PRIVATE'));
   const r=await f.call('confirm',{confirmationId:p.body.confirmationId,confirmed:true});
   expect(r.body).toMatchObject({status:'confirmed',journal:'uncertain'});expect(f.writes()).toBe(1);expect(JSON.stringify(r)).not.toContain('PRIVATE');
+}));
+
+it.each(['marker','clip'])('F04 %s consent is tied to Twitch stream ID across a rapid restart',async kind=>fixture(async f=>{
+  const initial=await f.call('preview',{draft:{kind,description:'Important'}});
+  expect(initial.status).toBe(200);
+  f.setStreamId('123457'); // Same broadcaster and FIXE host epoch, different Twitch live session.
+  const stale=await f.call('confirm',{confirmationId:initial.body.confirmationId,confirmed:true});
+  expect(stale.status).toBe(409);
+  expect(stale.body.error).toEqual({code:'MOMENT_PRECONDITION',retryable:false});
+  expect(f.writes()).toBe(0);expect(f.record).not.toHaveBeenCalled();
+  const fresh=await f.call('preview',{draft:{kind,description:'Important'}});
+  expect(fresh.status).toBe(200);
+  const valid=await f.call('confirm',{confirmationId:fresh.body.confirmationId,confirmed:true});
+  expect(valid.status).toBe(200);expect(f.writes()).toBe(1);
+}));
+it.each(['','not-a-stream-id'])('F04 refuses a Twitch live response without a trustworthy stream ID',async streamId=>fixture(async f=>{
+  f.setStreamId(streamId);
+  const preview=await f.call('preview',{draft:{kind:'clip',description:''}});
+  expect(preview.status).toBe(409);
+  expect(f.writes()).toBe(0);
 }));
 
 it('F04 public moment mutations additionally require the clips grant',()=>{

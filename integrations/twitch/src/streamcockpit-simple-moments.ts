@@ -1,7 +1,7 @@
 import {createHash} from 'node:crypto';
 import {AdvancedTwitchError,type AdvancedCredentials} from './streamcockpit-advanced.js';
 export interface SimpleMomentDraft {kind:'marker'|'clip';description:string}
-export interface SimpleMomentTarget {draft:SimpleMomentDraft;broadcasterId:string;tokenStamp:string}
+export interface SimpleMomentTarget {draft:SimpleMomentDraft;broadcasterId:string;streamId:string;tokenStamp:string}
 const object=(v:unknown):Record<string,unknown>=>v!==null&&typeof v==='object'&&!Array.isArray(v)?v as Record<string,unknown>:{};
 export function simpleMomentDraft(v:unknown):SimpleMomentDraft{
   const d=object(v);
@@ -39,13 +39,17 @@ export class SimpleMomentsTwitch{
   async preview(value:unknown):Promise<SimpleMomentTarget>{
     const draft=simpleMomentDraft(value),s=await this.session(draft.kind);
     const live=await this.request(s.c,'https://api.twitch.tv/helix/streams?user_id='+s.c.broadcasterId);
-    if(!Array.isArray(live.data)||live.data.length!==1||object(live.data[0]).user_id!==s.c.broadcasterId||
-      object(live.data[0]).type!=='live')throw new AdvancedTwitchError('precondition');
-    this.current(s);return {draft,broadcasterId:s.c.broadcasterId,tokenStamp:this.stamp(s.c)};
+    const stream=Array.isArray(live.data)&&live.data.length===1?object(live.data[0]):{};
+    // A channel can stop and restart within the consent window. Bind consent to
+    // the actual Twitch stream, not merely the broadcaster's current live flag.
+    if(stream.user_id!==s.c.broadcasterId||stream.type!=='live'||
+      typeof stream.id!=='string'||!/^\d{1,30}$/.test(stream.id))throw new AdvancedTwitchError('precondition');
+    this.current(s);return {draft,broadcasterId:s.c.broadcasterId,streamId:stream.id,tokenStamp:this.stamp(s.c)};
   }
   async confirm(target:SimpleMomentTarget,beforeSend:()=>Promise<void>){
     const fresh=await this.preview(target.draft);
-    if(fresh.broadcasterId!==target.broadcasterId||fresh.tokenStamp!==target.tokenStamp)throw new AdvancedTwitchError('precondition');
+    if(fresh.broadcasterId!==target.broadcasterId||fresh.streamId!==target.streamId||
+      fresh.tokenStamp!==target.tokenStamp)throw new AdvancedTwitchError('precondition');
     const s=await this.session(target.draft.kind);
     if(this.stamp(s.c)!==target.tokenStamp)throw new AdvancedTwitchError('unauthorized');
     await beforeSend();this.current(s);
