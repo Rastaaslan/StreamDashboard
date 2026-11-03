@@ -42,6 +42,7 @@ class FakeSocket extends EventEmitter {
 }
 vi.mock('obs-websocket-js', () => ({ default: FakeSocket }));
 const { ObsClient } = await import('../integrations/obs/src/client.js');
+const { attestWindowsObsReplaySource } = await import('../apps/server/src/streamcockpit-clipforge-windows-replay-grant.js');
 let obs: InstanceType<typeof ObsClient>;
 const socket = () => sockets.at(-1)!;
 beforeEach(() => { vi.useFakeTimers(); replayFileGate.wait = null; replayFileGate.entered = false; sockets.length = 0; available = true; obs = new ObsClient(); });
@@ -178,6 +179,32 @@ it('includes global OBS audio devices even outside scene items', async () => {
 
 
 describe('confirmed replay saves',()=>{
+ it.skipIf(process.platform!=='win32')('offers a bounded HMAC-bound replay source ONLY to the host for read-only F04 attestation',async()=>{
+  const root=await mkdtemp(join(tmpdir(),'sc3-f04-obs-host-'));
+  const file=join(root,'obs_replay_clip.mkv');
+  try {
+    await writeFile(file,'fixture not real OBS output');
+    const observed=vi.fn();obs.onReplaySaved(observed);
+    await obs.connect();await obs.stream(true);
+    socket().emit('ReplayBufferSaved',{savedReplayPath:file});
+    await vi.waitFor(()=>expect(observed).toHaveBeenCalledTimes(1));
+    const event=observed.mock.calls[0][0];
+    expect(JSON.stringify(event)).not.toContain(file);
+    const captured=await obs.withSavedReplayForHost(event.sourceEventId,
+      (trustedPath,witness,verifyObsEventId)=>attestWindowsObsReplaySource({
+        sourceRoot:root,savedReplayPath:trustedPath,witness,verifyObsEventId,
+        snapshot:()=>({connected:obs.state.connected,streamingKnown:obs.state.streamingKnown===true,
+          streaming:obs.state.streaming,connectionGeneration:obs.connectionGeneration,
+          streamEpoch:obs.streamTransitionEpoch}),
+        hostEligible:async()=>true,
+      }));
+    expect(captured?.status).toBe('VERIFIED_HOST_ONLY');
+    expect(JSON.stringify(captured)).not.toContain(root);
+    expect(await obs.withSavedReplayForHost('obs_replay_'+'0'.repeat(64),async()=>true)).toBeUndefined();
+    await obs.stream(false);
+    expect(await obs.withSavedReplayForHost(event.sourceEventId,async()=>true)).toBeUndefined();
+  } finally {await rm(root,{recursive:true,force:true});}
+ });
  it('publishes only a witnessed, non-empty local replay file while streaming, never its path',async()=>{
   const folder = await mkdtemp(join(tmpdir(), 'sc3-private-replay-'));
   const file = join(folder, 'private-live-clip.mkv');

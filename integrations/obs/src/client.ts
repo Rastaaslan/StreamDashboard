@@ -32,6 +32,8 @@ export class ObsClient {
   // Per-runtime secret prevents clients from guessing local replay filenames
   // from the opaque journal event identifier; never exported or persisted.
   private readonly replayEventSalt = randomBytes(32);
+  // Only the trusted local OBS adapter retains raw replay paths. Never serialize.
+  private readonly replayHostSources = new Map<string, {path:string;event:{sourceEventId:string;connectionGeneration:number;streamEpoch:number;observedAt:number}}>();
   // A stop -> start on the SAME websocket generation must not reassign a late
   // replay file metadata result to a different live session.
   private replayStreamEpoch = 0;
@@ -240,6 +242,7 @@ export class ObsClient {
 
   private invalidate(error: string | null) {
     this.generation++;
+    this.replayHostSources.clear();
     this.connecting = undefined;
     this.ready = false;
     this.volumeSubscribed = false;
@@ -269,7 +272,7 @@ export class ObsClient {
       if (!this.suppressReconnect) this.schedule();
     });
     on('CurrentProgramSceneChanged', ({ sceneName }) => { if (!this.ready) return; this.state.scene = sceneName; this.notify(); this.scheduleRefresh(); });
-    on('StreamStateChanged', ({ outputActive }) => { if (!this.ready) return; this.replayStreamEpoch++; this.state.streaming = outputActive; this.state.streamingKnown = true; this.micHealthWatch.updateStream(outputActive); void this.updateMicSubscription(); this.notify(); });
+    on('StreamStateChanged', ({ outputActive }) => { if (!this.ready) return; this.replayStreamEpoch++; this.replayHostSources.clear(); this.state.streaming = outputActive; this.state.streamingKnown = true; this.micHealthWatch.updateStream(outputActive); void this.updateMicSubscription(); this.notify(); });
     // InputVolumeMeters is a high-volume event. Do not increment the client's
     // revision or trigger a full OBS refresh for each meter frame.
     client.on('InputVolumeMeters', payload => {
@@ -297,6 +300,8 @@ export class ObsClient {
             (connectionGeneration !== this.generation || streamEpoch !== this.replayStreamEpoch)) return;
         const event = { sourceEventId: 'obs_replay_' + createHmac('sha256', this.replayEventSalt).update(savedReplayPath).digest('hex'),
           connectionGeneration, streamEpoch, observedAt };
+        this.replayHostSources.set(event.sourceEventId, {path:savedReplayPath,event});
+        if (this.replayHostSources.size > 64) this.replayHostSources.delete(this.replayHostSources.keys().next().value!);
         for (const listener of this.replaySavedListeners) {
           try { listener(event); } catch { /* An observer must never disrupt OBS. */ }
         }
@@ -510,6 +515,23 @@ export class ObsClient {
   onReplaySaved(listener: (event: { sourceEventId: string; connectionGeneration: number; streamEpoch: number; observedAt: number }) => void) {
     this.replaySavedListeners.add(listener);
     return () => this.replaySavedListeners.delete(listener);
+  }
+
+  /** Host-only read-only handoff for future F04 admission. Never use as a public
+   * API route or as permission to encode. The private OBS HMAC salt and saved
+   * file path are never returned; the callback must only verify an attestation.
+   */
+  async withSavedReplayForHost<T>(sourceEventId:string, inspect:(file:string,
+    witness:{sourceEventId:string;connectionGeneration:number;streamEpoch:number;observedAt:number},
+    verifyObsEventId:(path:string,id:string)=>boolean)=>Promise<T>):Promise<T|undefined>{
+    const entry=this.replayHostSources.get(sourceEventId);
+    const valid=()=>Boolean(entry&&this.ready&&this.state.connected&&this.state.streamingKnown&&this.state.streaming&&
+      entry.event.connectionGeneration===this.generation&&entry.event.streamEpoch===this.replayStreamEpoch&&
+      this.replayHostSources.get(sourceEventId)===entry);
+    if(!valid()||!entry)return undefined;
+    const verifyObsEventId=(file:string,id:string)=>id==='obs_replay_'+createHmac('sha256',this.replayEventSalt).update(file).digest('hex');
+    const result=await inspect(entry.path,{...entry.event},verifyObsEventId);
+    return valid()?result:undefined;
   }
   private notify() { for (const listener of this.listeners) listener(); }
 
