@@ -112,6 +112,7 @@ export async function stageWindowsObsReplay(options:WindowsReplayStageOptions):P
     if(!(await options.hostEligible())||!isAuthoritative(options))deny('OBS_AUTHORITY');
     const sourceFd=await open(source,'r');
     let destFd:Awaited<ReturnType<typeof open>>|undefined;
+    let copiedDest:Awaited<ReturnType<typeof lstat>>|undefined;
     try{
       const before=await sourceFd.stat();
       if(before.ino!==existing.ino||before.size!==existing.size||
@@ -148,6 +149,7 @@ export async function stageWindowsObsReplay(options:WindowsReplayStageOptions):P
         before.mtimeMs!==after.mtimeMs||before.ctimeMs!==after.ctimeMs||
         after.nlink!==1)deny('SOURCE_CHANGED');
       await destFd.sync();
+      copiedDest=await destFd.stat();
     }finally{await destFd?.close();await sourceFd.close();}
     // A source swap during copying or ACL/OBS revocation cannot become success.
     const last=await lstat(source);
@@ -159,7 +161,45 @@ export async function stageWindowsObsReplay(options:WindowsReplayStageOptions):P
     if(!inspectWindowsClipPrivateRoot(privateRoot).qualified)deny('ROOT_NOT_PRIVATE');
     if(options.signal?.aborted)deny('CANCELLED');
     const staged=await lstat(dest);
-    if(!staged.isFile()||staged.nlink!==1||staged.size!==existing.size)deny('SOURCE_CHANGED');
+    if(!copiedDest||!staged.isFile()||staged.isSymbolicLink()||staged.nlink!==1||
+      staged.size!==existing.size||staged.dev!==copiedDest.dev||
+      staged.ino!==copiedDest.ino||staged.mtimeMs!==copiedDest.mtimeMs||
+      staged.ctimeMs!==copiedDest.ctimeMs)deny('DEST_CHANGED');
+    // Source hashing during copy does NOT prove the staged bytes remained
+    // unchanged. Independently re-read the destination by descriptor, with
+    // the same I/O ceiling, before exposing any host-only SHA grant.
+    const stagedFd=await open(dest,'r');
+    try{
+      const opened=await stagedFd.stat();
+      if(!opened.isFile()||opened.dev!==staged.dev||opened.ino!==staged.ino||
+        opened.nlink!==1||opened.size!==staged.size||
+        opened.mtimeMs!==staged.mtimeMs||opened.ctimeMs!==staged.ctimeMs)
+        deny('DEST_CHANGED');
+      const digest=createHash('sha256'),buffer=Buffer.alloc(65536);
+      const started=performance.now();
+      let total=0;
+      while(total<opened.size){
+        if(options.signal?.aborted)deny('CANCELLED');
+        const {bytesRead}=await stagedFd.read(buffer,0,Math.min(buffer.length,opened.size-total),total);
+        if(bytesRead<=0)deny('DEST_CHANGED');
+        digest.update(buffer.subarray(0,bytesRead));
+        total+=bytesRead;
+        const pause=Math.ceil(total*1000/(8*1024*1024)-(performance.now()-started));
+        if(pause>0){
+          try{await sleep(Math.min(pause,250),undefined,{signal:options.signal});}
+          catch{deny('CANCELLED');}
+        }
+      }
+      if(digest.digest('hex')!==attestation.grant.sha256)deny('DEST_CHANGED');
+      const after=await stagedFd.stat(),atPath=await lstat(dest);
+      if(!atPath.isFile()||atPath.isSymbolicLink()||atPath.nlink!==1||
+        after.nlink!==1||after.dev!==opened.dev||after.ino!==opened.ino||
+        after.size!==opened.size||after.mtimeMs!==opened.mtimeMs||
+        after.ctimeMs!==opened.ctimeMs||atPath.dev!==opened.dev||
+        atPath.ino!==opened.ino||atPath.size!==opened.size||
+        atPath.mtimeMs!==opened.mtimeMs||atPath.ctimeMs!==opened.ctimeMs)
+        deny('DEST_CHANGED');
+    }finally{await stagedFd.close();}
     if(!isAuthoritative(options))deny('OBS_AUTHORITY');
     await verifyIntent();
     return {status:'STAGED_HOST_ONLY',grant:{relativePath:destName,sha256:attestation.grant.sha256}};

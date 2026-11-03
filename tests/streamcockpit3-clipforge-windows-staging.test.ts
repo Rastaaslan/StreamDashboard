@@ -121,6 +121,39 @@ describe('F04 Windows host-only staged OBS snapshot, no codec or production rout
       expect(await stageWindowsObsReplay(f.options)).toEqual({status:'UNKNOWN',code:'EXISTING_JOB'});
     }finally{await f.cleanup();}
   });
+  run('rejects a staged-file mutation of the same size before returning its SHA grant',async()=>{
+    const f=await fixture();
+    try{
+      let calls=0;
+      const edited=Buffer.from(f.bytes);
+      edited[0]^=1;
+      const options={...f.options,hostEligible:async()=>{
+        calls++;
+        if(calls===5)await writeFile(path.join(f.privateRoot,'clip_test_1.mkv'),edited);
+        return true;
+      }};
+      expect(await stageWindowsObsReplay(options)).toEqual({status:'UNKNOWN',code:'DEST_CHANGED'});
+      expect(await readdir(f.privateRoot)).toContain('clip_test_1.intent');
+      expect(await stageWindowsObsReplay(f.options)).toEqual({status:'UNKNOWN',code:'EXISTING_JOB'});
+    }finally{await f.cleanup();}
+  });
+  run('rejects replacing the staged NTFS file with identical bytes but a new file identity',async()=>{
+    const f=await fixture();
+    try{
+      let calls=0;
+      const options={...f.options,hostEligible:async()=>{
+        calls++;
+        if(calls===5){
+          const staged=path.join(f.privateRoot,'clip_test_1.mkv');
+          await rename(staged,path.join(f.privateRoot,'orphan.mkv'));
+          await writeFile(staged,f.bytes);
+        }
+        return true;
+      }};
+      expect(await stageWindowsObsReplay(options)).toEqual({status:'UNKNOWN',code:'DEST_CHANGED'});
+      expect(await stageWindowsObsReplay(f.options)).toEqual({status:'UNKNOWN',code:'EXISTING_JOB'});
+    }finally{await f.cleanup();}
+  });
   run('detects a source replacement after reservation; persists UNKNOWN and no valid staged grant',async()=>{
     const f=await fixture();
     try{
