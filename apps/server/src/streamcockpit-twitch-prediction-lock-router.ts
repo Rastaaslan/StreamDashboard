@@ -105,7 +105,11 @@ export function createTwitchPredictionLockRouter(options: {
           // Any unclear SQLite COMMIT blocks further PATCH attempts. Never retry.
           try {options.fence.markLockAttempted(entry.owner,entry.id);}
           catch {throw new AdvancedTwitchError('unavailable');}
-          dispatched = true; // From this point a PATCH may reach Twitch.
+          dispatched = true; // SQLite intent persists even if a final host check fails.
+          await check(req, {actor:entry.actor,epoch:entry.epoch});
+          if (options.broadcasterId() !== entry.owner ||
+              options.fence.readConfirmedId(entry.owner) !== entry.id)
+            throw new AdvancedTwitchError('precondition');
         });
         await check(req,{actor:entry.actor,epoch:entry.epoch});
         if (options.broadcasterId() !== entry.owner ||

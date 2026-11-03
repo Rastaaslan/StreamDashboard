@@ -220,6 +220,23 @@ it('F08 provider token changes before PATCH cannot send public mutation',()=>fix
   expect(h.patches).not.toHaveBeenCalled();
   expect(h.fence.readEndAttempted('123','pred-777')).toBe(false);
 }));
+it('F08 end refuses a switched FIXE epoch after durable intent, without sending PATCH or retrying',()=>fixture(async h=>{
+  const preview=await pre(h,resolve);
+  const write=h.fence.markEndAttempted.bind(h.fence);
+  vi.spyOn(h.fence,'markEndAttempted').mockImplementation((owner,id,action,winnerId)=>{
+    write(owner,id,action,winnerId);
+    h.setEpoch('12:35'); // OBS authority changed immediately after SQLite COMMIT.
+  });
+  const reply=await h.call('confirm',{confirmationId:preview.confirmationId,confirmed:true});
+  expect(reply.status).toBe(503);
+  expect(await reply.json()).toMatchObject({error:{
+    code:'PREDICTION_END_OUTCOME_UNCERTAIN',retryable:false}});
+  expect(h.fence.readEndAttempted('123','pred-777')).toBe(true);
+  expect(h.patches).not.toHaveBeenCalled();
+  h.setEpoch('12:34');
+  expect((await h.call('preview',resolve)).status).toBe(409);
+}));
+
 it('F08 two distinct confirmation IDs cannot send two terminal PATCHes',()=>fixture(async h=>{
   const a=await pre(h,resolve),b=await pre(h,resolve);
   const results=await Promise.all([

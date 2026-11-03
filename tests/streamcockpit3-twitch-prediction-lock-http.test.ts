@@ -158,6 +158,23 @@ it('F08 missing manage scope, host live or changed epoch denies before PATCH',()
   expect(h.fence.readLockAttempted('123','pred-777')).toBe(false);
 }));
 
+it('F08 lock refuses a switched FIXE epoch after durable intent, without sending PATCH or retrying',()=>fixture(async h=>{
+  const consent=await (await h.call('preview',{})).json() as {confirmationId:string};
+  const write=h.fence.markLockAttempted.bind(h.fence);
+  vi.spyOn(h.fence,'markLockAttempted').mockImplementation((owner,id)=>{
+    write(owner,id);
+    h.setEpoch('9:34'); // OBS authority changed just as the SQLite COMMIT returned.
+  });
+  const response=await h.call('confirm',{confirmed:true,confirmationId:consent.confirmationId});
+  expect(response.status).toBe(503);
+  expect(await response.json()).toMatchObject({error:{
+    code:'PREDICTION_LOCK_OUTCOME_UNCERTAIN',retryable:false}});
+  expect(h.fence.readLockAttempted('123','pred-777')).toBe(true);
+  expect(h.patches).not.toHaveBeenCalled();
+  h.setEpoch('9:33');
+  expect((await h.call('preview',{})).status).toBe(409);
+}));
+
 it('F08 different consent IDs cannot race two PATCHes for the same prediction',()=>fixture(async h=>{
   const a=await (await h.call('preview',{})).json() as {confirmationId:string};
   const b=await (await h.call('preview',{})).json() as {confirmationId:string};

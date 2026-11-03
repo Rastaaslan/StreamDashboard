@@ -527,7 +527,7 @@
         },
         {
           "path": "apps/server/src/streamcockpit-twitch-prediction-lock-router.ts",
-          "kind": "2026-11-03 F08 FIXE: paired chat+cloud, OBS stream epoch, one-use consent and SQLite v3 lock_attempted commit before PATCH; no duplicate POST/PATCH"
+          "kind": "2026-11-03 F08 FIXE: paired chat+cloud, OBS stream epoch, one-use consent and SQLite v3 lock_attempted commit before PATCH; new post-COMMIT host actor/epoch/owner/ID recheck rejects simulated authority switch without PATCH, but keeps durable intent uncertain and non-retryable; no hardware proof"
         },
         {
           "path": "apps/mobile/control/streamcockpit-twitch-prediction-lock.js",
@@ -543,7 +543,7 @@
         },
         {
           "path": "apps/server/src/streamcockpit-twitch-prediction-end-router.ts",
-          "kind": "2026-11-03 FIXE F08: paired chat+cloud, FIXE stream epoch, one-use UUID confirmation and SQLite v4 end_attempted COMMIT before terminal PATCH; no retry or double lock/end race"
+          "kind": "2026-11-03 FIXE F08: paired chat+cloud, FIXE stream epoch, one-use UUID confirmation and SQLite v4 end_attempted COMMIT before terminal PATCH; post-COMMIT actor/epoch/owner/ID recheck rejects simulated host switch without PATCH, durable intent remains blocked/uncertain; no retry or double lock/end race, no hardware proof"
         },
         {
           "path": "apps/mobile/control/streamcockpit-twitch-prediction-end.js",

@@ -131,7 +131,11 @@ export function createTwitchPredictionEndRouter(options:{
             try{options.fence.markEndAttempted(entry.owner,entry.id,
               entry.draft.action,entry.draft.winnerId);}
             catch{throw new AdvancedTwitchError('unavailable');}
-            dispatched=true; // PATCH may reach Twitch after this point.
+            dispatched=true; // SQLite intent persists even if a final host check fails.
+            await check(req,{actor:entry.actor,epoch:entry.epoch});
+            if(options.broadcasterId()!==entry.owner||
+                options.fence.readConfirmedId(entry.owner)!==entry.id)
+              throw new AdvancedTwitchError('precondition');
           });
         await check(req,{actor:entry.actor,epoch:entry.epoch});
         if(options.broadcasterId()!==entry.owner||
