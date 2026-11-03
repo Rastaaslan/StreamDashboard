@@ -122,7 +122,14 @@ it('F08 two distinct gestures: preview performs GET, one-use confirmation perfor
   const preview=await response.json();
   expect(preview).toMatchObject({schemaVersion:1,kind:'streamcockpit-shoutout-preview',targetLogin:login});
   expect(preview.confirmationId).toMatch(/^[0-9a-f-]{36}$/);
-  expect(JSON.stringify(preview)).not.toContain('999');
+  // An opaque random confirmation UUID may legitimately contain the digits
+  // 999. Check the actual projection shape so no private numeric target ID
+  // can leak as a field, without false alarms from UUIDs or timestamps.
+  expect(Object.keys(preview).sort()).toEqual([
+    'schemaVersion','kind','confirmationId','expiresAt','targetLogin','warning',
+  ].sort());
+  expect(preview.targetLogin).not.toContain('999');
+  expect(preview.warning).not.toContain('999');
   expect(h.writes).not.toHaveBeenCalled();
   const confirmed=await h.call('confirm',{confirmationId:preview.confirmationId,confirmed:true});
   expect(confirmed.status).toBe(200);
