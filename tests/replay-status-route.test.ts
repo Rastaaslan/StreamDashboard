@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import express from 'express';
-import type { Server } from 'node:http';
+import { get, type Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { registerControlRoutes } from '../apps/server/src/control-routes.js';
 import type { ObsClient } from '../integrations/obs/src/client.js';
@@ -23,8 +23,22 @@ async function requestReplay(replayStatus:ObsClient['replayStatus']) {
     const listener=app.listen(0,'127.0.0.1',()=>resolve(listener));
   });
   try{
-    const response=await fetch('http://127.0.0.1:'+(server.address() as AddressInfo).port+'/api/v2/replay');
-    const body=await response.json();
+    // Node fetch forbids a subset of otherwise valid ephemeral ports (bad port).
+    // This fixture tests the HTTP route itself, not browser Fetch policy.
+    const response=await new Promise<{status:number;body:unknown}>((resolve,reject)=>{
+      const req=get('http://127.0.0.1:'+(server.address() as AddressInfo).port+'/api/v2/replay',res=>{
+        const chunks:Buffer[]=[];
+        res.on('data',(chunk:Buffer)=>chunks.push(chunk));
+        res.on('error',reject);
+        res.on('end',()=>{
+          try {resolve({status:res.statusCode??0,body:JSON.parse(Buffer.concat(chunks).toString('utf8'))});}
+          catch(error){reject(error);}
+        });
+      });
+      req.on('error',reject);
+      req.setTimeout(5000,()=>req.destroy(new Error('REPLAY_STATUS_FIXTURE_TIMEOUT')));
+    });
+    const body=response.body;
     expect(obs.replayStatus).toHaveBeenCalledTimes(1);
     expect(obs.setReplayBuffer).not.toHaveBeenCalled();
     expect(obs.saveReplay).not.toHaveBeenCalled();
