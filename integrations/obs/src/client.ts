@@ -206,6 +206,17 @@ export class ObsClient {
       exists: Boolean(input), muted: input?.muted,
     });
   }
+  /** OBS meter evidence already received by the master websocket; no new
+   * poll, second clock or DSP estimate. Never expose pre-live/stale samples. */
+  mixerAudioMeters(now=Date.now()) {
+    const meters:Record<string,{value:number;observedAt:number}>={};
+    if(!this.ready||!this.state.connected||!this.state.streamingKnown||!this.state.streaming)return meters;
+    for(const name of Object.keys(this.state.inputs)){
+      const evidence=this.micHealthWatch.meterEvidence(name,now);
+      if(evidence)meters[name]=evidence;
+    }
+    return meters;
+  }
   private async updateMicSubscription() {
     const want = Boolean(this.ready && this.state.connected && this.state.streamingKnown && this.state.streaming);
     if (this.volumeSubscribed === want || !this.ready) return;

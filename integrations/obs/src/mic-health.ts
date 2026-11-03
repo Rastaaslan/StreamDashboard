@@ -102,6 +102,16 @@ export class MicHealthWatch {
     return observed;
   }
 
+  /** Raw peak from a witnessed OBS meter frame, not a gain knob or VOD route.
+   * Does not update the timestamp when read. Valid only in the current live. */
+  meterEvidence(inputName:string,now=Date.now()):{value:number;observedAt:number}|undefined {
+    if(!this.wasLive||!Number.isFinite(now))return undefined;
+    const sample=this.sources.get(inputName);
+    if(!sample||!Number.isFinite(sample.level)||sample.level<0||sample.level>10||
+      now<sample.lastMeterAt||now-sample.lastMeterAt>5000)return undefined;
+    return {value:sample.level,observedAt:sample.lastMeterAt};
+  }
+
   state(inputName: string,
     options: { connected: boolean; streaming: boolean; muted?: boolean; exists?: boolean },
     now = Date.now()): MicHealth {

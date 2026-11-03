@@ -3670,7 +3670,7 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
       scene: typeof obs.state.scene === 'string' && obs.state.scene.length <= 256 ? obs.state.scene : null,
       streamState: obs.state.streamingKnown === true ? obs.state.streaming ? 'live' : 'offline' : null,
     } : undefined;
-    obsMixerObservation.observe(obs.state, obs.connectionGeneration);
+    obsMixerObservation.observe(obs.state, obs.connectionGeneration, obs.mixerAudioMeters());
     autoStartReplay();
     const obsPayload = { connected: obs.state.connected, streaming: obs.state.streaming, streamingKnown: obs.state.streamingKnown !== false, scene: obs.state.scene };
     eventCore.publish({ type: 'obs.state.changed', source: 'obs', payload: obsPayload });
