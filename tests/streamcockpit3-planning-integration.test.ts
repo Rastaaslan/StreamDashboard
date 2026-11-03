@@ -33,6 +33,14 @@ it('mounts the real Planning views, offline/reconnect, without API or editor cal
 it('counts hidden imported blockers, labels stale provenance UNKNOWN and blocks invalid copies',()=>{
  const html=renderPlanningAssistant(items,{esc,now});
  expect(html).toContain('04:00:00');expect(html).toContain('Fraîcheur distante inconnue');
+ const connected=renderPlanningAssistant(items,{esc,now,googleConnected:true});
+ expect(connected).toContain('Compte Google connecté à la régie');
+ expect(connected).toContain('<details class="planning-assist-suggestions">');
+ expect(connected).toContain('Afficher les 3 propositions locales');
+ expect((connected.match(/data-planning="assist-new"/g)||[])).toHaveLength(3);
+ expect(connected).toContain('UNKNOWN pour les disponibilités');
+ expect(connected).not.toContain('Synchronisation Google confirmée');
+ expect(renderPlanningAssistant(items,{esc,now,googleConnected:false})).toContain('Compte Google non connecté sur cette source');
  expect(renderPlanningAssistant([{...items[0],conflict:true}],{esc,now})).toContain('Calcul indisponible');
  expect(renderPlanningAssistant(undefined,{esc,now})).toContain('Copie locale indisponible');
 });

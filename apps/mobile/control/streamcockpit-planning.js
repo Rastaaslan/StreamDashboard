@@ -2,9 +2,12 @@
  * Google is excluded from the calculation, never declared available/disabled remotely.
  * Cached imported events remain blockers with their original provenance displayed.
  */
-export function renderPlanningAssistant(items, { esc, online = false, now = Date.now() }) {
+export function renderPlanningAssistant(items, { esc, online = false, googleConnected, now = Date.now() }) {
   const heading = '<section class="panel spacer" data-planning-assistant aria-label="Planning assisté"><h2>Planning assisté</h2>';
-  const warning = '<p>Suggestion locale non publiée · Google / Twitch : UNKNOWN. Fraîcheur distante inconnue ; aucune disponibilité ni synchronisation garantie.</p>' +
+  const googleIdentity = googleConnected === true ? 'Compte Google connecté à la régie ; événements et fraîcheur non vérifiés.' :
+    googleConnected === false ? 'Compte Google non connecté sur cette source ; événement distant non vérifié.' : 'Connexion Google de la régie non observée.';
+  const warning = '<p>Suggestion locale non publiée · Google / Twitch : UNKNOWN pour les disponibilités. Fraîcheur distante inconnue ; aucune disponibilité ni synchronisation garantie.</p>' +
+    '<p>' + esc(googleIdentity) + '</p>' +
     '<p>' + (online ? 'Connexion régie disponible' : 'Hors ligne / connexion non vérifiée') + ' · calcul sur la copie locale uniquement, sans réservation.</p>';
   const sources = Array.isArray(items) ? items.filter(item =>
     typeof item?.id === 'string' && item.id && item.category === 'live' &&
@@ -32,15 +35,16 @@ export function renderPlanningAssistant(items, { esc, online = false, now = Date
     const format = new Intl.DateTimeFormat('fr-FR', { timeZone: PLANNING_ZONE, dateStyle: 'short', timeStyle: 'long' });
     const provenance = [...new Set(items.map(item => [item.source || 'origine inconnue', ...Object.keys(item.providers || {})].join(' / ')))];
     return heading + warning + '<p>' + items.length + ' événement(s) de la copie locale pris en compte, sans les filtres de la page. Provenance : ' + esc(provenance.join(', ') || 'aucun événement') + '.</p>' +
-      '<p>Créneaux de 60 minutes dans les prochaines 24 heures · Europe/Paris · sans chevauchement connu dans cette copie.</p>' + sourceSelect + '<ul>' +
-      slots.map(slot => '<li>' + esc(format.format(new Date(slot.from)) + ' → ' + format.format(new Date(slot.to))) +
+      '<p>Créneaux indicatifs de 60 minutes sur les prochaines 24 heures · Europe/Paris · calculés sur la copie locale seulement.</p>' + sourceSelect +
+      '<details class="planning-assist-suggestions"><summary>Afficher les ' + slots.length + ' propositions locales</summary><ul class="planning-assist-slots">' +
+      slots.map(slot => '<li><span>' + esc(format.format(new Date(slot.from)) + ' → ' + format.format(new Date(slot.to))) + '</span>' +
         ' <button type="button" data-planning="assist-new" data-from="' + esc(slot.from) +
         '" data-to="' + esc(slot.to) + '"' + (online ? '' : ' disabled') +
         '>Vérifier et préparer un brouillon local</button>' + (sources.length ?
         ' <button type="button" data-planning="assist-duplicate" data-from="' + esc(slot.from) +
         '" data-to="' + esc(slot.to) + '"' + (online ? '' : ' disabled') +
         '>Dupliquer vers un brouillon local</button>' : '') + '</li>').join('') +
-      '</ul>' + (slots.length ? '' : '<p>Aucun créneau trouvé dans cette copie.</p>') + footer;
+      '</ul></details>' + (slots.length ? '' : '<p>Aucun créneau trouvé dans cette copie.</p>') + footer;
   } catch (error) {
     return heading + warning + '<p role="status">Calcul indisponible : ' + esc(error instanceof Error ? error.message : String(error)) + '</p>' +
       '<p>Recommencez après actualisation du planning.</p></section>';
