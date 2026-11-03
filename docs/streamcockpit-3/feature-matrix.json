@@ -1004,7 +1004,8 @@
         "tests/streamcockpit3-simple-moments-http.test.ts",
         "tests/streamcockpit3-simple-moments-browser.test.ts",
         "tests/streamcockpit3-local-twitch-identity.test.ts",
-        "tests/streamcockpit3-authority-target.test.ts"
+        "tests/streamcockpit3-authority-target.test.ts",
+        "docs/streamcockpit-3/G2_REVALIDATION_C018566_20261103.md"
       ],
       "historicalDeferredEvidence": [
         "tests/streamcockpit3-clipforge-executor.test.ts",
