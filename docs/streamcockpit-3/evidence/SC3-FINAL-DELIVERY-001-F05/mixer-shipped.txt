@@ -1,0 +1,5 @@
+
+> stream-dashboard@3.0.0-alpha.1 check:shipped-js
+> node scripts/check-shipped-js.mjs
+
+Shipped JavaScript syntax OK (147 files)

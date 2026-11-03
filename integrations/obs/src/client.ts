@@ -28,6 +28,12 @@ export async function collectActiveSceneSources(sceneName: string, sceneItems: (
   await collect(await sceneItems(sceneName)); return names;
 }
 
+export interface ObsAudioSource {
+  sourceId: string; inputUuid: string; generation: number;
+  gain: number; mute: boolean; observedAt: number;
+}
+export type ObsAudioChange = { sourceId: string; gain: number } | { sourceId: string; mute: boolean };
+
 export class ObsClient {
   // Per-runtime secret prevents clients from guessing local replay filenames
   // from the opaque journal event identifier; never exported or persisted.
@@ -598,6 +604,38 @@ export class ObsClient {
     if (audio) await this.call('GetInputMute', { inputName });
     this.requireConnected();
   }
+  /** Actual host observation, addressed by OBS UUID. A name is never a durable identity. */
+  async readMixerSource(sourceId: string): Promise<ObsAudioSource> {
+    this.requireConnected();
+    if (typeof sourceId !== 'string' || !sourceId.trim() || sourceId.length > 200) throw new Error('Invalid audio source');
+    const generation = this.generation;
+    const entries = (await this.call('GetInputList')).inputs.filter(input => input.inputName === sourceId);
+    const inputUuid = entries.length === 1 ? entries[0]!.inputUuid : undefined;
+    if (typeof inputUuid !== 'string' || !/^[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}$/i.test(inputUuid)) throw new Error('OBS audio UUID unavailable');
+    // obs-websocket-js 5.0 typings predate the UUID selector in current OBS.
+    const selector = { inputUuid };
+    const [volume, mute] = await Promise.all([this.call('GetInputVolume', selector as never), this.call('GetInputMute', selector as never)]);
+    const current = (await this.call('GetInputList')).inputs.filter(input => input.inputName === sourceId);
+    this.requireConnected();
+    if (generation !== this.generation || current.length !== 1 || current[0]!.inputUuid !== inputUuid ||
+      !Number.isFinite(volume.inputVolumeMul) || volume.inputVolumeMul < 0 || volume.inputVolumeMul > 20 || typeof mute.inputMuted !== 'boolean') throw new Error('OBS audio source changed');
+    return { sourceId, inputUuid, generation, gain: volume.inputVolumeMul, mute: mute.inputMuted, observedAt: Date.now() };
+  }
+  /** Called only within the master's serialized bus after consent and intent persistence. */
+  async writeMixerSource(expected: ObsAudioSource, change: ObsAudioChange): Promise<void> {
+    this.requireConnected();
+    if (expected.generation !== this.generation || expected.sourceId !== change.sourceId ||
+      !/^[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}$/i.test(expected.inputUuid)) throw new Error('OBS audio authority changed');
+    const selector = { inputUuid: expected.inputUuid };
+    if ('gain' in change) {
+      if (!Number.isFinite(change.gain) || change.gain < 0 || change.gain > 20) throw new Error('Invalid audio gain');
+      await this.call('SetInputVolume', { ...selector, inputVolumeMul: change.gain } as never);
+    } else {
+      if (typeof change.mute !== 'boolean') throw new Error('Invalid audio mute');
+      await this.call('SetInputMute', { ...selector, inputMuted: change.mute } as never);
+    }
+  }
+
   async mute(inputName: string, inputMuted: boolean) { await this.requireInput(inputName, true); await this.call('SetInputMute', { inputName, inputMuted }); }
   async volume(inputName: string, inputVolumeMul: number) { if (!Number.isFinite(inputVolumeMul) || inputVolumeMul < 0 || inputVolumeMul > 20) throw new Error('Volume OBS invalide.'); await this.requireInput(inputName, true); await this.call('SetInputVolume', { inputName, inputVolumeMul }); }
   async volumeDb(inputName: string, inputVolumeDb: number) { if (!Number.isFinite(inputVolumeDb) || inputVolumeDb < -100 || inputVolumeDb > 26) throw new Error('Volume OBS invalide.'); await this.requireInput(inputName, true); await this.call('SetInputVolume', { inputName, inputVolumeDb }); }

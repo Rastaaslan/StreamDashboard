@@ -47,6 +47,21 @@ export class DashboardCommandService {
     return operation;
   }
 
+  /** Host-only observed operation sharing the sole OBS command queue. */
+  observedObs<T>(operation: (assertCurrent: () => void) => Promise<T>): Promise<T> {
+    if (this.stopping) return Promise.reject(new Error('OBS authority stopping'));
+    const generation = this.obs.connectionGeneration, connected = this.obs.state.connected;
+    this.pendingCommands++; this.commandRevision++;
+    const result = this.queue.then(async () => {
+      if (this.stopping || !connected || generation !== this.obs.connectionGeneration) throw new Error('OBS authority changed');
+      this.activeGeneration = generation;
+      this.requireActiveConnection();
+      return operation(() => this.requireActiveConnection());
+    }).finally(() => { this.pendingCommands--; this.commandRevision++; });
+    this.queue = result.then(() => undefined, () => undefined);
+    return result;
+  }
+
   private requireActiveConnection() {
     if (!this.obs.state.connected || this.activeGeneration !== this.obs.connectionGeneration) throw new Error('Connexion OBS modifiée : commande annulée.');
   }

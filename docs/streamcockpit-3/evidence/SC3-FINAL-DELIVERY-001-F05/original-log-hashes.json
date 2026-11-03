@@ -1,0 +1,102 @@
+[
+    {
+        "original":  "C:\\Users\\damie\\AppData\\Local\\Temp\\sc3-final-clean-build.log",
+        "sha256":  "8a12796663b54b04d1d436c12116435346d692e6bbe42b6f8f4b79d9050e2e44",
+        "presentation":  "clean-build.txt"
+    },
+    {
+        "original":  "C:\\Users\\damie\\AppData\\Local\\Temp\\sc3-final-clean-shipped.log",
+        "sha256":  "2f273ed6d3ebbce5a5b2f5fa31808ea54fac59ab6821d520301eb6297a842fe5",
+        "presentation":  "clean-shipped.txt"
+    },
+    {
+        "original":  "C:\\Users\\damie\\AppData\\Local\\Temp\\sc3-final-windows-package.log",
+        "sha256":  "0492da11631c4393f346b4fbf5c86055dca39240b0a554be614aed2f13299106",
+        "presentation":  "windows-package.txt"
+    },
+    {
+        "original":  "C:\\Users\\damie\\AppData\\Local\\Temp\\sc3-final-electron-packaged-smoke.log",
+        "sha256":  "d4a0740aaa0a019bd9d4c9ab2efbda2c7351a815c8d34ac16e010a7f09f369ad",
+        "presentation":  "electron-packaged-smoke.txt"
+    },
+    {
+        "original":  "C:\\Users\\damie\\AppData\\Local\\Temp\\sc3-final-android-sync.log",
+        "sha256":  "23da71dcf8374a18b3a8fee178add46534b141f853582969cd770bda3367382a",
+        "presentation":  "android-sync.txt"
+    },
+    {
+        "original":  "C:\\Users\\damie\\AppData\\Local\\Temp\\sc3-final-mixer-targets.log",
+        "sha256":  "47857b18409da71acfebc15c8f6b77e18b2b69d85e3548191c94efa4f2a2d782",
+        "presentation":  "mixer-targets.txt"
+    },
+    {
+        "original":  "C:\\Users\\damie\\AppData\\Local\\Temp\\sc3-final-mixer-http.log",
+        "sha256":  "9dce526134a7a09f69a9630d587b484fda7db1ab49eae4c00d706d0e949e6aef",
+        "presentation":  "mixer-http.txt"
+    },
+    {
+        "original":  "C:\\Users\\damie\\AppData\\Local\\Temp\\sc3-final-mixer-debug.log",
+        "sha256":  "016afa858dd8df2f3295efe975f806930bed9de5ecceb7591095e3e885314541",
+        "presentation":  "mixer-debug.txt"
+    },
+    {
+        "original":  "C:\\Users\\damie\\AppData\\Local\\Temp\\sc3-final-mixer-http-msgpack.log",
+        "sha256":  "58c2f85de059ce7dea0dab555dccd3e4133a9505f6b518eeb70ee7b518c034fd",
+        "presentation":  "mixer-http-msgpack.txt"
+    },
+    {
+        "original":  "C:\\Users\\damie\\AppData\\Local\\Temp\\sc3-final-mixer-edge.log",
+        "sha256":  "7ad8a36e81ac74295fce293874fc80f78e2792e95b41a72226843ef55ce9a1df",
+        "presentation":  "mixer-edge.txt"
+    },
+    {
+        "original":  "C:\\Users\\damie\\AppData\\Local\\Temp\\sc3-final-mixer-integrated.log",
+        "sha256":  "99b5133745c7ea939cf8f4cb46e5e40650120d618a320d94c91144d5b30850e8",
+        "presentation":  "mixer-integrated.txt"
+    },
+    {
+        "original":  "C:\\Users\\damie\\AppData\\Local\\Temp\\sc3-final-mixer-auth-race-red.log",
+        "sha256":  "0f079b86f428b1038f4a0f274c097fb0e555f9106bacebb0f28272b55f3c53be",
+        "presentation":  "mixer-auth-race-red.txt"
+    },
+    {
+        "original":  "C:\\Users\\damie\\AppData\\Local\\Temp\\sc3-final-mixer-qualified-targets.log",
+        "sha256":  "8f311a5bc2c6b4dc1c86354000e2ea4e46e9ec1dde6731b6d96967adfb80f28f",
+        "presentation":  "mixer-qualified-targets.txt"
+    },
+    {
+        "original":  "C:\\Users\\damie\\AppData\\Local\\Temp\\sc3-final-mixer-types.log",
+        "sha256":  "02fc317be9c2332372313f5ab4150d40edc22d27e0f384a484364fac49613455",
+        "presentation":  "mixer-types.txt"
+    },
+    {
+        "original":  "C:\\Users\\damie\\AppData\\Local\\Temp\\sc3-final-mixer-types2.log",
+        "sha256":  "02fc317be9c2332372313f5ab4150d40edc22d27e0f384a484364fac49613455",
+        "presentation":  "mixer-types2.txt"
+    },
+    {
+        "original":  "C:\\Users\\damie\\AppData\\Local\\Temp\\sc3-final-mixer-types3.log",
+        "sha256":  "02fc317be9c2332372313f5ab4150d40edc22d27e0f384a484364fac49613455",
+        "presentation":  "mixer-types3.txt"
+    },
+    {
+        "original":  "C:\\Users\\damie\\AppData\\Local\\Temp\\sc3-final-mixer-browser-types.log",
+        "sha256":  "bb924b5407f9d304b72de6585fd82df628813488b5da1b1a285d6e9d05b09c1b",
+        "presentation":  "mixer-browser-types.txt"
+    },
+    {
+        "original":  "C:\\Users\\damie\\AppData\\Local\\Temp\\sc3-final-mixer-build.log",
+        "sha256":  "d0710361932d276713d2aa4c4040321ca7b1f9975720d161d08fefa8a96a3a81",
+        "presentation":  "mixer-build.txt"
+    },
+    {
+        "original":  "C:\\Users\\damie\\AppData\\Local\\Temp\\sc3-final-mixer-shipped.log",
+        "sha256":  "007faf5fc7b4528bb0a55ffffc001f12ff01a09943bb76fb7eebdd853bce36bf",
+        "presentation":  "mixer-shipped.txt"
+    },
+    {
+        "original":  "C:\\Users\\damie\\AppData\\Local\\Temp\\sc3-final-mixer-security.log",
+        "sha256":  "454dab5175905171ce2209fc5c95fc8e1b825b6bf3e4a02198b2d0e5060959de",
+        "presentation":  "mixer-security.txt"
+    }
+]

@@ -1,0 +1,6 @@
+
+> stream-dashboard@3.0.0-alpha.1 android:sync
+> node scripts/build-mobile-planning.mjs && tsx scripts/android-sync.ts
+
+Public assets: 140 files (production), declarations and unused previews excluded from production.
+Android assets synchronized from apps/mobile

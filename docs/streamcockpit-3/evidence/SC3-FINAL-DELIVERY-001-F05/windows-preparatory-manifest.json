@@ -1,0 +1,52 @@
+{
+    "schemaVersion":  1,
+    "type":  "PREPARATORY_NOT_A_RELEASE",
+    "version":  "3.0.0-alpha.1",
+    "sourceCommit":  "99ac62622c3055366201dc481c0ed9121115bd1c",
+    "sourceTreeSha256":  "fe6e0b11b4125c76c2a045563aecc20d9d72d796ff1c30af4371581c6ce3fded",
+    "sourceTreeDirty":  false,
+    "windows":  {
+                    "arch":  "x64",
+                    "exeSha256":  "20260be73ff2437f0bf14bebd80a9687999d44144587b0ba98f39e893b94b7a0",
+                    "asarSha256":  "c00c4d6ec17ccdb76ee037b913e5a2e223ba487831c589d823b30d02ace80c85",
+                    "signatureStatus":  "NotSigned",
+                    "isolatedElectronTests":  {
+                                                  "pass":  2,
+                                                  "skipped":  0,
+                                                  "fail":  0
+                                              },
+                    "platform":  "win32",
+                    "executable":  "StreamDashboard.exe",
+                    "packageCheck":  "PASS"
+                },
+    "android":  {
+                    "apkProduced":  false,
+                    "blockers":  [
+                                     "ANDROID_SDK_35_BUILD_TOOLS_MISSING",
+                                     "ANDROID_EXISTING_PRODUCTION_SIGNING_NOT_CONFIGURED"
+                                 ],
+                    "assetsSourceCommit":  "99ac62622c3055366201dc481c0ed9121115bd1c"
+                },
+    "gates":  {
+                  "G0":  "historically_qualified",
+                  "G1":  "historically_qualified",
+                  "G5":  "open",
+                  "G4":  "open",
+                  "G3":  "open",
+                  "G2":  "in_progress"
+              },
+    "publicationAuthorized":  false,
+    "installationPerformed":  false,
+    "files":  [
+                  {
+                      "sha256":  "ccfc78983882a148e1a44ad3ff88ee9b452c34b10ec2666d099cffdb661b8a84",
+                      "name":  "source-99ac62622c30.zip",
+                      "bytes":  3428209
+                  },
+                  {
+                      "sha256":  "10bc1d8309d55a8dc95394fb10404b358f2e43a556b60e2aeecd56f65e9902af",
+                      "name":  "StreamCockpit-3.0.0-alpha.1-win-x64-PREPARATORY.zip",
+                      "bytes":  153126221
+                  }
+              ]
+}

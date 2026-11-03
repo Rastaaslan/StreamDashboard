@@ -1,0 +1,28 @@
+{
+  "schemaVersion": 1,
+  "checkedAt": "2026-11-03T13:13:57.510Z",
+  "sourceCommit": "99ac62622c3055366201dc481c0ed9121115bd1c",
+  "windows": {
+    "electronRuntime": true,
+    "forgeCli": true,
+    "configuredCertificate": false,
+    "certificatePasswordPresent": false
+  },
+  "android": {
+    "javaAvailable": true,
+    "sdkConfigured": false,
+    "sdkExists": false,
+    "platform35": false,
+    "buildTools35": false,
+    "gradleWrapper": true,
+    "stableKeyPresent": false,
+    "signingEnvironmentComplete": false
+  },
+  "releaseEligible": false,
+  "blockers": [
+    "WINDOWS_SIGNING_CHAIN_NOT_CONFIGURED",
+    "ANDROID_SDK_35_BUILD_TOOLS_MISSING",
+    "ANDROID_EXISTING_PRODUCTION_SIGNING_NOT_CONFIGURED",
+    "G2_G3_G4_G5_NOT_QUALIFIED"
+  ]
+}

@@ -9,7 +9,7 @@ Cet audit fixe les écarts de livraison. Il ne suffit pas à qualifier un parcou
 | F02 | Ban/timeout/delete/unban existants ; Shield et niveau global AutoMod désormais preview/confirm + relecture | Réception OAuth réelle, historique viewer et traitement des messages AutoMod retenus restent à compléter |
 | F03 | Commandes/macros et moteur déterministe présents | Prévisualisation contextuelle encore neutralisée ; contexte scène/jeu/rôle authentifié et exécution intégrée manquants |
 | F04 | Replays OBS ; nouvelles routes et UI de marqueurs/clips Twitch simples, reçus explicites et observation F09 | Vérification réelle hors action publique automatique, fichiers OBS et mise à disposition effective des clips ; ClipForge V4 exclu |
-| F05 | Inventaire gain/mute et tableau OBS en lecture | Écriture intégrée au mixeur, mesures, routage PC jeu/VOD, confirmations et rollback toujours manquants |
+| F05 | Inventaire en lecture ; gain/muet preview/confirm, UUID OBS, file maître, intention durable, relecture et retour manuel protégé intégrés | Réception physique ; mesures et routage PC jeu/VOD incomplets ; historique complet des reçus/rollback après redémarrage restant volatil |
 | F06 | Planning, récurrences, export, brouillons assistés avec contrôle des conflits locaux | Duplication dans l’assistant, publication Google et reprise trio non qualifiées |
 | F07 | Navigation cinq onglets et banques manuelles | Sélection adaptative contextuelle encore UNKNOWN, dépend de F03 ; réception tactile physique |
 | F08 | Sondages, prédictions create/lock/end, raids, shoutouts intégrés | Deux obstacles d’accès corrigés : scopes OAuth demandés et identité du Desktop local. Réception réelle, EventSub raid et réconciliation sur matériel manquent |

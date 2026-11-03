@@ -1,0 +1,71 @@
+
+ RUN  v5.0.1 C:/Users/damie/Dev/StreamCockpit-3.0-FullExperience
+
+ ÔØ» tests/streamcockpit3-mixer-control-http.test.ts (17 tests | 2 failed) 5392ms
+   Ô£ô F05 actual OBS WS + HTTP: preview, one write, readback and guarded manual rollback {"sourceId":"Micro QA","gain":0.5} 128ms
+   Ô£ô F05 actual OBS WS + HTTP: preview, one write, readback and guarded manual rollback {"sourceId":"Micro QA","mute":true} 36ms
+   Ô£ô F05 does not restore an obsolete audio state after another operator change 20ms
+   Ô£ô F05 replaced refuses writes before dispatch 15ms
+   Ô£ô F05 changed refuses writes before dispatch 12ms
+   Ô£ô F05 no-uuid refuses writes before dispatch 12ms
+   Ô£ô F05 changed-during-save refuses writes before dispatch 14ms
+   Ô£ô F05 disk-failure refuses writes before dispatch 13ms
+   Ô£ô F05 host refuses writes before dispatch 12ms
+   Ô£ô F05 permission refuses writes before dispatch 12ms
+   ├ù F05 lost never reports confirmed and never replays a consumed intent 5006ms
+   Ô£ô F05 no-effect never reports confirmed and never replays a consumed intent 21ms
+   Ô£ô F05 reject never reports confirmed and never replays a consumed intent 17ms
+   Ô£ô F05 revoke-after never reports confirmed and never replays a consumed intent 18ms
+   Ô£ô F05 persisted intent survives router restart, with no invented success or rollback 23ms
+   Ô£ô F05 unchanged settings send no mutation; unsupported routing and unpaired actors are rejected 18ms
+   ├ù F05 and legacy OBS operations share the same serialized authority and shutdown guard 12ms
+vitest.cmd :
+Au caractère Ligne:1 : 69
++ ... xperience'; & .\node_modules\.bin\vitest.cmd run tests/streamcockpit3 ...
++                 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: (:String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+
+ÔÄ»ÔÄ»ÔÄ»ÔÄ»ÔÄ»ÔÄ»ÔÄ» Failed Tests 2 ÔÄ»ÔÄ»ÔÄ»ÔÄ»ÔÄ»ÔÄ»ÔÄ»
+
+ FAIL  tests/streamcockpit3-mixer-control-http.test.ts > F05 lost never reports confirmed
+and never replays a consumed intent
+
+Error: Test timed out in 5000ms.
+If this is a long-running test, pass a timeout value as the last argument or configure it globally with
+"testTimeout".
+ ÔØ» tests/streamcockpit3-mixer-control-http.test.ts:30:54
+     28|  const r=await f.call('confirm',{confirmationId:p.body.confirmationId,ÔÇª
+     29| }));
+     30| it.each(['lost','no-effect','reject','revoke-after'])('F05 %s never reÔÇª
+       |                                                      ^
+     31|  const p=await f.call('preview',{change:{sourceId,mute:true}});f.setMoÔÇª
+     32|  const body={confirmationId:p.body.confirmationId,confirmed:true},r=awÔÇª
+
+ÔÄ»ÔÄ»ÔÄ»ÔÄ»ÔÄ»ÔÄ»ÔÄ»ÔÄ»ÔÄ»ÔÄ»ÔÄ»ÔÄ»ÔÄ»ÔÄ»ÔÄ»ÔÄ»ÔÄ»ÔÄ»ÔÄ»ÔÄ»ÔÄ»ÔÄ»ÔÄ»ÔÄ»[1/2]ÔÄ»
+
+ FAIL  tests/streamcockpit3-mixer-control-http.test.ts > F05 and legacy OBS operations
+share the same serialized authority and shutdown guard
+AssertionError: expected 300 to be 315 // Object.is equality
+
+- Expected
++ Received
+
+- 315
++ 300
+
+ ÔØ» tests/streamcockpit3-mixer-control-http.test.ts:60:79
+     58|  await entered;const timer=f.bus.execute({type:'timer.add',seconds:15}ÔÇª
+     59|  expect(f.domain.timer.duration).toBe(300);expect(f.bus.hasPendingCommÔÇª
+     60|  release();await Promise.all([blocked,timer]);expect(f.domain.timer.duÔÇª
+       |                                                                               ^
+     61|  await f.bus.stop();await expect(f.bus.observedObs(async()=>{})).rejecÔÇª
+     62| }));
+ ÔØ» withMixerFixture tests/helpers/streamcockpit-mixer-fixture.ts:91:3
+
+ÔÄ»ÔÄ»ÔÄ»ÔÄ»ÔÄ»ÔÄ»ÔÄ»ÔÄ»ÔÄ»ÔÄ»ÔÄ»ÔÄ»ÔÄ»ÔÄ»ÔÄ»ÔÄ»ÔÄ»ÔÄ»ÔÄ»ÔÄ»ÔÄ»ÔÄ»ÔÄ»ÔÄ»[2/2]ÔÄ»
+
+ Test Files  1 failed (1)
+      Tests  2 failed | 15 passed (17)
+   Start at  14:25:39
+   Duration  6.06s (tests 91%, import 6%, transform 3%)

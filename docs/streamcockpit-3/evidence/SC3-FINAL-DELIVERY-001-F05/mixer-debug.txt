@@ -1,0 +1,54 @@
+
+ RUN  v5.0.1 C:/Users/damie/Dev/StreamCockpit-3.0-FullExperience
+
+vitest.cmd : stderr | tests/streamcockpit3-mixer-control-http.test.ts > F05 unchanged settings
+send no mutation; unsupported routing and unpaired actors are rejected
+Au caractère Ligne:1 : 95
++ ... _DEBUG='1'; & .\node_modules\.bin\vitest.cmd run tests/streamcockpit3 ...
++                 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: (stderr...rs are rejected:String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+
+QA connecting
+
+ ÔØ» tests/streamcockpit3-mixer-control-http.test.ts (17 tests | 1 failed | 16 skipped) 5007ms
+   Ôåô F05 actual OBS WS + HTTP: preview, one write, readback and guarded manual rollback {"sourceId":"Micro QA","gain":0.5}
+   Ôåô F05 actual OBS WS + HTTP: preview, one write, readback and guarded manual rollback {"sourceId":"Micro QA","mute":true}
+   Ôåô F05 does not restore an obsolete audio state after another operator change
+   Ôåô F05 replaced refuses writes before dispatch
+   Ôåô F05 changed refuses writes before dispatch
+   Ôåô F05 no-uuid refuses writes before dispatch
+   Ôåô F05 changed-during-save refuses writes before dispatch
+   Ôåô F05 disk-failure refuses writes before dispatch
+   Ôåô F05 host refuses writes before dispatch
+   Ôåô F05 permission refuses writes before dispatch
+   Ôåô F05 lost never reports confirmed and never replays a consumed intent
+   Ôåô F05 no-effect never reports confirmed and never replays a consumed intent
+   Ôåô F05 reject never reports confirmed and never replays a consumed intent
+   Ôåô F05 revoke-after never reports confirmed and never replays a consumed intent
+   Ôåô F05 persisted intent survives router restart, with no invented success or rollback
+   ├ù F05 unchanged settings send no mutation; unsupported routing and unpaired actors are rejected 5006ms
+   Ôåô F05 and legacy OBS operations share the same serialized authority and shutdown guard
+
+ÔÄ»ÔÄ»ÔÄ»ÔÄ»ÔÄ»ÔÄ»ÔÄ» Failed Tests 1 ÔÄ»ÔÄ»ÔÄ»ÔÄ»ÔÄ»ÔÄ»ÔÄ»
+
+ FAIL  tests/streamcockpit3-mixer-control-http.test.ts > F05 unchanged settings send no
+mutation; unsupported routing and unpaired actors are rejected
+Error: Test timed out in 5000ms.
+If this is a long-running test, pass a timeout value as the last argument or configure it globally with
+"testTimeout".
+ ÔØ» tests/streamcockpit3-mixer-control-http.test.ts:45:1
+     43|  expect((await f.call('confirm',{confirmationId:p.body.confirmationId,ÔÇª
+     44| }));
+     45| it('F05 unchanged settings send no mutation; unsupported routing and uÔÇª
+       | ^
+     46|  const p=await f.call('preview',{change:{sourceId,gain:.75}});
+     47|  expect((await f.call('confirm',{confirmationId:p.body.confirmationId,ÔÇª
+
+ÔÄ»ÔÄ»ÔÄ»ÔÄ»ÔÄ»ÔÄ»ÔÄ»ÔÄ»ÔÄ»ÔÄ»ÔÄ»ÔÄ»ÔÄ»ÔÄ»ÔÄ»ÔÄ»ÔÄ»ÔÄ»ÔÄ»ÔÄ»ÔÄ»ÔÄ»ÔÄ»ÔÄ»[1/1]ÔÄ»
+
+
+ Test Files  1 failed (1)
+      Tests  1 failed | 16 skipped (17)
+   Start at  14:24:53
+   Duration  5.67s (tests 91%, import 6%, transform 3%)

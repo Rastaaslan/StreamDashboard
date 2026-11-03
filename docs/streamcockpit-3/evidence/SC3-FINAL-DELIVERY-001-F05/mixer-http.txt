@@ -1,0 +1,161 @@
+
+ RUN  v5.0.1 C:/Users/damie/Dev/StreamCockpit-3.0-FullExperience
+
+ ÔØ» tests/streamcockpit3-mixer-control-http.test.ts (17 tests | 17 failed) 85149ms
+   ├ù F05 actual OBS WS + HTTP: preview, one write, readback and guarded manual rollback {"sourceId":"Micro QA","gain":0.5} 5011ms
+   ├ù F05 actual OBS WS + HTTP: preview, one write, readback and guarded manual rollback {"sourceId":"Micro QA","mute":true} 5003ms
+   ├ù F05 does not restore an obsolete audio state after another operator change 5007ms
+   ├ù F05 replaced refuses writes before dispatch 5013ms
+   ├ù F05 changed refuses writes before dispatch 5009ms
+   ├ù F05 no-uuid refuses writes before dispatch 5002ms
+   ├ù F05 changed-during-save refuses writes before dispatch 5012ms
+   ├ù F05 disk-failure refuses writes before dispatch 5011ms
+   ├ù F05 host refuses writes before dispatch 5005ms
+   ├ù F05 permission refuses writes before dispatch 5002ms
+   ├ù F05 lost never reports confirmed and never replays a consumed intent 5004ms
+   ├ù F05 no-effect never reports confirmed and never replays a consumed intent 5014ms
+   ├ù F05 reject never reports confirmed and never replays a consumed intent 5014ms
+   ├ù F05 revoke-after never reports confirmed and never replays a consumed intent 5009ms
+   ├ù F05 persisted intent survives router restart, with no invented success or rollback 5016ms
+   ├ù F05 unchanged settings send no mutation; unsupported routing and unpaired actors are rejected 5007ms
+   ├ù F05 and legacy OBS operations share the same serialized authority and shutdown guard 5006ms
+vitest.cmd :
+Au caractère Ligne:1 : 69
++ ... xperience'; & .\node_modules\.bin\vitest.cmd run tests/streamcockpit3 ...
++                 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: (:String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+
+ÔÄ»ÔÄ»ÔÄ»ÔÄ»ÔÄ»ÔÄ» Failed Tests 17 ÔÄ»ÔÄ»ÔÄ»ÔÄ»ÔÄ»ÔÄ»ÔÄ»
+
+ FAIL  tests/streamcockpit3-mixer-control-http.test.ts > F05 actual OBS WS + HTTP:
+preview, one write, readback and guarded manual rollback {"sourceId":"Micro QA","gain":0.5}
+ FAIL  tests/streamcockpit3-mixer-control-http.test.ts > F05 actual OBS WS + HTTP:
+preview, one write, readback and guarded manual rollback {"sourceId":"Micro QA","mute":true}
+Error: Test timed out in 5000ms.
+If this is a long-running test, pass a timeout value as the last argument or configure it globally with
+"testTimeout".
+ ÔØ» tests/streamcockpit3-mixer-control-http.test.ts:5:51
+      3| import {isRemoteApiAllowed,requiredDevicePermissions} from '../apps/seÔÇª
+      4| const sourceId='Micro QA';
+      5| it.each([{sourceId,gain:.5},{sourceId,mute:true}])('F05 actual OBS WS ÔÇª
+       |                                                   ^
+      6|  const p=await f.call('preview',{change});expect(p.status).toBe(200);eÔÇª
+      7|  const body={confirmationId:p.body.confirmationId,confirmed:true};
+
+ÔÄ»ÔÄ»ÔÄ»ÔÄ»ÔÄ»ÔÄ»ÔÄ»ÔÄ»ÔÄ»ÔÄ»ÔÄ»ÔÄ»ÔÄ»ÔÄ»ÔÄ»ÔÄ»ÔÄ»ÔÄ»ÔÄ»ÔÄ»ÔÄ»ÔÄ»ÔÄ»[1/17]ÔÄ»
+
+ FAIL  tests/streamcockpit3-mixer-control-http.test.ts > F05 does not restore an obsolete
+audio state after another operator change
+Error: Test timed out in 5000ms.
+If this is a long-running test, pass a timeout value as the last argument or configure it globally with
+"testTimeout".
+ ÔØ» tests/streamcockpit3-mixer-control-http.test.ts:18:1
+     16|  expect(f.state()).toMatchObject({gain:.75,mute:false,writes:2});expecÔÇª
+     17| }));
+     18| it('F05 does not restore an obsolete audio state after another operatoÔÇª
+       | ^
+     19|  const p=await f.call('preview',{change:{sourceId,gain:.5}}),r=await fÔÇª
+     20|  f.changeGain(.9);
+
+ÔÄ»ÔÄ»ÔÄ»ÔÄ»ÔÄ»ÔÄ»ÔÄ»ÔÄ»ÔÄ»ÔÄ»ÔÄ»ÔÄ»ÔÄ»ÔÄ»ÔÄ»ÔÄ»ÔÄ»ÔÄ»ÔÄ»ÔÄ»ÔÄ»ÔÄ»ÔÄ»[2/17]ÔÄ»
+
+ FAIL  tests/streamcockpit3-mixer-control-http.test.ts > F05 replaced refuses writes
+before dispatch
+ FAIL  tests/streamcockpit3-mixer-control-http.test.ts > F05 changed refuses writes before
+dispatch
+ FAIL  tests/streamcockpit3-mixer-control-http.test.ts > F05 no-uuid refuses writes before
+dispatch
+ FAIL  tests/streamcockpit3-mixer-control-http.test.ts > F05 changed-during-save refuses
+writes before dispatch
+ FAIL  tests/streamcockpit3-mixer-control-http.test.ts > F05 disk-failure refuses writes
+before dispatch
+ FAIL  tests/streamcockpit3-mixer-control-http.test.ts > F05 host refuses writes before
+dispatch
+ FAIL  tests/streamcockpit3-mixer-control-http.test.ts > F05 permission refuses writes
+before dispatch
+Error: Test timed out in 5000ms.
+If this is a long-running test, pass a timeout value as the last argument or configure it globally with
+"testTimeout".
+ ÔØ» tests/streamcockpit3-mixer-control-http.test.ts:24:99
+     22|  expect(f.state().writes).toBe(1);expect(f.state().gain).toBe(.9);
+     23| }));
+     24| it.each(['replaced','changed','no-uuid','changed-during-save','disk-faÔÇª
+       |
+^
+     25|  const p=await f.call('preview',{change:{sourceId,gain:.5}});expect(p.ÔÇª
+     26|  if(mode==='replaced')f.changeSource();else if(mode==='changed')f.chanÔÇª
+
+ÔÄ»ÔÄ»ÔÄ»ÔÄ»ÔÄ»ÔÄ»ÔÄ»ÔÄ»ÔÄ»ÔÄ»ÔÄ»ÔÄ»ÔÄ»ÔÄ»ÔÄ»ÔÄ»ÔÄ»ÔÄ»ÔÄ»ÔÄ»ÔÄ»ÔÄ»ÔÄ»[3/17]ÔÄ»
+
+ FAIL  tests/streamcockpit3-mixer-control-http.test.ts > F05 lost never reports confirmed
+and never replays a consumed intent
+ FAIL  tests/streamcockpit3-mixer-control-http.test.ts > F05 no-effect never reports
+confirmed and never replays a consumed intent
+ FAIL  tests/streamcockpit3-mixer-control-http.test.ts > F05 reject never reports
+confirmed and never replays a consumed intent
+ FAIL  tests/streamcockpit3-mixer-control-http.test.ts > F05 revoke-after never reports
+confirmed and never replays a consumed intent
+Error: Test timed out in 5000ms.
+If this is a long-running test, pass a timeout value as the last argument or configure it globally with
+"testTimeout".
+ ÔØ» tests/streamcockpit3-mixer-control-http.test.ts:30:54
+     28|  const r=await f.call('confirm',{confirmationId:p.body.confirmationId,ÔÇª
+     29| }));
+     30| it.each(['lost','no-effect','reject','revoke-after'])('F05 %s never reÔÇª
+       |                                                      ^
+     31|  const p=await f.call('preview',{change:{sourceId,mute:true}});f.setMoÔÇª
+     32|  const body={confirmationId:p.body.confirmationId,confirmed:true},r=awÔÇª
+
+ÔÄ»ÔÄ»ÔÄ»ÔÄ»ÔÄ»ÔÄ»ÔÄ»ÔÄ»ÔÄ»ÔÄ»ÔÄ»ÔÄ»ÔÄ»ÔÄ»ÔÄ»ÔÄ»ÔÄ»ÔÄ»ÔÄ»ÔÄ»ÔÄ»ÔÄ»ÔÄ»[4/17]ÔÄ»
+
+ FAIL  tests/streamcockpit3-mixer-control-http.test.ts > F05 persisted intent survives
+router restart, with no invented success or rollback
+Error: Test timed out in 5000ms.
+If this is a long-running test, pass a timeout value as the last argument or configure it globally with
+"testTimeout".
+ ÔØ» tests/streamcockpit3-mixer-control-http.test.ts:38:1
+     36|  expect(JSON.stringify(r)).not.toContain('PRIVATE');
+     37| }));
+     38| it('F05 persisted intent survives router restart, with no invented sucÔÇª
+       | ^
+     39|  const p=await f.call('preview',{change:{sourceId,gain:.5}});
+     40|  await f.call('confirm',{confirmationId:p.body.confirmationId,confirmeÔÇª
+
+ÔÄ»ÔÄ»ÔÄ»ÔÄ»ÔÄ»ÔÄ»ÔÄ»ÔÄ»ÔÄ»ÔÄ»ÔÄ»ÔÄ»ÔÄ»ÔÄ»ÔÄ»ÔÄ»ÔÄ»ÔÄ»ÔÄ»ÔÄ»ÔÄ»ÔÄ»ÔÄ»[5/17]ÔÄ»
+
+ FAIL  tests/streamcockpit3-mixer-control-http.test.ts > F05 unchanged settings send no
+mutation; unsupported routing and unpaired actors are rejected
+Error: Test timed out in 5000ms.
+If this is a long-running test, pass a timeout value as the last argument or configure it globally with
+"testTimeout".
+ ÔØ» tests/streamcockpit3-mixer-control-http.test.ts:45:1
+     43|  expect((await f.call('confirm',{confirmationId:p.body.confirmationId,ÔÇª
+     44| }));
+     45| it('F05 unchanged settings send no mutation; unsupported routing and uÔÇª
+       | ^
+     46|  const p=await f.call('preview',{change:{sourceId,gain:.75}});
+     47|  expect((await f.call('confirm',{confirmationId:p.body.confirmationId,ÔÇª
+
+ÔÄ»ÔÄ»ÔÄ»ÔÄ»ÔÄ»ÔÄ»ÔÄ»ÔÄ»ÔÄ»ÔÄ»ÔÄ»ÔÄ»ÔÄ»ÔÄ»ÔÄ»ÔÄ»ÔÄ»ÔÄ»ÔÄ»ÔÄ»ÔÄ»ÔÄ»ÔÄ»[6/17]ÔÄ»
+
+ FAIL  tests/streamcockpit3-mixer-control-http.test.ts > F05 and legacy OBS operations
+share the same serialized authority and shutdown guard
+Error: Test timed out in 5000ms.
+If this is a long-running test, pass a timeout value as the last argument or configure it globally with
+"testTimeout".
+ ÔØ» tests/streamcockpit3-mixer-control-http.test.ts:55:1
+     53|  }
+     54| }));
+     55| it('F05 and legacy OBS operations share the same serialized authority ÔÇª
+       | ^
+     56|  let enter!:()=>void,release!:()=>void;const entered=new Promise<void>ÔÇª
+     57|  const blocked=f.bus.observedObs(async(assert:()=>void)=>{assert();entÔÇª
+
+ÔÄ»ÔÄ»ÔÄ»ÔÄ»ÔÄ»ÔÄ»ÔÄ»ÔÄ»ÔÄ»ÔÄ»ÔÄ»ÔÄ»ÔÄ»ÔÄ»ÔÄ»ÔÄ»ÔÄ»ÔÄ»ÔÄ»ÔÄ»ÔÄ»ÔÄ»ÔÄ»[7/17]ÔÄ»
+
+
+ Test Files  1 failed (1)
+      Tests  17 failed (17)
+   Start at  14:22:53
+   Duration  85.89s (tests 99%)

@@ -117,7 +117,7 @@ async function network(path, body, method=body===undefined?'GET':'POST',target=s
   if(target===localEndpoint&&/^\/api\/v1\/twitch\/advanced\//.test(path)&&globalThis.streamDashboardDesktop?.getLocalTwitchCredential)
     token=await globalThis.streamDashboardDesktop.getLocalTwitchCredential();
   let response;
-  try{response=await peers.request(target+path,{method,token,body,timeoutMs:(path==='/api/v2/actions'||path==='/api/v2/sounds/export')?120_000:path.startsWith('/api/v1/twitch/advanced/')?65_000:path.startsWith('/api/v2/wizebot/')||path.startsWith('/api/v2/youtube/')||path==='/api/v2/autonomy/sync'?65_000:path.startsWith('/api/v1/streamlabs/events')||path.startsWith('/api/v1/supports/streamlabs/history/')?20_000:8_000});}
+  try{response=await peers.request(target+path,{method,token,body,timeoutMs:(path==='/api/v2/actions'||path==='/api/v2/sounds/export')?120_000:(path.startsWith('/api/v1/twitch/advanced/')||path.startsWith('/api/v1/streamcockpit-mixer/control/'))?65_000:path.startsWith('/api/v2/wizebot/')||path.startsWith('/api/v2/youtube/')||path==='/api/v2/autonomy/sync'?65_000:path.startsWith('/api/v1/streamlabs/events')||path.startsWith('/api/v1/supports/streamlabs/history/')?20_000:8_000});}
   catch(cause){const error=new Error(cause?.message||'Connexion à la régie interrompue ou délai dépassé.',{cause});error.transportUnavailable=true;throw error;}
   if(response.status===204)return {};
   let value;
@@ -535,6 +535,7 @@ function settingsPage(){if(native&&!server&&tab==='obs')tab='platforms';return r
 
 function render({passive=false}={}){
  if(passive&&(pointerHeld||dialog.open||editingForm($('#content')))){shell();if(!online){healthPage?.unavailable();mixerPage?.unavailable();momentsPage?.unavailable();}return;}
+ if(passive&&page==='mixer'&&online&&server&&mixerPage?.isAvailable(server)){shell();void mixerPage.refresh();return;}
  // F09 is an explicit session lookup: a passive host status refresh must not erase the selected journal.
  // After disconnect isAvailable() stays false, forcing a fresh page on reconnection.
  if(passive&&page==='moments'&&online&&server&&momentsPage?.isAvailable()){shell();return;}
@@ -588,7 +589,12 @@ function render({passive=false}={}){
   liveMonitor?.destroy();liveMonitor=undefined;
   streamlabsFeed?.destroy();streamlabsFeed=undefined;streamlabsFeedRoot=undefined;
   $('#content').innerHTML='<button type="button" class="secondary" data-page="plus">Retour à Plus</button><div id="mixer-page"></div>';
-  mixerPage=mountMixerPage($('#mixer-page'),{online:Boolean(online&&server),request:path=>network(path)});
+  const mixerAuthority=server;
+  mixerPage=mountMixerPage($('#mixer-page'),{online:Boolean(online&&mixerAuthority),controls:{authorityKey:mixerAuthority},request:(path,body,method)=>{
+   if(!online||server!==mixerAuthority)throw new Error('Régie audio déconnectée ou modifiée.');
+   if(method==='POST'&&commandsBlocked())throw new Error('Synchronisez les réglages avant de commander le mixeur.');
+   return network(path,body,method,mixerAuthority,mixerAuthority===localEndpoint?'':credential);
+  }});
  }else if(page==='moments'){
   liveMonitor?.destroy();liveMonitor=undefined;
   streamlabsFeed?.destroy();streamlabsFeed=undefined;streamlabsFeedRoot=undefined;

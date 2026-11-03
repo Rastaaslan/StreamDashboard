@@ -1,5 +1,5 @@
 /** Read-only view; injected authenticated reader owns transport. */
-export function mountMixerTable(root, { read }) {
+export function mountMixerTable(root, { read, onData = () => {} }) {
   const doc = root.ownerDocument;
   const section = doc.createElement('section');
   section.setAttribute('aria-label', 'Mixeur audio — lecture seule');
@@ -24,6 +24,7 @@ export function mountMixerTable(root, { read }) {
       const data = await read();
       if (disposed || current !== generation) return;
       if (data?.schemaVersion !== 1 || data.readOnly !== true || !Array.isArray(data.sources) || !Array.isArray(data.errors) || !Array.isArray(data.outputs)) throw new Error('INVALID_MIXER');
+      onData(data);
       const head = doc.createElement('tr');
       for (const label of ['Source', 'Gain (×)', 'Muet', 'Niveau (amplitude)', 'Route stream', 'Route monitor', 'Route VOD', 'Périphérique']) {
         const cell = doc.createElement('th'); cell.textContent = label; head.append(cell);

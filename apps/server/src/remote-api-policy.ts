@@ -28,6 +28,7 @@ const PUT_EXACT = new Set([
 ]);
 
 const POST_EXACT = new Set([
+  '/v1/streamcockpit-mixer/control/preview','/v1/streamcockpit-mixer/control/confirm',
   '/v1/spotify/control','/v1/dji/telemetry','/v1/commands','/v1/remote/ws-ticket','/v1/obs/test',
   '/v1/soundboard/play','/v1/soundboard/volume','/v1/soundboard/stop',
   '/v1/twitch/device','/v1/twitch/disconnect','/v1/google/disconnect',
@@ -48,6 +49,7 @@ const POST_EXACT = new Set([
 export function isRemoteApiAllowed(method: string, pathName: string) {
   const verb = method.toUpperCase();
   if (verb === 'HEAD' && ['/v1/streamcockpit-health', '/v1/streamcockpit-mixer', '/v1/twitch/advanced/capabilities'].includes(pathName)) return true;
+  if (verb === 'GET' && /^\/v1\/streamcockpit-mixer\/control\/status\/[0-9a-f-]{36}$/i.test(pathName)) return true;
   if (verb === 'GET' && ['/v1/streamcockpit-moments/manual/context','/v1/streamcockpit-moments/manual/scheduled'].includes(pathName)) return true;
   if (verb === 'POST' && pathName === '/v1/streamcockpit-moments/manual/scheduled/select') return true;
   if (verb === 'POST' && pathName === '/v1/streamcockpit-moments/manual/add') return true;
@@ -92,6 +94,7 @@ export const remoteApiPolicySnapshot = {
 
 /** Explicit permissions supplement the existing legacy/management allowlists. */
 export function requiredDevicePermissions(method:string,path:string,body:unknown,actions:DeckAction[]=[]):DevicePermission[] {
+  if(path.startsWith('/v1/streamcockpit-mixer/control/'))return ['observe','obs','audio'];
   if(path==='/v1/twitch/advanced/capabilities')return ['chat'];
   if(method==='GET'&&['/v1/twitch/advanced/prediction','/v1/twitch/advanced/prediction/reconcile','/v1/twitch/advanced/prediction/end/inspect'].includes(path))return ['chat','cloud'];
   if(method==='POST'&&['/v1/twitch/advanced/moment/preview','/v1/twitch/advanced/moment/confirm'].includes(path))return ['chat','cloud','clips'];

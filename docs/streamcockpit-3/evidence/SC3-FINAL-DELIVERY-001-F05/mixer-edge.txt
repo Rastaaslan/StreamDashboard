@@ -1,0 +1,36 @@
+
+ RUN  v5.0.1 C:/Users/damie/Dev/StreamCockpit-3.0-FullExperience
+
+ ÔØ» tests/streamcockpit3-mixer-control-browser.test.ts (1 test | 1 failed) 6265ms
+   ├ù F05 Edge 320px + real HTTP/OBS WS: consent, readback, rollback, lost receipt and page restart 6263ms
+vitest.cmd :
+Au caractère Ligne:1 : 102
++ ... R_TEST='1'; & .\node_modules\.bin\vitest.cmd run tests/streamcockpit3 ...
++                 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: (:String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+
+ÔÄ»ÔÄ»ÔÄ»ÔÄ»ÔÄ»ÔÄ»ÔÄ» Failed Tests 1 ÔÄ»ÔÄ»ÔÄ»ÔÄ»ÔÄ»ÔÄ»ÔÄ»
+
+ FAIL  tests/streamcockpit3-mixer-control-browser.test.ts > F05 Edge 320px + real HTTP/OBS
+WS: consent, readback, rollback, lost receipt and page restart
+
+AssertionError: expected 'Aper├ºu obtenu sans ├®criture ; confirmÔÇª' to contain 'incertain'
+ Test Files  1 failed (1)
+      Tests  1 failed (1)
+   Start at  14:26:03
+   Duration  7.25s (tests 88%, import 9%, transform 2%)
+
+
+Expected: "incertain"
+Received: "Aper├ºu obtenu sans ├®criture ; confirmation valable 45 secondes."
+
+ ÔØ» tests/streamcockpit3-mixer-control-browser.test.ts:33:130
+
+ ÔØ» withMixerFixture tests/helpers/streamcockpit-mixer-fixture.ts:91:3
+
+Caused by: Error: Matcher did not succeed in time.
+ ÔØ» tests/streamcockpit3-mixer-control-browser.test.ts:33:66
+ ÔØ» withMixerFixture tests/helpers/streamcockpit-mixer-fixture.ts:91:3
+
+ÔÄ»ÔÄ»ÔÄ»ÔÄ»ÔÄ»ÔÄ»ÔÄ»ÔÄ»ÔÄ»ÔÄ»ÔÄ»ÔÄ»ÔÄ»ÔÄ»ÔÄ»ÔÄ»ÔÄ»ÔÄ»ÔÄ»ÔÄ»ÔÄ»ÔÄ»ÔÄ»ÔÄ»[1/1]ÔÄ»

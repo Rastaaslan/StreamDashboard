@@ -4,6 +4,7 @@ import { mapHostHealth } from './streamcockpit-health/host-adapter.js';
 import { ObsHealthObservation } from './streamcockpit-health/obs-observation.js';
 import { ObsMixerObservation } from './streamcockpit-mixer-observation.js';
 import { createMixerRouter, mixerHostEligible } from './streamcockpit-mixer-router.js';
+import { createMixerControlRouter } from './streamcockpit-mixer-control-router.js';
 import { createMomentsReadRouter } from './streamcockpit-moments-router.js';
 import { createMomentsManualRouter } from './streamcockpit-moments-manual-router.js';
 import { ScheduledMomentBinding } from './streamcockpit-moments-scheduled.js';
@@ -2086,6 +2087,32 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
       return Boolean(id && remoteAuth.permits(id, ['observe']));
     },
     readSnapshot: () => obsMixerObservation.read(Date.now()),
+  }));
+
+  app.use('/api/v1/streamcockpit-mixer/control', createMixerControlRouter({
+    actor: async request => {
+      await assertRole('obs'); await assertRole('audio');
+      if (isLocalRequest(request)) return 'FIXE:local-audio';
+      const token = request.headers.authorization?.match(/^Device (\S+)$/)?.[1];
+      const id = token ? remoteAuth.authenticate(token) : null;
+      return id && remoteAuth.permits(id, ['observe', 'obs', 'audio']) ? id : '';
+    },
+    host: async () => {
+      if (options.obsEnabled === false || options.timerAuthority === false || !obs.state.connected) return undefined;
+      const device = await options.deviceDescriptor?.().catch(() => undefined);
+      return mixerHostEligible(device) ? device!.id + ':' + obs.connectionGeneration : undefined;
+    },
+    read: sourceId => obs.readMixerSource(sourceId),
+    write: (before, change) => obs.writeMixerSource(before, change),
+    serialize: operation => commands.observedObs(operation),
+    reservation: id => local.commandReceipts?.[id],
+    reserve: async (id, fingerprint) => {
+      if (Object.hasOwn(local.commandReceipts ?? {}, id)) throw new Error('MIXER_INTENT_ALREADY_RESERVED');
+      local.commandReceipts = { ...local.commandReceipts, [id]: fingerprint };
+      local.commandReceiptOrder!.push(id);
+      for (const expired of local.commandReceiptOrder!.splice(0, Math.max(0, local.commandReceiptOrder!.length - 5_000))) delete local.commandReceipts[expired];
+      await save();
+    },
   }));
 
   // F09: FIXE is the single source of live identities for both paired manual

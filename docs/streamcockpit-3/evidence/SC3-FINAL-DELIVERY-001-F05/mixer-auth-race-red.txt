@@ -1,0 +1,58 @@
+
+ RUN  v5.0.1 C:/Users/damie/Dev/StreamCockpit-3.0-FullExperience
+
+ ÔØ» tests/streamcockpit3-mixer-control-http.test.ts (18 tests | 1 failed | 17 skipped) 118ms
+   Ôåô F05 actual OBS WS + HTTP: preview, one write, readback and guarded manual rollback {"sourceId":"Micro QA","gain":0.5}
+   Ôåô F05 actual OBS WS + HTTP: preview, one write, readback and guarded manual rollback {"sourceId":"Micro QA","mute":true}
+   Ôåô F05 does not restore an obsolete audio state after another operator change
+   Ôåô F05 replaced refuses writes before dispatch
+   Ôåô F05 changed refuses writes before dispatch
+   Ôåô F05 no-uuid refuses writes before dispatch
+   Ôåô F05 changed-during-save refuses writes before dispatch
+   Ôåô F05 disk-failure refuses writes before dispatch
+   Ôåô F05 host refuses writes before dispatch
+   Ôåô F05 permission refuses writes before dispatch
+   ├ù F05 revoke-during-final-read refuses writes before dispatch 116ms
+   Ôåô F05 lost never reports confirmed and never replays a consumed intent
+   Ôåô F05 no-effect never reports confirmed and never replays a consumed intent
+   Ôåô F05 reject never reports confirmed and never replays a consumed intent
+   Ôåô F05 revoke-after never reports confirmed and never replays a consumed intent
+   Ôåô F05 persisted intent survives router restart, with no invented success or rollback
+   Ôåô F05 unchanged settings send no mutation; unsupported routing and unpaired actors are rejected
+   Ôåô F05 and legacy OBS operations share the same serialized authority and shutdown guard
+vitest.cmd :
+Au caractère Ligne:1 : 69
++ ... xperience'; & .\node_modules\.bin\vitest.cmd run tests/streamcockpit3 ...
++                 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: (:String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+
+ÔÄ»ÔÄ»ÔÄ»ÔÄ»ÔÄ»ÔÄ»ÔÄ» Failed Tests 1 ÔÄ»ÔÄ»ÔÄ»ÔÄ»ÔÄ»ÔÄ»ÔÄ»
+
+ FAIL  tests/streamcockpit3-mixer-control-http.test.ts > F05 revoke-during-final-read
+refuses writes before dispatch
+
+AssertionError: expected 1 to be +0 // Object.is equality
+
+- Expected
++ Received
+
+- 0
++ 1
+
+ ÔØ» tests/streamcockpit3-mixer-control-http.test.ts:28:158
+     26|  if(mode==='replaced')f.changeSource();else if(mode==='changed')f.chanÔÇª
+     27|  else if(mode==='permission')f.auth.setPermissions(f.paired.deviceId,[ÔÇª
+     28|  const r=await f.call('confirm',{confirmationId:p.body.confirmationId,ÔÇª
+       |
+                                                         ^
+     29| }));
+     30| it.each(['lost','no-effect','reject','revoke-after'])('F05 %s never reÔÇª
+ ÔØ» withMixerFixture tests/helpers/streamcockpit-mixer-fixture.ts:91:3
+
+ÔÄ»ÔÄ»ÔÄ»ÔÄ»ÔÄ»ÔÄ»ÔÄ»ÔÄ»ÔÄ»ÔÄ»ÔÄ»ÔÄ»ÔÄ»ÔÄ»ÔÄ»ÔÄ»ÔÄ»ÔÄ»ÔÄ»ÔÄ»ÔÄ»ÔÄ»ÔÄ»ÔÄ»[1/1]ÔÄ»
+
+ Test Files  1 failed (1)
+      Tests  1 failed | 17 skipped (18)
+   Start at  14:28:20
+   Duration  802ms (import 56%, transform 25%, tests 18%, worker 1%)
