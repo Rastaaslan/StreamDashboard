@@ -220,3 +220,10 @@ it('F08 lock routes are mounted on the actual FIXE server and reject unauthentic
     }
   }finally{await server?.stop();await rm(dir,{recursive:true,force:true});}
 });
+
+it('F08 an attempted terminal PATCH blocks any subsequent LOCK even when Twitch still reports ACTIVE',()=>fixture(async h=>{
+  h.fence.markEndAttempted('123','pred-777','CANCELED');
+  expect(h.fence.readEndAttempted('123','pred-777')).toBe(true);
+  expect((await h.call('preview',{})).status).toBe(409);
+  expect(h.patches).not.toHaveBeenCalled();
+}));

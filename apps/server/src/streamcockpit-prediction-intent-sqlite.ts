@@ -49,13 +49,15 @@ export class PredictionIntentSqlite implements PredictionCreationFence {
         const app = db.prepare('PRAGMA application_id').get() as { application_id?: number };
         const version = db.prepare('PRAGMA user_version').get() as { user_version?: number };
         const table = db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='prediction_intents'").get();
-        if (app.application_id !== applicationId || ![1, 2, 3].includes(version.user_version ?? -1) || !table)
+        if (app.application_id !== applicationId || ![1, 2, 3, 4].includes(version.user_version ?? -1) || !table)
           throw Error('PREDICTION_FENCE_FORMAT_UNKNOWN');
         const columns = db.prepare('PRAGMA table_info(prediction_intents)').all() as { name: string }[];
         const expected = version.user_version === 1
           ? ['broadcaster_id'] : version.user_version === 2
             ? ['broadcaster_id', 'prediction_id']
-            : ['broadcaster_id', 'prediction_id', 'lock_attempted'];
+            : version.user_version === 3
+              ? ['broadcaster_id', 'prediction_id', 'lock_attempted']
+              : ['broadcaster_id', 'prediction_id', 'lock_attempted', 'end_attempted'];
         if (columns.map(c => c.name).join(',') !== expected.join(','))
           throw Error('PREDICTION_FENCE_FORMAT_UNKNOWN');
       }
@@ -135,12 +137,12 @@ export class PredictionIntentSqlite implements PredictionCreationFence {
     try {
       const version = db.prepare('PRAGMA user_version').get() as {user_version: number};
       if (version.user_version === 1) throw Error('PREDICTION_LOCK_UNAVAILABLE');
-      const row = db.prepare(version.user_version === 3
+      const row = db.prepare(version.user_version >= 3
         ? 'SELECT prediction_id, lock_attempted FROM prediction_intents WHERE broadcaster_id=?'
         : 'SELECT prediction_id FROM prediction_intents WHERE broadcaster_id=?')
         .get(broadcasterId) as {prediction_id: string|null; lock_attempted?: number}|undefined;
       if (!row || row.prediction_id !== predictionId) throw Error('PREDICTION_LOCK_UNAVAILABLE');
-      if (version.user_version === 3 && ![0, 1].includes(row.lock_attempted ?? -1))
+      if (version.user_version >= 3 && ![0, 1].includes(row.lock_attempted ?? -1))
         throw Error('PREDICTION_LOCK_UNAVAILABLE');
       return row.lock_attempted === 1;
     } finally { db.close(); }
@@ -162,6 +164,59 @@ export class PredictionIntentSqlite implements PredictionCreationFence {
     } catch {
       if (inTransaction) { try { db.exec('ROLLBACK'); } catch { /* uncertain lock intent */ } }
       throw Error('PREDICTION_LOCK_WRITE_UNCERTAIN');
+    } finally { db.close(); }
+  }
+
+  /** No provider read can infer that a prior end PATCH did not reach Twitch. */
+  readEndAttempted(broadcasterId: string, predictionId: string): boolean {
+    if (!validBroadcaster(broadcasterId) || !/^[A-Za-z0-9-]{1,128}$/.test(predictionId))
+      throw Error('PREDICTION_END_UNAVAILABLE');
+    const db = this.open(false);
+    if (!db) throw Error('PREDICTION_END_UNAVAILABLE');
+    try {
+      const version = db.prepare('PRAGMA user_version').get() as {user_version: number};
+      if (version === undefined || version.user_version === 1) throw Error('PREDICTION_END_UNAVAILABLE');
+      const row = db.prepare(version.user_version === 4
+        ? 'SELECT prediction_id, end_attempted FROM prediction_intents WHERE broadcaster_id=?'
+        : 'SELECT prediction_id FROM prediction_intents WHERE broadcaster_id=?')
+        .get(broadcasterId) as {prediction_id: string|null;end_attempted?:string|null}|undefined;
+      if (!row || row.prediction_id !== predictionId) throw Error('PREDICTION_END_UNAVAILABLE');
+      if (version.user_version === 4 && row.end_attempted !== null &&
+          !(row.end_attempted === 'CANCELED' ||
+            /^RESOLVED:[A-Za-z0-9-]{1,128}$/.test(row.end_attempted ?? '')))
+        throw Error('PREDICTION_END_UNAVAILABLE');
+      return typeof row.end_attempted === 'string';
+    } finally { db.close(); }
+  }
+
+  /** Exactly one durable end intent per saved prediction. COMMIT must succeed
+   * before the first possible provider PATCH; failures never permit a retry. */
+  markEndAttempted(broadcasterId: string, predictionId: string,
+    action: 'RESOLVED'|'CANCELED', winnerId?: string): void {
+    if (!validBroadcaster(broadcasterId) || !/^[A-Za-z0-9-]{1,128}$/.test(predictionId) ||
+        !['RESOLVED','CANCELED'].includes(action) ||
+        (action === 'RESOLVED' && (typeof winnerId !== 'string' ||
+          !/^[A-Za-z0-9-]{1,128}$/.test(winnerId))) ||
+        (action === 'CANCELED' && winnerId !== undefined))
+      throw Error('PREDICTION_END_UNAVAILABLE');
+    const db = this.open(true)!;
+    let inTransaction = false;
+    try {
+      db.exec('BEGIN IMMEDIATE'); inTransaction = true;
+      const version = db.prepare('PRAGMA user_version').get() as {user_version: number};
+      if (version.user_version !== 3 && version.user_version !== 4)
+        throw Error('PREDICTION_END_UNAVAILABLE');
+      if (version.user_version === 3)
+        db.exec('ALTER TABLE prediction_intents ADD COLUMN end_attempted TEXT');
+      const result = db.prepare('UPDATE prediction_intents SET end_attempted=? WHERE broadcaster_id=? AND prediction_id=? AND end_attempted IS NULL')
+        .run(action === 'CANCELED' ? 'CANCELED' : 'RESOLVED:' + winnerId,
+          broadcasterId, predictionId);
+      if (result.changes !== 1) throw Error('PREDICTION_END_ALREADY_ATTEMPTED');
+      if (version.user_version === 3) db.exec('PRAGMA user_version=4');
+      db.exec('COMMIT'); inTransaction = false;
+    } catch {
+      if (inTransaction) { try { db.exec('ROLLBACK'); } catch { /* uncertain COMMIT */ } }
+      throw Error('PREDICTION_END_WRITE_UNCERTAIN');
     } finally { db.close(); }
   }
 

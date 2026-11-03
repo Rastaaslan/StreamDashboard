@@ -7,6 +7,7 @@ import type { TwitchActor } from './streamcockpit-twitch-service.js';
 type Fence = {
   readConfirmedId(owner: string): string | null | undefined;
   readLockAttempted(owner: string, predictionId: string): boolean;
+  readEndAttempted(owner: string, predictionId: string): boolean;
   markLockAttempted(owner: string, predictionId: string): void;
 };
 
@@ -49,7 +50,8 @@ export function createTwitchPredictionLockRouter(options: {
   const readExact = (owner: string) => {
     if (!/^[0-9]{1,30}$/.test(owner)) throw new AdvancedTwitchError('unauthorized');
     const id = options.fence.readConfirmedId(owner);
-    if (!id || options.fence.readLockAttempted(owner, id)) throw new AdvancedTwitchError('precondition');
+    if (!id || options.fence.readLockAttempted(owner, id) ||
+        options.fence.readEndAttempted(owner, id)) throw new AdvancedTwitchError('precondition');
     return id;
   };
 
