@@ -1006,7 +1006,8 @@
       "status": "open",
       "verifiedEvidence": [],
       "preparatoryEvidence": [
-        "docs/streamcockpit-3/evidence/SC3-FINAL-DELIVERY-001-FINAL/campaign-configuration.json"
+        "docs/streamcockpit-3/evidence/SC3-FINAL-DELIVERY-001-FINAL/campaign-configuration.json",
+        "docs/streamcockpit-3/G4_ANDROID_DEV_QA_20261103.md"
       ]
     },
     {
