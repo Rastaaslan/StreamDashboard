@@ -18,6 +18,8 @@ async function fixture(run:(f:any)=>Promise<void>){
     }
     if(init?.method==='POST'){
       count++;if(mode==='lost')throw Error('PRIVATE');
+      if(mode==='host-change-after-post')host='1:2';
+      if(mode==='revoke-after-post')auth.revoke(paired.deviceId);
       if(mode==='bad-receipt')return Response.json({data:[{id:'clip',edit_url:'https://evil.invalid/private'}]});
       if(mode==='wrong-clip')return Response.json({data:[{id:'SafeClip',edit_url:'https://clips.twitch.tv/AnotherClip/edit'}]});
       if(mode==='wrong-port')return Response.json({data:[{id:'SafeClip',edit_url:'https://clips.twitch.tv:8443/SafeClip/edit'}]});
@@ -53,6 +55,19 @@ it.each(['lost','bad-receipt','wrong-clip','wrong-port','extra-query'])('F04 %s 
   const body={confirmationId:p.body.confirmationId,confirmed:true};
   const r=await f.call('confirm',body);expect(r.status).toBe(503);expect(r.body.error).toEqual({code:'MOMENT_UNCERTAIN',retryable:false});
   await f.call('confirm',body);expect(f.writes()).toBe(1);expect(f.record).not.toHaveBeenCalled();
+}));
+it.each(['host-change-after-post','revoke-after-post'])('F04 %s after Twitch POST cannot produce a trusted receipt or journal entry',async mode=>fixture(async f=>{
+  const p=await f.call('preview',{draft:{kind:'clip',description:''}});
+  expect(p.status).toBe(200);
+  f.setMode(mode);
+  const body={confirmationId:p.body.confirmationId,confirmed:true};
+  const result=await f.call('confirm',body);
+  expect(result.status).toBe(503);
+  expect(result.body.error).toEqual({code:'MOMENT_UNCERTAIN',retryable:false});
+  expect(f.writes()).toBe(1);
+  expect(f.record).not.toHaveBeenCalled();
+  await f.call('confirm',body);
+  expect(f.writes()).toBe(1);
 }));
 it('F04 invalidates consent on host epoch change and distinguishes journal failure from provider receipt',async()=>fixture(async f=>{
   let p=await f.call('preview',{draft:{kind:'marker',description:'Important'}});f.setHost('1:2');
