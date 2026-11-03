@@ -11,7 +11,11 @@ export function createTwitchPredictionRouter(options: {
   actor(req: Request): TwitchActor | Promise<TwitchActor>;
   hostLive(): string | undefined | Promise<string | undefined>;
   broadcasterId?(): string;
-  reservation?: { readConfirmedId(broadcasterId: string): string | null | undefined };
+  reservation?: {
+    readConfirmedId(broadcasterId: string): string | null | undefined;
+    readLockAttempted?(broadcasterId: string, predictionId: string): boolean;
+    readEndAttempted?(broadcasterId: string, predictionId: string): boolean;
+  };
   reconcileRelease?: { releaseAfterVerifiedTerminal(broadcasterId: string, predictionId: string): void };
 }) {
   const router = Router();
@@ -59,10 +63,21 @@ export function createTwitchPredictionRouter(options: {
       await check(req, expected);
       if (options.broadcasterId() !== owner)
         throw new AdvancedTwitchError('unauthorized');
+      // A concurrent terminal release/new reservation must not make stale
+      // provider evidence appear to belong to a different local intent.
+      if (options.reservation.readConfirmedId(owner) !== predictionId)
+        throw new AdvancedTwitchError('precondition');
+      // Committed PATCH attempts are *intent*, not proof of provider success.
+      // A legacy or unreadable journal fails closed instead of assuming false.
+      const lockAttempted = typeof predictionId === 'string' && options.reservation.readLockAttempted
+        ? options.reservation.readLockAttempted(owner, predictionId) : null;
+      const endAttempted = typeof predictionId === 'string' && options.reservation.readEndAttempted
+        ? options.reservation.readEndAttempted(owner, predictionId) : null;
       res.status(200).json({ schemaVersion: 1, kind: 'streamcockpit-prediction-reconciliation',
         reservation: predictionId === undefined ? 'absent' : predictionId === null ? 'unattributed' : 'confirmed',
         providerStatus: provider?.status ?? 'unchecked',
         checkedAt: provider?.checkedAt ?? null,
+        committedAttempts: { lock: lockAttempted, end: endAttempted },
         unlockAvailable: false, // GET alone cannot release.
         manualReleasePreviewPossible: Boolean(options.reconcileRelease &&
           typeof predictionId === 'string' && provider && terminal(provider.status)) });

@@ -157,6 +157,54 @@ it('F08 terminal provider states are evidence tied to persisted ID, NEVER a rele
   expect(JSON.stringify(h.reads.mock.calls)).not.toContain('/helix/predictions?broadcaster_id=123&first=1');
 }));
 
+it('F08 read-only reconciliation surfaces committed lock/end intents, never calls them success',()=>fixture(async h=>{
+  expect(await (await h.call()).json()).toMatchObject({
+    reservation:'absent', committedAttempts:{lock:null,end:null},unlockAvailable:false,
+  });
+  h.fence.reserve('123');
+  expect(await (await h.call()).json()).toMatchObject({
+    reservation:'unattributed',committedAttempts:{lock:null,end:null},unlockAvailable:false,
+  });
+  h.fence.recordConfirmed('123','pred-777');
+  h.setStatus('ACTIVE');
+  expect(await (await h.call()).json()).toMatchObject({
+    reservation:'confirmed', providerStatus:'active',
+    committedAttempts:{lock:false,end:false},unlockAvailable:false,
+  });
+  h.fence.markLockAttempted('123','pred-777');
+  h.setStatus('LOCKED');
+  expect(await (await h.call()).json()).toMatchObject({
+    reservation:'confirmed',providerStatus:'locked',
+    committedAttempts:{lock:true,end:false},unlockAvailable:false,
+    manualReleasePreviewPossible:false,
+  });
+  h.fence.markEndAttempted('123','pred-777','RESOLVED','outcome-1');
+  h.setStatus('RESOLVED');
+  expect(await (await h.call()).json()).toMatchObject({
+    reservation:'confirmed',providerStatus:'resolved',
+    committedAttempts:{lock:true,end:true},unlockAvailable:false,
+    manualReleasePreviewPossible:true,
+  });
+  expect(h.reopen().isBlocked('123')).toBe(true);
+  expect(h.reads.mock.calls.every(c=>c[1]==='GET')).toBe(true);
+}));
+
+it('F08 reconciliation cannot silently declare a corrupt intent history to be safe',()=>fixture(async h=>{
+  h.fence.reserve('123');h.fence.recordConfirmed('123','pred-777');
+  h.setStatus('LOCKED');
+  const original=h.fence.readLockAttempted.bind(h.fence);
+  const spy=vi.spyOn(h.fence,'readLockAttempted').mockImplementation(()=>{
+    throw Error('SIMULATED_SQLITE_READ_FAILURE');
+  });
+  try{
+    const response=await h.call();
+    expect(response.status).toBe(503);
+    expect(await response.json()).toMatchObject({error:{retryable:false}});
+    expect(h.reopen().isBlocked('123')).toBe(true);
+  }finally{spy.mockRestore();}
+  expect(h.fence.readLockAttempted('123','pred-777')).toBe(original('123','pred-777'));
+}));
+
 it('F08 rejects mismatched provider evidence; an account switch cannot access the prior lock',()=>fixture(async h=>{
   h.fence.reserve('123');
   h.fence.recordConfirmed('123','pred-777');

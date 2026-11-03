@@ -483,7 +483,7 @@
         },
         {
           "path": "apps/server/src/streamcockpit-twitch-prediction-router.ts",
-          "kind": "2026-11-03 FIXE F08: GET /prediction/reconcile remains read-only, exact saved ID and same FIXE OBS epoch; new opt-in POST /reconcile/preview + /confirm requires paired management, two separate actions, fresh terminal GET (RESOLVED/CANCELED) at both stages, same actor/epoch/owner, 45s one-use consent. Only then exact SQLite CAS releases. Provider mocked on loopback, Android UI and real OAuth/OBS unqualified."
+          "kind": "2026-11-03 FIXE F08: GET /prediction/reconcile remains read-only, exact saved ID and same FIXE OBS epoch; new opt-in POST /reconcile/preview + /confirm requires paired management, two separate actions, fresh terminal GET (RESOLVED/CANCELED) at both stages, same actor/epoch/owner, 45s one-use consent. Only then exact SQLite CAS releases. Provider mocked on loopback, Android UI and real OAuth/OBS unqualified. 2026-11-03 contrôle supplémentaire: GET vérifie à nouveau le même ID durable après lecture Twitch et expose committedAttempts.lock/end provenant exclusivement de SQLite (null si pas d'ID connu), sans en déduire un succès fournisseur ni effacer la réservation; lecture de journal en erreur => 503 fail-closed."
         },
         {
           "path": "apps/mobile/control/streamcockpit-twitch-prediction.js",
@@ -519,7 +519,7 @@
         },
         {
           "path": "tests/streamcockpit3-twitch-prediction-reconcile-http.test.ts",
-          "kind": "2026-11-03 FIXE: native node:http localhost transport avoids forbidden ephemeral Fetch ports; same real Express routes, 11/11 simulated-provider HTTP cases PASS; fixture reliability only, no live Twitch, OBS or hardware qualification"
+          "kind": "2026-11-03 FIXE: native node:http localhost transport avoids forbidden ephemeral Fetch ports; same real Express routes, 11/11 simulated-provider HTTP cases PASS; fixture reliability only, no live Twitch, OBS or hardware qualification; 2026-11-03 deux tests supplémentaires des intentions durables lock/end et erreurs de lecture SQLite (13/13 HTTP PASS, 16/16 avec roadmap), sans déblocage ni mutation Twitch"
         },
         {
           "path": "integrations/twitch/src/streamcockpit-prediction-lock.ts",
