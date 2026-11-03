@@ -207,3 +207,20 @@
 .compact-app.mobile-panes-active .mobile-pane-chat .monitor-grid > .panel {
   padding: 10px;
 }
+
+/* SC3 Android QA: keep the Live chat readable without turning the first screen into an empty full-height feed. */
+@media (max-width:700px) and (orientation:portrait) {
+  .compact-app.mobile-panes-active .mobile-pane-chat .monitor-native-twitch .twitch-native-chat {
+    height:clamp(250px,calc(100dvh - 500px),360px);
+    min-height:250px;
+  }
+  .compact-app.mobile-panes-active .mobile-pane-chat .twitch-chat-log { min-height:130px; }
+  .compact-app.mobile-panes-active .mobile-pane-chat .twitch-chat-account { flex-wrap:wrap; }
+  .compact-app.mobile-panes-active .mobile-pane-chat .twitch-chat-account p { min-width:0; }
+  .compact-app.mobile-panes-active .floating-mic-battery[data-tone=offline] .floating-mic-battery-button {
+    min-width:0;
+    min-height:38px;
+    padding:6px 9px;
+  }
+  .compact-app.mobile-panes-active .floating-mic-battery[data-tone=offline] .floating-mic-battery-button small { display:none; }
+}

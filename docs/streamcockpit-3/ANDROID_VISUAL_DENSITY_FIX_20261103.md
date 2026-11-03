@@ -1,0 +1,8 @@
+# Android QA — premier correctif de densité mobile (03/11/2026)
+
+- Retour utilisateur : quatre captures d'un affichage APK jugé bugué. La correction ci-dessous est une reproduction ciblée sur le rendu web mobile partagé ; elle n'affirme pas que toutes les anomalies de l'APK natif sont résolues.
+- En Microsoft Edge émulation tactile de tailles 320×690, 360×780, 390×844, 412×915 et paysage 844×390, l'onglet Live démarre par un chat Twitch surdimensionné, avec deux barres de navigation fixes. Aucun dépassement horizontal, ni JS pageerror. Le badge DJI hors connexion occupe deux lignes inutiles.
+- Correction limitée à `apps/mobile/control/mobile-ergonomics.css` : chat portrait plafonné à 250–360 px selon l'écran, conteneur de messages scrollable et nom de compte capable de se replier ; badge DJI absent compacté en une ligne visible mais texte complet maintenu en `aria-label` et `title`. Aucun changement de protocole, données, minuteur, scopes ni émission de commande.
+- Contrôles après correction : hauteur de chat 250 / 280 / 344 / 360 px pour les quatre tailles portrait ; paysage inchangé à 220 px ; 4 sous-onglets Live et 5 destinations générales visibles, `scrollWidth == innerWidth`, 0 erreur JS, navigation fixe sans recouvrement géométrique. Mesures par `out/sc3-mobile-density-verify.cjs` (hors artefacts versionnés).
+- `check:browser-types` PASS, `security:check` PASS (6 714 fichiers), `git diff --check` PASS.
+- Limites : images issues de l'émulation Edge et non capture de l'APK sur le téléphone. Aucun APK reconstruit/installé à l'instant de ce correctif. La réception Android tactile et les quatre retours utilisateur nécessitent une comparaison avec la nouvelle compilation avant de déclarer G3/G4 valides.
