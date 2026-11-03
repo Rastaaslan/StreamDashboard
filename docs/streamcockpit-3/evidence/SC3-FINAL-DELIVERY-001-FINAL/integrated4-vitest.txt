@@ -1,0 +1,758 @@
+
+ RUN  v5.0.1 C:/Users/damie/Dev/StreamCockpit-3.0-FullExperience
+
+ Ô£ô tests/streamcockpit3-clipforge-windows-staging.test.ts (11 tests) 17175ms
+   Ô£ô F04 Windows host-only staged OBS snapshot, no codec or production route (11)
+     Ô£ô stages exact SHA-256 bytes under a private root and reserves an UNKNOWN receipt before copying 2017ms
+     Ô£ô normalizes spaces and Unicode OBS filenames into a restricted host-only clip alias 1491ms
+     Ô£ô never overwrites an existing job nor returns false success on replay 1669ms
+     Ô£ô rejects a shared unprotected NTFS directory before creating any intent 716ms
+     Ô£ô stopped OBS/revoked witness and abort before reservation cannot write a staging intent 872ms
+     Ô£ô an OBS authority revocation after the intent is committed remains UNKNOWN, never replayable 1614ms
+     Ô£ô rejects an edited reservation after copying, never returns a staged grant 1587ms
+     Ô£ô rejects a staged-file mutation of the same size before returning its SHA grant 3421ms
+     Ô£ô rejects replacing the staged NTFS file with identical bytes but a new file identity 1959ms
+     Ô£ô detects a source replacement after reservation; persists UNKNOWN and no valid staged grant 1319ms
+     Ô£ô refuses nested source/staging roots to avoid self-ingestion and uncontrolled writers 507ms
+node.exe : (node:3916) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+Au caractère Ligne:1 : 1
++ & "C:\Users\damie\Documents\Dowloader vod twitch\.tools\node-v22.22.3 ...
++ ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: ((node:3916) Exp...nge at any time:String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+
+(Use `node --trace-warnings ...` to show where the warning was created)
+ Ô£ô tests/cb122-recurrence-runtime.test.ts (61 tests) 35129ms
+   Ô£ô twitch HTTP lifecycle weekly/1 simple 485ms
+   Ô£ô twitch HTTP lifecycle weekly/1 until 307ms
+   Ô£ô twitch HTTP lifecycle weekly/1 cancel 516ms
+   Ô£ô twitch HTTP lifecycle weekly/1 patch 509ms
+   Ô£ô twitch HTTP lifecycle daily/1 simple 1046ms
+   Ô£ô twitch HTTP lifecycle weekly/2 simple 376ms
+   Ô£ô twitch HTTP lifecycle monthly/1 simple 346ms
+   Ô£ô google HTTP lifecycle weekly/1 simple 352ms
+   Ô£ô google HTTP lifecycle weekly/1 cancel 543ms
+   Ô£ô google HTTP lifecycle weekly/1 patch 545ms
+   Ô£ô google HTTP lifecycle daily/1 simple 734ms
+   Ô£ô google HTTP lifecycle weekly/2 simple 313ms
+   Ô£ô Twitch replaces native identity durably on remove 337ms
+   Ô£ô Twitch replaces native identity durably on move 416ms
+   Ô£ô Twitch replaces native identity durably on timezone 406ms
+   Ô£ô Twitch replaces native identity durably on add 379ms
+   Ô£ô Google native-to-materialized 412 resolves local through the endpoint after restart 429ms
+   Ô£ô Google native-to-materialized 412 resolves remote through the endpoint after restart 402ms
+   Ô£ô twitch conversion cycles, cancelled remote retry and rolling shift preserve ownership 1521ms
+   Ô£ô google conversion cycles, cancelled remote retry and rolling shift preserve ownership 1532ms
+   Ô£ô Twitch retirement detects remote conflict and resolves local without blind deletion 732ms
+   Ô£ô Twitch retirement detects remote conflict and resolves remote without blind deletion 496ms
+   Ô£ô twitch whole-series deletion preserves legacy identities without proven ownership; bulk excludes the series 455ms
+   Ô£ô google whole-series deletion preserves legacy identities without proven ownership; bulk excludes the series 429ms
+   Ô£ô Twitch replacement resumes after confirmed deletion followed by a rejected CREATE and restart 357ms
+   Ô£ô pre-rolling recurrence rejection disappears from persisted state after successful projection 637ms
+   Ô£ô a conflicting Twitch retirement cannot remove the local owner and orphan the native remote 364ms
+   Ô£ô twitch native remote deletion becomes an error and explicit retry recreates once 322ms
+   Ô£ô google native remote deletion becomes an error and explicit retry recreates once 339ms
+   Ô£ô twitch offline occurrence move survives reload and retry with stable identity 648ms
+   Ô£ô google offline occurrence move survives reload and retry with stable identity 613ms
+   Ô£ô Twitch sync preserves a lost replacement CREATE without adopting, importing or retiring its unproven candidate 397ms
+   Ô£ô Google native recurrence conflict frequency: resolves local after restart with the same master 616ms
+   Ô£ô Google native recurrence conflict frequency: resolves remote after restart with the same master 469ms
+   Ô£ô Google native recurrence conflict timezone: resolves local after restart with the same master 390ms
+   Ô£ô Google native recurrence conflict timezone: resolves remote after restart with the same master 462ms
+   Ô£ô Google native recurrence conflict remove: resolves local after restart with the same master 602ms
+   Ô£ô Google native recurrence conflict remove: resolves remote after restart with the same master 650ms
+   Ô£ô Google native conflict refuses invalid identity for local resolution 554ms
+   Ô£ô Google native conflict refuses invalid identity for remote resolution 580ms
+   Ô£ô Google native conflict refuses invalid ownership for local resolution 549ms
+   Ô£ô Google native conflict refuses invalid ownership for remote resolution 547ms
+   Ô£ô Google native conflict refuses invalid etag for local resolution 569ms
+   Ô£ô Google native conflict refuses invalid etag for remote resolution 514ms
+   Ô£ô Google native conflict refuses invalid rule for local resolution 551ms
+   Ô£ô Google native conflict refuses invalid rule for remote resolution 540ms
+   Ô£ô Google native conflict refuses invalid event-id for local resolution 564ms
+   Ô£ô Google native conflict refuses invalid event-id for remote resolution 528ms
+   Ô£ô Google native conflict preserves a concurrent 412 during explicit local resolution 783ms
+   Ô£ô Google native conflict remote choice also restores a remotely removed recurrence 762ms
+   Ô£ô CB-131 twitch native=false HTTP deletion failure survives real storage reload, sync and retry without publication 1040ms
+   Ô£ô CB-131 twitch native=true HTTP deletion failure survives real storage reload, sync and retry without publication 622ms
+   Ô£ô CB-131 google native=false HTTP deletion failure survives real storage reload, sync and retry without publication 973ms
+   Ô£ô CB-131 google native=true HTTP deletion failure survives real storage reload, sync and retry without publication 646ms
+   Ô£ô CB-131 lost twitch CREATE native=false preserves uncertainty unless ownership can be proven 1108ms
+   Ô£ô CB-131 lost twitch CREATE native=true preserves uncertainty unless ownership can be proven 559ms
+   Ô£ô CB-131 lost google CREATE native=false preserves uncertainty unless ownership can be proven 1252ms
+   Ô£ô CB-131 lost google CREATE native=true preserves uncertainty unless ownership can be proven 718ms
+ Ô£ô tests/streamcockpit3-twitch-prediction-release-browser.test.ts (5 tests) 22688ms
+   Ô£ô F08 Edge 320px release is inspect -> preview -> checkbox -> one explicit FIXE confirmation 1792ms
+   Ô£ô F08 nonterminal, missing and unavailable states never expose consent or POST 1561ms
+   Ô£ô F08 source change during ambiguous release discards late receipt and never retries 1360ms
+   Ô£ô F08 lost local release receipt is uncertain and never auto-replayed 2188ms
+   Ô£ô F08 detached root during host commit never treats lost confirmation as safe 15785ms
+(node:10880) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+ Ô£ô tests/cb114-review.test.ts (23 tests) 11593ms
+   Ô£ô lost Google CREATE remains scoped to A after selecting B and restart; withdraw=false 724ms
+   Ô£ô lost Google CREATE remains scoped to A after selecting B and restart; withdraw=true 722ms
+   Ô£ô occurrence editor API honors both publication toggles before publication, after publication and restart 733ms
+   Ô£ô Google tombstones allow explicit withdraw republication, restart and lost-response recovery via 409 958ms
+   Ô£ô Google tombstones allow explicit cancel republication, restart and lost-response recovery via 409 910ms
+   Ô£ô Google tombstones allow explicit remote republication, restart and lost-response recovery via 409 776ms
+   Ô£ô settles a legacy uncertain CREATE whose deterministic ID became a tombstone before authorizing a new incarnation 645ms
+   Ô£ô 409 followed by an unavailable GET retains the same uncertain CREATE instead of issuing a new incarnation 454ms
+   Ô£ô Google DELETE 412 for withdraw supports durable local resolution from retained inventory 552ms
+   Ô£ô Google DELETE 412 for cancel supports durable local resolution from retained inventory 541ms
+   Ô£ô Google DELETE 412 for window supports durable local resolution from retained inventory 422ms
+   Ô£ô Google DELETE 412 for companion supports durable local resolution from retained inventory 387ms
+   Ô£ô Google DELETE conflict withdraw can keep the remote event as a standalone local row without republishing 404ms
+   Ô£ô Google DELETE conflict cancel can keep the remote event as a standalone local row without republishing 398ms
+   Ô£ô Google DELETE conflict window can keep the remote event as a standalone local row without republishing 368ms
+   Ô£ô Google DELETE conflict companion can keep the remote event as a standalone local row without republishing 350ms
+   Ô£ô a new remote edit after deletion approval requires a fresh decision, and a foreign identity is never deleted 409ms
+   Ô£ô real Google adapter resolves native DELETE 412 despite local exceptions: owned=false choice=local 489ms
+   Ô£ô real Google adapter resolves native DELETE 412 despite local exceptions: owned=false choice=remote 467ms
+   Ô£ô real Google adapter resolves native DELETE 412 despite local exceptions: owned=true choice=local 427ms
+   Ô£ô real Google adapter resolves native DELETE 412 despite local exceptions: owned=true choice=remote 436ms
+ Ô£ô tests/streamcockpit3-twitch-raid-browser.test.ts (4 tests) 4732ms
+   Ô£ô F08 Edge 320px raid requires separate preview and public-transfer consent 1226ms
+   Ô£ô F08 disconnect rejects late destination preview, erases private data 917ms
+   Ô£ô F08 uncertain raid outcome disables further sends, no retry or leak 1343ms
+   Ô£ô F08 an in-flight raid remains uncertain across reconnection until explicit Twitch reconciliation 1243ms
+ Ô£ô tests/streamcockpit3-mixer-control-browser.test.ts (1 test) 6638ms
+   Ô£ô F05 Edge 320px + real HTTP/OBS WS: consent, readback, rollback, lost receipt and page restart 6636ms
+ Ô£ô tests/streamcockpit3-twitch-prediction-lock-browser.test.ts (4 tests) 4196ms
+   Ô£ô F08 Edge 320px lock is preview, explicit checkbox, one provider PATCH confirmation 1219ms
+   Ô£ô F08 preview errors and offline do not expose lock consent 771ms
+   Ô£ô F08 lost PATCH acknowledgement stays uncertain, never retries after source reconnect 1003ms
+   Ô£ô F08 in-flight PATCH followed by a host change drops late receipt without retry 1202ms
+ Ô£ô tests/streamcockpit3-twitch-prediction-create-browser.test.ts (5 tests) 6460ms
+   Ô£ô F08 real Edge 320px requires explicit preview, checkbox and unique publication 1073ms
+   Ô£ô F08 lost Twitch POST receipt remains blocked even AFTER manual Twitch acknowledgement 1323ms
+   Ô£ô F08 changing host during in-flight POST keeps uncertain state and ignores delayed receipt 1163ms
+   Ô£ô F08 detached view during POST does not unlock when reattached with unchanged host 993ms
+   Ô£ô F08 fresh view reports persisted FIXE fence instead of offering automatic retry 1906ms
+ Ô£ô tests/streamcockpit3-mixer-control-http.test.ts (19 tests) 5429ms
+   Ô£ô F05 lost never reports confirmed and never replays a consumed intent 5025ms
+(node:34732) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+ Ô£ô tests/twitch-runtime-api.test.ts (5 tests) 5769ms
+   Ô£ô keeps runtime and mobile coherent across chatter errors, offline, scope loss and token expiry 489ms
+   Ô£ô retains the complete old session when reauthorization /users returns 429 1329ms
+   Ô£ô retains the complete old session when reauthorization /users returns 503 1287ms
+   Ô£ô retains the complete old session when reauthorization /validate returns 429 1341ms
+   Ô£ô retains the complete old session when reauthorization /validate returns 503 1322ms
+ Ô£ô tests/streamcockpit3-twitch-prediction-end-browser.test.ts (5 tests) 10157ms
+   Ô£ô F08 real Edge touch 320px resolves exact winning outcome with explicit consent 2584ms
+   Ô£ô F08 active prediction offers cancellation only, never a false resolution 1621ms
+   Ô£ô F08 provider or preview error cannot expose public consent or secrets 1655ms
+   Ô£ô F08 lost PATCH or source change never replays an uncertain public end action 2375ms
+   Ô£ô F08 missing PATCH acknowledgement disables reattempt through reconnect 1919ms
+(node:824) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+ Ô£ô tests/api-v1.test.ts (24 tests) 4885ms
+   Ô£ô API publique v1 (24)
+     Ô£ô pr├®serve le timer et refuse un rejeu apr├¿s restart, m├¬me apr├¿s une rafale 385ms
+     Ô£ô conserve un re├ºu num├®rique ├á capacit├® maximale et refuse son rejeu apr├¿s restart 391ms
+     Ô£ô termine r├®ellement le timer c├┤t├® serveur et persiste 00:00 1280ms
+ Ô£ô tests/streamcockpit3-moments-manual-browser.test.ts (4 tests) 7332ms
+   Ô£ô F09 manual creation is explicit and accessible at 320px without provider traffic 2662ms
+   Ô£ô F09 Edge 320px recovers an uncertain marker via GET without POST replay 1852ms
+   Ô£ô F09 Edge touch 320px explicitly verifies host OBS context without writing a marker 1132ms
+   Ô£ô F09 Edge touch 320px binds a scheduled live only after explicit two-step selection 1683ms
+(node:31956) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+ Ô£ô tests/companion-update-resolution.test.ts (2 tests) 4524ms
+   Ô£ô resolves a live Google 412 after restart through the real endpoint: local 2304ms
+   Ô£ô resolves a live Google 412 after restart through the real endpoint: remote 2219ms
+ Ô£ô tests/streamcockpit3-twitch-poll-browser.test.ts (3 tests) 6047ms
+   Ô£ô F08 tactile 320px: deliberate preview, checkbox and exactly one explicit publication 1850ms
+   Ô£ô F08 disconnect discards pending preview and confidential draft, late response ignored 1694ms
+   Ô£ô F08 lost confirmation remains uncertain, never automatically retries a public Twitch POST 2500ms
+ Ô£ô tests/streamcockpit3-twitch-shoutout-browser.test.ts (3 tests) 2933ms
+   Ô£ô F08 320px real Edge: voluntary preview, second consent, exactly one public command 916ms
+   Ô£ô F08 disconnect drops private target, pending consent and delayed preview 737ms
+   Ô£ô F08 lost Twitch receipt is uncertain and never silently re-sends 1278ms
+(node:6432) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+ Ô£ô tests/google-master-recovery.test.ts (15 tests) 3166ms
+   Ô£ô recovers an absent local master through HTTP, restart and title edit: RRULE:FREQ=WEEKLY;INTERVAL=1;UNTIL=20300501T180000Z allDay=false 351ms
+ Ô£ô tests/streamcockpit3-twitch-prediction-browser.test.ts (3 tests) 17579ms
+   Ô£ô F08 Edge touch 320px prediction is manual, read-only and escapes Twitch text 843ms
+   Ô£ô F08 disconnect drops late private prediction response and has no automatic retry 863ms
+   Ô£ô F08 predicted state visibly expires instead of becoming stale forever 15871ms
+(node:25356) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+ Ô£ô tests/planning-bulk-delete.test.ts (12 tests) 5492ms
+   Ô£ô requires confirmation, rejects stale previews, deletes only previewed items and rejects replay 499ms
+   Ô£ô Google copies: local retains retry identity and protects remote changes 302ms
+   Ô£ô Google copies: failure retains retry identity and protects remote changes 659ms
+   Ô£ô Google copies: moved retains retry identity and protects remote changes 643ms
+   Ô£ô Google copies: recurring retains retry identity and protects remote changes 621ms
+   Ô£ô retains a linked Twitch event when Twitch is disconnected, including after restart 371ms
+   Ô£ô connected Twitch: failure respects durable scope on retry and edit after restart 626ms
+   Ô£ô connected Twitch: moved respects durable scope on retry and edit after restart 589ms
+   Ô£ô connected Twitch: recurring respects durable scope on retry and edit after restart 597ms
+ Ô£ô tests/streamcockpit3-planning-assistant-browser.test.ts (2 tests) 2631ms
+   Ô£ô F06: real Microsoft Edge at 320px prepares then explicitly saves one local-only event 1514ms
+   Ô£ô F06: real Edge rejects source changes during local suggestion refresh 1114ms
+ Ô£ô tests/streamcockpit3-moderation-browser.test.ts (2 tests) 5212ms
+   Ô£ô F02 actual Edge 320px + paired HTTP: consent, readback, no page overflow 2330ms
+   Ô£ô F02 lost PUT + reconnect stays uncertain until an explicit external check, without resend 2880ms
+ Ô£ô tests/desktop-lifecycle.test.ts (14 tests) 2765ms
+   Ô£ô presents during startup, restores 20 launches and exits cleanly on crash failure 647ms
+ Ô£ô tests/obs-websocket-runtime.test.ts (2 tests) 2168ms
+   Ô£ô authenticates, loses OBS during a live, and recovers over a new websocket 2114ms
+(node:35892) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+ Ô£ô tests/google-desktop-credentials.test.ts (18 tests) 1925ms
+   Ô£ô reproduces client_secret is missing, saves locally, retries immediately, refreshes, restores and clears 349ms
+(node:4256) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+ Ô£ô tests/tags-integration.test.ts (15 tests) 1620ms
+   Ô£ô tags integration (15)
+     Ô£ô returns API suggestions while the Twitch observation remains unresolved 862ms
+ Ô£ô tests/streamcockpit3-master-context-browser.test.ts (1 test) 1392ms
+   Ô£ô F03/F07 Edge 320px: authenticated master banks, explicit OBS command, offline and expiry fences 1390ms
+ Ô£ô tests/streamcockpit3-simple-moments-browser.test.ts (1 test) 1287ms
+   Ô£ô F04 real Edge 320px: marker/clip consent, truthful async status, safe link and uncertainty 1285ms
+(node:33844) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+ Ô£ô tests/streamcockpit3-twitch-prediction-end-http.test.ts (16 tests) 1275ms
+(node:32240) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+ Ô£ô tests/twitch-projection-runtime.test.ts (2 tests) 1218ms
+   Ô£ô persists identities and resolves an occurrence conflict through the API after restart: local 658ms
+   Ô£ô persists identities and resolves an occurrence conflict through the API after restart: remote 558ms
+ Ô£ô tests/streamcockpit3-moments-page-browser.test.ts (1 test) 15873ms
+   Ô£ô F09 Plus timeline is readable at 320px and drops private markers on disconnect 15872ms
+ Ô£ô tests/streamcockpit3-context-integration-browser.test.ts (1 test) 426ms
+   Ô£ô preview at 320px: touch disclosure, XSS, offline/reconnect and zero requests 424ms
+ Ô£ô tests/mobile-transport-contract.test.ts (2 tests) 30ms
+(node:20376) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+ Ô£ô tests/agent-v2-gateway.test.ts (11 tests) 1398ms
+(node:10436) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+ Ô£ô tests/provider-sync-startup.test.ts (5 tests) 1127ms
+   Ô£ô returns before rolling I/O, serves the renderer during maintenance and coalesces overlapping Sync requests 462ms
+(node:16172) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+ Ô£ô tests/streamcockpit3-moments-sqlite.test.ts (8 tests) 372ms
+(node:35732) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+ Ô£ô tests/streamcockpit3-twitch-prediction-lock-http.test.ts (13 tests) 1920ms
+   Ô£ô F08 missing manage scope, host live or changed epoch denies before PATCH 324ms
+   Ô£ô F08 lock routes are mounted on the actual FIXE server and reject unauthenticated loopback 315ms
+(node:4888) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+ Ô£ô tests/cb97-review-regressions.test.ts (11 tests) 4012ms
+   Ô£ô global Twitch HTTP sync publishes seven distant occurrences while keeping the canonical series local: daily/1/undefined 554ms
+   Ô£ô global Twitch HTTP sync publishes seven distant occurrences while keeping the canonical series local: weekly/2/undefined 595ms
+   Ô£ô global Twitch HTTP sync publishes seven distant occurrences while keeping the canonical series local: monthly/1/undefined 1595ms
+   Ô£ô global Twitch HTTP sync publishes seven distant occurrences while keeping the canonical series local: weekly/1/{ ÔÇª(1) } 1043ms
+(node:25560) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+ Ô£ô tests/streamcockpit3-agent-fencing.test.ts (16 tests) 3489ms
+   Ô£ô Agent production writer startup and durable non replay (11)
+     Ô£ô rejects a second authority before opening a peer; old revisions stay invalid after restart 421ms
+     Ô£ô refuses startup with a peer already disconnected or lost during initial reads 441ms
+     Ô£ô blocks restart after a real process exits between durable reservation and effect 710ms
+     Ô£ô refuses a successful RPC ack without matching observed state 404ms
+(node:12440) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+ Ô£ô tests/companion-deletion-resolution.test.ts (3 tests) 1363ms
+   Ô£ô resolves a Google 412 deletion after restart through the paired endpoint: local 566ms
+   Ô£ô resolves a Google 412 deletion after restart through the paired endpoint: remote 437ms
+   Ô£ô resolves a Google 412 deletion after restart through the paired endpoint: android 359ms
+(node:24384) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+ Ô£ô tests/android-provider-conflict-handover.test.ts (4 tests) 1687ms
+   Ô£ô resolves an Android google conflict after Desktop restart using local 503ms
+   Ô£ô resolves an Android google conflict after Desktop restart using remote 391ms
+   Ô£ô resolves an Android twitch conflict after Desktop restart using local 390ms
+   Ô£ô resolves an Android twitch conflict after Desktop restart using remote 403ms
+ Ô£ô tests/streamcockpit3-master-clock-browser.test.ts (1 test) 1379ms
+   Ô£ô F00 320px Home shows FIXE timer despite device wall-clock skew and fails closed when stale 1377ms
+(node:2164) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+ Ô£ô tests/streamlabs-session.test.ts (6 tests) 1185ms
+(node:35116) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+ Ô£ô tests/google-missing-target-retry.test.ts (4 tests) 1732ms
+   Ô£ô retries Google creation from desktop (recurring=false) after missing target, restart and calendar selection 486ms
+   Ô£ô retries Google creation from companion (recurring=false) after missing target, restart and calendar selection 400ms
+   Ô£ô retries Google creation from desktop (recurring=true) after missing target, restart and calendar selection 496ms
+   Ô£ô retries Google creation from companion (recurring=true) after missing target, restart and calendar selection 349ms
+ Ô£ô tests/wizebot-management.test.ts (12 tests) 624ms
+ Ô£ô tests/agent-v2-simulated-obs-execution.test.ts (14 tests) 1017ms
+(node:35172) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+ Ô£ô tests/remote-lan.test.ts (5 tests) 794ms
+   Ô£ô LAN HTTP and WebSocket integration (4)
+     Ô£ô pairs across restart, reconnects with redacted state, rejects replay and revoked credentials 421ms
+(node:9072) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+ Ô£ô tests/google-remote-exceptions.test.ts (7 tests) 758ms
+   Ô£ô refuses sync and retries after restart for remote moved exceptions 339ms
+(node:37484) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+stdout | tests/cb52-upgrade.test.ts > upgrades old settings without changing explicit start choices: {"modeScenes":{"live":"Gameplay"}}
+StreamDashboard ready on 127.0.0.1:2482
+
+stdout | tests/cb52-upgrade.test.ts > upgrades old settings without changing explicit start choices: {"modeScenes":{"live":"Gameplay"}}
+StreamDashboard ready on 127.0.0.1:2484
+
+stdout | tests/cb52-upgrade.test.ts > upgrades old settings without changing explicit start choices: {"modeScenes":{"live":"Gameplay","intro":"Intro"}}
+StreamDashboard ready on 127.0.0.1:2486
+
+stdout | tests/cb52-upgrade.test.ts > upgrades old settings without changing explicit start choices: {"modeScenes":{"live":"Gameplay","intro":"Intro"}}
+StreamDashboard ready on 127.0.0.1:2488
+
+stdout | tests/cb52-upgrade.test.ts > upgrades old settings without changing explicit start choices: {"startMode":"intro","modeScenes":{"live":"Gameplay"}}
+StreamDashboard ready on 127.0.0.1:2490
+
+stdout | tests/cb52-upgrade.test.ts > upgrades old settings without changing explicit start choices: {"startMode":"intro","modeScenes":{"live":"Gameplay"}}
+StreamDashboard ready on 127.0.0.1:2492
+
+stdout | tests/cb52-upgrade.test.ts > upgrades old settings without changing explicit start choices: {"startMode":"live","modeScenes":{"live":"Gameplay","intro":"Intro"}}
+StreamDashboard ready on 127.0.0.1:2494
+
+stdout | tests/cb52-upgrade.test.ts > upgrades old settings without changing explicit start choices: {"startMode":"live","modeScenes":{"live":"Gameplay","intro":"Intro"}}
+StreamDashboard ready on 127.0.0.1:2496
+
+ Ô£ô tests/cb52-upgrade.test.ts (4 tests) 393ms
+(node:36692) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+ Ô£ô tests/streamcockpit3-twitch-prediction-reconcile-http.test.ts (13 tests) 745ms
+ Ô£ô tests/streamcockpit3-master-context-http.test.ts (9 tests) 742ms
+ Ô£ô tests/streamcockpit3-moments-manual-ui.test.ts (14 tests) 755ms
+(node:36320) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+ Ô£ô tests/google-desktop-errors.test.ts (5 tests) 472ms
+(node:33088) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+ Ô£ô tests/cb97-google-reconciliation.test.ts (1 test) 454ms
+   Ô£ô Google recurring master survives sync, restart, ETag conflict resolution, retry and deletion 453ms
+ Ô£ô tests/agent-v2-readonly-artifact.test.ts (5 tests) 564ms
+(node:11604) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+ Ô£ô tests/port-fallback.test.ts (10 tests) 638ms
+(node:14436) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+stdout | tests/providers-api.test.ts > API providers > configure, teste et d├®connecte Streamlabs sans exposer son secret
+StreamDashboard ready on 127.0.0.1:2666
+
+stdout | tests/providers-api.test.ts > API providers > connecte Streamlabs par OAuth sans exposer les secrets
+StreamDashboard ready on 127.0.0.1:2670
+
+stdout | tests/providers-api.test.ts > API providers > connecte Streamlabs par OAuth sans exposer les secrets
+Streamlabs support received
+
+stdout | tests/providers-api.test.ts > API providers > configure, rafra├«chit et d├®connecte WizeBot sans exposer son token
+StreamDashboard ready on 127.0.0.1:2675
+
+stdout | tests/providers-api.test.ts > API providers > configure, rafra├«chit et d├®connecte WizeBot sans exposer son token
+WizeBot connected
+
+stdout | tests/providers-api.test.ts > API providers > configure, rafra├«chit et d├®connecte WizeBot sans exposer son token
+WizeBot connected
+
+ Ô£ô tests/providers-api.test.ts (3 tests) 628ms
+   Ô£ô API providers (3)
+     Ô£ô connecte Streamlabs par OAuth sans exposer les secrets 366ms
+(node:31956) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+ Ô£ô tests/configuration-transfer.test.ts (1 test) 430ms
+   Ô£ô real HTTP agents copy actions and profile with durable strict receipts, restart and guarded undo 429ms
+ Ô£ô tests/agent-v2-controller-peer.test.ts (4 tests) 510ms
+(node:22880) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+ Ô£ô tests/control-v2.test.ts (13 tests) 656ms
+   Ô£ô Real HTTP persistence and cross-client conflict handling (1)
+     Ô£ô creates, updates and deletes events, rejects stale edits, and retains shared configuration after restart 339ms
+(node:7008) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+ Ô£ô tests/streamcockpit3-planning-assisted-host.test.ts (7 tests) 398ms
+ Ô£ô tests/streamcockpit3-moments-page.test.ts (8 tests) 568ms
+(node:27460) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+ Ô£ô tests/sound-library.test.ts (1 test) 404ms
+   Ô£ô two HTTP agents export and import real bytes and metadata without playback; retry and restart preserve one identity 403ms
+(node:29216) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+ Ô£ô tests/desktop-uncertain-create.test.ts (4 tests) 571ms
+   Ô£ô blocks google CREATE after lost Android response, handover, restart and Desktop edit/retry 336ms
+(node:1856) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+ Ô£ô tests/streamcockpit-production-obs-writer.test.ts (9 tests) 533ms
+(node:5264) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+ Ô£ô tests/streamcockpit3-release-scope.test.ts (2 tests) 438ms
+   Ô£ô real HTTP host explicitly disables V4 routes for every verb, with no production encoder 308ms
+(node:33416) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+ Ô£ô tests/streamcockpit3-agent-windows-sqlite.test.ts (8 tests) 512ms
+(node:8600) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+ Ô£ô tests/peer-tls-server.test.ts (3 tests) 355ms
+(node:4024) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+ Ô£ô tests/streamcockpit3-twitch-raid-http.test.ts (12 tests) 1185ms
+   Ô£ô F08 production server mounts raid routes but refuses unpaired host without Twitch call 992ms
+(node:3632) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+ Ô£ô tests/streamcockpit3-twitch-integration-http.test.ts (13 tests) 483ms
+   Ô£ô real server mounts read route behind origin guard and rejects anonymous poll mutations 343ms
+(node:25984) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+ Ô£ô tests/streamcockpit3-agent-refresh.test.ts (10 tests) 1403ms
+(node:36076) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+ Ô£ô tests/streamcockpit3-prediction-intent-sqlite.test.ts (14 tests) 2225ms
+   Ô£ô F08 SQLite intent uses durable blocking across recreated host services, without auto POST replay 581ms
+   Ô£ô F08 uncertain POST stays blocked after restart, while known pre-POST refusal releases intent 484ms
+   Ô£ô F08 explicit terminal release CAS refuses unknown, legacy and wrong receipt; releases only exact confirmed ID 302ms
+(node:2044) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+ Ô£ô tests/streamcockpit3-twitch-shoutout-http.test.ts (13 tests) 542ms
+   Ô£ô F08 real server mounts both shoutout routes but refuses anonymous/disabled FIXE without any Twitch call 345ms
+(node:8880) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+ Ô£ô tests/live-metadata-tags.test.ts (3 tests) 577ms
+   Ô£ô applies live metadata, normalizes tags, retries rejection and leaves planning untouched 313ms
+(node:36384) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+ Ô£ô tests/cb103-integration.test.ts (8 tests) 994ms
+   Ô£ô uses the dynamic production engine through regeneration and auto-tag preflight: ordinary 784ms
+ Ô£ô tests/streamcockpit3-planning-integration-browser.test.ts (1 test) 680ms
+   Ô£ô mounts Planning in Chromium, preserves an editor and makes zero requests 679ms
+(node:36804) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+ Ô£ô tests/streamcockpit3-health-integration.test.ts (5 tests) 950ms
+   Ô£ô real server entrypoint serves health read-only and never promotes a controller 820ms
+(node:820) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+stdout | tests/discord-api.test.ts > API Discord > garde le token hors ├®tat, valide la destination et d├®duplique deux posts concurrents
+StreamDashboard ready on 127.0.0.1:8129
+
+stdout | tests/discord-api.test.ts > API Discord > rev├®rifie le token persist├® apr├¿s red├®marrage et permet de choisir une destination sans le ressaisir
+StreamDashboard ready on 127.0.0.1:8135
+
+stdout | tests/discord-api.test.ts > API Discord > rev├®rifie le token persist├® apr├¿s red├®marrage et permet de choisir une destination sans le ressaisir
+StreamDashboard ready on 127.0.0.1:8138
+
+stdout | tests/discord-api.test.ts > API Discord > refuse faux PNG, message trop long et URL distante
+StreamDashboard ready on 127.0.0.1:8142
+
+stderr | tests/discord-api.test.ts > API Discord > refuse faux PNG, message trop
+long et URL distante
+Publication Discord invalide.
+
+stderr | tests/discord-api.test.ts > API Discord > refuse faux PNG, message trop
+long et URL distante
+Payload Discord invalide.
+
+stderr | tests/discord-api.test.ts > API Discord > refuse faux PNG, message trop
+long et URL distante
+Publication Discord invalide.
+
+ Ô£ô tests/discord-api.test.ts (3 tests) 707ms
+   Ô£ô API Discord (3)
+     Ô£ô garde le token hors ├®tat, valide la destination et d├®duplique deux posts concurrents 331ms
+(node:32372) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+ Ô£ô tests/streamcockpit3-twitch-prediction-create-http.test.ts (14 tests) 523ms
+   Ô£ô F08 prediction create endpoints are mounted on FIXE server and deny unauthenticated loopback 324ms
+(node:27820) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+ Ô£ô tests/planning-handoff.test.ts (2 tests) 792ms
+   Ô£ô two actual servers retain holds and receipts over restart, activate once and return ownership 783ms
+(node:25468) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+ Ô£ô tests/device-permissions.test.ts (4 tests) 1968ms
+   Ô£ô retains restricted and empty permissions through an actual server shutdown and disk reload 1758ms
+ Ô£ô tests/youtube-session.test.ts (6 tests) 449ms
+(node:18164) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+ Ô£ô tests/streamlabs-feed.test.ts (5 tests) 445ms
+   Ô£ô Streamlabs event feed (5)
+     Ô£ô serves the same received activity to readers, restores it, and keeps independent runtimes isolated 333ms
+ Ô£ô tests/streamcockpit3-mixer-browser.test.ts (1 test) 327ms
+   Ô£ô F05 Plus mixer scrolls at 320px and fails closed after disconnect 326ms
+(node:2660) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+ Ô£ô tests/streamcockpit3-moments-streamlabs-runtime.test.ts (1 test) 421ms
+   Ô£ô F09 complete runtime: socket receipt reaches durable timeline, readers agree, restart never duplicates or sends OBS commands 420ms
+(node:11684) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+ Ô£ô tests/streamcockpit3-twitch-prediction-http.test.ts (6 tests) 388ms
+(node:20112) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+ Ô£ô tests/streamlabs-history-api.test.ts (2 tests) 326ms
+   Ô£ô Streamlabs history API (2)
+     Ô£ô makes cloud history readable with local reception without replaying donations or automations 324ms
+ Ô£ô tests/streamcockpit3-clipforge-status.test.ts (2 tests) 298ms
+(node:8588) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+ Ô£ô tests/streamcockpit-timer-authority.test.ts (1 test) 296ms
+(node:34068) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+ Ô£ô tests/cb131-series-ui.test.ts (1 test) 284ms
+ Ô£ô tests/installation-store.test.ts (8 tests) 293ms
+(node:22768) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+ Ô£ô tests/companion-sync.test.ts (6 tests) 284ms
+(node:9692) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+ Ô£ô tests/cb118-series-tags.test.ts (1 test) 273ms
+ Ô£ô tests/streamlabs-history-sync.test.ts (9 tests) 264ms
+(node:36076) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+ Ô£ô tests/streamcockpit3-moments-manual-http.test.ts (13 tests) 261ms
+(node:10452) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+ Ô£ô tests/streamcockpit3-moments-http.test.ts (9 tests) 228ms
+(node:10412) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+ Ô£ô tests/universal-device-api.test.ts (1 test) 236ms
+ Ô£ô tests/control-keyboard-routes.test.ts (7 tests) 241ms
+(node:31192) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+ Ô£ô tests/twitch-categories-api.test.ts (1 test) 245ms
+ Ô£ô tests/obs-runtime.test.ts (20 tests) 238ms
+(node:14860) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+ Ô£ô tests/server-startup-cancellation.test.ts (2 tests) 215ms
+(node:33152) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+ Ô£ô tests/streamcockpit3-master-context-runtime.test.ts (1 test) 239ms
+ Ô£ô tests/agent-v2-durable-receipts.test.ts (7 tests) 236ms
+ Ô£ô tests/twitch.test.ts (29 tests) 195ms
+(node:33844) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+ Ô£ô tests/execution-roles.test.ts (1 test) 201ms
+ Ô£ô tests/streamcockpit3-twitch-poll-http.test.ts (12 tests) 197ms
+ Ô£ô tests/control-stop-twitch-priority.test.ts (7 tests) 183ms
+ Ô£ô tests/peer-discovery.test.ts (2 tests) 182ms
+ Ô£ô tests/twitch-projection.test.ts (20 tests) 154ms
+ Ô£ô tests/streamcockpit3-upgrade-integration.test.ts (24 tests) 131ms
+ Ô£ô tests/migration-backup.test.ts (3 tests) 159ms
+ Ô£ô tests/command-service.test.ts (33 tests) 136ms
+ Ô£ô tests/agent-v2-runner.test.ts (4 tests) 142ms
+ Ô£ô tests/cb114-integration.test.ts (11 tests) 136ms
+(node:6092) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+ Ô£ô tests/next-foundation.test.ts (18 tests) 129ms
+ Ô£ô tests/streamcockpit3-moments-mobile.test.ts (6 tests) 130ms
+stdout | tests/provider-sync-performance.test.ts > twitch interval 1 shares inventory and bounds independent writes
+twitch/1: 14 -> 8 HTTP; 2800 -> 1000 simulated ms
+
+stdout | tests/provider-sync-performance.test.ts > twitch interval 2 shares inventory and bounds independent writes
+twitch/2: 14 -> 8 HTTP; 2800 -> 1000 simulated ms
+
+stdout | tests/provider-sync-performance.test.ts > google interval 1 shares inventory and bounds independent writes
+google/1: 14 -> 8 HTTP; 2800 -> 1000 simulated ms
+
+stdout | tests/provider-sync-performance.test.ts > google interval 2 shares inventory and bounds independent writes
+google/2: 14 -> 8 HTTP; 2800 -> 1000 simulated ms
+
+ Ô£ô tests/provider-sync-performance.test.ts (14 tests) 128ms
+ Ô£ô tests/autonomy.test.ts (5 tests) 123ms
+ Ô£ô tests/streamcockpit3-readiness.test.ts (6 tests) 120ms
+ Ô£ô tests/twitch-chat-routes.test.ts (9 tests) 106ms
+ Ô£ô tests/agent-v2-windows-readonly.test.ts (8 tests) 110ms
+ Ô£ô tests/agent-v2-windows-secret-store.test.ts (9 tests | 1 skipped) 115ms
+ Ô£ô tests/google-secure-storage.test.ts (3 tests) 106ms
+ Ô£ô tests/soundboard-runtime.test.ts (11 tests) 105ms
+ Ô£ô tests/streamcockpit3-planning-integration.test.ts (4 tests) 101ms
+ Ô£ô tests/streamcockpit3-moderation-http.test.ts (9 tests) 110ms
+ Ô£ô tests/streamcockpit3-simple-moments-http.test.ts (9 tests) 101ms
+ Ô£ô tests/cb98-twitch-sync.test.ts (14 tests) 121ms
+ Ô£ô tests/streamcockpit3-moments-scheduled-http.test.ts (2 tests) 99ms
+ Ô£ô tests/google-projection.test.ts (17 tests) 96ms
+ Ô£ô tests/cb131-series-deletion.test.ts (17 tests) 87ms
+ Ô£ô tests/storage.test.ts (5 tests) 77ms
+ Ô£ô tests/streamcockpit3-health-observation-http.test.ts (2 tests) 80ms
+ Ô£ô tests/twitch-occurrence-conflict.test.ts (4 tests) 81ms
+ Ô£ô tests/streamcockpit3-moments-streamlabs.test.ts (16 tests) 70ms
+ Ô£ô tests/streamcockpit3-mixer-http.test.ts (3 tests) 76ms
+stdout | tests/cb129-next-occurrences.test.ts > measures daily operation and durable checkpoint reduction against the coalesced 28-day baseline
+CB-129 daily coalesced baseline -> next-7 {
+  before: { creates: 28, checkpoints: 21 },
+  after: { creates: 7, checkpoints: 7 }
+}
+
+ Ô£ô tests/cb129-next-occurrences.test.ts (11 tests) 78ms
+ Ô£ô tests/streamcockpit3-context-integration.test.ts (9 tests) 37ms
+ Ô£ô tests/streamcockpit3-artifact-verifier.test.ts (5 tests) 62ms
+ Ô£ô tests/google-recurrence.test.ts (26 tests) 65ms
+ Ô£ô tests/twitch-only.test.ts (3 tests) 62ms
+ Ô£ô tests/product-generalization.test.ts (9 tests) 56ms
+ Ô£ô tests/tag-intelligence.test.ts (18 tests) 56ms
+ Ô£ô tests/cb114-native-withdrawal.test.ts (7 tests) 59ms
+ Ô£ô tests/recurrence-projection.test.ts (18 tests) 61ms
+ Ô£ô tests/streamcockpit3-clipforge.test.ts (49 tests | 34 skipped) 60ms
+ Ô£ô tests/cb131-twitch-ownership.test.ts (2 tests) 64ms
+ Ô£ô tests/planning-export-layout.test.ts (15 tests) 59ms
+ Ô£ô tests/companion-multidevice.test.ts (16 tests) 59ms
+ Ô£ô tests/replay-status-route.test.ts (3 tests) 53ms
+ Ô£ô tests/agent-v2-reservation.test.ts (3 tests) 50ms
+ Ô£ô tests/twitch-projection-companion.test.ts (5 tests) 56ms
+ Ô£ô tests/streamcockpit3-clipforge-windows-replay-grant.test.ts (7 tests) 56ms
+ Ô£ô tests/android-signing-bootstrap.test.ts (4 tests) 50ms
+ Ô£ô tests/desktop-controller.test.ts (27 tests) 50ms
+ Ô£ô tests/twitch-stop-lag.test.ts (2 tests) 49ms
+ Ô£ô tests/streamcockpit3-twitch.test.ts (37 tests) 52ms
+ Ô£ô tests/logger.test.ts (2 tests) 52ms
+ Ô£ô tests/streamcockpit3-planning-assisted-draft.test.ts (23 tests) 48ms
+ Ô£ô tests/streamcockpit3-clipforge-windows-lab.test.ts (15 tests | 10 skipped) 43ms
+ Ô£ô tests/twitch-runtime-audit.test.ts (12 tests) 39ms
+ Ô£ô tests/recurrence.test.ts (7 tests) 43ms
+ Ô£ô tests/agent-v2-managed-runtime.test.ts (7 tests) 39ms
+ Ô£ô tests/definitive-create-failure.test.ts (10 tests) 41ms
+ Ô£ô tests/streamcockpit3-twitch-integration.test.ts (12 tests) 43ms
+ Ô£ô tests/streamlabs-transport.test.ts (4 tests) 26ms
+(node:13328) MaxListenersExceededWarning: Possible EventTarget memory leak detected. 11 visibilitychange listeners
+added to EventTarget. MaxListeners is 10. Use events.setMaxListeners() to increase limit
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:13328) MaxListenersExceededWarning: Possible EventTarget memory leak detected. 11 offline listeners added to
+EventTarget. MaxListeners is 10. Use events.setMaxListeners() to increase limit
+ Ô£ô tests/streamcockpit3-twitch-mobile.test.ts (20 tests) 29ms
+ Ô£ô tests/http-shutdown.test.ts (1 test) 36ms
+ Ô£ô tests/audit-regressions.test.ts (10 tests) 38ms
+ Ô£ô tests/agent-v2-simulated-writer.test.ts (1 test) 37ms
+ Ô£ô tests/standalone-create-recovery.test.ts (13 tests) 34ms
+ Ô£ô tests/streamcockpit3-moments.test.ts (33 tests | 6 skipped) 32ms
+ Ô£ô tests/desktop-restart-safety.test.ts (5 tests) 36ms
+ Ô£ô tests/google-all-day-recurrence.test.ts (10 tests) 33ms
+ Ô£ô tests/streamcockpit3-simple-replay-privacy.test.ts (1 test) 36ms
+ Ô£ô tests/twitch-live-control.test.ts (9 tests) 37ms
+ Ô£ô tests/twitch-legacy-metadata.test.ts (11 tests) 31ms
+ Ô£ô tests/companion-provider-contract.test.ts (6 tests) 32ms
+(node:16884) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+ Ô£ô tests/streamcockpit3-moments-obs-replay.test.ts (9 tests) 30ms
+ Ô£ô tests/streamcockpit3-upgrade.test.ts (29 tests) 29ms
+ Ô£ô tests/obs-output-safety.test.ts (26 tests) 30ms
+(node:37760) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+ Ô£ô tests/streamcockpit3-moments-manual-guard.test.ts (4 tests) 27ms
+ Ô£ô tests/streamcockpit3-planning.test.ts (20 tests) 28ms
+ Ô£ô tests/mobile-network-recovery.test.ts (3 tests) 29ms
+ Ô£ô tests/cb52-twitch.test.ts (3 tests) 25ms
+ Ô£ô tests/desktop-twitch-viewer.test.ts (24 tests) 26ms
+ Ô£ô tests/mobile-credential-session.test.ts (3 tests) 24ms
+ Ô£ô tests/wizebot-transport.test.ts (3 tests) 24ms
+ Ô£ô tests/streamcockpit-3-roadmap.test.ts (3 tests) 24ms
+ Ô£ô tests/google-oauth-pending.test.ts (3 tests) 27ms
+ Ô£ô tests/discord-client.test.ts (2 tests) 26ms
+ Ô£ô tests/google-cancelled-retry.test.ts (5 tests) 25ms
+ Ô£ô tests/desktop-recovery.test.ts (14 tests) 23ms
+ Ô£ô tests/planning-export-current-week.test.ts (3 tests) 22ms
+ Ô£ô tests/twitch-metadata-reliability.test.ts (4 tests) 29ms
+ Ô£ô tests/streamcockpit3-twitch-oauth-scope.test.ts (1 test) 24ms
+ Ô£ô tests/streamcockpit3-health-observation-hook.test.ts (2 tests) 12ms
+ Ô£ô tests/streamlabs-history.test.ts (12 tests) 20ms
+ Ô£ô tests/provider-sync.test.ts (10 tests) 19ms
+ Ô£ô tests/mobile-preview.test.ts (3 tests) 7ms
+ Ô£ô tests/aitum-suite.test.ts (15 tests) 15ms
+ Ô£ô tests/obs-recovery.test.ts (5 tests) 18ms
+ Ô£ô tests/streamcockpit3-context.test.ts (37 tests) 21ms
+ Ô£ô tests/twitch-tags.test.ts (36 tests) 16ms
+ Ô£ô tests/native-delete-recovery.test.ts (7 tests) 17ms
+ Ô£ô tests/desktop-updater-safety.test.ts (8 tests) 14ms
+ Ô£ô tests/streamcockpit3-health.test.ts (13 tests) 14ms
+ Ô£ô tests/android-remote.test.ts (44 tests) 17ms
+ Ô£ô tests/microphone-false-silence-regression.test.ts (9 tests) 16ms
+ Ô£ô tests/obs-soundboard.test.ts (11 tests) 15ms
+ Ô£ô tests/server-restart-safety.test.ts (26 tests) 14ms
+ Ô£ô tests/streamcockpit3-upgrade-integration-updater.test.ts (5 tests) 12ms
+ Ô£ô tests/mobile-companion.test.ts (9 tests) 12ms
+ Ô£ô tests/streamcockpit3-mixer.test.ts (17 tests) 11ms
+ Ô£ô tests/provider-retry.test.ts (6 tests) 12ms
+ Ô£ô tests/mobile-command-controller.test.ts (13 tests) 11ms
+ Ô£ô tests/mobile-remote-api-policy.test.ts (69 tests) 11ms
+ Ô£ô tests/agent-v2-lan-binding.test.ts (2 tests | 1 skipped) 11ms
+ Ô£ô tests/cb199-pairing-auth.test.ts (4 tests) 11ms
+ Ô£ô tests/streamcockpit3-moments-scheduled.test.ts (7 tests) 11ms
+ Ô£ô tests/streamcockpit3-planning-ui.test.ts (6 tests) 10ms
+ Ô£ô tests/live-stabilization.test.ts (5 tests) 10ms
+ Ô£ô tests/planning-conflict.test.ts (3 tests) 11ms
+ Ô£ô tests/mobile-shell-redesign.test.ts (12 tests) 10ms
+ Ô£ô tests/planning-share.test.ts (5 tests) 8ms
+ Ô£ô tests/live-planning.test.ts (5 tests) 9ms
+ Ô£ô tests/mobile-hot-feedback.test.ts (7 tests) 9ms
+ Ô£ô tests/streamcockpit3-moments-observed.test.ts (5 tests) 8ms
+ Ô£ô tests/audit-finalization.test.ts (3 tests) 9ms
+ Ô£ô tests/streamcockpit3-local-twitch-identity.test.ts (2 tests) 8ms
+ Ô£ô tests/dji-mic3-battery.test.ts (6 tests) 8ms
+ Ô£ô tests/streamcockpit3-health-observation.test.ts (13 tests) 8ms
+ Ô£ô tests/twitch-audit-features.test.ts (6 tests) 8ms
+ Ô£ô tests/dji-battery-warnings.test.ts (6 tests) 8ms
+ Ô£ô tests/desktop-product-v2.test.ts (12 tests) 7ms
+ Ô£ô tests/automation-engine.test.ts (2 tests) 8ms
+ Ô£ô tests/streamcockpit3-master-clock-resume.test.ts (6 tests | 1 skipped) 7ms
+ Ô£ô tests/audio-destinations.test.ts (2 tests) 7ms
+ Ô£ô tests/mobile-twitch-capabilities.test.ts (7 tests) 8ms
+ Ô£ô tests/support-runtime.test.ts (3 tests) 8ms
+ Ô£ô tests/provider-boundaries.test.ts (5 tests) 7ms
+ Ô£ô tests/automation-runtime.test.ts (2 tests) 9ms
+ Ô£ô tests/dji-battery-relay.test.ts (5 tests) 8ms
+ Ô£ô tests/dji-background-publisher.test.ts (6 tests) 7ms
+ Ô£ô tests/mobile-offline-planning-validation.test.ts (1 test) 7ms
+ Ô£ô tests/streamcockpit3-health-api.test.ts (1 test) 7ms
+ Ô£ô tests/audit-edgecases.test.ts (2 tests) 8ms
+ Ô£ô tests/live-control-core.test.ts (4 tests) 8ms
+ Ô£ô tests/mobile-templates-ui.test.ts (5 tests) 7ms
+ Ô£ô tests/mobile-panes-battery.test.ts (7 tests) 7ms
+ Ô£ô tests/planning-pagination.test.ts (5 tests) 7ms
+ Ô£ô tests/dji-host-warning-watcher.test.ts (5 tests) 7ms
+ Ô£ô tests/dji-relay-publisher.test.ts (4 tests) 6ms
+ Ô£ô tests/mobile-planning-audio.test.ts (4 tests) 7ms
+ Ô£ô tests/ui-refresh.test.ts (11 tests) 6ms
+ Ô£ô tests/domain.test.ts (6 tests) 6ms
+ Ô£ô tests/twitch-emotes.test.ts (4 tests) 6ms
+ Ô£ô tests/replay-auto-start.test.ts (6 tests) 6ms
+ Ô£ô tests/streamcockpit3-mixer-observation.test.ts (4 tests) 7ms
+ Ô£ô tests/live-control-domains.test.ts (3 tests) 6ms
+ Ô£ô tests/agent-v2-observer.test.ts (3 tests) 6ms
+ Ô£ô tests/discord-security.test.ts (2 tests) 6ms
+ Ô£ô tests/streamcockpit3-clipforge-windows-provenance.test.ts (5 tests | 1 skipped) 6ms
+ Ô£ô tests/mobile-start-live-flow.test.ts (2 tests) 6ms
+ Ô£ô tests/mobile-navigation-runtime.test.ts (2 tests) 6ms
+ Ô£ô tests/streamcockpit3-clipforge-windows-acl.test.ts (5 tests | 1 skipped) 6ms
+ Ô£ô tests/login-startup.test.ts (2 tests) 6ms
+ Ô£ô tests/streamcockpit3-clipforge-executor.test.ts (9 tests | 8 skipped) 4ms
+ Ô£ô tests/desktop-security.test.ts (6 tests) 5ms
+ Ô£ô tests/contracts.test.ts (4 tests) 5ms
+ Ô£ô tests/streamcockpit-client-authority.test.ts (5 tests) 5ms
+ Ô£ô tests/mobile-remote-redaction.test.ts (3 tests) 4ms
+ Ô£ô tests/streamcockpit3-mixer-page.test.ts (1 test) 5ms
+ Ô£ô tests/desktop-campfire-ux.test.ts (6 tests) 5ms
+ Ô£ô tests/agent-v2-health-cache.test.ts (3 tests) 5ms
+ Ô£ô tests/twitch-category.test.ts (3 tests) 6ms
+ Ô£ô tests/twitch-mobile-control.test.ts (5 tests) 4ms
+ Ô£ô tests/live-planning-wiring.test.ts (5 tests) 5ms
+ Ô£ô tests/qa-profile.test.ts (1 test) 4ms
+ Ô£ô tests/streamcockpit3-mixer-mobile.test.ts (2 tests) 5ms
+ Ô£ô tests/efficient-ui-contract.test.ts (4 tests) 4ms
+ Ô£ô tests/minimal-ui-function-contract.test.ts (2 tests) 4ms
+ Ô£ô tests/mobile-live-domains.test.ts (3 tests) 5ms
+ Ô£ô tests/agent-v2-cli.test.ts (3 tests) 5ms
+ Ô£ô tests/streamcockpit3-master-clock.test.ts (4 tests) 4ms
+ Ô£ô tests/creator-view-security.test.ts (2 tests) 4ms
+ Ô£ô tests/dji-relay-target.test.ts (5 tests) 4ms
+ Ô£ô tests/agent-v2-contract.test.ts (3 tests) 4ms
+ Ô£ô tests/launcher.test.ts (3 tests) 3ms
+ Ô£ô tests/streamcockpit3-authority-target.test.ts (1 test) 3ms
+ Ô£ô tests/mobile-service-worker.test.ts (1 test) 3ms
+ Ô£ô tests/desktop-runtime-assets.test.ts (1 test) 3ms
+ Ô£ô tests/agent-v2-command-guard.test.ts (2 tests) 3ms
+ Ôåô tests/agent-v2-read-only-bridge.test.ts (1 test | 1 skipped)
+ Ôåô tests/streamcockpit3-agent-headless-process.test.ts (1 test | 1 skipped)
+
+ Test Files  292 passed | 2 skipped (294)
+      Tests  2347 passed | 65 skipped (2412)
+   Start at  15:55:03
+   Duration  366.24s (tests 86%, import 12%, transform 1%)
+
+    Isolate  294 workers spawned ┬À ~134ms startup each (spawn + environment, per file)
+             at least ~39.20s faster with isolate: false ÔÇö reuses workers across files instead of one per file

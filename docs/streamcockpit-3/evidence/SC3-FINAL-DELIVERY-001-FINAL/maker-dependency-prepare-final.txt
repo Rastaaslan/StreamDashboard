@@ -1,0 +1,1 @@
+{"kind":"windows-maker-tools","arch":"x64","files":[{"file":"7z.exe","sha256":"c7245e21a7553d9e52d434002a401c77a7ca7d0f245f2311b0ddf16f8f946c6f"},{"file":"7z.dll","sha256":"9ed007aa82e440ceb39a6e105bb1d602a9bc59a4946267ba8de2f220aa15bc06"}],"userInstallation":false}

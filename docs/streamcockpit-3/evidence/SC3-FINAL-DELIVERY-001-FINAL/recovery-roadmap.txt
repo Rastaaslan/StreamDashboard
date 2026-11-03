@@ -1,0 +1,14 @@
+
+ RUN  v5.0.1 C:/Users/damie/Dev/StreamCockpit-3.0-FullExperience
+
+ Ô£ô tests/streamcockpit3-readiness.test.ts (6 tests) 119ms
+ Ô£ô tests/streamcockpit3-artifact-verifier.test.ts (5 tests) 64ms
+ Ô£ô tests/streamcockpit-3-roadmap.test.ts (3 tests) 24ms
+
+ Test Files  3 passed (3)
+      Tests  14 passed (14)
+   Start at  15:53:42
+   Duration  802ms (tests 55%, import 26%, transform 14%, worker 4%)
+
+    Isolate  3 workers spawned ┬À ~134ms startup each (spawn + environment, per file)
+             at least ~268ms faster with isolate: false ÔÇö reuses workers across files instead of one per file

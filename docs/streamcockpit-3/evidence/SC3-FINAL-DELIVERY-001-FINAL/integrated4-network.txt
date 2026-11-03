@@ -1,0 +1,44 @@
+
+> stream-dashboard@3.0.0-alpha.1 test:browser
+> playwright test -c playwright.mobile-network.config.ts
+
+
+Running 35 tests using 1 worker
+
+  ok  1 tests\mobile-network-ui.spec.ts:68:1 ÔÇ║ shipped Android address recovery uses no pairing code and persists the existing credential (728ms)
+  ok  2 tests\mobile-network-ui.spec.ts:93:1 ÔÇ║ silent network loss is detected by HTTP and automatically recovers after Desktop restart (273ms)
+  ok  3 tests\mobile-network-ui.spec.ts:112:1 ÔÇ║ concurrent reconnect events close old sockets and ignore delayed responses and callbacks (511ms)
+  ok  4 tests\mobile-network-ui.spec.ts:140:1 ÔÇ║ HTTP fallback stays usable, 403 preserves credentials, and revocation clears native storage (434ms)
+  ok  5 tests\mobile-network-ui.spec.ts:161:3 ÔÇ║ late command response cannot restore the old Desktop state after online event (469ms)
+  ok  6 tests\mobile-network-ui.spec.ts:161:3 ÔÇ║ late command response cannot restore the old Desktop state after HTTP heartbeat (499ms)
+  ok  7 tests\mobile-network-ui.spec.ts:195:3 ÔÇ║ stream guards survive HTTP, WebSocket and heartbeat with OBS connected=false but unknown (472ms)
+  ok  8 tests\mobile-network-ui.spec.ts:195:3 ÔÇ║ stream guards survive HTTP, WebSocket and heartbeat with OBS connected=true but unknown (548ms)
+  ok  9 tests\mobile-network-ui.spec.ts:237:1 ÔÇ║ Live HTTP matrix: confirmation, modes, mic, timer, Twitch, media and Soundboard without WS (1.8s)
+  ok 10 tests\mobile-network-ui.spec.ts:333:1 ÔÇ║ retrying unavailable WS tickets preserves an in-flight HTTP command on the same PC (634ms)
+  ok 11 tests\mobile-network-ui.spec.ts:361:1 ÔÇ║ CB-52 mobile keeps newer chat draft, audio DOM, Sounds selection, Focus and inline timer (780ms)
+  ok 12 tests\mobile-network-ui.spec.ts:396:1 ÔÇ║ CB-52 profile response never replaces text entered during save or periodic refresh (536ms)
+  ok 13 tests\mobile-network-ui.spec.ts:420:1 ÔÇ║ CB-52 mobile series round trip preserves timezone and exceptions; occurrence patch carries description (584ms)
+  ok 14 tests\mobile-network-ui.spec.ts:452:1 ÔÇ║ CB-127 planning refresh preserves expanded series actions and focus during click (660ms)
+  ok 15 tests\mobile-network-ui.spec.ts:502:1 ÔÇ║ CB-127 failed provider retry stays usable after unchanged refresh and succeeds on second attempt (412ms)
+  ok 16 tests\mobile-network-ui.spec.ts:548:1 ÔÇ║ CB-131 mobile deletes the canonical whole series with native confirmation and removes rows (474ms)
+  ok 17 tests\mobile-network-ui.spec.ts:570:1 ÔÇ║ CB-131 mobile pending series shows deletion status and retry clears its row (300ms)
+  ok 18 tests\mobile-network-ui.spec.ts:599:5 ÔÇ║ CB-138 mobile recurrence editor ÔÇ║ creates daily-1 with until=2030-06-30 through the mobile API (427ms)
+  ok 19 tests\mobile-network-ui.spec.ts:599:5 ÔÇ║ CB-138 mobile recurrence editor ÔÇ║ creates daily-1 with until=unbounded through the mobile API (444ms)
+  ok 20 tests\mobile-network-ui.spec.ts:599:5 ÔÇ║ CB-138 mobile recurrence editor ÔÇ║ creates weekly-1 with until=2030-06-30 through the mobile API (532ms)
+  ok 21 tests\mobile-network-ui.spec.ts:599:5 ÔÇ║ CB-138 mobile recurrence editor ÔÇ║ creates weekly-2 with until=2030-06-30 through the mobile API (506ms)
+  ok 22 tests\mobile-network-ui.spec.ts:599:5 ÔÇ║ CB-138 mobile recurrence editor ÔÇ║ creates monthly-1 with until=2030-06-30 through the mobile API (516ms)
+  ok 23 tests\mobile-network-ui.spec.ts:634:3 ÔÇ║ CB-138 mobile recurrence editor ÔÇ║ existing daily series retains its canonical rule and can change until (878ms)
+  ok 24 tests\mobile-network-ui.spec.ts:666:33 ÔÇ║ Live tags edit, refresh and retry on touch at 320px (976ms)
+  ok 25 tests\mobile-network-ui.spec.ts:666:33 ÔÇ║ Live tags edit, refresh and retry on touch at 390px (904ms)
+  ok 26 tests\mobile-network-ui.spec.ts:741:1 ÔÇ║ Live suggestions ignore late contexts and survive telemetry while pending (466ms)
+  ok 27 tests\streamlabs-feed-ui.spec.ts:12:1 ÔÇ║ old offline cache hides widget controls before its limit and preserves viewer activity (139ms)
+  ok 28 tests\streamlabs-feed-ui.spec.ts:33:1 ÔÇ║ old server controls stay out of visible and cached history while gifts remain available (174ms)
+  ok 29 tests\streamlabs-feed-ui.spec.ts:54:1 ÔÇ║ desktop feed filters real-shaped events, isolates sources and keeps offline history without claiming connected (367ms)
+  ok 30 tests\streamlabs-feed-ui.spec.ts:84:1 ÔÇ║ cloud history uses original dates and remains independent of the live connection (255ms)
+  ok 31 tests\streamlabs-feed-ui.spec.ts:132:1 ÔÇ║ manual refresh requests a cloud update while ordinary polling stays unforced (3.1s)
+  ok 32 tests\streamlabs-feed-ui.spec.ts:150:1 ÔÇ║ compact activity keeps filters folded and preserves source, focus and event rows through refresh (335ms)
+  ok 33 tests\streamlabs-feed-ui.spec.ts:198:1 ÔÇ║ folding options never accepts a late source response or carries a source choice into another workspace (223ms)
+  ok 34 tests\streamlabs-feed-ui.spec.ts:232:1 ÔÇ║ history configuration sends only the entered widget URL and keeps live credentials separate (230ms)
+  ok 35 tests\streamlabs-feed-ui.spec.ts:266:1 ÔÇ║ a late status response cannot replace saved history configuration and errors remain visible (202ms)
+
+  35 passed (22.3s)

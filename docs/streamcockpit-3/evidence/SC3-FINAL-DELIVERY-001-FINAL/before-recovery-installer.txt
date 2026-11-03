@@ -1,0 +1,128 @@
+ÔØ» Checking your system
+ÔØ» Checking package manager version
+Ô£ö Found npm@10.9.8
+Ô£ö Checking your system
+ÔØ» Loading configuration
+Ô£ö Loading configuration
+ÔØ» Resolving make targets
+ÔÇ║ Making for the following targets:
+Ô£ö Resolving make targets
+ÔØ» Running package command
+ÔÇ║ ÔÜá Skipping could result in an out of date build
+ÔØ» Running preMake hook
+Ô£ö Running preMake hook
+ÔØ» Making distributables
+ÔØ» Making a squirrel distributable for win32/x64
+node.exe : Ô£û Making a squirrel distributable for win32/x64 [FAILED: Failed with exit code: 4294967295
+Au caractère Ligne:1 : 1
++ & "C:\Users\damie\Documents\Dowloader vod twitch\.tools\node-v22.22.3 ...
++ ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: (Ô£û M...ode: 4294967295:String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+
+Output:
+System.AggregateException: Une ou plusieurs erreurs se sont produites. ---> System.ComponentModel.Win32Exception: Le
+fichier sp´┐¢cifi´┐¢ est introuvable
+   ´┐¢ System.Diagnostics.Process.StartWithCreateProcess(ProcessStartInfo startInfo)
+   ´┐¢ System.Diagnostics.Process.Start(ProcessStartInfo startInfo)
+   ´┐¢ Squirrel.Utility.<InvokeProcessAsync>d__11.MoveNext()
+--- Fin de la trace de la pile ´┐¢ partir de l'emplacement pr´┐¢c´┐¢dent au niveau duquel l'exception a ´┐¢t´┐¢
+lev´┐¢e ---
+   ´┐¢ System.Runtime.ExceptionServices.ExceptionDispatchInfo.Throw()
+   ´┐¢ System.Runtime.CompilerServices.TaskAwaiter.HandleNonSuccessAndDebuggerNotification(Task task)
+   ´┐¢ Squirrel.Utility.<CreateZipFromDirectory>d__23.MoveNext()
+   --- Fin de la trace de la pile d'exception interne ---
+   ´┐¢ System.Threading.Tasks.Task.ThrowIfExceptional(Boolean includeTaskCanceledExceptions)
+   ´┐¢ System.Threading.Tasks.Task.Wait(Int32 millisecondsTimeout, CancellationToken cancellationToken)
+   ´┐¢ Squirrel.ReleasePackage.CreateReleasePackage(String outputFile, String packagesRootDir, Func`2
+releaseNotesProcessor, Action`1 contentsPostProcessHook)
+   ´┐¢ Squirrel.Update.Program.Releasify(String package, String targetDir, String packagesDir, String bootstrapperExe,
+String backgroundGif, String signingOpts, String baseUrl, String setupIcon, Boolean generateMsi, Boolean
+packageAs64Bit, String frameworkVersion, Boolean generateDeltas)
+   ´┐¢ Squirrel.Update.Program.executeCommandLine(String[] args)
+   ´┐¢ Squirrel.Update.Program.main(String[] args)
+   ´┐¢ Squirrel.Update.Program.Main(String[] args)
+---> (Exception interne #0) System.ComponentModel.Win32Exception (0x80004005): Le fichier sp´┐¢cifi´┐¢ est introuvable
+   ´┐¢ System.Diagnostics.Process.StartWithCreateProcess(ProcessStartInfo startInfo)
+   ´┐¢ System.Diagnostics.Process.Start(ProcessStartInfo startInfo)
+   ´┐¢ Squirrel.Utility.<InvokeProcessAsync>d__11.MoveNext()
+--- Fin de la trace de la pile ´┐¢ partir de l'emplacement pr´┐¢c´┐¢dent au niveau duquel l'exception a ´┐¢t´┐¢
+lev´┐¢e ---
+   ´┐¢ System.Runtime.ExceptionServices.ExceptionDispatchInfo.Throw()
+   ´┐¢ System.Runtime.CompilerServices.TaskAwaiter.HandleNonSuccessAndDebuggerNotification(Task task)
+   ´┐¢ Squirrel.Utility.<CreateZipFromDirectory>d__23.MoveNext()<---
+
+]
+Ô£û Making distributables [FAILED: Failed with exit code: 4294967295
+Output:
+System.AggregateException: Une ou plusieurs erreurs se sont produites. ---> System.ComponentModel.Win32Exception: Le
+fichier sp´┐¢cifi´┐¢ est introuvable
+   ´┐¢ System.Diagnostics.Process.StartWithCreateProcess(ProcessStartInfo startInfo)
+   ´┐¢ System.Diagnostics.Process.Start(ProcessStartInfo startInfo)
+   ´┐¢ Squirrel.Utility.<InvokeProcessAsync>d__11.MoveNext()
+--- Fin de la trace de la pile ´┐¢ partir de l'emplacement pr´┐¢c´┐¢dent au niveau duquel l'exception a ´┐¢t´┐¢
+lev´┐¢e ---
+   ´┐¢ System.Runtime.ExceptionServices.ExceptionDispatchInfo.Throw()
+   ´┐¢ System.Runtime.CompilerServices.TaskAwaiter.HandleNonSuccessAndDebuggerNotification(Task task)
+   ´┐¢ Squirrel.Utility.<CreateZipFromDirectory>d__23.MoveNext()
+   --- Fin de la trace de la pile d'exception interne ---
+   ´┐¢ System.Threading.Tasks.Task.ThrowIfExceptional(Boolean includeTaskCanceledExceptions)
+   ´┐¢ System.Threading.Tasks.Task.Wait(Int32 millisecondsTimeout, CancellationToken cancellationToken)
+   ´┐¢ Squirrel.ReleasePackage.CreateReleasePackage(String outputFile, String packagesRootDir, Func`2
+releaseNotesProcessor, Action`1 contentsPostProcessHook)
+   ´┐¢ Squirrel.Update.Program.Releasify(String package, String targetDir, String packagesDir, String bootstrapperExe,
+String backgroundGif, String signingOpts, String baseUrl, String setupIcon, Boolean generateMsi, Boolean
+packageAs64Bit, String frameworkVersion, Boolean generateDeltas)
+   ´┐¢ Squirrel.Update.Program.executeCommandLine(String[] args)
+   ´┐¢ Squirrel.Update.Program.main(String[] args)
+   ´┐¢ Squirrel.Update.Program.Main(String[] args)
+---> (Exception interne #0) System.ComponentModel.Win32Exception (0x80004005): Le fichier sp´┐¢cifi´┐¢ est introuvable
+   ´┐¢ System.Diagnostics.Process.StartWithCreateProcess(ProcessStartInfo startInfo)
+   ´┐¢ System.Diagnostics.Process.Start(ProcessStartInfo startInfo)
+   ´┐¢ Squirrel.Utility.<InvokeProcessAsync>d__11.MoveNext()
+--- Fin de la trace de la pile ´┐¢ partir de l'emplacement pr´┐¢c´┐¢dent au niveau duquel l'exception a ´┐¢t´┐¢
+lev´┐¢e ---
+   ´┐¢ System.Runtime.ExceptionServices.ExceptionDispatchInfo.Throw()
+   ´┐¢ System.Runtime.CompilerServices.TaskAwaiter.HandleNonSuccessAndDebuggerNotification(Task task)
+   ´┐¢ Squirrel.Utility.<CreateZipFromDirectory>d__23.MoveNext()<---
+
+]
+
+An unhandled rejection has occurred inside Forge:
+Error: Failed with exit code: 4294967295
+Output:
+System.AggregateException: Une ou plusieurs erreurs se sont produites. ---> System.ComponentModel.Win32Exception: Le
+fichier sp´┐¢cifi´┐¢ est introuvable
+   ´┐¢ System.Diagnostics.Process.StartWithCreateProcess(ProcessStartInfo startInfo)
+   ´┐¢ System.Diagnostics.Process.Start(ProcessStartInfo startInfo)
+   ´┐¢ Squirrel.Utility.<InvokeProcessAsync>d__11.MoveNext()
+--- Fin de la trace de la pile ´┐¢ partir de l'emplacement pr´┐¢c´┐¢dent au niveau duquel l'exception a ´┐¢t´┐¢
+lev´┐¢e ---
+   ´┐¢ System.Runtime.ExceptionServices.ExceptionDispatchInfo.Throw()
+   ´┐¢ System.Runtime.CompilerServices.TaskAwaiter.HandleNonSuccessAndDebuggerNotification(Task task)
+   ´┐¢ Squirrel.Utility.<CreateZipFromDirectory>d__23.MoveNext()
+   --- Fin de la trace de la pile d'exception interne ---
+   ´┐¢ System.Threading.Tasks.Task.ThrowIfExceptional(Boolean includeTaskCanceledExceptions)
+   ´┐¢ System.Threading.Tasks.Task.Wait(Int32 millisecondsTimeout, CancellationToken cancellationToken)
+   ´┐¢ Squirrel.ReleasePackage.CreateReleasePackage(String outputFile, String packagesRootDir, Func`2
+releaseNotesProcessor, Action`1 contentsPostProcessHook)
+   ´┐¢ Squirrel.Update.Program.Releasify(String package, String targetDir, String packagesDir, String bootstrapperExe,
+String backgroundGif, String signingOpts, String baseUrl, String setupIcon, Boolean generateMsi, Boolean
+packageAs64Bit, String frameworkVersion, Boolean generateDeltas)
+   ´┐¢ Squirrel.Update.Program.executeCommandLine(String[] args)
+   ´┐¢ Squirrel.Update.Program.main(String[] args)
+   ´┐¢ Squirrel.Update.Program.Main(String[] args)
+---> (Exception interne #0) System.ComponentModel.Win32Exception (0x80004005): Le fichier sp´┐¢cifi´┐¢ est introuvable
+   ´┐¢ System.Diagnostics.Process.StartWithCreateProcess(ProcessStartInfo startInfo)
+   ´┐¢ System.Diagnostics.Process.Start(ProcessStartInfo startInfo)
+   ´┐¢ Squirrel.Utility.<InvokeProcessAsync>d__11.MoveNext()
+--- Fin de la trace de la pile ´┐¢ partir de l'emplacement pr´┐¢c´┐¢dent au niveau duquel l'exception a ´┐¢t´┐¢
+lev´┐¢e ---
+   ´┐¢ System.Runtime.ExceptionServices.ExceptionDispatchInfo.Throw()
+   ´┐¢ System.Runtime.CompilerServices.TaskAwaiter.HandleNonSuccessAndDebuggerNotification(Task task)
+   ´┐¢ Squirrel.Utility.<CreateZipFromDirectory>d__23.MoveNext()<---
+at ChildProcess.<anonymous>
+(C:\Users\damie\Dev\StreamCockpit-3.0-FullExperience\node_modules\electron-winstaller\lib\spawn-promise.js:48:24)
+    at ChildProcess.emit (node:events:519:28)
+    at maybeClose (node:internal/child_process:1101:16)
+    at ChildProcess._handle.onexit (node:internal/child_process:304:5)

@@ -1,0 +1,5 @@
+
+> stream-dashboard@3.0.0-alpha.1 desktop:check-package
+> node scripts/check-desktop-package.mjs
+
+Desktop package checked: version 3.0.0-alpha.1, public provider IDs, role ports, runtime assets, exclusions and matching EXE/ASAR integrity.

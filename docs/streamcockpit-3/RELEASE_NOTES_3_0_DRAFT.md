@@ -20,3 +20,5 @@ Les validations physiques et les signatures restent requises. Voir G3_MANUAL_REC
 Compléments intégrés le 03/11 : mixeur gain/muet avec aperçu, relecture et retour manuel protégé ; banques contextuelles du Deck issues des observations de la régie et de droits appairés, suspendues en cas de source périmée. Ces circuits réutilisent le maître OBS et les reçus existants. Routage audio avancé, matériels, OAuth réel et mise à jour transactionnelle restent décrits comme incomplets dans l’audit ; ces notes ne constituent pas une annonce de release.
 
 Le socket Streamlabs existant produit désormais des repères de réception dans la timeline du FIXE, sans copier les noms, messages ou montants dans les repères. Les doublons conservent leur première session après reprise ; la réception du compte réel reste à effectuer.
+
+La réception de nouveaux moments Streamlabs peut reprendre après une erreur de stockage, en conservant l’incertitude de l’événement précédent sans le renvoyer. Les réceptions de compte et de matériels restent à effectuer.

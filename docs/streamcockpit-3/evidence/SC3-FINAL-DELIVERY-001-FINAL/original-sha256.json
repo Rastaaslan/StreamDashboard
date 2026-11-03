@@ -1,0 +1,242 @@
+[
+  {
+    "file": "sc3-final-before-recovery-android-sync.log",
+    "size": 540,
+    "sha256": "29193379315e04ac1492fa0e5b4b06ac67f64fece1eccb670bb62f281254966f"
+  },
+  {
+    "file": "sc3-final-before-recovery-browser-types.log",
+    "size": 188,
+    "sha256": "bb924b5407f9d304b72de6585fd82df628813488b5da1b1a285d6e9d05b09c1b"
+  },
+  {
+    "file": "sc3-final-before-recovery-build.log",
+    "size": 1142,
+    "sha256": "ff22c0182ccaf7b2efc1a581e6f42d13f8b1f2d71672a6b2f73f1f5d1b8308f8"
+  },
+  {
+    "file": "sc3-final-before-recovery-electron.log",
+    "size": 912,
+    "sha256": "8b4538ab6d68ff86783cc4e274399812d5a432f01ad2ee194f737031bf293e3f"
+  },
+  {
+    "file": "sc3-final-before-recovery-gates.log",
+    "size": 2178,
+    "sha256": "5849a1c12e280131e7c95e46c5c2f890a5bf17c7baa6611d0db625a3b8f3c557"
+  },
+  {
+    "file": "sc3-final-before-recovery-installer-missing7z-fail.log",
+    "size": 17250,
+    "sha256": "dae6dae810eece28594db64b23e66d84bf22b66e035e6895b4d7e869418f7ce4"
+  },
+  {
+    "file": "sc3-final-before-recovery-installer.log",
+    "size": 17250,
+    "sha256": "dae6dae810eece28594db64b23e66d84bf22b66e035e6895b4d7e869418f7ce4"
+  },
+  {
+    "file": "sc3-final-before-recovery-network.log",
+    "size": 10654,
+    "sha256": "6b136ed49577e744dbeb4c3f8c48019ba5eb18ab0803841cdbe68248a259ef0a"
+  },
+  {
+    "file": "sc3-final-before-recovery-node.log",
+    "size": 174324,
+    "sha256": "d9bf74c792ebf2f81af2c6b91bbf18b278383a0f3379621c2a5000e42e193d88"
+  },
+  {
+    "file": "sc3-final-before-recovery-package-after-sync.log",
+    "size": 490,
+    "sha256": "384ce23f94487982ea34a2180e86f7316745e5e09585634c0ddd6c6e44f45f06"
+  },
+  {
+    "file": "sc3-final-before-recovery-package.log",
+    "size": 2910,
+    "sha256": "0492da11631c4393f346b4fbf5c86055dca39240b0a554be614aed2f13299106"
+  },
+  {
+    "file": "sc3-final-before-recovery-security.log",
+    "size": 380,
+    "sha256": "737e44b4be4b98e397a6d6fc9c95c6bc30702f63928b579511395a2c5e1e54a0"
+  },
+  {
+    "file": "sc3-final-before-recovery-shipped.log",
+    "size": 270,
+    "sha256": "b5bed5e2ffcf5737d70ed13b0c8a93b7b5aaefc5dce68ba7c50aba0856a1d856"
+  },
+  {
+    "file": "sc3-final-before-recovery-toolchain.log",
+    "size": 1560,
+    "sha256": "53c093999f956792c6b42a883bdd98ea322eac7abb567376876e17031ee9e8e5"
+  },
+  {
+    "file": "sc3-final-before-recovery-types.log",
+    "size": 168,
+    "sha256": "02fc317be9c2332372313f5ab4150d40edc22d27e0f384a484364fac49613455"
+  },
+  {
+    "file": "sc3-final-before-recovery-vitest-planning-fail.log",
+    "size": 159466,
+    "sha256": "29aa23efd3a1384347741ddf9ae104d77fe71ff2f6f46af9d416087b641f8752"
+  },
+  {
+    "file": "sc3-final-before-recovery-vitest.log",
+    "size": 160460,
+    "sha256": "4f4dea3cca056bc9d9d277fc09447405247defac0a405d0a874a31f897e3b4a3"
+  },
+  {
+    "file": "sc3-final-electron-receipt-poll-fixed.log",
+    "size": 352,
+    "sha256": "3c8e012d534a1ac240384407e7e7661970d2da8d6be8ef224326527cb512bc91"
+  },
+  {
+    "file": "sc3-final-electron-receipt-poll.log",
+    "size": 352,
+    "sha256": "b95db32df368ebe1b212beaa47ef65ae345d5139f77d7a3941ff15cf38f6c3b8"
+  },
+  {
+    "file": "sc3-final-f09-recovery-browser-types.log",
+    "size": 188,
+    "sha256": "bb924b5407f9d304b72de6585fd82df628813488b5da1b1a285d6e9d05b09c1b"
+  },
+  {
+    "file": "sc3-final-f09-recovery-green.log",
+    "size": 4954,
+    "sha256": "f9461efc88ddd3a8cf93bfb0f1ca996210f4f30b0f6cfc965b7e1ab4fae6eb6b"
+  },
+  {
+    "file": "sc3-final-f09-recovery-red.log",
+    "size": 11300,
+    "sha256": "61ad37e19bf5a7f4adf4f72dea67009f6646b3d04032fa75b3694ee553487bbc"
+  },
+  {
+    "file": "sc3-final-f09-recovery-security.log",
+    "size": 380,
+    "sha256": "937c210a65435f97c193c24e7ddf9e47677b7e1408acab5c9f3a6fae0fc02f1c"
+  },
+  {
+    "file": "sc3-final-f09-recovery-types.log",
+    "size": 168,
+    "sha256": "02fc317be9c2332372313f5ab4150d40edc22d27e0f384a484364fac49613455"
+  },
+  {
+    "file": "sc3-final-integrated4-android-sync.log",
+    "size": 540,
+    "sha256": "29193379315e04ac1492fa0e5b4b06ac67f64fece1eccb670bb62f281254966f"
+  },
+  {
+    "file": "sc3-final-integrated4-browser-types.log",
+    "size": 188,
+    "sha256": "bb924b5407f9d304b72de6585fd82df628813488b5da1b1a285d6e9d05b09c1b"
+  },
+  {
+    "file": "sc3-final-integrated4-build.log",
+    "size": 1142,
+    "sha256": "ff22c0182ccaf7b2efc1a581e6f42d13f8b1f2d71672a6b2f73f1f5d1b8308f8"
+  },
+  {
+    "file": "sc3-final-integrated4-electron-receipt-race-fail.log",
+    "size": 4882,
+    "sha256": "48dfa2eaa4f1225ab0d3571c4b173679480ad7c8cad41c4fb8ef97b56caa0adc"
+  },
+  {
+    "file": "sc3-final-integrated4-electron.log",
+    "size": 1202,
+    "sha256": "7e35f05b102e88e9a9dc0117f540b75b25fd826b62eaf95d5c1d219d6c602837"
+  },
+  {
+    "file": "sc3-final-integrated4-gates.log",
+    "size": 2178,
+    "sha256": "5849a1c12e280131e7c95e46c5c2f890a5bf17c7baa6611d0db625a3b8f3c557"
+  },
+  {
+    "file": "sc3-final-integrated4-installer-missing7z-fail.log",
+    "size": 17250,
+    "sha256": "dae6dae810eece28594db64b23e66d84bf22b66e035e6895b4d7e869418f7ce4"
+  },
+  {
+    "file": "sc3-final-integrated4-installer.log",
+    "size": 1766,
+    "sha256": "cda2d4769449bd3ce2e1da25eef2a09417e3dab3b59093c4f1740c44dbb17319"
+  },
+  {
+    "file": "sc3-final-integrated4-network.log",
+    "size": 10656,
+    "sha256": "1e549e7ab9debea0429cfc915c1fe19d51358ce015523e58195fa0b3bd8f835e"
+  },
+  {
+    "file": "sc3-final-integrated4-node.log",
+    "size": 174332,
+    "sha256": "59939c78785117aae1d41bfd5b9a747ff3789654b59cba8f5683be2e46468acc"
+  },
+  {
+    "file": "sc3-final-integrated4-package-after-sync.log",
+    "size": 490,
+    "sha256": "384ce23f94487982ea34a2180e86f7316745e5e09585634c0ddd6c6e44f45f06"
+  },
+  {
+    "file": "sc3-final-integrated4-package.log",
+    "size": 2910,
+    "sha256": "0492da11631c4393f346b4fbf5c86055dca39240b0a554be614aed2f13299106"
+  },
+  {
+    "file": "sc3-final-integrated4-security.log",
+    "size": 380,
+    "sha256": "8952d921c6475155e9ebad5f7cf5444fe460b9b9e88877e67a7188d72a3695cf"
+  },
+  {
+    "file": "sc3-final-integrated4-shipped.log",
+    "size": 270,
+    "sha256": "b5bed5e2ffcf5737d70ed13b0c8a93b7b5aaefc5dce68ba7c50aba0856a1d856"
+  },
+  {
+    "file": "sc3-final-integrated4-toolchain.log",
+    "size": 1560,
+    "sha256": "b0ec2431154d7618de629bc4c1e52c9935962bf93c2a94034a4c6fad53fa4f4f"
+  },
+  {
+    "file": "sc3-final-integrated4-types.log",
+    "size": 168,
+    "sha256": "02fc317be9c2332372313f5ab4150d40edc22d27e0f384a484364fac49613455"
+  },
+  {
+    "file": "sc3-final-integrated4-vitest-planning-fail.log",
+    "size": 159466,
+    "sha256": "29aa23efd3a1384347741ddf9ae104d77fe71ff2f6f46af9d416087b641f8752"
+  },
+  {
+    "file": "sc3-final-integrated4-vitest.log",
+    "size": 165422,
+    "sha256": "c589fd0857c087ec165f93e080c4eeec0fce676fcd06451f2caa1766362d9c0d"
+  },
+  {
+    "file": "sc3-final-maker-dependency-prepare-final.log",
+    "size": 538,
+    "sha256": "eb54e36621c7732400e6a2cd248a9ce4d3672735de16055edb9e8a6dbf73b5df"
+  },
+  {
+    "file": "sc3-final-maker-dependency-prepare.log",
+    "size": 950,
+    "sha256": "f6b6b40ece17c49de6b4c3ee651661638c419b1bc1b1bf75863fccdc12e3d365"
+  },
+  {
+    "file": "sc3-final-maker-recovery.log",
+    "size": 1766,
+    "sha256": "cda2d4769449bd3ce2e1da25eef2a09417e3dab3b59093c4f1740c44dbb17319"
+  },
+  {
+    "file": "sc3-final-planning-browser-fixed.log",
+    "size": 3098,
+    "sha256": "49fc53c31bdf9e0646526c3e6c0d8a177a78d9ed55db635389d9ff1ffb689426"
+  },
+  {
+    "file": "sc3-final-planning-browser-repro.log",
+    "size": 6478,
+    "sha256": "69fe93a71bb6e815438e9db55d983d1a525b0dbff877f7bb135e2b5cf540217c"
+  },
+  {
+    "file": "sc3-final-recovery-roadmap.log",
+    "size": 1998,
+    "sha256": "0be5220897f8ceba88b1871e604a0e1d01b7cc8c96e0c0484fca581ba8246087"
+  }
+]

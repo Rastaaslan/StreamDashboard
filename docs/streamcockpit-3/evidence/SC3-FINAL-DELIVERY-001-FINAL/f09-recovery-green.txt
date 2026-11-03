@@ -1,0 +1,31 @@
+
+ RUN  v5.0.1 C:/Users/damie/Dev/StreamCockpit-3.0-FullExperience
+
+node.exe : (node:34168) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+Au caractère Ligne:1 : 1
++ & "C:\Users\damie\Documents\Dowloader vod twitch\.tools\node-v22.22.3 ...
++ ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: ((node:34168) Ex...nge at any time:String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+
+(Use `node --trace-warnings ...` to show where the warning was created)
+ Ô£ô tests/streamcockpit3-moments-streamlabs-runtime.test.ts (1 test) 434ms
+   Ô£ô F09 complete runtime: socket receipt reaches durable timeline, readers agree, restart never duplicates or sends OBS commands 433ms
+ Ô£ô tests/streamcockpit3-moments-streamlabs.test.ts (16 tests) 79ms
+(node:26084) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+ Ô£ô tests/streamlabs-session.test.ts (6 tests) 951ms
+(node:18696) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+ Ô£ô tests/streamlabs-feed.test.ts (5 tests) 449ms
+   Ô£ô Streamlabs event feed (5)
+     Ô£ô serves the same received activity to readers, restores it, and keeps independent runtimes isolated 339ms
+ Ô£ô tests/streamlabs-transport.test.ts (4 tests) 40ms
+
+ Test Files  5 passed (5)
+      Tests  32 passed (32)
+   Start at  15:50:24
+   Duration  5.99s (import 42%, tests 37%, transform 20%, worker 1%)
+
+    Isolate  5 workers spawned ┬À ~138ms startup each (spawn + environment, per file)
+             at least ~553ms faster with isolate: false ÔÇö reuses workers across files instead of one per file

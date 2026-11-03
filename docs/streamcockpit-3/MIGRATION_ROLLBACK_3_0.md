@@ -25,3 +25,5 @@ Préparation SC3-FINAL-DELIVERY-001. Procédure non qualifiée sur les appareils
 
 ## Blocages avant G4
 SDK/build-tools Android et clé existante non configurés sur FIXE au contrôle ; aucune chaîne Authenticode de code signing disponible au contrôle. Les adaptateurs de migration/installation transactionnelle et les restaurations matérielles ne sont pas qualifiés. Un build portable non signé doit rester explicitement préparatoire, jamais présenté comme une RC validée.
+
+Contrôle logiciel natif ajouté : le paquet Windows sur profil QA conserve un repère SQLite à l’identique après fermeture puis reprise Agent sans fenêtre. Ce PASS ne prouve ni migration JSON legacy, ni restauration de données de production, ni perte électrique, ni rollback Android. Ces validations restent requises avant G4.

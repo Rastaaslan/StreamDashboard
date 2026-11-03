@@ -1,0 +1,30 @@
+{
+  "sourceCommit": "08198036d2dea173f9974e1db0387d778b758d1c",
+  "packagedSourceCommit": "cc332dbbe67e2a79cf94db0a0eb6d41eabf2f4fc",
+  "machine": "FIXE Windows 11",
+  "generalCommand": "npx vitest run --maxWorkers=1",
+  "processOnlyPathPrefix": "C:/Program Files/Git/usr/bin",
+  "browserFlags": [
+    "SC3_FINAL_BROWSER_TEST",
+    "CONTEXT_BROWSER_TEST",
+    "MASTER_CLOCK_BROWSER_TEST",
+    "MIXER_BROWSER_TEST",
+    "MOMENTS_BROWSER_TEST",
+    "PLANNING_ASSIST_BROWSER_TEST",
+    "PLANNING_BROWSER_TEST",
+    "TWITCH_POLL_BROWSER_TEST",
+    "TWITCH_PREDICTION_BROWSER_TEST",
+    "TWITCH_PREDICTION_CREATE_BROWSER_TEST",
+    "TWITCH_PREDICTION_END_BROWSER_TEST",
+    "TWITCH_PREDICTION_LOCK_BROWSER_TEST",
+    "TWITCH_PREDICTION_RELEASE_BROWSER_TEST",
+    "TWITCH_RAID_BROWSER_TEST",
+    "TWITCH_SHOUTOUT_BROWSER_TEST"
+  ],
+  "nodeCommand": "npm run test:node:built",
+  "networkCommand": "npm run test:browser",
+  "packagedElectronCommand": "npx playwright test -c playwright.electron.config.ts --grep 'SC3 final|agent sans fen'",
+  "hardwareQualification": false,
+  "installed": false,
+  "published": false
+}

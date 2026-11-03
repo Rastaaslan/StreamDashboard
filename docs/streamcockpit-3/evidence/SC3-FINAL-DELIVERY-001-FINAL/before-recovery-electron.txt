@@ -1,0 +1,7 @@
+
+Running 3 tests using 1 worker
+
+[1/3] tests\electron.smoke.spec.ts:292:1 ÔÇ║ SC3 final delivery : identit├® locale r├®elle, aucun privil├¿ge loopback implicite et profil isol├®
+[2/3] tests\electron.smoke.spec.ts:333:1 ÔÇ║ SC3 final context shell : Deck livr├®, commande OBS fictive et re├ºu natif
+[3/3] tests\electron.smoke.spec.ts:371:1 ÔÇ║ SC3 final moments : journal SQLite du paquet conserve le rep├¿re apr├¿s reprise Agent
+  3 passed (17.4s)

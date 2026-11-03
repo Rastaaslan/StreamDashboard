@@ -1,0 +1,78 @@
+
+ RUN  v5.0.1 C:/Users/damie/Dev/StreamCockpit-3.0-FullExperience
+
+node.exe : (node:36592) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+Au caractère Ligne:1 : 1
++ & "C:\Users\damie\Documents\Dowloader vod twitch\.tools\node-v22.22.3 ...
++ ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: ((node:36592) Ex...nge at any time:String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+
+(Use `node --trace-warnings ...` to show where the warning was created)
+ ÔØ» tests/streamcockpit3-moments-streamlabs-runtime.test.ts (1 test | 1 failed) 1419ms
+   ├ù F09 complete runtime: socket receipt reaches durable timeline, readers agree, restart never duplicates or sends OBS commands 1418ms
+ ÔØ» tests/streamcockpit3-moments-streamlabs.test.ts (16 tests | 1 failed) 85ms
+   Ô£ô F09 Streamlabs stores one host receipt with fixed labels and no private provider payload 7ms
+   Ô£ô F09 provider duplicate after restart keeps original session and receipt instant 1ms
+   ├ù F09 excludes test, YouTube, control, unknown type, stale occurrence and untrusted timestamps 5ms
+   Ô£ô F09 denies unavailable connected 1ms
+   Ô£ô F09 denies unavailable streamingKnown 1ms
+   Ô£ô F09 denies unavailable streaming 0ms
+   Ô£ô F09 denies unavailable providerConnected 0ms
+   Ô£ô F09 refuses missing FIXE host, unbound session or absent OBS witness 1ms
+   Ô£ô F09 fences connectionGeneration changed during host authorization 1ms
+   Ô£ô F09 fences streamEpoch changed during host authorization 0ms
+   Ô£ô F09 fences providerGeneration changed during host authorization 0ms
+   Ô£ô F09 rechecks host and session after awaited authorization 0ms
+   Ô£ô F09 never automatically retries an uncertain disk commit even on a duplicate event 1ms
+   Ô£ô F09 shutdown drains an already accepted write and never starts a second one 64ms
+   Ô£ô F09 final host check rejects a role switch immediately before persistence 0ms
+   Ô£ô F09 journal reconciles a committed but unacknowledged event only on explicit later observation 1ms
+
+ÔÄ»ÔÄ»ÔÄ»ÔÄ»ÔÄ»ÔÄ»ÔÄ» Failed Tests 2 ÔÄ»ÔÄ»ÔÄ»ÔÄ»ÔÄ»ÔÄ»ÔÄ»
+
+ FAIL  tests/streamcockpit3-moments-streamlabs-runtime.test.ts > F09 complete runtime:
+socket receipt reaches durable timeline, readers agree, restart never duplicates or sends OBS commands
+AssertionError: expected [ { ÔÇª(8) } ] to have a length of 2 but got 1
+
+- Expected
++ Received
+
+- 2
++ 1
+
+ ÔØ» tests/streamcockpit3-moments-streamlabs-runtime.test.ts:54:107
+     52|    receive!(lost); // An uncertain old event is never automatically reÔÇª
+     53|    receive!({...packet,message:[{_id:'fresh-after-recovery'}]});
+     54|    await vi.waitFor(async()=>expect((await get('/api/v1/streamcockpit-ÔÇª
+       |
+      ^
+     55|    expect(cas).toHaveBeenCalledTimes(2); // One failed attempt and oneÔÇª
+     56|    cas.mockRestore();
+
+ÔÄ»ÔÄ»ÔÄ»ÔÄ»ÔÄ»ÔÄ»ÔÄ»ÔÄ»ÔÄ»ÔÄ»ÔÄ»ÔÄ»ÔÄ»ÔÄ»ÔÄ»ÔÄ»ÔÄ»ÔÄ»ÔÄ»ÔÄ»ÔÄ»ÔÄ»ÔÄ»ÔÄ»[1/2]ÔÄ»
+
+ FAIL  tests/streamcockpit3-moments-streamlabs.test.ts > F09 excludes test, YouTube,
+control, unknown type, stale occurrence and untrusted timestamps
+Error: INVALID_MOMENT
+ ÔØ» invalid packages/core/src/streamcockpit-moments.ts:23:35
+     21|   markers: Moment[];
+     22| }
+     23| function invalid(): never { throw new Error('INVALID_MOMENT'); }
+       |                                   ^
+     24| function object(value: unknown): Record<string, unknown> {
+     25|   if (!value || typeof value !== 'object' || Array.isArray(value)) retÔÇª
+ ÔØ» validateMoment packages/core/src/streamcockpit-moments.ts:43:145
+ ÔØ» MomentsPipeline.recordStreamlabsObservation
+apps/server/src/streamcockpit-moments.ts:112:17
+ ÔØ» Object.<anonymous> tests/streamcockpit3-moments-streamlabs.test.ts:11:37
+ ÔØ» StreamlabsMomentProducer.process
+apps/server/src/streamcockpit-moments-streamlabs.ts:66:23
+
+ÔÄ»ÔÄ»ÔÄ»ÔÄ»ÔÄ»ÔÄ»ÔÄ»ÔÄ»ÔÄ»ÔÄ»ÔÄ»ÔÄ»ÔÄ»ÔÄ»ÔÄ»ÔÄ»ÔÄ»ÔÄ»ÔÄ»ÔÄ»ÔÄ»ÔÄ»ÔÄ»ÔÄ»[2/2]ÔÄ»
+
+
+ Test Files  2 failed (2)
+      Tests  2 failed | 15 passed (17)
+   Start at  15:49:19
+   Duration  4.57s (import 39%, tests 35%, transform 25%)

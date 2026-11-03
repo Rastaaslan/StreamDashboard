@@ -1,0 +1,7 @@
+
+> stream-dashboard@3.0.0-alpha.1 build
+> node scripts/clean-runtime.mjs && node scripts/build-mobile-planning.mjs && tsc -p tsconfig.runtime.json && node scripts/copy-runtime-js.mjs && node scripts/build-public-assets.mjs && node scripts/streamcockpit3-scope-check.mjs --built && node scripts/build-proof.mjs
+
+Runtime JS copied to dist (15 files)
+Public assets: 142 files (production), declarations and unused previews excluded from production.
+3.0 scope PASS: F00ÔÇôF10 retained; ClipForge V4 and modular layout V3.1 deferred; production JavaScript/UI checked.

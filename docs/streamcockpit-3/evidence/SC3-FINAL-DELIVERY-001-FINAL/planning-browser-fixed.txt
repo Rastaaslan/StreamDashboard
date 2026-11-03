@@ -1,0 +1,18 @@
+
+ RUN  v5.0.1 C:/Users/damie/Dev/StreamCockpit-3.0-FullExperience
+
+ Ô£ô tests/streamcockpit3-planning-integration-browser.test.ts (1 test) 1297ms
+   Ô£ô mounts Planning in Chromium, preserves an editor and makes zero requests 1296ms
+ Ô£ô tests/streamcockpit3-planning-assistant-browser.test.ts (2 tests) 3697ms
+   Ô£ô F06: real Microsoft Edge at 320px prepares then explicitly saves one local-only event 2252ms
+   Ô£ô F06: real Edge rejects source changes during local suggestion refresh 1443ms
+ Ô£ô tests/streamcockpit3-planning-integration.test.ts (4 tests) 103ms
+ Ô£ô tests/streamcockpit3-planning-assisted-draft.test.ts (23 tests) 46ms
+
+ Test Files  4 passed (4)
+      Tests  30 passed (30)
+   Start at  15:37:16
+   Duration  7.15s (tests 78%, import 18%, transform 4%)
+
+    Isolate  4 workers spawned ┬À ~131ms startup each (spawn + environment, per file)
+             at least ~394ms faster with isolate: false ÔÇö reuses workers across files instead of one per file

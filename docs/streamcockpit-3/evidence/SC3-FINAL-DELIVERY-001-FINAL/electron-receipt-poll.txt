@@ -1,0 +1,5 @@
+
+Running 1 test using 1 worker
+
+[1/1] tests\electron.smoke.spec.ts:333:1 ÔÇ║ SC3 final context shell : Deck livr├®, commande OBS fictive et re├ºu natif
+  1 passed (7.2s)

@@ -1,0 +1,20 @@
+ÔØ» Checking your system
+ÔØ» Checking package manager version
+Ô£ö Found npm@10.9.8
+Ô£ö Checking your system
+ÔØ» Loading configuration
+Ô£ö Loading configuration
+ÔØ» Resolving make targets
+ÔÇ║ Making for the following targets:
+Ô£ö Resolving make targets
+ÔØ» Running package command
+ÔÇ║ ÔÜá Skipping could result in an out of date build
+ÔØ» Running preMake hook
+Ô£ö Running preMake hook
+ÔØ» Making distributables
+ÔØ» Making a squirrel distributable for win32/x64
+Ô£ö Making a squirrel distributable for win32/x64
+Ô£ö Making distributables
+ÔØ» Running postMake hook
+ÔÇ║ Artifacts available at: C:\Users\damie\Dev\StreamCockpit-3.0-FullExperience\out\make
+Ô£ö Running postMake hook

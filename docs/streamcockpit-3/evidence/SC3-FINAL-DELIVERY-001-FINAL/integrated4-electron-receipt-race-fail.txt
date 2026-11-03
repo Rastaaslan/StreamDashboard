@@ -1,0 +1,31 @@
+
+Running 4 tests using 1 worker
+
+[1/4] tests\electron.smoke.spec.ts:173:1 ÔÇ║ agent sans fen├¬tre : services autonomes disponibles et fen├¬tre refermable sans arr├¬t du runtime
+[2/4] tests\electron.smoke.spec.ts:292:1 ÔÇ║ SC3 final delivery : identit├® locale r├®elle, aucun privil├¿ge loopback implicite et profil isol├®
+[3/4] tests\electron.smoke.spec.ts:333:1 ÔÇ║ SC3 final context shell : Deck livr├®, commande OBS fictive et re├ºu natif
+  1) tests\electron.smoke.spec.ts:333:1 ÔÇ║ SC3 final context shell : Deck livr├®, commande OBS fictive et re├ºu natif
+
+    Error: expect(received).toEqual(expected) // deep equality
+
+    Expected: ArrayContaining [ObjectContaining {"action": "pause-qa", "status": "succeeded"}]
+    Received: [{"action": "pause-qa", "createdAt": "2026-11-03T15:04:18.299Z", "fingerprint": "b811011fc22755940aee60d93c2d805b1ac0af5aae017e790c9ff288ce57def9", "id": "31b75d76-d30b-492b-b2b4-3dab536d2af6", "message": "Ex├®cution sur le PC de stream", "status": "running"}]
+
+      359 |    await expect.poll(()=>f.state().scene).toBe('Pause');expect(f.state().writes).toBe(1);
+      360 |    const receipts=await page.evaluate(async()=>{const value=await(await fetch('/api/v2/state')).json();return value.receipts});
+    > 361 |    expect(receipts).toEqual(expect.arrayContaining([expect.objectContaining({action:'pause-qa',status:'succeeded'})]));
+          |                     ^
+      362 |    await application.close();application=undefined;await expectEndpointClosed(RUNTIME_ORIGIN);
+      363 |   }finally{
+      364 |    await application?.close().catch(()=>{});if(previousObs===undefined)delete process.env.OBS_URL;else process.env.OBS_URL=previousObs;
+        at C:\Users\damie\Dev\StreamCockpit-3.0-FullExperience\tests\electron.smoke.spec.ts:361:21
+        at withMixerFixture (C:\Users\damie\Dev\StreamCockpit-3.0-FullExperience\tests\helpers\streamcockpit-mixer-fixture.ts:297:5)
+        at C:\Users\damie\Dev\StreamCockpit-3.0-FullExperience\tests\electron.smoke.spec.ts:336:2
+
+    Error Context: test-results\electron.smoke-SC3-final-c-eefb1-e-OBS-fictive-et-re├ºu-natif\error-context.md
+
+
+[4/4] tests\electron.smoke.spec.ts:371:1 ÔÇ║ SC3 final moments : journal SQLite du paquet conserve le rep├¿re apr├¿s reprise Agent
+  1 failed
+    tests\electron.smoke.spec.ts:333:1 ÔÇ║ SC3 final context shell : Deck livr├®, commande OBS fictive et re├ºu natif
+  3 passed (26.1s)

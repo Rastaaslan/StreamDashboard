@@ -1,0 +1,35 @@
+
+> stream-dashboard@3.0.0-alpha.1 desktop:package:built
+> node scripts/build-proof.mjs --verify && electron-forge package --platform=win32 --arch=x64 && npm run desktop:check-package
+
+Build proof matches current sources.
+ÔØ» Checking your system
+ÔØ» Checking package manager version
+Ô£ö Found npm@10.9.8
+Ô£ö Checking your system
+ÔØ» Preparing to package application
+Ô£ö Preparing to package application
+ÔØ» Running packaging hooks
+ÔØ» Running generateAssets hook
+Ô£ö Running generateAssets hook
+ÔØ» Running prePackage hook
+Ô£ö Running prePackage hook
+Ô£ö Running packaging hooks
+ÔØ» Packaging application
+ÔÇ║ Determining targets...
+ÔØ» Packaging for x64 on win32
+ÔØ» Copying files
+ÔØ» Preparing native dependencies
+ÔØ» Finalizing package
+Ô£ö Copying files
+Ô£ö Preparing native dependencies
+Ô£ö Finalizing package
+Ô£ö Packaging for x64 on win32
+Ô£ö Packaging application
+ÔØ» Running postPackage hook
+Ô£ö Running postPackage hook
+
+> stream-dashboard@3.0.0-alpha.1 desktop:check-package
+> node scripts/check-desktop-package.mjs
+
+Desktop package checked: version 3.0.0-alpha.1, public provider IDs, role ports, runtime assets, exclusions and matching EXE/ASAR integrity.

@@ -1,0 +1,5 @@
+
+> stream-dashboard@3.0.0-alpha.1 security:check
+> tsx scripts/security-check.ts
+
+Security check OK (1085 fichiers, Electron + secrets + surfaces publiques + garde-fous remote/mobile)

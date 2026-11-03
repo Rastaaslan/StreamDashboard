@@ -1,0 +1,2186 @@
+
+> stream-dashboard@3.0.0-alpha.1 test:node:built
+> node scripts/test-node.mjs
+
+TAP version 13
+# Subtest: Agent UI distinguishes fresh active, stopped, expired, and unavailable observations
+ok 1 - Agent UI distinguishes fresh active, stopped, expired, and unavailable observations
+  ---
+  duration_ms: 0.8651
+  type: 'test'
+  ...
+# Subtest: Agent UI owns one read, drops late updates after destroy, and never receives credentials
+ok 2 - Agent UI owns one read, drops late updates after destroy, and never receives credentials
+  ---
+  duration_ms: 3.3779
+  type: 'test'
+  ...
+# Subtest: desktop projection conflict choices send the provider and stable occurrence key
+ok 3 - desktop projection conflict choices send the provider and stable occurrence key
+  ---
+  duration_ms: 3.2625
+  type: 'test'
+  ...
+# (node:35412) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# Subtest: series deletion: shared lock, pending retry and managed close
+ok 4 - series deletion: shared lock, pending retry and managed close
+  ---
+  duration_ms: 2021.0549
+  type: 'test'
+  ...
+# Subtest: series deletion: shared lock, pending retry and new draft preservation
+ok 5 - series deletion: shared lock, pending retry and new draft preservation
+  ---
+  duration_ms: 1973.2835
+  type: 'test'
+  ...
+# (node:34508) ExperimentalWarning: stripTypeScriptTypes is an experimental feature and might change at any time
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# Subtest: Twitch guards follow granted scopes, connection and Twitch live state
+ok 6 - Twitch guards follow granted scopes, connection and Twitch live state
+  ---
+  duration_ms: 1.9562
+  type: 'test'
+  ...
+# Subtest: Desktop bridge calls and connection/Application actions have implementations
+ok 7 - Desktop bridge calls and connection/Application actions have implementations
+  ---
+  duration_ms: 9.8722
+  type: 'test'
+  ...
+# Subtest: Planning persists edits and standalone Twitch sync keeps remote link; PC/offline do not publish directly
+ok 8 - Planning persists edits and standalone Twitch sync keeps remote link; PC/offline do not publish directly
+  ---
+  duration_ms: 5.4134
+  type: 'test'
+  ...
+# Subtest: Mobile appearance survives reload without a PC
+ok 9 - Mobile appearance survives reload without a PC
+  ---
+  duration_ms: 2.2475
+  type: 'test'
+  ...
+# Subtest: Streamlabs internal test works disconnected; real test needs OAuth and socket
+ok 10 - Streamlabs internal test works disconnected; real test needs OAuth and socket
+  ---
+  duration_ms: 1.8633
+  type: 'test'
+  ...
+# Subtest: Server capabilities survive remote projection and reauthorization updates mobile buttons/actions
+ok 11 - Server capabilities survive remote projection and reauthorization updates mobile buttons/actions
+  ---
+  duration_ms: 33.5218
+  type: 'test'
+  ...
+# Subtest: Standalone Planning form uses real sync: second provider, failed creation retry, edit and delete
+ok 12 - Standalone Planning form uses real sync: second provider, failed creation retry, edit and delete
+  ---
+  duration_ms: 20.1946
+  type: 'test'
+  ...
+# Subtest: provider retry completion respects current availability: ONLINE_PC, native=false
+ok 13 - provider retry completion respects current availability: ONLINE_PC, native=false
+  ---
+  duration_ms: 1.0243
+  type: 'test'
+  ...
+# Subtest: provider retry completion respects current availability: OFFLINE, native=false
+ok 14 - provider retry completion respects current availability: OFFLINE, native=false
+  ---
+  duration_ms: 0.9937
+  type: 'test'
+  ...
+# Subtest: provider retry completion respects current availability: ONLINE_STANDALONE, native=false
+ok 15 - provider retry completion respects current availability: ONLINE_STANDALONE, native=false
+  ---
+  duration_ms: 1.0833
+  type: 'test'
+  ...
+# Subtest: provider retry completion respects current availability: ONLINE_STANDALONE, native=true
+ok 16 - provider retry completion respects current availability: ONLINE_STANDALONE, native=true
+  ---
+  duration_ms: 0.738
+  type: 'test'
+  ...
+# Subtest: mode transitions match CompanionMode and explain capabilities
+ok 17 - mode transitions match CompanionMode and explain capabilities
+  ---
+  duration_ms: 1.103
+  type: 'test'
+  ...
+# Subtest: pending operations, publication conflicts and successful sync timestamps remain distinct
+ok 18 - pending operations, publication conflicts and successful sync timestamps remain distinct
+  ---
+  duration_ms: 2.5658
+  type: 'test'
+  ...
+# Subtest: all event statuses and PC/Android metadata are exposed including conflicts and deleted links
+ok 19 - all event statuses and PC/Android metadata are exposed including conflicts and deleted links
+  ---
+  duration_ms: 0.7844
+  type: 'test'
+  ...
+# Subtest: targeted retry routes by mode, deduplicates and rejects offline or unsupported requests
+ok 20 - targeted retry routes by mode, deduplicates and rejects offline or unsupported requests
+  ---
+  duration_ms: 1.1903
+  type: 'test'
+  ...
+# Subtest: standalone retry preserves other provider, reports syncing/conflict then clears error on successful create
+ok 21 - standalone retry preserves other provider, reports syncing/conflict then clears error on successful create
+  ---
+  duration_ms: 1.9949
+  type: 'test'
+  ...
+# Subtest: failed deletions remain retryable in sync center
+ok 22 - failed deletions remain retryable in sync center
+  ---
+  duration_ms: 0.7419
+  type: 'test'
+  ...
+# Subtest: event controls expose two providers and invoke only selected retry without opening editor
+ok 23 - event controls expose two providers and invoke only selected retry without opening editor
+  ---
+  duration_ms: 1.9331
+  type: 'test'
+  ...
+# Subtest: mobile retains five tabs, editor and offline cache for sync center
+ok 24 - mobile retains five tabs, editor and offline cache for sync center
+  ---
+  duration_ms: 1.3754
+  type: 'test'
+  ...
+# Subtest: server remote deletion is displayed as deleted and retains a targeted retry
+ok 25 - server remote deletion is displayed as deleted and retains a targeted retry
+  ---
+  duration_ms: 0.5149
+  type: 'test'
+  ...
+# Subtest: summary combines successful PC and Android timestamps and never counts failed attempts
+ok 26 - summary combines successful PC and Android timestamps and never counts failed attempts
+  ---
+  duration_ms: 0.581
+  type: 'test'
+  ...
+# Subtest: occurrence and sync-center retry controls refuse unsupported Android series without remote mutation
+ok 27 - occurrence and sync-center retry controls refuse unsupported Android series without remote mutation
+  ---
+  duration_ms: 3.2416
+  type: 'test'
+  ...
+# Subtest: occurrence conflict choices target the canonical series and selected occurrence
+ok 28 - occurrence conflict choices target the canonical series and selected occurrence
+  ---
+  duration_ms: 1.4528
+  type: 'test'
+  ...
+# Subtest: Google tombstone deletion conflict choices use the retained provider journal
+ok 29 - Google tombstone deletion conflict choices use the retained provider journal
+  ---
+  duration_ms: 1.366
+  type: 'test'
+  ...
+# Subtest: local midnight, overnight and multi-day event editor round trips
+ok 30 - local midnight, overnight and multi-day event editor round trips
+  ---
+  duration_ms: 1.8566
+  type: 'test'
+  ...
+# Subtest: recurrence edit preserves provider timezone, exceptions and exact until
+ok 31 - recurrence edit preserves provider timezone, exceptions and exact until
+  ---
+  duration_ms: 0.9894
+  type: 'test'
+  ...
+# Subtest: Soundboard starts audible, respects a saved mute and clamps stored volume
+ok 32 - Soundboard starts audible, respects a saved mute and clamps stored volume
+  ---
+  duration_ms: 3.8676
+  type: 'test'
+  ...
+# Subtest: mobile Discord ignores inverted channel responses and clears stale choices
+ok 33 - mobile Discord ignores inverted channel responses and clears stale choices
+  ---
+  duration_ms: 1.8052
+  type: 'test'
+  ...
+# Subtest: Desktop delayed HTTP snapshot cannot replace newer WebSocket provider state
+ok 34 - Desktop delayed HTTP snapshot cannot replace newer WebSocket provider state
+  ---
+  duration_ms: 2.6287
+  type: 'test'
+  ...
+# Subtest: renderer/backend recovers from zero volume and still refuses inactive, muted or unrouted audio
+ok 35 - renderer/backend recovers from zero volume and still refuses inactive, muted or unrouted audio
+  ---
+  duration_ms: 9.1327
+  type: 'test'
+  ...
+# Subtest: mobile connections explain Preview, provisioning, module off and stale PC state
+ok 36 - mobile connections explain Preview, provisioning, module off and stale PC state
+  ---
+  duration_ms: 450.5701
+  type: 'test'
+  ...
+# Subtest: Desktop audit: guards, thumbnails, chat focus, destinations and overflow
+ok 37 - Desktop audit: guards, thumbnails, chat focus, destinations and overflow
+  ---
+  duration_ms: 5133.5503
+  type: 'test'
+  ...
+# Subtest: Desktop connections: default modules, Google OAuth, bot setup and live form preservation
+ok 38 - Desktop connections: default modules, Google OAuth, bot setup and live form preservation
+  ---
+  duration_ms: 1102.9636
+  type: 'test'
+  ...
+# (node:34384) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# Subtest: Desktop interaction layer: 20 save/reopen cycles, queued close, modal exclusion and refresh
+ok 39 - Desktop interaction layer: 20 save/reopen cycles, queued close, modal exclusion and refresh
+  ---
+  duration_ms: 14493.2467
+  type: 'test'
+  ...
+# Subtest: category name and hidden ID survive blur, WS and delayed HTTP before submission
+ok 40 - category name and hidden ID survive blur, WS and delayed HTTP before submission
+  ---
+  duration_ms: 743.6057
+  type: 'test'
+  ...
+# Subtest: Live title/chat survive ws-close and reconnect
+ok 41 - Live title/chat survive ws-close and reconnect
+  ---
+  duration_ms: 2382.8358
+  type: 'test'
+  ...
+# Subtest: Live title/chat survive refresh-error and reconnect
+ok 42 - Live title/chat survive refresh-error and reconnect
+  ---
+  duration_ms: 2452.5849
+  type: 'test'
+  ...
+# Subtest: delayed Twitch save preserves new text, category and chat, then accepts the next save
+ok 43 - delayed Twitch save preserves new text, category and chat, then accepts the next save
+  ---
+  duration_ms: 776.1199
+  type: 'test'
+  ...
+# Subtest: delayed Twitch save preserves original value, category and chat, then accepts the next save
+ok 44 - delayed Twitch save preserves original value, category and chat, then accepts the next save
+  ---
+  duration_ms: 748.0981
+  type: 'test'
+  ...
+# Subtest: delayed chat acknowledgement does not erase the next message
+ok 45 - delayed chat acknowledgement does not erase the next message
+  ---
+  duration_ms: 678.6455
+  type: 'test'
+  ...
+# Subtest: live tags keep manual edits across suggestions, broadcasts and rejection, then retry
+ok 46 - live tags keep manual edits across suggestions, broadcasts and rejection, then retry
+  ---
+  duration_ms: 2094.8084
+  type: 'test'
+  ...
+# Subtest: suggestions survive broadcast with completed generation and retain manual tags
+ok 47 - suggestions survive broadcast with completed generation and retain manual tags
+  ---
+  duration_ms: 863.6741
+  type: 'test'
+  ...
+# Subtest: suggestions survive broadcast with pending generation and retain manual tags
+ok 48 - suggestions survive broadcast with pending generation and retain manual tags
+  ---
+  duration_ms: 887.4386
+  type: 'test'
+  ...
+# Subtest: a pending suggestion from an older context cannot replace newer suggestions after a broadcast
+ok 49 - a pending suggestion from an older context cannot replace newer suggestions after a broadcast
+  ---
+  duration_ms: 1198.8364
+  type: 'test'
+  ...
+# Subtest: Desktop Live runtime matrix: HTTP controls, custom scenes, confirmations and WS drafts
+ok 50 - Desktop Live runtime matrix: HTTP controls, custom scenes, confirmations and WS drafts
+  ---
+  duration_ms: 2282.071
+  type: 'test'
+  ...
+# (node:7892) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# Subtest: planning: delayed reopen completion preserves the newer draft and target
+ok 51 - planning: delayed reopen completion preserves the newer draft and target
+  ---
+  duration_ms: 1098.6766
+  type: 'test'
+  ...
+# Subtest: planning: delayed edit-after-submit completion preserves the newer draft and target
+ok 52 - planning: delayed edit-after-submit completion preserves the newer draft and target
+  ---
+  duration_ms: 961.9301
+  type: 'test'
+  ...
+# Subtest: planning: delayed delete-reopen completion preserves the newer draft and target
+ok 53 - planning: delayed delete-reopen completion preserves the newer draft and target
+  ---
+  duration_ms: 1040.7735
+  type: 'test'
+  ...
+# Subtest: sounds: delayed reopen completion preserves the newer draft and target
+ok 54 - sounds: delayed reopen completion preserves the newer draft and target
+  ---
+  duration_ms: 959.8356
+  type: 'test'
+  ...
+# Subtest: sounds: delayed edit-after-submit completion preserves the newer draft and target
+ok 55 - sounds: delayed edit-after-submit completion preserves the newer draft and target
+  ---
+  duration_ms: 826.4953
+  type: 'test'
+  ...
+# Subtest: sounds: delayed delete-reopen completion preserves the newer draft and target
+ok 56 - sounds: delayed delete-reopen completion preserves the newer draft and target
+  ---
+  duration_ms: 934.8432
+  type: 'test'
+  ...
+# Subtest: legacy: delayed reopen completion preserves the newer draft and target
+ok 57 - legacy: delayed reopen completion preserves the newer draft and target
+  ---
+  duration_ms: 945.7302
+  type: 'test'
+  ...
+# Subtest: legacy: delayed edit-after-submit completion preserves the newer draft and target
+ok 58 - legacy: delayed edit-after-submit completion preserves the newer draft and target
+  ---
+  duration_ms: 860.4612
+  type: 'test'
+  ...
+# (node:15664) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# Subtest: planning: delayed creation adopts identity while preserving later typing
+ok 59 - planning: delayed creation adopts identity while preserving later typing
+  ---
+  duration_ms: 1167.9025
+  type: 'test'
+  ...
+# Subtest: planning: delayed creation never adopts into a reopened session
+ok 60 - planning: delayed creation never adopts into a reopened session
+  ---
+  duration_ms: 1121.9927
+  type: 'test'
+  ...
+# Subtest: legacy: delayed creation adopts identity while preserving later typing
+ok 61 - legacy: delayed creation adopts identity while preserving later typing
+  ---
+  duration_ms: 912.693
+  type: 'test'
+  ...
+# Subtest: legacy: delayed creation never adopts into a reopened session
+ok 62 - legacy: delayed creation never adopts into a reopened session
+  ---
+  duration_ms: 832.9146
+  type: 'test'
+  ...
+# Subtest: sounds: delayed creation adopts identity while preserving later typing
+ok 63 - sounds: delayed creation adopts identity while preserving later typing
+  ---
+  duration_ms: 838.4117
+  type: 'test'
+  ...
+# Subtest: sounds: delayed creation never adopts into a reopened session
+ok 64 - sounds: delayed creation never adopts into a reopened session
+  ---
+  duration_ms: 877.133
+  type: 'test'
+  ...
+# (node:21568) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# Subtest: Desktop dialog drafts survive character typing, refresh, IME and explicit reopen
+ok 65 - Desktop dialog drafts survive character typing, refresh, IME and explicit reopen
+  ---
+  duration_ms: 8704.9625
+  type: 'test'
+  ...
+# (node:36700) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# Subtest: OBS dialog ignores stale responses: same-session
+ok 66 - OBS dialog ignores stale responses: same-session
+  ---
+  duration_ms: 822.2869
+  type: 'test'
+  ...
+# Subtest: OBS dialog ignores stale responses: reopen-during-read
+ok 67 - OBS dialog ignores stale responses: reopen-during-read
+  ---
+  duration_ms: 778.924
+  type: 'test'
+  ...
+# Subtest: OBS dialog ignores stale responses: reopen-during-setup
+ok 68 - OBS dialog ignores stale responses: reopen-during-setup
+  ---
+  duration_ms: 868.1599
+  type: 'test'
+  ...
+# Subtest: Planning Desktop preserves the editable draft across telemetry, reconnect and save
+ok 69 - Planning Desktop preserves the editable draft across telemetry, reconnect and save
+  ---
+  duration_ms: 5205.5879
+  type: 'test'
+  ...
+# (node:35020) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# Subtest: Desktop Google (public PKCE): shipped ID, occupied port, OAuth callback, persistence and Planning
+ok 70 - Desktop Google (public PKCE): shipped ID, occupied port, OAuth callback, persistence and Planning
+  ---
+  duration_ms: 1040.1272
+  type: 'test'
+  ...
+# Subtest: Desktop Google (with secret): shipped ID, occupied port, OAuth callback, persistence and Planning
+ok 71 - Desktop Google (with secret): shipped ID, occupied port, OAuth callback, persistence and Planning
+  ---
+  duration_ms: 1518.807
+  type: 'test'
+  ...
+# Subtest: new cache installs every startup module and serves its bytes when all network requests fail
+ok 72 - new cache installs every startup module and serves its bytes when all network requests fail
+  ---
+  duration_ms: 127.2245
+  type: 'test'
+  ...
+# Subtest: offline support remains scoped to same-origin static GET requests
+ok 73 - offline support remains scoped to same-origin static GET requests
+  ---
+  duration_ms: 34.4928
+  type: 'test'
+  ...
+# Subtest: the production control shell, local services and styles boot entirely from installed assets without network
+ok 74 - the production control shell, local services and styles boot entirely from installed assets without network
+  ---
+  duration_ms: 172.5902
+  type: 'test'
+  ...
+# Subtest: single-pc: touch and desktop route by physical executor, never by selected workspace
+ok 75 - single-pc: touch and desktop route by physical executor, never by selected workspace
+  ---
+  duration_ms: 4.5857
+  type: 'test'
+  ...
+# Subtest: single-pc-deck: touch and desktop route by physical executor, never by selected workspace
+ok 76 - single-pc-deck: touch and desktop route by physical executor, never by selected workspace
+  ---
+  duration_ms: 0.8895
+  type: 'test'
+  ...
+# Subtest: dual-pc: touch and desktop route by physical executor, never by selected workspace
+ok 77 - dual-pc: touch and desktop route by physical executor, never by selected workspace
+  ---
+  duration_ms: 1.2676
+  type: 'test'
+  ...
+# Subtest: dual-pc-deck: touch and desktop route by physical executor, never by selected workspace
+ok 78 - dual-pc-deck: touch and desktop route by physical executor, never by selected workspace
+  ---
+  duration_ms: 0.5492
+  type: 'test'
+  ...
+# Subtest: custom: touch and desktop route by physical executor, never by selected workspace
+ok 79 - custom: touch and desktop route by physical executor, never by selected workspace
+  ---
+  duration_ms: 0.5971
+  type: 'test'
+  ...
+# Subtest: Android alone has no invented executor or queued OBS command
+ok 80 - Android alone has no invented executor or queued OBS command
+  ---
+  duration_ms: 0.2265
+  type: 'test'
+  ...
+# Subtest: retired identity, changed action and reassigned address cannot execute or fall back
+ok 81 - retired identity, changed action and reassigned address cannot execute or fall back
+  ---
+  duration_ms: 0.8953
+  type: 'test'
+  ...
+# Subtest: an interrupted dispatch is never replayed and the association remains restorable
+ok 82 - an interrupted dispatch is never replayed and the association remains restorable
+  ---
+  duration_ms: 0.4963
+  type: 'test'
+  ...
+# Subtest: peer role changes are re-observed after disable and enable without pairing again or replaying a command
+ok 83 - peer role changes are re-observed after disable and enable without pairing again or replaying a command
+  ---
+  duration_ms: 1.1572
+  type: 'test'
+  ...
+# Subtest: PR qualification needs no secrets and the release upload follows all dispatch-only gates
+ok 84 - PR qualification needs no secrets and the release upload follows all dispatch-only gates
+  ---
+  duration_ms: 1.252
+  type: 'test'
+  ...
+# Subtest: metadata uses the product package and checked-in version, refusing stale package identity and unsupported versions
+ok 85 - metadata uses the product package and checked-in version, refusing stale package identity and unsupported versions # SKIP Android CI shell fixtures target the Linux runner.
+  ---
+  duration_ms: 0.0818
+  type: 'test'
+  ...
+# Subtest: release keeps Twitch mandatory but accepts the public distribution ID without a Google ID or secrets
+ok 86 - release keeps Twitch mandatory but accepts the public distribution ID without a Google ID or secrets # SKIP Android CI shell fixtures target the Linux runner.
+  ---
+  duration_ms: 0.0769
+  type: 'test'
+  ...
+# Subtest: stable signing refuses every missing secret and malformed fingerprint before writing the keystore
+ok 87 - stable signing refuses every missing secret and malformed fingerprint before writing the keystore # SKIP Android CI shell fixtures target the Linux runner.
+  ---
+  duration_ms: 0.0823
+  type: 'test'
+  ...
+# Subtest: QA verifies both product and preview identities without claiming a stable signer
+ok 88 - QA verifies both product and preview identities without claiming a stable signer # SKIP Android CI shell fixtures target the Linux runner.
+  ---
+  duration_ms: 0.0739
+  type: 'test'
+  ...
+# Subtest: release accepts only the expected signer, normalizing the public SHA-256 notation
+ok 89 - release accepts only the expected signer, normalizing the public SHA-256 notation # SKIP Android CI shell fixtures target the Linux runner.
+  ---
+  duration_ms: 0.0621
+  type: 'test'
+  ...
+# Subtest: a valid signature cannot conceal an old Android package, version name or version code
+ok 90 - a valid signature cannot conceal an old Android package, version name or version code # SKIP Android CI shell fixtures target the Linux runner.
+  ---
+  duration_ms: 0.1465
+  type: 'test'
+  ...
+# Subtest: incremental browser byte hashes match native SHA-256 across boundaries without changing text identities
+ok 91 - incremental browser byte hashes match native SHA-256 across boundaries without changing text identities
+  ---
+  duration_ms: 736.8118
+  type: 'test'
+  ...
+# Subtest: UUID generation supports native and getRandomValues-only browser contexts
+ok 92 - UUID generation supports native and getRandomValues-only browser contexts
+  ---
+  duration_ms: 1.382
+  type: 'test'
+  ...
+# Subtest: native async results retain request correlation when randomUUID is absent
+ok 93 - native async results retain request correlation when randomUUID is absent
+  ---
+  duration_ms: 6.412
+  type: 'test'
+  ...
+# Subtest: assistant refusal ÔåÆ Planning error ÔåÆ targeted sync retry ÔåÆ prelive recovery
+ok 94 - assistant refusal ÔåÆ Planning error ÔåÆ targeted sync retry ÔåÆ prelive recovery
+  ---
+  duration_ms: 7.2657
+  type: 'test'
+  ...
+# Subtest: remote deletion remains a prelive warning even with a stale synced status
+ok 95 - remote deletion remains a prelive warning even with a stale synced status
+  ---
+  duration_ms: 0.157
+  type: 'test'
+  ...
+# Subtest: a native retry completing after PC reconnection cannot replace the PC dashboard
+ok 96 - a native retry completing after PC reconnection cannot replace the PC dashboard
+  ---
+  duration_ms: 1.9829
+  type: 'test'
+  ...
+# Subtest: integrated shell has unique IDs, imports and property handlers, and exactly five tabs
+ok 97 - integrated shell has unique IDs, imports and property handlers, and exactly five tabs
+  ---
+  duration_ms: 2.6171
+  type: 'test'
+  ...
+# Subtest: preview preserves physical paths, identities and target-only data; unsupported kinds are explicit
+ok 98 - preview preserves physical paths, identities and target-only data; unsupported kinds are explicit
+  ---
+  duration_ms: 4.3394
+  type: 'test'
+  ...
+# Subtest: secrets, reused workspace and a stale preview never write
+ok 99 - secrets, reused workspace and a stale preview never write
+  ---
+  duration_ms: 1.2588
+  type: 'test'
+  ...
+# Subtest: lost acknowledgement resumes once; reversing the completed batch restores the exact originals
+ok 100 - lost acknowledgement resumes once; reversing the completed batch restores the exact originals
+  ---
+  duration_ms: 3.1087
+  type: 'test'
+  ...
+# Subtest: cancel queries unknown receipts without applying an unattempted edit
+ok 101 - cancel queries unknown receipts without applying an unattempted edit
+  ---
+  duration_ms: 0.7872
+  type: 'test'
+  ...
+# Subtest: rollback after a lost reply discovers the write and protects subsequent destination edits
+ok 102 - rollback after a lost reply discovers the write and protects subsequent destination edits
+  ---
+  duration_ms: 0.9765
+  type: 'test'
+  ...
+# Subtest: wrong destination identity and oversized jobs are refused before application
+ok 103 - wrong destination identity and oversized jobs are refused before application
+  ---
+  duration_ms: 0.3717
+  type: 'test'
+  ...
+# Subtest: cached or local actions cannot arm native keys before a successful synchronization
+ok 104 - cached or local actions cannot arm native keys before a successful synchronization
+  ---
+  duration_ms: 1.8114
+  type: 'test'
+  ...
+# Subtest: one failed refresh preserves the last confirmed bindings without needing another renderer poll
+ok 105 - one failed refresh preserves the last confirmed bindings without needing another renderer poll
+  ---
+  duration_ms: 0.9678
+  type: 'test'
+  ...
+# Subtest: source and identity changes retire the old bindings until the new source is synchronized
+ok 106 - source and identity changes retire the old bindings until the new source is synchronized
+  ---
+  duration_ms: 0.3597
+  type: 'test'
+  ...
+# Subtest: local workspace and blocked edits invalidate confirmed actions rather than arming the edited view
+ok 107 - local workspace and blocked edits invalidate confirmed actions rather than arming the edited view
+  ---
+  duration_ms: 0.3536
+  type: 'test'
+  ...
+# Subtest: confirmed snapshots are isolated from subsequent edits to their input and output
+ok 108 - confirmed snapshots are isolated from subsequent edits to their input and output
+  ---
+  duration_ms: 0.2649
+  type: 'test'
+  ...
+# Subtest: transport errors and temporary HTTP failures preserve mappings; rejection and invalid payloads suspend them
+ok 109 - transport errors and temporary HTTP failures preserve mappings; rejection and invalid payloads suspend them
+  ---
+  duration_ms: 0.3949
+  type: 'test'
+  ...
+# Subtest: native configuration errors are readable and redact the current credential
+ok 110 - native configuration errors are readable and redact the current credential
+  ---
+  duration_ms: 0.4612
+  type: 'test'
+  ...
+# Subtest: an autonomous agent keeps verified mappings through a failed read, but never across a replaced workspace
+ok 111 - an autonomous agent keeps verified mappings through a failed read, but never across a replaced workspace
+  ---
+  duration_ms: 0.2767
+  type: 'test'
+  ...
+# Subtest: reproduces the old ASAR Windows lookup failure with the existing nested lifecycle layout
+ok 112 - reproduces the old ASAR Windows lookup failure with the existing nested lifecycle layout
+  ---
+  duration_ms: 54.313
+  type: 'test'
+  ...
+# Subtest: POSIX: package checker reads nested runtime assets
+ok 113 - POSIX: package checker reads nested runtime assets
+  ---
+  duration_ms: 5.873
+  type: 'test'
+  ...
+# Subtest: POSIX: package checker retains security, port and source/asset invariants
+ok 114 - POSIX: package checker retains security, port and source/asset invariants
+  ---
+  duration_ms: 334.7622
+  type: 'test'
+  ...
+# Subtest: POSIX: release manifest retains the full version and production entry point
+ok 115 - POSIX: release manifest retains the full version and production entry point
+  ---
+  duration_ms: 6.6895
+  type: 'test'
+  ...
+# Subtest: POSIX: embedded source provenance rejects a dirty source or mismatched Android assets
+ok 116 - POSIX: embedded source provenance rejects a dirty source or mismatched Android assets
+  ---
+  duration_ms: 8.0813
+  type: 'test'
+  ...
+# Subtest: POSIX: executable architecture and embedded ASAR integrity reject corruption
+ok 117 - POSIX: executable architecture and embedded ASAR integrity reject corruption
+  ---
+  duration_ms: 19.5037
+  type: 'test'
+  ...
+# Subtest: Windows: package checker reads nested runtime assets
+ok 118 - Windows: package checker reads nested runtime assets
+  ---
+  duration_ms: 2.9293
+  type: 'test'
+  ...
+# Subtest: Windows: package checker retains security, port and source/asset invariants
+ok 119 - Windows: package checker retains security, port and source/asset invariants
+  ---
+  duration_ms: 322.5817
+  type: 'test'
+  ...
+# Subtest: Windows: release manifest retains the full version and production entry point
+ok 120 - Windows: release manifest retains the full version and production entry point
+  ---
+  duration_ms: 6.4674
+  type: 'test'
+  ...
+# Subtest: Windows: embedded source provenance rejects a dirty source or mismatched Android assets
+ok 121 - Windows: embedded source provenance rejects a dirty source or mismatched Android assets
+  ---
+  duration_ms: 6.7897
+  type: 'test'
+  ...
+# Subtest: Windows: executable architecture and embedded ASAR integrity reject corruption
+ok 122 - Windows: executable architecture and embedded ASAR integrity reject corruption
+  ---
+  duration_ms: 18.7709
+  type: 'test'
+  ...
+# Subtest: Google Calendar state reports only its own authorization and diagnostic
+ok 123 - Google Calendar state reports only its own authorization and diagnostic
+  ---
+  duration_ms: 0.9997
+  type: 'test'
+  ...
+# Subtest: account modal presents Twitch and Calendar, never retired YouTube even if old native methods exist
+ok 124 - account modal presents Twitch and Calendar, never retired YouTube even if old native methods exist
+  ---
+  duration_ms: 0.7801
+  type: 'test'
+  ...
+# Subtest: native calendar refusal is shown after acknowledgement, not as fictitious browser success
+ok 125 - native calendar refusal is shown after acknowledgement, not as fictitious browser success
+  ---
+  duration_ms: 0.7903
+  type: 'test'
+  ...
+# Subtest: Calendar logout does not touch Twitch session
+ok 126 - Calendar logout does not touch Twitch session
+  ---
+  duration_ms: 1.1707
+  type: 'test'
+  ...
+# Subtest: pending Calendar authorization disables only Calendar, not Twitch
+ok 127 - pending Calendar authorization disables only Calendar, not Twitch
+  ---
+  duration_ms: 0.4005
+  type: 'test'
+  ...
+# Subtest: autonomous playback uses local blobs, actual volume, one active sound and releases URLs
+ok 128 - autonomous playback uses local blobs, actual volume, one active sound and releases URLs
+  ---
+  duration_ms: 3.5765
+  type: 'test'
+  ...
+# Subtest: stop cancels a pending asset read and a late play result cannot resurrect playback
+ok 129 - stop cancels a pending asset read and a late play result cannot resurrect playback
+  ---
+  duration_ms: 3.5612
+  type: 'test'
+  ...
+# Subtest: disabled, missing and cooldown sounds refuse without queuing; dispose stops the previous workspace
+ok 130 - disabled, missing and cooldown sounds refuse without queuing; dispose stops the previous workspace
+  ---
+  duration_ms: 0.7374
+  type: 'test'
+  ...
+# Subtest: play failures and runtime media errors never leave a false playing state
+ok 131 - play failures and runtime media errors never leave a false playing state
+  ---
+  duration_ms: 0.3761
+  type: 'test'
+  ...
+# Subtest: stop remains successful when the media play promise rejects after cancellation
+ok 132 - stop remains successful when the media play promise rejects after cancellation
+  ---
+  duration_ms: 1.6637
+  type: 'test'
+  ...
+# Subtest: mix keeps two device sounds, individual volumes, independent completion and Stop releases all
+ok 133 - mix keeps two device sounds, individual volumes, independent completion and Stop releases all
+  ---
+  duration_ms: 0.4236
+  type: 'test'
+  ...
+# Subtest: Stop cancels every concurrent mixed asset read without restarting on late resolution
+ok 134 - Stop cancels every concurrent mixed asset read without restarting on late resolution
+  ---
+  duration_ms: 0.8158
+  type: 'test'
+  ...
+# Subtest: an unavailable mixed sound preserves the other playback; replacing stops all mixed sounds
+ok 135 - an unavailable mixed sound preserves the other playback; replacing stops all mixed sounds
+  ---
+  duration_ms: 0.6308
+  type: 'test'
+  ...
+# Subtest: mix is bounded and duplicate preparation cannot bypass the cooldown
+ok 136 - mix is bounded and duplicate preparation cannot bypass the cooldown
+  ---
+  duration_ms: 0.7788
+  type: 'test'
+  ...
+# Subtest: RC11.7 migration binds its credential only to the previously selected origin
+ok 137 - RC11.7 migration binds its credential only to the previously selected origin
+  ---
+  duration_ms: 1.5697
+  type: 'test'
+  ...
+# Subtest: a failed secure write cannot replace the previous active credential
+ok 138 - a failed secure write cannot replace the previous active credential
+  ---
+  duration_ms: 0.6202
+  type: 'test'
+  ...
+# Subtest: Android pairing is single-use, credentials stay private and permissions precede effects
+ok 139 - Android pairing is single-use, credentials stay private and permissions precede effects
+  ---
+  duration_ms: 6.0962
+  type: 'test'
+  ...
+# Subtest: a Windows-style routed action executes on the physical Android identity and records one receipt
+ok 140 - a Windows-style routed action executes on the physical Android identity and records one receipt
+  ---
+  duration_ms: 2.751
+  type: 'test'
+  ...
+# Subtest: replaying a receipt after Android restart never plays twice; another payload cannot reuse its ID
+ok 141 - replaying a receipt after Android restart never plays twice; another payload cannot reuse its ID
+  ---
+  duration_ms: 1.201
+  type: 'test'
+  ...
+# Subtest: a stopped role and failed durable storage prevent audio effects
+ok 142 - a stopped role and failed durable storage prevent audio effects
+  ---
+  duration_ms: 1.0971
+  type: 'test'
+  ...
+# Subtest: Stop bypasses a pending decoder and both durable receipts survive
+ok 143 - Stop bypasses a pending decoder and both durable receipts survive
+  ---
+  duration_ms: 6.314
+  type: 'test'
+  ...
+# Subtest: revoking an Android caller or removing audio permission refuses future effects
+ok 144 - revoking an Android caller or removing audio permission refuses future effects
+  ---
+  duration_ms: 1.515
+  type: 'test'
+  ...
+# Subtest: permission revocation is not blocked by pending audio and repeated requests leave Stop available
+ok 145 - permission revocation is not blocked by pending audio and repeated requests leave Stop available
+  ---
+  duration_ms: 1.4451
+  type: 'test'
+  ...
+# Subtest: remote viewer opening requires chat permission, rejects arbitrary URLs and never repeats a receipt
+ok 146 - remote viewer opening requires chat permission, rejects arbitrary URLs and never repeats a receipt
+  ---
+  duration_ms: 1.4165
+  type: 'test'
+  ...
+# Subtest: autonomous CRUD uses own providers, persists identities and retries only failed destination
+ok 147 - autonomous CRUD uses own providers, persists identities and retries only failed destination
+  ---
+  duration_ms: 12.7718
+  type: 'test'
+  ...
+# Subtest: lost CREATE survives restart and recovery never issues a second creation
+ok 148 - lost CREATE survives restart and recovery never issues a second creation
+  ---
+  duration_ms: 2.5921
+  type: 'test'
+  ...
+# Subtest: recurring exceptions use shared projections and retain the canonical series
+ok 149 - recurring exceptions use shared projections and retain the canonical series
+  ---
+  duration_ms: 33.9991
+  type: 'test'
+  ...
+# Subtest: offline provider failure still saves the event and never reports a remote success
+ok 150 - offline provider failure still saves the event and never reports a remote success
+  ---
+  duration_ms: 1.3912
+  type: 'test'
+  ...
+# Subtest: browser engine keeps exactly the server SHA-256 occurrence identity
+ok 151 - browser engine keeps exactly the server SHA-256 occurrence identity
+  ---
+  duration_ms: 25.2916
+  type: 'test'
+  ...
+# Subtest: invalid end dates are rejected before local persistence or provider I/O
+ok 152 - invalid end dates are rejected before local persistence or provider I/O
+  ---
+  duration_ms: 2.0027
+  type: 'test'
+  ...
+# Subtest: Twitch metadata applies once and a repeated ID returns the saved receipt
+ok 153 - Twitch metadata applies once and a repeated ID returns the saved receipt
+  ---
+  duration_ms: 4.952
+  type: 'test'
+  ...
+# Subtest: reusing an ID with changed metadata is rejected before a native write
+ok 154 - reusing an ID with changed metadata is rejected before a native write
+  ---
+  duration_ms: 0.8434
+  type: 'test'
+  ...
+# Subtest: expired, invalid, or stale revision instructions never call the bridge
+ok 155 - expired, invalid, or stale revision instructions never call the bridge
+  ---
+  duration_ms: 1.3838
+  type: 'test'
+  ...
+# Subtest: YouTube endpoints and directed metadata remain disabled with no cloud effect
+ok 156 - YouTube endpoints and directed metadata remain disabled with no cloud effect
+  ---
+  duration_ms: 1.0639
+  type: 'test'
+  ...
+# Subtest: cloud role disabled is a definite failure without attempting Twitch
+ok 157 - cloud role disabled is a definite failure without attempting Twitch
+  ---
+  duration_ms: 0.7971
+  type: 'test'
+  ...
+# Subtest: Twitch quota keeps draft pending with Twitch-specific message, never retries blindly
+ok 158 - Twitch quota keeps draft pending with Twitch-specific message, never retries blindly
+  ---
+  duration_ms: 0.9792
+  type: 'test'
+  ...
+# Subtest: definite 403 denies rather than fabricating an uncertain dispatched command
+ok 159 - definite 403 denies rather than fabricating an uncertain dispatched command
+  ---
+  duration_ms: 0.4478
+  type: 'test'
+  ...
+# Subtest: lost acknowledgement is uncertain and replay never repeats the native side effect
+ok 160 - lost acknowledgement is uncertain and replay never repeats the native side effect
+  ---
+  duration_ms: 0.4235
+  type: 'test'
+  ...
+# Subtest: manual retry requires Twitch selection and an explicit confirmation
+ok 161 - manual retry requires Twitch selection and an explicit confirmation
+  ---
+  duration_ms: 0.9161
+  type: 'test'
+  ...
+# Subtest: local WizeBot import preserves custom buttons and deduplicates; native secrets stay outside replicas
+ok 162 - local WizeBot import preserves custom buttons and deduplicates; native secrets stay outside replicas
+  ---
+  duration_ms: 5.4106
+  type: 'test'
+  ...
+# Subtest: autonomous bot edits require exact readback and never resend an uncertain request
+ok 163 - autonomous bot edits require exact readback and never resend an uncertain request
+  ---
+  duration_ms: 1016.4674
+  type: 'test'
+  ...
+# Subtest: manual WizeBot buttons obtain local context without any catalog and persist one receipt per press
+ok 164 - manual WizeBot buttons obtain local context without any catalog and persist one receipt per press
+  ---
+  duration_ms: 3.3606
+  type: 'test'
+  ...
+# Subtest: a lost local chat result remains uncertain across restart and refuses automatic replay
+ok 165 - a lost local chat result remains uncertain across restart and refuses automatic replay
+  ---
+  duration_ms: 0.6666
+  type: 'test'
+  ...
+# Subtest: native account changes and missing chat permission remain explicit failures
+ok 166 - native account changes and missing chat permission remain explicit failures
+  ---
+  duration_ms: 0.5377
+  type: 'test'
+  ...
+# Subtest: invalid commands or failed durable storage never reach the native chat transport
+ok 167 - invalid commands or failed durable storage never reach the native chat transport
+  ---
+  duration_ms: 0.5914
+  type: 'test'
+  ...
+# Subtest: desktop local WizeBot uses its own fresh Twitch identity and persists before sending
+ok 168 - desktop local WizeBot uses its own fresh Twitch identity and persists before sending
+  ---
+  duration_ms: 0.6833
+  type: 'test'
+  ...
+# Subtest: desktop local lost response is never replayed; unavailable storage prevents chat I/O
+ok 169 - desktop local lost response is never replayed; unavailable storage prevents chat I/O
+  ---
+  duration_ms: 0.4773
+  type: 'test'
+  ...
+# Subtest: a disabled chat role rejects WizeBot before creating a receipt or invoking the native bridge
+ok 170 - a disabled chat role rejects WizeBot before creating a receipt or invoking the native bridge
+  ---
+  duration_ms: 0.4914
+  type: 'test'
+  ...
+# Subtest: a disabled planning role never calls the native provider and reports a non-started mutation
+ok 171 - a disabled planning role never calls the native provider and reports a non-started mutation
+  ---
+  duration_ms: 2.3184
+  type: 'test'
+  ...
+# Subtest: native cloud history works without a r├®gie and never claims a socket connection
+ok 172 - native cloud history works without a r├®gie and never claims a socket connection
+  ---
+  duration_ms: 4.4836
+  type: 'test'
+  ...
+# Subtest: refresh preserves durable activity, merges duplicate identities and filters technical widgets and credentials
+ok 173 - refresh preserves durable activity, merges duplicate identities and filters technical widgets and credentials
+  ---
+  duration_ms: 1.9345
+  type: 'test'
+  ...
+# Subtest: 429 backoff survives restart and explicit refresh or re-save cannot bypass it
+ok 174 - 429 backoff survives restart and explicit refresh or re-save cannot bypass it
+  ---
+  duration_ms: 1.5166
+  type: 'test'
+  ...
+# Subtest: changing or disconnecting the widget never shows another accountÔÇÖs cached activity
+ok 175 - changing or disconnecting the widget never shows another accountÔÇÖs cached activity
+  ---
+  duration_ms: 0.9082
+  type: 'test'
+  ...
+# Subtest: an incomplete cloud response or rejected credentials cannot become a false synchronized state
+ok 176 - an incomplete cloud response or rejected credentials cannot become a false synchronized state
+  ---
+  duration_ms: 0.6783
+  type: 'test'
+  ...
+# Subtest: a delayed response or failure from the previous widget cannot repopulate a changed account
+ok 177 - a delayed response or failure from the previous widget cannot repopulate a changed account
+  ---
+  duration_ms: 6.3924
+  type: 'test'
+  ...
+# Subtest: Android exports the JSON through its document bridge and reports refusal without a fake download
+ok 178 - Android exports the JSON through its document bridge and reports refusal without a fake download
+  ---
+  duration_ms: 1.5611
+  type: 'test'
+  ...
+# Subtest: permits a single Twitch start only when cloud and OBS agree it is stopped
+ok 179 - permits a single Twitch start only when cloud and OBS agree it is stopped
+  ---
+  duration_ms: 1.9783
+  type: 'test'
+  ...
+# Subtest: an already active OBS stream cannot be started again even before Twitch catches up
+ok 180 - an already active OBS stream cannot be started again even before Twitch catches up
+  ---
+  duration_ms: 0.658
+  type: 'test'
+  ...
+# Subtest: Twitch confirmed live disables start even if OBS falsely appears stopped
+ok 181 - Twitch confirmed live disables start even if OBS falsely appears stopped
+  ---
+  duration_ms: 0.1391
+  type: 'test'
+  ...
+# Subtest: stale cloud status never means a safe stopped stream
+ok 182 - stale cloud status never means a safe stopped stream
+  ---
+  duration_ms: 0.1671
+  type: 'test'
+  ...
+# Subtest: unknown, disconnected, or missing OBS state blocks start
+ok 183 - unknown, disconnected, or missing OBS state blocks start
+  ---
+  duration_ms: 0.2256
+  type: 'test'
+  ...
+# Subtest: offline UI never promotes stale state to a start permission
+ok 184 - offline UI never promotes stale state to a start permission
+  ---
+  duration_ms: 0.1179
+  type: 'test'
+  ...
+# Subtest: a pending start or stop prevents overlapping live commands
+ok 185 - a pending start or stop prevents overlapping live commands
+  ---
+  duration_ms: 0.3249
+  type: 'test'
+  ...
+# Subtest: an unconfigured output is never started
+ok 186 - an unconfigured output is never started
+  ---
+  duration_ms: 0.1288
+  type: 'test'
+  ...
+# Subtest: retired YouTube telemetry cannot alter Twitch decisions
+ok 187 - retired YouTube telemetry cannot alter Twitch decisions
+  ---
+  duration_ms: 0.3156
+  type: 'test'
+  ...
+# Subtest: future cloud snapshots beyond the clock-skew allowance are not trusted
+ok 188 - future cloud snapshots beyond the clock-skew allowance are not trusted
+  ---
+  duration_ms: 0.3458
+  type: 'test'
+  ...
+# Subtest: a command is durable before its effect and is not replayed after an agent restart
+ok 189 - a command is durable before its effect and is not replayed after an agent restart
+  ---
+  duration_ms: 3.4758
+  type: 'test'
+  ...
+# Subtest: a lost receipt, disk failure, wrong workspace and stale definition cannot trigger another effect
+ok 190 - a lost receipt, disk failure, wrong workspace and stale definition cannot trigger another effect
+  ---
+  duration_ms: 0.4694
+  type: 'test'
+  ...
+# Subtest: stop bypasses a pending playback and concurrent receipts survive
+ok 191 - stop bypasses a pending playback and concurrent receipts survive
+  ---
+  duration_ms: 0.7403
+  type: 'test'
+  ...
+# Subtest: role withdrawal and definition changes during account lookup prevent a chat send
+ok 192 - role withdrawal and definition changes during account lookup prevent a chat send
+  ---
+  duration_ms: 0.5991
+  type: 'test'
+  ...
+# Subtest: unsupported OBS commands and expired presses remain unavailable in the autonomous workspace
+ok 193 - unsupported OBS commands and expired presses remain unavailable in the autonomous workspace
+  ---
+  duration_ms: 0.4481
+  type: 'test'
+  ...
+# Subtest: closing a view detaches audio without stopping the agent and a replaced workspace is refused
+ok 194 - closing a view detaches audio without stopping the agent and a replaced workspace is refused
+  ---
+  duration_ms: 0.4525
+  type: 'test'
+  ...
+# Subtest: Stop received during the durable preparation cancels a playback that has not started yet
+ok 195 - Stop received during the durable preparation cancels a playback that has not started yet
+  ---
+  duration_ms: 0.982
+  type: 'test'
+  ...
+# PASS module: scoped storage, malformed storage, empty favorites, custom IDs, escaped HTML, no live pads, offline, blocked, safe edit, sound stop, replay, WizeBot
+# PASS integration: delayed offline initialization, intentionally empty favorites, temporary edit bank, page changes, Android dialog/edit/page back sequence
+# PASS concurrency: micro/stop resolving in both orders; timer/stop overlap; other actions remain blocked
+# PASS dispatch: offline and pending-config guards, configured IDs retained, custom live-stop requires confirmation
+# PASS installation: a removed executor never receives a command
+# Subtest: tests\\node\\mobile-performance.test.mjs
+ok 40 - tests\\node\\mobile-performance.test.mjs
+  ---
+  duration_ms: 82.5338
+  type: 'test'
+  ...
+# Subtest: mobile: renders live ÔåÆ OBS loss ÔåÆ connecting ÔåÆ confirmed recovery
+ok 197 - mobile: renders live ÔåÆ OBS loss ÔåÆ connecting ÔåÆ confirmed recovery
+  ---
+  duration_ms: 8.6477
+  type: 'test'
+  ...
+# Subtest: mobile: Twitch live is distinct from unknown OBS and cannot enable stream controls
+ok 198 - mobile: Twitch live is distinct from unknown OBS and cannot enable stream controls
+  ---
+  duration_ms: 4.8307
+  type: 'test'
+  ...
+# Subtest: mobile: failed start is not reconciled from retained offline telemetry
+ok 199 - mobile: failed start is not reconciled from retained offline telemetry
+  ---
+  duration_ms: 9.7611
+  type: 'test'
+  ...
+# Subtest: mobile: failed stop is not reconciled from retained offline telemetry
+ok 200 - mobile: failed stop is not reconciled from retained offline telemetry
+  ---
+  duration_ms: 6.6832
+  type: 'test'
+  ...
+# Subtest: preview: renders live ÔåÆ OBS loss ÔåÆ connecting ÔåÆ confirmed recovery
+ok 201 - preview: renders live ÔåÆ OBS loss ÔåÆ connecting ÔåÆ confirmed recovery
+  ---
+  duration_ms: 1.2762
+  type: 'test'
+  ...
+# Subtest: preview: Twitch live is distinct from unknown OBS and cannot enable stream controls
+ok 202 - preview: Twitch live is distinct from unknown OBS and cannot enable stream controls
+  ---
+  duration_ms: 0.8725
+  type: 'test'
+  ...
+# Subtest: preview: failed start is not reconciled from retained offline telemetry
+ok 203 - preview: failed start is not reconciled from retained offline telemetry
+  ---
+  duration_ms: 1.8204
+  type: 'test'
+  ...
+# Subtest: preview: failed stop is not reconciled from retained offline telemetry
+ok 204 - preview: failed stop is not reconciled from retained offline telemetry
+  ---
+  duration_ms: 1.507
+  type: 'test'
+  ...
+# Subtest: stream reconciliation requires explicit confirmed telemetry: true
+ok 205 - stream reconciliation requires explicit confirmed telemetry: true
+  ---
+  duration_ms: 1.2115
+  type: 'test'
+  ...
+# Subtest: stream reconciliation requires explicit confirmed telemetry: false
+ok 206 - stream reconciliation requires explicit confirmed telemetry: false
+  ---
+  duration_ms: 0.552
+  type: 'test'
+  ...
+# Subtest: agent identity accepts only full fingerprints and local HTTPS origins
+ok 207 - agent identity accepts only full fingerprints and local HTTPS origins
+  ---
+  duration_ms: 1.768
+  type: 'test'
+  ...
+# Subtest: cleartext remote origins never receive credentials, while local services remain independent
+ok 208 - cleartext remote origins never receive credentials, while local services remain independent
+  ---
+  duration_ms: 19.1458
+  type: 'test'
+  ...
+# Subtest: Windows carries credentials through the native pinned session and never retries failure
+ok 209 - Windows carries credentials through the native pinned session and never retries failure
+  ---
+  duration_ms: 0.67
+  type: 'test'
+  ...
+# Subtest: Android uploads audio in bounded ordered chunks and discards its staging file
+ok 210 - Android uploads audio in bounded ordered chunks and discards its staging file
+  ---
+  duration_ms: 15.4211
+  type: 'test'
+  ...
+# Subtest: Android correlates concurrent replies and reports trust CAS errors
+ok 211 - Android correlates concurrent replies and reports trust CAS errors
+  ---
+  duration_ms: 1.1294
+  type: 'test'
+  ...
+# Subtest: lost response after phase 1 resumes without a second owner
+ok 212 - lost response after phase 1 resumes without a second owner
+  ---
+  duration_ms: 3.7007
+  type: 'test'
+  ...
+# Subtest: lost response after phase 2 resumes without a second owner
+ok 213 - lost response after phase 2 resumes without a second owner
+  ---
+  duration_ms: 1.5154
+  type: 'test'
+  ...
+# Subtest: lost response after phase 3 resumes without a second owner
+ok 214 - lost response after phase 3 resumes without a second owner
+  ---
+  duration_ms: 0.9348
+  type: 'test'
+  ...
+# Subtest: lost response after phase 4 resumes without a second owner
+ok 215 - lost response after phase 4 resumes without a second owner
+  ---
+  duration_ms: 0.8888
+  type: 'test'
+  ...
+# Subtest: cancellation after phase 0 restores the source and rejects delayed activation
+ok 216 - cancellation after phase 0 restores the source and rejects delayed activation
+  ---
+  duration_ms: 0.7634
+  type: 'test'
+  ...
+# Subtest: cancellation after phase 1 restores the source and rejects delayed activation
+ok 217 - cancellation after phase 1 restores the source and rejects delayed activation
+  ---
+  duration_ms: 0.9709
+  type: 'test'
+  ...
+# Subtest: cancellation after phase 2 restores the source and rejects delayed activation
+ok 218 - cancellation after phase 2 restores the source and rejects delayed activation
+  ---
+  duration_ms: 0.7634
+  type: 'test'
+  ...
+# Subtest: cancellation after phase 3 restores the source and rejects delayed activation
+ok 219 - cancellation after phase 3 restores the source and rejects delayed activation
+  ---
+  duration_ms: 0.8841
+  type: 'test'
+  ...
+# Subtest: a completed handoff reverses with the destination edits and cannot be cancelled or replayed over them
+ok 220 - a completed handoff reverses with the destination edits and cannot be cancelled or replayed over them
+  ---
+  duration_ms: 1.9964
+  type: 'test'
+  ...
+# Subtest: conflicts, changed identities, uncertain publications and forged mismatching receipts preserve state
+ok 221 - conflicts, changed identities, uncertain publications and forged mismatching receipts preserve state
+  ---
+  duration_ms: 0.9042
+  type: 'test'
+  ...
+# Subtest: a copy relinquished by the previous local-import workflow can return without deleting its history
+ok 222 - a copy relinquished by the previous local-import workflow can return without deleting its history
+  ---
+  duration_ms: 0.7
+  type: 'test'
+  ...
+# Subtest: nominal PC, including unscheduled stream, is OK and read-only
+ok 223 - nominal PC, including unscheduled stream, is OK and read-only
+  ---
+  duration_ms: 3.2176
+  type: 'test'
+  ...
+# Subtest: muted microphone warns and offers audio correction
+ok 224 - muted microphone warns and offers audio correction
+  ---
+  duration_ms: 0.1544
+  type: 'test'
+  ...
+# Subtest: OBS disconnected, missing microphone, missing start scene and required timer block independently
+ok 225 - OBS disconnected, missing microphone, missing start scene and required timer block independently
+  ---
+  duration_ms: 0.261
+  type: 'test'
+  ...
+# Subtest: Standalone Android excludes PC checks even with cached disconnected OBS
+ok 226 - Standalone Android excludes PC checks even with cached disconnected OBS
+  ---
+  duration_ms: 0.2482
+  type: 'test'
+  ...
+# Subtest: stale, offline or redacted data warns instead of confirming failures
+ok 227 - stale, offline or redacted data warns instead of confirming failures
+  ---
+  duration_ms: 0.3053
+  type: 'test'
+  ...
+# Subtest: only required Twitch metadata scope is checked, unknown and missing scopes warn
+ok 228 - only required Twitch metadata scope is checked, unknown and missing scopes warn
+  ---
+  duration_ms: 0.1708
+  type: 'test'
+  ...
+# Subtest: pending operations, conflicts, provider failures and publications warn
+ok 229 - pending operations, conflicts, provider failures and publications warn
+  ---
+  duration_ms: 0.4013
+  type: 'test'
+  ...
+# Subtest: optional providers and silent intro scene do not block
+ok 230 - optional providers and silent intro scene do not block
+  ---
+  duration_ms: 0.1515
+  type: 'test'
+  ...
+# Subtest: mobile entry points, offline cache and unchanged five-tab navigation
+ok 231 - mobile entry points, offline cache and unchanged five-tab navigation
+  ---
+  duration_ms: 0.9922
+  type: 'test'
+  ...
+# Subtest: schedule scope is required only for requested Twitch publications
+ok 232 - schedule scope is required only for requested Twitch publications
+  ---
+  duration_ms: 0.4076
+  type: 'test'
+  ...
+# Subtest: Standalone ignores cached PC provider errors but reports local publication failures
+ok 233 - Standalone ignores cached PC provider errors but reports local publication failures
+  ---
+  duration_ms: 0.2122
+  type: 'test'
+  ...
+# (node:4408) ExperimentalWarning: stripTypeScriptTypes is an experimental feature and might change at any time
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# Subtest: real mobile projection supports nominal, missing scene and required timer without exposing credentials
+ok 234 - real mobile projection supports nominal, missing scene and required timer without exposing credentials
+  ---
+  duration_ms: 3.1125
+  type: 'test'
+  ...
+# Subtest: mobile feature keeps fresh OBS blocker when Twitch capabilities request fails (LF)
+ok 235 - mobile feature keeps fresh OBS blocker when Twitch capabilities request fails (LF)
+  ---
+  duration_ms: 20.8109
+  type: 'test'
+  ...
+# Subtest: mobile feature keeps fresh OBS blocker when Twitch capabilities request fails (CRLF)
+ok 236 - mobile feature keeps fresh OBS blocker when Twitch capabilities request fails (CRLF)
+  ---
+  duration_ms: 1.7446
+  type: 'test'
+  ...
+# Subtest: desktop invalidates cached positive results on refresh failure, socket close and restores them on new telemetry (LF)
+ok 237 - desktop invalidates cached positive results on refresh failure, socket close and restores them on new telemetry (LF)
+  ---
+  duration_ms: 8.7036
+  type: 'test'
+  ...
+# Subtest: desktop invalidates cached positive results on refresh failure, socket close and restores them on new telemetry (CRLF)
+ok 238 - desktop invalidates cached positive results on refresh failure, socket close and restores them on new telemetry (CRLF)
+  ---
+  duration_ms: 8.0432
+  type: 'test'
+  ...
+# Subtest: desktop preparation renders diagnostic with checklist disabled, without redirect or checklist controls (LF)
+ok 239 - desktop preparation renders diagnostic with checklist disabled, without redirect or checklist controls (LF)
+  ---
+  duration_ms: 3.443
+  type: 'test'
+  ...
+# Subtest: desktop preparation renders diagnostic with checklist disabled, without redirect or checklist controls (CRLF)
+ok 240 - desktop preparation renders diagnostic with checklist disabled, without redirect or checklist controls (CRLF)
+  ---
+  duration_ms: 5.044
+  type: 'test'
+  ...
+# Subtest: CalendarItem twitch error: PC and real mobile projection
+ok 241 - CalendarItem twitch error: PC and real mobile projection
+  ---
+  duration_ms: 0.8106
+  type: 'test'
+  ...
+# Subtest: CalendarItem twitch pending: PC and real mobile projection
+ok 242 - CalendarItem twitch pending: PC and real mobile projection
+  ---
+  duration_ms: 0.6173
+  type: 'test'
+  ...
+# Subtest: CalendarItem twitch conflict: PC and real mobile projection
+ok 243 - CalendarItem twitch conflict: PC and real mobile projection
+  ---
+  duration_ms: 0.374
+  type: 'test'
+  ...
+# Subtest: CalendarItem twitch synced: PC and real mobile projection
+ok 244 - CalendarItem twitch synced: PC and real mobile projection
+  ---
+  duration_ms: 0.2546
+  type: 'test'
+  ...
+# Subtest: CalendarItem twitch not-published: PC and real mobile projection
+ok 245 - CalendarItem twitch not-published: PC and real mobile projection
+  ---
+  duration_ms: 0.1347
+  type: 'test'
+  ...
+# Subtest: CalendarItem google error: PC and real mobile projection
+ok 246 - CalendarItem google error: PC and real mobile projection
+  ---
+  duration_ms: 0.1421
+  type: 'test'
+  ...
+# Subtest: CalendarItem google pending: PC and real mobile projection
+ok 247 - CalendarItem google pending: PC and real mobile projection
+  ---
+  duration_ms: 0.1314
+  type: 'test'
+  ...
+# Subtest: CalendarItem google conflict: PC and real mobile projection
+ok 248 - CalendarItem google conflict: PC and real mobile projection
+  ---
+  duration_ms: 0.0987
+  type: 'test'
+  ...
+# Subtest: CalendarItem google synced: PC and real mobile projection
+ok 249 - CalendarItem google synced: PC and real mobile projection
+  ---
+  duration_ms: 0.1887
+  type: 'test'
+  ...
+# Subtest: CalendarItem google not-published: PC and real mobile projection
+ok 250 - CalendarItem google not-published: PC and real mobile projection
+  ---
+  duration_ms: 0.1358
+  type: 'test'
+  ...
+# Subtest: CalendarItem explicit syncError warns even with synced provider
+ok 251 - CalendarItem explicit syncError warns even with synced provider
+  ---
+  duration_ms: 0.2315
+  type: 'test'
+  ...
+# Subtest: CalendarItem explicit conflict warns even with synced provider
+ok 252 - CalendarItem explicit conflict warns even with synced provider
+  ---
+  duration_ms: 0.1322
+  type: 'test'
+  ...
+# Subtest: Standalone providerLinks still reports error, pending, syncing and conflict
+ok 253 - Standalone providerLinks still reports error, pending, syncing and conflict
+  ---
+  duration_ms: 0.2448
+  type: 'test'
+  ...
+# javac 21.0.11
+# Note: Some input files use or override a deprecated API.
+# Note: Recompile with -Xlint:deprecation for details.
+# Subtest: ProviderBridge compiles and enforces provider isolation, deletion and Streamlabs payload policy
+ok 254 - ProviderBridge compiles and enforces provider isolation, deletion and Streamlabs payload policy
+  ---
+  duration_ms: 1907.226
+  type: 'test'
+  ...
+# Subtest: twitch: cancelled reauthorization without callback keeps OAuth relaunch available
+ok 255 - twitch: cancelled reauthorization without callback keeps OAuth relaunch available
+  ---
+  duration_ms: 2.5068
+  type: 'test'
+  ...
+# Subtest: google: cancelled reauthorization without callback keeps OAuth relaunch available
+ok 256 - google: cancelled reauthorization without callback keeps OAuth relaunch available
+  ---
+  duration_ms: 0.7132
+  type: 'test'
+  ...
+# Subtest: unavailable phone ÔåÆ connected PC recalculates both publication controls and reasons
+ok 257 - unavailable phone ÔåÆ connected PC recalculates both publication controls and reasons
+  ---
+  duration_ms: 1.2659
+  type: 'test'
+  ...
+# Subtest: PC permissions pending and offline mode do not enable publication
+ok 258 - PC permissions pending and offline mode do not enable publication
+  ---
+  duration_ms: 0.699
+  type: 'test'
+  ...
+# Subtest: twitch: wizard configuration ÔåÆ OAuth ÔåÆ test ÔåÆ ready, reauth and logout
+ok 259 - twitch: wizard configuration ÔåÆ OAuth ÔåÆ test ÔåÆ ready, reauth and logout
+  ---
+  duration_ms: 1.2264
+  type: 'test'
+  ...
+# Subtest: twitch: native mutation requires a tested capability
+ok 260 - twitch: native mutation requires a tested capability
+  ---
+  duration_ms: 1.2381
+  type: 'test'
+  ...
+# Subtest: google: wizard configuration ÔåÆ OAuth ÔåÆ test ÔåÆ ready, reauth and logout
+ok 261 - google: wizard configuration ÔåÆ OAuth ÔåÆ test ÔåÆ ready, reauth and logout
+  ---
+  duration_ms: 0.158
+  type: 'test'
+  ...
+# Subtest: google: native mutation requires a tested capability
+ok 262 - google: native mutation requires a tested capability
+  ---
+  duration_ms: 0.2513
+  type: 'test'
+  ...
+# Subtest: diagnostics redact arbitrary secrets in every untrusted field
+ok 263 - diagnostics redact arbitrary secrets in every untrusted field
+  ---
+  duration_ms: 0.6712
+  type: 'test'
+  ...
+# Subtest: diagnostics explain configuration, scopes and calendar requirements
+ok 264 - diagnostics explain configuration, scopes and calendar requirements
+  ---
+  duration_ms: 0.9205
+  type: 'test'
+  ...
+# Subtest: bridge error messages never relay raw provider payloads
+ok 265 - bridge error messages never relay raw provider payloads
+  ---
+  duration_ms: 0.2936
+  type: 'test'
+  ...
+# Subtest: CB-2 retry chooses create/update independently and stores sanitized errors
+ok 266 - CB-2 retry chooses create/update independently and stores sanitized errors
+  ---
+  duration_ms: 3.6974
+  type: 'test'
+  ...
+# Subtest: twitch: NETWORK is preserved through diagnostic refusal and persistence
+ok 267 - twitch: NETWORK is preserved through diagnostic refusal and persistence
+  ---
+  duration_ms: 0.7359
+  type: 'test'
+  ...
+# Subtest: twitch: ACCOUNT is preserved through diagnostic refusal and persistence
+ok 268 - twitch: ACCOUNT is preserved through diagnostic refusal and persistence
+  ---
+  duration_ms: 0.6556
+  type: 'test'
+  ...
+# Subtest: twitch: CALENDAR is preserved through diagnostic refusal and persistence
+ok 269 - twitch: CALENDAR is preserved through diagnostic refusal and persistence
+  ---
+  duration_ms: 0.4401
+  type: 'test'
+  ...
+# Subtest: twitch: REAUTH_REQUIRED is preserved through diagnostic refusal and persistence
+ok 270 - twitch: REAUTH_REQUIRED is preserved through diagnostic refusal and persistence
+  ---
+  duration_ms: 0.2746
+  type: 'test'
+  ...
+# Subtest: google: NETWORK is preserved through diagnostic refusal and persistence
+ok 271 - google: NETWORK is preserved through diagnostic refusal and persistence
+  ---
+  duration_ms: 0.3366
+  type: 'test'
+  ...
+# Subtest: google: ACCOUNT is preserved through diagnostic refusal and persistence
+ok 272 - google: ACCOUNT is preserved through diagnostic refusal and persistence
+  ---
+  duration_ms: 0.3173
+  type: 'test'
+  ...
+# Subtest: google: CALENDAR is preserved through diagnostic refusal and persistence
+ok 273 - google: CALENDAR is preserved through diagnostic refusal and persistence
+  ---
+  duration_ms: 0.4227
+  type: 'test'
+  ...
+# Subtest: google: REAUTH_REQUIRED is preserved through diagnostic refusal and persistence
+ok 274 - google: REAUTH_REQUIRED is preserved through diagnostic refusal and persistence
+  ---
+  duration_ms: 0.3301
+  type: 'test'
+  ...
+# Subtest: an unknown diagnostic code is redacted before the mutation refusal
+ok 275 - an unknown diagnostic code is redacted before the mutation refusal
+  ---
+  duration_ms: 0.1792
+  type: 'test'
+  ...
+# Subtest: HTTP provider diagnostics preserve status instead of inventing network failures
+ok 276 - HTTP provider diagnostics preserve status instead of inventing network failures
+  ---
+  duration_ms: 0.1609
+  type: 'test'
+  ...
+# Subtest: native sanitized HTTP detail stays useful while credentials remain redacted
+ok 277 - native sanitized HTTP detail stays useful while credentials remain redacted
+  ---
+  duration_ms: 0.3817
+  type: 'test'
+  ...
+# Subtest: HTTP to HTTPS and changed IP retain the exact original replica without copying its outbox
+ok 278 - HTTP to HTTPS and changed IP retain the exact original replica without copying its outbox
+  ---
+  duration_ms: 1.7331
+  type: 'test'
+  ...
+# Subtest: first association seeds once and retries resolve the same record
+ok 279 - first association seeds once and retries resolve the same record
+  ---
+  duration_ms: 0.3454
+  type: 'test'
+  ...
+# Subtest: an unrelated workspace never receives the queued edits of a reused address
+ok 280 - an unrelated workspace never receives the queued edits of a reused address
+  ---
+  duration_ms: 0.5362
+  type: 'test'
+  ...
+# Subtest: a cloned workspace with a different physical identity is diagnosed before any write
+ok 281 - a cloned workspace with a different physical identity is diagnosed before any write
+  ---
+  duration_ms: 0.1902
+  type: 'test'
+  ...
+# Subtest: preexisting installation identities protect a replica before its first endpoint link exists
+ok 282 - preexisting installation identities protect a replica before its first endpoint link exists
+  ---
+  duration_ms: 0.4177
+  type: 'test'
+  ...
+# Subtest: independently edited older copies cannot silently hide each other
+ok 283 - independently edited older copies cannot silently hide each other
+  ---
+  duration_ms: 0.2118
+  type: 'test'
+  ...
+# Subtest: legacy peers without a physical descriptor can retain their verified workspace
+ok 284 - legacy peers without a physical descriptor can retain their verified workspace
+  ---
+  duration_ms: 0.2527
+  type: 'test'
+  ...
+# Subtest: local autonomous data cannot be claimed by a remote server
+ok 285 - local autonomous data cannot be claimed by a remote server
+  ---
+  duration_ms: 0.2691
+  type: 'test'
+  ...
+# Subtest: single-pc: coordinated data, planning ownership and controller destinations; current planning returns intact
+ok 286 - single-pc: coordinated data, planning ownership and controller destinations; current planning returns intact
+  ---
+  duration_ms: 20.7053
+  type: 'test'
+  ...
+# Subtest: single-pc-deck: coordinated data, planning ownership and controller destinations; current planning returns intact
+ok 287 - single-pc-deck: coordinated data, planning ownership and controller destinations; current planning returns intact
+  ---
+  duration_ms: 11.7606
+  type: 'test'
+  ...
+# Subtest: dual-pc: coordinated data, planning ownership and controller destinations; current planning returns intact
+ok 288 - dual-pc: coordinated data, planning ownership and controller destinations; current planning returns intact
+  ---
+  duration_ms: 12.3101
+  type: 'test'
+  ...
+# Subtest: dual-pc-deck: coordinated data, planning ownership and controller destinations; current planning returns intact
+ok 289 - dual-pc-deck: coordinated data, planning ownership and controller destinations; current planning returns intact
+  ---
+  duration_ms: 11.7108
+  type: 'test'
+  ...
+# Subtest: android-only: coordinated data, planning ownership and controller destinations; current planning returns intact
+ok 290 - android-only: coordinated data, planning ownership and controller destinations; current planning returns intact
+  ---
+  duration_ms: 10.051
+  type: 'test'
+  ...
+# Subtest: custom: coordinated data, planning ownership and controller destinations; current planning returns intact
+ok 291 - custom: coordinated data, planning ownership and controller destinations; current planning returns intact
+  ---
+  duration_ms: 10.8982
+  type: 'test'
+  ...
+# Subtest: every lost acknowledgement resumes without duplicating audio or giving two devices planning ownership
+ok 292 - every lost acknowledgement resumes without duplicating audio or giving two devices planning ownership
+  ---
+  duration_ms: 67.2038
+  type: 'test'
+  ...
+# Subtest: rollback resolves every possible unknown forward receipt, including activation and final installation commit
+ok 293 - rollback resolves every possible unknown forward receipt, including activation and final installation commit
+  ---
+  duration_ms: 71.2099
+  type: 'test'
+  ...
+# Subtest: rollback itself survives each lost acknowledgement and cannot resume forward
+ok 294 - rollback itself survives each lost acknowledgement and cannot resume forward
+  ---
+  duration_ms: 103.0898
+  type: 'test'
+  ...
+# Subtest: stale installation, offline devices, changed identity and stopped roles do not start migration
+ok 295 - stale installation, offline devices, changed identity and stopped roles do not start migration
+  ---
+  duration_ms: 11.8842
+  type: 'test'
+  ...
+# Subtest: concurrent destination or controller changes block compensation without overwriting new values
+ok 296 - concurrent destination or controller changes block compensation without overwriting new values
+  ---
+  duration_ms: 22.651
+  type: 'test'
+  ...
+# Subtest: other controller bindings and incompatible commands are preserved; no account or sound path is copied
+ok 297 - other controller bindings and incompatible commands are preserved; no account or sound path is copied
+  ---
+  duration_ms: 1.9599
+  type: 'test'
+  ...
+# Subtest: export excludes local paths and outputs and holds immutable bytes for the authorized owner
+ok 298 - export excludes local paths and outputs and holds immutable bytes for the authorized owner
+  ---
+  duration_ms: 5.6092
+  type: 'test'
+  ...
+# Subtest: revoked permissions, changed metadata, missing IDs and invalid offsets cannot export files
+ok 299 - revoked permissions, changed metadata, missing IDs and invalid offsets cannot export files
+  ---
+  duration_ms: 1.0319
+  type: 'test'
+  ...
+# Subtest: export staging is bounded and releases its slots on close or expiry
+ok 300 - export staging is bounded and releases its slots on close or expiry
+  ---
+  duration_ms: 3.1765
+  type: 'test'
+  ...
+# Subtest: a lost upload acknowledgement resumes the same file and preserves the source and portable metadata
+ok 301 - a lost upload acknowledgement resumes the same file and preserves the source and portable metadata
+  ---
+  duration_ms: 41.5603
+  type: 'test'
+  ...
+# Subtest: modified source files and corrupt chunks never reach the destination
+ok 302 - modified source files and corrupt chunks never reach the destination
+  ---
+  duration_ms: 14.8288
+  type: 'test'
+  ...
+# Subtest: an older destination cannot silently discard portable settings or workspace checks
+ok 303 - an older destination cannot silently discard portable settings or workspace checks
+  ---
+  duration_ms: 0.8789
+  type: 'test'
+  ...
+# Subtest: versioned installation backups restore roles with revision checks and retain devices added later
+ok 304 - versioned installation backups restore roles with revision checks and retain devices added later
+  ---
+  duration_ms: 7.8415
+  type: 'test'
+  ...
+# Subtest: installation export omits private extension fields and prevents hardware identity replacement
+ok 305 - installation export omits private extension fields and prevents hardware identity replacement
+  ---
+  duration_ms: 0.747
+  type: 'test'
+  ...
+# Subtest: single-pc: common model, services, OBS absence and reconnect
+ok 306 - single-pc: common model, services, OBS absence and reconnect
+  ---
+  duration_ms: 0.6867
+  type: 'test'
+  ...
+# Subtest: single-pc-deck: common model, services, OBS absence and reconnect
+ok 307 - single-pc-deck: common model, services, OBS absence and reconnect
+  ---
+  duration_ms: 0.2745
+  type: 'test'
+  ...
+# Subtest: dual-pc: common model, services, OBS absence and reconnect
+ok 308 - dual-pc: common model, services, OBS absence and reconnect
+  ---
+  duration_ms: 0.3467
+  type: 'test'
+  ...
+# Subtest: dual-pc-deck: common model, services, OBS absence and reconnect
+ok 309 - dual-pc-deck: common model, services, OBS absence and reconnect
+  ---
+  duration_ms: 0.2331
+  type: 'test'
+  ...
+# Subtest: android-only: common model, services, OBS absence and reconnect
+ok 310 - android-only: common model, services, OBS absence and reconnect
+  ---
+  duration_ms: 0.2759
+  type: 'test'
+  ...
+# Subtest: custom: common model, services, OBS absence and reconnect
+ok 311 - custom: common model, services, OBS absence and reconnect
+  ---
+  duration_ms: 0.3467
+  type: 'test'
+  ...
+# Subtest: RC11.7 control profile and unknown compatible fields survive every Windows setup transition
+ok 312 - RC11.7 control profile and unknown compatible fields survive every Windows setup transition
+  ---
+  duration_ms: 1.8301
+  type: 'test'
+  ...
+# Subtest: several controllers never choose another executor silently, including disabled and permission failures
+ok 313 - several controllers never choose another executor silently, including disabled and permission failures
+  ---
+  duration_ms: 0.9786
+  type: 'test'
+  ...
+# Subtest: agent stopped leaves autonomous services available; unsupported Android roles fail
+ok 314 - agent stopped leaves autonomous services available; unsupported Android roles fail
+  ---
+  duration_ms: 0.6644
+  type: 'test'
+  ...
+# Subtest: transaction, stale writer, restore and storage failure preserve current configuration
+ok 315 - transaction, stale writer, restore and storage failure preserve current configuration
+  ---
+  duration_ms: 1.6069
+  type: 'test'
+  ...
+# Subtest: invalid and future schemas are diagnosed without silently resetting data
+ok 316 - invalid and future schemas are diagnosed without silently resetting data
+  ---
+  duration_ms: 0.7242
+  type: 'test'
+  ...
+# Subtest: authenticated device identity survives address changes without copying private descriptor fields
+ok 317 - authenticated device identity survives address changes without copying private descriptor fields
+  ---
+  duration_ms: 0.96
+  type: 'test'
+  ...
+# Subtest: Android recovery preserves the prior backup after an interrupted change and checks restored identity
+ok 318 - Android recovery preserves the prior backup after an interrupted change and checks restored identity
+  ---
+  duration_ms: 1.2615
+  type: 'test'
+  ...
+# Subtest: windows: removed roles disable only their capabilities and a fresh peer observation wins
+ok 319 - windows: removed roles disable only their capabilities and a fresh peer observation wins
+  ---
+  duration_ms: 0.4267
+  type: 'test'
+  ...
+# Subtest: android: removed roles disable only their capabilities and a fresh peer observation wins
+ok 320 - android: removed roles disable only their capabilities and a fresh peer observation wins
+  ---
+  duration_ms: 0.2277
+  type: 'test'
+  ...
+# Subtest: single-pc: autonomous chat follows preparation, ingestion, live and end with its own polling clock
+ok 321 - single-pc: autonomous chat follows preparation, ingestion, live and end with its own polling clock
+  ---
+  duration_ms: 3.7403
+  type: 'test'
+  ...
+# Subtest: single-pc-deck: autonomous chat follows preparation, ingestion, live and end with its own polling clock
+ok 322 - single-pc-deck: autonomous chat follows preparation, ingestion, live and end with its own polling clock
+  ---
+  duration_ms: 0.5543
+  type: 'test'
+  ...
+# Subtest: dual-pc: autonomous chat follows preparation, ingestion, live and end with its own polling clock
+ok 323 - dual-pc: autonomous chat follows preparation, ingestion, live and end with its own polling clock
+  ---
+  duration_ms: 0.3044
+  type: 'test'
+  ...
+# Subtest: dual-pc-deck: autonomous chat follows preparation, ingestion, live and end with its own polling clock
+ok 324 - dual-pc-deck: autonomous chat follows preparation, ingestion, live and end with its own polling clock
+  ---
+  duration_ms: 0.4588
+  type: 'test'
+  ...
+# Subtest: android-only: autonomous chat follows preparation, ingestion, live and end with its own polling clock
+ok 325 - android-only: autonomous chat follows preparation, ingestion, live and end with its own polling clock
+  ---
+  duration_ms: 0.3078
+  type: 'test'
+  ...
+# Subtest: custom: autonomous chat follows preparation, ingestion, live and end with its own polling clock
+ok 326 - custom: autonomous chat follows preparation, ingestion, live and end with its own polling clock
+  ---
+  duration_ms: 0.2658
+  type: 'test'
+  ...
+# Subtest: one in-flight read, no cross-broadcast late responses and retained history after network loss
+ok 327 - one in-flight read, no cross-broadcast late responses and retained history after network loss
+  ---
+  duration_ms: 6.7633
+  type: 'test'
+  ...
+# Subtest: explicit diagnostic quotaExceeded
+ok 328 - explicit diagnostic quotaExceeded
+  ---
+  duration_ms: 0.7092
+  type: 'test'
+  ...
+# Subtest: explicit diagnostic liveChatDisabled
+ok 329 - explicit diagnostic liveChatDisabled
+  ---
+  duration_ms: 0.501
+  type: 'test'
+  ...
+# Subtest: explicit diagnostic liveChatEnded
+ok 330 - explicit diagnostic liveChatEnded
+  ---
+  duration_ms: 0.496
+  type: 'test'
+  ...
+# Subtest: explicit diagnostic insufficientPermissions
+ok 331 - explicit diagnostic insufficientPermissions
+  ---
+  duration_ms: 0.2548
+  type: 'test'
+  ...
+# Subtest: explicit diagnostic liveChatNotFound
+ok 332 - explicit diagnostic liveChatNotFound
+  ---
+  duration_ms: 0.13
+  type: 'test'
+  ...
+# (node:34828) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# Subtest: Planning period deletion: preview, invalidation, cancel, explicit confirmation and protected series
+ok 333 - Planning period deletion: preview, invalidation, cancel, explicit confirmation and protected series
+  ---
+  duration_ms: 1517.1847
+  type: 'test'
+  ...
+# (node:31348) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# Subtest: retry google, recurrence=none, identity=new: retry desired publication without duplicates
+ok 334 - retry google, recurrence=none, identity=new: retry desired publication without duplicates
+  ---
+  duration_ms: 1471.5214
+  type: 'test'
+  ...
+# Subtest: retry google, recurrence=none, identity=linked: retry desired publication without duplicates
+ok 335 - retry google, recurrence=none, identity=linked: retry desired publication without duplicates
+  ---
+  duration_ms: 1278.5244
+  type: 'test'
+  ...
+# Subtest: retry google, recurrence=none, identity=deleted: retry desired publication without duplicates
+ok 336 - retry google, recurrence=none, identity=deleted: retry desired publication without duplicates
+  ---
+  duration_ms: 1231.1896
+  type: 'test'
+  ...
+# Subtest: retry google, recurrence=none, identity=cancelled: retry desired publication without duplicates
+ok 337 - retry google, recurrence=none, identity=cancelled: retry desired publication without duplicates
+  ---
+  duration_ms: 1214.4894
+  type: 'test'
+  ...
+# Subtest: retry google, recurrence=weekly-1, identity=new: retry desired publication without duplicates
+ok 338 - retry google, recurrence=weekly-1, identity=new: retry desired publication without duplicates
+  ---
+  duration_ms: 1679.899
+  type: 'test'
+  ...
+# Subtest: retry google, recurrence=weekly-1, identity=linked: retry desired publication without duplicates
+ok 339 - retry google, recurrence=weekly-1, identity=linked: retry desired publication without duplicates
+  ---
+  duration_ms: 1696.3841
+  type: 'test'
+  ...
+# Subtest: retry google, recurrence=weekly-1, identity=deleted: retry desired publication without duplicates
+ok 340 - retry google, recurrence=weekly-1, identity=deleted: retry desired publication without duplicates
+  ---
+  duration_ms: 1665.2394
+  type: 'test'
+  ...
+# Subtest: retry google, recurrence=weekly-1, identity=cancelled: retry desired publication without duplicates
+ok 341 - retry google, recurrence=weekly-1, identity=cancelled: retry desired publication without duplicates
+  ---
+  duration_ms: 1638.7077
+  type: 'test'
+  ...
+# Subtest: retry twitch, recurrence=none, identity=new: retry desired publication without duplicates
+ok 342 - retry twitch, recurrence=none, identity=new: retry desired publication without duplicates
+  ---
+  duration_ms: 1092.4904
+  type: 'test'
+  ...
+# Subtest: retry twitch, recurrence=none, identity=linked: retry desired publication without duplicates
+ok 343 - retry twitch, recurrence=none, identity=linked: retry desired publication without duplicates
+  ---
+  duration_ms: 1120.6999
+  type: 'test'
+  ...
+# Subtest: retry twitch, recurrence=none, identity=deleted: retry desired publication without duplicates
+ok 344 - retry twitch, recurrence=none, identity=deleted: retry desired publication without duplicates
+  ---
+  duration_ms: 1076.2206
+  type: 'test'
+  ...
+# Subtest: retry twitch, recurrence=weekly-1, identity=new: retry desired publication without duplicates
+ok 345 - retry twitch, recurrence=weekly-1, identity=new: retry desired publication without duplicates
+  ---
+  duration_ms: 1720.8708
+  type: 'test'
+  ...
+# Subtest: retry twitch, recurrence=weekly-1, identity=linked: retry desired publication without duplicates
+ok 346 - retry twitch, recurrence=weekly-1, identity=linked: retry desired publication without duplicates
+  ---
+  duration_ms: 1591.5292
+  type: 'test'
+  ...
+# Subtest: retry twitch, recurrence=weekly-1, identity=deleted: retry desired publication without duplicates
+ok 347 - retry twitch, recurrence=weekly-1, identity=deleted: retry desired publication without duplicates
+  ---
+  duration_ms: 1610.8671
+  type: 'test'
+  ...
+# Subtest: context selects stream/video/clip versus category, with appropriate Twitch dimensions
+ok 348 - context selects stream/video/clip versus category, with appropriate Twitch dimensions
+  ---
+  duration_ms: 1.4119
+  type: 'test'
+  ...
+# Subtest: only public HTTPS CDN URLs, without credentials, query tokens or fragments
+ok 349 - only public HTTPS CDN URLs, without credentials, query tokens or fragments
+  ---
+  duration_ms: 0.2433
+  type: 'test'
+  ...
+# Subtest: cache coalesces, expires success/failure, refreshes and invalidates
+ok 350 - cache coalesces, expires success/failure, refreshes and invalidates
+  ---
+  duration_ms: 0.8812
+  type: 'test'
+  ...
+# Subtest: cache bounds entries, catches rejection, and ignores stale completion after invalidation
+ok 351 - cache bounds entries, catches rejection, and ignores stale completion after invalidation
+  ---
+  duration_ms: 0.3709
+  type: 'test'
+  ...
+# Subtest: image loader handles 404, timeout and user refresh without network or leaking referrers
+ok 352 - image loader handles 404, timeout and user refresh without network or leaking referrers
+  ---
+  duration_ms: 5.0322
+  type: 'test'
+  ...
+# Subtest: DOM keeps deterministic placeholder for absent/error and renders only decoded pixels after retry
+ok 353 - DOM keeps deterministic placeholder for absent/error and renders only decoded pixels after retry
+  ---
+  duration_ms: 1.2961
+  type: 'test'
+  ...
+# Subtest: export loader validates source, omits credentials, blocks redirects and revokes blobs
+ok 354 - export loader validates source, omits credentials, blocks redirects and revokes blobs
+  ---
+  duration_ms: 15.0657
+  type: 'test'
+  ...
+# Subtest: Planning PNG export completes with artwork
+ok 355 - Planning PNG export completes with artwork
+  ---
+  duration_ms: 16.9798
+  type: 'test'
+  ...
+# Subtest: Planning PNG export completes without artwork
+ok 356 - Planning PNG export completes without artwork
+  ---
+  duration_ms: 0.7183
+  type: 'test'
+  ...
+# Subtest: served CSP allows only explicit thumbnail CDN hosts and blob export, preserving script restrictions
+ok 357 - served CSP allows only explicit thumbnail CDN hosts and blob export, preserving script restrictions
+  ---
+  duration_ms: 1.8775
+  type: 'test'
+  ...
+1..357
+# tests 357
+# suites 0
+# pass 351
+# fail 0
+# cancelled 0
+# skipped 6
+# todo 0
+# duration_ms 67502.907

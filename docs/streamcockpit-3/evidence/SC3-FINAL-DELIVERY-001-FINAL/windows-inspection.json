@@ -1,0 +1,40 @@
+﻿{
+    "published":  false,
+    "installed":  false,
+    "maker":  [
+                  {
+                      "verifiedAgainstPortable":  true,
+                      "file":  "StreamDashboard-3.0.0-alpha1-full.nupkg",
+                      "embeddedFiles":  [
+                                            {
+                                                "sha256":  "b2f9882897cac17f196f2d42a4ed131d13ffe5b18a95f1e586dbb608093441c1",
+                                                "entry":  "lib/net45/StreamDashboard.exe"
+                                            },
+                                            {
+                                                "sha256":  "586b0bbbda4af97aa01b0ab6947e00ea5cc0cea416d61e664fca7f01ef30b8bf",
+                                                "entry":  "lib/net45/resources/app.asar"
+                                            }
+                                        ]
+                  }
+              ],
+    "sourceCommit":  "cc332dbbe67e2a79cf94db0a0eb6d41eabf2f4fc",
+    "make":  {
+                 "exitCode":  0,
+                 "published":  false,
+                 "sourceCommit":  "cc332dbbe67e2a79cf94db0a0eb6d41eabf2f4fc",
+                 "installed":  false,
+                 "log":  "C:\\Users\\damie\\AppData\\Local\\Temp\\sc3-final-integrated4-installer.log"
+             },
+    "signatures":  [
+                       {
+                           "status":  "NotSigned",
+                           "file":  "StreamDashboard.exe",
+                           "signerThumbprint":  null
+                       },
+                       {
+                           "status":  "NotSigned",
+                           "file":  "StreamDashboardSetup.exe",
+                           "signerThumbprint":  null
+                       }
+                   ]
+}
