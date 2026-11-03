@@ -18,7 +18,15 @@ export type ReplaySourceAttestation =
   | {status:'VERIFIED_HOST_ONLY';grant:SourceGrant}
   | {status:'DENIED';code:string};
 const eventId=/^obs_replay_[a-f0-9]{64}$/;
-const safePart=/^[A-Za-z0-9_-][A-Za-z0-9_.-]*$/;
+// OBS uses user-facing replay filenames (often spaces/accented characters).
+// Keep their literal HMAC-bound spelling host-only; the staging step maps
+// them to a restricted ASCII alias before any ClipForge SourceGrant is used.
+const invalidNameChars=new Set(['<','>','\"','/','|','?','*',':',String.fromCharCode(92)]);
+const reservedNames=new Set(['CON','PRN','AUX','NUL',...Array.from({length:9},(_,i)=>'COM'+(i+1)),
+  ...Array.from({length:9},(_,i)=>'LPT'+(i+1))]);
+const safePart=(p:string)=>p.length>0&&p.length<=255&&
+  !Array.from(p).some(c=>c.charCodeAt(0)<32||invalidNameChars.has(c))&&
+  !p.endsWith('.')&&!p.endsWith(' ')&&!reservedNames.has(p.split('.')[0].toUpperCase());
 const deny=(code:string):never=>{throw Error('F04_SOURCE_'+code);};
 const fixedDrive=(p:string)=>typeof p==='string'&&/^[A-Za-z]:[\\/]/.test(p)&&
   path.win32.isAbsolute(p)&&!p.startsWith('\\\\')&&!p.includes('\0');
@@ -55,7 +63,7 @@ export async function attestWindowsObsReplaySource(options:{
     const source=path.win32.normalize(options.savedReplayPath);
     const relative=path.win32.relative(root,source);
     if(!relative||path.win32.isAbsolute(relative)||relative.startsWith('..')||
-      relative.length>512||!relative.split(/[\\/]/).every(p=>safePart.test(p)))
+      relative.length>512||!relative.split(/[\\/]/).every(p=>safePart(p)))
       deny('SOURCE_PATH');
     // A host-local HMAC check is essential: a valid-looking event id alone
     // never authorizes arbitrary filenames or paths supplied by a client.

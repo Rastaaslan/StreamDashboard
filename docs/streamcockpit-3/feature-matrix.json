@@ -265,6 +265,10 @@
         {
           "path": "integrations/obs/src/client.ts",
           "kind": "2026-11-03 FIXE OBS adapter retains at most 64 local file witnesses privately and clears on stop/reconnect; host-only callback exposes actual saved replay file exclusively to F04 attestation, never mobile or moments journal"
+        },
+        {
+          "path": "apps/server/src/streamcockpit-clipforge-windows-staging.ts",
+          "kind": "2026-11-03 FIXE host-only NTFS copy from HMAC/OBS-attested replay to externally provisioned private root; exclusive UNKNOWN intent before copy, source/dest hash and epoch checks, 8 MiB/s I/O cap, safe ASCII alias for spaces/Unicode; synthetic fixture tests only, never encoder/public API, power-loss directory durability unqualified"
         }
       ],
       "verifiedTests": [
@@ -278,6 +282,7 @@
         "tests/streamcockpit3-clipforge-status.test.ts",
         "tests/streamcockpit3-moments-obs-replay.test.ts",
         "tests/streamcockpit3-clipforge-windows-replay-grant.test.ts",
+        "tests/streamcockpit3-clipforge-windows-staging.test.ts",
         "tests/obs-runtime.test.ts"
       ],
       "hardwareEvidence": [],
@@ -286,7 +291,7 @@
         "Native Job Object lab tests confirm pre-resume assignment, child-count refusal, timeout and kill-on-close; unsigned helper packaging, independent CPU/memory stress verification, NTFS adversarial ACLs and power-loss durability remain absent",
         "42 Linux-only ClipForge tests remain explicitly skipped; Windows native Job Object lab 15/15 PASS on synthetic NTFS/FFmpeg only, no real OBS replay or signed distribution qualified",
         "2026-11-03 FIXE read-only provenance/ACL audit: current WinGet FFmpeg Authenticode NotSigned; TEMP DACL permits local sandbox identities; zero personal Code Signing private-key candidates and no configured Android SDK detected. Trusted binary pins, signed helper, private staging ACL, durable real OBS source grant/API/UI, power-loss and signed same-commit artifacts remain unavailable. These new admission checks do not authorize production encoding.",
-        "2026-11-03 F04 host-only OBS in-memory witness and source hash do not establish a durable consent/grant, source identity across a power loss, NTFS descriptor-relative race exclusion, a signed native Windows encoder, or a phone/Desktop export. Standard OBS replay filenames containing spaces/unicode do not satisfy the current SourceGrant relativePath grammar; private staging and rename policy required."
+        "2026-11-03 F04 host-only OBS in-memory witness and source hash do not establish a durable consent/grant, source identity across a power loss, NTFS descriptor-relative race exclusion, a signed native Windows encoder, or a phone/Desktop export. The new host-only staging adapter supports OBS replay names containing spaces/Unicode by mapping to a safe ASCII staged alias, but NTFS directory-entry power-loss durability, signed codec/helper, production private roots, appairage/API/UX and real OBS/hardware qualification remain absent."
       ],
       "ownerJob": "streamcockpit/3.0-lot-d",
       "integrationNote": "2026-11-01 Linux-only ClipForge guarded; 2026-11-02 isolated Windows OFFLINE lab with real synthetic 360x640 H.264/AAC, SHA-256 and VTT, no source overwrite, fail-closed uncertain intent and source grants pinned before await. Native C# Job Object helper compiled ONLY in temporary Windows test folder; suspended process assigned before resume, kill-on-close, active-child count, low-priority/memory/CPU limits, no bare FFmpeg fallback. Windows lab 15/15 PASS including observed timeout, descendant process refusal and kill-on-close; four targeted suites 34 PASS / 42 Linux skips / 0 FAIL, TypeScript/browser types PASS, security 833 files PASS. No unsigned native helper in release, hardware power-loss/ACL or real OBS replay proof, API, Windows EXE/APK; F04 partial, G2 in progress. 2026-11-03 FIXE: read-only binary sha256/Authenticode pinned signer qualification + private NTFS DACL SID inspection and F04 status CLI added, 30/30 PASS across five targeted suites including 15 real FFmpeg synthetic lab, actual NotSigned FFmpeg and shared TEMP DACL observations. TypeScript/browser/security PASS; no production route, signed helper, real OBS replay or hardware/rollback evidence. F04 remains partial, G2 in_progress. After separate 30/30 real Windows lab and provenance/ACL tests, full FIXE Vitest 2208 PASS / 108 skipped / 0 fail (276 files), Node built 349 PASS / 6 skipped, Playwright network 35/35 PASS, development build 136 assets and 143 shipped JavaScript PASS. No signed candidate or actual OBS/Android hardware qualification."
