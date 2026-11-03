@@ -284,7 +284,7 @@
         },
         {
           "path": "apps/mobile/control/streamcockpit-twitch-moments.js",
-          "kind": "SC3-FINAL-DELIVERY-001: source integration and targeted software qualification only; hardware remains unqualified"
+          "kind": "2026-11-03 FIXE F04: Desktop/Android shared UI independently binds displayed Twitch edit URL to the returned clip ID and exact HTTPS canonical route (no port/query/fragment), rejects forged receipts as uncertain, preserves read-only FIXE receipt lookup with zero repeat POST. Red Edge test 1 FAIL; green 24 PASS including Edge 320px plus HTTP/scope; types/browser and security 6714 files PASS. No real Twitch, OBS or physical Android reception."
         },
         {
           "path": "apps/server/src/control-public-view.ts",

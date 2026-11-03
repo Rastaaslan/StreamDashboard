@@ -17,7 +17,7 @@ it.skipIf(process.env.SC3_FINAL_BROWSER_TEST!=='1')('F04 real Edge 320px: marker
         if(path.endsWith('/preview')){w.kind=body.draft.kind;return {schemaVersion:1,kind:'streamcockpit-moment-preview',confirmationId:'643e0c2b-e8e4-4ccd-a82c-8ad0a05f19c5',expiresAt:Date.now()+30_000,draft:body.draft}}
         if(path.includes('/status/'))return {schemaVersion:1,kind:'streamcockpit-moment-status',status:'not_found_at_read',retryable:false};
         if(w.lost)throw Error('PRIVATE');
-        return {schemaVersion:1,kind:'streamcockpit-moment-confirmation',momentKind:w.kind,status:w.kind==='clip'?'accepted':'confirmed',id:'safe',journal:'recorded',...(w.kind==='clip'?{editUrl:'https://clips.twitch.tv/Safe/edit'}:{})};
+        return {schemaVersion:1,kind:'streamcockpit-moment-confirmation',momentKind:w.kind,status:w.kind==='clip'?'accepted':'confirmed',id:'Safe',journal:'recorded',...(w.kind==='clip'?{editUrl:w.badClipUrl??'https://clips.twitch.tv/Safe/edit'}:{})};
       }});w.panel.update({sourceKey:'FIXE',accountKey:'owner',online:true});
     });
     for(const kind of ['marker','clip']){
@@ -43,6 +43,28 @@ it.skipIf(process.env.SC3_FINAL_BROWSER_TEST!=='1')('F04 real Edge 320px: marker
     expect(await page.evaluate(()=>(window as any).calls.filter((c:any)=>c.method==='POST').length)).toBe(6);
     expect(await page.evaluate(()=>(window as any).calls.filter((c:any)=>c.method==='GET').length)).toBe(1);
     expect(await page.locator('main').textContent()).not.toContain('PRIVATE');
+    // Even if a malformed provider receipt crossed the server boundary, a client
+    // must not turn an unrelated/redirectable URL into a trusted Twitch edit link.
+    for(const badUrl of [
+      'https://clips.twitch.tv/Another/edit',
+      'https://clips.twitch.tv/Safe/edit?redirect=1',
+      'https://clips.twitch.tv:8443/Safe/edit',
+      'https://clips.twitch.tv/Safe/edit#fragment',
+    ]){
+      await page.getByRole('button',{name:'J’ai vérifié ce moment dans Twitch'}).click();
+      await page.evaluate(url=>{const w=window as any;w.lost=false;w.badClipUrl=url},badUrl);
+      await page.getByLabel('Type de moment Twitch').selectOption('clip');
+      await page.getByRole('button',{name:'Vérifier le moment sans publier'}).click();
+      await page.getByLabel('Confirmer le moment Twitch').check();
+      await page.getByRole('button',{name:'Créer ce moment sur Twitch'}).click();
+      await expect.poll(()=>page.getByRole('status').textContent()).toContain('Résultat incertain');
+      expect(await page.getByRole('link',{name:'Ouvrir le clip dans Twitch'}).isVisible()).toBe(false);
+      expect(await page.getByRole('button',{name:'Vérifier le moment sans publier'}).isDisabled()).toBe(true);
+      await expect.poll(()=>page.getByRole('button',{name:'Consulter le journal FIXE sans renvoyer'}).isVisible()).toBe(true);
+    }
+    await page.getByRole('button',{name:'Consulter le journal FIXE sans renvoyer'}).click();
+    await expect.poll(()=>page.getByRole('status').textContent()).toContain('Aucune entrée trouvée');
+    expect(await page.evaluate(()=>(window as any).calls.filter((c:any)=>c.method==='GET').length)).toBe(2);
     await page.evaluate(()=>(window as any).panel.destroy());
   }finally{await browser.close()}
 },30000);

@@ -61,10 +61,16 @@ export function mountTwitchMoments(root,{request}={}){
       const r=await request('/api/v1/twitch/advanced/moment/confirm',{confirmationId:id,confirmed:true},'POST',target);
       if(!connected()||key!==revision||target!==sourceKey){uncertain=true;return}
       if(r?.schemaVersion!==1||r.kind!=='streamcockpit-moment-confirmation'||r.momentKind!==expected||r.status!==(expected==='marker'?'confirmed':'accepted'))throw Error('UNVERIFIED');
-      uncertainReceipt=undefined;
       status.textContent=r.status==='confirmed'?'Marqueur confirmé par Twitch.':'Demande de clip acceptée par Twitch ; disponibilité de la vidéo à vérifier.';
       status.textContent+=r.journal==='recorded'?' Ajouté à la timeline.':r.journal==='uncertain'?' Écriture timeline incertaine : vérifiez le journal, sans recréer le moment.':' Aucune session liée pour la timeline.';
-      if(r.editUrl){const url=new URL(r.editUrl);if(url.protocol==='https:'&&url.hostname==='clips.twitch.tv'&&!url.username&&!url.password){link.href=url.href;link.hidden=false}}
+      if(expected==='clip'){
+        if(typeof r.id!=='string'||!/^[A-Za-z0-9_-]{1,128}$/.test(r.id)||typeof r.editUrl!=='string')throw Error('UNVERIFIED');
+        const url=new URL(r.editUrl);
+        if(url.protocol!=='https:'||url.hostname!=='clips.twitch.tv'||url.username||url.password||
+          url.port||url.search||url.hash||url.pathname!==`/${r.id}/edit`)throw Error('UNVERIFIED');
+        link.href=url.href;link.hidden=false;
+      }else if(r.editUrl!==undefined)throw Error('UNVERIFIED');
+      uncertainReceipt=undefined;
     }catch{uncertain=true;status.textContent='Résultat incertain : vérifiez Twitch avant une nouvelle demande. Aucun renvoi automatique.'}
     finally{sending=false;if(key===revision)flight=false;draw()}
   });
