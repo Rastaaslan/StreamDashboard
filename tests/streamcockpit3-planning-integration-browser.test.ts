@@ -19,7 +19,12 @@ it.skipIf(process.env.PLANNING_BROWSER_TEST !== '1')('mounts Planning in Chromiu
  await page.evaluate(({online,view})=>{const w=window as any;w.online=online;document.querySelector('main')!.innerHTML=w.planning.mobilePage(view);},{online,view});
  expect(await page.locator('[data-planning-assistant]').count()).toBe(1);
  expect(await page.locator('[data-planning-assistant]').textContent()).toContain('UNKNOWN');
- expect(await page.locator('[data-planning-assistant] button').isDisabled()).toBe(true);
+ // Local-draft suggestions are available online; assisted duplication remains unavailable.
+ // Check every suggestion across all views/offline transitions, never pick an arbitrary first button.
+ const suggestions=page.locator('[data-planning-assistant] [data-planning="assist-new"]');
+ expect(await suggestions.count()).toBe(3);
+ for(let index=0;index<3;index++)expect(await suggestions.nth(index).isDisabled()).toBe(!online);
+ expect(await page.getByRole('button',{name:'Dupliquer vers un brouillon (indisponible)',exact:true}).isDisabled()).toBe(true);
  expect(await page.locator('input[name=title]').inputValue()).toBe('Brouillon en cours');
  expect(await page.locator('img').count()).toBe(0);
  }
