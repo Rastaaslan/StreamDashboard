@@ -284,7 +284,11 @@
         },
         {
           "path": "apps/mobile/control/streamcockpit-twitch-moments.js",
-          "kind": "2026-11-03 FIXE F04: Desktop/Android shared UI independently binds displayed Twitch edit URL to the returned clip ID and exact HTTPS canonical route (no port/query/fragment), rejects forged receipts as uncertain, preserves read-only FIXE receipt lookup with zero repeat POST. Red Edge test 1 FAIL; green 24 PASS including Edge 320px plus HTTP/scope; types/browser and security 6714 files PASS. No real Twitch, OBS or physical Android reception."
+          "kind": "2026-11-03 FIXE F04 canonical clip edit-link validation and GET-only receipt review (24 tests PASS). 2026-11-04 FIXE: synchronously saves bounded host/account-scoped UUID+kind before Twitch confirmation POST; uncertain result survives actual Edge 320px reload; no repeat POST; fails closed if storage unavailable. See streamcockpit-twitch-moment-pending.js and tests. No real Twitch or Android device test."
+        },
+        {
+          "path": "apps/mobile/control/streamcockpit-twitch-moment-pending.js",
+          "kind": "2026-11-04 FIXE F04: per-host/account localStorage reconciliation hints (7-day expiry, maximum 8 entries, no credentials/links). Read-only journal lookup after reload, independent identity, no Twitch retry. Targeted 28/28 PASS including 2 real Edge tests; TypeScript/browser/security (6717 files) PASS; no hardware proof."
         },
         {
           "path": "apps/server/src/control-public-view.ts",
@@ -298,13 +302,14 @@
         "tests/obs-runtime.test.ts",
         "tests/streamcockpit3-simple-moments-http.test.ts",
         "tests/streamcockpit3-simple-moments-browser.test.ts",
+        "tests/streamcockpit3-simple-moments-storage.test.ts",
         "tests/streamcockpit3-simple-replay-privacy.test.ts",
         "tests/streamcockpit3-release-scope.test.ts"
       ],
       "hardwareEvidence": [],
       "blockers": [
         "Physical FIXE/laptop/Android replay, provider marker and clip availability walkthroughs remain unqualified.",
-        "Single-use moment confirmation is volatile; a lost receipt is never replayed automatically, but durable read-only reconciliation across host restarts remains incomplete.",
+        "Single-use confirmation stays volatile on FIXE. The new 7-day localStorage host/account-scoped UUID hint survives client reload only; durable server journal reconciliation across FIXE process restart, physical Android migration and lost receipts before client storage remain unqualified.",
         "OBS replay file validity, production Twitch OAuth/VOD configuration and real uncertain-command receipts still require reception."
       ],
       "ownerJob": "streamcockpit/3.0-lot-d",
