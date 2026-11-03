@@ -62,6 +62,15 @@ android {
             buildConfigField 'boolean', 'PREVIEW_MODE', 'true'
             manifestPlaceholders = [deepLinkScheme: 'streamdashboard-preview']
         }
+        // Parallel QA install: all real native features remain enabled, but this
+        // package never replaces a differently signed production installation.
+        qa {
+            initWith debug
+            applicationIdSuffix '.qa'
+            versionNameSuffix '-qa'
+            buildConfigField 'boolean', 'PREVIEW_MODE', 'false'
+            manifestPlaceholders = [deepLinkScheme: 'streamdashboard-next-qa']
+        }
     }
 }
 
