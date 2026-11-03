@@ -1,6 +1,7 @@
 import { expect, it, vi } from 'vitest';
 import express, { type Request } from 'express';
 import { type AddressInfo } from 'node:net';
+import { request as httpRequest } from 'node:http';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -65,11 +66,33 @@ async function fixture(run:(ctx:{
   const url='http://127.0.0.1:'+(server.address() as AddressInfo).port+
     '/api/v1/twitch/advanced/prediction/reconcile';
   try {
-    const call=(credential=token,method='GET',body?:unknown,suffix='')=>fetch(url+suffix,{
-      method,headers:{Authorization:'Device '+credential,
-        ...(body===undefined?{}:{'Content-Type':'application/json'})},
-      body:body===undefined?undefined:JSON.stringify(body),
-    });
+    // Ephemeral localhost ports can be rejected by Fetch as a "bad port".
+    // Exercise the same real Express socket without Fetch's browser port blacklist.
+    const call=(credential=token,method='GET',body?:unknown,suffix=''):Promise<Response>=>
+      new Promise((resolve,reject)=>{
+        const payload=body===undefined?undefined:JSON.stringify(body);
+        const req=httpRequest(url+suffix,{method,timeout:5000,headers:{
+          Authorization:'Device '+credential,
+          ...(payload===undefined?{}:{'Content-Type':'application/json',
+            'Content-Length':Buffer.byteLength(payload)}),
+        }},res=>{
+          const chunks:Buffer[]=[];
+          res.on('data',(part:Buffer)=>chunks.push(part));
+          res.on('error',reject);
+          res.on('end',()=>{
+            if(!res.complete){reject(Error('TEST_HTTP_INCOMPLETE'));return;}
+            const headers=new Headers();
+            for(let i=0;i<res.rawHeaders.length;i+=2)
+              headers.append(res.rawHeaders[i],res.rawHeaders[i+1]);
+            resolve(new Response(Buffer.concat(chunks),{
+              status:res.statusCode??500,headers,
+            }));
+          });
+        });
+        req.on('timeout',()=>req.destroy(Error('TEST_HTTP_TIMEOUT')));
+        req.on('error',reject);
+        req.end(payload);
+      });
     await run({call,token,fence,reopen:()=>new PredictionIntentSqlite(join(dir,'intent.sqlite')),reads,auth,
       setStatus:v=>{status=v},setEpoch:v=>{epoch=v},
       swapEpochOnRead:()=>{switchEpoch=true},

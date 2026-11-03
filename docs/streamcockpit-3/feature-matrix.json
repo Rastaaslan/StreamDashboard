@@ -516,6 +516,10 @@
         {
           "path": "docs/streamcockpit-3/F08_PREDICTION_CREATE_FIXE_20261102.md",
           "kind": "2026-11-02 FIXE: scope, authorization, fail-closed pending consent, validation and remaining G3/G4 limits"
+        },
+        {
+          "path": "tests/streamcockpit3-twitch-prediction-reconcile-http.test.ts",
+          "kind": "2026-11-03 FIXE: native node:http localhost transport avoids forbidden ephemeral Fetch ports; same real Express routes, 11/11 simulated-provider HTTP cases PASS; fixture reliability only, no live Twitch, OBS or hardware qualification"
         }
       ],
       "verifiedTests": [
