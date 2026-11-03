@@ -38,6 +38,7 @@
     "universal:release-check": "node scripts/check-universal-release.mjs --final",
     "streamcockpit3:status": "node scripts/streamcockpit3-readiness.mjs",
     "streamcockpit3:release-check": "node scripts/streamcockpit3-readiness.mjs --final",
+    "streamcockpit3:artifacts": "node scripts/streamcockpit3-artifact-verifier.mjs",
     "build:types": "tsc -p tsconfig.json --noEmit",
     "test:node:built": "node scripts/test-node.mjs",
     "test:unit": "vitest run",
