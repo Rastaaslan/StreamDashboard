@@ -49,11 +49,11 @@ export function mountTwitchPredictionCreate(root, { request } = {}) {
   confirmation.append(summary, consent, publish);
   const status = doc.createElement('p'); status.setAttribute('role', 'status'); status.className = 'small';
   const acknowledge = doc.createElement('button'); acknowledge.type = 'button'; acknowledge.className = 'secondary';
-  acknowledge.textContent = 'J’ai vérifié l’état dans Twitch'; acknowledge.hidden = true;
+  acknowledge.textContent = 'J’ai consulté Twitch (ne débloque pas le FIXE)'; acknowledge.hidden = true;
   section.append(header, note, form, confirmation, status, acknowledge); root.append(section);
 
   let disposed = false, online = false, sourceKey = '', accountKey = '', revision = 0;
-  let busy = false, sent = false, uncertain = false, pending, approved;
+  let busy = false, sent = false, uncertain = false, hostReconciliationRequired = false, pending, approved;
   const fields = [title, outcomes, windowSeconds];
   const connected = () => !disposed && root.isConnected && online && !!sourceKey &&
     view?.navigator?.onLine !== false && doc.visibilityState !== 'hidden';
@@ -62,7 +62,7 @@ export function mountTwitchPredictionCreate(root, { request } = {}) {
     checkbox.checked = false; summary.textContent = '';
   };
   const draw = () => {
-    const enabled = connected() && !busy && !uncertain && typeof request === 'function';
+    const enabled = connected() && !busy && !uncertain && !hostReconciliationRequired && typeof request === 'function';
     for (const field of fields) field.disabled = !enabled;
     preview.disabled = !enabled;
     checkbox.disabled = !enabled || !pending;
@@ -72,12 +72,14 @@ export function mountTwitchPredictionCreate(root, { request } = {}) {
   };
   const invalidate = reason => {
     revision++;
-    if (sent) uncertain = true; // Lost receipt across network/suspend/source change.
+    if (sent) { uncertain = true; hostReconciliationRequired = true; } // Lost receipt: the FIXE journal still blocks.
     sent = false; busy = false; clear();
     title.value = ''; outcomes.value = ''; windowSeconds.value = '60';
     status.textContent = uncertain
-      ? 'Résultat potentiellement public et incertain. Vérifiez Twitch avant toute nouvelle création. Aucun renvoi automatique.'
-      : reason;
+      ? 'Résultat potentiellement public et incertain. Vérifiez Twitch ; le FIXE reste bloqué jusqu’à une réconciliation qualifiée. Aucun renvoi automatique.'
+      : hostReconciliationRequired
+        ? 'Journal de création réservé sur le FIXE. Aucune nouvelle prédiction avant réconciliation côté régie.'
+        : reason;
     draw();
   };
   const readDraft = () => {
@@ -90,13 +92,13 @@ export function mountTwitchPredictionCreate(root, { request } = {}) {
     return { title: question, outcomes: options, predictionWindow: seconds };
   };
   for (const field of fields) field.addEventListener('input', () => {
-    if (disposed || busy) return;
+    if (disposed || busy || hostReconciliationRequired) return;
     clear(); status.textContent = 'Brouillon modifié. Une nouvelle prévisualisation est nécessaire.'; draw();
   });
   checkbox.addEventListener('change', draw);
   form.addEventListener('submit', async event => {
     event.preventDefault();
-    if (!connected() || busy || uncertain || typeof request !== 'function') return;
+    if (!connected() || busy || uncertain || hostReconciliationRequired || typeof request !== 'function') return;
     const draft = readDraft();
     if (!draft) { clear();status.textContent = 'Question ou issues invalides : 2 à 10 issues distinctes, 25 caractères maximum.';draw();return; }
     clear(); busy = true; const current = ++revision, host = sourceKey;
@@ -118,16 +120,16 @@ export function mountTwitchPredictionCreate(root, { request } = {}) {
       if (!connected() || current !== revision) return;
       clear();
       status.textContent = error?.status === 403 ? 'Scope channel:manage:predictions ou permission manquante.' :
-        error?.status === 409 ? 'Live FIXE ou prédiction existante non compatible.' :
+        error?.status === 409 ? 'Live FIXE indisponible, prédiction existante ou réservation conservée sur le FIXE : réconciliation côté régie nécessaire.' :
         'Prévisualisation impossible. Aucun envoi demandé.';
     } finally { if (!disposed && current === revision) { busy = false;draw(); } }
   });
   publish.addEventListener('click', async () => {
-    if (!connected() || busy || uncertain || !pending || !approved || !checkbox.checked ||
+    if (!connected() || busy || uncertain || hostReconciliationRequired || !pending || !approved || !checkbox.checked ||
         Date.now() >= pending.expiresAt || typeof request !== 'function') return;
     if (JSON.stringify(readDraft()) !== JSON.stringify(approved)) { clear();draw();return; }
     const token = pending.id, current = ++revision, host = sourceKey;
-    clear(); busy = true; sent = true; draw();
+    clear(); busy = true; sent = true; hostReconciliationRequired = true; draw();
     status.textContent = 'Confirmation envoyée : reçu Twitch attendu. Aucun renvoi automatique.';
     try {
       const data = await request(CONFIRM,{confirmed:true,confirmationId:token},'POST',host);
@@ -137,19 +139,19 @@ export function mountTwitchPredictionCreate(root, { request } = {}) {
         throw Error('UNVERIFIED_RECEIPT');
       sent = false;
       title.value = ''; outcomes.value = ''; windowSeconds.value = '60';
-      status.textContent = 'Création acceptée par Twitch. Vérifiez son affichage sur la chaîne.';
+      status.textContent = 'Création acceptée par Twitch. Vérifiez son affichage ; le journal FIXE interdit une nouvelle création avant réconciliation.';
     } catch {
       if (!connected() || current !== revision) return;
       uncertain = true; sent = false;
       title.value = ''; outcomes.value = '';
-      status.textContent = 'Publication potentiellement effectuée, reçu incertain. Vérifiez Twitch avant toute nouvelle demande.';
+      status.textContent = 'Publication potentiellement effectuée, reçu incertain. Vérifiez Twitch ; le journal FIXE reste bloqué.';
     } finally {
       if (!disposed && current === revision) {
         // A detached root or an unobserved receipt is still a possible
         // public POST. Do not unlock a new creation on reconnect.
         if (sent) {
           sent = false; uncertain = true;
-          status.textContent = 'Reçu inconnu après publication possible. Vérifiez Twitch avant toute nouvelle création.';
+          status.textContent = 'Reçu inconnu après publication possible. Vérifiez Twitch ; le FIXE reste bloqué jusqu’à réconciliation.';
         }
         busy = false; draw();
       }
@@ -157,7 +159,9 @@ export function mountTwitchPredictionCreate(root, { request } = {}) {
   });
   acknowledge.addEventListener('click', () => {
     if (!connected() || busy || !uncertain) return;
-    uncertain = false; invalidate('Vérification manuelle déclarée : nouvelle prévisualisation requise.');
+    uncertain = false; invalidate('');
+    status.textContent = 'Vérification manuelle déclarée. Le FIXE reste bloqué : aucune nouvelle création avant réconciliation qualifiée.';
+    draw();
   });
   const visibility = () => invalidate('Vue suspendue : confirmations annulées.');
   const offline = () => invalidate('Hors ligne : aucune nouvelle prédiction.');

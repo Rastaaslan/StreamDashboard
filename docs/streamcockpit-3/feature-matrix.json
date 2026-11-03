@@ -503,7 +503,7 @@
         },
         {
           "path": "apps/mobile/control/streamcockpit-twitch-prediction-create.js",
-          "kind": "2026-11-02 FIXE: separate voluntary prediction creation form, preview + explicit public checkbox and second click, uncertain write locked until manual Twitch verification, Edge real touch 320px simulated provider only"
+          "kind": "2026-11-03 FIXE: voluntary preview and second public consent remain one-shot; after any confirm attempt the mobile view stays blocked (including acknowledged uncertainty and source reconnect) to match the host SQLite intent. Fresh views explain host 409 without automatic retry. 5 real Edge 320px tests with simulated Twitch; no operator reconciliation or hardware proof."
         },
         {
           "path": "apps/server/src/streamcockpit-prediction-intent-sqlite.ts",
