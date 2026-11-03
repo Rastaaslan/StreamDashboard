@@ -162,7 +162,7 @@ public class MainActivity extends Activity {
     if (BuildConfig.PREVIEW_MODE) return;
     Uri data = intent == null ? null : intent.getData();
     if (data == null) return;
-    if (DeepLinkRouter.route(data.toString()) != DeepLinkRouter.Route.INVALID) pendingDeepLink = data;
+    if (DeepLinkRouter.route(data.toString(), BuildConfig.DEEP_LINK_SCHEME) != DeepLinkRouter.Route.INVALID) pendingDeepLink = data;
     intent.setData(null);
   }
 
@@ -170,7 +170,7 @@ public class MainActivity extends Activity {
     if (!pageReady || pendingDeepLink == null) return;
     Uri data = pendingDeepLink;
     pendingDeepLink = null;
-    DeepLinkRouter.Route route = DeepLinkRouter.route(data.toString());
+    DeepLinkRouter.Route route = DeepLinkRouter.route(data.toString(), BuildConfig.DEEP_LINK_SCHEME);
     if (route == DeepLinkRouter.Route.PAIR) {
       String quoted = org.json.JSONObject.quote(data.toString());
       webView.evaluateJavascript("window.dispatchEvent(new CustomEvent('native-pairing',{detail:" + quoted + "}))", null);

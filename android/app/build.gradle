@@ -21,6 +21,9 @@ def buildVersionCode = (System.getenv('ANDROID_VERSION_CODE') ?: derivedVersionC
 def buildVersionName = System.getenv('ANDROID_VERSION_NAME') ?: packageVersion
 def twitchAndroidClientId = System.getenv('TWITCH_ANDROID_CLIENT_ID') ?: new groovy.json.JsonSlurper().parse(rootProject.file('../resources/distribution.json')).twitchClientId ?: ''
 def googleAndroidClientId = System.getenv('GOOGLE_ANDROID_CLIENT_ID') ?: ''
+def standardDeepLinkScheme = 'streamdashboard-next'
+def previewDeepLinkScheme = 'streamdashboard-preview'
+def qaDeepLinkScheme = 'streamdashboard-next-qa'
 
 android {
     namespace 'com.rastaaslan.streamdashboard.remote'
@@ -37,7 +40,8 @@ android {
         buildConfigField 'String', 'TWITCH_ANDROID_CLIENT_ID', '"' + twitchAndroidClientId.replace('"', '\\"') + '"'
         buildConfigField 'String', 'GOOGLE_ANDROID_CLIENT_ID', '"' + googleAndroidClientId.replace('"', '\\"') + '"'
         buildConfigField 'boolean', 'PREVIEW_MODE', 'false'
-        manifestPlaceholders = [deepLinkScheme: 'streamdashboard-next']
+        buildConfigField 'String', 'DEEP_LINK_SCHEME', '"' + standardDeepLinkScheme + '"'
+        manifestPlaceholders = [deepLinkScheme: standardDeepLinkScheme]
     }
     signingConfigs {
         if (hasStableSigning) {
@@ -60,7 +64,8 @@ android {
             applicationIdSuffix '.preview'
             versionNameSuffix '-preview'
             buildConfigField 'boolean', 'PREVIEW_MODE', 'true'
-            manifestPlaceholders = [deepLinkScheme: 'streamdashboard-preview']
+            buildConfigField 'String', 'DEEP_LINK_SCHEME', '"' + previewDeepLinkScheme + '"'
+            manifestPlaceholders = [deepLinkScheme: previewDeepLinkScheme]
         }
         // Parallel QA install: all real native features remain enabled, but this
         // package never replaces a differently signed production installation.
@@ -69,7 +74,8 @@ android {
             applicationIdSuffix '.qa'
             versionNameSuffix '-qa'
             buildConfigField 'boolean', 'PREVIEW_MODE', 'false'
-            manifestPlaceholders = [deepLinkScheme: 'streamdashboard-next-qa']
+            buildConfigField 'String', 'DEEP_LINK_SCHEME', '"' + qaDeepLinkScheme + '"'
+            manifestPlaceholders = [deepLinkScheme: qaDeepLinkScheme]
         }
     }
 }
