@@ -55,6 +55,8 @@ import { RaidTwitch } from '../../../integrations/twitch/src/streamcockpit-raid.
 import { StreamcockpitRaidService } from './streamcockpit-twitch-raid-service.js';
 import { createTwitchRaidRouter } from './streamcockpit-twitch-raid-router.js';
 import { PredictionTwitch } from '../../../integrations/twitch/src/streamcockpit-prediction.js';
+import { PredictionLockTwitch } from '../../../integrations/twitch/src/streamcockpit-prediction-lock.js';
+import { createTwitchPredictionLockRouter } from './streamcockpit-twitch-prediction-lock-router.js';
 import { createTwitchPredictionRouter } from './streamcockpit-twitch-prediction-router.js';
 import { PredictionCreateTwitch } from '../../../integrations/twitch/src/streamcockpit-prediction-create.js';
 import { StreamcockpitPredictionCreateService } from './streamcockpit-twitch-prediction-create-service.js';
@@ -722,6 +724,7 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
   const shoutoutTwitch = new StreamcockpitShoutoutService(new ShoutoutTwitch(advancedTwitchCredentials, runtimeFetch()));
   const raidTwitch = new StreamcockpitRaidService(new RaidTwitch(advancedTwitchCredentials, runtimeFetch()));
   const predictionTwitch = new PredictionTwitch(advancedTwitchCredentials, runtimeFetch());
+  const predictionLockTwitch = new PredictionLockTwitch(advancedTwitchCredentials, runtimeFetch());
   const predictionFence = new PredictionIntentSqlite(path.join(dataDir, 'streamcockpit-prediction-intents.sqlite'));
   const predictionCreate = new StreamcockpitPredictionCreateService(
     new PredictionCreateTwitch(advancedTwitchCredentials, runtimeFetch()), Date.now, predictionFence);
@@ -2017,6 +2020,12 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
   // Mutation stays server-owned and requires a separate, single-use consent.
   app.use('/api/v1/twitch/advanced/prediction', createTwitchPredictionCreateRouter({
     service: predictionCreate, actor: pairedF08Actor, hostLive: confirmedF08HostEpoch,
+  }));
+  // LOCK is opt-in only: a persisted exact-ID SQLite intent MUST precede PATCH.
+  // Never unlock a lost lock receipt or send a second PATCH after restart.
+  app.use('/api/v1/twitch/advanced/prediction/lock', createTwitchPredictionLockRouter({
+    api: predictionLockTwitch, actor: pairedF08Actor, hostLive: confirmedF08HostEpoch,
+    broadcasterId: () => advancedTwitchCredentials().broadcasterId, fence: predictionFence,
   }));
 
   app.use('/api/v1/streamcockpit-health', createHealthRouter({

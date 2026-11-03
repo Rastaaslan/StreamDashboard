@@ -119,7 +119,7 @@ it('F08 confirmed provider ID is bound durably without unlocking an active or co
     .resolves.toMatchObject({predictionId:'observed-1'});
   const db=new DatabaseSync(file,{readOnly:true});
   try {
-    expect((db.prepare('PRAGMA user_version').get() as {user_version:number}).user_version).toBe(2);
+    expect((db.prepare('PRAGMA user_version').get() as {user_version:number}).user_version).toBe(3);
     expect((db.prepare('SELECT prediction_id FROM prediction_intents WHERE broadcaster_id=?')
       .get('123') as {prediction_id:string}).prediction_id).toBe('observed-1');
   } finally { db.close(); }
@@ -153,7 +153,7 @@ it('F08 legacy v1 SQLite journal upgrades atomically without losing a reserved b
   fence.recordConfirmed('123','old-receipt');
   const inspect=new DatabaseSync(file,{readOnly:true});
   try {
-    expect((inspect.prepare('PRAGMA user_version').get() as {user_version:number}).user_version).toBe(2);
+    expect((inspect.prepare('PRAGMA user_version').get() as {user_version:number}).user_version).toBe(3);
     expect((inspect.prepare('SELECT prediction_id FROM prediction_intents WHERE broadcaster_id=?')
       .get('123') as {prediction_id:string}).prediction_id).toBe('old-receipt');
   } finally { inspect.close(); }
@@ -205,4 +205,56 @@ it('F08 reconciled service clears only its local memory after exact durable term
   expect(fence.isBlocked('123')).toBe(false);
   expect((await first.svc.preview(actor,draft,epoch)).confirmationId).toBeTruthy();
   expect((await service(new PredictionIntentSqlite(file)).svc.preview(actor,draft,epoch)).confirmationId).toBeTruthy();
+}));
+
+it('F08 lock intent is committed once and still blocks a second PATCH after host restart',()=>withTemp(async file=>{
+  const fence=new PredictionIntentSqlite(file);
+  expect(fence.reserve('123')).toBe(true);
+  fence.recordConfirmed('123','pred-777');
+  expect(fence.readLockAttempted('123','pred-777')).toBe(false);
+  fence.markLockAttempted('123','pred-777');
+  const afterRestart=new PredictionIntentSqlite(file);
+  expect(afterRestart.readLockAttempted('123','pred-777')).toBe(true);
+  expect(()=>afterRestart.markLockAttempted('123','pred-777')).toThrow('PREDICTION_LOCK_WRITE_UNCERTAIN');
+  expect(()=>afterRestart.readLockAttempted('123','pred-888')).toThrow();
+  expect(afterRestart.readConfirmedId('123')).toBe('pred-777');
+  expect(afterRestart.isBlocked('123')).toBe(true);
+}));
+
+it('F08 v2 SQLite confirmed ID migrates to v3 only on the first lock write',()=>withTemp(async file=>{
+  const old=new DatabaseSync(file);
+  try {
+    old.exec('PRAGMA journal_mode=DELETE');
+    old.exec('PRAGMA synchronous=EXTRA');
+    old.exec('BEGIN IMMEDIATE');
+    old.exec('CREATE TABLE prediction_intents (broadcaster_id TEXT PRIMARY KEY NOT NULL, prediction_id TEXT)');
+    old.prepare('INSERT INTO prediction_intents VALUES (?,?)').run('123','pred-777');
+    old.exec('PRAGMA application_id='+0x53435038);
+    old.exec('PRAGMA user_version=2');
+    old.exec('COMMIT');
+  }finally{old.close();}
+  const fence=new PredictionIntentSqlite(file);
+  expect(fence.readLockAttempted('123','pred-777')).toBe(false);
+  let inspect=new DatabaseSync(file,{readOnly:true});
+  try {expect((inspect.prepare('PRAGMA user_version').get() as {user_version:number}).user_version).toBe(2);}
+  finally{inspect.close();}
+  fence.markLockAttempted('123','pred-777');
+  inspect=new DatabaseSync(file,{readOnly:true});
+  try {
+    expect((inspect.prepare('PRAGMA user_version').get() as {user_version:number}).user_version).toBe(3);
+    expect((inspect.prepare('SELECT prediction_id,lock_attempted FROM prediction_intents WHERE broadcaster_id=?')
+      .get('123') as {prediction_id:string;lock_attempted:number})).toEqual({prediction_id:'pred-777',lock_attempted:1});
+  }finally{inspect.close();}
+}));
+
+it('F08 rejects lock intents for unattributed, missing and mismatched IDs before any write',()=>withTemp(async file=>{
+  const fence=new PredictionIntentSqlite(file);
+  expect(()=>fence.markLockAttempted('123','pred-777')).toThrow();
+  fence.reserve('123');
+  expect(()=>fence.readLockAttempted('123','pred-777')).toThrow();
+  expect(()=>fence.markLockAttempted('123','pred-777')).toThrow();
+  expect(fence.readConfirmedId('123')).toBeNull();
+  fence.recordConfirmed('123','pred-777');
+  expect(()=>fence.markLockAttempted('123','pred-999')).toThrow();
+  expect(fence.readLockAttempted('123','pred-777')).toBe(false);
 }));

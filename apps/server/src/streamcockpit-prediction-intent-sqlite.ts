@@ -49,11 +49,13 @@ export class PredictionIntentSqlite implements PredictionCreationFence {
         const app = db.prepare('PRAGMA application_id').get() as { application_id?: number };
         const version = db.prepare('PRAGMA user_version').get() as { user_version?: number };
         const table = db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='prediction_intents'").get();
-        if (app.application_id !== applicationId || ![1, 2].includes(version.user_version ?? -1) || !table)
+        if (app.application_id !== applicationId || ![1, 2, 3].includes(version.user_version ?? -1) || !table)
           throw Error('PREDICTION_FENCE_FORMAT_UNKNOWN');
         const columns = db.prepare('PRAGMA table_info(prediction_intents)').all() as { name: string }[];
         const expected = version.user_version === 1
-          ? ['broadcaster_id'] : ['broadcaster_id', 'prediction_id'];
+          ? ['broadcaster_id'] : version.user_version === 2
+            ? ['broadcaster_id', 'prediction_id']
+            : ['broadcaster_id', 'prediction_id', 'lock_attempted'];
         if (columns.map(c => c.name).join(',') !== expected.join(','))
           throw Error('PREDICTION_FENCE_FORMAT_UNKNOWN');
       }
@@ -72,21 +74,23 @@ export class PredictionIntentSqlite implements PredictionCreationFence {
         throw Error('PREDICTION_FENCE_UNSAFE');
       if (!stat) {
         db.exec('BEGIN IMMEDIATE');
-        db.exec('CREATE TABLE prediction_intents (broadcaster_id TEXT PRIMARY KEY NOT NULL, prediction_id TEXT)');
+        db.exec('CREATE TABLE prediction_intents (broadcaster_id TEXT PRIMARY KEY NOT NULL, prediction_id TEXT, lock_attempted INTEGER NOT NULL DEFAULT 0 CHECK(lock_attempted IN (0,1)))');
         db.exec('PRAGMA application_id=' + applicationId);
-        db.exec('PRAGMA user_version=2');
+        db.exec('PRAGMA user_version=3');
         db.exec('COMMIT');
       } else if (writable) {
         // Never migrate a v1 journal whose pages are already inconsistent.
         const beforeUpgrade = db.prepare('PRAGMA quick_check').get() as { quick_check?: string };
         if (beforeUpgrade.quick_check !== 'ok') throw Error('PREDICTION_FENCE_CORRUPT');
         const version = db.prepare('PRAGMA user_version').get() as { user_version: number };
-        if (version.user_version === 1) {
-          // Upgrade old FIXE reservations atomically; their blocking rows remain intact.
+        if (version.user_version < 3) {
+          // Upgrade v1/v2 atomically. Preserve every existing blocking row.
           db.exec('BEGIN IMMEDIATE');
           try {
-            db.exec('ALTER TABLE prediction_intents ADD COLUMN prediction_id TEXT');
-            db.exec('PRAGMA user_version=2');
+            if (version.user_version === 1)
+              db.exec('ALTER TABLE prediction_intents ADD COLUMN prediction_id TEXT');
+            db.exec('ALTER TABLE prediction_intents ADD COLUMN lock_attempted INTEGER NOT NULL DEFAULT 0 CHECK(lock_attempted IN (0,1))');
+            db.exec('PRAGMA user_version=3');
             db.exec('COMMIT');
           } catch (error) { db.exec('ROLLBACK'); throw error; }
         }
@@ -118,6 +122,46 @@ export class PredictionIntentSqlite implements PredictionCreationFence {
       if (!/^[A-Za-z0-9-]{1,128}$/.test(row.prediction_id))
         throw Error('PREDICTION_FENCE_FORMAT_UNKNOWN');
       return row.prediction_id;
+    } finally { db.close(); }
+  }
+
+  /** A lock attempt is never inferred from a Twitch GET. Legacy v1/v2
+   * receipts have no prior lock history; the first PATCH needs a v3 COMMIT. */
+  readLockAttempted(broadcasterId: string, predictionId: string): boolean {
+    if (!validBroadcaster(broadcasterId) || !/^[A-Za-z0-9-]{1,128}$/.test(predictionId))
+      throw Error('PREDICTION_LOCK_UNAVAILABLE');
+    const db = this.open(false);
+    if (!db) throw Error('PREDICTION_LOCK_UNAVAILABLE');
+    try {
+      const version = db.prepare('PRAGMA user_version').get() as {user_version: number};
+      if (version.user_version === 1) throw Error('PREDICTION_LOCK_UNAVAILABLE');
+      const row = db.prepare(version.user_version === 3
+        ? 'SELECT prediction_id, lock_attempted FROM prediction_intents WHERE broadcaster_id=?'
+        : 'SELECT prediction_id FROM prediction_intents WHERE broadcaster_id=?')
+        .get(broadcasterId) as {prediction_id: string|null; lock_attempted?: number}|undefined;
+      if (!row || row.prediction_id !== predictionId) throw Error('PREDICTION_LOCK_UNAVAILABLE');
+      if (version.user_version === 3 && ![0, 1].includes(row.lock_attempted ?? -1))
+        throw Error('PREDICTION_LOCK_UNAVAILABLE');
+      return row.lock_attempted === 1;
+    } finally { db.close(); }
+  }
+
+  /** Durable local intent BEFORE the first Twitch PATCH. An uncertain outcome
+   * stays blocked across restarts, including a lost or malformed HTTP receipt. */
+  markLockAttempted(broadcasterId: string, predictionId: string): void {
+    if (!validBroadcaster(broadcasterId) || !/^[A-Za-z0-9-]{1,128}$/.test(predictionId))
+      throw Error('PREDICTION_LOCK_UNAVAILABLE');
+    const db = this.open(true)!;
+    let inTransaction = false;
+    try {
+      db.exec('BEGIN IMMEDIATE'); inTransaction = true;
+      const changed = db.prepare('UPDATE prediction_intents SET lock_attempted=1 WHERE broadcaster_id=? AND prediction_id=? AND lock_attempted=0')
+        .run(broadcasterId, predictionId);
+      if (changed.changes !== 1) throw Error('PREDICTION_LOCK_ATTEMPTED_OR_MISSING');
+      db.exec('COMMIT'); inTransaction = false;
+    } catch {
+      if (inTransaction) { try { db.exec('ROLLBACK'); } catch { /* uncertain lock intent */ } }
+      throw Error('PREDICTION_LOCK_WRITE_UNCERTAIN');
     } finally { db.close(); }
   }
 

@@ -36,6 +36,7 @@ const POST_EXACT = new Set([
   '/v1/twitch/advanced/poll/preview','/v1/twitch/advanced/poll/confirm',
   '/v1/twitch/advanced/prediction/preview','/v1/twitch/advanced/prediction/confirm',
   '/v1/twitch/advanced/prediction/reconcile/preview','/v1/twitch/advanced/prediction/reconcile/confirm',
+  '/v1/twitch/advanced/prediction/lock/preview','/v1/twitch/advanced/prediction/lock/confirm',
   '/v1/twitch/advanced/shoutout/preview','/v1/twitch/advanced/shoutout/confirm',
     '/v1/twitch/advanced/raid/preview','/v1/twitch/advanced/raid/confirm',
   '/v1/planning','/v1/companion/sync','/v1/discord/planning','/v1/streamer-pings/ack-all',
@@ -94,6 +95,7 @@ export function requiredDevicePermissions(method:string,path:string,body:unknown
     '/v1/twitch/advanced/poll/preview','/v1/twitch/advanced/poll/confirm',
     '/v1/twitch/advanced/prediction/preview','/v1/twitch/advanced/prediction/confirm',
     '/v1/twitch/advanced/prediction/reconcile/preview','/v1/twitch/advanced/prediction/reconcile/confirm',
+    '/v1/twitch/advanced/prediction/lock/preview','/v1/twitch/advanced/prediction/lock/confirm',
     '/v1/twitch/advanced/shoutout/preview','/v1/twitch/advanced/shoutout/confirm',
     '/v1/twitch/advanced/raid/preview','/v1/twitch/advanced/raid/confirm',
   ].includes(path))return ['chat','cloud'];
