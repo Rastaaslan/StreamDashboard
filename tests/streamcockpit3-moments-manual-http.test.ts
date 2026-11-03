@@ -50,7 +50,19 @@ async function fixture(run: (f: {
       server.once('error', reject);
       server.listen(0, '127.0.0.1', resolve);
     });
-    const url = `http://127.0.0.1:${(server.address() as AddressInfo).port}/api/v1/streamcockpit-moments/manual/add`;
+    // Some ephemeral ports are blocked by fetch itself (WHATWG bad ports),
+    // even when the loopback HTTP listener bound successfully. Verify that
+    // this disposable fixture is reachable before exercising product routes.
+    let url = '';
+    for (let attempt = 0; attempt < 12; attempt++) {
+      url = `http://127.0.0.1:${(server.address() as AddressInfo).port}/api/v1/streamcockpit-moments/manual/add`;
+      try { await fetch(url, {method:'GET'}); break; }
+      catch (error) {
+        if (!(error instanceof TypeError) || !String((error as Error & {cause?: Error}).cause?.message).includes('bad port') || attempt === 11) throw error;
+        await new Promise<void>(resolve => server.close(() => resolve()));
+        await new Promise<void>((resolve, reject) => { server.once('error', reject); server.listen(0, '127.0.0.1', resolve); });
+      }
+    }
     await run({ url, auth, id: paired.deviceId, credential: paired.credential, pipeline,
       setSession: id => {session = id;}, setSessionReader: reader => {sessionReader = reader;}, setHost: value => {host = value;},
       setTime: value => {time = value;}, setWriter: value => {writer = value;},
