@@ -424,7 +424,7 @@
         },
         {
           "path": "apps/server/src/streamcockpit-mixer-control-router.ts",
-          "kind": "SC3-FINAL-DELIVERY-001: explicit gain/mute consent on UUID-pinned OBS input, shared command bus, durable intent, readback and manual guarded rollback; 80 targeted software tests PASS including real Edge/HTTP/OBS WS fixture. Physical and routing qualification remain absent."
+          "kind": "SC3-FINAL-DELIVERY-001: explicit gain/mute consent on UUID-pinned OBS input, shared command bus, durable intent, readback and manual guarded rollback; 80 targeted software tests PASS including real Edge/HTTP/OBS WS fixture. 2026-11-03 F05 authority fix: cached and in-flight receipts/status now revalidate actor AND current host, 19/19 targeted HTTP PASS, TS/browser/security 1069 files PASS; physical and routing qualification remain absent."
         },
         {
           "path": "apps/mobile/control/streamcockpit-mixer-control.js",

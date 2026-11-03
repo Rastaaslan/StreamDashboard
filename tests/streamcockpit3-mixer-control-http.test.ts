@@ -15,6 +15,24 @@ it.each([{sourceId,gain:.5},{sourceId,mute:true}])('F05 actual OBS WS + HTTP: pr
  expect((await f.call('confirm',{confirmationId:rollback.body.confirmationId,confirmed:true})).body.status).toBe('confirmed');
  expect(f.state()).toMatchObject({gain:.75,mute:false,writes:2});expect(f.domain.timer.running).toBe(false);
 }));
+it('F05 refuses old mixer receipts and duplicate confirmations after host authority changes',async()=>withMixerFixture(async f=>{
+ const preview=await f.call('preview',{change:{sourceId,gain:.5}});
+ expect(preview.status).toBe(200);
+ const body={confirmationId:preview.body.confirmationId,confirmed:true};
+ const confirmed=await f.call('confirm',body);
+ expect(confirmed.status).toBe(200);
+ expect(confirmed.body.status).toBe('confirmed');
+ expect(f.state().writes).toBe(1);
+ f.setHost('OTHER');
+ const status=await f.call('status/'+body.confirmationId);
+ const repeated=await f.call('confirm',body);
+ expect(status.status).toBe(409);
+ expect(status.body.error.code).toBe('MIXER_AUTHORITY_CHANGED');
+ expect(repeated.status).toBe(409);
+ expect(repeated.body.error.code).toBe('MIXER_AUTHORITY_CHANGED');
+ expect((await f.call('preview',{rollbackReceiptId:body.confirmationId})).status).toBe(409);
+ expect(f.state().writes).toBe(1);
+}));
 it('F05 does not restore an obsolete audio state after another operator change',async()=>withMixerFixture(async f=>{
  const p=await f.call('preview',{change:{sourceId,gain:.5}}),r=await f.call('confirm',{confirmationId:p.body.confirmationId,confirmed:true});
  f.changeGain(.9);

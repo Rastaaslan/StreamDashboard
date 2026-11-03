@@ -32,7 +32,8 @@ export function createMixerControlRouter(options:{
   return actor;
  };
  const check=async(request:Request,expected?:Context)=>{
-  const host=await options.host(),actor=await actorOnly(request,expected?.actor);
+  const actor=await actorOnly(request,expected?.actor);
+  const host=await options.host();
   if(!host||expected&&(actor!==expected.actor||host!==expected.host))throw new MixerFault('AUTHORITY_CHANGED');
   return {actor,host};
  };
@@ -45,14 +46,20 @@ export function createMixerControlRouter(options:{
  router.use((_q,r,next)=>{r.set('Cache-Control','private, no-store');next()});
  router.get('/status/:id',async(req,res)=>{
   try{
-   const context={actor:await actorOnly(req)},id=String(req.params.id);
+   const context=await check(req),id=String(req.params.id);
    if(!/^[0-9a-f-]{36}$/i.test(id))throw new MixerFault('INVALID',400);
    const receipt=receipts.get(id),flight=flights.get(id);
-   if(receipt?.context.actor===context.actor){await actorOnly(req,context.actor);res.json(receipt.value);return}
-   if(flight?.context.actor===context.actor){res.json({schemaVersion:1,kind:'streamcockpit-mixer-status',confirmationId:id,status:'running'});return}
+   if(receipt?.context.actor===context.actor){
+    if(receipt.context.host!==context.host)throw new MixerFault('AUTHORITY_CHANGED');
+    await check(req,context);res.json(receipt.value);return;
+   }
+   if(flight?.context.actor===context.actor){
+    if(flight.context.host!==context.host)throw new MixerFault('AUTHORITY_CHANGED');
+    await check(req,context);res.json({schemaVersion:1,kind:'streamcockpit-mixer-status',confirmationId:id,status:'running'});return;
+   }
    const reservation=options.reservation(id);
    if(!reservation?.startsWith(owner(context.actor)))throw new MixerFault('NOT_FOUND',404);
-   await actorOnly(req,context.actor);res.json({schemaVersion:1,kind:'streamcockpit-mixer-status',confirmationId:id,status:'uncertain',rollbackAvailable:false});
+   await check(req,context);res.json({schemaVersion:1,kind:'streamcockpit-mixer-status',confirmationId:id,status:'uncertain',rollbackAvailable:false});
   }catch(error){const e=error instanceof MixerFault?error:new MixerFault('UNAVAILABLE',503);res.status(e.status).json({error:{code:'MIXER_'+e.code,retryable:false}})}
  });
  for(const op of ['preview','confirm']as const)router.all('/'+op,async(req,res)=>{
@@ -77,8 +84,14 @@ export function createMixerControlRouter(options:{
    }
    if(!exact(req.body,['confirmationId','confirmed'])||typeof req.body.confirmationId!=='string'||req.body.confirmed!==true)throw new MixerFault('INVALID',400);
    const id=req.body.confirmationId,previous=receipts.get(id),flight=flights.get(id);
-   if(previous?.context.actor===context.actor){res.json(previous.value);return}
-   if(flight?.context.actor===context.actor){const value=await flight.operation;await actorOnly(req,context.actor);res.json(value);return}
+   if(previous?.context.actor===context.actor){
+    if(previous.context.host!==context.host)throw new MixerFault('AUTHORITY_CHANGED');
+    await check(req,context);res.json(previous.value);return;
+   }
+   if(flight?.context.actor===context.actor){
+    if(flight.context.host!==context.host)throw new MixerFault('AUTHORITY_CHANGED');
+    const value=await flight.operation;await check(req,context);res.json(value);return;
+   }
    const plan=plans.get(id);
    if(!plan||plan.actor!==context.actor||plan.host!==context.host||plan.expiresAt<=now())throw new MixerFault('CONSENT_EXPIRED');
    if(flights.size>=20)throw new MixerFault('BUSY',503);
