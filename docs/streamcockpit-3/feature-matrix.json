@@ -919,6 +919,10 @@
         {
           "path": "scripts/prepare-windows-maker.mjs",
           "kind": "Repository-only preparation of bundled 7-Zip aliases with path and byte-hash checks for the Squirrel maker; no user installation or signature qualification."
+        },
+        {
+          "path": "apps/desktop/src/streamcockpit-upgrade-qa-checkpoint.ts",
+          "kind": "2026-11-03 F10 isolated QA-only Windows filesystem checkpoint and fresh-directory restore: 6 new test cases verify SHA-256 bytes, binary/SQLite, tamper, path traversal, and no overwrites. No production installer/rollback or power-loss guarantee."
         }
       ],
       "verifiedTests": [
@@ -927,16 +931,17 @@
         "tests/streamcockpit3-upgrade-integration-updater.test.ts",
         "tests/streamcockpit3-readiness.test.ts",
         "tests/desktop-updater-safety.test.ts",
-        "tests/desktop-restart-safety.test.ts"
+        "tests/desktop-restart-safety.test.ts",
+        "tests/streamcockpit3-upgrade-qa-checkpoint.test.ts"
       ],
       "hardwareEvidence": [],
       "blockers": [
         "Real Windows/Android trusted signing and staged bytes verification unavailable",
-        "Durable installer, migration/recovery and rollback on hardware not integrated",
+        "QA-only byte-exact profile checkpoint and restore are verified on isolated temporary directories; durable real installer, migration/recovery and rollback on hardware remain unintegrated.",
         "2026-11-03: StreamCockpit3 release:check correctly refuses G2-G5 unqualified and missing cryptographic same-commit artifact verifier; raw build commands do not certify publication"
       ],
       "ownerJob": "streamcockpit/3.0-lot-p",
-      "integrationNote": "F10 lot P preflight read-only integrated 2026-11-01; 71/71 targeted PASS, types/security PASS; transaction Squirrel, real signatures and hardware rollback absent. No quitAndInstall enabled. Common Git commit/source SHA-256 provenance is generated for Windows resources and Android assets. ASAR checker rejects dirty or mismatched source and cross-artifact provenance. This is packaging preparation, not a signed APK/EXE or qualified rollback."
+      "integrationNote": "F10 lot P preflight read-only integrated 2026-11-01; 71/71 targeted PASS, types/security PASS; transaction Squirrel, real signatures and hardware rollback absent. No quitAndInstall enabled. Common Git commit/source SHA-256 provenance is generated for Windows resources and Android assets. ASAR checker rejects dirty or mismatched source and cross-artifact provenance. 2026-11-03 isolated QA checkpoint: 65/65 targeted F10 PASS (including 6 new real filesystem backup/restore tests), no production data or app installation touched; cryptographic release signing, Squirrel transaction and real hardware migration/rollback remain unqualified. This is packaging preparation, not a signed APK/EXE or qualified rollback."
     }
   ],
   "gates": [
