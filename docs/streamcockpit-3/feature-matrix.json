@@ -681,19 +681,29 @@
         {
           "path": "tests/streamcockpit3-upgrade-integration-updater.test.ts",
           "kind": "2026-11-01 lot P read-only fail-closed preflight integrated; no installer enabled"
+        },
+        {
+          "path": "scripts/streamcockpit3-readiness.mjs",
+          "kind": "2026-11-03 FIXE read-only Twitch-only 3.0 readiness checker, wired into release:check. Status reports gates and incomplete features; --final always refuses until an independent signed Windows x64+APK same-commit verifier and hardware/rollback evidence exist. Not a release signature check or packaging qualification."
+        },
+        {
+          "path": "docs/streamcockpit-3/F10_RELEASE_GUARD_FIXE_20261103.md",
+          "kind": "2026-11-03 FIXE: release QA scope and failure gate, exact test evidence, absent crypto verification and G3/G4 blockers; no installed release"
         }
       ],
       "verifiedTests": [
         "tests/streamcockpit3-upgrade.test.ts",
         "tests/streamcockpit3-upgrade-integration.test.ts",
         "tests/streamcockpit3-upgrade-integration-updater.test.ts",
+        "tests/streamcockpit3-readiness.test.ts",
         "tests/desktop-updater-safety.test.ts",
         "tests/desktop-restart-safety.test.ts"
       ],
       "hardwareEvidence": [],
       "blockers": [
         "Real Windows/Android trusted signing and staged bytes verification unavailable",
-        "Durable installer, migration/recovery and rollback on hardware not integrated"
+        "Durable installer, migration/recovery and rollback on hardware not integrated",
+        "2026-11-03: StreamCockpit3 release:check correctly refuses G2-G5 unqualified and missing cryptographic same-commit artifact verifier; raw build commands do not certify publication"
       ],
       "ownerJob": "streamcockpit/3.0-lot-p",
       "integrationNote": "F10 lot P preflight read-only integrated 2026-11-01; 71/71 targeted PASS, types/security PASS; transaction Squirrel, real signatures and hardware rollback absent. No quitAndInstall enabled."
