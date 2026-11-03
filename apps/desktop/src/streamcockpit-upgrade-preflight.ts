@@ -61,7 +61,9 @@ export async function preflightDesktopUpgrade(deps: DesktopUpgradePreflightDepen
       || now - value.observedAt > 5_000 || value.obs !== 'idle' || value.twitch !== 'offline') {
       throw new PreflightRejected('OBS/Twitch actif, UNKNOWN, déconnecté ou observation périmée');
     }
-    return value;
+    // Snapshot the sample and clock together. A reused/mutated provider object must
+    // not hide a backwards authority observation during release verification.
+    return { ...value, checkedAt: now };
   };
   try {
     await requireDesktopRestartSafety(() => deps.assessRestartSafety());
@@ -92,6 +94,9 @@ export async function preflightDesktopUpgrade(deps: DesktopUpgradePreflightDepen
     await requireDesktopRestartSafety(() => deps.assessRestartSafety());
     const final = await observe();
     if (final.session !== initial.session) throw new PreflightRejected('Agent redémarré pendant le préflight');
+    if (final.observedAt < initial.observedAt || final.checkedAt < initial.checkedAt) {
+      throw new PreflightRejected('Horloge ou observation de la régie revenue en arrière pendant le préflight');
+    }
     result.releaseVerified = true;
   } catch (error) {
     result.reasons.push(error instanceof PreflightRejected ? error.message : 'Préflight indisponible : vérification non confirmée');

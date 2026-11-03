@@ -66,6 +66,20 @@ describe('Windows preflight is read-only and fail-closed', () => {
       expect((await preflightDesktopUpgrade(f.deps)).releaseVerified).toBe(false);
     }
   });
+  it('rejects older authority observations or a clock rollback during verification', async () => {
+    const stale = fixture();
+    stale.deps.observe.mockResolvedValueOnce(stale.observation)
+      .mockResolvedValueOnce({ ...stale.observation, observedAt: 9_999 });
+    expect((await preflightDesktopUpgrade(stale.deps)).releaseVerified).toBe(false);
+    expect(stale.deps.verifyRelease).toHaveBeenCalledTimes(1);
+
+    const clock = fixture();
+    const time = vi.fn().mockReturnValueOnce(10_000).mockReturnValueOnce(9_999);
+    clock.deps.now = time;
+    clock.deps.observe.mockResolvedValue({ ...clock.observation, observedAt: 9_999 });
+    expect((await preflightDesktopUpgrade(clock.deps)).releaseVerified).toBe(false);
+    expect(time).toHaveBeenCalledTimes(2);
+  });
   it.each(['revision', 'signer', 'applicationId'] as const)('rejects divergent Android %s', async field => {
     const f = fixture(); f.evidence.android[field] = 'c'.repeat(40);
     expect((await preflightDesktopUpgrade(f.deps)).releaseVerified).toBe(false);
