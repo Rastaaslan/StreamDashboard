@@ -357,8 +357,10 @@ test('SC3 final context shell : Deck livré, commande OBS fictive et reçu natif
    const context=page.locator('[data-context-preview]');await expect(context).toHaveAttribute('data-status','known');
    expect(f.state().writes).toBe(0);await context.getByRole('button',{name:'Pause QA',exact:true}).click();
    await expect.poll(()=>f.state().scene).toBe('Pause');expect(f.state().writes).toBe(1);
-   const receipts=await page.evaluate(async()=>{const value=await(await fetch('/api/v2/state')).json();return value.receipts});
-   expect(receipts).toEqual(expect.arrayContaining([expect.objectContaining({action:'pause-qa',status:'succeeded'})]));
+   // OBS can change before the terminal receipt reaches disk. Observe it; never resend.
+   await expect.poll(()=>page.evaluate(async()=>{const value=await(await fetch('/api/v2/state')).json();return value.receipts}))
+    .toEqual(expect.arrayContaining([expect.objectContaining({action:'pause-qa',status:'succeeded'})]));
+   expect(f.state().writes).toBe(1);
    await application.close();application=undefined;await expectEndpointClosed(RUNTIME_ORIGIN);
   }finally{
    await application?.close().catch(()=>{});if(previousObs===undefined)delete process.env.OBS_URL;else process.env.OBS_URL=previousObs;
