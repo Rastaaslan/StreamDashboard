@@ -15,6 +15,7 @@ it.skipIf(process.env.SC3_FINAL_BROWSER_TEST!=='1')('F04 real Edge 320px: marker
       w.panel=w.mountMoments(document.getElementById('root'),{request:async(path:string,body:any,method:string,source:string)=>{
         w.calls.push({path,body,method,source});
         if(path.endsWith('/preview')){w.kind=body.draft.kind;return {schemaVersion:1,kind:'streamcockpit-moment-preview',confirmationId:'643e0c2b-e8e4-4ccd-a82c-8ad0a05f19c5',expiresAt:Date.now()+30_000,draft:body.draft}}
+        if(path.includes('/status/'))return {schemaVersion:1,kind:'streamcockpit-moment-status',status:'not_found_at_read',retryable:false};
         if(w.lost)throw Error('PRIVATE');
         return {schemaVersion:1,kind:'streamcockpit-moment-confirmation',momentKind:w.kind,status:w.kind==='clip'?'accepted':'confirmed',id:'safe',journal:'recorded',...(w.kind==='clip'?{editUrl:'https://clips.twitch.tv/Safe/edit'}:{})};
       }});w.panel.update({sourceKey:'FIXE',accountKey:'owner',online:true});
@@ -34,7 +35,13 @@ it.skipIf(process.env.SC3_FINAL_BROWSER_TEST!=='1')('F04 real Edge 320px: marker
     await expect.poll(()=>page.getByRole('status').textContent()).toContain('Résultat incertain');
     await page.evaluate(()=>{window.dispatchEvent(new Event('offline'));window.dispatchEvent(new Event('online'))});
     expect(await page.getByRole('button',{name:'Vérifier le moment sans publier'}).isDisabled()).toBe(true);
-    expect(await page.evaluate(()=>(window as any).calls.length)).toBe(6);
+    const inspect=page.getByRole('button',{name:'Consulter le journal FIXE sans renvoyer'});
+    await expect.poll(()=>inspect.isVisible()).toBe(true);
+    await inspect.click();
+    await expect.poll(()=>page.getByRole('status').textContent()).toContain('Aucune entrée trouvée');
+    expect(await page.getByRole('button',{name:'Vérifier le moment sans publier'}).isDisabled()).toBe(true);
+    expect(await page.evaluate(()=>(window as any).calls.filter((c:any)=>c.method==='POST').length)).toBe(6);
+    expect(await page.evaluate(()=>(window as any).calls.filter((c:any)=>c.method==='GET').length)).toBe(1);
     expect(await page.locator('main').textContent()).not.toContain('PRIVATE');
     await page.evaluate(()=>(window as any).panel.destroy());
   }finally{await browser.close()}

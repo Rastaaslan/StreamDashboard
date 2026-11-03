@@ -16,15 +16,32 @@ export function mountTwitchMoments(root,{request}={}){
   const status=doc.createElement('p');status.setAttribute('role','status');
   const link=doc.createElement('a');link.textContent='Ouvrir le clip dans Twitch';link.target='_blank';link.rel='noopener noreferrer';link.hidden=true;
   const verified=doc.createElement('button');verified.type='button';verified.textContent='J’ai vérifié ce moment dans Twitch';verified.hidden=true;
-  section.append(heading,note,form,review,status,link,verified);root.append(section);
-  let disposed=false,online=false,sourceKey='',accountKey='',revision=0,flight=false,sending=false,uncertain=false,pending;
+  const inspect=doc.createElement('button');inspect.type='button';inspect.textContent='Consulter le journal FIXE sans renvoyer';inspect.hidden=true;
+  section.append(heading,note,form,review,status,link,inspect,verified);root.append(section);
+  let disposed=false,online=false,sourceKey='',accountKey='',revision=0,flight=false,sending=false,uncertain=false,pending,uncertainReceipt;
   const connected=()=>!disposed&&root.isConnected&&online&&sourceKey&&view?.navigator?.onLine!==false&&doc.visibilityState!=='hidden';
   const cancel=()=>{pending=undefined;review.hidden=true;agree.checked=false};
-  const draw=()=>{const enabled=connected()&&!flight&&!uncertain&&typeof request==='function';kind.disabled=description.disabled=preview.disabled=!enabled;agree.disabled=!enabled||!pending;publish.disabled=!enabled||!pending||!agree.checked||Date.now()>=pending.expiresAt;verified.hidden=!uncertain};
+  const draw=()=>{const enabled=connected()&&!flight&&!uncertain&&typeof request==='function';kind.disabled=description.disabled=preview.disabled=!enabled;agree.disabled=!enabled||!pending;publish.disabled=!enabled||!pending||!agree.checked||Date.now()>=pending.expiresAt;verified.hidden=!uncertain;
+    inspect.hidden=!uncertain||!uncertainReceipt;inspect.disabled=!connected()||flight||sending||typeof request!=='function'};
   const invalidate=message=>{revision++;if(sending)uncertain=true;flight=false;cancel();link.hidden=true;link.removeAttribute('href');status.textContent=uncertain?'Résultat incertain : vérifiez Twitch avant une nouvelle demande. Aucun renvoi automatique.':message;draw()};
   kind.addEventListener('change',()=>invalidate('Type modifié : nouvelle vérification requise.'));
   description.addEventListener('input',()=>{cancel();draw()});agree.addEventListener('change',draw);
-  verified.addEventListener('click',()=>{if(sending)return;uncertain=false;invalidate('Vérification externe confirmée. Une nouvelle prévisualisation est requise.')});
+  verified.addEventListener('click',()=>{if(sending)return;uncertain=false;uncertainReceipt=undefined;invalidate('Vérification externe confirmée. Une nouvelle prévisualisation est requise.')});
+  inspect.addEventListener('click',async()=>{
+    if(!connected()||flight||sending||!uncertain||!uncertainReceipt||typeof request!=='function')return;
+    const receipt=uncertainReceipt,target=sourceKey,account=accountKey,key=++revision;flight=true;draw();
+    try{
+      const r=await request('/api/v1/twitch/advanced/moment/status/'+receipt.id,undefined,'GET',target);
+      if(!connected()||key!==revision||target!==sourceKey||account!==accountKey)return;
+      if(r?.schemaVersion!==1||r.kind!=='streamcockpit-moment-status'||r.retryable!==false)throw Error('UNVERIFIED');
+      if(r.status==='journal_observed'&&r.momentKind===receipt.kind){
+        status.textContent=r.momentKind==='clip'?'Le journal FIXE retrouve la demande de clip ; sa vidéo reste à vérifier sur Twitch. Aucun renvoi.':'Le journal FIXE retrouve le marqueur Twitch. Aucun renvoi.';
+      }else if(r.status==='not_found_at_read'){
+        status.textContent='Aucune entrée trouvée à cet instant dans le journal FIXE. Le résultat Twitch reste incertain ; aucun renvoi.';
+      }else throw Error('UNVERIFIED');
+    }catch{if(key===revision&&connected())status.textContent='Journal FIXE indisponible ou non confirmé. Résultat incertain, aucun renvoi.'}
+    finally{if(key===revision){flight=false;draw()}}
+  });
   form.addEventListener('submit',async e=>{
     e.preventDefault();if(!connected()||flight||uncertain||typeof request!=='function')return;
     cancel();link.hidden=true;const target=sourceKey,key=++revision,draft={kind:kind.value,description:description.value.trim()};flight=true;draw();
@@ -39,11 +56,12 @@ export function mountTwitchMoments(root,{request}={}){
   });
   publish.addEventListener('click',async()=>{
     if(!connected()||flight||uncertain||!pending||!agree.checked||Date.now()>=pending.expiresAt)return;
-    const id=pending.confirmationId,expected=pending.draft.kind,target=sourceKey,key=++revision;cancel();flight=true;sending=true;draw();
+    const id=pending.confirmationId,expected=pending.draft.kind,target=sourceKey,key=++revision;uncertainReceipt={id,kind:expected};cancel();flight=true;sending=true;draw();
     try{
       const r=await request('/api/v1/twitch/advanced/moment/confirm',{confirmationId:id,confirmed:true},'POST',target);
       if(!connected()||key!==revision||target!==sourceKey){uncertain=true;return}
       if(r?.schemaVersion!==1||r.kind!=='streamcockpit-moment-confirmation'||r.momentKind!==expected||r.status!==(expected==='marker'?'confirmed':'accepted'))throw Error('UNVERIFIED');
+      uncertainReceipt=undefined;
       status.textContent=r.status==='confirmed'?'Marqueur confirmé par Twitch.':'Demande de clip acceptée par Twitch ; disponibilité de la vidéo à vérifier.';
       status.textContent+=r.journal==='recorded'?' Ajouté à la timeline.':r.journal==='uncertain'?' Écriture timeline incertaine : vérifiez le journal, sans recréer le moment.':' Aucune session liée pour la timeline.';
       if(r.editUrl){const url=new URL(r.editUrl);if(url.protocol==='https:'&&url.hostname==='clips.twitch.tv'&&!url.username&&!url.password){link.href=url.href;link.hidden=false}}
@@ -54,7 +72,8 @@ export function mountTwitchMoments(root,{request}={}){
   view?.addEventListener('offline',pause);view?.addEventListener('online',pause);doc.addEventListener('visibilitychange',pause);
   status.textContent='Source non associée.';draw();
   return {update(c={}){if(disposed)return;const next=c.online===true,key=typeof c.sourceKey==='string'?c.sourceKey:'',account=typeof c.accountKey==='string'?c.accountKey:'';
-    const changed=next!==online||key!==sourceKey||account!==accountKey;online=next;sourceKey=key;accountKey=account;
-    if(changed)invalidate(online?'Prêt à vérifier un moment.':'Source déconnectée.');else draw()},
+    const identityChanged=key!==sourceKey||account!==accountKey,changed=next!==online||identityChanged;
+    online=next;sourceKey=key;accountKey=account;
+    if(changed){if(identityChanged)uncertainReceipt=undefined;invalidate(online?'Prêt à vérifier un moment.':'Source déconnectée.')}else draw()},
     destroy(){disposed=true;invalidate('Vue fermée.');view?.removeEventListener('offline',pause);view?.removeEventListener('online',pause);doc.removeEventListener('visibilitychange',pause);section.remove()}};
 }
