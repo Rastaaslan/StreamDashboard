@@ -1,0 +1,7 @@
+
+Running 3 tests using 1 worker
+
+[1/3] tests\electron.smoke.spec.ts:173:1 ÔÇ║ agent sans fen├¬tre : services autonomes disponibles et fen├¬tre refermable sans arr├¬t du runtime
+[2/3] tests\electron.smoke.spec.ts:292:1 ÔÇ║ SC3 final delivery : identit├® locale r├®elle, aucun privil├¿ge loopback implicite et profil isol├®
+[3/3] tests\electron.smoke.spec.ts:333:1 ÔÇ║ SC3 final context shell : Deck livr├®, commande OBS fictive et re├ºu natif
+  3 passed (13.3s)

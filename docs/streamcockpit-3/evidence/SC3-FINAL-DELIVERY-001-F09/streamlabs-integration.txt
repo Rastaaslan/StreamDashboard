@@ -1,0 +1,28 @@
+
+ RUN  v5.0.1 C:/Users/damie/Dev/StreamCockpit-3.0-FullExperience
+
+ Ô£ô tests/streamcockpit3-mixer-control-http.test.ts (19 tests) 5438ms
+   Ô£ô F05 lost never reports confirmed and never replays a consumed intent 5032ms
+node.exe : (node:35392) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+Au caractère Ligne:1 : 1
++ & "C:\Users\damie\Documents\Dowloader vod twitch\.tools\node-v22.22.3 ...
++ ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: ((node:35392) Ex...nge at any time:String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+
+(Use `node --trace-warnings ...` to show where the warning was created)
+ Ô£ô tests/streamlabs-session.test.ts (6 tests) 866ms
+(node:32716) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+ Ô£ô tests/streamlabs-feed.test.ts (5 tests) 444ms
+   Ô£ô Streamlabs event feed (5)
+     Ô£ô serves the same received activity to readers, restores it, and keeps independent runtimes isolated 335ms
+(node:3608) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+ Ô£ô tests/streamcockpit3-master-context-runtime.test.ts (1 test) 228ms
+ Ô£ô tests/streamlabs-transport.test.ts (4 tests) 36ms
+
+ Test Files  5 passed (5)
+      Tests  35 passed (35)
+   Start at  15:26:47
+   Duration  11.19s (tests 67%, import 23%, transform 10%)

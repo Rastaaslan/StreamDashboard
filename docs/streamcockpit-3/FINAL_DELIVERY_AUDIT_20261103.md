@@ -13,12 +13,12 @@ Cet audit fixe les écarts de livraison. Il ne suffit pas à qualifier un parcou
 | F06 | Planning, récurrences, export, brouillons assistés avec contrôle des conflits locaux | Duplication dans l’assistant, publication Google et reprise trio non qualifiées |
 | F07 | Navigation cinq onglets, banques manuelles et contexte maître intégré ; Edge tactile 320 px avec changement de scène, perte réseau et expiration testé | Réception tactile physique Android/laptop ; rôle logique de télécommande authentifié sans déduire le type matériel ; destinations alternatives réservées aux banques manuelles |
 | F08 | Sondages, prédictions create/lock/end, raids, shoutouts intégrés | Deux obstacles d’accès corrigés : scopes OAuth demandés et identité du Desktop local. Réception réelle, EventSub raid et réconciliation sur matériel manquent |
-| F09 | SQLite Windows, repères manuels/replays, liste/export ; observation des marqueurs/clips Twitch ajoutée | Pas de dépendance ClipForge ; producteurs Streamlabs/session complète et partage Android physique à qualifier ; F09-Q isolé |
+| F09 | SQLite Windows, repères manuels/replays, liste/export, marqueurs/clips Twitch et événements du socket Streamlabs raccordés | Pas de dépendance ClipForge ; réception du compte Streamlabs et de la session complète, migration legacy et partage Android physique à qualifier ; F09-Q isolé |
 | F10 | Préflight updater, garde live, report et contrats de migration/rollback | Adaptateurs d’installation transactionnelle et rollback réel Agent/Desktop/Android manquants ; aucune installation automatique autorisée |
 
 ## Critères révisés
 - F04 n’exige aucun encodeur, montage, superviseur FFmpeg ou export vertical.
 - Un PASS sur mock vérifie un circuit logiciel ; il ne prouve ni OAuth de production ni matériel.
 - G2 reste in_progress jusqu’à résolution des écarts fonctionnels et preuves intégrées ; G3–G5 restent open.
-- Priorités techniques restantes : F05 (routage/mesures et reçus après redémarrage), F02 (historique viewer et messages AutoMod), F09 (producteurs Streamlabs/session) et F10 (adaptateurs de mise à jour/migration/rollback). Recevoir sur le trio le mode --agent existant, le mixeur et le contexte déjà intégrés. F06 conserve ses réceptions Google et duplication à qualifier.
+- Priorités techniques restantes : F05 (routage/mesures et reçus après redémarrage), F02 (historique viewer et messages AutoMod), F09 (réception compte/session, migration et partage) et F10 (adaptateurs de mise à jour/migration/rollback). Recevoir sur le trio le mode --agent existant, le mixeur et le contexte déjà intégrés. F06 conserve ses réceptions Google et duplication à qualifier.
 - Les critères historiques ne sont ni effacés ni attribués aux nouveaux modules. Voir G2_QUALIFICATION_FINAL_DELIVERY_20261103.md pour les résultats exécutés.

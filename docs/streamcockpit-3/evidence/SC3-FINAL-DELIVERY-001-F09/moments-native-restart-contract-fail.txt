@@ -1,0 +1,34 @@
+
+Running 1 test using 1 worker
+
+[1/1] tests\electron.smoke.spec.ts:371:1 ÔÇ║ SC3 final moments : journal SQLite du paquet conserve le rep├¿re apr├¿s reprise Agent
+  1) tests\electron.smoke.spec.ts:371:1 ÔÇ║ SC3 final moments : journal SQLite du paquet conserve le rep├¿re apr├¿s reprise Agent
+
+    Error: expect(received).toMatchObject(expected)
+
+    - Expected  - 2
+    + Received  + 1
+
+      Object {
+    -   "correlationId": "4a6ddf9841b82adbb6c22c6c172c0dafe05a7fbbdc8af3348e876c4b570c82c6",
+        "sessionId": "97374207-c22f-4e42-9409-e08db45f8aea",
+    -   "status": "observed",
+    +   "status": "confirmed",
+      }
+
+      409 |    expect(after).toEqual(before);
+      410 |    const status=await get('/api/v1/streamcockpit-moments/manual/status/'+requestId);
+    > 411 |    expect(status.status).toBe(200);expect(status.body).toMatchObject({status:'observed',sessionId,correlationId:created.correlationId});
+          |                                                        ^
+      412 |    expect((await get('/api/v1/streamcockpit-moments')).body.sessions).toEqual([expect.objectContaining({sessionId,markerCount:1})]);
+      413 |    expect(f.rpc.filter((rpc:any)=>/^StartStream$|^StopStream$|^SaveReplayBuffer$/.test(rpc.type))).toHaveLength(0);
+      414 |    expect(f.state().writes).toBe(0);
+        at C:\Users\damie\Dev\StreamCockpit-3.0-FullExperience\tests\electron.smoke.spec.ts:411:56
+        at withMixerFixture (C:\Users\damie\Dev\StreamCockpit-3.0-FullExperience\tests\helpers\streamcockpit-mixer-fixture.ts:297:5)
+        at C:\Users\damie\Dev\StreamCockpit-3.0-FullExperience\tests\electron.smoke.spec.ts:374:2
+
+    Error Context: test-results\electron.smoke-SC3-final-m-7cc86--rep├¿re-apr├¿s-reprise-Agent\error-context.md
+
+
+  1 failed
+    tests\electron.smoke.spec.ts:371:1 ÔÇ║ SC3 final moments : journal SQLite du paquet conserve le rep├¿re apr├¿s reprise Agent

@@ -251,20 +251,8 @@
           "kind": "existing partial implementation only"
         },
         {
-          "path": "apps/server/src/streamcockpit-clipforge-pipeline.ts",
-          "kind": "2026-11-01 wave3 implemented and integrated; G2 partial only"
-        },
-        {
-          "path": "apps/server/src/streamcockpit-clipforge-executor.ts",
-          "kind": "2026-11-01 wave3 implemented and integrated; G2 partial only"
-        },
-        {
           "path": "apps/server/src/streamcockpit-moments-obs-replay.ts",
           "kind": "2026-11-02 FIXE ReplayBufferSaved marker now requires a point-in-time nonempty regular-file lstat on FIXE (synthetic OBS plus temporary NTFS file tests); no real OBS clip, immutable file binding, file durability or clip-link export qualified"
-        },
-        {
-          "path": "apps/server/src/streamcockpit-clipforge-windows.ts",
-          "kind": "2026-11-02 FIXE isolated Windows OFFLINE lab: FFmpeg/ffprobe now require native Job Object supervisor, no direct-spawn fallback; 360x640 synthetic verified, not a production route/hardware claim"
         },
         {
           "path": "scripts/streamcockpit-windows-clip-job.cs",
@@ -275,32 +263,12 @@
           "kind": "2026-11-02 lab scope, measured tests, Windows security and durability blockers"
         },
         {
-          "path": "apps/server/src/streamcockpit-clipforge-windows-provenance.ts",
-          "kind": "2026-11-03 FIXE read-only 3 EXE admission: realpath, no reparse/hardlinks, SHA-256 double read, Authenticode Valid and external signer+digest pins; current WinGet FFmpeg observed NotSigned, never production-qualified"
-        },
-        {
-          "path": "apps/server/src/streamcockpit-clipforge-windows-acl.ts",
-          "kind": "2026-11-03 FIXE read-only NTFS private staging admission, owner SID and protected DACL, only owner/SYSTEM/admins allowed; existing FIXE TEMP found shared sandbox ACE, not qualified"
-        },
-        {
-          "path": "scripts/streamcockpit3-clipforge-status.ts",
-          "kind": "2026-11-03 read-only F04 CLI for host binary and ACL blockers, always release-ineligible until OBS replay authorization, signature and rollback evidence"
-        },
-        {
           "path": "docs/streamcockpit-3/F04_WINDOWS_PROVENANCE_ACL_FIXE_20261103.md",
           "kind": "2026-11-03 FIXE factual F04 audit and 30/30 tests with real Windows FFmpeg and temporary Job Object supervisor, no production integration or hardware proof"
         },
         {
-          "path": "apps/server/src/streamcockpit-clipforge-windows-replay-grant.ts",
-          "kind": "2026-11-03 FIXE host-only read-only replay witness attestation bound to OBS HMAC event ID, live generation/epoch, source root, SHA-256 and NTFS identity; MUST rehash at staging, NOT durable job authorization or production API"
-        },
-        {
           "path": "integrations/obs/src/client.ts",
           "kind": "2026-11-03 FIXE OBS adapter retains at most 64 local file witnesses privately and clears on stop/reconnect; host-only callback exposes actual saved replay file exclusively to F04 attestation, never mobile or moments journal"
-        },
-        {
-          "path": "apps/server/src/streamcockpit-clipforge-windows-staging.ts",
-          "kind": "2026-11-03 FIXE host-only NTFS replay staging with UNKNOWN intent and private-root ACL; SHA source plus independent throttled 8 MiB/s SHA-256 re-read of staged bytes, compare NTFS file ID/dev and size/timestamps to descriptor of original copy, reject changed destination with UNKNOWN/DEST_CHANGED and never retry; 11/11 Windows staging fixture tests, 11 PASS/1 skipped replay grant + ACL, TypeScript/browser/security 897 files PASS. Synthetic only: no encode/API/UX; NTFS power-loss directory durability and adversarial races unqualified."
         },
         {
           "path": "integrations/twitch/src/streamcockpit-simple-moments.ts",
@@ -322,15 +290,7 @@
       "verifiedTests": [
         "tests/streamcockpit3-moments.test.ts",
         "tests/streamcockpit3-moments-mobile.test.ts",
-        "tests/streamcockpit3-clipforge.test.ts",
-        "tests/streamcockpit3-clipforge-executor.test.ts",
-        "tests/streamcockpit3-clipforge-windows-lab.test.ts",
-        "tests/streamcockpit3-clipforge-windows-provenance.test.ts",
-        "tests/streamcockpit3-clipforge-windows-acl.test.ts",
-        "tests/streamcockpit3-clipforge-status.test.ts",
         "tests/streamcockpit3-moments-obs-replay.test.ts",
-        "tests/streamcockpit3-clipforge-windows-replay-grant.test.ts",
-        "tests/streamcockpit3-clipforge-windows-staging.test.ts",
         "tests/obs-runtime.test.ts",
         "tests/streamcockpit3-simple-moments-http.test.ts",
         "tests/streamcockpit3-simple-moments-browser.test.ts",
@@ -357,7 +317,51 @@
         ],
         "integrationNote": "2026-11-01 Linux-only ClipForge guarded; 2026-11-02 isolated Windows OFFLINE lab with real synthetic 360x640 H.264/AAC, SHA-256 and VTT, no source overwrite, fail-closed uncertain intent and source grants pinned before await. Native C# Job Object helper compiled ONLY in temporary Windows test folder; suspended process assigned before resume, kill-on-close, active-child count, low-priority/memory/CPU limits, no bare FFmpeg fallback. Windows lab 15/15 PASS including observed timeout, descendant process refusal and kill-on-close; four targeted suites 34 PASS / 42 Linux skips / 0 FAIL, TypeScript/browser types PASS, security 833 files PASS. No unsigned native helper in release, hardware power-loss/ACL or real OBS replay proof, API, Windows EXE/APK; F04 partial, G2 in progress. 2026-11-03 FIXE: read-only binary sha256/Authenticode pinned signer qualification + private NTFS DACL SID inspection and F04 status CLI added, 30/30 PASS across five targeted suites including 15 real FFmpeg synthetic lab, actual NotSigned FFmpeg and shared TEMP DACL observations. TypeScript/browser/security PASS; no production route, signed helper, real OBS replay or hardware/rollback evidence. F04 remains partial, G2 in_progress. After separate 30/30 real Windows lab and provenance/ACL tests, full FIXE Vitest 2208 PASS / 108 skipped / 0 fail (276 files), Node built 349 PASS / 6 skipped, Playwright network 35/35 PASS, development build 136 assets and 143 shipped JavaScript PASS. No signed candidate or actual OBS/Android hardware qualification.",
         "note": "Historical V4 laboratory evidence retained; excluded from V3.0 release acceptance by explicit product decision."
-      }
+      },
+      "historicalDeferredEvidence": [
+        {
+          "path": "apps/server/src/streamcockpit-clipforge-pipeline.ts",
+          "kind": "2026-11-01 wave3 implemented and integrated; G2 partial only"
+        },
+        {
+          "path": "apps/server/src/streamcockpit-clipforge-executor.ts",
+          "kind": "2026-11-01 wave3 implemented and integrated; G2 partial only"
+        },
+        {
+          "path": "apps/server/src/streamcockpit-clipforge-windows.ts",
+          "kind": "2026-11-02 FIXE isolated Windows OFFLINE lab: FFmpeg/ffprobe now require native Job Object supervisor, no direct-spawn fallback; 360x640 synthetic verified, not a production route/hardware claim"
+        },
+        {
+          "path": "apps/server/src/streamcockpit-clipforge-windows-provenance.ts",
+          "kind": "2026-11-03 FIXE read-only 3 EXE admission: realpath, no reparse/hardlinks, SHA-256 double read, Authenticode Valid and external signer+digest pins; current WinGet FFmpeg observed NotSigned, never production-qualified"
+        },
+        {
+          "path": "apps/server/src/streamcockpit-clipforge-windows-acl.ts",
+          "kind": "2026-11-03 FIXE read-only NTFS private staging admission, owner SID and protected DACL, only owner/SYSTEM/admins allowed; existing FIXE TEMP found shared sandbox ACE, not qualified"
+        },
+        {
+          "path": "scripts/streamcockpit3-clipforge-status.ts",
+          "kind": "2026-11-03 read-only F04 CLI for host binary and ACL blockers, always release-ineligible until OBS replay authorization, signature and rollback evidence"
+        },
+        {
+          "path": "apps/server/src/streamcockpit-clipforge-windows-replay-grant.ts",
+          "kind": "2026-11-03 FIXE host-only read-only replay witness attestation bound to OBS HMAC event ID, live generation/epoch, source root, SHA-256 and NTFS identity; MUST rehash at staging, NOT durable job authorization or production API"
+        },
+        {
+          "path": "apps/server/src/streamcockpit-clipforge-windows-staging.ts",
+          "kind": "2026-11-03 FIXE host-only NTFS replay staging with UNKNOWN intent and private-root ACL; SHA source plus independent throttled 8 MiB/s SHA-256 re-read of staged bytes, compare NTFS file ID/dev and size/timestamps to descriptor of original copy, reject changed destination with UNKNOWN/DEST_CHANGED and never retry; 11/11 Windows staging fixture tests, 11 PASS/1 skipped replay grant + ACL, TypeScript/browser/security 897 files PASS. Synthetic only: no encode/API/UX; NTFS power-loss directory durability and adversarial races unqualified."
+        }
+      ],
+      "historicalDeferredTests": [
+        "tests/streamcockpit3-clipforge.test.ts",
+        "tests/streamcockpit3-clipforge-executor.test.ts",
+        "tests/streamcockpit3-clipforge-windows-lab.test.ts",
+        "tests/streamcockpit3-clipforge-windows-provenance.test.ts",
+        "tests/streamcockpit3-clipforge-windows-acl.test.ts",
+        "tests/streamcockpit3-clipforge-status.test.ts",
+        "tests/streamcockpit3-clipforge-windows-replay-grant.test.ts",
+        "tests/streamcockpit3-clipforge-windows-staging.test.ts"
+      ]
     },
     {
       "id": "F05",
@@ -791,12 +795,16 @@
           "kind": "2026-11-01 FIXE development build includes F09 page and timeline modules in public cache; no API response cached"
         },
         {
-          "path": "apps/server/src/streamcockpit-clipforge-pipeline.ts",
-          "kind": "2026-11-01 wave3 implemented and integrated; G2 partial only"
-        },
-        {
           "path": "apps/server/src/streamcockpit-twitch-moment-router.ts",
           "kind": "SC3-FINAL-DELIVERY-001: source integration and targeted software qualification only; hardware remains unqualified"
+        },
+        {
+          "path": "apps/server/src/streamcockpit-moments-streamlabs.ts",
+          "kind": "SC3-FINAL-DELIVERY-001: existing authenticated Streamlabs socket -> single FIXE journal and timeline; fixed labels and host receipt time, test/YouTube/control/history excluded, OBS/provider/host/session fences and no uncertain-write retry. Targeted software only; real account and hardware unqualified."
+        },
+        {
+          "path": "tests/electron.smoke.spec.ts",
+          "kind": "Native Windows package a13df025: real SQLite header, one manual marker and exact HTTP journal/status recovery after closing and restarting --agent without a window. Fake OBS observation only, zero Start/StopStream or SaveReplayBuffer; not physical reception."
         }
       ],
       "verifiedTests": [
@@ -815,19 +823,29 @@
         "tests/obs-runtime.test.ts",
         "tests/streamcockpit3-moments-page.test.ts",
         "tests/streamcockpit3-moments-page-browser.test.ts",
-        "tests/streamcockpit3-clipforge.test.ts",
-        "tests/streamcockpit3-simple-moments-http.test.ts"
+        "tests/streamcockpit3-simple-moments-http.test.ts",
+        "tests/streamcockpit3-moments-streamlabs.test.ts",
+        "tests/streamcockpit3-moments-streamlabs-runtime.test.ts"
       ],
       "hardwareEvidence": [],
       "blockers": [
-        "F09 planned live manual marker binding exists only after a witnessed FIXE OBS start and a separate explicit choice, in runtime memory; already-running live at initial connection, reconnect, unknown OBS state, conflicting/excessive planning remain intentionally unbound; no real OBS/Android/laptop qualification; OBS ReplayBufferSaved automatic marker now exists in development but Streamlabs producers remain unimplemented; ClipForge is deferred to V4 and is not an F09 delivery dependency",
+        "F09 planned live manual marker binding exists only after a witnessed FIXE OBS start and a separate explicit choice, in runtime memory; already-running live at initial connection, reconnect, unknown OBS state, conflicting/excessive planning remain intentionally unbound; no real OBS/Android/laptop qualification; OBS ReplayBufferSaved automatic marker now exists in development and the existing Streamlabs socket is now connected to the same journal; provider/account reception and full-session coverage remain unqualified; ClipForge is deferred to V4 and is not an F09 delivery dependency",
         "Node 22 node:sqlite experimental; power-loss hardware durability and legacy JSON migration unqualified",
         "FIXE 2026-11-02 replay epoch forwarding: 31/31 targeted OBS/F09/roadmap, 2015 PASS / 60 skipped / 0 FAIL full Vitest (246 files) with Git OpenSSL PATH, Node 349 PASS / 6 skipped / 0 FAIL; first full run had 2 TLS suites failing solely because openssl was absent from process PATH, 12/12 TLS targeted PASS with PATH fixed. Skips nonqualified; ClipForge Windows is deferred to V4; F09 hardware remains unqualified",
         "Android native report sharing is exercised with a simulated bridge and real Edge UI, not an actual paired Android device; report interval is NOT a live duration",
         "2026-11-02 FIXE OBS ReplayBufferSaved producer: OBS streaming and host/session remain checked across awaits; raw path NEVER stored/exposed; local absolute nonempty regular-file lstat checked before marker emission, with no retry if missing/stopped/reconnected or if the same OBS connection stopped and restarted; real OBS file validity, handle pinning and power-loss durability NOT proven"
       ],
-      "ownerJob": "streamcockpit/3.0-lot-d",
-      "integrationNote": "2026-11-01 FIXE F09: existing Q SQLite EXTRA journal and paired observe-only marker route extended with GET/HEAD index of exclusively durable marker sessions (1k sessions/10k markers max), no live or duration inference. Plus now explicitly lists, selects then consults; no automatic polling, second authority, marker title exposure in index, or local persistence; late responses and disconnect clear private state. 23/23 targeted F09 PASS including real Edge 320px; full FIXE Vitest 1956 PASS / 54 skipped / 0 FAIL (237 files); Node 349 PASS / 6 skipped / 0 FAIL (355 cases); TypeScript, browser types, security 803 files PASS; dev build 125 assets and shipped-JS 132 PASS. A full pass initially lacked OpenSSL in test PATH; rerun with process-only Git OpenSSL passed. 2026-11-01 23h FIXE: GET read-only manual marker status by original actor/UUID, refuses revoked access even after disk failure, manual mobile reconciliation of possibly committed lost POST, no silent replay or safe-retry claim for not_found. 22/22 targeted F09 including 2 true Edge touch 320px, full Vitest 1981 PASS / 58 skipped / 0 FAIL (243 files); types/browser-types, security 814 files, dev build 127 assets, shipped JS 134 files PASS. 2026-11-02 FIXE: readOnly verified session JSON report is shared only by explicit user click with native bridge/browser fallback; marker fields are whitelisted, extra correlation/provider fields dropped; exports complete observed journal despite local filters and no live duration claim. 18/18 targeted F09+roadmap PASS including real Edge touch 320px (native share stub), full Vitest 1986 PASS / 55 skipped (243 files), Node 349 PASS / 6 skipped, types/browser types, security 814, dev build 127 assets and shipped JS 134 PASS. No physical Android share test. 2026-11-02 FIXE manual/context endpoint and mobile explicit session check: 29/29 targeted F09 tests including 3 real Edge 320px, 1993 PASS / 55 skipped full Vitest (243 files), Node 349 PASS / 6 skipped, TypeScript/browser types, security 814, development build 127 assets and shipped-JS 134 PASS. Read-only status is not a write reservation. 2026-11-02 FIXE F09 planned live binding: only a witnessed OBS known-idle to known-streaming transition on the pinned FIXE yields up to 20 candidates, followed by an explicit paired user choice; ephemeral opaque scheduled session ID, no planner-only inference, no automatic POST, no OBS provider action. New 6 pure state and 2 real-loopback HTTP tests, 13 manual UI tests, true Edge touch 320px two-step scenario; initial Edge overflow found and CSS corrected. Full Windows Vitest 2003 PASS / 55 skipped / 0 fail (245 files) before final calendar-invalid guard, node first attempt 348 PASS/6 skipped/1 unrelated Desktop WS race; isolated Desktop audit 1 PASS and full Node rerun 349 PASS/6 skipped/0 fail. TypeScript/browser types and security 817 files PASS again after final guard; 39/39 final F09+roadmap targeted PASS including 4 real Edge touch 320px; dev build 127 assets and shipped-JS 134 PASS before guard and regenerated again before commit. No live producer, real OBS or Android hardware, signed candidate, Windows ClipForge or power-loss proof; G2 remains partial. 2026-11-02 FIXE pre-write session fence: second awaited authoritative OBS session read, then new paired permission check before starting SQLite marker write; if changed, absent or unreadable, HTTP 409 nonretryable and no journal call; if pairing revoked during second read, HTTP 403. UI distinguishes definitive no-write from unknown result, never retries automatically. Three new targeted regressions PASS (36/36 manual+scheduled), full Vitest 2008 PASS / 55 skipped, Node 349 PASS / 6 skipped; TypeScript/browser-types, security 817, development build and shipped-JS PASS. No atomic guarantee during in-flight COMMIT or real hardware validation. 2026-11-02 FIXE F09 automatic OBS ReplayBufferSaved observed during confirmed live: local filename HMAC with ephemeral runtime key, no path/command exposed; only after FIXE role and single host session checks, recorded in SAME Windows SQLite journal, duplicate event ignored, no uncertain-write retry. New tests 7/7 PASS plus OBS runtime test (total 17/17), full Vitest 2016 PASS/55 skipped (246 files), Node 349 PASS/6 skipped. No physical OBS/Android, durable video file/handle validation, power-loss or ClipForge Windows certification. Local lstat checks with temporary Windows files and fake OBS WebSocket events pass, including an in-flight stop/restart on the SAME connection generation; this neither creates a clip reference nor proves a real replay. Twitch simple moment receipts can now produce host-owned timeline observations through the existing SQLite pipeline after session/epoch checks; no ClipForge dependency and no claim that an asynchronously accepted clip is playable."
+      "ownerJob": "SC3-FINAL-DELIVERY-001",
+      "integrationNote": "2026-11-01 FIXE F09: existing Q SQLite EXTRA journal and paired observe-only marker route extended with GET/HEAD index of exclusively durable marker sessions (1k sessions/10k markers max), no live or duration inference. Plus now explicitly lists, selects then consults; no automatic polling, second authority, marker title exposure in index, or local persistence; late responses and disconnect clear private state. 23/23 targeted F09 PASS including real Edge 320px; full FIXE Vitest 1956 PASS / 54 skipped / 0 FAIL (237 files); Node 349 PASS / 6 skipped / 0 FAIL (355 cases); TypeScript, browser types, security 803 files PASS; dev build 125 assets and shipped-JS 132 PASS. A full pass initially lacked OpenSSL in test PATH; rerun with process-only Git OpenSSL passed. 2026-11-01 23h FIXE: GET read-only manual marker status by original actor/UUID, refuses revoked access even after disk failure, manual mobile reconciliation of possibly committed lost POST, no silent replay or safe-retry claim for not_found. 22/22 targeted F09 including 2 true Edge touch 320px, full Vitest 1981 PASS / 58 skipped / 0 FAIL (243 files); types/browser-types, security 814 files, dev build 127 assets, shipped JS 134 files PASS. 2026-11-02 FIXE: readOnly verified session JSON report is shared only by explicit user click with native bridge/browser fallback; marker fields are whitelisted, extra correlation/provider fields dropped; exports complete observed journal despite local filters and no live duration claim. 18/18 targeted F09+roadmap PASS including real Edge touch 320px (native share stub), full Vitest 1986 PASS / 55 skipped (243 files), Node 349 PASS / 6 skipped, types/browser types, security 814, dev build 127 assets and shipped JS 134 PASS. No physical Android share test. 2026-11-02 FIXE manual/context endpoint and mobile explicit session check: 29/29 targeted F09 tests including 3 real Edge 320px, 1993 PASS / 55 skipped full Vitest (243 files), Node 349 PASS / 6 skipped, TypeScript/browser types, security 814, development build 127 assets and shipped-JS 134 PASS. Read-only status is not a write reservation. 2026-11-02 FIXE F09 planned live binding: only a witnessed OBS known-idle to known-streaming transition on the pinned FIXE yields up to 20 candidates, followed by an explicit paired user choice; ephemeral opaque scheduled session ID, no planner-only inference, no automatic POST, no OBS provider action. New 6 pure state and 2 real-loopback HTTP tests, 13 manual UI tests, true Edge touch 320px two-step scenario; initial Edge overflow found and CSS corrected. Full Windows Vitest 2003 PASS / 55 skipped / 0 fail (245 files) before final calendar-invalid guard, node first attempt 348 PASS/6 skipped/1 unrelated Desktop WS race; isolated Desktop audit 1 PASS and full Node rerun 349 PASS/6 skipped/0 fail. TypeScript/browser types and security 817 files PASS again after final guard; 39/39 final F09+roadmap targeted PASS including 4 real Edge touch 320px; dev build 127 assets and shipped-JS 134 PASS before guard and regenerated again before commit. No live producer, real OBS or Android hardware, signed candidate, Windows ClipForge or power-loss proof; G2 remains partial. 2026-11-02 FIXE pre-write session fence: second awaited authoritative OBS session read, then new paired permission check before starting SQLite marker write; if changed, absent or unreadable, HTTP 409 nonretryable and no journal call; if pairing revoked during second read, HTTP 403. UI distinguishes definitive no-write from unknown result, never retries automatically. Three new targeted regressions PASS (36/36 manual+scheduled), full Vitest 2008 PASS / 55 skipped, Node 349 PASS / 6 skipped; TypeScript/browser-types, security 817, development build and shipped-JS PASS. No atomic guarantee during in-flight COMMIT or real hardware validation. 2026-11-02 FIXE F09 automatic OBS ReplayBufferSaved observed during confirmed live: local filename HMAC with ephemeral runtime key, no path/command exposed; only after FIXE role and single host session checks, recorded in SAME Windows SQLite journal, duplicate event ignored, no uncertain-write retry. New tests 7/7 PASS plus OBS runtime test (total 17/17), full Vitest 2016 PASS/55 skipped (246 files), Node 349 PASS/6 skipped. No physical OBS/Android, durable video file/handle validation, power-loss or ClipForge Windows certification. Local lstat checks with temporary Windows files and fake OBS WebSocket events pass, including an in-flight stop/restart on the SAME connection generation; this neither creates a clip reference nor proves a real replay. Twitch simple moment receipts can now produce host-owned timeline observations through the existing SQLite pipeline after session/epoch checks; no ClipForge dependency and no claim that an asynchronously accepted clip is playable. 2026-11-03 SC3-FINAL-DELIVERY-001: existing Streamlabs socket now creates fixed-label receipt markers in the same Windows SQLite journal during a trusted FIXE OBS session. Host, OBS connection/live epoch and provider generation rechecked across awaits; known pre-session events, test/YouTube/control traffic ignored, no raw viewer/message/payment data copied. Stable provider identity keeps its first durable session and instant across restart, with no automatic retry after uncertain commit. 129 PASS / 11 skipped on 16 F09 files; five optional real Edge 320px cases separately enabled and PASS. Prior package a13df025 manual SQLite close/restart/no-window test 1 PASS; new producer awaits next packaged revision. Still partial, no real Streamlabs account, hardware, synthetic live duration or legacy migration qualification.",
+      "historicalDeferredEvidence": [
+        {
+          "path": "apps/server/src/streamcockpit-clipforge-pipeline.ts",
+          "kind": "2026-11-01 wave3 implemented and integrated; G2 partial only"
+        }
+      ],
+      "historicalDeferredTests": [
+        "tests/streamcockpit3-clipforge.test.ts"
+      ]
     },
     {
       "id": "F10",

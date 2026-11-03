@@ -366,3 +366,56 @@ test('SC3 final context shell : Deck livré, commande OBS fictive et reçu natif
   }
  });
 });
+
+
+test('SC3 final moments : journal SQLite du paquet conserve le repère après reprise Agent',async()=>{
+ test.setTimeout(60_000);
+ const {withMixerFixture}=await import('./helpers/streamcockpit-mixer-fixture.js');
+ await withMixerFixture(async f=>{
+  await f.obs.close();
+  const profile=await mkdtemp(path.join(os.tmpdir(),'streamdashboard-qa-'));
+  const previousObs=process.env.OBS_URL,previousData=process.env.DATA_FILE;
+  process.env.OBS_URL=f.obsUrl;delete process.env.DATA_FILE;
+  let application:ElectronApplication|undefined;
+  const requestId='a199ed3d-cf42-415e-982c-e9961703721c';
+  const get=async(route:string)=>{const response=await fetch(RUNTIME_ORIGIN+route);return{status:response.status,body:await response.json()}};
+  try{
+   await expectEndpointClosed(RUNTIME_ORIGIN);application=await launch(profile);
+   const page=await application.firstWindow();await expectRuntimeReady(page);
+   await page.locator('#installation-form [name="name"]').fill('FIXE QA moments');
+   await page.locator('#installation-form [name="preset"]').selectOption('single-pc');
+   await page.locator('#installation-form').getByRole('button',{name:'Prévisualiser le changement'}).click();
+   await page.getByRole('button',{name:'Appliquer',exact:true}).click();await expect(page.locator('#dialog')).not.toBeVisible();
+   const missing=await get('/api/v1/streamcockpit-moments');
+   expect(missing).toMatchObject({status:503,body:{error:{code:'MOMENTS_NOT_OBSERVED'}}});
+   f.setStreaming(true); // Observation from a loopback fake, never a StartStream command.
+   await expect.poll(async()=> (await get('/api/v1/streamcockpit-moments/manual/context')).body.writable).toBe(true);
+   const response=await fetch(RUNTIME_ORIGIN+'/api/v1/streamcockpit-moments/manual/add',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({requestId,title:'Repère QA persistant'})});
+   expect(response.status).toBe(201);const created=await response.json();
+   expect(created).toMatchObject({outcome:'created',source:'manual',status:'observed'});
+   const sessionId=created.sessionId;
+   const before=await get('/api/v1/streamcockpit-moments/'+encodeURIComponent(sessionId));
+   expect(before.status).toBe(200);
+   expect(before.body.markers).toHaveLength(1);
+   expect(before.body.markers[0]).toMatchObject({title:'Repère QA persistant',source:'manual'});
+   expect((await get('/api/v1/streamcockpit-moments')).body.sessions).toEqual([expect.objectContaining({sessionId,markerCount:1})]);
+   const sqlite=await readFile(path.join(profile,'StreamDashboard-Next','config','streamcockpit-moments.sqlite'));
+   expect(sqlite.subarray(0,16).toString()).toBe('SQLite format 3\0');
+   await application.close();application=undefined;await expectEndpointClosed(RUNTIME_ORIGIN);
+   application=await launch(profile,['--agent']);
+   await expect.poll(async()=>{try{return(await get('/api/v1/health')).status}catch{return 0}}).toBe(200);
+   expect(await application.evaluate(({BrowserWindow})=>BrowserWindow.getAllWindows().length)).toBe(0);
+   const after=await get('/api/v1/streamcockpit-moments/'+encodeURIComponent(sessionId));
+   expect(after).toEqual(before);
+   const status=await get('/api/v1/streamcockpit-moments/manual/status/'+requestId);
+   expect(status.status).toBe(200);expect(status.body).toMatchObject({status:'confirmed',sessionId,instant:created.instant,sequence:created.sequence,source:'manual'});
+   expect((await get('/api/v1/streamcockpit-moments')).body.sessions).toEqual([expect.objectContaining({sessionId,markerCount:1})]);
+   expect(f.rpc.filter((rpc:any)=>/^StartStream$|^StopStream$|^SaveReplayBuffer$/.test(rpc.type))).toHaveLength(0);
+   expect(f.state().writes).toBe(0);
+   await application.close();application=undefined;await expectEndpointClosed(RUNTIME_ORIGIN);
+  }finally{
+   await application?.close().catch(()=>{});if(previousObs===undefined)delete process.env.OBS_URL;else process.env.OBS_URL=previousObs;
+   if(previousData===undefined)delete process.env.DATA_FILE;else process.env.DATA_FILE=previousData;await rm(profile,{recursive:true,force:true});
+  }
+ });
+});

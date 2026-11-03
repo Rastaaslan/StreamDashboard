@@ -1,0 +1,46 @@
+
+ RUN  v5.0.1 C:/Users/damie/Dev/StreamCockpit-3.0-FullExperience
+
+ Ô£ô tests/streamcockpit3-moments-manual-ui.test.ts (14 tests) 752ms
+ Ô£ô tests/streamcockpit3-moments-page.test.ts (8 tests) 567ms
+node.exe : (node:11800) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+Au caractère Ligne:1 : 1
++ & "C:\Users\damie\Documents\Dowloader vod twitch\.tools\node-v22.22.3 ...
++ ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: ((node:11800) Ex...nge at any time:String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+
+(Use `node --trace-warnings ...` to show where the warning was created)
+ Ô£ô tests/streamcockpit3-moments-streamlabs-runtime.test.ts (1 test) 381ms
+   Ô£ô F09 complete runtime: socket receipt reaches durable timeline, readers agree, restart never duplicates or sends OBS commands 380ms
+(node:3912) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+ Ô£ô tests/streamcockpit3-moments-sqlite.test.ts (8 tests) 363ms
+(node:6220) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+ Ô£ô tests/streamcockpit3-moments-manual-http.test.ts (13 tests) 252ms
+(node:3152) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+ Ô£ô tests/streamcockpit3-moments-http.test.ts (9 tests) 227ms
+ Ô£ô tests/streamcockpit3-moments-mobile.test.ts (6 tests) 131ms
+ Ô£ô tests/streamcockpit3-moments-scheduled-http.test.ts (2 tests) 91ms
+ Ô£ô tests/streamcockpit3-moments-streamlabs.test.ts (16 tests) 73ms
+ Ô£ô tests/streamcockpit3-moments.test.ts (33 tests | 6 skipped) 30ms
+(node:25532) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+ Ô£ô tests/streamcockpit3-moments-obs-replay.test.ts (9 tests) 29ms
+(node:20828) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+ Ô£ô tests/streamcockpit3-moments-manual-guard.test.ts (4 tests) 28ms
+ Ô£ô tests/streamcockpit3-moments-scheduled.test.ts (7 tests) 11ms
+ Ô£ô tests/streamcockpit3-moments-observed.test.ts (5 tests) 8ms
+ Ôåô tests/streamcockpit3-moments-manual-browser.test.ts (4 tests | 4 skipped)
+ Ôåô tests/streamcockpit3-moments-page-browser.test.ts (1 test | 1 skipped)
+
+ Test Files  14 passed | 2 skipped (16)
+      Tests  129 passed | 11 skipped (140)
+   Start at  15:27:36
+   Duration  9.45s (import 42%, tests 41%, transform 16%, worker 1%)
+
+    Isolate  16 workers spawned ┬À ~130ms startup each (spawn + environment, per file)
+             at least ~1.95s faster with isolate: false ÔÇö reuses workers across files instead of one per file

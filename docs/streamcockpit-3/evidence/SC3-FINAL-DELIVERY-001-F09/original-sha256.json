@@ -1,0 +1,107 @@
+[
+  {
+    "file": "sc3-final-integrated3-build.log",
+    "size": 1142,
+    "sha256": "ff22c0182ccaf7b2efc1a581e6f42d13f8b1f2d71672a6b2f73f1f5d1b8308f8"
+  },
+  {
+    "file": "sc3-final-integrated3-vitest.log",
+    "size": 143168,
+    "sha256": "560ef082a5576465c77702e429f5e6a8026349802e5c1c57fb9a58201c9baf57"
+  },
+  {
+    "file": "sc3-final-integrated3-node.log",
+    "size": 174326,
+    "sha256": "7c3b59297c6fd1725eb9e3891645b7e00ea797bede7187fccbcd92c50e1d7a1c"
+  },
+  {
+    "file": "sc3-final-integrated3-network.log",
+    "size": 10656,
+    "sha256": "2c40a6786236dd490d149379ef49e8eab6415ce85535b7b2908ddec96daf6d0e"
+  },
+  {
+    "file": "sc3-final-integrated3-package.log",
+    "size": 2910,
+    "sha256": "0492da11631c4393f346b4fbf5c86055dca39240b0a554be614aed2f13299106"
+  },
+  {
+    "file": "sc3-final-integrated3-electron.log",
+    "size": 938,
+    "sha256": "9ab5d4c6203e2fc6c33b6920e44e70f165d0eae70722f8fca6d53af135b6ded3"
+  },
+  {
+    "file": "sc3-final-integrated3-gates.log",
+    "size": 2194,
+    "sha256": "58e1443d758a76c89cc89f4f092fce5363566795ba6368966d0bbfb14d7074be"
+  },
+  {
+    "file": "sc3-final-integrated3-native-moments.log",
+    "size": 1954,
+    "sha256": "5289feb1d9780f635e45e39135515ba44afbb4895a1f6de686eeb4955b26e6ad"
+  },
+  {
+    "file": "sc3-final-moments-native-restart-contract-fail.log",
+    "size": 3864,
+    "sha256": "4a403fd840eafd18e757a1bc9d7e25c72954ebe1c829f34daed6cd2ac6e85f6f"
+  },
+  {
+    "file": "sc3-final-moments-native-restart.log",
+    "size": 374,
+    "sha256": "91d3ca1c9daa1640cc8ceced63a5217ef8294a8ad46fb7ae8eb8f6214d151b94"
+  },
+  {
+    "file": "sc3-final-streamlabs-types-first-fail.log",
+    "size": 2242,
+    "sha256": "9f3326d05b9c1547e17f2935e7f650307c0df75abf9385ab8bd87a4ff16b0717"
+  },
+  {
+    "file": "sc3-final-streamlabs-types2.log",
+    "size": 168,
+    "sha256": "02fc317be9c2332372313f5ab4150d40edc22d27e0f384a484364fac49613455"
+  },
+  {
+    "file": "sc3-final-streamlabs-browser-types2.log",
+    "size": 188,
+    "sha256": "bb924b5407f9d304b72de6585fd82df628813488b5da1b1a285d6e9d05b09c1b"
+  },
+  {
+    "file": "sc3-final-streamlabs-targeted.log",
+    "size": 6484,
+    "sha256": "720ce46d8bd7e2559316f9c250e7b39f5b76b0d18cdad770e2b1cc38d87a7448"
+  },
+  {
+    "file": "sc3-final-streamlabs-targeted2.log",
+    "size": 6486,
+    "sha256": "1a7f1363f325199613998301fa793bd65965c1217ba4978999c81cb2c70deef8"
+  },
+  {
+    "file": "sc3-final-streamlabs-integration.log",
+    "size": 4284,
+    "sha256": "df069244380a20b1decf74f6991179a1bfb84e2788298216025f2ec0b06f059e"
+  },
+  {
+    "file": "sc3-final-streamlabs-moments-all.log",
+    "size": 8632,
+    "sha256": "c508f8a5c7e3c3f8d97bed466ae2cf02c026e9244b28f51b4865bcf395bfdfe8"
+  },
+  {
+    "file": "sc3-final-streamlabs-moments-edge.log",
+    "size": 2542,
+    "sha256": "d695056f7a2a8196de96a242ad5886dfbd06a3457e438da8060cfa4b365e7e6d"
+  },
+  {
+    "file": "sc3-final-streamlabs-build.log",
+    "size": 1142,
+    "sha256": "ff22c0182ccaf7b2efc1a581e6f42d13f8b1f2d71672a6b2f73f1f5d1b8308f8"
+  },
+  {
+    "file": "sc3-final-streamlabs-shipped.log",
+    "size": 270,
+    "sha256": "b5bed5e2ffcf5737d70ed13b0c8a93b7b5aaefc5dce68ba7c50aba0856a1d856"
+  },
+  {
+    "file": "sc3-final-streamlabs-security.log",
+    "size": 380,
+    "sha256": "a7f969c7820135728724ba17bb26cf39256453556b3cb8bbb5f47f993b7675a4"
+  }
+]

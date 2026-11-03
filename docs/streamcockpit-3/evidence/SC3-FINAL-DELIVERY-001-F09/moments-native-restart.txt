@@ -1,0 +1,5 @@
+
+Running 1 test using 1 worker
+
+[1/1] tests\electron.smoke.spec.ts:371:1 ÔÇ║ SC3 final moments : journal SQLite du paquet conserve le rep├¿re apr├¿s reprise Agent
+  1 passed (5.3s)

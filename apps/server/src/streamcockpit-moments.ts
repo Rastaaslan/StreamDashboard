@@ -104,6 +104,28 @@ export class MomentsPipeline {
     }
     throw new Error('MOMENTS_BUSY');
   }
+  /** FIXE socket receipt. A duplicate provider ID keeps its FIRST durable
+   * session and instant even after restart, never a new live or receipt time.
+   * Fixed labels are the only provider text copied to this journal. */
+  async recordStreamlabsObservation(value: {sessionId:string;instant:number;correlationId:string;sourceEventId:string;title:string}):
+      Promise<{moment:Moment;outcome:'created'|'replayed'}> {
+    const input=validateMoment({...value,source:'streamlabs',status:'observed'});
+    for(let attempt=0;attempt<16;attempt++){
+      const raw=await this.storage.read(),state=decode(raw),moments=project(state.requests);
+      const previous=moments.find(a=>a.source==='streamlabs'&&a.sourceEventId===input.sourceEventId);
+      if(previous){
+        if(previous.title!==input.title||previous.correlationId!==input.correlationId||previous.status!=='observed'||previous.clip)
+          throw new Error('MOMENT_EVENT_CONFLICT');
+        if(await this.storage.compareAndSwap(raw,raw!))return{moment:previous,outcome:'replayed'};
+        continue;
+      }
+      if(moments.length>=10000)throw new Error('MOMENTS_TOO_MANY');
+      state.requests.push(input);
+      if(await this.storage.compareAndSwap(raw,encode(state)))
+        return{moment:{...input,sequence:moments.length+1},outcome:'created'};
+    }
+    throw new Error('MOMENTS_BUSY');
+  }
   /** Reconcile a lost manual-write response by reading only the host journal.
    * A missing row is NOT proof that an in-flight transaction cannot commit;
    * callers must never turn it into permission to retry a write automatically.

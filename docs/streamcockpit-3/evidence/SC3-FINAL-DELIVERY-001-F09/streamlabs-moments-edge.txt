@@ -1,0 +1,15 @@
+
+ RUN  v5.0.1 C:/Users/damie/Dev/StreamCockpit-3.0-FullExperience
+
+ Ô£ô tests/streamcockpit3-moments-manual-browser.test.ts (4 tests) 18649ms
+   Ô£ô F09 manual creation is explicit and accessible at 320px without provider traffic 1064ms
+   Ô£ô F09 Edge 320px recovers an uncertain marker via GET without POST replay 15753ms
+   Ô£ô F09 Edge touch 320px explicitly verifies host OBS context without writing a marker 755ms
+   Ô£ô F09 Edge touch 320px binds a scheduled live only after explicit two-step selection 1076ms
+ Ô£ô tests/streamcockpit3-moments-page-browser.test.ts (1 test) 1137ms
+   Ô£ô F09 Plus timeline is readable at 320px and drops private markers on disconnect 1136ms
+
+ Test Files  2 passed (2)
+      Tests  5 passed (5)
+   Start at  15:28:07
+   Duration  20.83s (tests 96%, import 3%)

@@ -1,0 +1,9 @@
+
+> stream-dashboard@3.0.0-alpha.1 build:types
+> tsc -p tsconfig.json --noEmit
+
+apps/server/src/index.ts(868,9): error TS7022: 'streamlabs' implicitly has type 'any' because it does not have a type annotation and is referenced directly or indirectly in its own initializer.
+apps/server/src/index.ts(868,232): error TS7024: Function implicitly has return type 'any' because it does not have a return type annotation and is referenced directly or indirectly in one of its return expressions.
+apps/server/src/index.ts(869,11): error TS7022: 'observation' implicitly has type 'any' because it does not have a type annotation and is referenced directly or indirectly in its own initializer.
+apps/server/src/index.ts(2199,9): error TS7022: 'streamlabsMomentProducer' implicitly has type 'any' because it does not have a type annotation and is referenced directly or indirectly in its own initializer.
+apps/server/src/index.ts(2200,5): error TS7023: 'snapshot' implicitly has return type 'any' because it does not have a return type annotation and is referenced directly or indirectly in one of its return expressions.

@@ -1,0 +1,29 @@
+
+> stream-dashboard@3.0.0-alpha.1 streamcockpit3:release-check
+> node scripts/streamcockpit3-readiness.mjs --final
+
+StreamCockpit 3.0: 2/6 gates qualified.
+Features qualified: 0/11.
+Release: BLOCKED (read-only preflight; no verified Windows x64/APK signatures).
+ - F00_NOT_QUALIFIED
+ - F01_NOT_QUALIFIED
+ - F02_NOT_QUALIFIED
+ - F03_NOT_QUALIFIED
+ - F04_NOT_QUALIFIED
+ - F05_NOT_QUALIFIED
+ - F06_NOT_QUALIFIED
+ - F07_NOT_QUALIFIED
+ - F08_NOT_QUALIFIED
+ - F09_NOT_QUALIFIED
+ - F10_NOT_QUALIFIED
+ - G2_NOT_QUALIFIED
+ - G3_NOT_QUALIFIED
+ - G4_NOT_QUALIFIED
+ - G5_NOT_QUALIFIED
+ - G4_REAL_ARTIFACT_SIGNATURE_VERIFIER_MISSING
+npm.cmd : STREAMCOCKPIT3_RELEASE_NOT_QUALIFIED: G0-G5 and independent artifact/signature checks required.
+Au caractère Ligne:1 : 69
++ ... xperience'; npm.cmd run streamcockpit3:release-check *> "$env:TEMP\sc ...
++                 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: (STREAMCOCKPIT3_...hecks required.:String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError

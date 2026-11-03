@@ -11,6 +11,7 @@ import { createMomentsManualRouter } from './streamcockpit-moments-manual-router
 import { ScheduledMomentBinding } from './streamcockpit-moments-scheduled.js';
 import { ObsReplayMomentProducer } from './streamcockpit-moments-obs-replay.js';
 import { MomentsPipeline } from './streamcockpit-moments.js';
+import { StreamlabsMomentProducer } from './streamcockpit-moments-streamlabs.js';
 import { MomentsFileStorage } from './streamcockpit-moments-file.js';
 import { registerPairingRequests } from './pairing-requests.js';
 import {createPlatformObserver} from './platform-observer.js';
@@ -864,7 +865,12 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
   }
   let streamlabsSocketToken = await secrets.getStreamlabsToken?.() ?? process.env.STREAMLABS_SOCKET_TOKEN ?? '';
   const streamlabsOAuthSecrets = await secrets.getStreamlabsOAuth?.() ?? null;
-  const streamlabs = new StreamlabsAdapter(streamlabsSocketToken, value => support.record(value).then(() => undefined), options.streamlabsTransport ?? new StreamlabsSocketTransport({ logger, signal: runtimeAbort.signal }), logger, events => streamlabsFeed.record(events));
+  const streamlabs: StreamlabsAdapter = new StreamlabsAdapter(streamlabsSocketToken, value => support.record(value).then(() => undefined), options.streamlabsTransport ?? new StreamlabsSocketTransport({ logger, signal: runtimeAbort.signal }), logger, events => {
+    const observation=streamlabsMomentProducer.observe(events);
+    // Persist the existing feed even if the separate marker journal fails.
+    const feed=streamlabsFeed.record(events);
+    return Promise.all([feed,observation]).then(()=>undefined);
+  });
   const streamlabsHistory = new StreamlabsHistory({ directory: path.join(dataDir, 'streamlabs-history'), secrets, fetchApi: runtimeFetch(options.streamlabsFetch), signal: runtimeAbort.signal, connectionStamp: () => streamlabs.state().lastConnectedAt });
   const storedWizeBot = await secrets.getWizeBotConfiguration?.() ?? null;
   const environmentWizeBot = process.env.WIZEBOT_API_URL && process.env.WIZEBOT_TOKEN ? { apiBaseUrl: process.env.WIZEBOT_API_URL, token: process.env.WIZEBOT_TOKEN } : null;
@@ -2190,6 +2196,18 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
       return 'recorded';
     },
   }));
+  const streamlabsMomentProducer=new StreamlabsMomentProducer({
+    snapshot:()=>({connected:obs.state.connected,streamingKnown:obs.state.streamingKnown===true,
+      streaming:obs.state.streaming,connectionGeneration:obs.connectionGeneration,streamEpoch:obs.streamTransitionEpoch,
+      providerGeneration:streamlabs.connectionGeneration,providerConnected:streamlabs.state().status==='CONNECTED'}),
+    host:async()=>{
+      if(backgroundStopped||options.obsEnabled===false||options.timerAuthority===false)return undefined;
+      const device=await options.deviceDescriptor?.().catch(()=>undefined);
+      return mixerHostEligible(device)?device!.id:undefined;
+    },
+    activeSessionId:activeMomentsSessionId,
+    record:input=>observedMomentsPipeline().then(pipeline=>pipeline.recordStreamlabsObservation(input)),
+  });
   const replayMomentProducer = new ObsReplayMomentProducer({
     snapshot: () => ({ connected: obs.state.connected, streamingKnown: obs.state.streamingKnown === true,
       streaming: obs.state.streaming, connectionGeneration: obs.connectionGeneration,
@@ -3628,6 +3646,7 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
     void obs.setReplayBuffer(true).then(() => { replayAutoStartError = ''; }, error => { replayAutoStartError = error instanceof Error ? error.message : 'Tampon indisponible.'; }).finally(broadcast);
   };
   const unsubscribeObs = obs.onStateChanged(() => {
+    streamlabsMomentProducer.observeState();
     obsHealthObservation.observe(obs.state);
     const contextWitness = obsHealthObservation.read(Date.now());
     masterContextObservation = contextWitness?.data.connected === true ? {
@@ -3735,6 +3754,7 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
     twitch.close();
     twitchEventSub.stop();
     await streamlabs.disconnect();
+    await streamlabsMomentProducer.stop();
     await streamlabsHistory.stop();
     await streamlabsFeed.stop();
     await obs.close();

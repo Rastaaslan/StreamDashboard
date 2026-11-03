@@ -1,0 +1,16 @@
+node : file:///C:/Users/damie/Dev/StreamCockpit-3.0-FullExperience/.build/sc3-native-moments-check.mjs:19
+Au caractère Ligne:1 : 499
++ ... e failed'}; node .build\sc3-native-moments-check.mjs *> "$env:TEMP\sc ...
++                 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: (file:///C:/User...ts-check.mjs:19:String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+
+ if(result.status!==200||!Array.isArray(body.sessions))throw Error('PACKAGED_MOMENTS_SQLITE_UNAVAILABLE:
+'+result.status+' '+JSON.stringify(body));
+                                                             ^
+
+Error: PACKAGED_MOMENTS_SQLITE_UNAVAILABLE: 503 {"error":{"code":"MOMENTS_NOT_OBSERVED"}}
+    at file:///C:/Users/damie/Dev/StreamCockpit-3.0-FullExperience/.build/sc3-native-moments-check.mjs:19:62
+    at process.processTicksAndRejections (node:internal/process/task_queues:103:5)
+
+Node.js v22.22.3
