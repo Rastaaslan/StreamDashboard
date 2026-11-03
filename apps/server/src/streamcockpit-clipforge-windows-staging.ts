@@ -1,6 +1,6 @@
 import {createHash} from 'node:crypto';
 import {setTimeout as sleep} from 'node:timers/promises';
-import {lstat,open,realpath,statfs} from 'node:fs/promises';
+import {lstat,open,readFile,realpath,statfs} from 'node:fs/promises';
 import path from 'node:path';
 import {CLIP_LIMITS} from '../../../packages/core/src/streamcockpit-clipforge-plan.js';
 import type {SourceGrant} from './streamcockpit-clipforge-pipeline.js';
@@ -93,12 +93,22 @@ export async function stageWindowsObsReplay(options:WindowsReplayStageOptions):P
     // Reserve BEFORE any destination snapshot write. Failed/partial fsync
     // after O_EXCL still leaves an uncertain intent and forbids retry.
     reservationAttempted=true;
+    const intentBytes=JSON.stringify({schemaVersion:1,state:'UNKNOWN',
+      stageFile:destName,sourceSha256:attestation.grant.sha256})+'\n';
     const intentFd=await open(intent,'wx',0o600);
     try{
-      await intentFd.writeFile(JSON.stringify({schemaVersion:1,state:'UNKNOWN',
-        stageFile:destName,sourceSha256:attestation.grant.sha256})+'\n');
+      await intentFd.writeFile(intentBytes);
       await intentFd.sync();
     }finally{await intentFd.close();}
+    // An intent is an immutable fail-closed reservation, not permission to
+    // encode. Reject replacements, hardlinks or edits before and after copy.
+    const verifyIntent=async()=>{
+      const current=await lstat(intent);
+      if(!current.isFile()||current.isSymbolicLink()||current.nlink!==1||
+        current.size!==Buffer.byteLength(intentBytes)||
+        await readFile(intent,'utf8')!==intentBytes)deny('INTENT_CHANGED');
+    };
+    await verifyIntent();
     if(!(await options.hostEligible())||!isAuthoritative(options))deny('OBS_AUTHORITY');
     const sourceFd=await open(source,'r');
     let destFd:Awaited<ReturnType<typeof open>>|undefined;
@@ -151,6 +161,7 @@ export async function stageWindowsObsReplay(options:WindowsReplayStageOptions):P
     const staged=await lstat(dest);
     if(!staged.isFile()||staged.nlink!==1||staged.size!==existing.size)deny('SOURCE_CHANGED');
     if(!isAuthoritative(options))deny('OBS_AUTHORITY');
+    await verifyIntent();
     return {status:'STAGED_HOST_ONLY',grant:{relativePath:destName,sha256:attestation.grant.sha256}};
   }catch(e){
     const code=errorCode(e);

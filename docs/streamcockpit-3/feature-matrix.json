@@ -268,7 +268,7 @@
         },
         {
           "path": "apps/server/src/streamcockpit-clipforge-windows-staging.ts",
-          "kind": "2026-11-03 FIXE host-only NTFS copy from HMAC/OBS-attested replay to externally provisioned private root; exclusive UNKNOWN intent before copy, source/dest hash and epoch checks, 8 MiB/s I/O cap, safe ASCII alias for spaces/Unicode; synthetic fixture tests only, never encoder/public API, power-loss directory durability unqualified"
+          "kind": "2026-11-03 FIXE host-only NTFS copy from HMAC/OBS-attested replay to externally provisioned private root; exclusive UNKNOWN intent before copy, source/dest hash and epoch checks, 8 MiB/s I/O cap, safe ASCII alias for spaces/Unicode; subsequent readback guard checks immutable reservation bytes, file type, and link count before/after copy (9/9 targeted Windows fixture PASS, TypeScript/browser/security 897 files PASS); synthetic only, never encoder/public API, power-loss directory durability unqualified"
         }
       ],
       "verifiedTests": [

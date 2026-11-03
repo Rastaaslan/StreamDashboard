@@ -107,6 +107,20 @@ describe('F04 Windows host-only staged OBS snapshot, no codec or production rout
       expect(await stageWindowsObsReplay(f.options)).toEqual({status:'UNKNOWN',code:'EXISTING_JOB'});
     }finally{await f.cleanup();}
   });
+  run('rejects an edited reservation after copying, never returns a staged grant',async()=>{
+    const f=await fixture();
+    try{
+      let calls=0;
+      const options={...f.options,hostEligible:async()=>{
+        calls++;
+        if(calls===4)await writeFile(path.join(f.privateRoot,'clip_test_1.intent'),'corrupted intent');
+        return true;
+      }};
+      expect(await stageWindowsObsReplay(options)).toEqual({status:'UNKNOWN',code:'INTENT_CHANGED'});
+      expect(calls).toBe(5);
+      expect(await stageWindowsObsReplay(f.options)).toEqual({status:'UNKNOWN',code:'EXISTING_JOB'});
+    }finally{await f.cleanup();}
+  });
   run('detects a source replacement after reservation; persists UNKNOWN and no valid staged grant',async()=>{
     const f=await fixture();
     try{
