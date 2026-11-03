@@ -36,6 +36,40 @@ export class PredictionTwitch {
     } catch { throw new AdvancedTwitchError('unavailable'); }
   }
 
+  /** Explicit GET of precisely the ID persisted by FIXE. Missing/terminal is evidence ONLY, never an unlock. */
+  async observeById(predictionId: string, expectedBroadcasterId: string): Promise<{
+    status: 'not_found' | 'active' | 'locked' | 'resolved' | 'canceled'; checkedAt: number;
+  }> {
+    if (!/^[A-Za-z0-9-]{1,128}$/.test(predictionId) || !numericId.test(expectedBroadcasterId))
+      throw new AdvancedTwitchError('precondition');
+    const c = { ...this.credentials() }, started = this.now();
+    if (!c.clientId || !c.accessToken || c.broadcasterId !== expectedBroadcasterId)
+      throw new AdvancedTwitchError('unauthorized');
+    const claim = await this.read(c, 'https://id.twitch.tv/oauth2/validate');
+    if (claim.client_id !== c.clientId || claim.user_id !== c.broadcasterId ||
+        !Array.isArray(claim.scopes) || !claim.scopes.every(s => typeof s === 'string') ||
+        !claim.scopes.some(s => scopes.includes(s)) ||
+        typeof claim.expires_in !== 'number' || !Number.isFinite(claim.expires_in) ||
+        claim.expires_in <= 0) throw new AdvancedTwitchError('forbidden');
+    const validUntil = Math.min(started + 30_000, started + claim.expires_in * 1000);
+    const payload = await this.read(c, 'https://api.twitch.tv/helix/predictions?broadcaster_id=' +
+      encodeURIComponent(c.broadcasterId) + '&id=' + encodeURIComponent(predictionId));
+    const current = this.credentials();
+    if (this.now() >= validUntil || current.clientId !== c.clientId ||
+        current.accessToken !== c.accessToken || current.broadcasterId !== c.broadcasterId)
+      throw new AdvancedTwitchError('unauthorized');
+    if (!Array.isArray(payload.data) || payload.data.length > 1)
+      throw new AdvancedTwitchError('unavailable');
+    if (!payload.data.length) return { status: 'not_found', checkedAt: this.now() };
+    const row = asObject(payload.data[0]);
+    if (row.id !== predictionId || row.broadcaster_id !== c.broadcasterId ||
+        typeof row.status !== 'string' ||
+        !['ACTIVE', 'LOCKED', 'RESOLVED', 'CANCELED'].includes(row.status))
+      throw new AdvancedTwitchError('unavailable');
+    return { status: row.status.toLowerCase() as 'active' | 'locked' | 'resolved' | 'canceled',
+      checkedAt: this.now() };
+  }
+
   async observe(): Promise<PredictionSnapshot> {
     const c = { ...this.credentials() }, started = this.now();
     if (!c.clientId || !c.accessToken || !numericId.test(c.broadcasterId))

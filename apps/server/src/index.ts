@@ -722,9 +722,9 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
   const shoutoutTwitch = new StreamcockpitShoutoutService(new ShoutoutTwitch(advancedTwitchCredentials, runtimeFetch()));
   const raidTwitch = new StreamcockpitRaidService(new RaidTwitch(advancedTwitchCredentials, runtimeFetch()));
   const predictionTwitch = new PredictionTwitch(advancedTwitchCredentials, runtimeFetch());
+  const predictionFence = new PredictionIntentSqlite(path.join(dataDir, 'streamcockpit-prediction-intents.sqlite'));
   const predictionCreate = new StreamcockpitPredictionCreateService(
-    new PredictionCreateTwitch(advancedTwitchCredentials, runtimeFetch()), Date.now,
-    new PredictionIntentSqlite(path.join(dataDir, 'streamcockpit-prediction-intents.sqlite')));
+    new PredictionCreateTwitch(advancedTwitchCredentials, runtimeFetch()), Date.now, predictionFence);
   const tagIntelligence = new TwitchTagIntelligence((gameId, signal) => twitch.getStreamsForGame(gameId, signal), () => local.planning, Date.now, undefined, undefined, () => local.settings.tagPreferences ?? {});
   const googleClientId = options.googleClientId ?? process.env.GOOGLE_CLIENT_ID ?? '';
   const google = new GoogleCalendarClient(
@@ -2011,6 +2011,8 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
   // F08: voluntary read-only snapshot; owner OAuth + same FIXE OBS epoch fenced.
   app.use('/api/v1/twitch/advanced/prediction', createTwitchPredictionRouter({
     api: predictionTwitch, actor: pairedF08Actor, hostLive: confirmedF08HostEpoch,
+    broadcasterId: () => advancedTwitchCredentials().broadcasterId,
+    reservation: predictionFence,
   }));
   // Mutation stays server-owned and requires a separate, single-use consent.
   app.use('/api/v1/twitch/advanced/prediction', createTwitchPredictionCreateRouter({

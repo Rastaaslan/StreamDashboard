@@ -8,6 +8,8 @@ export function createTwitchPredictionRouter(options: {
   api: PredictionTwitch;
   actor(req: Request): TwitchActor | Promise<TwitchActor>;
   hostLive(): string | undefined | Promise<string | undefined>;
+  broadcasterId?(): string;
+  reservation?: { readConfirmedId(broadcasterId: string): string | null | undefined };
 }) {
   const router = Router();
   router.use((_req, res, next) => { res.set('Cache-Control', 'private, no-store'); next(); });
@@ -27,6 +29,31 @@ export function createTwitchPredictionRouter(options: {
         (expected && expected.epoch !== epoch)) throw new AdvancedTwitchError('precondition');
     return { actor: actor.id, epoch };
   };
+  // Explicit read-only reconciliation: exact persisted ID, never 'latest' or a title match.
+  // Even a terminal provider state DOES NOT clear the SQLite fence.
+  router.all('/reconcile', async (req, res) => {
+    if (req.method !== 'GET') {
+      res.set('Allow', 'GET').status(405).json({ error: { code: 'METHOD_NOT_ALLOWED' } });
+      return;
+    }
+    try {
+      const expected = await check(req);
+      if (!options.reservation || !options.broadcasterId)
+        throw new AdvancedTwitchError('unavailable');
+      const owner = options.broadcasterId();
+      const predictionId = options.reservation.readConfirmedId(owner);
+      const provider = typeof predictionId === 'string'
+        ? await options.api.observeById(predictionId, owner) : undefined;
+      await check(req, expected);
+      if (options.broadcasterId() !== owner)
+        throw new AdvancedTwitchError('unauthorized');
+      res.status(200).json({ schemaVersion: 1, kind: 'streamcockpit-prediction-reconciliation',
+        reservation: predictionId === undefined ? 'absent' : predictionId === null ? 'unattributed' : 'confirmed',
+        providerStatus: provider?.status ?? 'unchecked',
+        checkedAt: provider?.checkedAt ?? null,
+        unlockAvailable: false });
+    } catch (cause) { deny(res, cause); }
+  });
   router.all('/', async (req, res) => {
     if (req.method !== 'GET') {
       res.set('Allow', 'GET').status(405).json({ error: { code: 'METHOD_NOT_ALLOWED' } });

@@ -145,6 +145,10 @@ it('F08 legacy v1 SQLite journal upgrades atomically without losing a reserved b
   } finally { db.close(); }
   const fence=new PredictionIntentSqlite(file);
   expect(fence.isBlocked('123')).toBe(true);
+  expect(fence.readConfirmedId('123')).toBeNull(); // Legacy v1 stays read-only and blocked.
+  const before=new DatabaseSync(file,{readOnly:true});
+  try { expect((before.prepare('PRAGMA user_version').get() as {user_version:number}).user_version).toBe(1); }
+  finally { before.close(); }
   expect(fence.reserve('123')).toBe(false);
   fence.recordConfirmed('123','old-receipt');
   const inspect=new DatabaseSync(file,{readOnly:true});

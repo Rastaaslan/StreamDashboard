@@ -2,7 +2,7 @@ import type { DeckAction } from '../../../packages/contracts/src/control.js';
 import { actionCapability } from '../../mobile/shared/action-definition.js';
 import type { DevicePermission } from '../../mobile/shared/device-permissions.js';
 const GET_EXACT = new Set([
-  '/v1/twitch/advanced/capabilities','/v1/twitch/advanced/prediction','/v1/streamcockpit-health','/v1/streamcockpit-mixer','/v1/state','/v1/profile','/v1/connections','/v1/control-hub','/v1/events','/v1/soundboard',
+  '/v1/twitch/advanced/capabilities','/v1/twitch/advanced/prediction','/v1/twitch/advanced/prediction/reconcile','/v1/streamcockpit-health','/v1/streamcockpit-mixer','/v1/state','/v1/profile','/v1/connections','/v1/control-hub','/v1/events','/v1/soundboard',
   '/v1/automations','/v1/automations/capabilities','/v1/streamlabs/events','/v1/supports','/v1/twitch/categories',
   '/v1/dji/overview','/v1/spotify/status','/v1/twitch/videos','/v1/twitch/clips','/v1/twitch/chatters','/v1/twitch/chat/state','/v1/twitch/moderation/capabilities',
   '/v1/discord/status','/v1/discord/guilds',
@@ -88,7 +88,7 @@ export const remoteApiPolicySnapshot = {
 /** Explicit permissions supplement the existing legacy/management allowlists. */
 export function requiredDevicePermissions(method:string,path:string,body:unknown,actions:DeckAction[]=[]):DevicePermission[] {
   if(path==='/v1/twitch/advanced/capabilities')return ['chat'];
-  if(method==='GET'&&path==='/v1/twitch/advanced/prediction')return ['chat','cloud'];
+  if(method==='GET'&&['/v1/twitch/advanced/prediction','/v1/twitch/advanced/prediction/reconcile'].includes(path))return ['chat','cloud'];
   if(method==='POST'&&[
     '/v1/twitch/advanced/poll/preview','/v1/twitch/advanced/poll/confirm',
     '/v1/twitch/advanced/prediction/preview','/v1/twitch/advanced/prediction/confirm',

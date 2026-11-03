@@ -99,6 +99,27 @@ export class PredictionIntentSqlite implements PredictionCreationFence {
     }
   }
 
+  /** Read-only lookup: undefined=no reservation, null=unattributed/uncertain POST, string=confirmed provider ID. Never unlocks. */
+  readConfirmedId(broadcasterId: string): string | null | undefined {
+    if (!validBroadcaster(broadcasterId)) throw Error('PREDICTION_FENCE_UNAVAILABLE');
+    const db = this.open(false);
+    if (!db) return undefined;
+    try {
+      // A read of a legacy v1 journal must not migrate it or pretend it has a provider ID.
+      const version = db.prepare('PRAGMA user_version').get() as { user_version: number };
+      if (version.user_version === 1)
+        return db.prepare('SELECT 1 FROM prediction_intents WHERE broadcaster_id=?').get(broadcasterId)
+          ? null : undefined;
+      const row = db.prepare('SELECT prediction_id FROM prediction_intents WHERE broadcaster_id=?')
+        .get(broadcasterId) as { prediction_id: string | null } | undefined;
+      if (!row) return undefined;
+      if (row.prediction_id === null) return null;
+      if (!/^[A-Za-z0-9-]{1,128}$/.test(row.prediction_id))
+        throw Error('PREDICTION_FENCE_FORMAT_UNKNOWN');
+      return row.prediction_id;
+    } finally { db.close(); }
+  }
+
   isBlocked(broadcasterId: string) {
     if (!validBroadcaster(broadcasterId)) throw Error('PREDICTION_FENCE_UNAVAILABLE');
     const db = this.open(false);
