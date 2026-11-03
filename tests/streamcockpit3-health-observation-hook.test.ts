@@ -51,7 +51,8 @@ it('production binds exactly one recorder to existing subscription before legacy
   expect(entry).toContain('obs: obsHealthObservation,');
   const start = entry.indexOf('const unsubscribeObs = obs.onStateChanged(() => {');
   const health = entry.indexOf('obsHealthObservation.observe(obs.state);', start);
-  const mixer = entry.indexOf('obsMixerObservation.observe(obs.state, obs.connectionGeneration);', start);
+  const mixer = entry.indexOf('obsMixerObservation.observe(obs.state, obs.connectionGeneration, obs.mixerAudioMeters());', start);
+  expect(entry).toContain('obs.mixerAudioMeters()');
   const existing = entry.indexOf('autoStartReplay();', start);
   expect(start).toBeGreaterThanOrEqual(0);
   expect(health).toBeGreaterThan(start);
