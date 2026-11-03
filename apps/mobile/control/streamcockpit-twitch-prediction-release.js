@@ -93,10 +93,13 @@ export function mountTwitchPredictionRelease(root, { request } = {}) {
           !['unchecked', 'active', 'locked', 'resolved', 'canceled', 'not_found'].includes(data.providerStatus) ||
           data.unlockAvailable !== false || typeof data.manualReleasePreviewPossible !== 'boolean')
         throw Error('INVALID_RECONCILIATION');
-      uncertain = false;
-      eligible = data.reservation === 'confirmed' && terminal(data.providerStatus) &&
+      // A GET observation cannot prove whether a prior local DELETE committed.
+      // Keep the uncertainty latch until a separately qualified host recovery.
+      eligible = !uncertain && data.reservation === 'confirmed' && terminal(data.providerStatus) &&
         data.manualReleasePreviewPossible;
-      status.textContent = data.reservation === 'absent'
+      status.textContent = uncertain
+        ? 'Résultat de libération précédent incertain : lecture seule, aucune nouvelle confirmation autorisée. Vérifiez le journal FIXE.'
+        : data.reservation === 'absent'
         ? 'Aucune réservation enregistrée sur cette chaîne. Aucune libération nécessaire.'
         : data.reservation === 'unattributed'
           ? 'Réservation sans identifiant Twitch vérifié : libération refusée.'

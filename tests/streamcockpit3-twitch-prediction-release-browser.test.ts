@@ -114,6 +114,12 @@ it.skipIf(process.env.TWITCH_PREDICTION_RELEASE_BROWSER_TEST!=='1')(
     await page.waitForTimeout(80);
     expect(await page.evaluate(()=>(window as any).calls.length)).toBe(3);
     expect(await page.getByRole('status').textContent()).not.toContain('PRIVATE_SECRET');
+    // A subsequent GET is read-only; it MUST NOT clear an uncertain commit
+    // and silently unlock a second local DELETE confirmation.
+    await inspect(page);
+    expect(await page.getByRole('status').textContent()).toContain('incertain');
+    expect(await page.getByRole('button',{name:'Préparer la libération locale'}).isDisabled()).toBe(true);
+    expect(await page.evaluate(()=>(window as any).calls.map((x:any)=>x.method))).toEqual(['GET','POST','POST','GET']);
   }),30000);
 
 it.skipIf(process.env.TWITCH_PREDICTION_RELEASE_BROWSER_TEST!=='1')(

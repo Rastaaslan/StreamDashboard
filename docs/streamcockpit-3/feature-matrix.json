@@ -511,7 +511,7 @@
         },
         {
           "path": "apps/mobile/control/streamcockpit-twitch-prediction-release.js",
-          "kind": "2026-11-03 FIXE F08: Live Monitor voluntary read-only journal+Twitch check, then distinct local release preview and checkbox-confirm; refuses nonterminal/unattributed states and discards late confirmations on source change. Uncertain local CAS receipt never retried automatically. Real Edge touch 320px with FIXE/Twitch simulated; physical Android/live OAuth/OBS unqualified."
+          "kind": "2026-11-03 FIXE F08: Live Monitor voluntary read-only journal+Twitch check, then distinct local release preview and checkbox-confirm; refuses nonterminal/unattributed states and discards late confirmations on source change. Uncertain local CAS receipt never retried automatically; 2026-11-03 FIXE additional guard retains the uncertain latch after subsequent read-only GET, preventing a second release confirmation until separately qualified host recovery. 5/5 real Edge touch 320px and 11/11 HTTP simulated PASS; physical Android/live OAuth/OBS unqualified."
         },
         {
           "path": "docs/streamcockpit-3/F08_PREDICTION_CREATE_FIXE_20261102.md",
