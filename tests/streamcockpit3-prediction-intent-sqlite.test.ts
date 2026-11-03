@@ -176,3 +176,33 @@ it('F08 receipt persistence failure after Twitch POST reports uncertain and NEVE
   await expect(first.svc.preview(actor,draft,epoch)).rejects.toMatchObject({code:'precondition'});
   expect(first.writes).toHaveBeenCalledTimes(1);
 }));
+
+
+it('F08 explicit terminal release CAS refuses unknown, legacy and wrong receipt; releases only exact confirmed ID',()=>withTemp(async file=>{
+  const fence=new PredictionIntentSqlite(file);
+  fence.reserve('123');
+  expect(()=>fence.releaseConfirmedTerminal('123','pred-777')).toThrow();
+  expect(fence.isBlocked('123')).toBe(true); // no receipt, outcome unknown
+  fence.recordConfirmed('123','pred-777');
+  expect(()=>fence.releaseConfirmedTerminal('123','pred-888')).toThrow();
+  expect(fence.readConfirmedId('123')).toBe('pred-777');
+  fence.releaseConfirmedTerminal('123','pred-777');
+  expect(new PredictionIntentSqlite(file).readConfirmedId('123')).toBeUndefined();
+  expect(()=>fence.releaseConfirmedTerminal('123','pred-777')).toThrow(); // no replay
+  expect(fence.reserve('123')).toBe(true);
+  expect(fence.isBlocked('123')).toBe(true);
+}));
+
+it('F08 reconciled service clears only its local memory after exact durable terminal release',()=>withTemp(async file=>{
+  const fence=new PredictionIntentSqlite(file), first=service(fence);
+  const preview=await first.svc.preview(actor,draft,epoch);
+  await first.svc.confirm(actor,preview.confirmationId,true,epoch,async()=>{});
+  await expect(first.svc.preview(actor,draft,epoch)).rejects.toMatchObject({code:'precondition'});
+  expect(()=>first.svc.releaseAfterVerifiedTerminal('123','incorrect-id')).toThrow();
+  expect(fence.isBlocked('123')).toBe(true);
+  await expect(first.svc.preview(actor,draft,epoch)).rejects.toMatchObject({code:'precondition'});
+  first.svc.releaseAfterVerifiedTerminal('123','observed-1');
+  expect(fence.isBlocked('123')).toBe(false);
+  expect((await first.svc.preview(actor,draft,epoch)).confirmationId).toBeTruthy();
+  expect((await service(new PredictionIntentSqlite(file)).svc.preview(actor,draft,epoch)).confirmationId).toBeTruthy();
+}));

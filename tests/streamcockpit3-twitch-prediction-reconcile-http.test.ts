@@ -5,6 +5,8 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { PredictionTwitch } from '../integrations/twitch/src/streamcockpit-prediction.js';
+import { StreamcockpitPredictionCreateService } from '../apps/server/src/streamcockpit-twitch-prediction-create-service.js';
+import type { PredictionCreateTwitch } from '../integrations/twitch/src/streamcockpit-prediction-create.js';
 import { PredictionIntentSqlite } from '../apps/server/src/streamcockpit-prediction-intent-sqlite.js';
 import { createTwitchPredictionRouter } from '../apps/server/src/streamcockpit-twitch-prediction-router.js';
 import { twitchPollActor } from '../apps/server/src/streamcockpit-twitch-poll-router.js';
@@ -12,8 +14,8 @@ import { RemoteAuth } from '../apps/server/src/remote-auth.js';
 import { isRemoteApiAllowed, requiredDevicePermissions } from '../apps/server/src/remote-api-policy.js';
 
 async function fixture(run:(ctx:{
-  call:(token?:string,method?:string)=>Promise<Response>; token:string;
-  fence:PredictionIntentSqlite; reads:ReturnType<typeof vi.fn>;
+  call:(token?:string,method?:string,body?:unknown,suffix?:string)=>Promise<Response>; token:string;
+  fence:PredictionIntentSqlite; reopen:()=>PredictionIntentSqlite; reads:ReturnType<typeof vi.fn>;
   setStatus:(v:string)=>void; setEpoch:(v:string|undefined)=>void;
   swapEpochOnRead:()=>void; rotateDuringRead:()=>void; switchOwnerDuringRead:()=>void;
   rotateToken:()=>void; setOwner:(v:string)=>void;
@@ -50,20 +52,25 @@ async function fixture(run:(ctx:{
     return Response.json({data:[{id:'pred-777',broadcaster_id:'123',status}]});
   });
   const app=express();
+  app.use(express.json());
+  const releaseService=new StreamcockpitPredictionCreateService({} as PredictionCreateTwitch, Date.now, fence);
   app.use('/api/v1/twitch/advanced/prediction',createTwitchPredictionRouter({
     api:new PredictionTwitch(()=>c,mockedFetch as typeof fetch),
     actor:(req:Request)=>twitchPollActor(req,auth,false,true),
     hostLive:()=>epoch, broadcasterId:()=>c.broadcasterId, reservation:fence,
+    reconcileRelease:releaseService,
   }));
   const server=app.listen(0,'127.0.0.1');
   await new Promise<void>((ok,fail)=>{server.once('listening',ok);server.once('error',fail);});
   const url='http://127.0.0.1:'+(server.address() as AddressInfo).port+
     '/api/v1/twitch/advanced/prediction/reconcile';
   try {
-    const call=(credential=token,method='GET')=>fetch(url,{
-      method,headers:{Authorization:'Device '+credential},
+    const call=(credential=token,method='GET',body?:unknown,suffix='')=>fetch(url+suffix,{
+      method,headers:{Authorization:'Device '+credential,
+        ...(body===undefined?{}:{'Content-Type':'application/json'})},
+      body:body===undefined?undefined:JSON.stringify(body),
     });
-    await run({call,token,fence,reads,auth,
+    await run({call,token,fence,reopen:()=>new PredictionIntentSqlite(join(dir,'intent.sqlite')),reads,auth,
       setStatus:v=>{status=v},setEpoch:v=>{epoch=v},
       swapEpochOnRead:()=>{switchEpoch=true},
       rotateDuringRead:()=>{switchToken=true},
@@ -118,6 +125,7 @@ it('F08 terminal provider states are evidence tied to persisted ID, NEVER a rele
     expect(await reply.json()).toMatchObject({
       reservation:'confirmed',providerStatus:state==='NONE'?'not_found':state.toLowerCase(),
       unlockAvailable:false,
+      manualReleasePreviewPossible:state==='RESOLVED'||state==='CANCELED',
     });
     expect(h.fence.isBlocked('123')).toBe(true);
     expect(h.fence.readConfirmedId('123')).toBe('pred-777');
@@ -163,4 +171,74 @@ it('F08 provider account switch during exact-ID GET cannot report terminal evide
   h.setStatus('CANCELED');h.switchOwnerDuringRead();
   expect((await h.call()).status).toBe(401);
   expect(h.fence.isBlocked('123')).toBe(true);
+}));
+
+it('F08 terminal release requires management pairing and two distinct manual POSTs; CAS survives restart',()=>fixture(async h=>{
+  const route='/v1/twitch/advanced/prediction/reconcile';
+  for (const suffix of ['/preview','/confirm']) {
+    expect(isRemoteApiAllowed('POST',route+suffix)).toBe(true);
+    expect(requiredDevicePermissions('POST',route+suffix,{})).toEqual(['chat','cloud']);
+    expect(isRemoteApiAllowed('GET',route+suffix)).toBe(false);
+    expect((await h.call(h.token,'GET',undefined,suffix)).status).toBe(405);
+  }
+  h.fence.reserve('123'); h.fence.recordConfirmed('123','pred-777');
+  h.setStatus('RESOLVED');
+  const limitedOffer=h.auth.createPairing(undefined,false,['chat','cloud']);
+  const limited=h.auth.pair(limitedOffer.id,limitedOffer.code,'Limited');
+  expect((await h.call(limited.credential,'POST',{},'/preview')).status).toBe(403);
+  const draft=await h.call(h.token,'POST',{},'/preview');
+  expect(draft.status).toBe(200);
+  expect(draft.headers.get('cache-control')).toContain('no-store');
+  const approval=await draft.json() as { confirmationId:string; providerStatus:string };
+  expect(approval.providerStatus).toBe('resolved');
+  expect(h.fence.isBlocked('123')).toBe(true); // PREVIEW must never unlock.
+  const confirm=await h.call(h.token,'POST',{confirmationId:approval.confirmationId,confirmed:true},'/confirm');
+  expect(confirm.status).toBe(200);
+  expect(await confirm.json()).toMatchObject({released:true,providerStatus:'resolved'});
+  expect(h.reopen().isBlocked('123')).toBe(false);
+  expect((await h.call(h.token,'POST',{confirmationId:approval.confirmationId,confirmed:true},'/confirm')).status).toBe(409);
+  expect(h.reads.mock.calls.every(c=>c[1]==='GET')).toBe(true);
+}));
+
+it('F08 release never treats active, missing, unattributed, mismatched or lost provider data as terminal',()=>fixture(async h=>{
+  for(const state of ['ACTIVE','LOCKED','NONE','DOWN','WRONG_ID','WRONG_OWNER','UNKNOWN']) {
+    h.fence.reserve('123'); h.fence.recordConfirmed('123','pred-777');
+    h.setStatus(state);
+    expect((await h.call(h.token,'POST',{},'/preview')).status).toBeGreaterThanOrEqual(400);
+    expect(h.fence.isBlocked('123')).toBe(true);
+  }
+  h.setStatus('RESOLVED');
+  const draft=await (await h.call(h.token,'POST',{},'/preview')).json() as {confirmationId:string};
+  h.setStatus('ACTIVE');
+  expect((await h.call(h.token,'POST',{confirmationId:draft.confirmationId,confirmed:true},'/confirm')).status).toBe(409);
+  expect(h.fence.isBlocked('123')).toBe(true);
+  h.setStatus('RESOLVED');
+  expect((await h.call(h.token,'POST',{confirmationId:draft.confirmationId,confirmed:true},'/confirm')).status).toBe(409);
+  expect(h.fence.isBlocked('123')).toBe(true);
+}));
+
+it('F08 release rejects stale OBS epoch or provider-owner switch; confirmation is consumed',()=>fixture(async h=>{
+  h.fence.reserve('123'); h.fence.recordConfirmed('123','pred-777');
+  h.setStatus('CANCELED');
+  const draft=await (await h.call(h.token,'POST',{},'/preview')).json() as {confirmationId:string};
+  h.setEpoch('9:42');
+  expect((await h.call(h.token,'POST',{confirmationId:draft.confirmationId,confirmed:true},'/confirm')).status).toBe(409);
+  expect(h.fence.isBlocked('123')).toBe(true);
+  const newDraft=await (await h.call(h.token,'POST',{},'/preview')).json() as {confirmationId:string};
+  h.setOwner('999');
+  expect((await h.call(h.token,'POST',{confirmationId:newDraft.confirmationId,confirmed:true},'/confirm')).status).toBeGreaterThanOrEqual(400);
+  expect(h.fence.isBlocked('123')).toBe(true);
+}));
+
+it('F08 two concurrent terminal confirmations never release twice or issue a provider mutation',()=>fixture(async h=>{
+  h.fence.reserve('123'); h.fence.recordConfirmed('123','pred-777'); h.setStatus('RESOLVED');
+  const a=await (await h.call(h.token,'POST',{},'/preview')).json() as {confirmationId:string};
+  const b=await (await h.call(h.token,'POST',{},'/preview')).json() as {confirmationId:string};
+  const [first,second]=await Promise.all([
+    h.call(h.token,'POST',{confirmed:true,confirmationId:a.confirmationId},'/confirm'),
+    h.call(h.token,'POST',{confirmed:true,confirmationId:b.confirmationId},'/confirm'),
+  ]);
+  expect([first.status,second.status].sort()).toEqual([200,409]);
+  expect(h.fence.isBlocked('123')).toBe(false);
+  expect(h.reads.mock.calls.every(c=>c[1]==='GET')).toBe(true);
 }));

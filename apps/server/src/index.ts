@@ -2012,7 +2012,7 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
   app.use('/api/v1/twitch/advanced/prediction', createTwitchPredictionRouter({
     api: predictionTwitch, actor: pairedF08Actor, hostLive: confirmedF08HostEpoch,
     broadcasterId: () => advancedTwitchCredentials().broadcasterId,
-    reservation: predictionFence,
+    reservation: predictionFence, reconcileRelease: predictionCreate,
   }));
   // Mutation stays server-owned and requires a separate, single-use consent.
   app.use('/api/v1/twitch/advanced/prediction', createTwitchPredictionCreateRouter({

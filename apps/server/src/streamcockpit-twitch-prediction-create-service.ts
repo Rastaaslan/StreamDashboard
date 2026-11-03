@@ -19,6 +19,18 @@ export class StreamcockpitPredictionCreateService {
   constructor(private readonly api: PredictionCreateTwitch, private readonly now = Date.now,
     private readonly durableFence?: PredictionCreationFence) {}
 
+  /** Called only after a separate, explicit operator confirmation AND a fresh
+   * exact-ID terminal Twitch observation. Never clears the journal on GET. */
+  releaseAfterVerifiedTerminal(broadcasterId: string, predictionId: string) {
+    if (!this.durableFence?.releaseConfirmedTerminal)
+      throw new AdvancedTwitchError('unavailable');
+    try { this.durableFence.releaseConfirmedTerminal(broadcasterId, predictionId); }
+    catch { throw new AdvancedTwitchError('unavailable'); }
+    this.blockedBroadcasters.delete(broadcasterId);
+    for (const [key, entry] of this.pending)
+      if (entry.broadcasterId === broadcasterId) this.pending.delete(key);
+  }
+
   private checkActor(actor: TwitchActor, epoch: string) {
     if (!actor?.id || !actor.canRead || !actor.canInteract)
       throw new AdvancedTwitchError('forbidden');

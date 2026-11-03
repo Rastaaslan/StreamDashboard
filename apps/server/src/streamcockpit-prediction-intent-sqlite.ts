@@ -20,6 +20,7 @@ export interface PredictionCreationFence {
   reserve(broadcasterId: string): boolean;
   releaseBeforePost(broadcasterId: string): void;
   recordConfirmed(broadcasterId: string, predictionId: string): void;
+  releaseConfirmedTerminal?(broadcasterId: string, predictionId: string): void;
 }
 
 /** No automatic release on successful/uncertain Twitch POST or process restart. */
@@ -167,6 +168,25 @@ export class PredictionIntentSqlite implements PredictionCreationFence {
     } catch {
       if (inTransaction) { try { db.exec('ROLLBACK'); } catch { /* retain uncertain block */ } }
       throw Error('PREDICTION_FENCE_RECEIPT_WRITE_UNCERTAIN');
+    } finally { db.close(); }
+  }
+
+  /** Explicit operator-authorized terminal reconciliation only. CAS protects the exact
+   * previously confirmed ID; unknown outcomes and legacy rows cannot be released. */
+  releaseConfirmedTerminal(broadcasterId: string, predictionId: string) {
+    if (!validBroadcaster(broadcasterId) || !/^[A-Za-z0-9-]{1,128}$/.test(predictionId))
+      throw Error('PREDICTION_FENCE_UNAVAILABLE');
+    const db = this.open(true)!;
+    let inTransaction = false;
+    try {
+      db.exec('BEGIN IMMEDIATE'); inTransaction = true;
+      const deleted = db.prepare('DELETE FROM prediction_intents WHERE broadcaster_id=? AND prediction_id=?')
+        .run(broadcasterId, predictionId);
+      if (deleted.changes !== 1) throw Error('PREDICTION_FENCE_RECEIPT_MISMATCH');
+      db.exec('COMMIT'); inTransaction = false;
+    } catch {
+      if (inTransaction) { try { db.exec('ROLLBACK'); } catch { /* cannot infer commit state */ } }
+      throw Error('PREDICTION_FENCE_RECONCILIATION_UNCERTAIN');
     } finally { db.close(); }
   }
 

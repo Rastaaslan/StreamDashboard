@@ -1,17 +1,29 @@
+import { randomUUID } from 'node:crypto';
 import { Router, type Request, type Response } from 'express';
 import { AdvancedTwitchError } from '../../../integrations/twitch/src/streamcockpit-advanced.js';
 import { PredictionTwitch } from '../../../integrations/twitch/src/streamcockpit-prediction.js';
 import type { TwitchActor } from './streamcockpit-twitch-service.js';
 
-/** Read-only F08: paired management actor and SAME FIXE OBS live epoch before/after provider read. */
+/** F08 paired management: read-only observation and explicitly consented local CAS release.
+ * No route in this module sends a Twitch mutation; FIXE OBS epoch fenced throughout. */
 export function createTwitchPredictionRouter(options: {
   api: PredictionTwitch;
   actor(req: Request): TwitchActor | Promise<TwitchActor>;
   hostLive(): string | undefined | Promise<string | undefined>;
   broadcasterId?(): string;
   reservation?: { readConfirmedId(broadcasterId: string): string | null | undefined };
+  reconcileRelease?: { releaseAfterVerifiedTerminal(broadcasterId: string, predictionId: string): void };
 }) {
   const router = Router();
+  const pending = new Map<string, { actor: string; epoch: string; owner: string;
+    predictionId: string; expiresAt: number }>();
+  const releasing = new Set<string>();
+  const terminal = (state: string) => state === 'resolved' || state === 'canceled';
+  const onlyPost = (req: Request, res: Response) => {
+    if (req.method === 'POST') return false;
+    res.set('Allow', 'POST').status(405).json({ error: { code: 'METHOD_NOT_ALLOWED' } });
+    return true;
+  };
   router.use((_req, res, next) => { res.set('Cache-Control', 'private, no-store'); next(); });
   const deny = (res: Response, cause: unknown) => {
     const code = cause instanceof AdvancedTwitchError ? cause.code : 'unavailable';
@@ -51,7 +63,69 @@ export function createTwitchPredictionRouter(options: {
         reservation: predictionId === undefined ? 'absent' : predictionId === null ? 'unattributed' : 'confirmed',
         providerStatus: provider?.status ?? 'unchecked',
         checkedAt: provider?.checkedAt ?? null,
-        unlockAvailable: false });
+        unlockAvailable: false, // GET alone cannot release.
+        manualReleasePreviewPossible: Boolean(options.reconcileRelease &&
+          typeof predictionId === 'string' && provider && terminal(provider.status)) });
+    } catch (cause) { deny(res, cause); }
+  });
+  /** Operator explicitly requests release PREVIEW. Never changes journal or Twitch. */
+  router.all('/reconcile/preview', async (req, res) => {
+    if (onlyPost(req, res)) return;
+    try {
+      if (!req.body || typeof req.body !== 'object' || Array.isArray(req.body) ||
+          Object.keys(req.body).length !== 0)
+        throw new AdvancedTwitchError('precondition');
+      const expected = await check(req);
+      if (!options.reservation || !options.broadcasterId || !options.reconcileRelease)
+        throw new AdvancedTwitchError('unavailable');
+      const owner = options.broadcasterId();
+      if (releasing.has(owner)) throw new AdvancedTwitchError('precondition');
+      const id = options.reservation.readConfirmedId(owner);
+      if (typeof id !== 'string') throw new AdvancedTwitchError('precondition');
+      const observation = await options.api.observeById(id, owner);
+      await check(req, expected);
+      if (options.broadcasterId() !== owner || !terminal(observation.status))
+        throw new AdvancedTwitchError('precondition');
+      for (const [key, value] of pending) if (value.expiresAt <= Date.now()) pending.delete(key);
+      if (pending.size >= 100) throw new AdvancedTwitchError('unavailable');
+      const confirmationId = randomUUID(), expiresAt = Date.now() + 45_000;
+      pending.set(confirmationId, { ...expected, owner, predictionId: id, expiresAt });
+      res.json({ schemaVersion: 1, kind: 'streamcockpit-prediction-release-preview',
+        confirmationId, expiresAt, providerStatus: observation.status,
+        warning: 'Confirmer manuellement la fin de cette prédiction libère la création suivante sur cette chaîne.' });
+    } catch (cause) { deny(res, cause); }
+  });
+  /** One-use operator confirmation: fresh exact-ID terminal GET, then SQLite CAS. */
+  router.all('/reconcile/confirm', async (req, res) => {
+    if (onlyPost(req, res)) return;
+    try {
+      const expected = await check(req);
+      const body = req.body;
+      if (!body || typeof body !== 'object' || Array.isArray(body) ||
+          Object.keys(body).sort().join(',') !== 'confirmationId,confirmed' ||
+          body.confirmed !== true || typeof body.confirmationId !== 'string' ||
+          !/^[0-9a-f-]{36}$/i.test(body.confirmationId))
+        throw new AdvancedTwitchError('precondition');
+      const entry = pending.get(body.confirmationId);
+      pending.delete(body.confirmationId); // Consume BEFORE first await.
+      if (!entry || entry.expiresAt <= Date.now() || entry.actor !== expected.actor ||
+          entry.epoch !== expected.epoch || !options.reservation ||
+          !options.broadcasterId || !options.reconcileRelease ||
+          releasing.has(entry.owner)) throw new AdvancedTwitchError('precondition');
+      releasing.add(entry.owner);
+      try {
+        if (options.broadcasterId() !== entry.owner ||
+            options.reservation.readConfirmedId(entry.owner) !== entry.predictionId)
+          throw new AdvancedTwitchError('precondition');
+        const provider = await options.api.observeById(entry.predictionId, entry.owner);
+        await check(req, expected);
+        if (!terminal(provider.status) || options.broadcasterId() !== entry.owner ||
+            options.reservation.readConfirmedId(entry.owner) !== entry.predictionId)
+          throw new AdvancedTwitchError('precondition');
+        options.reconcileRelease.releaseAfterVerifiedTerminal(entry.owner, entry.predictionId);
+        res.json({ schemaVersion: 1, kind: 'streamcockpit-prediction-release-confirmed',
+          released: true, providerStatus: provider.status });
+      } finally { releasing.delete(entry.owner); }
     } catch (cause) { deny(res, cause); }
   });
   router.all('/', async (req, res) => {
