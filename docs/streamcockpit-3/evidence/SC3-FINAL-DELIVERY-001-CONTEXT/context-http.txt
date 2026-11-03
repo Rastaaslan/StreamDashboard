@@ -1,0 +1,9 @@
+
+ RUN  v5.0.1 C:/Users/damie/Dev/StreamCockpit-3.0-FullExperience
+
+ Ô£ô tests/streamcockpit3-master-context-http.test.ts (8 tests) 590ms
+
+ Test Files  1 passed (1)
+      Tests  8 passed (8)
+   Start at  14:48:48
+   Duration  1.34s (tests 49%, import 34%, transform 17%)

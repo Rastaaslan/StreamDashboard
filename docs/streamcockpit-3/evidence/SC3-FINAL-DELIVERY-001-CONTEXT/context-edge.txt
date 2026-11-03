@@ -1,0 +1,10 @@
+
+ RUN  v5.0.1 C:/Users/damie/Dev/StreamCockpit-3.0-FullExperience
+
+ Ô£ô tests/streamcockpit3-master-context-browser.test.ts (1 test) 1294ms
+   Ô£ô F03/F07 Edge 320px: authenticated master banks, explicit OBS command, offline and expiry fences 1293ms
+
+ Test Files  1 passed (1)
+      Tests  1 passed (1)
+   Start at  14:50:06
+   Duration  2.35s (tests 59%, import 32%, transform 9%)

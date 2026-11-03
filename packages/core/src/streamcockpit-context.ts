@@ -1,5 +1,5 @@
 /** Presentation selection only. No command payload, dispatcher, clock or I/O. */
-export type DeviceRole = 'stream-pc' | 'gaming-pc' | 'android';
+export type DeviceRole = 'stream-pc' | 'gaming-pc' | 'android' | 'paired-controller';
 export type StreamState = 'offline' | 'starting' | 'live' | 'stopping';
 export interface ContextSnapshot {
   scene: string | null;
@@ -43,7 +43,7 @@ export interface ContextPresentation {
   actions: Array<{ id: string; label: string; available: boolean;
     reason: 'network-unavailable' | 'capabilities-unknown' | 'missing-capability' | null }>;
 }
-const roles = ['stream-pc', 'gaming-pc', 'android'];
+const roles = ['stream-pc', 'gaming-pc', 'android', 'paired-controller'];
 const states = ['offline', 'starting', 'live', 'stopping'];
 function fail(path: string): never { throw new TypeError(`Invalid context schema: ${path}`); }
 function object(value: unknown, keys: string[], required: string[], path: string): Record<string, unknown> {

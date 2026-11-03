@@ -1,0 +1,82 @@
+[
+    {
+        "original":  "C:\\Users\\damie\\AppData\\Local\\Temp\\sc3-final-integrated2-vitest.log",
+        "sha256":  "d9ca6805d2124733485b7fb0150292e0ec303ba41adb3ec222bacd1f79097a21",
+        "presentation":  "integrated2-vitest.txt"
+    },
+    {
+        "original":  "C:\\Users\\damie\\AppData\\Local\\Temp\\sc3-final-integrated2-vitest-tls.log",
+        "sha256":  "e8d4cc89ff5a20ce7a0b10e897f9379a05cc581c69eba53f5342875885b51c95",
+        "presentation":  "integrated2-vitest-tls.txt"
+    },
+    {
+        "original":  "C:\\Users\\damie\\AppData\\Local\\Temp\\sc3-final-context-types.log",
+        "sha256":  "02fc317be9c2332372313f5ab4150d40edc22d27e0f384a484364fac49613455",
+        "presentation":  "context-types.txt"
+    },
+    {
+        "original":  "C:\\Users\\damie\\AppData\\Local\\Temp\\sc3-final-context-types2.log",
+        "sha256":  "02fc317be9c2332372313f5ab4150d40edc22d27e0f384a484364fac49613455",
+        "presentation":  "context-types2.txt"
+    },
+    {
+        "original":  "C:\\Users\\damie\\AppData\\Local\\Temp\\sc3-final-context-types-final.log",
+        "sha256":  "02fc317be9c2332372313f5ab4150d40edc22d27e0f384a484364fac49613455",
+        "presentation":  "context-types-final.txt"
+    },
+    {
+        "original":  "C:\\Users\\damie\\AppData\\Local\\Temp\\sc3-final-context-browser-types.log",
+        "sha256":  "bb924b5407f9d304b72de6585fd82df628813488b5da1b1a285d6e9d05b09c1b",
+        "presentation":  "context-browser-types.txt"
+    },
+    {
+        "original":  "C:\\Users\\damie\\AppData\\Local\\Temp\\sc3-final-context-browser-types-final.log",
+        "sha256":  "bb924b5407f9d304b72de6585fd82df628813488b5da1b1a285d6e9d05b09c1b",
+        "presentation":  "context-browser-types-final.txt"
+    },
+    {
+        "original":  "C:\\Users\\damie\\AppData\\Local\\Temp\\sc3-final-context-regression.log",
+        "sha256":  "9587b13d121c3881bd00328544544030ba2fd2c4fb3822f5c57a58b451d61527",
+        "presentation":  "context-regression.txt"
+    },
+    {
+        "original":  "C:\\Users\\damie\\AppData\\Local\\Temp\\sc3-final-context-http.log",
+        "sha256":  "1c621bd77bc38c5ee4a3412a55c08026bd71e3d37753dce81472299d76fbd940",
+        "presentation":  "context-http.txt"
+    },
+    {
+        "original":  "C:\\Users\\damie\\AppData\\Local\\Temp\\sc3-final-context-edge.log",
+        "sha256":  "3d503cbbbbc71a8af0b6d56ca351f605ba0e88080a2ae9d5b0493cb01ecf53f8",
+        "presentation":  "context-edge.txt"
+    },
+    {
+        "original":  "C:\\Users\\damie\\AppData\\Local\\Temp\\sc3-final-context-runtime.log",
+        "sha256":  "f2d507dc2ac11beaf66a5e77ee434e60a0b38ee5eb156735cceb9defec4a817b",
+        "presentation":  "context-runtime.txt"
+    },
+    {
+        "original":  "C:\\Users\\damie\\AppData\\Local\\Temp\\sc3-final-context-qualified-targets.log",
+        "sha256":  "bee5c3228926a90b650027d3a1e430ace62254c43c06f590b9f3aedf046677a8",
+        "presentation":  "context-qualified-targets.txt"
+    },
+    {
+        "original":  "C:\\Users\\damie\\AppData\\Local\\Temp\\sc3-final-context-build.log",
+        "sha256":  "ff22c0182ccaf7b2efc1a581e6f42d13f8b1f2d71672a6b2f73f1f5d1b8308f8",
+        "presentation":  "context-build.txt"
+    },
+    {
+        "original":  "C:\\Users\\damie\\AppData\\Local\\Temp\\sc3-final-context-shipped.log",
+        "sha256":  "b5bed5e2ffcf5737d70ed13b0c8a93b7b5aaefc5dce68ba7c50aba0856a1d856",
+        "presentation":  "context-shipped.txt"
+    },
+    {
+        "original":  "C:\\Users\\damie\\AppData\\Local\\Temp\\sc3-final-context-security.log",
+        "sha256":  "4c3d35ca9fc2f245661638aea23bca5e4473929da39bc424f18f7cfbfcbcbe54",
+        "presentation":  "context-security.txt"
+    },
+    {
+        "original":  "C:\\Users\\damie\\AppData\\Local\\Temp\\sc3-final-context-electron.log",
+        "sha256":  "bda852f94a2968b6befe3bbf7fb8e30650eb5eb4f4ab5c69f7db6734efd51c6a",
+        "presentation":  "context-electron.txt"
+    }
+]

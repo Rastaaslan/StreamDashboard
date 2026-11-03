@@ -16,7 +16,7 @@ import {isRemoteApiAllowed,requiredDevicePermissions} from '../../apps/server/sr
 /** Loopback-only fake OBS protocol; the actual ObsClient, authority bus and HTTP router run unchanged. */
 export async function withMixerFixture(run:(fixture:any)=>Promise<void>){
  const directory=await mkdtemp(join(tmpdir(),'streamcockpit-mixer-qa-'));
- let gain=.75,mute=false,uuid='b7ddf425-b16d-4d53-b213-b607dc853c9f',mode='ok',host:string|undefined='FIXE',writes=0;
+ let gain=.75,mute=false,uuid='b7ddf425-b16d-4d53-b213-b607dc853c9f',mode='ok',host:string|undefined='FIXE',writes=0,scene='Live',streaming=false;
  const rpc:Array<{type:string;args:any}>=[],intents:Record<string,string>={};let listReads=0;
  const obsServer=new WebSocketServer({port:0,host:'127.0.0.1'});
  await new Promise<void>(resolve=>obsServer.once('listening',resolve));
@@ -28,15 +28,17 @@ export async function withMixerFixture(run:(fixture:any)=>Promise<void>){
   socket.on('message',data=>{
    const message=decode(data as Buffer) as any,d=message.d;
    if(process.env.SC3_MIXER_DEBUG==='1')console.error('QA OBS',message.op,d?.requestType??'handshake');
-   if(message.op===1){send({op:2,d:{negotiatedRpcVersion:1}});return}
+   if(message.op===1||message.op===3){send({op:2,d:{negotiatedRpcVersion:1}});return}
    if(message.op!==6)return;
    const type=d.requestType,args=d.requestData??{};rpc.push({type,args});
    let response:any={},code=100;
    switch(type){
     case 'GetVersion':response={obsVersion:'32.0.0',obsWebSocketVersion:'5.6.0',rpcVersion:1};break;
-    case 'GetCurrentProgramScene':response={currentProgramSceneName:'Live'};break;
-    case 'GetSceneList':response={scenes:[{sceneName:'Live'}]};break;
-    case 'GetStreamStatus':case 'GetRecordStatus':response={outputActive:false};break;
+    case 'GetCurrentProgramScene':response={currentProgramSceneName:scene};break;
+    case 'GetSceneList':response={scenes:[{sceneName:'Live'},{sceneName:'Pause'}]};break;
+    case 'SetCurrentProgramScene':scene=args.sceneName;writes++;send({op:5,d:{eventType:'CurrentProgramSceneChanged',eventIntent:4,eventData:{sceneName:scene}}});break;
+    case 'GetStreamStatus':response={outputActive:streaming};break;
+    case 'GetRecordStatus':response={outputActive:false};break;
     case 'GetInputList':if(mode==='revoke-during-final-read'&&++listReads===4)auth.revoke(paired.deviceId);response={inputs:[{inputName:'Micro QA',inputUuid:mode==='no-uuid'?undefined:uuid,inputKind:'wasapi_input_capture'}]};break;
     case 'GetInputMute':response={inputMuted:mute};break;
     case 'GetInputVolume':response={inputVolumeMul:gain,inputVolumeDb:20*Math.log10(gain)};break;
@@ -88,8 +90,9 @@ export async function withMixerFixture(run:(fixture:any)=>Promise<void>){
    const response=await fetch(origin+'/api/v1/streamcockpit-mixer/control/'+path,{method,headers:{'Content-Type':'application/json',authorization:'Device '+token},...(body===undefined?{}:{body:JSON.stringify(body)})});
    const text=await response.text();let payload;try{payload=JSON.parse(text)}catch{payload={error:text}}return {status:response.status,body:payload};
   };
-  await run({origin,call,auth,paired,obs,bus,rpc,domain,intents,directory,
-   state:()=>({gain,mute,uuid,writes}),setMode:(value:string)=>{mode=value},setHost:(value:string|undefined)=>{host=value},
+  await run({origin,call,auth,paired,obs,bus,rpc,domain,intents,directory,app,cache,obsUrl:'ws://127.0.0.1:'+(obsServer.address()as AddressInfo).port,
+   state:()=>({gain,mute,uuid,writes,scene}),setScene:(value:string)=>{scene=value;for(const socket of obsServer.clients)if(socket.readyState===WebSocket.OPEN)socket.send(encode({op:5,d:{eventType:'CurrentProgramSceneChanged',eventIntent:4,eventData:{sceneName:scene}}}))},setMode:(value:string)=>{mode=value},setHost:(value:string|undefined)=>{host=value},
+   setStreaming:(value:boolean)=>{streaming=value;for(const socket of obsServer.clients)if(socket.readyState===WebSocket.OPEN)socket.send(encode({op:5,d:{eventType:'StreamStateChanged',eventIntent:64,eventData:{outputActive:streaming}}}))},
    changeSource:()=>{uuid='ea7cd229-38a9-46dc-aa94-e746eb37622d'},changeGain:(value:number)=>{gain=value},
    restartRouter:async()=>{const stored=JSON.parse(await readFile(join(directory,'intents.json'),'utf8'));Object.assign(intents,stored);controls=makeRouter()},
   });

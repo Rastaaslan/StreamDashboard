@@ -16,3 +16,5 @@ Régie Twitch avec FIXE comme propriétaire OBS/minuteur, interfaces Windows et 
 
 ## Réception et migration
 Les validations physiques et les signatures restent requises. Voir G3_MANUAL_RECEPTION_20261103.md et MIGRATION_ROLLBACK_3_0.md. Aucune installation, mise à jour d’une installation existante, publication ou action Twitch publique n’est autorisée par ces notes.
+
+Compléments intégrés le 03/11 : mixeur gain/muet avec aperçu, relecture et retour manuel protégé ; banques contextuelles du Deck issues des observations de la régie et de droits appairés, suspendues en cas de source périmée. Ces circuits réutilisent le maître OBS et les reçus existants. Routage audio avancé, matériels, OAuth réel et mise à jour transactionnelle restent décrits comme incomplets dans l’audit ; ces notes ne constituent pas une annonce de release.

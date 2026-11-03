@@ -328,3 +328,41 @@ test('SC3 final delivery : identité locale réelle, aucun privilège loopback i
   await rm(profile,{recursive:true,force:true});
  }
 });
+
+
+test('SC3 final context shell : Deck livré, commande OBS fictive et reçu natif',async()=>{
+ test.setTimeout(45_000);
+ const {withMixerFixture}=await import('./helpers/streamcockpit-mixer-fixture.js');
+ await withMixerFixture(async f=>{
+  await f.obs.close();
+  const profile=await mkdtemp(path.join(os.tmpdir(),'streamdashboard-qa-'));
+  const previousObs=process.env.OBS_URL,previousData=process.env.DATA_FILE;
+  process.env.OBS_URL=f.obsUrl;delete process.env.DATA_FILE;
+  let application:ElectronApplication|undefined;
+  try{
+   await expectEndpointClosed(RUNTIME_ORIGIN);application=await launch(profile);
+   const page=await application.firstWindow();await expectRuntimeReady(page);
+   await page.locator('#installation-form [name="name"]').fill('FIXE QA contexte');
+   await page.locator('#installation-form [name="preset"]').selectOption('single-pc');
+   await page.locator('#installation-form').getByRole('button',{name:'Prévisualiser le changement'}).click();
+   await page.getByRole('button',{name:'Appliquer',exact:true}).click();await expect(page.locator('#dialog')).not.toBeVisible();
+   await page.evaluate(async()=>{
+    const state=await(await fetch('/api/v2/state')).json(),configuration=state.configuration;
+    configuration.actions=[{id:'pause-qa',label:'Pause QA',type:'scene.set',value:'Pause',color:'amber',shortcut:''}];
+    const response=await fetch('/api/v2/configuration',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({configuration,expectedRevision:configuration.revision})});
+    if(!response.ok)throw Error('QA_CONFIGURATION_FAILED');
+   });
+   await page.locator('nav [data-page="deck"]').click();
+   await expect(page.locator('[data-action="pause-qa"]')).toBeVisible();
+   const context=page.locator('[data-context-preview]');await expect(context).toHaveAttribute('data-status','known');
+   expect(f.state().writes).toBe(0);await context.getByRole('button',{name:'Pause QA',exact:true}).click();
+   await expect.poll(()=>f.state().scene).toBe('Pause');expect(f.state().writes).toBe(1);
+   const receipts=await page.evaluate(async()=>{const value=await(await fetch('/api/v2/state')).json();return value.receipts});
+   expect(receipts).toEqual(expect.arrayContaining([expect.objectContaining({action:'pause-qa',status:'succeeded'})]));
+   await application.close();application=undefined;await expectEndpointClosed(RUNTIME_ORIGIN);
+  }finally{
+   await application?.close().catch(()=>{});if(previousObs===undefined)delete process.env.OBS_URL;else process.env.OBS_URL=previousObs;
+   if(previousData===undefined)delete process.env.DATA_FILE;else process.env.DATA_FILE=previousData;await rm(profile,{recursive:true,force:true});
+  }
+ });
+});

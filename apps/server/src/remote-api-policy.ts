@@ -2,6 +2,7 @@ import type { DeckAction } from '../../../packages/contracts/src/control.js';
 import { actionCapability } from '../../mobile/shared/action-definition.js';
 import type { DevicePermission } from '../../mobile/shared/device-permissions.js';
 const GET_EXACT = new Set([
+  '/v1/streamcockpit-context',
   '/v1/twitch/advanced/capabilities','/v1/twitch/advanced/prediction','/v1/twitch/advanced/prediction/reconcile','/v1/twitch/advanced/prediction/end/inspect','/v1/streamcockpit-health','/v1/streamcockpit-mixer','/v1/state','/v1/profile','/v1/connections','/v1/control-hub','/v1/events','/v1/soundboard',
   '/v1/automations','/v1/automations/capabilities','/v1/streamlabs/events','/v1/supports','/v1/twitch/categories',
   '/v1/dji/overview','/v1/spotify/status','/v1/twitch/videos','/v1/twitch/clips','/v1/twitch/chatters','/v1/twitch/chat/state','/v1/twitch/moderation/capabilities',
@@ -94,6 +95,7 @@ export const remoteApiPolicySnapshot = {
 
 /** Explicit permissions supplement the existing legacy/management allowlists. */
 export function requiredDevicePermissions(method:string,path:string,body:unknown,actions:DeckAction[]=[]):DevicePermission[] {
+  if(path==='/v1/streamcockpit-context')return ['observe'];
   if(path.startsWith('/v1/streamcockpit-mixer/control/'))return ['observe','obs','audio'];
   if(path==='/v1/twitch/advanced/capabilities')return ['chat'];
   if(method==='GET'&&['/v1/twitch/advanced/prediction','/v1/twitch/advanced/prediction/reconcile','/v1/twitch/advanced/prediction/end/inspect'].includes(path))return ['chat','cloud'];

@@ -8,6 +8,7 @@ export function registerControlRoutes(options: {
   app: express.Application; control: ControlService; wizebotCommands: WizeBotService; obs: ObsClient;
   timerSource(): string | undefined; state(): unknown; settings: express.RequestHandler; planningCreate: express.RequestHandler; planningUpdate: express.RequestHandler; planningDelete: express.RequestHandler; recurrence: express.RequestHandler;
   observe(): Promise<void>;
+  verifyContext?(request: express.Request, action: string): Promise<void>;
   isLocal(req: express.Request): boolean; port(): number;
 }) {
   const {app,control,obs}=options;
@@ -23,7 +24,7 @@ export function registerControlRoutes(options: {
         res.status(409).json({ok:false,error:{code:'CONFIRM_REQUIRED',message:'Confirmez l’arrêt depuis le bouton du tableau de bord.',retryable:false}});
         return;
       }
-      res.json(publicControlReceipt(await control.execute({...req.body,action}, async action=>{res.locals.checkDevicePermission?.(action);await res.locals.checkDeviceRole?.(action);})));
+      res.json(publicControlReceipt(await control.execute({...req.body,action}, async action=>{res.locals.checkDevicePermission?.(action);await res.locals.checkDeviceRole?.(action);if(req.body.expectedContextToken!==undefined){if(!options.verifyContext)throw new Error('Contexte maître indisponible.');await options.verifyContext(req,action);}})));
     } catch(e){next(e);}
   });
   app.get('/api/v2/wizebot/catalog',(_req,res)=>res.json(options.wizebotCommands.snapshot()));

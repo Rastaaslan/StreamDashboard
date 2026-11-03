@@ -12,7 +12,7 @@ export interface ControlAdapter {
   outputActive?(platform: Platform): boolean | null;
   settle?(platform: Platform, start: boolean, requestId?: string, signal?: AbortSignal): Promise<void>;
   metadata(platform: Platform, value: LiveMetadata): Promise<void>;
-  action(action: DeckAction, id: string): Promise<void | ActionResult>;
+  action(action: DeckAction, id: string, recheck?: () => Promise<void>): Promise<void | ActionResult>;
 }
 const platforms: Platform[] = ['twitch'];
 function superseded() { return Object.assign(new Error('Démarrage interrompu par une demande d’arrêt. Vérifiez les sorties déjà lancées.'), { name: 'ACTION_SUPERSEDED' }); }
@@ -121,7 +121,8 @@ export class ControlService {
     if (this.stopped) return Promise.reject(new Error('Hôte en cours d’arrêt.'));
     if (!request || !/^[A-Za-z0-9_-]{8,100}$/.test(request.id) || typeof request.action !== 'string' || request.action.length > 100 || (request.platform !== undefined && !platforms.includes(request.platform))) return Promise.reject(new Error('Commande invalide.'));
     if (request.soundId !== undefined && (request.action !== 'sound.play' || !/^[A-Za-z0-9._:-]{1,100}$/.test(request.soundId))) return Promise.reject(new Error('Son invalide.'));
-    const fingerprint = createHash('sha256').update(JSON.stringify({action:request.action, platform:request.platform, metadata:request.metadata, soundId:request.soundId, expectedRevision:request.expectedRevision, expectedAction:request.expectedAction, confirmed:request.confirmed, youtubeBaseline:request.youtubeBaseline})).digest('hex');
+    if (request.expectedContextToken !== undefined && (typeof request.expectedContextToken !== 'string' || !/^[0-9a-f-]{36}$/i.test(request.expectedContextToken))) return Promise.reject(new Error('Contexte invalide.'));
+    const fingerprint = createHash('sha256').update(JSON.stringify({expectedContextToken:request.expectedContextToken,action:request.action, platform:request.platform, metadata:request.metadata, soundId:request.soundId, expectedRevision:request.expectedRevision, expectedAction:request.expectedAction, confirmed:request.confirmed, youtubeBaseline:request.youtubeBaseline})).digest('hex');
     const previous = this.data.receipts.find(r => r.id === request.id);
     if (previous && previous.fingerprint !== fingerprint) return Promise.reject(new Error('Identifiant déjà utilisé pour une autre commande.'));
     const active = this.inFlight.get(request.id); if (active) return active;
@@ -129,7 +130,7 @@ export class ControlService {
     const timestamp = Date.parse(request.issuedAt);
     if (!Number.isFinite(timestamp) || Date.now() - timestamp > 30_000 || timestamp - Date.now() > 5_000) return Promise.reject(new Error('Commande expirée. Vérifiez l’horloge et recommencez.'));
     // A second press with a different ID while the same action is pending joins its result.
-    const actionKey = `${request.action}:${request.soundId ?? ''}:${request.platform ?? 'both'}:${request.expectedAction ? actionDefinition(request.expectedAction) : ''}`;
+    const actionKey = `${request.action}:${request.soundId ?? ''}:${request.platform ?? 'both'}:${request.expectedAction ? actionDefinition(request.expectedAction) : ''}:${request.expectedContextToken ?? ''}`;
     const pending = this.pendingActions.get(actionKey);
     if (pending && request.action !== 'metadata.apply') return pending;
     const stopping = request.action === 'live.stop';
@@ -244,7 +245,7 @@ export class ControlService {
             : this.data.configuration.actions.find(a => a.id === request.action);
           if (!action) fail('Action inconnue.');
           if (action.type === 'live.start' || action.type === 'live.stop') fail('Utilisez la commande commune de diffusion.');
-          const result = await this.adapter.action(action, request.id); receipt.status = 'succeeded'; receipt.message = result?.message || 'Exécution confirmée par le PC de stream'; if (result) receipt.result = result;
+          const result = authorize && request.expectedContextToken ? await this.adapter.action(action, request.id, async () => { await authorize(request.action); verifyButton(); }) : await this.adapter.action(action, request.id); receipt.status = 'succeeded'; receipt.message = result?.message || 'Exécution confirmée par le PC de stream'; if (result) receipt.result = result;
         }
       } catch (error) { receipt.status = error instanceof Error && error.name === 'ACTION_UNCERTAIN' ? 'uncertain' : 'failed'; receipt.message = error instanceof Error ? error.message : 'Échec de la commande'; }
       receipt.finishedAt = new Date().toISOString(); await this.save(); return structuredClone(receipt);

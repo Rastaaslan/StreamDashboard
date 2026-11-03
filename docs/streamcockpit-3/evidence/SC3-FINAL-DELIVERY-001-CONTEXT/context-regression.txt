@@ -1,0 +1,26 @@
+
+ RUN  v5.0.1 C:/Users/damie/Dev/StreamCockpit-3.0-FullExperience
+
+vitest.cmd : (node:16928) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+Au caractère Ligne:1 : 69
++ ... xperience'; & .\node_modules\.bin\vitest.cmd run tests/control-v2.tes ...
++                 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: ((node:16928) Ex...nge at any time:String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+
+(Use `node --trace-warnings ...` to show where the warning was created)
+ Ô£ô tests/control-v2.test.ts (13 tests) 606ms
+   Ô£ô Real HTTP persistence and cross-client conflict handling (1)
+     Ô£ô creates, updates and deletes events, rejects stale edits, and retains shared configuration after restart 321ms
+ Ô£ô tests/control-keyboard-routes.test.ts (7 tests) 235ms
+ Ô£ô tests/command-service.test.ts (33 tests) 149ms
+ Ô£ô tests/streamcockpit3-context-integration.test.ts (9 tests) 36ms
+ Ô£ô tests/streamcockpit3-context.test.ts (37 tests) 16ms
+
+ Test Files  5 passed (5)
+      Tests  99 passed (99)
+   Start at  14:47:25
+   Duration  4.62s (import 46%, tests 27%, transform 26%, worker 1%)
+
+    Isolate  5 workers spawned ┬À ~131ms startup each (spawn + environment, per file)
+             at least ~523ms faster with isolate: false ÔÇö reuses workers across files instead of one per file

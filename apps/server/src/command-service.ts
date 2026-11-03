@@ -30,7 +30,7 @@ export class DashboardCommandService {
   get hasPendingCommands() { return this.pendingCommands > 0; }
   get activityRevision() { return this.commandRevision; }
 
-  execute(command: DashboardCommand) {
+  execute(command: DashboardCommand, authorize?: () => Promise<void>) {
     if (this.stopping) return Promise.reject(new Error('StreamDashboard est en cours d’arrêt.'));
     if (!command || typeof command.type !== 'string') return Promise.reject(new Error('Commande invalide.'));
     const generation = this.obs.connectionGeneration;
@@ -41,7 +41,12 @@ export class DashboardCommandService {
     const operation = this.queue.then(() => {
       if (usesObs && (!connected || generation !== this.obs.connectionGeneration)) throw new Error('Connexion OBS modifiée : commande annulée.');
       this.activeGeneration = generation;
-      return this.executeNow(command);
+      if (!authorize) return this.executeNow(command);
+      return (async () => {
+        await authorize();
+        if (usesObs) this.requireActiveConnection();
+        return this.executeNow(command);
+      })();
     }).finally(() => { this.pendingCommands--; this.commandRevision++; });
     this.queue = operation.then(() => undefined, () => undefined);
     return operation;

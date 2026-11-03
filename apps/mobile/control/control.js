@@ -1,9 +1,10 @@
+import { mountMasterContext } from './streamcockpit-master-context.js';
 import { renderContextPreview } from './streamcockpit-context-preview.js';
 import { liveControlTarget } from './streamcockpit-authority-target.js';
 import { mountHealthPage } from './streamcockpit-health/page.js';
 import { mountMixerPage } from './streamcockpit-mixer-page.js';
 import { mountMomentsPage } from './streamcockpit-moments-page.js';
-let healthPage, mixerPage, momentsPage;
+let healthPage, mixerPage, momentsPage, contextDeck;
 import {createLazyTask,createLazyPlanning} from './lazy-features.js';
 import {clientAuthorityEndpoint,clientMustDelegateCommand} from './client-authority.js';
 import {createMasterClockProjection} from './streamcockpit-master-clock.js';
@@ -466,7 +467,7 @@ function deckPage(){
  if(compact)return compactDeckPage();
  const groups=[['all','Tout'],['scenes','Scènes'],['alerts','Alertes'],['messages','Messages'],['wizebot','WizeBot']];
  const actions=data.configuration.actions.filter(a=>deckCategory==='all'||(deckCategory==='scenes'&&['mode.set','scene.set'].includes(a.type))||(deckCategory==='alerts'&&a.type==='alert.play')||(deckCategory==='messages'&&a.type==='chat.send')||(deckCategory==='wizebot'&&a.type==='wizebot.command'));
- return `<div class="performance-head"><div><span class="eyebrow">À VOUS DE JOUER</span><h1>Mon Deck</h1></div><span class="pill">${esc(data.host.state.obs.scene||'OBS indisponible')}</span></div><div class="tabs pad-tabs">${groups.map(([id,label])=>`<button class="${id===deckCategory?'':'secondary'}" data-deck-category="${id}">${label}</button>`).join('')}</div>${deckCategory==='wizebot'?wizebotToolbar():replayPanel()}<div class="deck performance-deck">${actions.map(actionButton).join('')||'<p class="empty">Ajoutez vos boutons depuis Gestion → Boutons & macros.</p>'}</div><div class="sound-transport">${stopAudioButton()}<button class="secondary" data-page="sounds">♫ Ouvrir la soundboard</button></div><section class="last-feedback" aria-live="polite">${resultRows()}</section>`;
+ return renderContextPreview({online,server,actions})+`<div class="performance-head"><div><span class="eyebrow">À VOUS DE JOUER</span><h1>Mon Deck</h1></div><span class="pill">${esc(data.host.state.obs.scene||'OBS indisponible')}</span></div><div class="tabs pad-tabs">${groups.map(([id,label])=>`<button class="${id===deckCategory?'':'secondary'}" data-deck-category="${id}">${label}</button>`).join('')}</div>${deckCategory==='wizebot'?wizebotToolbar():replayPanel()}<div class="deck performance-deck">${actions.map(actionButton).join('')||'<p class="empty">Ajoutez vos boutons depuis Gestion → Boutons & macros.</p>'}</div><div class="sound-transport">${stopAudioButton()}<button class="secondary" data-page="sounds">♫ Ouvrir la soundboard</button></div><section class="last-feedback" aria-live="polite">${resultRows()}</section>`;
 }
 function replayPanel(){
  const active=online&&replay?.active===true,ready=online&&replay?.enabled===true&&replay?.available!==false;
@@ -534,11 +535,12 @@ const floatingMic=createFloatingMicBattery($('#floating-mic-battery'),{
 function settingsPage(){if(native&&!server&&tab==='obs')tab='platforms';return renderSettings({data,native,server,tab,online,device,localEndpoint,deviceExecutor,macroConfigurationError,esc,input,select,check});}
 
 function render({passive=false}={}){
- if(passive&&(pointerHeld||dialog.open||editingForm($('#content')))){shell();if(!online){healthPage?.unavailable();mixerPage?.unavailable();momentsPage?.unavailable();}return;}
+ if(passive&&(pointerHeld||dialog.open||editingForm($('#content')))){shell();if(!online){healthPage?.unavailable();mixerPage?.unavailable();momentsPage?.unavailable();contextDeck?.unavailable();}return;}
  if(passive&&page==='mixer'&&online&&server&&mixerPage?.isAvailable(server)){shell();void mixerPage.refresh();return;}
  // F09 is an explicit session lookup: a passive host status refresh must not erase the selected journal.
  // After disconnect isAvailable() stays false, forcing a fresh page on reconnection.
  if(passive&&page==='moments'&&online&&server&&momentsPage?.isAvailable()){shell();return;}
+ contextDeck?.destroy();contextDeck=undefined;
  healthPage?.destroy();healthPage=undefined;
  mixerPage?.destroy();mixerPage=undefined;
  momentsPage?.destroy();momentsPage=undefined;
@@ -652,6 +654,15 @@ function render({passive=false}={}){
    spotifyPanel.update({online:online&&Boolean(server),host:data.host.hostname});
  }else{spotifyPanel?.destroy();spotifyPanel=undefined;}
  if(commandsBlocked())document.querySelectorAll('[data-action], [data-play-sound], [data-command]').forEach(button=>{if(button.dataset.action==='sound.stop'&&!macroContextChanging)return;button.disabled=true;button.title='Synchronisez les réglages en attente avant de déclencher une commande.';});
+ const contextRoot=$('[data-context-preview]');
+ if(page==='deck'&&contextRoot){
+  const contextAuthority=server;
+  contextDeck=mountMasterContext(contextRoot,{online:Boolean(online&&contextAuthority),
+   canExecute:()=>online&&server===contextAuthority&&!commandsBlocked()&&!busy,
+   request:()=>{if(!online||server!==contextAuthority)throw new Error('Régie contextuelle modifiée.');return network('/api/v1/streamcockpit-context',undefined,'GET',contextAuthority,contextAuthority===localEndpoint?'':credential);},
+   execute:(id,proof)=>{if(!online||server!==contextAuthority)throw new Error('Régie contextuelle modifiée.');return runAction(id,undefined,undefined,proof);},
+  });
+ }
  $('#content').dataset.renderedPage=page;
  if(samePerformance){const banks=$('.deck-banks');if(banks)banks.scrollLeft=bankScroll;window.scrollTo(0,scroll);}
  rememberForms();
@@ -881,9 +892,10 @@ async function runLocalAction(action,type,configured,soundId){
  }catch(error){if(error?.code!=='CANCELED'&&owner===autonomy&&!server)toast(error.message||'Action locale non confirmée.');}
  finally{busy=--activeCommands>0;if(owner===autonomy&&!server)await refresh(true);}
 }
-async function runAction(action,platform,soundId){
+async function runAction(action,platform,soundId,contextToken){
  const configured=data?.configuration.actions.find(value=>value.id===action),type=configured?.type||action;
  if(commandsBlocked()&&!(action==='sound.stop'&&!macroContextChanging)){toast('Synchronisez les réglages en attente avant de déclencher une commande.');return;}
+ if(contextToken&&(!configured||actionRouter.binding(configured))){toast('Cette action contextuelle exige son association courante sur la régie sélectionnée. Utilisez les banques manuelles pour une autre destination.');return;}
  if(configured&&actionRouter.binding(configured)){
   const bound=actionRouter.binding(configured);
   if(busy&&!['sound.stop','live.stop'].includes(bound.definition.type))return;
@@ -906,7 +918,7 @@ async function runAction(action,platform,soundId){
  activeCommands++;busy=true;
  try{
   render();
-  const result=await api('/api/v2/actions',{id:uuid(),issuedAt:new Date().toISOString(),action:['live.start','live.stop'].includes(configured?.type)?configured.type:action,...(platform?{platform}:{}),...(soundId?{soundId}:{}),...(configured?{expectedAction:configured}:{})});
+  const result=await api('/api/v2/actions',{id:uuid(),issuedAt:new Date().toISOString(),action:['live.start','live.stop'].includes(configured?.type)?configured.type:action,...(platform?{platform}:{}),...(soundId?{soundId}:{}),...(configured?{expectedAction:configured}:{}),...(contextToken?{expectedContextToken:contextToken}:{})});
   toast(`${labels[result.status]} · ${result.message}`);globalThis.StreamDashboardNative?.haptic(result.status==='succeeded'?'light':'heavy');
  }catch(error){toast(`Résultat non reçu : ${error.message}. Vérifiez le journal avant de recommencer.`);}
  finally{busy=--activeCommands>0;await refresh(true);if(dialog.open&&$('#replay-dialog-root'))replayDialog();}

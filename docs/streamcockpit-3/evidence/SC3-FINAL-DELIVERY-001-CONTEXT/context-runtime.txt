@@ -1,0 +1,17 @@
+
+ RUN  v5.0.1 C:/Users/damie/Dev/StreamCockpit-3.0-FullExperience
+
+vitest.cmd : (node:32304) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+Au caractère Ligne:1 : 69
++ ... xperience'; & .\node_modules\.bin\vitest.cmd run tests/streamcockpit3 ...
++                 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: ((node:32304) Ex...nge at any time:String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+
+(Use `node --trace-warnings ...` to show where the warning was created)
+ Ô£ô tests/streamcockpit3-master-context-runtime.test.ts (1 test) 238ms
+
+ Test Files  1 passed (1)
+      Tests  1 passed (1)
+   Start at  14:52:00
+   Duration  2.72s (import 53%, transform 38%, tests 9%)

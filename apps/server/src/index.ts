@@ -4,6 +4,7 @@ import { mapHostHealth } from './streamcockpit-health/host-adapter.js';
 import { ObsHealthObservation } from './streamcockpit-health/obs-observation.js';
 import { ObsMixerObservation } from './streamcockpit-mixer-observation.js';
 import { createMixerRouter, mixerHostEligible } from './streamcockpit-mixer-router.js';
+import { createMasterContext, createMasterContextRouter, type MasterContextObservation } from './streamcockpit-master-context.js';
 import { createMixerControlRouter } from './streamcockpit-mixer-control-router.js';
 import { createMomentsReadRouter } from './streamcockpit-moments-router.js';
 import { createMomentsManualRouter } from './streamcockpit-moments-manual-router.js';
@@ -714,6 +715,7 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
   const discordClient = () => new DiscordClient(discordToken, options.discordFetch ?? fetch);
   const obs = new ObsClient(local.settings.obsUrl, currentObsPassword, { logger });
   const obsHealthObservation = new ObsHealthObservation();
+  let masterContextObservation: Omit<MasterContextObservation, 'host' | 'game'> | undefined;
   const obsMixerObservation = new ObsMixerObservation();
   const savedTokens = await secrets.getTwitchTokens() ?? {};
   const twitchClientId = options.twitchClientId ?? process.env.TWITCH_CLIENT_ID ?? '';
@@ -757,6 +759,7 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
     (await secrets.getGoogleClientSecret?.() || (options.googleClientSecret ?? process.env.GOOGLE_CLIENT_SECRET ?? '')).trim(),
   );
   let googleCalendars: Array<{ id: string; summary: string; writable: boolean }> = [];
+  let masterGameObservation: { broadcasterId: string; gameId: string; gameName: string; observedAt: number } | undefined;
   let twitchChannel: { title: string; gameId: string; gameName: string; tags?: string[]; tagsWarning?: string } = { title: '', gameId: '', gameName: '' };
   let twitchRuntimeGeneration = 0;
   let twitchMetadataQueue: Promise<void> = Promise.resolve();
@@ -1281,7 +1284,9 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
       if (channel.title !== value.title || (value.twitchGameId && channel.gameId !== value.twitchGameId) || !sameTwitchTags(channel.tags, value.tags)) throw new Error('Twitch n’a pas confirmé toutes les informations demandées.');
       twitchChannel = { ...twitchChannel, ...channel }; broadcast();
     },
-    action: async (action, id) => {
+    action: async (action, id, recheck) => {
+      const executeAuthorizedCommand = (command: DashboardCommand) => commands.execute(command, recheck);
+      await recheck?.();
       if (action.type === 'replay.save') {
         const replayPath = await obs.saveReplay();
         return { message: `Clip sauvegardé sur ${hostname()} : ${replayPath}`, replayPath };
@@ -1312,16 +1317,16 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
         await obs.refresh(); const input = action.value || local.settings.primaryMicInput || '';
         if (!obs.state.connected || !Object.hasOwn(obs.state.inputs, input)) throw new Error('Sélectionnez un micro OBS disponible dans Configuration.');
         const muted = !obs.state.inputs[input].muted;
-        await commands.execute({ type: 'obs.mute', input, muted });
+        await executeAuthorizedCommand({ type: 'obs.mute', input, muted });
         if (obs.state.inputs[input]?.muted !== muted) throw new Error('Le micro OBS n’a pas confirmé son nouvel état.'); return;
       }
-      if (action.type === 'scene.set') await commands.execute({ type: 'obs.scene', scene: action.value });
-      else if (action.type === 'mode.set') await commands.execute(action.value === 'chatting' ? { type: 'scene.chatting' } : parseCommand({ type: 'mode.set', mode: action.value }));
+      if (action.type === 'scene.set') await executeAuthorizedCommand({ type: 'obs.scene', scene: action.value });
+      else if (action.type === 'mode.set') await executeAuthorizedCommand(action.value === 'chatting' ? { type: 'scene.chatting' } : parseCommand({ type: 'mode.set', mode: action.value }));
       else if (action.type === 'timer.add') {
         if (options.timerAuthority === false) throw Object.assign(new Error('Minuteur contrôlé uniquement par la régie principale.'), { name:'TIMER_AUTHORITY_REQUIRED' });
-        await commands.execute({ type: 'timer.add', seconds: Number(action.value) });
+        await executeAuthorizedCommand({ type: 'timer.add', seconds: Number(action.value) });
       }
-      else if (action.type === 'alert.play') await commands.execute({ type: 'obs.media.restart', input: action.value });
+      else if (action.type === 'alert.play') await executeAuthorizedCommand({ type: 'obs.media.restart', input: action.value });
       else throw new Error('Action non prise en charge.');
     },
   }, broadcast);
@@ -1589,6 +1594,7 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
   };
   executeAutomationCommand = async command => { await executeCommand({ ...command, commandId: `auto_${randomUUID()}`, correlationId: `auto_${randomUUID()}` }); };
   const resetTwitchRuntime = () => {
+    masterGameObservation = undefined;
     twitchRuntimeGeneration++;
     twitchEventSubKey = '';
     chatMessages = []; chatStatus = 'DISCONNECTED';
@@ -1627,8 +1633,11 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
       if (!capabilities.chatRead) { chatStatus = 'DISCONNECTED'; chatMessages = []; }
       if (!capabilities.chatters) twitchChatters = { items: [], total: 0, cursor: null };
       reconcileTwitchEventSub();
+      const metadataIdentity = twitch.publicIdentity().broadcasterId;
       const metadata = await twitch.getChannelMetadata();
       if (backgroundStopped) return;
+      masterGameObservation = metadataIdentity && metadataIdentity === twitch.publicIdentity().broadcasterId
+        ? { broadcasterId: metadataIdentity, gameId: metadata.gameId, gameName: metadata.gameName, observedAt: Date.now() } : undefined;
       twitchChannel = { title: metadata.title, gameId: metadata.gameId, gameName: metadata.gameName, tags: metadata.tags, tagsWarning: twitchChannel.tagsWarning };
       await refreshTwitchLive();
     } finally { broadcast(); }
@@ -2071,6 +2080,37 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
       obs: obsHealthObservation,
     }, Date.now()),
   }));
+
+  const masterContext = createMasterContext({
+    actor: async request => {
+      if (options.obsEnabled === false || options.timerAuthority === false) return undefined;
+      const device = await options.deviceDescriptor?.().catch(() => undefined);
+      if (!mixerHostEligible(device)) return undefined;
+      const local = isLocalRequest(request);
+      const token = request.headers.authorization?.match(/^Device (\S+)$/)?.[1];
+      const id = local ? 'FIXE:local-context:' + device!.id : remoteRuntimeEnabled && token ? remoteAuth.authenticate(token) : null;
+      if (!id || !local && !remoteAuth.permits(id, ['observe'])) return undefined;
+      const capabilities = (['obs','audio','clips','chat','cloud'] as const).filter(cap =>
+        capabilityEnabled(cap) && deviceRoleAvailable(device!, cap) && (local || remoteAuth.permits(id, [cap])) &&
+        (cap !== 'chat' || twitch.controlCapabilities().chatWrite));
+      return { id, role: local ? 'stream-pc' : 'paired-controller', capabilities };
+    },
+    source: async () => {
+      const device = await options.deviceDescriptor?.().catch(() => undefined);
+      const now = Date.now(), sample = masterContextObservation, clock = obsHealthObservation.read(now);
+      if (options.obsEnabled === false || options.timerAuthority === false || !mixerHostEligible(device) || !sample ||
+        !clock?.data.connected || clock.observedAt !== sample.observedAt || !obs.state.connected ||
+        sample.generation !== obs.connectionGeneration || sample.epoch !== obs.streamTransitionEpoch) return undefined;
+      const game = masterGameObservation;
+      const gameName = game && twitch.state.connected && game.broadcasterId === twitch.publicIdentity().broadcasterId &&
+        game.gameId === twitchChannel.gameId && game.gameName === twitchChannel.gameName && game.observedAt <= now && now-game.observedAt < 60_000 &&
+        game.gameName.length > 0 && game.gameName.length <= 200 ? game.gameName : null;
+      return { ...sample, host: device!.id, game: gameName };
+    },
+    configuration: () => control.snapshot().configuration,
+    modes: () => ({ ...local.settings.modeScenes, discussion: local.settings.chattingScene }),
+  });
+  app.use('/api/v1/streamcockpit-context', createMasterContextRouter(masterContext));
 
   // F05: audio gain/mute from notifications emitted by the local OBS host.
   // Reading never polls OBS and cannot modify gain, VOD routing or Spotify.
@@ -2995,7 +3035,7 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
     if (req.path.startsWith('/api/v2/') && req.body.expectedRevision !== planningFingerprint(id)) throw Object.assign(new Error('Événement modifié sur un autre appareil. Rechargez avant d’enregistrer.'), { name: 'REVISION_CONFLICT' });
   };
   const controlHostState = () => ({ hostname: hostname(), timerObservedAt: Date.now(), chat: { connected: twitch.state.connected, canSend: twitch.controlCapabilities().chatWrite, channel: twitch.publicIdentity().userName || '' }, replayAutoStartError, monitor: { twitchLogin: twitch.publicIdentity().userName || '' }, micHealth:obs.micHealth(local.settings.primaryMicInput || ''), djiBatteryRelay:djiBatteryRelay.snapshot(), state: toRemoteDashboardState(snapshot()), settings: publicSettings(), settingsRevision: settingsFingerprint(), planning: structuredClone(local.planning), occurrences: expandEditableRecurringItems(local.planning, { from: Date.now() - DAY_MS, to: Date.now() + 90 * DAY_MS }), planningRevisions: Object.fromEntries(local.planning.map(item => [item.id, planningFingerprint(item.id)])), platforms: structuredClone(platformLive), outputStatus: structuredClone(outputStatus), local: true });
-  registerControlRoutes({ app, control, obs, wizebotCommands, timerSource: () => local.settings.timerBrowserSource, settings: settingsUpdate, planningCreate, planningUpdate, planningDelete, recurrence: recurrenceException, isLocal: isLocalRequest, port: () => runtimePort, observe: observePlatforms, state: controlHostState });
+  registerControlRoutes({ app, control, obs, wizebotCommands, timerSource: () => local.settings.timerBrowserSource, settings: settingsUpdate, planningCreate, planningUpdate, planningDelete, recurrence: recurrenceException, isLocal: isLocalRequest, port: () => runtimePort, observe: observePlatforms, state: controlHostState, verifyContext: (req, action) => masterContext.assert(req, req.body.expectedContextToken, action) });
   // Device-owned clients call their loopback runtime, never a paired PC. The
   // narrow adapter reuses provider credentials and all existing remote guards.
   app.post('/api/v2/device/providers', async (req, res) => {
@@ -3589,6 +3629,12 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
   };
   const unsubscribeObs = obs.onStateChanged(() => {
     obsHealthObservation.observe(obs.state);
+    const contextWitness = obsHealthObservation.read(Date.now());
+    masterContextObservation = contextWitness?.data.connected === true ? {
+      observedAt: contextWitness.observedAt, generation: obs.connectionGeneration, epoch: obs.streamTransitionEpoch,
+      scene: typeof obs.state.scene === 'string' && obs.state.scene.length <= 256 ? obs.state.scene : null,
+      streamState: obs.state.streamingKnown === true ? obs.state.streaming ? 'live' : 'offline' : null,
+    } : undefined;
     obsMixerObservation.observe(obs.state, obs.connectionGeneration);
     autoStartReplay();
     const obsPayload = { connected: obs.state.connected, streaming: obs.state.streaming, streamingKnown: obs.state.streamingKnown !== false, scene: obs.state.scene };

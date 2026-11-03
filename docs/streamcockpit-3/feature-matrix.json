@@ -209,17 +209,32 @@
         {
           "path": "apps/mobile/control/streamcockpit-context-preview.js",
           "kind": "2026-11-01 wave3 implemented and integrated; G2 partial only"
+        },
+        {
+          "path": "apps/server/src/streamcockpit-master-context.ts",
+          "kind": "SC3-FINAL-DELIVERY-001: master OBS notification provenance, authenticated paired-controller role, existing deterministic selector, fixed scene/game/state banks, 12-second actor/context proof and existing durable action journal; 129 targeted tests PASS including real DashboardServer and Edge 320px. No physical Android/laptop qualification."
+        },
+        {
+          "path": "apps/mobile/control/streamcockpit-master-context.js",
+          "kind": "SC3-FINAL-DELIVERY-001: master OBS notification provenance, authenticated paired-controller role, existing deterministic selector, fixed scene/game/state banks, 12-second actor/context proof and existing durable action journal; 129 targeted tests PASS including real DashboardServer and Edge 320px. No physical Android/laptop qualification."
         }
       ],
       "verifiedTests": [
         "tests/streamcockpit3-context.test.ts",
         "tests/streamcockpit3-context-integration.test.ts",
-        "tests/streamcockpit3-context-integration-browser.test.ts"
+        "tests/streamcockpit3-context-integration-browser.test.ts",
+        "tests/streamcockpit3-master-context-http.test.ts",
+        "tests/streamcockpit3-master-context-browser.test.ts",
+        "tests/streamcockpit3-master-context-runtime.test.ts"
       ],
       "hardwareEvidence": [],
-      "blockers": [],
-      "ownerJob": "streamcockpit/3.0-lot-c",
-      "integrationNote": "Wave3 fail-closed read-only context preview; missing authenticated scene/game/role observations"
+      "blockers": [
+        "Physical FIXE/laptop/Android scene/game/routing, role changes and suspend/resume reception remain unqualified.",
+        "Production Twitch category/OAuth observation remains unqualified; game means the observed channel category, never inferred game-process activity.",
+        "Built-in context banks reuse existing single actions; real audio/chat/replay context flows and arbitrary multi-step macros are not fully received."
+      ],
+      "ownerJob": "SC3-FINAL-DELIVERY-001",
+      "integrationNote": "Wave3 fail-closed read-only context preview; missing authenticated scene/game/role observations 2026-11-03 SC3-FINAL-DELIVERY-001: production Deck now reads master context instead of using only the neutral preview. The existing deterministic core selects built-in banks by observed OBS scene/state and fresh Twitch category. Paired actor role/grants come from host authentication; physical device type is never inferred. Short-lived actor/context proofs are rechecked by ControlService and again inside the sole DashboardCommandService queue for native actions. Durable ordinary receipts and expected action definitions retained; no automatic command or offline replay. 129 targeted tests PASS including real HTTP/OBS MessagePack, complete DashboardServer and Edge 320px with offline/expiry/XSS/queue changes. Physical and provider OAuth reception remain open."
     },
     {
       "id": "F04",
@@ -510,17 +525,32 @@
         {
           "path": "apps/mobile/control/streamcockpit-context-preview.js",
           "kind": "2026-11-01 wave3 implemented and integrated; G2 partial only"
+        },
+        {
+          "path": "apps/server/src/streamcockpit-master-context.ts",
+          "kind": "SC3-FINAL-DELIVERY-001: master OBS notification provenance, authenticated paired-controller role, existing deterministic selector, fixed scene/game/state banks, 12-second actor/context proof and existing durable action journal; 129 targeted tests PASS including real DashboardServer and Edge 320px. No physical Android/laptop qualification."
+        },
+        {
+          "path": "apps/mobile/control/streamcockpit-master-context.js",
+          "kind": "SC3-FINAL-DELIVERY-001: master OBS notification provenance, authenticated paired-controller role, existing deterministic selector, fixed scene/game/state banks, 12-second actor/context proof and existing durable action journal; 129 targeted tests PASS including real DashboardServer and Edge 320px. No physical Android/laptop qualification."
         }
       ],
       "verifiedTests": [
         "tests/streamcockpit3-context.test.ts",
         "tests/streamcockpit3-context-integration.test.ts",
-        "tests/streamcockpit3-context-integration-browser.test.ts"
+        "tests/streamcockpit3-context-integration-browser.test.ts",
+        "tests/streamcockpit3-master-context-http.test.ts",
+        "tests/streamcockpit3-master-context-browser.test.ts",
+        "tests/streamcockpit3-master-context-runtime.test.ts"
       ],
       "hardwareEvidence": [],
-      "blockers": [],
-      "ownerJob": "streamcockpit/3.0-lot-c",
-      "integrationNote": "Wave3 preview in Deck, 320px Chromium test; contextual activation remains intentionally UNKNOWN"
+      "blockers": [
+        "Physical Android touch/navigation/reconnect and synchronized authority reception remain pending.",
+        "Authenticated paired-controller is a logical grant, not a claim of verified Android/laptop hardware identity.",
+        "Contextual bindings deliberately execute only on the selected regie; alternate per-device destinations remain on manual banks."
+      ],
+      "ownerJob": "SC3-FINAL-DELIVERY-001",
+      "integrationNote": "Wave3 preview in Deck, 320px Chromium test; contextual activation remains intentionally UNKNOWN 2026-11-03 SC3-FINAL-DELIVERY-001: production Deck now reads master context instead of using only the neutral preview. The existing deterministic core selects built-in banks by observed OBS scene/state and fresh Twitch category. Paired actor role/grants come from host authentication; physical device type is never inferred. Short-lived actor/context proofs are rechecked by ControlService and again inside the sole DashboardCommandService queue for native actions. Durable ordinary receipts and expected action definitions retained; no automatic command or offline replay. 129 targeted tests PASS including real HTTP/OBS MessagePack, complete DashboardServer and Edge 320px with offline/expiry/XSS/queue changes. Physical and provider OAuth reception remain open."
     },
     {
       "id": "F08",

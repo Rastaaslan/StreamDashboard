@@ -11,7 +11,7 @@ export interface ControlConfiguration {
   metadata: LiveMetadata;
   replayAutoStart?: boolean;
 }
-export interface ControlRequest { id: string; issuedAt: string; action: string; platform?: Platform; expectedRevision?: number; metadata?: LiveMetadata; soundId?: string; expectedAction?: DeckAction; confirmed?: boolean; youtubeBaseline?: import('../../../integrations/youtube/src/client.js').YouTubeMetadata }
+export interface ControlRequest { id: string; issuedAt: string; action: string; platform?: Platform; expectedRevision?: number; metadata?: LiveMetadata; soundId?: string; expectedAction?: DeckAction; expectedContextToken?: string; confirmed?: boolean; youtubeBaseline?: import('../../../integrations/youtube/src/client.js').YouTubeMetadata }
 export interface ActionResult { message: string; replayPath?: string; messageId?: string }
 export interface ControlReceipt { id: string; action: string; fingerprint: string; status: Outcome; message: string; createdAt: string; finishedAt?: string; result?: ActionResult; platforms?: Partial<Record<Platform, PlatformResult>> }
 // Documented global commands. Custom commands can be added without an API key.

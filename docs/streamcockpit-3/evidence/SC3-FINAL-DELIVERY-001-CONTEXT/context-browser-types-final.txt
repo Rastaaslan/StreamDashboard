@@ -1,0 +1,3 @@
+
+> stream-dashboard@3.0.0-alpha.1 check:browser-types
+> tsc -p tsconfig.browser-js.json

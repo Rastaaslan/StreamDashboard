@@ -2,7 +2,7 @@
 // Regenerate: node apps/mobile/control/streamcockpit-context-build.mjs
 
 // packages/core/src/streamcockpit-context.ts
-var roles = ["stream-pc", "gaming-pc", "android"];
+var roles = ["stream-pc", "gaming-pc", "android", "paired-controller"];
 var states = ["offline", "starting", "live", "stopping"];
 function fail(path) {
   throw new TypeError(`Invalid context schema: ${path}`);
