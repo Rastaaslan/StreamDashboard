@@ -31,7 +31,9 @@ it.skipIf(process.env.MIXER_BROWSER_TEST !== '1')('F05 Plus mixer scrolls at 320
         }});
     });
     await expect.poll(() => page.locator('section[aria-label="Mixeur audio — lecture seule"] tr').count()).toBe(2);
-    expect(await page.locator('img, button').count()).toBe(0);
+    expect(await page.locator('img').count()).toBe(0);
+    expect(await page.getByRole('button',{name:'Lire les pistes OBS'}).count()).toBe(1);
+    // The new explicit read button does not request OBS track data automatically.
     expect(await page.locator('section[aria-label="Mixeur audio — lecture seule"]').textContent()).toContain('Inconnu');
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= 320)).toBe(true);
     expect(await page.evaluate(() => {

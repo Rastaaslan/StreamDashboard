@@ -632,6 +632,44 @@ export class ObsClient {
       !Number.isFinite(volume.inputVolumeMul) || volume.inputVolumeMul < 0 || volume.inputVolumeMul > 20 || typeof mute.inputMuted !== 'boolean') throw new Error('OBS audio source changed');
     return { sourceId, inputUuid, generation, gain: volume.inputVolumeMul, mute: mute.inputMuted, observedAt: Date.now() };
   }
+  /** Explicit, read-only OBS audio track and monitor inspection. It does not
+   * identify Twitch's VOD output track, a physical PC-game device or audibility.
+   * Both lists must agree on the same OBS UUID and connection generation.
+   */
+  async readMixerRouting(sourceId: string) {
+    this.requireConnected();
+    if (typeof sourceId !== 'string' || !sourceId.trim() || sourceId.length > 200) throw new Error('Invalid audio source');
+    const generation = this.generation;
+    const first = (await this.call('GetInputList')).inputs.filter(input => input.inputName === sourceId);
+    const inputUuid = first.length === 1 ? first[0]!.inputUuid : undefined;
+    if (typeof inputUuid !== 'string' || !/^[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}$/i.test(inputUuid))
+      throw new Error('OBS audio UUID unavailable');
+    const selector = { inputUuid };
+    const [tracks, monitor] = await Promise.all([
+      this.call('GetInputAudioTracks', selector as never),
+      this.call('GetInputAudioMonitorType', selector as never),
+    ]);
+    const raw: unknown = tracks.inputAudioTracks;
+    if (!raw || typeof raw !== 'object' || Array.isArray(raw)) throw new Error('OBS audio tracks unavailable');
+    const entries = Object.entries(raw);
+    if (entries.length !== 6 || entries.some(([number, enabled]) => !/^[1-6]$/.test(number) || typeof enabled !== 'boolean'))
+      throw new Error('OBS audio tracks invalid');
+    const allowedMonitor = ['OBS_MONITORING_TYPE_NONE', 'OBS_MONITORING_TYPE_MONITOR_ONLY', 'OBS_MONITORING_TYPE_MONITOR_AND_OUTPUT'];
+    if (typeof monitor.monitorType !== 'string' || !allowedMonitor.includes(monitor.monitorType))
+      throw new Error('OBS monitor type unavailable');
+    const last = (await this.call('GetInputList')).inputs.filter(input => input.inputName === sourceId);
+    this.requireConnected();
+    if (this.generation !== generation || last.length !== 1 || last[0]!.inputUuid !== inputUuid)
+      throw new Error('OBS source or authority changed');
+    return {
+      schemaVersion: 1 as const, kind: 'streamcockpit-obs-audio-routing' as const,
+      sourceId, generation, observedAt: Date.now(),
+      tracks: entries.map(([number, enabled]) => ({ number: Number(number), enabled: enabled as boolean }))
+        .sort((a, b) => a.number - b.number),
+      monitorType: monitor.monitorType,
+      vodTrack: 'unverified' as const, // OBS track 2 is NOT necessarily the Twitch VOD track.
+    };
+  }
   /** Called only within the master's serialized bus after consent and intent persistence. */
   async writeMixerSource(expected: ObsAudioSource, change: ObsAudioChange): Promise<void> {
     this.requireConnected();

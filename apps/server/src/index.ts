@@ -2149,6 +2149,7 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
       return Boolean(id && remoteAuth.permits(id, ['observe']));
     },
     readSnapshot: () => obsMixerObservation.read(Date.now()),
+    readRouting: sourceId => obs.readMixerRouting(sourceId),
   }));
 
   app.use('/api/v1/streamcockpit-mixer/control', createMixerControlRouter({
