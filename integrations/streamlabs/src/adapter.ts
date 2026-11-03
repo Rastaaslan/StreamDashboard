@@ -20,6 +20,8 @@ export class StreamlabsAdapter implements SupportProvider {
   }
   state() { return structuredClone(this.lifecycle); }
   get connectionGeneration() { return this.generation; }
+  /** A persistence warning does not close the authenticated socket. */
+  get connectionActive() { return this.close !== undefined; }
   configure(token: string) { this.generation++; this.pending = undefined; const close = this.close; this.close = undefined; void close?.().catch(() => undefined); this.attempts = 0; if (this.reconnect) clearTimeout(this.reconnect); this.reconnect = undefined; this.token = token.trim(); this.lifecycle = integrationState(this.transport ? (this.token ? 'DISCONNECTED' : 'NOT_CONFIGURED') : 'NOT_SUPPORTED'); }
 
   connect(): Promise<void> {

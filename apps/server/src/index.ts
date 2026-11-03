@@ -2199,7 +2199,7 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
   const streamlabsMomentProducer=new StreamlabsMomentProducer({
     snapshot:()=>({connected:obs.state.connected,streamingKnown:obs.state.streamingKnown===true,
       streaming:obs.state.streaming,connectionGeneration:obs.connectionGeneration,streamEpoch:obs.streamTransitionEpoch,
-      providerGeneration:streamlabs.connectionGeneration,providerConnected:streamlabs.state().status==='CONNECTED'}),
+      providerGeneration:streamlabs.connectionGeneration,providerConnected:streamlabs.connectionActive}),
     host:async()=>{
       if(backgroundStopped||options.obsEnabled===false||options.timerAuthority===false)return undefined;
       const device=await options.deviceDescriptor?.().catch(()=>undefined);

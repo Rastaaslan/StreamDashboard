@@ -3,6 +3,7 @@ import {mkdir} from 'node:fs/promises';
 import {join} from 'node:path';
 import {startDashboardServer,type DashboardServerHandle} from '../apps/server/src/index.js';
 import {MemorySecretStore} from '../apps/server/src/storage.js';
+import {MomentsSqliteStorage} from '../apps/server/src/streamcockpit-moments-sqlite.js';
 import {withMixerFixture} from './helpers/streamcockpit-mixer-fixture.js';
 it('F09 complete runtime: socket receipt reaches durable timeline, readers agree, restart never duplicates or sends OBS commands',async()=>withMixerFixture(async f=>{
  await f.obs.close();
@@ -43,6 +44,17 @@ it('F09 complete runtime: socket receipt reaches durable timeline, readers agree
   await vi.waitFor(async()=>expect((await get('/api/v1/streamlabs/events')).body.provider.lastEventAt).toBeTruthy());
   expect(await get('/api/v1/streamcockpit-moments/'+sessionId)).toEqual(before);
   expect((await get('/api/v1/streamcockpit-moments')).body.sessions).toHaveLength(1);
+  if(process.platform==='win32'){
+   const cas=vi.spyOn(MomentsSqliteStorage.prototype,'compareAndSwap').mockRejectedValueOnce(Error('MOMENTS_WRITE_UNCERTAIN'));
+   const lost={...packet,message:[{_id:'unacknowledged-event'}]};
+   receive!(lost);
+   await vi.waitFor(async()=>expect((await get('/api/v1/streamlabs/events')).body.provider.status).toBe('DEGRADED'));
+   receive!(lost); // An uncertain old event is never automatically repeated.
+   receive!({...packet,message:[{_id:'fresh-after-recovery'}]});
+   await vi.waitFor(async()=>expect((await get('/api/v1/streamcockpit-moments/'+sessionId)).body.markers).toHaveLength(2));
+   expect(cas).toHaveBeenCalledTimes(2); // One failed attempt and one NEW provider event.
+   cas.mockRestore();
+  }
   expect(f.state().writes).toBe(0);expect(f.rpc.filter((rpc:any)=>/^StartStream$|^StopStream$|^SaveReplayBuffer$/.test(rpc.type))).toEqual([]);
- }finally{await server?.stop();for(const name of names){if(saved[name]===undefined)delete process.env[name];else process.env[name]=saved[name]}}
+ }finally{await server?.stop();vi.restoreAllMocks();for(const name of names){if(saved[name]===undefined)delete process.env[name];else process.env[name]=saved[name]}}
 }),30_000);

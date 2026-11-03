@@ -47,7 +47,7 @@ export class StreamlabsMomentProducer {
     !Number.isSafeInteger(instant)||instant<witness.at||!Array.isArray(events)||events.length>500)return;
   for(const event of events){
    if(!event||event.test!==false||!['twitch','streamlabs'].includes(event.platform)||
-     !titles[event.type]||typeof event.id!=='string'||!/^[a-f0-9]{64}$/.test(event.id))continue;
+     !Object.hasOwn(titles,event.type)||typeof event.id!=='string'||!/^[a-f0-9]{64}$/.test(event.id))continue;
    const received=Date.parse(event.receivedAt),occurred=event.occurredAt===null?null:Date.parse(event.occurredAt);
    if(!Number.isFinite(received)||received<instant-15_000||received>instant||
      occurred!==null&&(!Number.isFinite(occurred)||occurred<witness.at||occurred>instant))continue;

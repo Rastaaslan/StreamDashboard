@@ -30,7 +30,7 @@ it('F09 provider duplicate after restart keeps original session and receipt inst
 });
 it('F09 excludes test, YouTube, control, unknown type, stale occurrence and untrusted timestamps',async()=>{
  const f=fixture();
- const inputs=[{...packet(),isTest:true},{...packet(),for:'youtube_account'},{...packet(),type:'rollendcredits'},{...packet(),type:'unknown-future'},
+ const inputs=[{...packet(),isTest:true},{...packet(),for:'youtube_account'},{...packet(),type:'rollendcredits'},{...packet(),type:'unknown-future'},{...packet(),type:'constructor'},
   packet('old',{created_at:new Date(now-60_000).toISOString()}),packet('future',{created_at:new Date(now+60_000).toISOString()})];
  for(const input of inputs)await f.producer.observe(f.events(input));
  await f.producer.observe([{...f.events()[0],receivedAt:'invalid'}]);
