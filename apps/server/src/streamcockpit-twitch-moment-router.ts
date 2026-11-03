@@ -14,6 +14,7 @@ export function createTwitchMomentRouter(options:{
   api:SimpleMomentsTwitch;actor(req:Request):TwitchActor|Promise<TwitchActor>;
   hostLive():string|undefined|Promise<string|undefined>;
   record?(moment:{kind:'marker'|'clip';id:string;instant:number;correlationId:string;title:string}):Promise<'recorded'|'unbound'>;
+  lookupReceipt?(id:string):Promise<{journalObserved:boolean;moment?:{source:string;correlationId:string;status:string;instant:number;sequence:number;clip?:{provider:string;reference:string}}}>;
 }){
   const pending=new Map<string,{actor:string;host:string;until:number;target:SimpleMomentTarget}>(),router=Router();
   const exact=(v:unknown,keys:string[])=>v!==null&&typeof v==='object'&&!Array.isArray(v)&&Object.keys(v).sort().join(',')===[...keys].sort().join(',');
@@ -24,6 +25,32 @@ export function createTwitchMomentRouter(options:{
     if(!host||expected&&host!==expected.host)throw new AdvancedTwitchError('precondition');
     return {actor:actor.id,host};
   };
+  // Explicit read-only reconciliation: a journal row is an observation, NOT
+  // confirmation that Twitch finished rendering a clip. Never retry a POST.
+  router.all('/status/:confirmationId',async(req,res)=>{
+    if(req.method!=='GET'){res.set('Allow','GET').status(405).json({error:{code:'METHOD_NOT_ALLOWED'}});return}
+    const id=req.params.confirmationId;
+    if(!/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(id)){
+      res.status(400).json({error:{code:'MOMENT_INVALID'}});return;
+    }
+    try{
+      const authority=await check(req);
+      const found=await options.lookupReceipt?.(id);
+      await check(req,authority);
+      if(!found||!found.journalObserved){res.status(503).json({error:{code:'MOMENT_JOURNAL_UNAVAILABLE'}});return}
+      if(!found.moment){res.json({schemaVersion:1,kind:'streamcockpit-moment-status',status:'not_found_at_read',retryable:false});return}
+      const m=found.moment;
+      if(m.source!=='twitch'||m.correlationId!==id||!['confirmed','observed'].includes(m.status)||
+        !Number.isSafeInteger(m.instant)||!Number.isSafeInteger(m.sequence)||
+        (m.clip&&(m.clip.provider!=='twitch'||typeof m.clip.reference!=='string'))){
+        res.status(503).json({error:{code:'MOMENT_JOURNAL_UNAVAILABLE'}});return;
+      }
+      res.json({schemaVersion:1,kind:'streamcockpit-moment-status',status:'journal_observed',
+        momentKind:m.clip?'clip':'marker',providerStatus:m.status,instant:m.instant,sequence:m.sequence,retryable:false});
+    }catch{
+      res.status(503).json({error:{code:'MOMENT_STATUS_UNAVAILABLE'}});
+    }
+  });
   for(const op of ['preview','confirm']as const)router.all('/'+op,async(req,res)=>{
     if(req.method!=='POST'){res.set('Allow','POST').status(405).json({error:{code:'METHOD_NOT_ALLOWED'}});return}
     let sent=false;

@@ -55,6 +55,7 @@ export function isRemoteApiAllowed(method: string, pathName: string) {
   if (verb === 'POST' && pathName === '/v1/streamcockpit-moments/manual/scheduled/select') return true;
   if (verb === 'POST' && pathName === '/v1/streamcockpit-moments/manual/add') return true;
   if (verb === 'GET' && /^\/v1\/streamcockpit-moments\/manual\/status\/[0-9a-f-]{36}$/i.test(pathName)) return true;
+  if (verb === 'GET' && /^\/v1\/twitch\/advanced\/moment\/status\/[0-9a-f-]{36}$/i.test(pathName)) return true;
   if (['GET','HEAD'].includes(verb) && (pathName === '/v1/streamcockpit-moments' ||
       /^\/v1\/streamcockpit-moments\/[A-Za-z0-9_-]{1,128}$/.test(pathName))) return true;
   // Paired clients own the shared control surface. OAuth secrets remain on the host.
@@ -101,6 +102,7 @@ export function requiredDevicePermissions(method:string,path:string,body:unknown
   if(method==='GET'&&path==='/v1/twitch/advanced/moderation/held')return ['chat','cloud'];
   if(method==='GET'&&['/v1/twitch/advanced/prediction','/v1/twitch/advanced/prediction/reconcile','/v1/twitch/advanced/prediction/end/inspect'].includes(path))return ['chat','cloud'];
   if(method==='POST'&&['/v1/twitch/advanced/moment/preview','/v1/twitch/advanced/moment/confirm'].includes(path))return ['chat','cloud','clips'];
+  if(method==='GET'&&/^\/v1\/twitch\/advanced\/moment\/status\/[0-9a-f-]{36}$/i.test(path))return ['chat','cloud','clips'];
   if(method==='POST'&&[
     '/v1/twitch/advanced/moderation/preview','/v1/twitch/advanced/moderation/confirm',
     '/v1/twitch/advanced/poll/preview','/v1/twitch/advanced/poll/confirm',

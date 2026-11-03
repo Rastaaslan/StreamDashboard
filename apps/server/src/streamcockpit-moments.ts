@@ -137,6 +137,15 @@ export class MomentsPipeline {
     return { journalObserved: true,
       moment: moments.find(moment => moment.source === 'manual' && moment.correlationId === correlationId) };
   }
+  /** F04: journal-only lookup of a Twitch marker/clip by the original one-use
+   * confirmation ID. Absence never proves the provider POST did not happen.
+   * This does not contact Twitch or retry any external action. */
+  async lookupTwitchMoment(correlationId: string): Promise<{journalObserved:boolean;moment?:Moment}> {
+    const raw=await this.storage.read();
+    if(raw===null)return {journalObserved:false};
+    const moments=project(decode(raw).requests);
+    return {journalObserved:true,moment:moments.find(m=>m.source==='twitch'&&m.correlationId===correlationId)};
+  }
   async export(sessionId: string) {
     return exportMarkers(sessionId, project(decode(await this.storage.read()).requests));
   }

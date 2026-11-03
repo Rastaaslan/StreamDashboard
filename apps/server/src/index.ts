@@ -2196,6 +2196,7 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
       await assertRole('clips');
       return twitchMomentActor(req, remoteAuth, isLocalRequest(req), remoteRuntimeEnabled);
     }, hostLive: confirmedF08HostEpoch,
+    lookupReceipt: id => observedMomentsPipeline().then(pipeline => pipeline.lookupTwitchMoment(id)),
     record: async moment => {
       const epoch = await confirmedF08HostEpoch(), sessionId = await activeMomentsSessionId();
       if (!epoch) throw new Error('MOMENT_HOST_UNAVAILABLE');

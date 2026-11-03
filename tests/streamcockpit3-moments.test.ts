@@ -44,6 +44,17 @@ describe('moments contract and replay', () => {
     await expect(pipeline.record({ ...moment(), ...patch })).rejects.toThrow(/^INVALID_MOMENT$/);
     expect(storage.raw).toBe(null);
   });
+  it('recovers Twitch journal-only observations from reopened storage without a provider call',async()=>{
+    const storage=new Memory(),pipeline=new MomentsPipeline(storage);
+    expect(await pipeline.lookupTwitchMoment('request-1')).toEqual({journalObserved:false});
+    await pipeline.record(moment({status:'observed',clip:{provider:'twitch',reference:'clip-1'}}));
+    await pipeline.record({sessionId:'session-1',instant:1000,source:'manual',correlationId:'manual-1',title:'Manual',status:'observed'});
+    const reopened=new MomentsPipeline(storage);
+    expect(await reopened.lookupTwitchMoment('request-1')).toMatchObject({journalObserved:true,
+      moment:{source:'twitch',status:'observed',clip:{provider:'twitch',reference:'clip-1'}}});
+    expect(await reopened.lookupTwitchMoment('manual-1')).toEqual({journalObserved:true,moment:undefined});
+    expect(await reopened.lookupTwitchMoment('missing')).toEqual({journalObserved:true,moment:undefined});
+  });
   it('persists replay aliases, rejects conflicting correlations and provider events', async () => {
     const storage = new Memory(), first = new MomentsPipeline(storage);
     expect((await first.record(moment())).outcome).toBe('created');

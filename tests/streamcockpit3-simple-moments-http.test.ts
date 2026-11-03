@@ -9,7 +9,8 @@ import {RemoteAuth} from '../apps/server/src/remote-auth.js';
 async function fixture(run:(f:any)=>Promise<void>){
   let mode='ok',host='1:1',streamId='123456',count=0;
   const auth=new RemoteAuth(),p=auth.createPairing(undefined,true,['chat','cloud','clips']),paired=auth.pair(p.id,p.code,'Phone');
-  const credentials={clientId:'client',accessToken:'PRIVATE',broadcasterId:'42'},record=vi.fn(async()=> 'recorded' as const);
+  const journal=new Map<string,any>(),credentials={clientId:'client',accessToken:'PRIVATE',broadcasterId:'42'};
+  const record=vi.fn(async(m:any)=>{journal.set(m.correlationId,{source:'twitch',correlationId:m.correlationId,status:m.kind==='clip'?'observed':'confirmed',instant:m.instant,sequence:1,...(m.kind==='clip'?{clip:{provider:'twitch',reference:m.id}}:{})});return 'recorded' as const});
   const transport=vi.fn(async(url:any,init?:RequestInit)=>{
     if(String(url).includes('/validate'))return Response.json({client_id:'client',user_id:'42',scopes:mode==='scope'?[]:['clips:edit','channel:manage:broadcast'],expires_in:300});
     if(String(url).includes('/streams?')){
@@ -30,16 +31,43 @@ async function fixture(run:(f:any)=>Promise<void>){
     throw Error('Unexpected provider request');
   });
   const app=express();app.use(express.json());app.use('/moment',createTwitchMomentRouter({api:new SimpleMomentsTwitch(()=>credentials,transport as typeof fetch),
-    actor:req=>twitchMomentActor(req,auth,false,true),hostLive:()=>host,record}));
+    actor:req=>twitchMomentActor(req,auth,false,true),hostLive:()=>host,record,
+    lookupReceipt:async id=>({journalObserved:true,moment:journal.get(id)})}));
   const server=app.listen(0,'127.0.0.1');await new Promise<void>(resolve=>server.once('listening',resolve));
-  const call=(path:string,body?:any)=>new Promise<any>((resolve,reject)=>{
-    const req=httpRequest('http://127.0.0.1:'+(server.address()as AddressInfo).port+'/moment/'+path,{method:'POST',headers:{'Content-Type':'application/json',authorization:'Device '+paired.credential}},res=>{
+  const call=(path:string,body?:any,method='POST')=>new Promise<any>((resolve,reject)=>{
+    const req=httpRequest('http://127.0.0.1:'+(server.address()as AddressInfo).port+'/moment/'+path,{method,headers:{'Content-Type':'application/json',authorization:'Device '+paired.credential}},res=>{
       const chunks:Buffer[]=[];res.on('data',c=>chunks.push(c));res.on('error',reject);res.on('end',()=>{try{resolve({status:res.statusCode,body:JSON.parse(Buffer.concat(chunks).toString())})}catch(e){reject(e)}});
-    });req.on('error',reject);req.setTimeout(5000,()=>req.destroy(Error('TIMEOUT')));req.end(JSON.stringify(body));
+    });req.on('error',reject);req.setTimeout(5000,()=>req.destroy(Error('TIMEOUT')));req.end(method==='GET'?undefined:JSON.stringify(body));
   });
-  try{await run({call,record,transport,setMode:(v:string)=>{mode=v},setHost:(v:string)=>{host=v},setStreamId:(v:string)=>{streamId=v},writes:()=>count})}
+  try{await run({call,record,transport,revoke:()=>auth.revoke(paired.deviceId),setMode:(v:string)=>{mode=v},setHost:(v:string)=>{host=v},setStreamId:(v:string)=>{streamId=v},writes:()=>count})}
   finally{server.closeAllConnections();await new Promise<void>(resolve=>server.close(()=>resolve()))}
 }
+it.each(['marker','clip'])('F04 %s read-only journal lookup never repeats Twitch POST',async kind=>fixture(async f=>{
+  const p=await f.call('preview',{draft:{kind,description:'Important'}});
+  const id=p.body.confirmationId;
+  const before=await f.call('status/'+id,undefined,'GET');
+  expect(before.body).toMatchObject({status:'not_found_at_read',retryable:false});
+  expect(f.writes()).toBe(0);
+  const sent=await f.call('confirm',{confirmationId:id,confirmed:true});
+  expect(sent.status).toBe(200);
+  const observed=await f.call('status/'+id,undefined,'GET');
+  expect(observed.body).toMatchObject({status:'journal_observed',momentKind:kind,
+    providerStatus:kind==='clip'?'observed':'confirmed',retryable:false});
+  expect(f.writes()).toBe(1);
+  expect((await f.call('status/not-a-uuid',undefined,'GET')).status).toBe(400);
+  expect(requiredDevicePermissions('GET','/v1/twitch/advanced/moment/status/'+id,{})).toEqual(['chat','cloud','clips']);
+}));
+it('F04 status hides historical receipts when paired actor is revoked or FIXE host is absent',async()=>fixture(async f=>{
+  const p=await f.call('preview',{draft:{kind:'clip',description:''}});
+  await f.call('confirm',{confirmationId:p.body.confirmationId,confirmed:true});
+  f.setHost('');
+  expect((await f.call('status/'+p.body.confirmationId,undefined,'GET')).status).toBe(503);
+  f.setHost('1:1');f.revoke();
+  const denied=await f.call('status/'+p.body.confirmationId,undefined,'GET');
+  expect(denied.status).toBe(503);
+  expect(JSON.stringify(denied)).not.toContain('journal_observed');
+  expect(f.writes()).toBe(1);
+}));
 it.each(['marker','clip'])('F04 paired HTTP %s: source live proof, exact receipt, one POST and F09 observation',async kind=>fixture(async f=>{
   const p=await f.call('preview',{draft:{kind,description:'Important'}});expect(p.status).toBe(200);expect(f.writes()).toBe(0);
   const body={confirmationId:p.body.confirmationId,confirmed:true},r=await f.call('confirm',body);

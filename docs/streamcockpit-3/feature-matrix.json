@@ -280,7 +280,7 @@
         },
         {
           "path": "apps/server/src/streamcockpit-twitch-moment-router.ts",
-          "kind": "SC3-FINAL-DELIVERY-001: source integration and targeted software qualification only; hardware remains unqualified"
+          "kind": "2026-11-03 FIXE: authenticated paired read-only GET status by original confirmation UUID using existing F09 journal; missing row is not permission to repeat a Twitch POST. 51 targeted PASS/6 skipped on mock providers; physical devices and Twitch unqualified."
         },
         {
           "path": "apps/mobile/control/streamcockpit-twitch-moments.js",
