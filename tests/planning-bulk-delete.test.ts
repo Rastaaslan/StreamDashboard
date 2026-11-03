@@ -12,10 +12,23 @@ const item: CalendarItem = { id: 'one', title: 'Live', startAtUtc: '2030-10-01T1
 let server: DashboardServerHandle | undefined, folder = '';
 afterEach(async () => { await server?.stop(); server = undefined; vi.unstubAllGlobals(); if (folder) await rm(folder, { recursive: true, force: true }); });
 const nativeFetch = globalThis.fetch;
+async function startOnFetchAllowedPort(options: Parameters<typeof startDashboardServer>[0]) {
+  for (let attempt = 0; attempt < 12; attempt++) {
+    const handle = await startDashboardServer(options);
+    try {
+      await nativeFetch(handle.url + '/api/v1/state'); // disposable loopback probe, read-only
+      return handle;
+    } catch (error) {
+      await handle.stop();
+      if (!(error instanceof TypeError) || !String((error as Error & {cause?: Error}).cause?.message).includes('bad port') || attempt === 11) throw error;
+    }
+  }
+  throw new Error('Unable to allocate allowed loopback test port');
+}
 async function call(route: string, body?: unknown, method = 'POST') {
   return nativeFetch(server!.url + '/api/v1/' + route, { method, headers: { 'content-type': 'application/json' }, ...(body === undefined ? {} : { body: JSON.stringify(body) }) });
 }
-async function boot() { folder = await mkdtemp(join(tmpdir(), 'bulk-delete-')); server = await startDashboardServer({ port: 0, dataDir: folder, logger: { info() {}, warn() {}, error() {} } }); }
+async function boot() { folder = await mkdtemp(join(tmpdir(), 'bulk-delete-')); server = await startOnFetchAllowedPort({ port: 0, dataDir: folder, logger: { info() {}, warn() {}, error() {} } }); }
 async function preview(destinations = {}) { const response = await call('planning/bulk-delete/preview', { start, end, destinations }); expect(response.ok, await response.clone().text()).toBe(true); return response.json(); }
 async function snapshot() { return (await call('state', undefined, 'GET')).json(); }
 
@@ -76,7 +89,7 @@ it.each(['local', 'failure', 'moved', 'recurring', 'cancelled'])('Google copies:
     throw new Error('Unexpected provider request: ' + url);
   }));
   const options = { port: 0, dataDir: folder, googleClientId: 'client', secretStore: secrets, logger: { info() {}, warn() {}, error() {} } };
-  server = await startDashboardServer(options);
+  server = await startOnFetchAllowedPort(options);
   expect((await call('google/target', { calendarId: 'calendar' }, 'PUT')).ok).toBe(true);
   expect((await call('planning', { ...item, desiredPublication: { local: true, twitch: false, google: true } })).ok).toBe(true);
   expect((await call('planning', { ...item, id: 'local-only' })).ok).toBe(true);
@@ -112,7 +125,7 @@ it('retains a linked Twitch event when Twitch is disconnected, including after r
   data.planning = [{ ...item, ownership: 'LOCAL', twitchSegmentId: 'segment', providers: { twitch: { status: 'synced', remoteId: 'segment' } }, desiredPublication: { local: true, twitch: true, google: false } }];
   await writeFile(file, JSON.stringify(data));
   const options = { port: 0, dataDir: folder, logger: { info() {}, warn() {}, error() {} } };
-  server = await startDashboardServer(options);
+  server = await startOnFetchAllowedPort(options);
   const first = await preview({ twitch: true });
   const response = await (await call('planning/bulk-delete/confirm', { token: first.token, confirm: true })).json();
   expect(response.deleted).toEqual([]); expect(response.failed).toHaveLength(1);
@@ -147,7 +160,7 @@ it.each(['success', 'failure', 'moved', 'recurring'])('connected Twitch: %s resp
     throw new Error('Unexpected Twitch request: ' + url);
   }));
   const options = { port: 0, dataDir: folder, secretStore: secrets, twitchClientId: 'client', logger: { info() {}, warn() {}, error() {} } };
-  server = await startDashboardServer(options);
+  server = await startOnFetchAllowedPort(options);
   expect((await snapshot()).twitch.connected).toBe(true);
   const first = await preview({ twitch: true });
   const response = await (await call('planning/bulk-delete/confirm', { token: first.token, confirm: true })).json();
