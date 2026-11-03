@@ -67,7 +67,12 @@ export class SimpleMomentsTwitch{
         return {status:'confirmed' as const,kind:'marker' as const,id,instant:Date.parse(row.created_at),positionSeconds:Number(row.position_seconds)};
       }
       const url=new URL(String(row.edit_url));
-      if(url.protocol!=='https:'||url.hostname!=='clips.twitch.tv'||url.username||url.password)throw Error('INVALID_CLIP_LINK');
+      // A Twitch hostname alone is insufficient: bind the edit link to the
+      // exact provider clip ID, default TLS port, and canonical edit route.
+      // Never hand a different clip, arbitrary endpoint or tracking redirect
+      // to the operator as the receipt of this confirmed request.
+      if(url.protocol!=='https:'||url.hostname!=='clips.twitch.tv'||url.username||url.password||
+        url.port||url.search||url.hash||url.pathname!==`/${id}/edit`)throw Error('INVALID_CLIP_LINK');
       // A successful Create Clip response acknowledges asynchronous processing.
       // Never describe this receipt as a verified playable video.
       return {status:'accepted' as const,kind:'clip' as const,id,instant:this.now(),editUrl:url.href};

@@ -276,7 +276,7 @@
         },
         {
           "path": "integrations/twitch/src/streamcockpit-simple-moments.ts",
-          "kind": "SC3-FINAL-DELIVERY-001: source integration and targeted software qualification only; hardware remains unqualified"
+          "kind": "2026-11-03 FIXE F04: provider clip edit URL must match the returned clip ID and canonical HTTPS Twitch route with no nondefault port, query or fragment; three previously accepted forged links now fail closed as uncertain without a second provider POST. 19 targeted PASS/1 skipped plus real Edge 320px 1 PASS on synthetic provider; production OAuth/hardware unqualified."
         },
         {
           "path": "apps/server/src/streamcockpit-twitch-moment-router.ts",

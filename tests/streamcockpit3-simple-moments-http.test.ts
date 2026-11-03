@@ -19,6 +19,9 @@ async function fixture(run:(f:any)=>Promise<void>){
     if(init?.method==='POST'){
       count++;if(mode==='lost')throw Error('PRIVATE');
       if(mode==='bad-receipt')return Response.json({data:[{id:'clip',edit_url:'https://evil.invalid/private'}]});
+      if(mode==='wrong-clip')return Response.json({data:[{id:'SafeClip',edit_url:'https://clips.twitch.tv/AnotherClip/edit'}]});
+      if(mode==='wrong-port')return Response.json({data:[{id:'SafeClip',edit_url:'https://clips.twitch.tv:8443/SafeClip/edit'}]});
+      if(mode==='extra-query')return Response.json({data:[{id:'SafeClip',edit_url:'https://clips.twitch.tv/SafeClip/edit?redirect=other'}]});
       if(String(url).includes('/markers'))return Response.json({data:[{id:'123',created_at:new Date().toISOString(),position_seconds:17,description:'Important'}]});
       return Response.json({data:[{id:'SafeClip',edit_url:'https://clips.twitch.tv/SafeClip/edit'}]});
     }
@@ -45,7 +48,7 @@ it.each(['marker','clip'])('F04 paired HTTP %s: source live proof, exact receipt
 it.each(['scope','offline','revoke'])('F04 %s cannot issue a provider POST',async mode=>fixture(async f=>{
   f.setMode(mode);expect((await f.call('preview',{draft:{kind:'clip',description:''}})).status).toBeGreaterThanOrEqual(400);expect(f.writes()).toBe(0);expect(f.record).not.toHaveBeenCalled();
 }));
-it.each(['lost','bad-receipt'])('F04 %s remains uncertain and never recreates a clip',async mode=>fixture(async f=>{
+it.each(['lost','bad-receipt','wrong-clip','wrong-port','extra-query'])('F04 %s remains uncertain and never recreates a clip',async mode=>fixture(async f=>{
   const p=await f.call('preview',{draft:{kind:'clip',description:''}});f.setMode(mode);
   const body={confirmationId:p.body.confirmationId,confirmed:true};
   const r=await f.call('confirm',body);expect(r.status).toBe(503);expect(r.body.error).toEqual({code:'MOMENT_UNCERTAIN',retryable:false});
