@@ -2,8 +2,32 @@ import { afterEach, expect, it, vi } from 'vitest';
 import { mkdtemp, rm } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
+import { request as httpRequest } from 'node:http';
 import { startDashboardServer, type DashboardServerHandle } from '../apps/server/src/index.js';
 import { MemorySecretStore } from '../apps/server/src/storage.js';
+
+// This suite exercises local HTTP, not browser Fetch blocked-port policy.
+// Windows ephemeral ports can be valid TCP ports yet forbidden by Fetch.
+function loopbackFetch(input: string | URL | Request, init: RequestInit = {}): Promise<Response> {
+  const url = new URL(String(input));
+  if (url.hostname !== '127.0.0.1' || url.protocol !== 'http:')
+    throw Error('LOOPBACK_FIXTURE_ONLY');
+  return new Promise((resolve, reject) => {
+    const req = httpRequest(url, { method: init.method || 'GET', headers: init.headers as Record<string, string> }, res => {
+      const chunks: Buffer[] = [];
+      res.on('data', (chunk: Buffer) => chunks.push(chunk));
+      res.on('error', reject);
+      res.on('end', () => resolve(new Response(Buffer.concat(chunks), {
+        status: res.statusCode || 500,
+        headers: res.headers as Record<string, string>,
+      })));
+    });
+    req.on('error', reject);
+    req.setTimeout(5000, () => req.destroy(Error('LOOPBACK_FIXTURE_TIMEOUT')));
+    if (init.body !== undefined && init.body !== null) req.write(String(init.body));
+    req.end();
+  });
+}
 
 let server: DashboardServerHandle | undefined;
 let dataDir = '';
@@ -17,12 +41,11 @@ it.each([['desktop', false], ['companion', false], ['desktop', true], ['companio
   dataDir = await mkdtemp(path.join(os.tmpdir(), 'cb16-missing-target-'));
   const secrets = new MemorySecretStore();
   await secrets.setGoogleTokens({ accessToken: 'token', refreshToken: 'refresh', expiresAt: String(Date.now() + 3600_000) });
-  const nativeFetch = globalThis.fetch;
   const writes = vi.fn();
   const eventReads = vi.fn();
   vi.stubGlobal('fetch', vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
     const url = String(input);
-    if (url.startsWith('http://127.0.0.1:')) return nativeFetch(input, init);
+    if (url.startsWith('http://127.0.0.1:')) return loopbackFetch(input, init);
     if (url.includes('/users/me/calendarList')) return Response.json({ items: [{ id: 'calendar', summary: 'Target', accessRole: 'owner' }] });
     if (url.includes('/calendars/calendar/events')) {
       if (init?.method === 'POST') {
@@ -37,7 +60,7 @@ it.each([['desktop', false], ['companion', false], ['desktop', true], ['companio
   const options = { port: 0, remoteEnabled: true, dataDir, googleClientId: 'client', secretStore: secrets,
     logger: { info() {}, warn() {}, error() {} } };
   server = await startDashboardServer(options);
-  const request = (route: string, body: unknown, method = 'POST', authorization?: string) => nativeFetch(server!.url + '/api/v1/' + route, {
+  const request = (route: string, body: unknown, method = 'POST', authorization?: string) => loopbackFetch(server!.url + '/api/v1/' + route, {
     method, headers: { 'content-type': 'application/json', ...(authorization ? { authorization } : {}) }, body: JSON.stringify(body),
   });
   const item = { id: 'missing-target', title: 'Live', startAtUtc: '2030-10-01T18:00:00Z', endAtUtc: '2030-10-01T19:00:00Z',
@@ -53,7 +76,7 @@ it.each([['desktop', false], ['companion', false], ['desktop', true], ['companio
       operations: [{ id: 'create', type: 'create', eventId: item.id, baseRevision: 0, patch: item }] }, 'POST', 'Device ' + paired.credential);
     expect(response.ok, await response.clone().text()).toBe(true);
   }
-  const snapshot = () => nativeFetch(server!.url + '/api/v1/companion/snapshot').then(r => r.json());
+  const snapshot = () => loopbackFetch(server!.url + '/api/v1/companion/snapshot').then(r => r.json());
   const verifyFailure = async () => {
     const state = await snapshot();
     expect(state.planning[0].providers.google).toMatchObject({ status: 'error', lastError: 'Choisissez un calendrier Google cible.' });
