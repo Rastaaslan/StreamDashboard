@@ -70,8 +70,11 @@ export class StreamcockpitPredictionCreateService {
     }
     try {
       // Reservation COMMIT precedes every possible external Twitch write.
-      return await this.api.createConfirmed(entry.draft, entry.broadcasterId,
+      const receipt = await this.api.createConfirmed(entry.draft, entry.broadcasterId,
         entry.fingerprint, beforeSend);
+      try { this.durableFence?.recordConfirmed(entry.broadcasterId, receipt.predictionId); }
+      catch { throw new AdvancedTwitchError('uncertain'); }
+      return receipt;
     } catch (error) {
       if (error instanceof AdvancedTwitchError && error.code !== 'uncertain') {
         try {

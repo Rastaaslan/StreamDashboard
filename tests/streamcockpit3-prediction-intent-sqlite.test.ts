@@ -99,6 +99,7 @@ it('F08 failed persistence refuses BEFORE provider POST, even after independent 
   const broken:PredictionCreationFence={
     isBlocked:()=>false, reserve:()=>{throw Error('flush uncertain');},
     releaseBeforePost:()=>{throw Error('must not release');},
+    recordConfirmed:()=>{throw Error('must not record');},
   };
   const first=service(broken);
   const preview=await first.svc.preview(actor,draft,epoch);
@@ -108,4 +109,66 @@ it('F08 failed persistence refuses BEFORE provider POST, even after independent 
   // No file written, but the unknown result does not trigger an automatic retry.
   expect(new PredictionIntentSqlite(file).isBlocked('123')).toBe(false);
   await expect(first.svc.preview(actor,draft,epoch)).rejects.toMatchObject({code:'precondition'});
+}));
+
+it('F08 confirmed provider ID is bound durably without unlocking an active or completed prediction',()=>withTemp(async file=>{
+  const fence=new PredictionIntentSqlite(file);
+  const first=service(fence);
+  const preview=await first.svc.preview(actor,draft,epoch);
+  await expect(first.svc.confirm(actor,preview.confirmationId,true,epoch,async()=>{}))
+    .resolves.toMatchObject({predictionId:'observed-1'});
+  const db=new DatabaseSync(file,{readOnly:true});
+  try {
+    expect((db.prepare('PRAGMA user_version').get() as {user_version:number}).user_version).toBe(2);
+    expect((db.prepare('SELECT prediction_id FROM prediction_intents WHERE broadcaster_id=?')
+      .get('123') as {prediction_id:string}).prediction_id).toBe('observed-1');
+  } finally { db.close(); }
+  // Verification is NOT unlocking: only the exact provider ID may be recorded again.
+  expect(()=>new PredictionIntentSqlite(file).recordConfirmed('123','observed-1')).not.toThrow();
+  expect(()=>new PredictionIntentSqlite(file).recordConfirmed('123','other-id')).toThrow();
+  expect(()=>new PredictionIntentSqlite(file).releaseBeforePost('123')).toThrow();
+  expect(new PredictionIntentSqlite(file).isBlocked('123')).toBe(true);
+  expect(first.writes).toHaveBeenCalledTimes(1);
+}));
+
+it('F08 legacy v1 SQLite journal upgrades atomically without losing a reserved broadcaster',()=>withTemp(async file=>{
+  const db=new DatabaseSync(file);
+  try {
+    db.exec('PRAGMA journal_mode=DELETE');
+    db.exec('PRAGMA synchronous=EXTRA');
+    db.exec('BEGIN IMMEDIATE');
+    db.exec('CREATE TABLE prediction_intents (broadcaster_id TEXT PRIMARY KEY NOT NULL)');
+    db.exec('INSERT INTO prediction_intents VALUES (\'123\')');
+    db.exec('PRAGMA application_id='+0x53435038);
+    db.exec('PRAGMA user_version=1');
+    db.exec('COMMIT');
+  } finally { db.close(); }
+  const fence=new PredictionIntentSqlite(file);
+  expect(fence.isBlocked('123')).toBe(true);
+  expect(fence.reserve('123')).toBe(false);
+  fence.recordConfirmed('123','old-receipt');
+  const inspect=new DatabaseSync(file,{readOnly:true});
+  try {
+    expect((inspect.prepare('PRAGMA user_version').get() as {user_version:number}).user_version).toBe(2);
+    expect((inspect.prepare('SELECT prediction_id FROM prediction_intents WHERE broadcaster_id=?')
+      .get('123') as {prediction_id:string}).prediction_id).toBe('old-receipt');
+  } finally { inspect.close(); }
+  expect(new PredictionIntentSqlite(file).isBlocked('123')).toBe(true);
+}));
+
+it('F08 receipt persistence failure after Twitch POST reports uncertain and NEVER retries or unlocks',()=>withTemp(async _file=>{
+  let recorded=0;
+  const fence:PredictionCreationFence={
+    isBlocked:()=>false,reserve:()=>true,
+    releaseBeforePost:()=>{throw Error('must remain locked');},
+    recordConfirmed:()=>{recorded++;throw Error('disk failure');},
+  };
+  const first=service(fence);
+  const preview=await first.svc.preview(actor,draft,epoch);
+  await expect(first.svc.confirm(actor,preview.confirmationId,true,epoch,async()=>{}))
+    .rejects.toMatchObject({code:'uncertain'});
+  expect(recorded).toBe(1);
+  expect(first.writes).toHaveBeenCalledTimes(1);
+  await expect(first.svc.preview(actor,draft,epoch)).rejects.toMatchObject({code:'precondition'});
+  expect(first.writes).toHaveBeenCalledTimes(1);
 }));

@@ -19,6 +19,7 @@ export interface PredictionCreationFence {
   isBlocked(broadcasterId: string): boolean;
   reserve(broadcasterId: string): boolean;
   releaseBeforePost(broadcasterId: string): void;
+  recordConfirmed(broadcasterId: string, predictionId: string): void;
 }
 
 /** No automatic release on successful/uncertain Twitch POST or process restart. */
@@ -47,7 +48,12 @@ export class PredictionIntentSqlite implements PredictionCreationFence {
         const app = db.prepare('PRAGMA application_id').get() as { application_id?: number };
         const version = db.prepare('PRAGMA user_version').get() as { user_version?: number };
         const table = db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='prediction_intents'").get();
-        if (app.application_id !== applicationId || version.user_version !== 1 || !table)
+        if (app.application_id !== applicationId || ![1, 2].includes(version.user_version ?? -1) || !table)
+          throw Error('PREDICTION_FENCE_FORMAT_UNKNOWN');
+        const columns = db.prepare('PRAGMA table_info(prediction_intents)').all() as { name: string }[];
+        const expected = version.user_version === 1
+          ? ['broadcaster_id'] : ['broadcaster_id', 'prediction_id'];
+        if (columns.map(c => c.name).join(',') !== expected.join(','))
           throw Error('PREDICTION_FENCE_FORMAT_UNKNOWN');
       }
       const mode = db.prepare('PRAGMA journal_mode').get() as { journal_mode?: string };
@@ -65,10 +71,24 @@ export class PredictionIntentSqlite implements PredictionCreationFence {
         throw Error('PREDICTION_FENCE_UNSAFE');
       if (!stat) {
         db.exec('BEGIN IMMEDIATE');
-        db.exec('CREATE TABLE prediction_intents (broadcaster_id TEXT PRIMARY KEY NOT NULL)');
+        db.exec('CREATE TABLE prediction_intents (broadcaster_id TEXT PRIMARY KEY NOT NULL, prediction_id TEXT)');
         db.exec('PRAGMA application_id=' + applicationId);
-        db.exec('PRAGMA user_version=1');
+        db.exec('PRAGMA user_version=2');
         db.exec('COMMIT');
+      } else if (writable) {
+        // Never migrate a v1 journal whose pages are already inconsistent.
+        const beforeUpgrade = db.prepare('PRAGMA quick_check').get() as { quick_check?: string };
+        if (beforeUpgrade.quick_check !== 'ok') throw Error('PREDICTION_FENCE_CORRUPT');
+        const version = db.prepare('PRAGMA user_version').get() as { user_version: number };
+        if (version.user_version === 1) {
+          // Upgrade old FIXE reservations atomically; their blocking rows remain intact.
+          db.exec('BEGIN IMMEDIATE');
+          try {
+            db.exec('ALTER TABLE prediction_intents ADD COLUMN prediction_id TEXT');
+            db.exec('PRAGMA user_version=2');
+            db.exec('COMMIT');
+          } catch (error) { db.exec('ROLLBACK'); throw error; }
+        }
       }
       const integrity = db.prepare('PRAGMA quick_check').get() as { quick_check?: string };
       if (integrity.quick_check !== 'ok') throw Error('PREDICTION_FENCE_CORRUPT');
@@ -107,13 +127,36 @@ export class PredictionIntentSqlite implements PredictionCreationFence {
     } finally { db.close(); }
   }
 
+  /** Bind a verified success receipt to its permanent reservation, never unlock it. */
+  recordConfirmed(broadcasterId: string, predictionId: string) {
+    if (!validBroadcaster(broadcasterId) || !/^[A-Za-z0-9-]{1,128}$/.test(predictionId))
+      throw Error('PREDICTION_FENCE_UNAVAILABLE');
+    const db = this.open(true)!;
+    let inTransaction = false;
+    try {
+      db.exec('BEGIN IMMEDIATE'); inTransaction = true;
+      const row = db.prepare('SELECT prediction_id FROM prediction_intents WHERE broadcaster_id=?')
+        .get(broadcasterId) as { prediction_id: string | null } | undefined;
+      if (!row || (row.prediction_id !== null && row.prediction_id !== predictionId))
+        throw Error('PREDICTION_FENCE_RECEIPT_MISMATCH');
+      if (row.prediction_id === null)
+        db.prepare('UPDATE prediction_intents SET prediction_id=? WHERE broadcaster_id=?')
+          .run(predictionId, broadcasterId);
+      db.exec('COMMIT'); inTransaction = false;
+    } catch {
+      if (inTransaction) { try { db.exec('ROLLBACK'); } catch { /* retain uncertain block */ } }
+      throw Error('PREDICTION_FENCE_RECEIPT_WRITE_UNCERTAIN');
+    } finally { db.close(); }
+  }
+
   releaseBeforePost(broadcasterId: string) {
     if (!validBroadcaster(broadcasterId)) throw Error('PREDICTION_FENCE_UNAVAILABLE');
     const db = this.open(true)!;
     let inTransaction = false;
     try {
       db.exec('BEGIN IMMEDIATE'); inTransaction = true;
-      const deleted = db.prepare('DELETE FROM prediction_intents WHERE broadcaster_id=?').run(broadcasterId);
+      // Never remove a reservation which already has a confirmed Twitch receipt.
+      const deleted = db.prepare('DELETE FROM prediction_intents WHERE broadcaster_id=? AND prediction_id IS NULL').run(broadcasterId);
       if (deleted.changes !== 1) throw Error('PREDICTION_FENCE_MISSING_INTENT');
       db.exec('COMMIT'); inTransaction = false;
     } catch {
