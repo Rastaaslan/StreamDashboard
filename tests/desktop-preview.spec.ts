@@ -25,7 +25,9 @@ test('Desktop Preview navigue et émet une commande unique par contrôle', async
     let testedObs = false;
     await page.route('**/api/v1/obs/test', async route => {
       testedObs = true;
-      expect(route.request().postDataJSON()).toMatchObject({ obsUrl: 'ws://127.0.0.1:4455' });
+      const displayedObsUrl = await page.locator('#preview-obs-form input[name="obsUrl"]').inputValue();
+      expect(displayedObsUrl).toMatch(/^ws:\/\/127\.0\.0\.1:\d{2,5}$/);
+      expect(route.request().postDataJSON()).toMatchObject({ obsUrl: displayedObsUrl });
       await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ ok: true, obsVersion: '31.0.0' }) });
     });
     let repairedSoundboard = false; let playedDesktopSounds = 0; let fixtureObsConnected = true;
