@@ -18,7 +18,13 @@ const VIDEOS_SCOPE = 'channel:manage:videos';
 const DELETE_CHAT_SCOPE = 'moderator:manage:chat_messages';
 const BANS_SCOPE = 'moderator:manage:banned_users';
 const REDEMPTIONS_SCOPE = 'channel:read:redemptions';
-const REQUESTED_SCOPES = [SCHEDULE_SCOPE, BROADCAST_SCOPE, CHAT_READ_SCOPE, CHAT_WRITE_SCOPE, CHATTERS_SCOPE, CLIPS_SCOPE, VIDEOS_SCOPE, DELETE_CHAT_SCOPE, BANS_SCOPE, REDEMPTIONS_SCOPE] as const;
+// 3.0 interfaces use these exact scopes; requesting only legacy scopes made
+// F02/F08 unreachable even after an operator deliberately reconnected Twitch.
+export const REQUESTED_SCOPES = [SCHEDULE_SCOPE, BROADCAST_SCOPE, CHAT_READ_SCOPE, CHAT_WRITE_SCOPE, CHATTERS_SCOPE, CLIPS_SCOPE, VIDEOS_SCOPE, DELETE_CHAT_SCOPE, BANS_SCOPE, REDEMPTIONS_SCOPE,
+  'channel:manage:polls', 'channel:manage:predictions', 'channel:manage:raids',
+  'moderator:manage:shoutouts', 'moderator:manage:shield_mode',
+  'moderator:manage:automod_settings', 'moderator:manage:automod',
+] as const;
 const REQUEST_TIMEOUT_MS = 15_000;
 
 type Credentials = {

@@ -1,0 +1,117 @@
+[
+    {
+        "original":  "C:\\Users\\damie\\AppData\\Local\\Temp\\sc3-final-browser-types.log",
+        "sha256":  "bb924b5407f9d304b72de6585fd82df628813488b5da1b1a285d6e9d05b09c1b",
+        "presentation":  "browser-types.txt"
+    },
+    {
+        "original":  "C:\\Users\\damie\\AppData\\Local\\Temp\\sc3-final-development-build.log",
+        "sha256":  "8a12796663b54b04d1d436c12116435346d692e6bbe42b6f8f4b79d9050e2e44",
+        "presentation":  "development-build.txt"
+    },
+    {
+        "original":  "C:\\Users\\damie\\AppData\\Local\\Temp\\sc3-final-electron-source-smoke.log",
+        "sha256":  "96eadb2fae7a20c35891408800b5076307ef583a16eb7a9b5a29aa8de07f9b9a",
+        "presentation":  "electron-source-smoke.txt"
+    },
+    {
+        "original":  "C:\\Users\\damie\\AppData\\Local\\Temp\\sc3-final-frozen-vitest.log",
+        "sha256":  "5ff43df1f75809500ec824d0225d332d7144fd5997154364eac3ffc31a8d0d5b",
+        "presentation":  "frozen-vitest.txt"
+    },
+    {
+        "original":  "C:\\Users\\damie\\AppData\\Local\\Temp\\sc3-final-full-vitest.log",
+        "sha256":  "589486144e65d3676c37541b6ff629228028138c9cbf2a457f340aea6a8d6485",
+        "presentation":  "full-vitest.txt"
+    },
+    {
+        "original":  "C:\\Users\\damie\\AppData\\Local\\Temp\\sc3-final-integrated-targets.log",
+        "sha256":  "b9ddbaef68fb128a65498fb88f13a8554f4ab20a3787603675dc4d8e86f4a598",
+        "presentation":  "integrated-targets.txt"
+    },
+    {
+        "original":  "C:\\Users\\damie\\AppData\\Local\\Temp\\sc3-final-moderation-edge.log",
+        "sha256":  "4a3ed06973ebc7ce16c7cdec08f2457db3c3d12d04c63a428a1c97f6f9e4a083",
+        "presentation":  "moderation-edge.txt"
+    },
+    {
+        "original":  "C:\\Users\\damie\\AppData\\Local\\Temp\\sc3-final-moderation.log",
+        "sha256":  "20ec9f0290b71da6ee6a9f1d3f9b01d154fac7d95217b80094f258a870626b04",
+        "presentation":  "moderation.txt"
+    },
+    {
+        "original":  "C:\\Users\\damie\\AppData\\Local\\Temp\\sc3-final-moments-edge.log",
+        "sha256":  "3ea2f23e06289957cec6149ccb78b66ff13688e65449d57b520b78fa6004217e",
+        "presentation":  "moments-edge.txt"
+    },
+    {
+        "original":  "C:\\Users\\damie\\AppData\\Local\\Temp\\sc3-final-moments-verified.log",
+        "sha256":  "76e92ff6e592559a899d02ac6ce4d40d83176019bb2485472eb033302eada483",
+        "presentation":  "moments-verified.txt"
+    },
+    {
+        "original":  "C:\\Users\\damie\\AppData\\Local\\Temp\\sc3-final-network.log",
+        "sha256":  "a7cd0866b52d24004a20c065fd9a0719700c2ae7ad73711b1d367c0744cda814",
+        "presentation":  "network.txt"
+    },
+    {
+        "original":  "C:\\Users\\damie\\AppData\\Local\\Temp\\sc3-final-node-built.log",
+        "sha256":  "7338b72dc4f65bab5726a8d5cfd5da6d4a41c11b31982793fe71e491410b2b73",
+        "presentation":  "node-built.txt"
+    },
+    {
+        "original":  "C:\\Users\\damie\\AppData\\Local\\Temp\\sc3-final-node-modal.log",
+        "sha256":  "83818d6ccc057648ef56b3b499c8d85c207f8fa75a179744f0812c0fea62029f",
+        "presentation":  "node-modal.txt"
+    },
+    {
+        "original":  "C:\\Users\\damie\\AppData\\Local\\Temp\\sc3-final-node-sequential.log",
+        "sha256":  "7b01fbc86f7a81c6607f386ce3bc5b53710a7e23b23f9638c0ac229dfa553907",
+        "presentation":  "node-sequential.txt"
+    },
+    {
+        "original":  "C:\\Users\\damie\\AppData\\Local\\Temp\\sc3-final-oauth.log",
+        "sha256":  "860f350c8aa8560d633b52d560fbb6c5e1a204179363a586191ee5e8c096ef2c",
+        "presentation":  "oauth.txt"
+    },
+    {
+        "original":  "C:\\Users\\damie\\AppData\\Local\\Temp\\sc3-final-package-unit.log",
+        "sha256":  "9cf46ccb4c100cdba2022f56c3a088c49b92aefbf680d79557d653c954e373df",
+        "presentation":  "package-unit.txt"
+    },
+    {
+        "original":  "C:\\Users\\damie\\AppData\\Local\\Temp\\sc3-final-qa-guard.log",
+        "sha256":  "8a67fab6306faba3e18ec3701457ea4104460e2fa45b1df6c28db1d9e6525ff5",
+        "presentation":  "qa-guard.txt"
+    },
+    {
+        "original":  "C:\\Users\\damie\\AppData\\Local\\Temp\\sc3-final-scope-targeted.log",
+        "sha256":  "cdb987b20ca16891e137c91ba0840f8844331492d2a2c8dea1a3b5859bef6e46",
+        "presentation":  "scope-targeted.txt"
+    },
+    {
+        "original":  "C:\\Users\\damie\\AppData\\Local\\Temp\\sc3-final-security.log",
+        "sha256":  "a1fae5b58111ece504118606a9d441214ea97fd2fc308922b4ad9d005ca35565",
+        "presentation":  "security.txt"
+    },
+    {
+        "original":  "C:\\Users\\damie\\AppData\\Local\\Temp\\sc3-final-shipped.log",
+        "sha256":  "2f273ed6d3ebbce5a5b2f5fa31808ea54fac59ab6821d520301eb6297a842fe5",
+        "presentation":  "shipped.txt"
+    },
+    {
+        "original":  "C:\\Users\\damie\\AppData\\Local\\Temp\\sc3-final-simple-moments.log",
+        "sha256":  "bb6f7da7f98db1d3ccfd5f7fde0918d75b5ff3184be723305a8c30455da65bbc",
+        "presentation":  "simple-moments.txt"
+    },
+    {
+        "original":  "C:\\Users\\damie\\AppData\\Local\\Temp\\sc3-final-source-smoke-build.log",
+        "sha256":  "8a12796663b54b04d1d436c12116435346d692e6bbe42b6f8f4b79d9050e2e44",
+        "presentation":  "source-smoke-build.txt"
+    },
+    {
+        "original":  "C:\\Users\\damie\\AppData\\Local\\Temp\\sc3-final-types.log",
+        "sha256":  "02fc317be9c2332372313f5ab4150d40edc22d27e0f384a484364fac49613455",
+        "presentation":  "types.txt"
+    }
+]

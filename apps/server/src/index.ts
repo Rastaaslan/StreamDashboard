@@ -1,3 +1,4 @@
+import { enforceStreamCockpitReleaseScope } from './streamcockpit-release-scope.js';
 import { createHealthRouter } from './streamcockpit-health/index.js';
 import { mapHostHealth } from './streamcockpit-health/host-adapter.js';
 import { ObsHealthObservation } from './streamcockpit-health/obs-observation.js';
@@ -24,6 +25,7 @@ import { resolveTags, editedTags, tagMetadata, tagPreferences, type TagEngine } 
 import { googleRecurrence, parseGoogleRecurrence } from '../../../integrations/google-calendar/src/recurrence.js';
 import express from 'express';
 import { ControlService } from './control-service.js';
+import { publicControlSnapshot } from './control-public-view.js';
 import { replayAutoStartDecision } from './replay-auto-start.js';
 import { registerControlRoutes } from './control-routes.js';
 import { registerTwitchChatRoutes } from './twitch-chat-routes.js';
@@ -47,6 +49,10 @@ import { ObsClient } from '../../../integrations/obs/src/client.js';
 import { AdvancedTwitch } from '../../../integrations/twitch/src/streamcockpit-advanced.js';
 import { StreamcockpitTwitchService } from './streamcockpit-twitch-service.js';
 import { createTwitchCapabilitiesRouter, twitchReadActor } from './streamcockpit-twitch-router.js';
+import { ModerationTwitch } from '../../../integrations/twitch/src/streamcockpit-moderation.js';
+import { SimpleMomentsTwitch } from '../../../integrations/twitch/src/streamcockpit-simple-moments.js';
+import { createTwitchMomentRouter, twitchMomentActor } from './streamcockpit-twitch-moment-router.js';
+import { createTwitchModerationRouter } from './streamcockpit-twitch-moderation-router.js';
 import { createTwitchPollRouter, twitchPollActor } from './streamcockpit-twitch-poll-router.js';
 import { ShoutoutTwitch } from '../../../integrations/twitch/src/streamcockpit-shoutout.js';
 import { StreamcockpitShoutoutService } from './streamcockpit-twitch-shoutout-service.js';
@@ -218,6 +224,8 @@ export interface DashboardServerOptions {
   wizebotTransport?: WizeBotTransport;
 }
 export interface DashboardServerHandle {
+  /** Main-process capability, never returned by an HTTP endpoint. */
+  issueLocalTwitchCredential?(): Promise<string>;
   remotePort?:number;
   port: number;
   url: string;
@@ -1907,6 +1915,7 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
     } catch (error) { next(error); }
   });
 
+  app.use('/api', enforceStreamCockpitReleaseScope);
   app.use('/api', (req, res, next) => {
     if (isLocalRequest(req)) { next(); return; }
     if (!remoteRuntimeEnabled) {
@@ -1995,6 +2004,16 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
     await assertRole('chat');
     return twitchPollActor(req, remoteAuth, isLocalRequest(req), remoteRuntimeEnabled);
   };
+  // F02 settings remain available off-air; they never start/stop a stream.
+  app.use('/api/v1/twitch/advanced/moderation', createTwitchModerationRouter({
+    api: new ModerationTwitch(advancedTwitchCredentials, runtimeFetch()),
+    actor: pairedF08Actor,
+    host: async () => {
+      if (options.obsEnabled === false || options.timerAuthority === false) return undefined;
+      const device = await options.deviceDescriptor?.().catch(() => undefined);
+      return mixerHostEligible(device) ? device!.id : undefined;
+    },
+  }));
   const confirmedF08HostEpoch = async () => {
     if (!await confirmedF08HostLive()) return undefined;
     // Stop/start or reconnect on the same FIXE host revokes earlier consent.
@@ -2081,6 +2100,29 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
     if (scheduled.available && scheduled.candidates.length) return scheduled.sessionId;
     return tracked && tracked.id === trackedUnplannedLiveId ? tracked.id : undefined;
   };
+  app.use('/api/v1/twitch/advanced/moment', createTwitchMomentRouter({
+    api: new SimpleMomentsTwitch(advancedTwitchCredentials, runtimeFetch()),
+    actor: async req => {
+      await assertRole('clips');
+      return twitchMomentActor(req, remoteAuth, isLocalRequest(req), remoteRuntimeEnabled);
+    }, hostLive: confirmedF08HostEpoch,
+    record: async moment => {
+      const epoch = await confirmedF08HostEpoch(), sessionId = await activeMomentsSessionId();
+      if (!epoch) throw new Error('MOMENT_HOST_UNAVAILABLE');
+      if (!sessionId) return 'unbound';
+      const pipeline = await observedMomentsPipeline();
+      if (await activeMomentsSessionId() !== sessionId || await confirmedF08HostEpoch() !== epoch)
+        throw new Error('MOMENT_SESSION_CHANGED');
+      await pipeline.record({ sessionId, instant: moment.instant, source: 'twitch',
+        correlationId: moment.correlationId,
+        sourceEventId: 'twitch-' + createHash('sha256').update(moment.kind + ':' + moment.id).digest('hex'),
+        title: moment.kind === 'marker' ? 'Marqueur Twitch' : 'Clip Twitch demandé',
+        status: moment.kind === 'marker' ? 'confirmed' : 'observed',
+        ...(moment.kind === 'clip' ? { clip: { provider: 'twitch', reference: moment.id } } : {}),
+      });
+      return 'recorded';
+    },
+  }));
   const replayMomentProducer = new ObsReplayMomentProducer({
     snapshot: () => ({ connected: obs.state.connected, streamingKnown: obs.state.streamingKnown === true,
       streaming: obs.state.streaming, connectionGeneration: obs.connectionGeneration,
@@ -3001,7 +3043,7 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
   });
   const autonomyBundle = (req: express.Request) => ({
     savedAt: autonomySnapshotTime = Math.max(Date.now(), autonomySnapshotTime + 1),
-    data: { ...control.snapshot(), host: { ...controlHostState(), local: isLocalRequest(req) } },
+    data: { ...publicControlSnapshot(control.snapshot()), host: { ...controlHostState(), local: isLocalRequest(req) } },
     sounds: { sounds: local.sounds.map(({ source: _source, ...sound }) => sound), available: obs.state.connected, currentPlayback: null },
     extras: { templates: structuredClone(local.companion.templates), automations: automation.list(), profile: structuredClone(productProfile), discord: structuredClone(local.discord), google: { calendarId: local.google.targetCalendarId }, wizebot: wizebotCommands.snapshot() },
   });
@@ -3647,7 +3689,15 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
     throw startupSignal?.aborted ? startupSignal.reason : error;
   }
   const urlHost = host === '0.0.0.0' ? '127.0.0.1' : host === '::1' ? '[::1]' : host;
-  return { remotePort:tlsPort||undefined,port: actualPort, url: `http://${urlHost}:${actualPort}`, state: snapshot, providersReady, server, stop,
+  let localTwitchSession: ReturnType<RemoteAuth['createLocalTwitchSession']> | undefined;
+  return { issueLocalTwitchCredential: async () => {
+      if (stopPromise || options.obsEnabled === false || options.timerAuthority === false) throw new Error('LOCAL_TWITCH_AUTHORITY_UNAVAILABLE');
+      const device = await options.deviceDescriptor?.().catch(() => undefined);
+      if (!mixerHostEligible(device) || stopPromise) throw new Error('LOCAL_TWITCH_AUTHORITY_UNAVAILABLE');
+      localTwitchSession ??= remoteAuth.createLocalTwitchSession();
+      if (!remoteAuth.canManage(localTwitchSession.deviceId)) throw new Error('LOCAL_TWITCH_SESSION_REVOKED');
+      return localTwitchSession.credential;
+    }, remotePort:tlsPort||undefined,port: actualPort, url: `http://${urlHost}:${actualPort}`, state: snapshot, providersReady, server, stop,
     assessRestartSafety: () => assessRestartSafety({ obsEnabled: options.obsEnabled !== false, stopped: () => Boolean(stopPromise),
       pending: () => control.hasPendingActions || commands.hasPendingCommands,
       revision: () => JSON.stringify([commands.activityRevision, control.snapshot().receipts.map(receipt => [receipt.id, receipt.status])]),

@@ -1,4 +1,5 @@
 import ts from 'typescript';
+import {streamCockpitBuildInfo} from './streamcockpit3-build-info.mjs';
 import path from 'node:path';
 import {readFile,mkdir,copyFile,writeFile,rm,readdir} from 'node:fs/promises';
 import {createHash} from 'node:crypto';
@@ -52,5 +53,8 @@ if(!includeLegacy){
   const redirect='<!doctype html><html lang="fr"><meta charset="utf-8"><meta http-equiv="refresh" content="0;url=/mobile/control/"><title>StreamDashboard</title><a href="/mobile/control/">Ouvrir StreamDashboard</a></html>';
   for(const file of ['mobile/index.html']){const target=path.join(destination,file);await mkdir(path.dirname(target),{recursive:true});await writeFile(target,redirect);manifest.push({path:file,sha256:createHash('sha256').update(redirect).digest('hex')});}
 }
+const buildInfo=JSON.stringify(streamCockpitBuildInfo(),null,2)+'\n';
+await writeFile(path.join(destination,'mobile/streamcockpit-build.json'),buildInfo);
+manifest.push({path:'mobile/streamcockpit-build.json',sha256:createHash('sha256').update(buildInfo).digest('hex')});
 await writeFile(path.join(destination,'manifest.json'),JSON.stringify({version,profile:includeLegacy?'compatibility':'production',files:manifest},null,2)+'\n');
 console.log('Public assets: '+manifest.length+' files ('+(includeLegacy?'compatibility':'production')+'), declarations and unused previews excluded from production.');

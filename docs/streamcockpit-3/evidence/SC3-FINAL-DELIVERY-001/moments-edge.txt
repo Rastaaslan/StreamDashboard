@@ -1,0 +1,42 @@
+
+ RUN  v5.0.1 C:/Users/damie/Dev/StreamCockpit-3.0-FullExperience
+
+ ÔØ» tests/streamcockpit3-simple-moments-browser.test.ts (1 test | 1 failed) 1837ms
+   ├ù F04 real Edge 320px: marker/clip consent, truthful async status, safe link and uncertainty 1836ms
+vitest.cmd :
+Au caractère Ligne:1 : 115
++ ... R_TEST='1'; & .\node_modules\.bin\vitest.cmd run tests/streamcockpit3 ...
++                 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: (:String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+
+ÔÄ»ÔÄ»ÔÄ»ÔÄ»ÔÄ»ÔÄ»ÔÄ» Failed Tests 1 ÔÄ»ÔÄ»ÔÄ»ÔÄ»ÔÄ»ÔÄ»ÔÄ»
+
+ FAIL  tests/streamcockpit3-simple-moments-browser.test.ts > F04 real Edge 320px:
+marker/clip consent, truthful async status, safe link and uncertainty
+
+ Test Files  1 failed (1)
+      Tests  1 failed (1)
+   Start at  13:48:32
+   Duration  2.37s (tests 83%, import 16%, transform 1%)
+
+AssertionError: expected false to be true // Object.is equality
+
+- Expected
++ Received
+
+- true
++ false
+
+ ÔØ» tests/streamcockpit3-simple-moments-browser.test.ts:26:49
+     24|       await page.getByRole('button',{name:'V├®rifier le moment sans pubÔÇª
+     25|       const submit=page.getByRole('button',{name:'Cr├®er ce moment sur ÔÇª
+     26|       await expect.poll(()=>submit.isVisible()).toBe(true);expect(awaiÔÇª
+       |                                                 ^
+     27|       await page.getByLabel('Confirmer le moment Twitch').check();awaiÔÇª
+     28|       await expect.poll(()=>page.getByRole('status').textContent()).toÔÇª
+
+Caused by: Error: Matcher did not succeed in time.
+ ÔØ» tests/streamcockpit3-simple-moments-browser.test.ts:26:7
+
+ÔÄ»ÔÄ»ÔÄ»ÔÄ»ÔÄ»ÔÄ»ÔÄ»ÔÄ»ÔÄ»ÔÄ»ÔÄ»ÔÄ»ÔÄ»ÔÄ»ÔÄ»ÔÄ»ÔÄ»ÔÄ»ÔÄ»ÔÄ»ÔÄ»ÔÄ»ÔÄ»ÔÄ»[1/1]ÔÄ»

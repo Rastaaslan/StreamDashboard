@@ -1,0 +1,95 @@
+{
+  "schemaVersion": 1,
+  "ticket": "SC3-FINAL-DELIVERY-001",
+  "gate": "G3",
+  "status": "open",
+  "hardwareQualification": false,
+  "operator": "Dam",
+  "devices": [
+    "FIXE Windows 11",
+    "laptop (manual)",
+    "Android (manual)"
+  ],
+  "scenarios": [
+    {
+      "id": "G3-01",
+      "status": "pending",
+      "commit": null,
+      "observedAt": null,
+      "result": null,
+      "evidence": []
+    },
+    {
+      "id": "G3-02",
+      "status": "pending",
+      "commit": null,
+      "observedAt": null,
+      "result": null,
+      "evidence": []
+    },
+    {
+      "id": "G3-03",
+      "status": "pending",
+      "commit": null,
+      "observedAt": null,
+      "result": null,
+      "evidence": []
+    },
+    {
+      "id": "G3-04",
+      "status": "pending",
+      "commit": null,
+      "observedAt": null,
+      "result": null,
+      "evidence": []
+    },
+    {
+      "id": "G3-05",
+      "status": "pending",
+      "commit": null,
+      "observedAt": null,
+      "result": null,
+      "evidence": []
+    },
+    {
+      "id": "G3-06",
+      "status": "pending",
+      "commit": null,
+      "observedAt": null,
+      "result": null,
+      "evidence": []
+    },
+    {
+      "id": "G3-07",
+      "status": "pending",
+      "commit": null,
+      "observedAt": null,
+      "result": null,
+      "evidence": []
+    },
+    {
+      "id": "G3-08",
+      "status": "pending",
+      "commit": null,
+      "observedAt": null,
+      "result": null,
+      "evidence": []
+    },
+    {
+      "id": "G3-09",
+      "status": "pending",
+      "commit": null,
+      "observedAt": null,
+      "result": null,
+      "evidence": []
+    },
+    {
+      "id": "G3-10",
+      "status": "pending",
+      "commit": null,
+      "observedAt": null,
+      "result": null,
+      "evidence": []
+    }
+  ]
+}

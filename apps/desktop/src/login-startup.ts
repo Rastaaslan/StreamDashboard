@@ -10,6 +10,12 @@ export function loginStartupOptions(executable: string, enabled: boolean) {
 }
 
 export function configureLoginStartup(app: Pick<Electron.App, 'isPackaged'|'setLoginItemSettings'|'getLoginItemSettings'>, enabled: boolean, executable = process.execPath, platform = process.platform) {
+  // desktopUserData validates this explicit temporary QA profile before boot.
+  // A packaged smoke test must never remove/change the user's real startup entry.
+  if (process.env.NODE_ENV === 'test' && process.argv.some(value => value.startsWith('--qa-profile='))) {
+    if (enabled) throw new Error('Démarrage automatique indisponible dans un profil QA isolé.');
+    return;
+  }
   if (platform !== 'win32' || !app.isPackaged) {
     if (enabled) throw new Error('Le démarrage automatique nécessite l’application Windows installée.');
     return;

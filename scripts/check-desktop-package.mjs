@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { execFileSync } from 'node:child_process';
 import path from 'node:path';
 import { readFileSync } from 'node:fs';
 import { createHash } from 'node:crypto';
@@ -17,6 +18,13 @@ assert.equal(packagedManifest.version, sourceManifest.version, 'Packaged runtime
 assert.equal(packagedManifest.main, 'dist/apps/desktop/src/main.js', 'Packaged desktop entry point must use the built runtime');
 assert.equal(packagedManifest.devDependencies, undefined, 'Production packaging must remove development dependencies from the runtime manifest');
 
+const embeddedBuild=JSON.parse(readArchive('resources/streamcockpit-build.json').toString());
+const publicBuild=JSON.parse(readFileSync('.build/public/mobile/streamcockpit-build.json','utf8'));
+assert.deepEqual(embeddedBuild,publicBuild,'EXE/ASAR must embed the exact same source provenance as Android assets');
+assert.match(embeddedBuild.sourceCommit,/^[a-f0-9]{40}$/);
+assert.equal(embeddedBuild.sourceCommit,execFileSync('git',['rev-parse','HEAD'],{encoding:'utf8',windowsHide:true}).trim(),'Embedded commit must match the frozen source revision');
+assert.equal(embeddedBuild.sourceTreeDirty,false,'Delivery artifacts require a clean identified source commit');
+assert.equal(embeddedBuild.version,sourceManifest.version);
 const publicConfig = JSON.parse(readArchive('resources/distribution.json').toString());
 assert.deepEqual(Object.keys(publicConfig).sort(), ['googleClientId', 'twitchClientId']);
 assert.match(publicConfig.googleClientId, /^[\w.-]+\.apps\.googleusercontent\.com$/);

@@ -13,6 +13,17 @@ export class RemoteAuth {
   private devices = new Map<string, DeviceRecord>();
   private attempts = new Map<string, number[]>();
   private wsTickets = new Map<string, WsTicket>();
+  private localSessions = new Set<string>();
+
+  /** Process-only capability issued solely to the trusted Electron main frame.
+   * Never persisted, listed as a paired phone, or accepted over the LAN. */
+  createLocalTwitchSession() {
+    const invitation = this.createPairing(1000, true, ['chat', 'cloud', 'clips']);
+    const session = this.pair(invitation.id, invitation.code, 'FIXE local Twitch', 'trusted-main-process');
+    this.localSessions.add(session.deviceId);
+    return session;
+  }
+  isLocalSession(id: string) { return this.localSessions.has(id); }
 
   constructor(private now: () => number = Date.now, initial: PersistedRemoteDevice[] = [], pending: PersistedPairing[] = []) {
     for (const value of pending) {
@@ -59,10 +70,11 @@ export class RemoteAuth {
     return { deviceId, credential, management: value.management === true, permissions:this.permissions(deviceId) };
   }
 
-  authenticate(credential: string) {
+  authenticate(credential: string, allowLocalSession = false) {
     if (!credential) return null;
     const digest = this.hash(credential);
     for (const device of this.devices.values()) {
+      if (this.localSessions.has(device.id) && !allowLocalSession) continue;
       if (!device.revokedAt && this.equal(device.credentialHash, digest)) {
         device.lastSeenAt = new Date(this.now()).toISOString();
         return device.id;
@@ -114,7 +126,7 @@ export class RemoteAuth {
   }
 
   list(): RemoteDevice[] {
-    return [...this.devices.values()].map(({ credentialHash: _secret, ...device }) => ({ ...device }));
+    return [...this.devices.values()].filter(device => !this.localSessions.has(device.id)).map(({ credentialHash: _secret, ...device }) => ({ ...device }));
   }
 
   serializePairings(): PersistedPairing[] {
@@ -123,7 +135,7 @@ export class RemoteAuth {
   }
 
   serialize(): PersistedRemoteDevice[] {
-    return [...this.devices.values()].map(device => ({ ...device, credentialHash: device.credentialHash.toString('base64') }));
+    return [...this.devices.values()].filter(device => !this.localSessions.has(device.id)).map(device => ({ ...device, credentialHash: device.credentialHash.toString('base64') }));
   }
 
   private limit(key: string) {

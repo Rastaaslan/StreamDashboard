@@ -20,6 +20,7 @@ contextBridge.exposeInMainWorld('streamDashboardDesktop', {
   getVersion: (): Promise<string> => ipcRenderer.invoke('app:get-version'),
   getDeviceProfile: () => ipcRenderer.invoke('app:device-profile'),
   getInstallation: () => ipcRenderer.invoke('installation:get'),
+  getLocalTwitchCredential: (): Promise<string> => ipcRenderer.invoke('twitch:local-credential'),
   changeInstallation: (changes: unknown, revision: number) => ipcRenderer.invoke('installation:change', changes, revision),
   restoreInstallation: (revision: number) => ipcRenderer.invoke('installation:restore', revision),
   setDeviceRole: (role: string, name: string) => ipcRenderer.invoke('app:set-device-role', role, name),

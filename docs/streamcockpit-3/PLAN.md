@@ -21,7 +21,7 @@ Le StreamCockpit 3.0 est une régie de streaming Twitch-only, pilotable depuis F
 | F01 | Centre de santé et alertes intelligentes | Indicateurs épars ; diagnostic global OBS/Twitch/audio/DJI/sync/perf avec provenance et alertes dédupliquées | F00 |
 | F02 | Modération Twitch complète | Ban/timeout/suppression/déban de base ; AutoMod, Shield Mode, historique viewer et permissions | F00 |
 | F03 | Régie et macros contextuelles | Deck/favoris/macro basique ; règles selon jeu/scène/état, confirmations et journal cohérent | F00,F01 |
-| F04 | Marqueurs / clips / ClipForge | Clips OBS partiels ; marqueurs Twitch/OBS, collecte, export vertical ClipForge vérifié | F00 |
+| F04 | Marqueurs OBS/Twitch, replays et clips simples | Tampon OBS, clips Twitch et repères horodatés ; aucun montage ni export vidéo | F00 |
 | F05 | Mixeur audio avancé | Commandes audio dispersées ; niveaux/sources/routage OBS+PC jeu sécurisés, VOD préservée | F00,F01 |
 | F06 | Planning assisté | Agenda, récurrences et exports ; suggestions, duplication, préflight, publication explicite | F00 |
 | F07 | Deck Android adaptatif | Volets et banques présents ; adaptation contrôlée selon rôle/scène/jeu/lancement | F03 |
@@ -33,7 +33,7 @@ Le StreamCockpit 3.0 est une régie de streaming Twitch-only, pilotable depuis F
 **Lot A — OBS / Santé / sécurité :** F00+F01 en priorité ; instrumentation read-only, alarmes fondées sur mesures, tests déconnexion.
 **Lot B — Twitch / communauté :** F02+F08 ; capacités OAuth lisibles, outils modérateurs, actions confirmées et erreurs explicites.
 **Lot C — Contexte / audio / planning :** F03+F07, puis F05+F06 ; moteur de contexte purement déterministe et interfaces.
-**Lot D — Contenu / livraison :** F04+F09, puis F10 ; marqueurs, timeline, ClipForge, packaging et retour arrière.
+**Lot D — Contenu / livraison :** F04+F09, puis F10 ; marqueurs et clips simples, timeline, packaging et retour arrière.
 
 Au lancement : premier sous-lot d'implémentation par lot. Chaque lot doit livrer un **résultat fonctionnel étroit, testable et non simulé au niveau architecture**, pas prétendre couvrir en une itération toute la roadmap. Ne pas mélanger les branches de travail ; intégration séparée après revue des diffs et des tests.
 
@@ -51,3 +51,10 @@ La source de vérité machine est `docs/streamcockpit-3/feature-matrix.json` ; c
 ## Backlog version 3.1 — hors critères de livraison 3.0
 - **SC31-LAYOUT-001 : Cockpit à disposition modulaire et entièrement personnalisable.** Modules à déplacer, redimensionner, afficher/masquer et regrouper, profils par appareil/format et sauvegarde, édition tactile et souris/clavier. Voir ROADMAP_3_1_MODULAR_DISPLAY.md et ROADMAP_3_1_BACKLOG.json.
 - Ce chantier **n'ajoute aucune obligation à G2–G5** ; conserver une seule livraison 3.0 complète avant d'engager la phase 3.1. Aucun module existant ne doit être considéré automatiquement apte au drag-and-drop sans audit des contrats de rendu.
+
+## Décision produit SC3-FINAL-DELIVERY-001 — 03/11/2026
+- V3.0 inclut F00 à F10. F04 est limité aux marqueurs OBS/Twitch, replays et clips simples. F09 dépend des événements et clips simples, jamais du pipeline de montage.
+- ClipForge, montage, FFmpeg avancé, exports verticaux et traitements multimédias lourds sont reportés en V4 : voir ROADMAP_4_CLIPFORGE.md. Code et preuves historiques conservés ; routes, commandes et interface de production 3.0 désactivées explicitement. Aucun nouveau développement ClipForge pour fermer G2–G5.
+- SC31-LAYOUT-001 reste en V3.1, hors livraison 3.0.
+- Les limites ClipForge ne bloquent plus la 3.0. Les manques Agent, modération, macros, mixeur, planning, deck, interactions, timeline et mise à jour restent à résoudre et à prouver.
+- Un propriétaire actif : SC3-FINAL-DELIVERY-001 sur le dépôt canonique. Aucun autre traitement autonome ne doit modifier ses fichiers pendant cette exécution. F09-Q reste isolé jusqu’à revue sélective.

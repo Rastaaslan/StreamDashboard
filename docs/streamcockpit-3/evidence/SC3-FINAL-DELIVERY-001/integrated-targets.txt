@@ -1,0 +1,33 @@
+
+ RUN  v5.0.1 C:/Users/damie/Dev/StreamCockpit-3.0-FullExperience
+
+ Ô£ô tests/streamcockpit3-simple-moments-http.test.ts (9 tests) 102ms
+ Ô£ô tests/streamcockpit3-local-twitch-identity.test.ts (2 tests) 9ms
+ Ô£ô tests/streamcockpit3-moderation-browser.test.ts (2 tests) 2400ms
+   Ô£ô F02 actual Edge 320px + paired HTTP: consent, readback, no page overflow 1152ms
+   Ô£ô F02 lost PUT + reconnect stays uncertain until an explicit external check, without resend 1247ms
+ Ô£ô tests/streamcockpit3-simple-moments-browser.test.ts (1 test) 1147ms
+   Ô£ô F04 real Edge 320px: marker/clip consent, truthful async status, safe link and uncertainty 1146ms
+ Ô£ô tests/streamcockpit3-moderation-http.test.ts (9 tests) 111ms
+ Ô£ô tests/streamcockpit3-simple-replay-privacy.test.ts (1 test) 35ms
+vitest.cmd : (node:34248) MaxListenersExceededWarning: Possible EventTarget memory leak detected. 11 visibilitychange
+listeners added to EventTarget. MaxListeners is 10. Use events.setMaxListeners() to increase limit
+Au caractère Ligne:1 : 115
++ ... R_TEST='1'; & .\node_modules\.bin\vitest.cmd run tests/streamcockpit3 ...
++                 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: ((node:34248) Ma... increase limit:String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:34248) MaxListenersExceededWarning: Possible EventTarget memory leak detected. 11 offline listeners added to
+EventTarget. MaxListeners is 10. Use events.setMaxListeners() to increase limit
+ Ô£ô tests/streamcockpit3-twitch-mobile.test.ts (20 tests) 30ms
+ Ô£ô tests/streamcockpit3-authority-target.test.ts (1 test) 3ms
+
+ Test Files  8 passed (8)
+      Tests  45 passed (45)
+   Start at  13:58:44
+   Duration  7.00s (tests 65%, import 29%, transform 5%, worker 1%)
+
+    Isolate  8 workers spawned ┬À ~131ms startup each (spawn + environment, per file)
+             at least ~915ms faster with isolate: false ÔÇö reuses workers across files instead of one per file

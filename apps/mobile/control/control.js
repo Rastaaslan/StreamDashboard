@@ -1,4 +1,5 @@
 import { renderContextPreview } from './streamcockpit-context-preview.js';
+import { liveControlTarget } from './streamcockpit-authority-target.js';
 import { mountHealthPage } from './streamcockpit-health/page.js';
 import { mountMixerPage } from './streamcockpit-mixer-page.js';
 import { mountMomentsPage } from './streamcockpit-moments-page.js';
@@ -111,8 +112,12 @@ function soundDestinationId(){const current=installationUI.current,id=server===l
 async function network(path, body, method=body===undefined?'GET':'POST',target=server,token=target===localEndpoint?'':credential) {
   if(!target)throw new Error('Renseignez l’adresse du PC de stream.');
   const clockTicket=masterClock.revision();
+  // The FIXE desktop uses a process-only identity obtained through its guarded
+  // IPC bridge. Loopback alone never grants a public Twitch mutation.
+  if(target===localEndpoint&&/^\/api\/v1\/twitch\/advanced\//.test(path)&&globalThis.streamDashboardDesktop?.getLocalTwitchCredential)
+    token=await globalThis.streamDashboardDesktop.getLocalTwitchCredential();
   let response;
-  try{response=await peers.request(target+path,{method,token,body,timeoutMs:(path==='/api/v2/actions'||path==='/api/v2/sounds/export')?120_000:path.startsWith('/api/v2/wizebot/')||path.startsWith('/api/v2/youtube/')||path==='/api/v2/autonomy/sync'?65_000:path.startsWith('/api/v1/streamlabs/events')||path.startsWith('/api/v1/supports/streamlabs/history/')?20_000:8_000});}
+  try{response=await peers.request(target+path,{method,token,body,timeoutMs:(path==='/api/v2/actions'||path==='/api/v2/sounds/export')?120_000:path.startsWith('/api/v1/twitch/advanced/')?65_000:path.startsWith('/api/v2/wizebot/')||path.startsWith('/api/v2/youtube/')||path==='/api/v2/autonomy/sync'?65_000:path.startsWith('/api/v1/streamlabs/events')||path.startsWith('/api/v1/supports/streamlabs/history/')?20_000:8_000});}
   catch(cause){const error=new Error(cause?.message||'Connexion à la régie interrompue ou délai dépassé.',{cause});error.transportUnavailable=true;throw error;}
   if(response.status===204)return {};
   let value;
@@ -684,6 +689,10 @@ function liveChatRequest(path,body,method,sourceKey){
  // A chat message is never put in the configuration's offline queue.
  return network(path,body,method,target,target===localEndpoint?'':credential);
 }
+function liveControlRequest(path,body,method,sourceKey){
+ const target=liveControlTarget({server,localEndpoint,clientRole,online,sourceKey});
+ return network(path,body,method,target,target===localEndpoint?'':credential);
+}
 function updateLiveMonitor(){
  const root=$('#live-monitor');if(!root)return;
  if(!localCapabilityEnabled('viewer')){
@@ -691,8 +700,8 @@ function updateLiveMonitor(){
   const activity=$('#streamlabs-feed');if(activity&&root.contains(activity))root.after(activity);
   root.innerHTML='<p class="panel">Visionneuses et chats désactivés sur cet appareil. Réactivez ce rôle dans Mon installation.</p>';return;
  }
- liveMonitor??=createLiveMonitor(root,{native,activityRoot:compact?undefined:$('#streamlabs-feed'),request:liveChatRequest,configure:()=>{page='settings';tab='platforms';localStorage.setItem('sd2.page',page);render();}});
- liveMonitor?.update(data,{online:localEndpoint?true:server?online:native,chatOnly:compact,sourceKey:localEndpoint||server||LOCAL_SCOPE});
+ liveMonitor??=createLiveMonitor(root,{native,activityRoot:compact?undefined:$('#streamlabs-feed'),request:liveChatRequest,controlRequest:liveControlRequest,configure:()=>{page='settings';tab='platforms';localStorage.setItem('sd2.page',page);render();}});
+ liveMonitor?.update(data,{online:localEndpoint?true:server?online:native,chatOnly:compact,sourceKey:localEndpoint||server||LOCAL_SCOPE,authorityKey:server||'',authorityOnline:Boolean(server&&online)});
 }
 function rememberForms(){const forms=[...document.querySelectorAll('form')].filter(f=>!formBases.has(f));if(!forms.length)return;const bundle=autonomy?.store.view();if(bundle){const base=resources(bundle);forms.forEach(f=>formBases.set(f,base));}}
 function modal(content){dialogBase=autonomy?.store.view()?resources(autonomy.store.view()):undefined;$('#dialog-content').innerHTML=content;if(!dialog.open)dialog.showModal();rememberForms();}

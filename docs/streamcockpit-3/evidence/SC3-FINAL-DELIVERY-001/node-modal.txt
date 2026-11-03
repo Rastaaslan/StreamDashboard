@@ -1,0 +1,60 @@
+TAP version 13
+# (node:26816) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# Subtest: planning: delayed reopen completion preserves the newer draft and target
+ok 1 - planning: delayed reopen completion preserves the newer draft and target
+  ---
+  duration_ms: 1165.496
+  type: 'test'
+  ...
+# Subtest: planning: delayed edit-after-submit completion preserves the newer draft and target
+ok 2 - planning: delayed edit-after-submit completion preserves the newer draft and target
+  ---
+  duration_ms: 922.5221
+  type: 'test'
+  ...
+# Subtest: planning: delayed delete-reopen completion preserves the newer draft and target
+ok 3 - planning: delayed delete-reopen completion preserves the newer draft and target
+  ---
+  duration_ms: 965.5665
+  type: 'test'
+  ...
+# Subtest: sounds: delayed reopen completion preserves the newer draft and target
+ok 4 - sounds: delayed reopen completion preserves the newer draft and target
+  ---
+  duration_ms: 839.5911
+  type: 'test'
+  ...
+# Subtest: sounds: delayed edit-after-submit completion preserves the newer draft and target
+ok 5 - sounds: delayed edit-after-submit completion preserves the newer draft and target
+  ---
+  duration_ms: 779.8753
+  type: 'test'
+  ...
+# Subtest: sounds: delayed delete-reopen completion preserves the newer draft and target
+ok 6 - sounds: delayed delete-reopen completion preserves the newer draft and target
+  ---
+  duration_ms: 849.9195
+  type: 'test'
+  ...
+# Subtest: legacy: delayed reopen completion preserves the newer draft and target
+ok 7 - legacy: delayed reopen completion preserves the newer draft and target
+  ---
+  duration_ms: 848.941
+  type: 'test'
+  ...
+# Subtest: legacy: delayed edit-after-submit completion preserves the newer draft and target
+ok 8 - legacy: delayed edit-after-submit completion preserves the newer draft and target
+  ---
+  duration_ms: 815.836
+  type: 'test'
+  ...
+1..8
+# tests 8
+# suites 0
+# pass 8
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 7962.1691

@@ -1,0 +1,48 @@
+
+ RUN  v5.0.1 C:/Users/damie/Dev/StreamCockpit-3.0-FullExperience
+
+ ÔØ» tests/streamcockpit3-moderation-browser.test.ts (2 tests | 2 failed) 2172ms
+   ├ù F02 actual Edge 320px + paired HTTP: consent, readback, no page overflow 1054ms
+   ├ù F02 lost PUT + reconnect stays uncertain until an explicit external check, without resend 1117ms
+vitest.cmd :
+Au caractère Ligne:1 : 115
++ ... R_TEST='1'; & .\node_modules\.bin\vitest.cmd run tests/streamcockpit3 ...
++                 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: (:String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+
+ÔÄ»ÔÄ»ÔÄ»ÔÄ»ÔÄ»ÔÄ»ÔÄ» Failed Tests 2 ÔÄ»ÔÄ»ÔÄ»ÔÄ»ÔÄ»ÔÄ»ÔÄ»
+
+ FAIL  tests/streamcockpit3-moderation-browser.test.ts > F02 actual Edge 320px + paired
+HTTP: consent, readback, no page overflow
+
+Error: Invalid Chai property: toBeVisible
+ Test Files  1 failed (1)
+      Tests  2 failed (2)
+   Start at  13:44:45
+   Duration  3.65s (tests 62%, import 34%, transform 3%)
+
+ ÔØ» tests/streamcockpit3-moderation-browser.test.ts:46:22
+     44|   expect(await apply.isVisible()).toBe(false);
+     45|   await page.getByRole('button',{name:'V├®rifier sans modifier Twitch'}ÔÇª
+     46|   await expect(apply).toBeVisible();expect(await apply.isDisabled()).tÔÇª
+       |                      ^
+     47|   await page.getByLabel('Confirmer la modification Twitch').check();awÔÇª
+     48|   await expect(page.getByRole('status')).toHaveText('Modification confÔÇª
+ ÔØ» browserFixture tests/streamcockpit3-moderation-browser.test.ts:38:5
+
+ÔÄ»ÔÄ»ÔÄ»ÔÄ»ÔÄ»ÔÄ»ÔÄ»ÔÄ»ÔÄ»ÔÄ»ÔÄ»ÔÄ»ÔÄ»ÔÄ»ÔÄ»ÔÄ»ÔÄ»ÔÄ»ÔÄ»ÔÄ»ÔÄ»ÔÄ»ÔÄ»ÔÄ»[1/2]ÔÄ»
+
+ FAIL  tests/streamcockpit3-moderation-browser.test.ts > F02 lost PUT + reconnect stays
+uncertain until an explicit external check, without resend
+Error: Invalid Chai property: toContainText
+ ÔØ» tests/streamcockpit3-moderation-browser.test.ts:55:41
+     53|   await page.getByLabel('Confirmer la modification Twitch').check();loÔÇª
+     54|   await page.getByRole('button',{name:'Appliquer sur Twitch'}).click();
+     55|   await expect(page.getByRole('status')).toContainText('Issue incertaiÔÇª
+       |                                         ^
+     56|   await page.evaluate(()=>{window.dispatchEvent(new Event('offline'));ÔÇª
+     57|   expect(await page.getByRole('button',{name:'V├®rifier sans modifier TÔÇª
+ ÔØ» browserFixture tests/streamcockpit3-moderation-browser.test.ts:38:5
+
+ÔÄ»ÔÄ»ÔÄ»ÔÄ»ÔÄ»ÔÄ»ÔÄ»ÔÄ»ÔÄ»ÔÄ»ÔÄ»ÔÄ»ÔÄ»ÔÄ»ÔÄ»ÔÄ»ÔÄ»ÔÄ»ÔÄ»ÔÄ»ÔÄ»ÔÄ»ÔÄ»ÔÄ»[2/2]ÔÄ»

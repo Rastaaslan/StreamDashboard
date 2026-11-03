@@ -1,4 +1,5 @@
 import type { WizeBotService } from './wizebot-service.js';
+import {publicControlReceipt,publicControlSnapshot} from './control-public-view.js';
 import type express from 'express';
 import type { ControlService } from './control-service.js';
 import type { ObsClient } from '../../../integrations/obs/src/client.js';
@@ -10,8 +11,8 @@ export function registerControlRoutes(options: {
   isLocal(req: express.Request): boolean; port(): number;
 }) {
   const {app,control,obs}=options;
-  app.get('/api/v2/state', async(req,res,next)=>{try{await options.observe();res.json({...control.snapshot(), receipts:control.snapshot().receipts.slice(-60), host:{...options.state() as object,local:options.isLocal(req)}});}catch(e){next(e);}});
-  app.put('/api/v2/configuration',async(req,res,next)=>{try {res.json(await control.configure(req.body.configuration,req.body.expectedRevision));}catch(e){next(e);}});
+  app.get('/api/v2/state', async(req,res,next)=>{try{await options.observe();res.json({...publicControlSnapshot(control.snapshot()), receipts:control.snapshot().receipts.slice(-60).map(publicControlReceipt), host:{...options.state() as object,local:options.isLocal(req)}});}catch(e){next(e);}});
+  app.put('/api/v2/configuration',async(req,res,next)=>{try {res.json(publicControlSnapshot(await control.configure(req.body.configuration,req.body.expectedRevision)));}catch(e){next(e);}});
   app.post('/api/v2/actions',async(req,res,next)=>{
     try {
       const selected=control.snapshot().configuration.actions.find(a=>a.id===req.body.action);
@@ -22,15 +23,15 @@ export function registerControlRoutes(options: {
         res.status(409).json({ok:false,error:{code:'CONFIRM_REQUIRED',message:'Confirmez l’arrêt depuis le bouton du tableau de bord.',retryable:false}});
         return;
       }
-      res.json(await control.execute({...req.body,action}, async action=>{res.locals.checkDevicePermission?.(action);await res.locals.checkDeviceRole?.(action);}));
+      res.json(publicControlReceipt(await control.execute({...req.body,action}, async action=>{res.locals.checkDevicePermission?.(action);await res.locals.checkDeviceRole?.(action);})));
     } catch(e){next(e);}
   });
   app.get('/api/v2/wizebot/catalog',(_req,res)=>res.json(options.wizebotCommands.snapshot()));
   app.post('/api/v2/wizebot/refresh',async(_req,res,next)=>{try{res.json(await options.wizebotCommands.refresh());}catch(e){next(e);}});
   app.post('/api/v2/wizebot/import',async(req,res,next)=>{try{res.json(await options.wizebotCommands.import(control,req.body.ids,req.body.expectedRevision,req.body.channel));}catch(e){next(e);}});
   app.post('/api/v2/wizebot/edit',async(req,res,next)=>{try{res.json(await options.wizebotCommands.edit(req.body));}catch(e){next(e);}});
-  app.get('/api/v2/replay', async(_req,res) => {
-    try { res.json(await obs.replayStatus()); }
+  app.get('/api/v2/replay', async(req,res) => {
+    try { const status=await obs.replayStatus();res.json(options.isLocal(req)?status:{...status,directory:''}); }
     catch(e) { res.json({ active: null, enabled: null, available: null, mode: null, seconds: null, directory: '', error: e instanceof Error ? e.message : 'Replay indisponible.' }); }
   });
   const timerOverlay = async () => {

@@ -10,11 +10,11 @@ const exactKeys = (value: unknown, keys: string[]) =>
 
 /** Stream-owner pairing, not a chat-only reader or a body-supplied identity. */
 export function twitchPollActor(request: Request, auth: RemoteAuth, local: boolean, remoteEnabled: boolean): TwitchActor {
-  // Loopback is not an identity. Even the desktop needs an explicitly
-  // management-paired credential for a public Twitch mutation.
+  // Loopback is not an identity. The trusted desktop gets a process-only
+  // capability through guarded IPC; remote controllers still need management pairing.
   const token = request.headers.authorization?.match(/^Device (\S+)$/)?.[1];
-  const id = (local || remoteEnabled) && token ? auth.authenticate(token) : null;
-  if (!id) throw new AdvancedTwitchError('unauthorized');
+  const id = (local || remoteEnabled) && token ? auth.authenticate(token, local) : null;
+  if (!id || (auth.isLocalSession(id) && !local)) throw new AdvancedTwitchError('unauthorized');
   if (!auth.canManage(id) || !auth.permits(id, ['chat', 'cloud'])) throw new AdvancedTwitchError('forbidden');
   return { id, canRead: true, canInteract: true };
 }

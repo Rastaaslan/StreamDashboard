@@ -1,0 +1,27 @@
+# 3.0 — sauvegarde, migration et retour arrière
+Préparation SC3-FINAL-DELIVERY-001. Procédure non qualifiée sur les appareils ; aucune autorisation d’installation ou de remplacement n’en découle.
+
+## Préparer sans toucher aux installations
+- Conserver la RC2 1cbb1d9 et ses artefacts. Ne jamais utiliser un downgrade binaire sur des données migrées.
+- Relever commit, version, identifiant Android et empreinte du certificat de l’installation cible.
+- Sur une copie isolée, arrêter l’Agent et toutes les écritures. Archiver ensemble application, config, installation-v2.json, pairing, soundboard, profils et journaux SQLite ; conserver les fichiers annexes SQLite éventuels. Les secrets restent protégés sous le même compte Windows/Android.
+- Calculer SHA-256 des fichiers et vérifier une restauration dans un second répertoire de test. Les archives contenant des secrets ne doivent pas être ajoutées au dépôt.
+
+## Migration de test
+1. Restaurer la copie de référence dans un profil QA distinct, réseau public désactivé et OBS/Twitch simulés.
+2. Démarrer les fichiers 3.0 de la même révision EXE/APK ; conserver les identifiants de régie.
+3. Vérifier profils, planning/récurrences, sons, associations, journal des commandes et réservations incertaines.
+4. Tester arrêt normal et crash simulé de la copie. Une opération running devient incertaine ; aucune commande externe n’est rejouée.
+5. Documenter la migration de journaux JSON vers SQLite séparément : un ancien journal non réconcilié bloque son producteur. Ne pas supprimer la source pour obtenir un démarrage.
+6. Android : la mise à jour exige le même applicationId et le certificat de production existant, avec versionCode croissant. Ne pas désinstaller pour contourner une incompatibilité.
+
+## Retour arrière de test
+1. Arrêter 3.0 et toutes les écritures.
+2. Mettre de côté l’état 3.0 complet avec son journal de commandes ; ne pas le fusionner automatiquement.
+3. Restaurer ensemble les anciens fichiers applicatifs et la sauvegarde de données associée.
+4. Relire les hashes puis contrôler les associations et le planning avant de réactiver les intégrations.
+5. Comparer les effets déjà observés chez OBS/Twitch aux reçus sauvegardés. Une réponse inconnue reste à réconcilier manuellement.
+6. Pour Android, le retour à un ancien versionCode peut être refusé par le système ; privilégier un build de retour arrière signé avec la clé d’origine et un versionCode supérieur, sans désinstallation ni perte de données.
+
+## Blocages avant G4
+SDK/build-tools Android et clé existante non configurés sur FIXE au contrôle ; aucune chaîne Authenticode de code signing disponible au contrôle. Les adaptateurs de migration/installation transactionnelle et les restaurations matérielles ne sont pas qualifiés. Un build portable non signé doit rester explicitement préparatoire, jamais présenté comme une RC validée.

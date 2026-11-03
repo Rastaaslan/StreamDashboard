@@ -310,6 +310,13 @@ ipcMain.handle('node-agent:status',event=>{
   requireInstallationSender(event);nodeAgent.start();return nodeAgent.snapshot();
 });
 ipcMain.handle('installation:get', async event => { requireInstallationSender(event); return installations.read(); });
+ipcMain.handle('twitch:local-credential', async event => {
+  requireInstallationSender(event);
+  const current = await runtimePromise;
+  requireInstallationSender(event);
+  if (controllerRole || quitting || !current?.dashboard.issueLocalTwitchCredential) throw new Error('LOCAL_TWITCH_AUTHORITY_UNAVAILABLE');
+  return current.dashboard.issueLocalTwitchCredential();
+});
 ipcMain.handle('autonomous:request',async(event,operation:'state'|'command',body?:unknown)=>{requireInstallationSender(event);return autonomous.request(operation,body);});
 const agentIdentityStore=new ElectronSecretStore(app.getPath('userData'));
 ipcMain.handle('peer:identity',async event=>{

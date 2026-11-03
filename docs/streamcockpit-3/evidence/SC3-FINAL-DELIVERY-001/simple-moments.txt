@@ -1,0 +1,30 @@
+
+ RUN  v5.0.1 C:/Users/damie/Dev/StreamCockpit-3.0-FullExperience
+
+ Ô£ô tests/streamcockpit3-moderation-browser.test.ts (2 tests) 2367ms
+   Ô£ô F02 actual Edge 320px + paired HTTP: consent, readback, no page overflow 1103ms
+   Ô£ô F02 lost PUT + reconnect stays uncertain until an explicit external check, without resend 1263ms
+vitest.cmd : (node:33552) MaxListenersExceededWarning: Possible EventTarget memory leak detected. 11 visibilitychange
+listeners added to EventTarget. MaxListeners is 10. Use events.setMaxListeners() to increase limit
+Au caractère Ligne:1 : 115
++ ... R_TEST='1'; & .\node_modules\.bin\vitest.cmd run tests/streamcockpit3 ...
++                 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: ((node:33552) Ma... increase limit:String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:33552) MaxListenersExceededWarning: Possible EventTarget memory leak detected. 11 offline listeners added to
+EventTarget. MaxListeners is 10. Use events.setMaxListeners() to increase limit
+ Ô£ô tests/streamcockpit3-twitch-mobile.test.ts (20 tests) 31ms
+ Ô£ô tests/streamcockpit3-simple-moments-http.test.ts (8 tests) 96ms
+(node:33544) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+ Ô£ô tests/streamcockpit3-release-scope.test.ts (2 tests) 424ms
+
+ Test Files  4 passed (4)
+      Tests  32 passed (32)
+   Start at  13:47:22
+   Duration  6.86s (tests 46%, import 35%, transform 18%)
+
+    Isolate  4 workers spawned ┬À ~136ms startup each (spawn + environment, per file)
+             at least ~407ms faster with isolate: false ÔÇö reuses workers across files instead of one per file

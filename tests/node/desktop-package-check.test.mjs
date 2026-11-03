@@ -46,7 +46,10 @@ const runtimeAssets = [
   'dist/apps/server/src/remote-api-policy.js', 'dist/apps/server/src/live-control-routes.js',
   'dist/apps/desktop/src/secrets.js', 'dist/integrations/obs/src/client.js',
 ];
+const buildInfo = {schemaVersion:1,product:'Le StreamCockpit',version:sourceManifest.version,sourceCommit:'a'.repeat(40),sourceTreeSha256:'b'.repeat(64),sourceTreeDirty:false};
 const fixture = {
+  'resources/streamcockpit-build.json': JSON.stringify(buildInfo),
+  'apps/mobile/streamcockpit-build.json': JSON.stringify(buildInfo),
   ...Object.fromEntries(runtimeAssets.map(file => [file, `runtime asset: ${file}`])),
   'package.json': JSON.stringify(runtimeManifest),
   'resources/distribution.json': JSON.stringify({ googleClientId: 'public.apps.googleusercontent.com', twitchClientId: 'public' }),
@@ -82,6 +85,7 @@ function check(platform, changes = {}, options = {}) {
   const pe = { is32bit: () => options.is32bit === true };
   vm.runInNewContext(options.script ?? checker, {
     assert, path: platform, Buffer, createHash,
+    execFileSync:()=>options.currentCommit??buildInfo.sourceCommit,
     process: { argv: ['node', 'checker', archive] }, console: { log() {} },
     listPackage: () => fs.listFiles(),
     extractFile: (_archive, file) => {
@@ -92,6 +96,8 @@ function check(platform, changes = {}, options = {}) {
       if (file === executable) return executableBytes;
       const normalized = file.replaceAll('\\', '/');
       const manifest=runtimeAssets.filter(f=>f.startsWith('apps/')).map(f=>({path:f.slice(5),sha256:createHash('sha256').update(fixture[f]).digest('hex')}));
+      manifest.push({path:'mobile/streamcockpit-build.json',sha256:createHash('sha256').update(fixture['apps/mobile/streamcockpit-build.json']).digest('hex')});
+      if(normalized==='.build/public/mobile/streamcockpit-build.json')return Buffer.from(JSON.stringify(options.publicBuild??buildInfo));
       if(normalized==='.build/public/manifest.json')return Buffer.from(JSON.stringify({profile:'production',files:manifest}));
       if(normalized==='.build/build-proof.json')return Buffer.from(JSON.stringify({outputs:runtimeAssets.filter(f=>f.startsWith('dist/')).map(f=>({path:f,sha256:createHash('sha256').update(fixture[f]).digest('hex')}))}));
       return Buffer.from(normalized === 'package.json' ? JSON.stringify(sourceManifest) : fixture[normalized]);
@@ -115,7 +121,7 @@ function check(platform, changes = {}, options = {}) {
 }
 
 test('reproduces the old ASAR Windows lookup failure with the existing nested lifecycle layout', () => {
-  assert.throws(() => check(path.win32, {}, { script: checker.replace('path.normalize(file)', 'file') }), /lifecycle\.js.*was not found/);
+  assert.throws(() => check(path.win32, {}, { script: checker.replace('path.normalize(file)', 'file') }), /(?:streamcockpit-build\.json|lifecycle\.js).*was not found/);
 });
 for (const platform of [path.posix, path.win32]) {
   const name = platform === path.win32 ? 'Windows' : 'POSIX';
@@ -145,6 +151,13 @@ for (const platform of [path.posix, path.win32]) {
     assert.throws(() => check(platform, { 'package.json': JSON.stringify({ ...runtimeManifest, version: runtimeManifest.version + '-stale' }) }), /complete release identifier/);
     assert.throws(() => check(platform, { 'package.json': JSON.stringify({ ...runtimeManifest, main: 'apps/server/src/run.js' }) }), /built runtime/);
     assert.throws(() => check(platform, { 'package.json': JSON.stringify({ ...runtimeManifest, devDependencies: {} }) }), /remove development dependencies/);
+  });
+  test(`${name}: embedded source provenance rejects a dirty source or mismatched Android assets`, () => {
+    assert.throws(() => check(platform, {'resources/streamcockpit-build.json': null}), /was not found/);
+    assert.throws(() => check(platform, {'resources/streamcockpit-build.json': JSON.stringify({...buildInfo,sourceCommit:'c'.repeat(40)})}), /exact same source provenance/);
+    assert.throws(() => check(platform, {}, {currentCommit:'c'.repeat(40)}), /frozen source revision/);
+    const dirty={...buildInfo,sourceTreeDirty:true};
+    assert.throws(() => check(platform, {'resources/streamcockpit-build.json':JSON.stringify(dirty)}, {publicBuild:dirty}), /clean identified source commit/);
   });
   test(`${name}: executable architecture and embedded ASAR integrity reject corruption`, () => {
     assert.throws(() => check(platform, {}, { is32bit: true }), /Windows x64/);

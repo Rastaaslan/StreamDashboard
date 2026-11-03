@@ -1,0 +1,24 @@
+
+ RUN  v5.0.1 C:/Users/damie/Dev/StreamCockpit-3.0-FullExperience
+
+ Ô£ô tests/streamcockpit3-readiness.test.ts (6 tests) 119ms
+ Ô£ô tests/streamcockpit-3-roadmap.test.ts (3 tests) 22ms
+vitest.cmd : (node:12908) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+Au caractère Ligne:1 : 135
++ ... +$env:PATH; & .\node_modules\.bin\vitest.cmd run tests/streamcockpit3 ...
++                 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: ((node:12908) Ex...nge at any time:String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+
+(Use `node --trace-warnings ...` to show where the warning was created)
+ Ô£ô tests/streamcockpit3-release-scope.test.ts (2 tests) 567ms
+   Ô£ô real HTTP host explicitly disables V4 routes for every verb, with no production encoder 441ms
+
+ Test Files  3 passed (3)
+      Tests  11 passed (11)
+   Start at  13:38:55
+   Duration  7.47s (import 58%, transform 31%, tests 11%, worker 1%)
+
+  Transform  transforming modules took 2.07s ┬À 31% of tracked time, re-done on every run
+             persist transforms across runs with fsModuleCache: true
+             learn more: https://vitest.dev/guide/improving-performance#caching-between-reruns

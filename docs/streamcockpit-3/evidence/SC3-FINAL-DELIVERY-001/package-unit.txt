@@ -1,0 +1,76 @@
+TAP version 13
+# Subtest: reproduces the old ASAR Windows lookup failure with the existing nested lifecycle layout
+ok 1 - reproduces the old ASAR Windows lookup failure with the existing nested lifecycle layout
+  ---
+  duration_ms: 9.6918
+  type: 'test'
+  ...
+# Subtest: POSIX: package checker reads nested runtime assets
+ok 2 - POSIX: package checker reads nested runtime assets
+  ---
+  duration_ms: 4.7009
+  type: 'test'
+  ...
+# Subtest: POSIX: package checker retains security, port and source/asset invariants
+ok 3 - POSIX: package checker retains security, port and source/asset invariants
+  ---
+  duration_ms: 290.7664
+  type: 'test'
+  ...
+# Subtest: POSIX: release manifest retains the full version and production entry point
+ok 4 - POSIX: release manifest retains the full version and production entry point
+  ---
+  duration_ms: 5.6116
+  type: 'test'
+  ...
+# Subtest: POSIX: embedded source provenance rejects a dirty source or mismatched Android assets
+ok 5 - POSIX: embedded source provenance rejects a dirty source or mismatched Android assets
+  ---
+  duration_ms: 6.2027
+  type: 'test'
+  ...
+# Subtest: POSIX: executable architecture and embedded ASAR integrity reject corruption
+ok 6 - POSIX: executable architecture and embedded ASAR integrity reject corruption
+  ---
+  duration_ms: 18.4134
+  type: 'test'
+  ...
+# Subtest: Windows: package checker reads nested runtime assets
+ok 7 - Windows: package checker reads nested runtime assets
+  ---
+  duration_ms: 2.5048
+  type: 'test'
+  ...
+# Subtest: Windows: package checker retains security, port and source/asset invariants
+ok 8 - Windows: package checker retains security, port and source/asset invariants
+  ---
+  duration_ms: 296.3006
+  type: 'test'
+  ...
+# Subtest: Windows: release manifest retains the full version and production entry point
+ok 9 - Windows: release manifest retains the full version and production entry point
+  ---
+  duration_ms: 5.9952
+  type: 'test'
+  ...
+# Subtest: Windows: embedded source provenance rejects a dirty source or mismatched Android assets
+ok 10 - Windows: embedded source provenance rejects a dirty source or mismatched Android assets
+  ---
+  duration_ms: 6.4518
+  type: 'test'
+  ...
+# Subtest: Windows: executable architecture and embedded ASAR integrity reject corruption
+ok 11 - Windows: executable architecture and embedded ASAR integrity reject corruption
+  ---
+  duration_ms: 19.4721
+  type: 'test'
+  ...
+1..11
+# tests 11
+# suites 0
+# pass 11
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 751.6678

@@ -288,3 +288,43 @@ test('contenus autonomes : sons sans fenêtre, macros restaurées et aucune comm
   await application.close();application=undefined;await expectEndpointClosed('http://127.0.0.1:48135');
  }finally{if(application)await application.close().catch(()=>{});await rm(profile,{recursive:true,force:true});}
 });
+
+test('SC3 final delivery : identité locale réelle, aucun privilège loopback implicite et profil isolé',async()=>{
+ const {createServer}=await import('node:http');
+ const fakeObs=createServer((_request,response)=>{response.writeHead(503);response.end();});
+ await new Promise<void>(resolve=>fakeObs.listen(0,'127.0.0.1',resolve));
+ const profile=await mkdtemp(path.join(os.tmpdir(),'streamdashboard-qa-'));
+ const previousObs=process.env.OBS_URL;
+ process.env.OBS_URL='ws://127.0.0.1:'+(fakeObs.address()as{port:number}).port;
+ let application:ElectronApplication|undefined;
+ try{
+  await expectEndpointClosed(RUNTIME_ORIGIN);
+  application=await launch(profile);
+  await application.close();await expectEndpointClosed(RUNTIME_ORIGIN);
+  application=await launch(profile,['--agent']);
+  await expect.poll(async()=>{try{return(await fetch(RUNTIME_ORIGIN+'/api/v1/health')).status}catch{return 0}}).toBe(200);
+  expect(await application.evaluate(({BrowserWindow})=>BrowserWindow.getAllWindows().length)).toBe(0);
+  await application.evaluate(({app})=>app.emit('activate'));
+  const page=await application.firstWindow();await expectRuntimeReady(page);
+  const observation=await page.evaluate(async()=>{
+   const bridge=(globalThis as any).streamDashboardDesktop;
+   const credential=await bridge.getLocalTwitchCredential();
+   const same=credential===await bridge.getLocalTwitchCredential();
+   const body=JSON.stringify({draft:{kind:'marker',description:'Fixture'}});
+   const anonymous=await fetch('/api/v1/twitch/advanced/moment/preview',{method:'POST',headers:{'Content-Type':'application/json'},body});
+   const authorized=await fetch('/api/v1/twitch/advanced/moment/preview',{method:'POST',headers:{'Content-Type':'application/json',Authorization:'Device '+credential},body});
+   const devices=await(await fetch('/api/v1/remote/devices')).json();
+   return {same,anonymous:anonymous.status,authorized:authorized.status,credential,devices};
+  });
+  expect(observation.same).toBe(true);expect(observation.anonymous).toBe(401);
+  expect(observation.authorized).toBe(409); // Actor accepted, sole host is intentionally not LIVE.
+  expect(JSON.stringify(observation.devices)).not.toContain(observation.credential);
+  await application.close();application=undefined;await expectEndpointClosed(RUNTIME_ORIGIN);
+  const stored=await readFile(path.join(profile,'StreamDashboard-Next','config','dashboard.json'),'utf8');
+  expect(stored).not.toContain(observation.credential);
+ }finally{
+  await application?.close().catch(()=>{});if(previousObs===undefined)delete process.env.OBS_URL;else process.env.OBS_URL=previousObs;
+  await new Promise<void>(resolve=>{fakeObs.close(()=>resolve());fakeObs.closeAllConnections()});
+  await rm(profile,{recursive:true,force:true});
+ }
+});

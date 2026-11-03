@@ -14,6 +14,7 @@ module.exports = {
       const paths = require('node:path');
       await fs.cp(paths.resolve('.build/public/mobile'), paths.join(buildPath,'apps/mobile'), {recursive:true});
       await fs.cp(paths.resolve('.build/public/web'), paths.join(buildPath,'apps/web'), {recursive:true});
+      await fs.copyFile(paths.resolve('.build/public/mobile/streamcockpit-build.json'), paths.join(buildPath,'resources/streamcockpit-build.json'));
       const manifestPath = paths.join(buildPath, 'package.json');
       const manifest = JSON.parse(await fs.readFile(manifestPath, 'utf8'));
       manifest.version = applicationVersion;
@@ -37,8 +38,10 @@ module.exports = {
       /^\/node_modules\/(?:\.cache|\.vite)(?:\/|$)/,
       /^\/(?:test-results|playwright-report)(?:\/|$)/,
       /^\/dist\/(?:tests|scripts)(?:\/|$)/,
+      // V4 sources and lab evidence are retained in Git, excluded from 3.0 bytes.
+      /^\/dist\/(?:apps\/server\/src|packages\/core\/src)\/streamcockpit-clipforge[^/]*$/,
       /^\/(?:_integration_sources|android|tests|docs|scripts|data|\.github|\.agents|\.codex)(?:\/|$)/,
-      /^\/apps\/(?:desktop|server)\/src(?:\/|$)/,
+      /^\/apps\/(?:desktop|server|agent|controller)\/src(?:\/|$)/,
       /^\/(?:integrations|packages)(?:\/|$)/,
       /^\/(?:README\.md|tsconfig(?:\.[^/]*)?\.json|vitest\.config\.ts|playwright(?:\.[^/]*)?\.ts|\.env\.example|Lancer_StreamDashboard\.cmd|package-lock\.json)$/,
     ],

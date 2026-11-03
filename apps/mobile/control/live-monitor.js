@@ -3,6 +3,8 @@ import {callDeviceBridge} from './device-bridge.js';
 import {randomUuid} from '../shared/uuid.js';
 import {createTwitchChat} from './twitch-chat.js';
 import {mountTwitchAdvanced} from './streamcockpit-twitch-advanced.js';
+import {mountTwitchModeration} from './streamcockpit-twitch-moderation.js';
+import {mountTwitchMoments} from './streamcockpit-twitch-moments.js';
 import {mountTwitchPoll} from './streamcockpit-twitch-poll.js';
 import {mountTwitchShoutout} from './streamcockpit-twitch-shoutout.js';
 import {mountTwitchRaid} from './streamcockpit-twitch-raid.js';
@@ -11,7 +13,7 @@ import {mountTwitchPredictionCreate} from './streamcockpit-twitch-prediction-cre
 import {mountTwitchPredictionRelease} from './streamcockpit-twitch-prediction-release.js';
 import {mountTwitchPredictionLock} from './streamcockpit-twitch-prediction-lock.js';
 import {mountTwitchPredictionEnd} from './streamcockpit-twitch-prediction-end.js';
-export function createLiveMonitor(root,{native=false,configure=()=>{},request,activityRoot}={}){
+export function createLiveMonitor(root,{native=false,configure=()=>{},request,controlRequest=request,activityRoot}={}){
  let enabled=localStorage.getItem('sd2.monitor-enabled')===null?matchMedia('(min-width:701px)').matches:localStorage.getItem('sd2.monitor-enabled')==='true';
  let state,context={},disposed=false,viewerFlight,viewerRevision=0,viewerMessage='';
  root.className='live-monitor spacer';
@@ -36,15 +38,17 @@ export function createLiveMonitor(root,{native=false,configure=()=>{},request,ac
   if(response.ok===false)throw new Error(response.message||'Reconnectez Twitch.');return response;
  };
  // Advanced reads always use the paired/local host transport, never the native account bridge.
- const twitchAdvanced=mountTwitchAdvanced(get('.monitor-chat'),{request});
- const twitchPoll=mountTwitchPoll(get('.monitor-chat'),{request});
- const twitchShoutout=mountTwitchShoutout(get('.monitor-chat'),{request});
- const twitchRaid=mountTwitchRaid(get('.monitor-chat'),{request});
- const twitchPrediction=mountTwitchPrediction(get('.monitor-chat'),{request});
- const twitchPredictionCreate=mountTwitchPredictionCreate(get('.monitor-chat'),{request});
- const twitchPredictionRelease=mountTwitchPredictionRelease(get('.monitor-chat'),{request});
- const twitchPredictionLock=mountTwitchPredictionLock(get('.monitor-chat'),{request});
- const twitchPredictionEnd=mountTwitchPredictionEnd(get('.monitor-chat'),{request});
+ const twitchAdvanced=mountTwitchAdvanced(get('.monitor-chat'),{request:controlRequest});
+ const twitchModeration=mountTwitchModeration(get('.monitor-chat'),{request:controlRequest});
+ const twitchMoments=mountTwitchMoments(get('.monitor-chat'),{request:controlRequest});
+ const twitchPoll=mountTwitchPoll(get('.monitor-chat'),{request:controlRequest});
+ const twitchShoutout=mountTwitchShoutout(get('.monitor-chat'),{request:controlRequest});
+ const twitchRaid=mountTwitchRaid(get('.monitor-chat'),{request:controlRequest});
+ const twitchPrediction=mountTwitchPrediction(get('.monitor-chat'),{request:controlRequest});
+ const twitchPredictionCreate=mountTwitchPredictionCreate(get('.monitor-chat'),{request:controlRequest});
+ const twitchPredictionRelease=mountTwitchPredictionRelease(get('.monitor-chat'),{request:controlRequest});
+ const twitchPredictionLock=mountTwitchPredictionLock(get('.monitor-chat'),{request:controlRequest});
+ const twitchPredictionEnd=mountTwitchPredictionEnd(get('.monitor-chat'),{request:controlRequest});
  const twitchChat=createTwitchChat(get('[data-twitch-native]'),{request:native?nativeRequest:request,configure});
  function twitchLogin(){const login=localStorage.getItem('sd2.monitor-channel')||state?.host?.monitor?.twitchLogin||'';return /^[a-zA-Z0-9_]{1,25}$/.test(login)?login.toLowerCase():'';}
  function link(key,url){const a=get('[data-monitor-link="'+key+'"]');a.hidden=!url;if(url)a.href=url;else a.removeAttribute('href');}
@@ -74,15 +78,19 @@ export function createLiveMonitor(root,{native=false,configure=()=>{},request,ac
   get('[data-monitor-note]').hidden=!enabled&&!chatOnly;
   get('[data-monitor-viewer-status]').textContent=viewerMessage||'Session visionneuse Twitch et API distinctes.';
   const connect=get('[data-monitor-connect="twitch"]');connect.disabled=Boolean(viewerFlight)||!twitchLogin();connect.textContent=viewerFlight?'Connexion ouverte…':'Connexion visionneuse';
-  twitchAdvanced.update({sourceKey:context.sourceKey,accountKey:state?.host?.monitor?.twitchLogin,online:context.online===true&&(enabled||chatOnly)});
-  twitchPoll.update({sourceKey:context.sourceKey,accountKey:state?.host?.monitor?.twitchLogin,online:context.online===true&&(enabled||chatOnly)});
-  twitchShoutout.update({sourceKey:context.sourceKey,accountKey:state?.host?.monitor?.twitchLogin,online:context.online===true&&(enabled||chatOnly)});
-  twitchRaid.update({sourceKey:context.sourceKey,accountKey:state?.host?.monitor?.twitchLogin,online:context.online===true&&(enabled||chatOnly)});
-  twitchPrediction.update({sourceKey:context.sourceKey,accountKey:state?.host?.monitor?.twitchLogin,online:context.online===true&&(enabled||chatOnly)});
-  twitchPredictionCreate.update({sourceKey:context.sourceKey,accountKey:state?.host?.monitor?.twitchLogin,online:context.online===true&&(enabled||chatOnly)});
-  twitchPredictionRelease.update({sourceKey:context.sourceKey,accountKey:state?.host?.monitor?.twitchLogin,online:context.online===true&&(enabled||chatOnly)});
-  twitchPredictionLock.update({sourceKey:context.sourceKey,accountKey:state?.host?.monitor?.twitchLogin,online:context.online===true&&(enabled||chatOnly)});
-  twitchPredictionEnd.update({sourceKey:context.sourceKey,accountKey:state?.host?.monitor?.twitchLogin,online:context.online===true&&(enabled||chatOnly)});
+  const authorityKey=typeof context.authorityKey==='string'?context.authorityKey:context.sourceKey;
+  const authorityOnline=context.authorityOnline===undefined?context.online===true:context.authorityOnline===true;
+  twitchAdvanced.update({sourceKey:authorityKey,accountKey:state?.host?.monitor?.twitchLogin,online:authorityOnline&&(enabled||chatOnly)});
+  twitchPoll.update({sourceKey:authorityKey,accountKey:state?.host?.monitor?.twitchLogin,online:authorityOnline&&(enabled||chatOnly)});
+  twitchShoutout.update({sourceKey:authorityKey,accountKey:state?.host?.monitor?.twitchLogin,online:authorityOnline&&(enabled||chatOnly)});
+  twitchModeration.update({sourceKey:authorityKey,accountKey:state?.host?.monitor?.twitchLogin,online:authorityOnline&&(enabled||chatOnly)});
+  twitchMoments.update({sourceKey:authorityKey,accountKey:state?.host?.monitor?.twitchLogin,online:authorityOnline&&(enabled||chatOnly)});
+  twitchRaid.update({sourceKey:authorityKey,accountKey:state?.host?.monitor?.twitchLogin,online:authorityOnline&&(enabled||chatOnly)});
+  twitchPrediction.update({sourceKey:authorityKey,accountKey:state?.host?.monitor?.twitchLogin,online:authorityOnline&&(enabled||chatOnly)});
+  twitchPredictionCreate.update({sourceKey:authorityKey,accountKey:state?.host?.monitor?.twitchLogin,online:authorityOnline&&(enabled||chatOnly)});
+  twitchPredictionRelease.update({sourceKey:authorityKey,accountKey:state?.host?.monitor?.twitchLogin,online:authorityOnline&&(enabled||chatOnly)});
+  twitchPredictionLock.update({sourceKey:authorityKey,accountKey:state?.host?.monitor?.twitchLogin,online:authorityOnline&&(enabled||chatOnly)});
+  twitchPredictionEnd.update({sourceKey:authorityKey,accountKey:state?.host?.monitor?.twitchLogin,online:authorityOnline&&(enabled||chatOnly)});
   twitchChat.update({...context,online:(native||context.online===true)&&(enabled||chatOnly),sourceLabel:state?.host?.hostname||''});
   if(!enabled||chatOnly){slot.replaceChildren();delete slot.dataset.identity;return;}
   const login=twitchLogin(),parent=encodeURIComponent(location.hostname);
@@ -93,5 +101,5 @@ export function createLiveMonitor(root,{native=false,configure=()=>{},request,ac
  get('[data-monitor-targets]').addEventListener('submit',event=>{event.preventDefault();event.stopPropagation();const channel=get('[name="channel"]').value.trim();if(channel&&!/^[a-zA-Z0-9_]{1,25}$/.test(channel)){get('[data-monitor-targets-status]').textContent='Nom Twitch invalide.';return;}localStorage.setItem('sd2.monitor-channel',channel);viewerRevision++;viewerMessage='';delete slot.dataset.identity;draw();get('[data-monitor-targets-status]').textContent='Chaîne Twitch enregistrée.';});
  root.addEventListener('click',event=>{if(disposed)return;const b=event.target.closest('button');if(!b)return;if(b.hasAttribute('data-monitor-toggle')){enabled=!enabled;viewerRevision++;localStorage.setItem('sd2.monitor-enabled',String(enabled));draw();}if(b.dataset.monitorConnect==='twitch')void connectViewer();if(b.dataset.monitorReload==='video'){delete slot.dataset.identity;draw();}});
  const stop=globalThis.streamDashboardDesktop?.onTwitchViewerSessionClosed?.(()=>{if(disposed||!enabled||!twitchLogin())return;delete slot.dataset.identity;viewerMessage='Visionneuse Twitch rechargée.';draw();});
- return {update(value,options={}){if(disposed)return;if(context.sourceKey!==options.sourceKey||state?.host?.monitor?.twitchLogin!==value?.host?.monitor?.twitchLogin){viewerRevision++;viewerMessage='';}state=value;context=options;draw();},destroy(){disposed=true;agentStatus.destroy();viewerRevision++;if(typeof stop==='function')stop();twitchChat.destroy();twitchAdvanced.destroy();twitchPoll.destroy();twitchShoutout.destroy();twitchRaid.destroy();twitchPrediction.destroy();twitchPredictionCreate.destroy();twitchPredictionRelease.destroy();twitchPredictionLock.destroy();twitchPredictionEnd.destroy();slot.replaceChildren();}};
+ return {update(value,options={}){if(disposed)return;if(context.sourceKey!==options.sourceKey||state?.host?.monitor?.twitchLogin!==value?.host?.monitor?.twitchLogin){viewerRevision++;viewerMessage='';}state=value;context=options;draw();},destroy(){disposed=true;agentStatus.destroy();viewerRevision++;if(typeof stop==='function')stop();twitchChat.destroy();twitchAdvanced.destroy();twitchModeration.destroy();twitchMoments.destroy();twitchPoll.destroy();twitchShoutout.destroy();twitchRaid.destroy();twitchPrediction.destroy();twitchPredictionCreate.destroy();twitchPredictionRelease.destroy();twitchPredictionLock.destroy();twitchPredictionEnd.destroy();slot.replaceChildren();}};
 }

@@ -1,0 +1,6 @@
+
+Running 2 tests using 1 worker
+
+[1/2] tests\electron.smoke.spec.ts:173:1 ÔÇ║ agent sans fen├¬tre : services autonomes disponibles et fen├¬tre refermable sans arr├¬t du runtime
+[2/2] tests\electron.smoke.spec.ts:292:1 ÔÇ║ SC3 final delivery : identit├® locale r├®elle, aucun privil├¿ge loopback implicite et profil isol├®
+  2 passed (6.5s)
