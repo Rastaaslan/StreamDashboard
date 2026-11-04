@@ -219,7 +219,11 @@ it.skipIf(process.env.SC3_FINAL_BROWSER_TEST!=='1')('F04 real Edge 320px: explic
       w.panel.update({online:true,sourceKey:'FIXE',accountKey:'owner'});
     });
     const backup=page.getByRole('button',{name:'Exporter une copie locale du journal (confidentiel)'});
+    const diagnostic=page.getByRole('button',{name:'Afficher le diagnostic expurgé du journal'});
     expect(await backup.isVisible()).toBe(true);
+    expect(await diagnostic.isVisible()).toBe(true);
+    await diagnostic.click();
+    expect(await page.getByRole('status').textContent()).toContain('Diagnostic local expurgé : JSON illisible');
     expect(await page.locator('main').textContent()).not.toContain('private-raw-MUST');
     expect(await page.getByRole('button',{name:'Vérifier le moment sans publier'}).isDisabled()).toBe(true);
     const downloaded=page.waitForEvent('download');await backup.click();

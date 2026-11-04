@@ -1,5 +1,5 @@
 import {it,expect} from 'vitest';
-import {loadUncertainMoment,rememberUncertainMoment,clearUncertainMoment,diagnoseUncertainMomentStore,recoverUncertainMomentForReview,readUncertainMomentBackup} from '../apps/mobile/control/streamcockpit-twitch-moment-pending.js';
+import {loadUncertainMoment,rememberUncertainMoment,clearUncertainMoment,diagnoseUncertainMomentStore,recoverUncertainMomentForReview,readUncertainMomentBackup,describeUncertainMomentIssue} from '../apps/mobile/control/streamcockpit-twitch-moment-pending.js';
 const uuid='643e0c2b-e8e4-4ccd-a82c-8ad0a05f19c5';
 function mockStorage(){
   const data=new Map<string,string>();
@@ -185,4 +185,28 @@ it('F04 forensic backup reads exact corrupt bytes only on request, without modif
   expect(data.get(key)).toHaveLength(1024*1024+1);
   expect(readUncertainMomentBackup({get localStorage():never{throw Error('DENIED')}})).toBeNull();
   expect(readUncertainMomentBackup({localStorage:{getItem(){throw Error('DENIED')},setItem(){throw Error('WRITE_NOT_ALLOWED')}}})).toBeNull();
+});
+
+it('F04 diagnostic is strictly redacted and never reads another account into UI or rewrites a corrupt journal',()=>{
+  const {view,data}=mockStorage(),now=1800000000000,key='sd3.f04.twitch-moment-uncertain.v1';
+  const describe=()=>describeUncertainMomentIssue(view,'FIXE','owner',now);
+  expect(describe()).toEqual({code:'clear'});
+  expect(rememberUncertainMoment(view,'FIXE','owner',{id:uuid,kind:'clip'},now)).toBe(true);
+  expect(describe()).toEqual({code:'pending'});
+  const cases=[
+    ['{PRIVATE_TOKEN_SHOULD_NOT_LEAK','corrupt-json'],
+    [JSON.stringify({version:1,rows:[],otherAccount:'PRIVATE_TOKEN_SHOULD_NOT_LEAK'}),'unknown-schema'],
+    [JSON.stringify({version:1,rows:[{source:'OTHER_PRIVATE',account:'SECRET_ACCOUNT',id:'invalid',kind:'marker',createdAt:now}]}),'invalid-rows'],
+    ['x'.repeat(8193),'too-large'],
+  ] as const;
+  for(const [raw,code] of cases){
+    data.set(key,raw);
+    const diagnostic=describe();
+    expect(diagnostic).toEqual({code});
+    expect(JSON.stringify(diagnostic)).not.toMatch(/PRIVATE|SECRET|OTHER|643e0c2b|token/i);
+    expect(data.get(key)).toBe(raw);
+    expect(rememberUncertainMoment(view,'FIXE','owner',{id:uuid,kind:'marker'},now)).toBe(false);
+  }
+  expect(describeUncertainMomentIssue({localStorage:{getItem(){throw Error('TOP_SECRET')},setItem(){throw Error('NO')}}},'FIXE','owner',now)).toEqual({code:'unavailable'});
+  expect(describeUncertainMomentIssue(view,'','owner',now)).toEqual({code:'unavailable'});
 });

@@ -329,6 +329,10 @@
         {
           "path": "apps/mobile/control/streamcockpit-twitch-moment-pending.js",
           "kind": "2026-11-04 FIXE F04: strict top-level journal schema rejects unknown fields before any local write/clear or admission, avoiding silent loss of unexpected possibly executed receipts. Read-only partial recovery also refuses unknown top-level data, raw backup remains byte-for-byte unchanged. RED 10 PASS/1 FAIL; final 42 PASS/0 FAIL/0 skipped across five targeted suites including 8 actual Edge browser tests, all providers synthetic. TypeScript, browser types, development build, shipped JS (149) and security (6726 files before documentation) PASS. No physical Android/Twitch, power-loss or supervised reconciliation proof; F04 partial/G2 in_progress."
+        },
+        {
+          "path": "apps/mobile/control/streamcockpit-twitch-moment-pending.js",
+          "kind": "2026-11-04 FIXE F04: opt-in, read-only redacted local journal diagnosis: fixed issue categories only, never an account, UUID, field value, raw exception or another-account count. Desktop/Android shared page offers diagnosis only while blocked; existing raw forensic copy remains separately marked confidential. RED 11 PASS/1 FAIL; final 43 PASS/0 FAIL/0 skipped across five targeted suites including eight actual Edge 320px and multitab tests; TypeScript, browser types and security (6726 files pre-doc) PASS, git diff --check PASS. No build, hardware, Twitch OAuth, power-loss or supervised repair qualified; F04 partial/G2 in_progress."
         }
       ],
       "verifiedTests": [

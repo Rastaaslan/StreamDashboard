@@ -58,6 +58,23 @@ export async function withExclusiveMomentJournal(view,operation){
     return result===true;
   }catch{return false}
 }
+// Operator-requested, redacted diagnosis. Only a fixed category may leave this
+// module: never a UUID, scope, raw field, exception message, or other account count.
+// Reading even an invalid/expired journal must not mutate, clear or permit a POST.
+export function describeUncertainMomentIssue(view,source,account,now=Date.now()){
+  if(!validScope(source,account))return {code:'unavailable'};
+  const storage=store(view);if(!storage)return {code:'unavailable'};
+  try{
+    const rows=read(storage,now);
+    return {code:rows.some(r=>r.source===source&&r.account===account)?'pending':'clear'};
+  }catch(error){
+    if(error instanceof SyntaxError)return {code:'corrupt-json'};
+    if(error?.message==='OVER_LIMIT')return {code:'too-large'};
+    if(error?.message==='BAD_STORAGE')return {code:'unknown-schema'};
+    if(error?.message==='BAD_ROW'||error?.message==='DUPLICATE_SCOPE')return {code:'invalid-rows'};
+    return {code:'unavailable'};
+  }
+}
 // Read-only diagnostic: never erase or interpret an invalid journal as an empty one.
 // It reveals neither raw journal data nor account/host identifiers to the UI.
 export function diagnoseUncertainMomentStore(view,source,account,now=Date.now()){
