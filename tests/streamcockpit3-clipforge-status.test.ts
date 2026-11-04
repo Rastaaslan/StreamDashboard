@@ -19,7 +19,9 @@ it('F04 status is read-only and never claims a release without host binaries or 
   expect(result.status).toBe(0);
   const json=JSON.parse(result.stdout);
   expect(json.product).toBe('StreamCockpit 3.0');
-  expect(json.binaries).toEqual({qualified:false,reasons:['BINARIES_MISSING']});
+  expect(json.binaries).toEqual({
+    qualified:false,reasons:[process.platform==='win32'?'BINARIES_MISSING':'WINDOWS_ONLY'],
+  });
   expect(json.outputAcl).toEqual({
     qualified:false,reasons:['OUTPUT_ROOT_NOT_CONFIGURED'],
   });

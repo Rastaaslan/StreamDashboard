@@ -2,12 +2,17 @@ import { createHash } from 'node:crypto';
 import { createReadStream, existsSync, lstatSync, realpathSync } from 'node:fs';
 import { readFile } from 'node:fs/promises';
 import { spawnSync } from 'node:child_process';
-import { isAbsolute, resolve } from 'node:path';
+import { isAbsolute, resolve, win32 } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const HEX40 = /^[a-f0-9]{40}$/i, HEX64 = /^[a-f0-9]{64}$/i;
 const fail = code => { throw new Error('SC3_ARTIFACT_' + code); };
 const root = resolve(fileURLToPath(new URL('..', import.meta.url)));
+// Manifest schema is portable: CI on Linux must recognize a local Windows
+// drive path without allowing UNC/network locations or relative paths.
+// Actual file verification remains native and requires Windows Authenticode.
+const manifestAbsolute = value => isAbsolute(value) ||
+  (win32.isAbsolute(value) && /^[A-Za-z]:[\\/]/.test(value));
 const exactKeys = (obj, names) => obj && typeof obj === 'object' && !Array.isArray(obj) &&
   Object.keys(obj).sort().join(',') === [...names].sort().join(',');
 
@@ -18,7 +23,7 @@ export function validateArtifactManifest(value) {
   for (const item of ['windows', 'android']) {
     const row = value[item];
     if (!exactKeys(row, ['file', 'sha256']) ||
-        typeof row.file !== 'string' || !isAbsolute(row.file) ||
+        typeof row.file !== 'string' || !manifestAbsolute(row.file) ||
         !HEX64.test(row.sha256) || !/\.(exe|apk)$/i.test(row.file) ||
         (item === 'windows' && !/\.exe$/i.test(row.file)) ||
         (item === 'android' && !/\.apk$/i.test(row.file))) fail('MANIFEST_INVALID');

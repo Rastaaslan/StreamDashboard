@@ -46,7 +46,9 @@ describe('F04 Windows executable provenance — read-only source admission, NOT 
   it('does not mistake three missing paths for production readiness',async()=>{
     expect(await inspectWindowsClipForgeProvenance({
       ffmpeg:'',ffprobe:'',supervisor:'',
-    })).toMatchObject({qualified:false,reasons:['BINARIES_MISSING']});
+    })).toMatchObject({
+      qualified:false,reasons:[process.platform==='win32'?'BINARIES_MISSING':'WINDOWS_ONLY'],
+    });
   });
   it.skipIf(process.platform!=='win32'||!process.env.SC3_FFMPEG)(
     'inspects actual FIXE FFmpeg Authenticode in read-only mode without executing it',
