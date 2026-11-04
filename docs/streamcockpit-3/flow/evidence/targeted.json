@@ -1,0 +1,29 @@
+{
+  "schemaVersion": 1,
+  "softwareOnly": true,
+  "red": {
+    "productAssertions": {
+      "passed": 0,
+      "failed": 5
+    },
+    "note": "Après réparation du harnais ; erreurs initiales du harnais exclues des preuves produit."
+  },
+  "green": {
+    "passed": 44,
+    "failed": 0,
+    "skipped": 0,
+    "files": 5,
+    "newBrowserScenarios": 5,
+    "layoutSizes": 6
+  },
+  "logs": [
+    ".git/sc3-flow/chat-red.log",
+    ".git/sc3-flow/chat-targeted.log"
+  ],
+  "checks": {
+    "typesPreliminary": "PASS",
+    "runtimeBuildPreliminary": "PASS_143_ASSETS"
+  },
+  "externalActions": [],
+  "physicalReception": false
+}

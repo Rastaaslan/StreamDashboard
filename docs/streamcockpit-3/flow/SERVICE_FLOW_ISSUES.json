@@ -1,0 +1,139 @@
+{
+  "schemaVersion": 1,
+  "auditedAt": "2026-11-04T21:59:20.451Z",
+  "issues": [
+    {
+      "id": "FLOW-P0-01",
+      "severity": "P0",
+      "feature": "F02",
+      "device": "Android",
+      "service": "Twitch Chat",
+      "symptom": "Le chat appairé passe toujours par un compte natif Android, même si Twitch est connecté sur FIXE.",
+      "reproduction": "Monter createLiveMonitor native=true avec une source FIXE connectée et une session Android différente/absente : le compte FIXE n’est pas demandé.",
+      "rootCause": "Choix request:native?nativeRequest:request inconditionnel dans live-monitor.js.",
+      "fix": "Relais FIXE par défaut, sélection explicite du compte Android, séparation des sourceKey et brouillons ; aucune copie de token ni fallback.",
+      "tests": [
+        "paired Android defaults",
+        "Android local chat is explicit"
+      ],
+      "status": "FIXED_SOFTWARE_PHYSICAL_PENDING",
+      "commit": "See evidence/qualification.json sourceCommit",
+      "limits": "Les essais Edge/API synthétiques ne sont pas une réception physique Android ni un effet Twitch public."
+    },
+    {
+      "id": "FLOW-P1-02",
+      "severity": "P1",
+      "feature": "F02",
+      "device": "Android 320px",
+      "service": "Moderation",
+      "symptom": "Aucun contrôle de modération par message sur mobile.",
+      "reproduction": "Snapshot avec permissions valides à 320 px.",
+      "rootCause": "Garde desktop() côté JS et display:none dans le media query mobile.",
+      "fix": "Permissions pilotent la disponibilité, indépendamment de la largeur ; boutons tactiles 44 px et confirmations conservées.",
+      "tests": [
+        "paired chat offers permission-checked moderation"
+      ],
+      "status": "FIXED_SOFTWARE_PHYSICAL_PENDING",
+      "commit": "See evidence/qualification.json sourceCommit",
+      "limits": "Les essais Edge/API synthétiques ne sont pas une réception physique Android ni un effet Twitch public."
+    },
+    {
+      "id": "FLOW-P1-03",
+      "severity": "P1",
+      "feature": "F02",
+      "device": "Windows/Android",
+      "service": "Twitch permissions",
+      "symptom": "Les capacités de modération ne sont pas relues après changement de compte.",
+      "reproduction": "Rafraîchir le snapshot avec un autre broadcaster.",
+      "rootCause": "modCaps conservé et generation incrémentée sans mettre à jour le contexte de la lecture en cours.",
+      "fix": "Réinitialiser les permissions et actualiser la génération lors du changement de compte ; relire les capacités.",
+      "tests": [
+        "paired chat offers permission-checked moderation"
+      ],
+      "status": "FIXED_SOFTWARE_PHYSICAL_PENDING",
+      "commit": "See evidence/qualification.json sourceCommit",
+      "limits": "Les essais Edge/API synthétiques ne sont pas une réception physique Android ni un effet Twitch public."
+    },
+    {
+      "id": "FLOW-P1-04",
+      "severity": "P1",
+      "feature": "F02",
+      "device": "Windows/Android",
+      "service": "Client lifecycle",
+      "symptom": "Un snapshot antérieur à la veille peut rester utilisable ou accepter une réponse tardive.",
+      "reproduction": "GET retardé, visibility hidden puis visible ; réponse du GET avant veille livrée en dernier.",
+      "rootCause": "Absence de garde de cycle de vie dans le composant chat.",
+      "fix": "Invalidation sur visibilité/online/offline/pagehide/pageshow ; nouveau GET requis ; polling suspendu ; aucun renvoi automatique.",
+      "tests": [
+        "chat resume fences reads"
+      ],
+      "status": "FIXED_SOFTWARE_PHYSICAL_PENDING",
+      "commit": "See evidence/qualification.json sourceCommit",
+      "limits": "Les essais Edge/API synthétiques ne sont pas une réception physique Android ni un effet Twitch public."
+    },
+    {
+      "id": "FLOW-P1-05",
+      "severity": "P1",
+      "feature": "F02",
+      "device": "Windows/Android",
+      "service": "Chat receipts",
+      "symptom": "Un reçu explicitly failed/uncertain portant un messageId suffit à afficher envoyé.",
+      "reproduction": "Retourner {status:uncertain,messageId:...} au composant.",
+      "rootCause": "Vérification limitée à la présence de messageId.",
+      "fix": "Refuser ok=false et tout status explicite autre que sent ; conserver le brouillon.",
+      "tests": [
+        "uncertain or rejected chat receipts"
+      ],
+      "status": "FIXED_SOFTWARE",
+      "commit": "See evidence/qualification.json sourceCommit",
+      "limits": "Les essais Edge/API synthétiques ne sont pas une réception physique Android ni un effet Twitch public."
+    },
+    {
+      "id": "FLOW-P2-06",
+      "severity": "P2",
+      "feature": "F07",
+      "device": "Windows",
+      "service": "Navigation",
+      "symptom": "Navigation mélange pilotage courant et administration sans séparation explicite.",
+      "reproduction": "Lecture du menu Desktop.",
+      "rootCause": "Menu historique plat.",
+      "fix": "Groupes Régie et Administration ; Planning déplacé dans Administration sur Windows, cinq onglets mobiles conservés.",
+      "tests": [
+        "browser layout and navigation campaign"
+      ],
+      "status": "IMPLEMENTED_SOFTWARE_UI_VERIFICATION_PENDING",
+      "commit": "See evidence/qualification.json sourceCommit",
+      "limits": "Les essais Edge/API synthétiques ne sont pas une réception physique Android ni un effet Twitch public."
+    },
+    {
+      "id": "FLOW-LIMIT-07",
+      "severity": "P1",
+      "feature": "F02",
+      "device": "Tous",
+      "service": "Chat history",
+      "symptom": "Historique borné à 200 messages en mémoire ; une interruption de FIXE peut créer un trou.",
+      "reproduction": "Contrat twitch-chat-routes et cache index.ts ; non testé en production.",
+      "rootCause": "Cache d’événements, pas un stockage historique complet ni un replay fournisseur.",
+      "fix": "Limite explicitée ; pas de backend historique ajouté sans besoin démontré.",
+      "tests": [],
+      "status": "DOCUMENTED_LIMITATION",
+      "commit": "See evidence/qualification.json sourceCommit",
+      "limits": "Les essais Edge/API synthétiques ne sont pas une réception physique Android ni un effet Twitch public."
+    },
+    {
+      "id": "FLOW-BLOCK-08",
+      "severity": "P1",
+      "feature": "F10",
+      "device": "Windows/Android",
+      "service": "Release",
+      "symptom": "Signatures de production non configurées, G3 et migration/repli courant non reçus.",
+      "reproduction": "toolchain-local.log et preuves historiques G3/G4.",
+      "rootCause": "Pré-requis externes distincts de la compilation QA.",
+      "fix": "Préparer un seul couple QA commun ; conserver G4/G5 ouverts et aucune installation.",
+      "tests": [],
+      "status": "EXTERNAL_PREREQUISITE",
+      "commit": "See evidence/qualification.json sourceCommit",
+      "limits": "Les essais Edge/API synthétiques ne sont pas une réception physique Android ni un effet Twitch public."
+    }
+  ]
+}

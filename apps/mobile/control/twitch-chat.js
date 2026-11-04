@@ -83,12 +83,11 @@ export function createTwitchChat(root, { request, configure = () => {} } = {}) {
 
   function fresh() {
     const age = Date.now() - receivedAt;
-    return !disposed && online && snapshot && !readError && age >= -5_000 && age <= FRESH_FOR_MS;
+    return !disposed && online && active() && snapshot && !readError && age >= -5_000 && age <= FRESH_FOR_MS;
   }
   function maySend() { return Boolean(fresh() && snapshot.accountConnected && snapshot.capabilities.chatWrite && typeof request === 'function'); }
   function setResult(message) { result = message; resultLabel.textContent = result; }
-  const desktop = () => matchMedia('(min-width: 701px)').matches;
-  function allowed(action) { return desktop() && fresh() && snapshot.accountConnected && modCaps?.[action] === true && !modBusy; }
+  function allowed(action) { return fresh() && snapshot.accountConnected && modCaps?.[action] === true && !modBusy; }
   list.addEventListener('click', async event => {
     const button = event.target.closest?.('button[data-moderate]');
     if (!button || !list.contains(button)) return;
@@ -118,15 +117,40 @@ export function createTwitchChat(root, { request, configure = () => {} } = {}) {
     finally { if (current === generation && target === sourceKey) { modBusy = false; drawMessages(); draw(); } }
   });
 
+  let browserOnline=globalThis.navigator?.onLine!==false;
+  const active=()=>browserOnline&&document.visibilityState!=='hidden';
   function stopPolling() { clearInterval(pollTimer); pollTimer = undefined; }
+  function armPolling() {
+    if(!disposed&&root.isConnected&&online&&sourceKey&&active()&&typeof request==='function')pollTimer??=setInterval(poll,REFRESH_EVERY_MS);
+    else stopPolling();
+  }
+  function invalidate() {
+    generation++;flight=undefined;checkedAt=0;receivedAt=0;readError=Boolean(snapshot);modCaps=null;
+    if(sending)setResult('Envoi non confirmé. Brouillon conservé : vérifiez le chat avant de réessayer.');
+    sending=false;modBusy=false;stopPolling();drawMessages();draw();
+  }
+  function lifecycle() {
+    if(disposed)return;
+    invalidate();
+    if(active()){armPolling();void refresh(true);}
+  }
+  const onOffline=()=>{browserOnline=false;lifecycle();};
+  const onOnline=()=>{browserOnline=true;lifecycle();};
+  const onPageHide=()=>{invalidate();};
+  const onPageShow=()=>{browserOnline=globalThis.navigator?.onLine!==false;lifecycle();};
+  document.addEventListener('visibilitychange',lifecycle);
+  globalThis.addEventListener('offline',onOffline);
+  globalThis.addEventListener('online',onOnline);
+  globalThis.addEventListener('pagehide',onPageHide);
+  globalThis.addEventListener('pageshow',onPageShow);
   function poll() {
-    if (disposed || !root.isConnected || !online || !sourceKey || typeof request !== 'function') { stopPolling(); return; }
+    if (disposed || !root.isConnected || !online || !active() || !sourceKey || typeof request !== 'function') { stopPolling(); return; }
     // A slow OBS/configuration request must not freeze the chat or leave an old
     // identity looking fresh while another chat read is still pending.
     draw(); void refresh();
   }
   function clearSource() {
-    generation++; flight = undefined; modCaps = null; snapshot = null; checkedAt = 0; receivedAt = 0; readError = false; sending = false;
+    generation++; flight = undefined; modCaps = null; modBusy = false; snapshot = null; checkedAt = 0; receivedAt = 0; readError = false; sending = false;
     followLatest = true; nodes.clear(); list.replaceChildren(); rememberScroll(); showFollowState(); draft.value = ''; setResult('');
   }
   function msgIdSafe(id) { return typeof id === 'string' && /^\d{1,30}$/.test(id); }
@@ -193,7 +217,7 @@ export function createTwitchChat(root, { request, configure = () => {} } = {}) {
       ? (confirmed && snapshot.accountConnected ? 'Compte : ' : 'Dernier compte confirmé : ')
         + (identity.displayName || identity.userName) + ' (@' + identity.userName + ')' : 'Compte Twitch non confirmé';
     identityLabel.title = sourceLabel ? 'Source : ' + sourceLabel : '';
-    if (!online) status.textContent = 'Source inaccessible · historique conservé, envoi désactivé.';
+    if (!online || !active()) status.textContent = 'Source inaccessible · historique conservé, envoi désactivé.';
     else if (typeof request !== 'function') status.textContent = 'Mettez à jour cette source pour utiliser le chat connecté.';
     else if (readError || (snapshot && !confirmed)) status.textContent = 'État actuel non confirmé · envoi désactivé. Actualisez la source.';
     else if (!snapshot) status.textContent = 'Vérification du compte Twitch…';
@@ -211,20 +235,21 @@ export function createTwitchChat(root, { request, configure = () => {} } = {}) {
     resultLabel.textContent = result;
   }
   async function refresh(force = false) {
-    if (disposed || !root.isConnected || !online || !sourceKey || typeof request !== 'function' || flight
+    if (disposed || !root.isConnected || !online || !active() || !sourceKey || typeof request !== 'function' || flight
         || (!force && Date.now() - checkedAt < 2_000)) return;
     checkedAt = Date.now();
-    const current = generation, target = sourceKey;
+    let current = generation;
+    const target = sourceKey;
     const operation = Promise.resolve().then(async () => {
       try {
         if (disposed || current !== generation || !online) return;
         const next = normalize(await request('/api/v1/twitch/chat/state', undefined, 'GET', target));
         if (disposed || current !== generation || target !== sourceKey || !online || !root.isConnected) return;
         if (snapshot?.identity.broadcasterId && snapshot.identity.broadcasterId !== next.identity.broadcasterId) {
-          generation++; followLatest = true; sending = false; draft.value = ''; setResult('Compte Twitch changé. Vérifiez l’expéditeur avant d’écrire.');
+          current=++generation;modCaps=null;modBusy=false;followLatest = true; sending = false; draft.value = ''; setResult('Compte Twitch changé. Vérifiez l’expéditeur avant d’écrire.');
         }
         snapshot = next; receivedAt = Date.now(); readError = false;
-        if (desktop() && !modCaps) {
+        if (!modCaps) {
           try {
             const permissions = await request('/api/v1/twitch/moderation/capabilities', undefined, 'GET', target);
             if (current !== generation || target !== sourceKey || disposed) return;
@@ -254,7 +279,7 @@ export function createTwitchChat(root, { request, configure = () => {} } = {}) {
     try {
       const receipt = await request('/api/v1/twitch/chat/messages', { message, expectedBroadcasterId }, 'POST', target);
       if (disposed || current !== generation || target !== sourceKey || !root.isConnected) return;
-      if (!receipt || typeof receipt.messageId !== 'string' || !receipt.messageId) throw new Error('Résultat non confirmé.');
+      if (!receipt || receipt.ok===false || (receipt.status!==undefined&&receipt.status!=='sent') || typeof receipt.messageId !== 'string' || !receipt.messageId) throw new Error('Résultat non confirmé.');
       draft.value = ''; setResult('Message envoyé par Twitch.'); void refresh(true);
     } catch {
       if (disposed || current !== generation || target !== sourceKey || !root.isConnected) return;
@@ -278,13 +303,16 @@ export function createTwitchChat(root, { request, configure = () => {} } = {}) {
       const nextKey = typeof context.sourceKey === 'string' ? context.sourceKey : '';
       if (nextKey !== sourceKey) { clearSource(); sourceKey = nextKey; }
       const nextOnline = context.online === true;
-      if (online && !nextOnline) { generation++; flight = undefined; sending = false; readError = Boolean(snapshot); }
+      if (online && !nextOnline) invalidate();
       if (!online && nextOnline) checkedAt = 0;
       online = nextOnline; sourceLabel = bounded(context.sourceLabel, 100); draw(); void refresh();
-      if (online && sourceKey && typeof request === 'function') { pollTimer ??= setInterval(poll, REFRESH_EVERY_MS); }
-      else stopPolling();
+      armPolling();
     },
     refresh,
-    destroy() { disposed = true; generation++; online = false; flight = undefined; stopPolling(); cancelAnimationFrame(scrollFrame); resizeObserver?.disconnect(); list.removeEventListener('scroll', onScroll); },
+    destroy() {
+      document.removeEventListener('visibilitychange',lifecycle);
+      globalThis.removeEventListener('offline',onOffline);globalThis.removeEventListener('online',onOnline);
+      globalThis.removeEventListener('pagehide',onPageHide);globalThis.removeEventListener('pageshow',onPageShow);
+      disposed = true; generation++; online = false; flight = undefined; stopPolling(); cancelAnimationFrame(scrollFrame); resizeObserver?.disconnect(); list.removeEventListener('scroll', onScroll); },
   };
 }

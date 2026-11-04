@@ -16,24 +16,23 @@ import {mountTwitchPredictionEnd} from './streamcockpit-twitch-prediction-end.js
 export function createLiveMonitor(root,{native=false,configure=()=>{},request,controlRequest=request,activityRoot}={}){
  let enabled=localStorage.getItem('sd2.monitor-enabled')===null?matchMedia('(min-width:701px)').matches:localStorage.getItem('sd2.monitor-enabled')==='true';
  let state,context={},disposed=false,viewerFlight,viewerRevision=0,viewerMessage='';
+ let chatSource=localStorage.getItem('sd2.twitch-chat-source')==='device'?'device':'host';
+ const deviceChatKey='android:twitch-local-account';
  root.className='live-monitor spacer';
  root.innerHTML='<div class="section-heading"><div><h2>Retour Twitch & chat</h2><p class="small muted">Retour vidéo spectateur, son coupé.</p></div><button type="button" class="secondary" data-monitor-toggle></button></div>'
  +'<div class="monitor-grid" data-monitor-body><section class="panel monitor-video"><div class="monitor-heading"><h3>Retour Twitch</h3></div><div class="monitor-slot video-slot" data-monitor-slot="video"></div><div class="monitor-footer"><a data-monitor-link="video" target="_blank" rel="noopener noreferrer">Ouvrir Twitch ↗</a><button type="button" class="secondary" data-monitor-connect="twitch">Connexion visionneuse</button><button type="button" class="secondary" data-monitor-reload="video">Recharger</button></div></section>'
- +'<section class="panel monitor-chat monitor-native-twitch"><div class="monitor-heading"><h3><span class="chat-dot twitch-dot"></span>Chat Twitch</h3></div><div data-twitch-native></div><div class="monitor-footer monitor-creator-links"><a data-monitor-link="twitch" target="_blank" rel="noopener noreferrer">Chat dans le navigateur ↗</a><a data-monitor-link="twitch-creator" target="_blank" rel="noopener noreferrer">Régie Twitch ↗</a></div></section></div>'
+ +'<section class="panel monitor-chat monitor-native-twitch"><div class="monitor-heading"><h3><span class="chat-dot twitch-dot"></span>Chat Twitch</h3></div><div data-twitch-source></div><div data-twitch-native></div><div class="monitor-footer monitor-creator-links"><a data-monitor-link="twitch" target="_blank" rel="noopener noreferrer">Chat dans le navigateur ↗</a><a data-monitor-link="twitch-creator" target="_blank" rel="noopener noreferrer">Régie Twitch ↗</a></div></section></div>'
  +'<p class="small muted" data-monitor-note><span data-monitor-viewer-status role="status"></span> Le chat Twitch utilise le compte connecté.</p><details class="monitor-targets"><summary>Choisir la chaîne Twitch</summary><form data-monitor-targets><label>Chaîne Twitch<input name="channel" maxlength="25"></label><button>Enregistrer</button><p data-monitor-targets-status role="status"></p></form></details>';
  const agentStatus=mountAgentStatus(root);
  const get=selector=>root.querySelector(selector),slot=get('[data-monitor-slot="video"]');
  get('[name="channel"]').value=localStorage.getItem('sd2.monitor-channel')||'';
  if(activityRoot){activityRoot.classList.add('monitor-activity');get('[data-monitor-body]').classList.add('monitor-grid-with-activity');get('[data-monitor-body]').append(activityRoot);}
+ const sourcePicker=get('[data-twitch-source]');
+ if(native)sourcePicker.innerHTML='<label>Source du chat Twitch<select data-chat-source aria-label="Source du chat Twitch"><option value="host">Régie sélectionnée</option><option value="device">Compte Twitch Android</option></select></label><p class="small muted" data-chat-source-note></p>';
  const nativeRequest=async(path,body,method)=>{
   const operation=path==='/api/v1/twitch/chat/state'?'twitchChatState':path==='/api/v1/twitch/chat/messages'?'twitchChatSend':'';
-  // Moderation belongs to the paired host: the native account bridge only implements read/send.
-  // Never treat unsupported native commands as missing Twitch permissions.
-  if(!operation){
-    if(/^\/api\/v1\/twitch\/moderation\/(?:capabilities|messages\/[A-Za-z0-9_-]+|bans(?:\/[0-9]+)?)$/.test(path)
-      && typeof request==='function') return request(path,body,method,context.sourceKey);
-    throw new Error('Opération chat inconnue.');
-  }
+  // Local chat never borrows the paired host's moderation identity.
+  if(!operation)throw new Error('Modération disponible avec le chat de la régie sélectionnée.');
   const response=await callDeviceBridge(globalThis.StreamDashboardProviders,operation,body?{...body,id:randomUuid()}:{});
   if(response.ok===false)throw new Error(response.message||'Reconnectez Twitch.');return response;
  };
@@ -49,7 +48,23 @@ export function createLiveMonitor(root,{native=false,configure=()=>{},request,co
  const twitchPredictionRelease=mountTwitchPredictionRelease(get('.monitor-chat'),{request:controlRequest});
  const twitchPredictionLock=mountTwitchPredictionLock(get('.monitor-chat'),{request:controlRequest});
  const twitchPredictionEnd=mountTwitchPredictionEnd(get('.monitor-chat'),{request:controlRequest});
- const twitchChat=createTwitchChat(get('[data-twitch-native]'),{request:native?nativeRequest:request,configure});
+ const chatRequest=(path,body,method,sourceKey)=>{
+  if(!native)return request?.(path,body,method,sourceKey);
+  if(chatSource==='device'){
+   if(sourceKey!==deviceChatKey)throw new Error('La source du chat a changé.');
+   return nativeRequest(path,body,method);
+  }
+  const host=context.authorityKey??context.sourceKey;
+  const available=context.authorityOnline??context.online;
+  if(!host||sourceKey!==host||available!==true||typeof request!=='function')throw new Error('Régie du chat déconnectée. Aucun envoi effectué.');
+  return request(path,body,method,host);
+ };
+ const twitchChat=createTwitchChat(get('[data-twitch-native]'),{request:chatRequest,configure});
+ if(native)get('[data-chat-source]').addEventListener('change',event=>{
+  const choice=event.target.value;
+  if(choice!=='host'&&choice!=='device')return;
+  chatSource=choice;localStorage.setItem('sd2.twitch-chat-source',choice);draw();
+ });
  function twitchLogin(){const login=localStorage.getItem('sd2.monitor-channel')||state?.host?.monitor?.twitchLogin||'';return /^[a-zA-Z0-9_]{1,25}$/.test(login)?login.toLowerCase():'';}
  function link(key,url){const a=get('[data-monitor-link="'+key+'"]');a.hidden=!url;if(url)a.href=url;else a.removeAttribute('href');}
  function mount(url){
@@ -91,7 +106,14 @@ export function createLiveMonitor(root,{native=false,configure=()=>{},request,co
   twitchPredictionRelease.update({sourceKey:authorityKey,accountKey:state?.host?.monitor?.twitchLogin,online:authorityOnline&&(enabled||chatOnly)});
   twitchPredictionLock.update({sourceKey:authorityKey,accountKey:state?.host?.monitor?.twitchLogin,online:authorityOnline&&(enabled||chatOnly)});
   twitchPredictionEnd.update({sourceKey:authorityKey,accountKey:state?.host?.monitor?.twitchLogin,online:authorityOnline&&(enabled||chatOnly)});
-  twitchChat.update({...context,online:(native||context.online===true)&&(enabled||chatOnly),sourceLabel:state?.host?.hostname||''});
+  const localChat=native&&chatSource==='device';
+  const chatKey=native?(localChat?deviceChatKey:authorityKey):context.sourceKey;
+  if(native){
+   get('[data-chat-source]').value=chatSource;
+   get('[data-chat-source-note]').textContent=localChat?'Messages avec le compte Android. Les outils ci-dessous utilisent le compte de la régie.':'Compte de la régie sélectionnée · aucune connexion Twitch Android nécessaire.';
+  }
+  twitchChat.update({...context,sourceKey:chatKey,online:(native?(localChat||authorityOnline):context.online===true)&&(enabled||chatOnly),
+   sourceLabel:localChat?'Compte Twitch Android':state?.host?.hostname||''});
   if(!enabled||chatOnly){slot.replaceChildren();delete slot.dataset.identity;return;}
   const login=twitchLogin(),parent=encodeURIComponent(location.hostname);
   mount(login&&'https://player.twitch.tv/?channel='+login+'&parent='+parent+'&muted=true&autoplay=true');

@@ -1,0 +1,665 @@
+{
+  "schemaVersion": 1,
+  "ticket": "SC3-FLOW-ARCH-UX-001",
+  "amendment": "SC3-FLOW-ONESHOT-001",
+  "auditedAt": "2026-11-04T21:59:20.451Z",
+  "baseCommit": "477d22809b51582cc171fefbf3267e951176fbc3",
+  "statusLegend": [
+    "WORKING",
+    "PARTIAL",
+    "BROKEN",
+    "UNAVAILABLE",
+    "UNTESTED"
+  ],
+  "classificationRule": "PARTIAL = code et/ou preuves logicielles disponibles, réception complète non acquise. UNTESTED des plateformes = pas de test du code courant sur cet appareil. Ne pas confondre avec une absence de fonctionnalité.",
+  "features": [
+    {
+      "id": "F00",
+      "name": "Agent V2 autonome + régie maîtresse",
+      "status": "PARTIAL",
+      "releaseQualification": "partial",
+      "platforms": {
+        "windowsFixe": "UNTESTED",
+        "windowsLaptop": "UNTESTED",
+        "androidPhysical": "UNTESTED"
+      },
+      "executor": "Runtime/Agent FIXE exclusivement",
+      "ui": "Live > Diffusion / minuteur ; Accueil Android",
+      "offline": "Dernier état affiché comme périmé ; aucune régie ou horloge de commande de remplacement.",
+      "permissions": [
+        "observe",
+        "obs",
+        "timer"
+      ],
+      "scopes": [],
+      "notes": "--agent et tray existent. Ne pas lancer simultanément un nouveau writer et la régie installée ; réception Agent sans fenêtre requise.",
+      "dependencies": [],
+      "implementation": [
+        "apps/agent/src/production-obs-writer.ts",
+        "apps/server/src/index.ts",
+        "apps/server/src/streamcockpit-health/host-adapter.ts",
+        "apps/agent/src/real-obs-transport.ts",
+        "apps/agent/src/windows-sqlite-receipts.ts",
+        "apps/mobile/control/client-authority.js",
+        "apps/mobile/control/streamcockpit-master-clock.js",
+        "apps/server/src/autonomy-routes.ts",
+        "apps/mobile/control/control.js"
+      ],
+      "softwareProofs": [
+        "tests/streamcockpit3-health.test.ts",
+        "tests/streamcockpit3-health-api.test.ts",
+        "tests/streamcockpit3-health-integration.test.ts",
+        "tests/streamcockpit3-agent-fencing.test.ts",
+        "tests/streamcockpit3-agent-windows-sqlite.test.ts",
+        "tests/streamcockpit-production-obs-writer.test.ts",
+        "tests/streamcockpit-client-authority.test.ts",
+        "tests/streamcockpit-timer-authority.test.ts",
+        "tests/streamcockpit3-master-clock.test.ts",
+        "tests/streamcockpit3-master-clock-browser.test.ts",
+        "tests/streamcockpit3-master-clock-resume.test.ts"
+      ],
+      "hardwareEvidence": [],
+      "knownBlockers": [
+        "Agent real OBS production execution on FIXE and hardware power-loss behavior of SQLite rollback journal not qualified",
+        "Legacy JSON receipt or epoch history intentionally blocks Windows startup pending explicit reconciliation/migration",
+        "Node 22 node:sqlite experimental; no packaged Windows service and no FIXE/laptop/Android timer-master hardware evidence",
+        "Monotonic master countdown, visibility/sleep invalidation and strict pinned-host fallback tested on FIXE and real Edge headless 320px with synthetic host; no physical Android/laptop sleep, clock, reconnection or live hardware qualification"
+      ],
+      "currentRevisionNote": "Aucune réception physique sur le code de ce lot. Les tests logiciels finaux sont référencés dans evidence/qualification.json."
+    },
+    {
+      "id": "F01",
+      "name": "Centre de santé intelligent",
+      "status": "PARTIAL",
+      "releaseQualification": "partial",
+      "platforms": {
+        "windowsFixe": "UNTESTED",
+        "windowsLaptop": "UNTESTED",
+        "androidPhysical": "UNTESTED"
+      },
+      "executor": "Observateurs FIXE et projections de santé",
+      "ui": "Santé ; Accueil/Plus Android",
+      "offline": "UNKNOWN et provenance conservée, aucune estimation DJI.",
+      "permissions": [
+        "observe"
+      ],
+      "scopes": [],
+      "notes": "Batterie et VOD nécessitent les mesures et le matériel réel.",
+      "dependencies": [
+        "F00"
+      ],
+      "implementation": [
+        "apps/agent/src/health-snapshot-cache.ts",
+        "apps/server/src/platform-observer.ts",
+        "apps/server/src/streamcockpit-health/host-adapter.ts",
+        "apps/mobile/control/streamcockpit-health/page.js",
+        "apps/server/src/streamcockpit-health/obs-observation.ts"
+      ],
+      "softwareProofs": [
+        "tests/streamcockpit3-health.test.ts",
+        "tests/streamcockpit3-health-api.test.ts",
+        "tests/streamcockpit3-health-integration.test.ts",
+        "tests/streamcockpit3-health-observation.test.ts",
+        "tests/streamcockpit3-health-observation-hook.test.ts",
+        "tests/streamcockpit3-health-observation-http.test.ts"
+      ],
+      "hardwareEvidence": [],
+      "knownBlockers": [],
+      "currentRevisionNote": "Aucune réception physique sur le code de ce lot. Les tests logiciels finaux sont référencés dans evidence/qualification.json."
+    },
+    {
+      "id": "F02",
+      "name": "Modération Twitch avancée",
+      "status": "PARTIAL",
+      "releaseQualification": "partial",
+      "platforms": {
+        "windowsFixe": "UNTESTED",
+        "windowsLaptop": "UNTESTED",
+        "androidPhysical": "UNTESTED"
+      },
+      "executor": "FIXE par défaut pour Android appairé ; compte Android direct sur choix explicite",
+      "ui": "Live > Chat ; source du chat ; modération par message",
+      "offline": "Chat FIXE indisponible sans bascule de compte. Historique en mémoire max 200 ; compte Android distinct disponible sur choix explicite.",
+      "permissions": [
+        "chat",
+        "observe"
+      ],
+      "scopes": [
+        "user:read:chat (EventSub FIXE)",
+        "user:write:chat (Helix)",
+        "chat:read (IRC Android)",
+        "moderator:manage:chat_messages",
+        "moderator:manage:banned_users"
+      ],
+      "notes": "Routage Android, permissions mobiles, reprise et reçus corrigés dans ce lot. Réception physique et OAuth réels non testés.",
+      "dependencies": [
+        "F00"
+      ],
+      "implementation": [
+        "apps/server/src/index.ts",
+        "apps/mobile/control/live-monitor.js",
+        "apps/server/src/streamcockpit-twitch-router.ts",
+        "apps/mobile/control/streamcockpit-twitch-advanced.js",
+        "integrations/twitch/src/streamcockpit-moderation.ts",
+        "apps/server/src/streamcockpit-twitch-moderation-router.ts",
+        "apps/mobile/control/streamcockpit-twitch-moderation.js"
+      ],
+      "softwareProofs": [
+        "tests/streamcockpit3-twitch.test.ts",
+        "tests/streamcockpit3-twitch-integration.test.ts",
+        "tests/streamcockpit3-twitch-integration-http.test.ts",
+        "tests/streamcockpit3-twitch-mobile.test.ts",
+        "tests/streamcockpit3-moderation-http.test.ts",
+        "tests/streamcockpit3-moderation-browser.test.ts"
+      ],
+      "hardwareEvidence": [],
+      "knownBlockers": [
+        "AutoMod held-message management and viewer history remain incomplete.",
+        "Production OAuth and physical FIXE/laptop/Android reception of moderation remain unqualified."
+      ],
+      "currentRevisionNote": "Aucune réception physique sur le code de ce lot. Les tests logiciels finaux sont référencés dans evidence/qualification.json."
+    },
+    {
+      "id": "F03",
+      "name": "Régie et macros contextuelles",
+      "status": "PARTIAL",
+      "releaseQualification": "partial",
+      "platforms": {
+        "windowsFixe": "UNTESTED",
+        "windowsLaptop": "UNTESTED",
+        "androidPhysical": "UNTESTED"
+      },
+      "executor": "FIXE : contexte observé, scènes, actions et macros",
+      "ui": "Live > Diffusion ; Deck ; Administration > Gestion",
+      "offline": "Commandes critiques refusées ; pas de rejeu. Fin est un changement de scène distinct de l'arrêt de diffusion.",
+      "permissions": [
+        "obs",
+        "timer",
+        "chat",
+        "audio selon action"
+      ],
+      "scopes": [
+        "Selon effet Twitch de la macro"
+      ],
+      "notes": "Mappage effectif Intro/Jeu/Chatting/Pause/Fin et macros multi-étapes à recevoir sur les scènes réelles.",
+      "dependencies": [
+        "F00",
+        "F01"
+      ],
+      "implementation": [
+        "apps/server/src/automation-runtime.ts",
+        "docs/streamcockpit-3/SCENE_MODES_AUDIT_20261104.md",
+        "apps/mobile/control/performance-ui.js",
+        "apps/mobile/control/streamcockpit-context-preview.js",
+        "apps/server/src/streamcockpit-master-context.ts",
+        "apps/mobile/control/streamcockpit-master-context.js"
+      ],
+      "softwareProofs": [
+        "tests/streamcockpit3-context.test.ts",
+        "tests/streamcockpit3-context-integration.test.ts",
+        "tests/streamcockpit3-context-integration-browser.test.ts",
+        "tests/streamcockpit3-master-context-http.test.ts",
+        "tests/streamcockpit3-master-context-browser.test.ts",
+        "tests/streamcockpit3-master-context-runtime.test.ts"
+      ],
+      "hardwareEvidence": [],
+      "knownBlockers": [
+        "Physical FIXE/laptop/Android scene/game/routing, role changes and suspend/resume reception remain unqualified.",
+        "Production Twitch category/OAuth observation remains unqualified; game means the observed channel category, never inferred game-process activity.",
+        "Built-in context banks reuse existing single actions; real audio/chat/replay context flows and arbitrary multi-step macros are not fully received."
+      ],
+      "currentRevisionNote": "Aucune réception physique sur le code de ce lot. Les tests logiciels finaux sont référencés dans evidence/qualification.json."
+    },
+    {
+      "id": "F04",
+      "name": "Marqueurs OBS/Twitch, replays et clips simples",
+      "status": "PARTIAL",
+      "releaseQualification": "partial",
+      "platforms": {
+        "windowsFixe": "UNTESTED",
+        "windowsLaptop": "UNTESTED",
+        "androidPhysical": "UNTESTED"
+      },
+      "executor": "FIXE : OBS Replay Buffer et Twitch via confirmations",
+      "ui": "Live > Moments Twitch ; Deck > Replay",
+      "offline": "Résultat incertain et indices UUID conservés ; récupération GET-only ; aucun retry implicite.",
+      "permissions": [
+        "clips",
+        "chat",
+        "cloud",
+        "management selon action"
+      ],
+      "scopes": [
+        "clips:edit",
+        "channel:manage:broadcast"
+      ],
+      "notes": "ClipForge, montage et transcodage V4, hors livraison 3.0.",
+      "dependencies": [
+        "F00"
+      ],
+      "implementation": [
+        "apps/server/src/replay-auto-start.ts",
+        "apps/server/src/streamcockpit-moments-obs-replay.ts",
+        "scripts/streamcockpit-windows-clip-job.cs",
+        "docs/streamcockpit-3/F04_WINDOWS_OFFLINE_LAB_20261102.md",
+        "docs/streamcockpit-3/F04_WINDOWS_PROVENANCE_ACL_FIXE_20261103.md",
+        "integrations/obs/src/client.ts",
+        "docs/streamcockpit-3/F04_REPLAY_SAVE_FILE_CHECK_FIXE_20261103.md",
+        "integrations/twitch/src/streamcockpit-simple-moments.ts",
+        "apps/server/src/streamcockpit-twitch-moment-router.ts",
+        "apps/mobile/control/streamcockpit-twitch-moments.js",
+        "apps/mobile/control/streamcockpit-twitch-moment-pending.js",
+        "tests/streamcockpit3-simple-moments-storage.test.ts",
+        "tests/streamcockpit3-f04-durable-status-windows.test.ts",
+        "apps/server/src/control-public-view.ts",
+        "tests/streamcockpit3-simple-moments-multitab-browser.test.ts",
+        "apps/server/src/streamcockpit-clipforge-windows-provenance.ts"
+      ],
+      "softwareProofs": [
+        "tests/streamcockpit3-moments.test.ts",
+        "tests/streamcockpit3-moments-mobile.test.ts",
+        "tests/streamcockpit3-moments-obs-replay.test.ts",
+        "tests/obs-runtime.test.ts",
+        "tests/streamcockpit3-simple-moments-http.test.ts",
+        "tests/streamcockpit3-f04-durable-status-windows.test.ts",
+        "tests/streamcockpit3-simple-moments-browser.test.ts",
+        "tests/streamcockpit3-simple-moments-storage.test.ts",
+        "tests/streamcockpit3-simple-moments-multitab-browser.test.ts",
+        "tests/streamcockpit3-f04-ephemeral-journal-multitab.test.ts",
+        "tests/streamcockpit3-f04-expiring-lock-browser.test.ts",
+        "tests/streamcockpit3-simple-replay-privacy.test.ts",
+        "tests/streamcockpit3-release-scope.test.ts"
+      ],
+      "hardwareEvidence": [],
+      "knownBlockers": [
+        "Physical FIXE/laptop/Android replay, provider marker and clip availability walkthroughs remain unqualified.",
+        "Single-use confirmation stays volatile on FIXE. Bounded host/account-scoped localStorage UUID hint survives client reload; synthetic Windows child-exit proves authenticated read-only SQLite journal retrieval after a process exit, never a duplicate Twitch POST. Actual FIXE production restart, crash/power-loss, physical Android migration and receipts lost before client storage remain unqualified.",
+        "OBS replay file validity, production Twitch OAuth/VOD configuration and real uncertain-command receipts still require reception.",
+        "Corrupt/inaccessible or expired-unreviewed browser pending-confirmation storage blocks F04 preview/POST/normal clearing globally, preserving the raw journal instead of silently dropping possible executed UUIDs after 7 days. A unique valid unexpired current-host/account receipt in an otherwise partly corrupt parseable journal permits paired GET only. Operator opt-in diagnostic is redacted; separate raw .txt copy (at most 1 MiB) may contain sensitive or other-account data and must not be shared. Oversized/inaccessible storage, ambiguous receipts, safe repair and full manual reconciliation still require supervised handling. For an expired but uniquely identified current-scope UUID in a canonical wholly valid journal, paired GET-only review is permitted. One expired UUID can additionally be reconciled only by a deliberate same-scope operator action after requesting a confidential local backup and verifying Twitch externally, under an exclusive browser lock and exact raw snapshot match; other rows remain intact. The browser download request and external verification are operator attestations, not independently attested physical evidence. Invalid/noncanonical journals cannot be auto-repaired, and no expired evidence is ever cleared/admitted automatically. Until explicitly reconciled an expired UUID blocks new F04 actions, even for other accounts, by design.",
+        "Native same-origin Web Locks required for F04 UI journal mutations: unsupported or insecure browser contexts fail closed. Edge two-tab contention was exercised but actual Android WebView support, noncooperative writers and simultaneous physical devices remain unqualified."
+      ],
+      "currentRevisionNote": "Aucune réception physique sur le code de ce lot. Les tests logiciels finaux sont référencés dans evidence/qualification.json."
+    },
+    {
+      "id": "F05",
+      "name": "Mixeur audio distribué",
+      "status": "PARTIAL",
+      "releaseQualification": "partial",
+      "platforms": {
+        "windowsFixe": "UNTESTED",
+        "windowsLaptop": "UNTESTED",
+        "androidPhysical": "UNTESTED"
+      },
+      "executor": "Mixeur OBS et lecteur Spotify local du PC ciblé",
+      "ui": "Live > Micro ; Mixeur ; Spotify",
+      "offline": "Statut inconnu, gains/mute bloqués, commande Spotify non assimilée à lecture confirmée.",
+      "permissions": [
+        "audio",
+        "obs selon opération"
+      ],
+      "scopes": [],
+      "notes": "Contrôle Spotify Windows sans connexion à un compte Spotify ; séparation VOD et routage PC jeu à recevoir.",
+      "dependencies": [
+        "F00",
+        "F01"
+      ],
+      "implementation": [
+        "apps/server/src/audio-destinations.ts",
+        "packages/core/src/streamcockpit-mixer.ts",
+        "apps/server/src/streamcockpit-mixer.ts",
+        "apps/server/src/streamcockpit-mixer-observation.ts",
+        "apps/server/src/streamcockpit-mixer-router.ts",
+        "apps/server/src/index.ts",
+        "apps/server/src/remote-api-policy.ts",
+        "apps/mobile/control/streamcockpit-mixer-page.js",
+        "apps/mobile/control/streamcockpit-mixer.js",
+        "apps/mobile/control/control.js",
+        "apps/mobile/control/mobile-five-tab-ui.js",
+        "apps/mobile/control/streamcockpit-mobile-v2.css",
+        "apps/mobile/control-sw.js",
+        "apps/server/src/streamcockpit-mixer-control-router.ts",
+        "apps/mobile/control/streamcockpit-mixer-control.js",
+        "integrations/obs/src/client.ts"
+      ],
+      "softwareProofs": [
+        "tests/streamcockpit3-mixer.test.ts",
+        "tests/streamcockpit3-mixer-mobile.test.ts",
+        "tests/streamcockpit3-mixer-observation.test.ts",
+        "tests/streamcockpit3-mixer-http.test.ts",
+        "tests/streamcockpit3-mixer-page.test.ts",
+        "tests/streamcockpit3-mixer-browser.test.ts",
+        "tests/streamcockpit3-health-observation-hook.test.ts",
+        "tests/streamcockpit3-mixer-control-http.test.ts",
+        "tests/streamcockpit3-mixer-control-browser.test.ts",
+        "tests/streamcockpit3-mixer-routing-http.test.ts",
+        "tests/streamcockpit3-mixer-routing-obs.test.ts",
+        "tests/streamcockpit3-mixer-routing-browser.test.ts"
+      ],
+      "hardwareEvidence": [],
+      "knownBlockers": [
+        "Physical FIXE/laptop/Android gain/mute and guarded rollback not verified; source control requires an actual OBS UUID and otherwise refuses the write.",
+        "OBS track 1-6 flags and monitoring mode can now be read on demand from FIXE, and peak meters observed while live; the PC game hardware path, exact Twitch VOD output track and real stream/VOD separation remain unqualified.",
+        "Persisted intents prevent replay across restart; full historical success/rollback receipts remain volatile, so a host restart yields an honest uncertain status."
+      ],
+      "currentRevisionNote": "Aucune réception physique sur le code de ce lot. Les tests logiciels finaux sont référencés dans evidence/qualification.json."
+    },
+    {
+      "id": "F06",
+      "name": "Planning assisté",
+      "status": "PARTIAL",
+      "releaseQualification": "partial",
+      "platforms": {
+        "windowsFixe": "UNTESTED",
+        "windowsLaptop": "UNTESTED",
+        "androidPhysical": "UNTESTED"
+      },
+      "executor": "Planning maître du workspace FIXE ; comptes autonomes explicites et brouillons dans Mon espace",
+      "ui": "Planning ; Administration > Gestion",
+      "offline": "Projection locale et éditions réconciliées par base/id ; publication externe explicite. Brouillon local distinct de l'autorité maîtresse.",
+      "permissions": [
+        "cloud",
+        "management"
+      ],
+      "scopes": [
+        "Google calendar.events",
+        "Google calendar.calendarlist.readonly (Windows)",
+        "Google calendar.readonly (Android)",
+        "channel:manage:schedule"
+      ],
+      "notes": "Pas de nouvelle connexion Google Android imposée. Conflits externes et publication réelle non testés dans ce lot.",
+      "dependencies": [
+        "F00"
+      ],
+      "implementation": [
+        "apps/mobile/control/planning.js",
+        "packages/core/src/streamcockpit-planning.ts",
+        "apps/mobile/control/streamcockpit-planning.js",
+        "apps/mobile/control/streamcockpit-planning-draft.js",
+        "docs/streamcockpit-3/F06_ASSISTED_LOCAL_DRAFT_FIXE_20261102.md",
+        "apps/server/src/streamcockpit-planning-assisted.ts"
+      ],
+      "softwareProofs": [
+        "tests/streamcockpit3-planning.test.ts",
+        "tests/streamcockpit3-planning-ui.test.ts",
+        "tests/streamcockpit3-planning-integration.test.ts",
+        "tests/streamcockpit3-planning-integration-browser.test.ts",
+        "tests/streamcockpit3-planning-assisted-draft.test.ts",
+        "tests/streamcockpit3-planning-assisted-host.test.ts",
+        "tests/streamcockpit3-planning-assistant-browser.test.ts"
+      ],
+      "hardwareEvidence": [],
+      "knownBlockers": [
+        "Google and Twitch live availability are UNKNOWN; only cached imported events are considered local blockers and no remote publishing is attempted",
+        "Host queue now rechecks conflicts just before assisted local creation; no atomic transaction with external Google/Twitch state or durable storage, and post-COMMIT power-loss/reconciliation is unqualified",
+        "Assisted copy of simple one-off live is now available and tested in Edge 320px; recurring occurrence duplication remains excluded. Physical Android/FIXE/laptop reconnection and real Google publishing/rollback remain unqualified"
+      ],
+      "currentRevisionNote": "Aucune réception physique sur le code de ce lot. Les tests logiciels finaux sont référencés dans evidence/qualification.json."
+    },
+    {
+      "id": "F07",
+      "name": "Deck Android adaptatif",
+      "status": "PARTIAL",
+      "releaseQualification": "partial",
+      "platforms": {
+        "windowsFixe": "UNTESTED",
+        "windowsLaptop": "UNTESTED",
+        "androidPhysical": "UNTESTED"
+      },
+      "executor": "Android émet des intentions vers FIXE ; sons locaux seulement dans l'espace explicite",
+      "ui": "Accueil / Live / Sons / Planning / Plus ; Live ouvre Chat par défaut",
+      "offline": "Deck de régie suspendu, copie locale et navigation disponibles ; aucune seconde autorité OBS.",
+      "permissions": [
+        "Selon bouton et rôle appairé"
+      ],
+      "scopes": [],
+      "notes": "Navigation cinq onglets conservée ; chat et commandes de modération rendus accessibles à 320 px.",
+      "dependencies": [
+        "F03"
+      ],
+      "implementation": [
+        "apps/mobile/control/mobile-panes.js",
+        "apps/mobile/control/performance-ui.js",
+        "apps/mobile/control/streamcockpit-context-preview.js",
+        "apps/server/src/streamcockpit-master-context.ts",
+        "apps/mobile/control/streamcockpit-master-context.js"
+      ],
+      "softwareProofs": [
+        "tests/streamcockpit3-context.test.ts",
+        "tests/streamcockpit3-context-integration.test.ts",
+        "tests/streamcockpit3-context-integration-browser.test.ts",
+        "tests/streamcockpit3-master-context-http.test.ts",
+        "tests/streamcockpit3-master-context-browser.test.ts",
+        "tests/streamcockpit3-master-context-runtime.test.ts"
+      ],
+      "hardwareEvidence": [],
+      "knownBlockers": [
+        "Physical Android touch/navigation/reconnect and synchronized authority reception remain pending.",
+        "Authenticated paired-controller is a logical grant, not a claim of verified Android/laptop hardware identity.",
+        "Contextual bindings deliberately execute only on the selected regie; alternate per-device destinations remain on manual banks."
+      ],
+      "currentRevisionNote": "Aucune réception physique sur le code de ce lot. Les tests logiciels finaux sont référencés dans evidence/qualification.json."
+    },
+    {
+      "id": "F08",
+      "name": "Interactions Twitch enrichies",
+      "status": "PARTIAL",
+      "releaseQualification": "partial",
+      "platforms": {
+        "windowsFixe": "UNTESTED",
+        "windowsLaptop": "UNTESTED",
+        "androidPhysical": "UNTESTED"
+      },
+      "executor": "FIXE : contrôleurs Twitch protégés preview/confirm",
+      "ui": "Live > outils Twitch",
+      "offline": "Confirmation expirée/inconnue refusée, journal incertain, aucune action publique automatique.",
+      "permissions": [
+        "chat",
+        "cloud",
+        "management"
+      ],
+      "scopes": [
+        "channel:manage:polls",
+        "channel:manage:predictions",
+        "channel:manage:raids",
+        "moderator:manage:shoutouts"
+      ],
+      "notes": "Tests fournisseurs synthétiques seulement ; sondage/raid/prédiction/shoutout réel nécessite une autorisation distincte.",
+      "dependencies": [
+        "F02"
+      ],
+      "implementation": [
+        "apps/server/src/streamcockpit-twitch-router.ts",
+        "apps/mobile/control/streamcockpit-twitch-advanced.js",
+        "apps/server/src/streamcockpit-twitch-poll-router.ts",
+        "apps/server/src/streamcockpit-twitch-service.ts",
+        "apps/mobile/control/streamcockpit-twitch-poll.js",
+        "apps/server/src/streamcockpit-twitch-shoutout-router.ts",
+        "apps/mobile/control/streamcockpit-twitch-shoutout.js",
+        "integrations/twitch/src/streamcockpit-raid.ts",
+        "apps/server/src/streamcockpit-twitch-raid-router.ts",
+        "apps/mobile/control/streamcockpit-twitch-raid.js",
+        "integrations/twitch/src/streamcockpit-prediction.ts",
+        "apps/server/src/streamcockpit-twitch-prediction-router.ts",
+        "apps/mobile/control/streamcockpit-twitch-prediction.js",
+        "integrations/twitch/src/streamcockpit-prediction-create.ts",
+        "apps/server/src/streamcockpit-twitch-prediction-create-router.ts",
+        "apps/server/src/streamcockpit-twitch-prediction-create-service.ts",
+        "apps/mobile/control/streamcockpit-twitch-prediction-create.js",
+        "apps/server/src/streamcockpit-prediction-intent-sqlite.ts",
+        "apps/mobile/control/streamcockpit-twitch-prediction-release.js",
+        "docs/streamcockpit-3/F08_PREDICTION_CREATE_FIXE_20261102.md",
+        "tests/streamcockpit3-twitch-prediction-reconcile-http.test.ts",
+        "integrations/twitch/src/streamcockpit-prediction-lock.ts",
+        "apps/server/src/streamcockpit-twitch-prediction-lock-router.ts",
+        "apps/mobile/control/streamcockpit-twitch-prediction-lock.js",
+        "docs/streamcockpit-3/F08_PREDICTION_LOCK_FIXE_20261103.md",
+        "integrations/twitch/src/streamcockpit-prediction-end.ts",
+        "apps/server/src/streamcockpit-twitch-prediction-end-router.ts",
+        "apps/mobile/control/streamcockpit-twitch-prediction-end.js",
+        "docs/streamcockpit-3/F08_PREDICTION_END_FIXE_20261103.md",
+        "apps/server/src/remote-auth.ts",
+        "apps/mobile/control/streamcockpit-authority-target.js",
+        "apps/desktop/src/preload.cts"
+      ],
+      "softwareProofs": [
+        "tests/streamcockpit3-twitch.test.ts",
+        "tests/streamcockpit3-twitch-integration.test.ts",
+        "tests/streamcockpit3-twitch-integration-http.test.ts",
+        "tests/streamcockpit3-twitch-mobile.test.ts",
+        "tests/streamcockpit3-twitch-poll-http.test.ts",
+        "tests/streamcockpit3-twitch-poll-browser.test.ts",
+        "tests/streamcockpit3-twitch-shoutout-http.test.ts",
+        "tests/streamcockpit3-twitch-shoutout-browser.test.ts",
+        "tests/streamcockpit3-twitch-raid-http.test.ts",
+        "tests/streamcockpit3-twitch-raid-browser.test.ts",
+        "tests/streamcockpit3-twitch-prediction-http.test.ts",
+        "tests/streamcockpit3-twitch-prediction-browser.test.ts",
+        "tests/streamcockpit3-twitch-prediction-create-http.test.ts",
+        "tests/streamcockpit3-twitch-prediction-reconcile-http.test.ts",
+        "tests/streamcockpit3-twitch-prediction-lock-http.test.ts",
+        "tests/streamcockpit3-twitch-prediction-lock-browser.test.ts",
+        "tests/streamcockpit3-twitch-prediction-end-http.test.ts",
+        "tests/streamcockpit3-twitch-prediction-end-browser.test.ts",
+        "tests/streamcockpit3-twitch-prediction-create-browser.test.ts",
+        "tests/streamcockpit3-twitch-prediction-release-browser.test.ts",
+        "tests/streamcockpit3-prediction-intent-sqlite.test.ts",
+        "tests/streamcockpit3-local-twitch-identity.test.ts",
+        "tests/streamcockpit3-twitch-oauth-scope.test.ts",
+        "tests/streamcockpit3-authority-target.test.ts"
+      ],
+      "hardwareEvidence": [],
+      "knownBlockers": [
+        "F08 polls, shoutouts, raids and prediction creation previews/confirmations in development with MOCKED Twitch providers and real Edge only. Prediction READ-ONLY remains separate; creation flow is source-integrated but no public Twitch mutation was tested. Prediction resolution/cancellation/lock now source-integrated only with simulated Twitch and Edge; all actual Helix mutations and hardware lock/end qualification, production OAuth, actual FIXE OBS live, raid 90s transfer/EventSub, Android/laptop physical and viewer outcome not qualified.",
+        "Twitch poll/shoutout POST is not atomic with OBS state, and a lost provider receipt requires explicit Twitch reconciliation; no automatic retry. Shoutout cooldown/visibility and token scope not qualified on a real channel",
+        "Raid POST is not atomic with Twitch or OBS; a 200 only queues the 90-second raid, not a completed transfer. No actual raid sent, no Twitch EventSub receipt/cancel UI or verified production scope; an ambiguous POST must be reconciled manually, never replayed.",
+        "Prediction POST is not atomic with OBS/Twitch. FIXE SQLite DELETE/EXTRA intent is COMMITTED before external POST and survives simulated restart; v3 stores confirmed Twitch prediction ID plus lock_attempted before a LOCKED PATCH; v4 adds terminal end_attempted, atomically migrated only on an explicit RESOLVED/CANCELED command; v1/v2 upgrades preserve reservations and unknown attempts remain blocked. GET-by-persisted-ID reconciliation is read-only. Separate POST preview+confirm now atomically releases the exact confirmed SQLite reservation only following a second fresh provider RESOLVED/CANCELED observation and explicit actor-bound consent. Missing ID, unknown result, token/epoch change, or nonterminal provider never unlock. Real Helix/OAuth/OBS hardware, physical Android/laptop lock/end/release walkthrough, post-PATCH uncertain reconciliation, power-loss durability, auditing of decisions, rollback/migrations remain UNQUALIFIED."
+      ],
+      "currentRevisionNote": "Aucune réception physique sur le code de ce lot. Les tests logiciels finaux sont référencés dans evidence/qualification.json."
+    },
+    {
+      "id": "F09",
+      "name": "Moments marquants et bilans",
+      "status": "PARTIAL",
+      "releaseQualification": "partial",
+      "platforms": {
+        "windowsFixe": "UNTESTED",
+        "windowsLaptop": "UNTESTED",
+        "androidPhysical": "UNTESTED"
+      },
+      "executor": "Journal FIXE SQLite ; projections clients et historiques de source nommée",
+      "ui": "Activité / Moments ; Plus Android",
+      "offline": "Historique local signalé ; aucune durée de live inférée d'un rapport.",
+      "permissions": [
+        "observe",
+        "clips selon marqueur"
+      ],
+      "scopes": [],
+      "notes": "Replays et Streamlabs alimentent le journal dans le code ; réception d'une session complète sur le trio à prouver.",
+      "dependencies": [
+        "F04",
+        "F08"
+      ],
+      "implementation": [
+        "apps/server/src/streamlabs-history.ts",
+        "apps/server/src/streamcockpit-moments-router.ts",
+        "apps/server/src/streamcockpit-moments-manual-router.ts",
+        "apps/mobile/control/streamcockpit-moments-manual.js",
+        "apps/server/src/streamcockpit-moments-scheduled.ts",
+        "apps/server/src/streamcockpit-moments-sqlite.ts",
+        "integrations/obs/src/client.ts",
+        "apps/server/src/streamcockpit-moments-obs-replay.ts",
+        "apps/server/src/streamcockpit-moments.ts",
+        "apps/mobile/control/streamcockpit-moments-page.js",
+        "apps/mobile/control/streamcockpit-moments.js",
+        "apps/mobile/control/control.js",
+        "apps/mobile/control-sw.js",
+        "apps/server/src/streamcockpit-twitch-moment-router.ts",
+        "apps/server/src/streamcockpit-moments-streamlabs.ts",
+        "tests/electron.smoke.spec.ts"
+      ],
+      "softwareProofs": [
+        "tests/streamcockpit3-moments.test.ts",
+        "tests/streamcockpit3-moments-mobile.test.ts",
+        "tests/streamcockpit3-moments-http.test.ts",
+        "tests/streamcockpit3-moments-manual-guard.test.ts",
+        "tests/streamcockpit3-moments-manual-http.test.ts",
+        "tests/streamcockpit3-moments-manual-ui.test.ts",
+        "tests/streamcockpit3-moments-manual-browser.test.ts",
+        "tests/streamcockpit3-moments-scheduled.test.ts",
+        "tests/streamcockpit3-moments-scheduled-http.test.ts",
+        "tests/streamcockpit3-moments-observed.test.ts",
+        "tests/streamcockpit3-moments-sqlite.test.ts",
+        "tests/streamcockpit3-moments-obs-replay.test.ts",
+        "tests/obs-runtime.test.ts",
+        "tests/streamcockpit3-moments-page.test.ts",
+        "tests/streamcockpit3-moments-page-browser.test.ts",
+        "tests/streamcockpit3-simple-moments-http.test.ts",
+        "tests/streamcockpit3-moments-streamlabs.test.ts",
+        "tests/streamcockpit3-moments-streamlabs-runtime.test.ts"
+      ],
+      "hardwareEvidence": [],
+      "knownBlockers": [
+        "F09 planned live manual marker binding exists only after a witnessed FIXE OBS start and a separate explicit choice, in runtime memory; already-running live at initial connection, reconnect, unknown OBS state, conflicting/excessive planning remain intentionally unbound; no real OBS/Android/laptop qualification; OBS ReplayBufferSaved automatic marker now exists in development and the existing Streamlabs socket is now connected to the same journal; provider/account reception and full-session coverage remain unqualified; ClipForge is deferred to V4 and is not an F09 delivery dependency",
+        "Node 22 node:sqlite experimental; power-loss hardware durability and legacy JSON migration unqualified",
+        "FIXE 2026-11-02 replay epoch forwarding: 31/31 targeted OBS/F09/roadmap, 2015 PASS / 60 skipped / 0 FAIL full Vitest (246 files) with Git OpenSSL PATH, Node 349 PASS / 6 skipped / 0 FAIL; first full run had 2 TLS suites failing solely because openssl was absent from process PATH, 12/12 TLS targeted PASS with PATH fixed. Skips nonqualified; ClipForge Windows is deferred to V4; F09 hardware remains unqualified",
+        "Android native report sharing is exercised with a simulated bridge and real Edge UI, not an actual paired Android device; report interval is NOT a live duration",
+        "2026-11-02 FIXE OBS ReplayBufferSaved producer: OBS streaming and host/session remain checked across awaits; raw path NEVER stored/exposed; local absolute nonempty regular-file lstat checked before marker emission, with no retry if missing/stopped/reconnected or if the same OBS connection stopped and restarted; real OBS file validity, handle pinning and power-loss durability NOT proven"
+      ],
+      "currentRevisionNote": "Aucune réception physique sur le code de ce lot. Les tests logiciels finaux sont référencés dans evidence/qualification.json."
+    },
+    {
+      "id": "F10",
+      "name": "Mise à jour sans interruption",
+      "status": "PARTIAL",
+      "releaseQualification": "partial",
+      "platforms": {
+        "windowsFixe": "UNTESTED",
+        "windowsLaptop": "UNTESTED",
+        "androidPhysical": "UNTESTED"
+      },
+      "executor": "Updater FIXE et clients ; chaîne de livraison contrôlée",
+      "ui": "Administration > Configuration / diagnostics",
+      "offline": "Report et récupération explicites ; pas de remplacement de version en live.",
+      "permissions": [
+        "management",
+        "autorisation installation distincte"
+      ],
+      "scopes": [],
+      "notes": "SDK de développement existant réutilisable. Certificat Windows et signature Android stable non configurés ; rollback matériel et compatibilité à recevoir.",
+      "dependencies": [
+        "F00"
+      ],
+      "implementation": [
+        "apps/desktop/src/updater.ts",
+        "packages/core/src/streamcockpit-upgrade.ts",
+        "apps/desktop/src/streamcockpit-upgrade.ts",
+        "apps/desktop/src/streamcockpit-upgrade-preflight.ts",
+        "tests/streamcockpit3-upgrade-integration.test.ts",
+        "tests/streamcockpit3-upgrade-integration-updater.test.ts",
+        "scripts/streamcockpit3-readiness.mjs",
+        "docs/streamcockpit-3/F10_RELEASE_GUARD_FIXE_20261103.md",
+        "scripts/streamcockpit3-build-info.mjs",
+        "scripts/streamcockpit3-toolchain.mjs",
+        "docs/streamcockpit-3/MIGRATION_ROLLBACK_3_0.md",
+        "scripts/prepare-windows-maker.mjs",
+        "apps/desktop/src/streamcockpit-upgrade-qa-checkpoint.ts"
+      ],
+      "softwareProofs": [
+        "tests/streamcockpit3-upgrade.test.ts",
+        "tests/streamcockpit3-upgrade-integration.test.ts",
+        "tests/streamcockpit3-upgrade-integration-updater.test.ts",
+        "tests/streamcockpit3-readiness.test.ts",
+        "tests/desktop-updater-safety.test.ts",
+        "tests/desktop-restart-safety.test.ts",
+        "tests/streamcockpit3-upgrade-qa-checkpoint.test.ts"
+      ],
+      "hardwareEvidence": [],
+      "knownBlockers": [
+        "Real Windows/Android trusted signing and staged bytes verification unavailable",
+        "QA-only byte-exact profile checkpoint and restore are verified on isolated temporary directories; durable real installer, migration/recovery and rollback on hardware remain unintegrated.",
+        "2026-11-03: StreamCockpit3 release:check correctly refuses G2-G5 unqualified and missing cryptographic same-commit artifact verifier; raw build commands do not certify publication"
+      ],
+      "currentRevisionNote": "Aucune réception physique sur le code de ce lot. Les tests logiciels finaux sont référencés dans evidence/qualification.json."
+    }
+  ]
+}

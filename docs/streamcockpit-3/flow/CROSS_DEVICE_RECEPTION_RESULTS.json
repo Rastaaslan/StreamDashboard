@@ -1,0 +1,77 @@
+{
+  "schemaVersion": 1,
+  "gate": "G3",
+  "status": "open",
+  "hardwareQualification": false,
+  "checkedAt": "2026-11-04T21:59:20.451Z",
+  "currentSource": {
+    "FIXE": "NOT_TESTED_INSTALLED",
+    "laptop": "NOT_TESTED",
+    "Android": "NOT_TESTED"
+  },
+  "historicalEvidence": {
+    "path": "../G3_RECEPTION_RESULTS.json",
+    "sourceCommits": [
+      "a38305fd0e2548043bfca772942ea26565c7dec9"
+    ],
+    "operatorReportedPasses": [
+      "G3-01",
+      "G3-02",
+      "G3-03",
+      "G3-06",
+      "G3-07",
+      "G3-09"
+    ],
+    "actualPasses": [
+      "G3-01",
+      "G3-04"
+    ]
+  },
+  "reason": "Pas d’autorisation distincte d’installer ce nouveau lot. Pas de session QA installée active observée au préflight ; aucun matériel Android reçu par cette campagne. Les anciennes validations ne sont pas réattribuées.",
+  "scenarios": [
+    {
+      "name": "chat réception/envoi/modération",
+      "status": "NOT_TESTED_CURRENT_SOURCE"
+    },
+    {
+      "name": "scènes",
+      "status": "NOT_TESTED_CURRENT_SOURCE"
+    },
+    {
+      "name": "minuteur",
+      "status": "NOT_TESTED_CURRENT_SOURCE"
+    },
+    {
+      "name": "audio/VOD",
+      "status": "NOT_TESTED_CURRENT_SOURCE"
+    },
+    {
+      "name": "soundboard",
+      "status": "NOT_TESTED_CURRENT_SOURCE"
+    },
+    {
+      "name": "planning",
+      "status": "NOT_TESTED_CURRENT_SOURCE"
+    },
+    {
+      "name": "Wi-Fi",
+      "status": "NOT_TESTED_CURRENT_SOURCE"
+    },
+    {
+      "name": "veille",
+      "status": "NOT_TESTED_CURRENT_SOURCE"
+    },
+    {
+      "name": "redémarrage",
+      "status": "NOT_TESTED_CURRENT_SOURCE"
+    },
+    {
+      "name": "permissions",
+      "status": "NOT_TESTED_CURRENT_SOURCE"
+    },
+    {
+      "name": "reçus",
+      "status": "NOT_TESTED_CURRENT_SOURCE"
+    }
+  ]
+}

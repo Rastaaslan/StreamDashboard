@@ -169,6 +169,18 @@
         {
           "path": "apps/mobile/control/streamcockpit-twitch-moderation.js",
           "kind": "SC3-FINAL-DELIVERY-001: source integration and targeted software qualification only; hardware remains unqualified"
+        },
+        {
+          "path": "apps/mobile/control/live-monitor.js",
+          "kind": "SC3-FLOW-ONESHOT-001 : relais FIXE Android par défaut, compte Android explicite, lifecycle et modération tactile ; logiciels seulement."
+        },
+        {
+          "path": "apps/mobile/control/twitch-chat.js",
+          "kind": "SC3-FLOW-ONESHOT-001 : relais FIXE Android par défaut, compte Android explicite, lifecycle et modération tactile ; logiciels seulement."
+        },
+        {
+          "path": "apps/mobile/control/twitch-chat.css",
+          "kind": "SC3-FLOW-ONESHOT-001 : relais FIXE Android par défaut, compte Android explicite, lifecycle et modération tactile ; logiciels seulement."
         }
       ],
       "verifiedTests": [
@@ -177,7 +189,8 @@
         "tests/streamcockpit3-twitch-integration-http.test.ts",
         "tests/streamcockpit3-twitch-mobile.test.ts",
         "tests/streamcockpit3-moderation-http.test.ts",
-        "tests/streamcockpit3-moderation-browser.test.ts"
+        "tests/streamcockpit3-moderation-browser.test.ts",
+        "tests/streamcockpit3-flow-chat-browser.test.ts"
       ],
       "hardwareEvidence": [],
       "blockers": [
@@ -185,7 +198,7 @@
         "Production OAuth and physical FIXE/laptop/Android reception of moderation remain unqualified."
       ],
       "ownerJob": "streamcockpit/3.0-lot-b",
-      "integrationNote": "Wave4 Shield/AutoMod read-only capability panel mounted in Live Monitor; real OAuth scopes and mutation UI not connected 2026-11-03 SC3-FINAL-DELIVERY-001: Shield Mode and global AutoMod settings are now integrated through management-paired preview/one-use confirmation, exact token/host checks and provider PUT followed by GET readback. Edge touch 320px and real paired HTTP with simulated Twitch, no public Twitch action. Pending AutoMod-message handling, viewer history and physical OAuth reception remain incomplete."
+      "integrationNote": "Wave4 Shield/AutoMod read-only capability panel mounted in Live Monitor; real OAuth scopes and mutation UI not connected 2026-11-03 SC3-FINAL-DELIVERY-001: Shield Mode and global AutoMod settings are now integrated through management-paired preview/one-use confirmation, exact token/host checks and provider PUT followed by GET readback. Edge touch 320px and real paired HTTP with simulated Twitch, no public Twitch action. Pending AutoMod-message handling, viewer history and physical OAuth reception remain incomplete. SC3-FLOW : corrections de routage chat Android et de reprise intégrées ; réception physique toujours ouverte."
     },
     {
       "id": "F03",
@@ -368,7 +381,7 @@
         },
         {
           "path": "apps/mobile/control/streamcockpit-twitch-moments.js",
-          "kind": "2026-11-04 RDC FIXE: canonical expired Twitch receipt can be reconciled in the shared Desktop/Android source UI only after an explicitly requested local confidential download and operator declaration of checking the saved copy and Twitch. Exclusive same-origin Web Lock, exact backup snapshot match, UUID/kind/account/host, whole journal validation and read-back are required. Other accounts\u0027 expired UUIDs survive; malformed/noncanonical evidence remains blocked; no retry or provider POST. RED storage 18 PASS/2 FAIL; targeted 54 PASS/0 FAIL/0 skipped (five suites, 11 real Edge tests with actual confidential download). TypeScript/browser checks and security 6735 files PASS. No physical Android, independently proven filesystem download, real Twitch verification, power-loss, packaging or gate promotion: F04 partial/G2 in_progress."
+          "kind": "2026-11-04 RDC FIXE: canonical expired Twitch receipt can be reconciled in the shared Desktop/Android source UI only after an explicitly requested local confidential download and operator declaration of checking the saved copy and Twitch. Exclusive same-origin Web Lock, exact backup snapshot match, UUID/kind/account/host, whole journal validation and read-back are required. Other accounts' expired UUIDs survive; malformed/noncanonical evidence remains blocked; no retry or provider POST. RED storage 18 PASS/2 FAIL; targeted 54 PASS/0 FAIL/0 skipped (five suites, 11 real Edge tests with actual confidential download). TypeScript/browser checks and security 6735 files PASS. No physical Android, independently proven filesystem download, real Twitch verification, power-loss, packaging or gate promotion: F04 partial/G2 in_progress."
         },
         {
           "path": "apps/mobile/control/streamcockpit-twitch-moments.js",
@@ -1171,5 +1184,11 @@
       }
     ],
     "developmentVersion": "3.0.0-alpha.1"
+  },
+  "flowAudit": {
+    "ticket": "SC3-FLOW-ONESHOT-001",
+    "path": "docs/streamcockpit-3/flow/FUNCTIONAL_AUDIT.json",
+    "softwareQualification": "pending_final_campaign",
+    "hardwareQualification": false
   }
 }

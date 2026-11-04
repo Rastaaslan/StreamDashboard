@@ -215,3 +215,8 @@ html:not(.compact-app) [data-planning-assistant] .planning-assist-slots li { min
 html:not(.compact-app) [data-planning-assistant] .planning-assist-slots li>span { flex:1 1 270px; min-width:0; font-size:12px; line-height:1.5; }
 html:not(.compact-app) [data-planning-assistant] .planning-assist-slots button { max-width:100%; white-space:normal; min-height:40px; }
 @media(max-width:700px){.compact-app [data-planning-assistant] .planning-assist-suggestions summary{min-height:44px;padding:10px 0;cursor:pointer}.compact-app [data-planning-assistant] .planning-assist-slots li{margin-bottom:12px;overflow-wrap:anywhere}}
+
+/* Desktop control and administration areas; five-tab mobile navigation stays compact. */
+
+@media(min-width:701px){nav>.cockpit-nav-group{display:block;padding:14px 12px 4px;color:var(--muted,#a19baa);font-size:10px;font-weight:700;letter-spacing:.08em;text-transform:uppercase}}
+@media(max-width:700px){nav>.cockpit-nav-group{display:none}}
