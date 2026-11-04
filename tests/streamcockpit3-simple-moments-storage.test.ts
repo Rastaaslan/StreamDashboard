@@ -32,6 +32,20 @@ it('F04 keeps other account/host pending hints independent and refuses to evict 
   expect(rememberUncertainMoment(view,'fixe','9',{id:uuid,kind:'clip'},now)).toBe(true);
   expect(loadUncertainMoment(view,'fixe','0',now)?.kind).toBe('marker');
 });
+it('F04 never overwrites an unresolved receipt from the same host/account with a new POST UUID',()=>{
+  const {view,data}=mockStorage(),now=1800000000000;
+  const newer='743e0c2b-e8e4-4ccd-a82c-8ad0a05f19c5';
+  expect(rememberUncertainMoment(view,'https://fixe','dam',{id:uuid,kind:'clip'},now)).toBe(true);
+  const original=[...data.values()][0];
+  // A fresh preview must not erase a possibly executed Twitch command.
+  expect(rememberUncertainMoment(view,'https://fixe','dam',{id:newer,kind:'marker'},now+1000)).toBe(false);
+  expect(rememberUncertainMoment(view,'https://fixe','dam',{id:uuid,kind:'clip'},now+1000)).toBe(false);
+  expect([...data.values()][0]).toBe(original);
+  expect(loadUncertainMoment(view,'https://fixe','dam',now+1000)).toEqual({id:uuid,kind:'clip'});
+  expect(clearUncertainMoment(view,'https://fixe','dam',now+1000)).toBe(true);
+  expect(rememberUncertainMoment(view,'https://fixe','dam',{id:newer,kind:'marker'},now+1000)).toBe(true);
+  expect(loadUncertainMoment(view,'https://fixe','dam',now+1000)).toEqual({id:newer,kind:'marker'});
+});
 it('F04 expires bounded local hints; invalid UUID and unavailable storage fail closed before sending',()=>{
   const {view,data}=mockStorage(),now=1800000000000;
   expect(rememberUncertainMoment(view,'fixe','dam',{id:'not-uuid',kind:'clip'},now)).toBe(false);

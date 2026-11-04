@@ -32,7 +32,10 @@ export function rememberUncertainMoment(view,source,account,receipt,now=Date.now
   if(!validScope(source,account)||!validRow({...receipt,source,account,createdAt:now},now))return false;
   const storage=store(view);if(!storage)return false;
   try{
-    const rows=read(storage,now).filter(r=>r.source!==source||r.account!==account);
+    const rows=read(storage,now);
+    // Never replace an older uncertain confirmation, even for the same host/account.
+    // Its provider POST may have succeeded and its original UUID is required for GET-only reconciliation.
+    if(rows.some(r=>r.source===source&&r.account===account))return false;
     if(rows.length>=MAX_RECORDS)return false; // Never silently evict a pending receipt.
     rows.push({source,account,id:receipt.id,kind:receipt.kind,createdAt:now});
     write(storage,rows);

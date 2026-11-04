@@ -288,7 +288,7 @@
         },
         {
           "path": "apps/mobile/control/streamcockpit-twitch-moment-pending.js",
-          "kind": "2026-11-04 FIXE F04: per-host/account localStorage reconciliation hints (7-day expiry, maximum 8 entries, no credentials/links). Read-only journal lookup after reload, independent identity, no Twitch retry. Targeted 28/28 PASS including 2 real Edge tests; TypeScript/browser/security (6717 files) PASS; no hardware proof."
+          "kind": "2026-11-04 FIXE F04: per-host/account localStorage reconciliation hints (7-day expiry, maximum 8 entries, no credentials/links). Read-only journal lookup after reload, independent identity, no Twitch retry. Targeted 28/28 PASS including 2 real Edge tests; TypeScript/browser/security (6717 files) PASS; no hardware proof. 2026-11-04 subsequent F04 regression: prevents a second pending UUID from silently overwriting an unresolved same-host/account receipt before POST; red test 3 PASS/1 FAIL, final 29 PASS/0 FAIL/0 skipped across storage, HTTP, Edge 320px, V4 scope. TS/browser/build (143 public assets, 149 shipped JS) and security (6719 files) PASS; synthetic provider only, G2 partial."
         },
         {
           "path": "tests/streamcockpit3-f04-durable-status-windows.test.ts",
