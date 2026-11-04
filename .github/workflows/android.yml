@@ -122,9 +122,14 @@ jobs:
             StreamDashboard-Next-QA-preview.apk
             Android-QA-README.txt
           if-no-files-found: error
-      - name: Enforce universal final-release qualification
+      # Manual dispatch creates PRIVATE CI artifacts only. This stage does
+      # not publish a GitHub release, approve G4/G5, or replace an installed APK.
+      # The legacy Next 2.1 universal checker is not applicable to StreamCockpit 3.
+      - name: Record StreamCockpit 3.0 source readiness (non-publishing)
         if: github.event_name == 'workflow_dispatch'
-        run: node scripts/check-universal-release.mjs --publication
+        run: |
+          node scripts/streamcockpit3-readiness.mjs --json
+          node scripts/streamcockpit3-scope-check.mjs
       - name: Require release Twitch client ID
         if: github.event_name == 'workflow_dispatch'
         shell: bash
