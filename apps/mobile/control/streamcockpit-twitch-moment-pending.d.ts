@@ -4,7 +4,7 @@ export interface MomentStorageView {readonly localStorage?: {getItem(key:string)
 /** The production UI must claim an exclusive same-origin Web Lock before *every* journal mutation. Missing/contended locks fail closed. */
 export declare function withExclusiveMomentJournal(view:MomentStorageView & {readonly navigator?: {readonly locks?: {request(name:string,options:{mode:'exclusive';ifAvailable:true},callback:(lock:unknown)=>boolean):Promise<boolean>}}},operation:()=>boolean):Promise<boolean>;
 /** Fixed-category local diagnostic, without any UUID, account, scope, raw data or exception text. */
-export declare function describeUncertainMomentIssue(view:MomentStorageView,source:string,account:string,now?:number):{code:'unavailable'|'corrupt-json'|'too-large'|'unknown-schema'|'invalid-rows'|'pending'|'clear'};
+export declare function describeUncertainMomentIssue(view:MomentStorageView,source:string,account:string,now?:number):{code:'unavailable'|'corrupt-json'|'too-large'|'unknown-schema'|'invalid-rows'|'expired-unreviewed'|'pending'|'clear'};
 /** Non-destructive journal status; blocked includes corrupt or unavailable localStorage. */
 export declare function diagnoseUncertainMomentStore(view:MomentStorageView,source:string,account:string,now?:number):{state:'blocked'|'clear'}|{state:'pending';receipt:MomentReceipt};
 /** Read-only forensic lookup when another row is corrupt; no journal repairs or admission. */

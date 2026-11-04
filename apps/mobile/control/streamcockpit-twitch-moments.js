@@ -41,6 +41,7 @@ export function mountTwitchMoments(root,{request}={}){
       'too-large':'Journal trop volumineux pour validation.',
       'unknown-schema':'Schéma de journal inconnu.',
       'invalid-rows':'Lignes incohérentes ou ambiguës.',
+      'expired-unreviewed':'Ancienne référence non réconciliée : conservez le journal et vérifiez sur Twitch avant une action.',
       'pending':'Référence en attente de vérification.',
       'clear':'Aucune référence courante identifiée.'
     };

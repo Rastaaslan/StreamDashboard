@@ -236,3 +236,40 @@ it.skipIf(process.env.SC3_FINAL_BROWSER_TEST!=='1')('F04 real Edge 320px: explic
     expect(await page.evaluate(()=>document.documentElement.scrollWidth<=320)).toBe(true);
   }finally{await browser.close()}
 },30000);
+
+
+it.skipIf(process.env.SC3_FINAL_BROWSER_TEST!=='1')('F04 real Edge 320px: a seven-day-old unresolved UUID blocks every account without silently erasing it',async()=>{
+  const bundle=await build({stdin:{contents:"import {mountTwitchMoments} from './apps/mobile/control/streamcockpit-twitch-moments.js';window.mountMoments=mountTwitchMoments;",resolveDir:process.cwd()},bundle:true,write:false,format:'iife',platform:'browser'});
+  const browser=await chromium.launch({channel:'msedge',headless:true});
+  try{
+    const page=await browser.newPage({viewport:{width:320,height:720},hasTouch:true});
+    await page.route('**/*',r=>r.abort());
+    await page.route('http://127.0.0.1:38660/**',r=>r.fulfill({status:200,contentType:'text/html',body:'<main id="root"></main>'}));
+    const mount=async()=>{
+      await page.addScriptTag({content:bundle.outputFiles[0].text});
+      await page.evaluate(()=>{
+        const w=window as any;w.calls=[];
+        w.panel=w.mountMoments(document.getElementById('root'),{request:async(...args:any[])=>{w.calls.push(args);throw Error('NO_PROVIDER_CALL')}});
+        w.panel.update({online:true,sourceKey:'FIXE',accountKey:'dam'});
+      });
+    };
+    await page.goto('http://127.0.0.1:38660/moments');
+    const raw=await page.evaluate(()=>{
+      const previous=Date.now()-8*24*60*60*1000;
+      const journal=JSON.stringify({version:1,rows:[{source:'FIXE',account:'other-account',id:'643e0c2b-e8e4-4ccd-a82c-8ad0a05f19c5',kind:'clip',createdAt:previous}]});
+      localStorage.setItem('sd3.f04.twitch-moment-uncertain.v1',journal);return journal;
+    });
+    await mount();
+    for(let n=0;n<2;n++){
+      expect(await page.getByRole('button',{name:'Vérifier le moment sans publier'}).isDisabled()).toBe(true);
+      const diagnostic=page.getByRole('button',{name:'Afficher le diagnostic expurgé du journal'});
+      expect(await diagnostic.isVisible()).toBe(true);
+      await diagnostic.click();
+      expect(await page.getByRole('status').textContent()).toContain('Ancienne référence non réconciliée');
+      expect(await page.locator('main').textContent()).not.toContain('other-account');
+      expect(await page.locator('main').textContent()).not.toContain('643e0c2b');
+      expect(await page.evaluate(()=>[localStorage.getItem('sd3.f04.twitch-moment-uncertain.v1'),(window as any).calls.length])).toEqual([raw,0]);
+      if(n===0){await page.reload();await mount()}
+    }
+  }finally{await browser.close()}
+},30000);

@@ -42,7 +42,11 @@ function read(storage,now){
     if(scopes.has(scope))throw Error('DUPLICATE_SCOPE');
     scopes.add(scope);
   }
-  return data.rows.filter(r=>validRow(r,now)); // Expired hints obey the explicit 7-day retention policy.
+  // An expired UUID can still represent a successfully executed Twitch POST.
+  // Do not silently discard it during a later journal write for *any* account.
+  // The 7-day lookup window closes, but the raw evidence stays until supervised reconciliation.
+  if(data.rows.some(r=>!validRow(r,now)))throw Error('EXPIRED_UNREVIEWED');
+  return data.rows;
 }
 function write(storage,rows){storage.setItem(KEY,JSON.stringify({version:1,rows}));}
 // localStorage alone cannot atomically claim a receipt across different tabs.
@@ -71,6 +75,7 @@ export function describeUncertainMomentIssue(view,source,account,now=Date.now())
     if(error instanceof SyntaxError)return {code:'corrupt-json'};
     if(error?.message==='OVER_LIMIT')return {code:'too-large'};
     if(error?.message==='BAD_STORAGE')return {code:'unknown-schema'};
+    if(error?.message==='EXPIRED_UNREVIEWED')return {code:'expired-unreviewed'};
     if(error?.message==='BAD_ROW'||error?.message==='DUPLICATE_SCOPE')return {code:'invalid-rows'};
     return {code:'unavailable'};
   }

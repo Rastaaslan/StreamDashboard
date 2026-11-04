@@ -51,8 +51,9 @@ it('F04 expires bounded local hints; invalid UUID and unavailable storage fail c
   expect(rememberUncertainMoment(view,'fixe','dam',{id:'not-uuid',kind:'clip'},now)).toBe(false);
   expect(rememberUncertainMoment(view,'fixe','dam',{id:uuid,kind:'clip'},now)).toBe(true);
   expect(loadUncertainMoment(view,'fixe','dam',now+7*24*60*60*1000)).toBeNull();
-  expect(rememberUncertainMoment(view,'fixe','dam',{id:uuid,kind:'marker'},now+7*24*60*60*1000)).toBe(true);
-  expect(loadUncertainMoment(view,'fixe','dam',now+7*24*60*60*1000)?.kind).toBe('marker');
+  // Expiry ends trusted lookup, but cannot silently purge an executed provider UUID.
+  expect(diagnoseUncertainMomentStore(view,'fixe','dam',now+7*24*60*60*1000)).toEqual({state:'blocked'});
+  expect(rememberUncertainMoment(view,'fixe','dam',{id:uuid,kind:'marker'},now+7*24*60*60*1000)).toBe(false);
   expect(rememberUncertainMoment(view,'fixe','', {id:uuid,kind:'clip'},now)).toBe(false);
   const blocked={get localStorage():never{throw Error('DISABLED')}};
   expect(rememberUncertainMoment(blocked,'fixe','dam',{id:uuid,kind:'clip'},now)).toBe(false);
@@ -115,7 +116,7 @@ it('F04 read-only diagnosis distinguishes corrupt or inaccessible storage withou
   expect(diagnoseUncertainMomentStore(view,'fixe','dam',now)).toEqual({state:'pending',receipt:{id:uuid,kind:'clip'}});
   expect(diagnoseUncertainMomentStore(view,'fixe','other',now)).toEqual({state:'clear'});
   expect(data.get(key)).toBe(good);
-  expect(diagnoseUncertainMomentStore(view,'fixe','dam',now+7*24*60*60*1000)).toEqual({state:'clear'});
+  expect(diagnoseUncertainMomentStore(view,'fixe','dam',now+7*24*60*60*1000)).toEqual({state:'blocked'});
   expect(data.get(key)).toBe(good); // inspection does not perform expiry cleanup
   for(const invalid of ['{',JSON.stringify({version:1,rows:[{source:'fixe',account:'dam',id:'bad',kind:'clip',createdAt:now}]})]){
     data.set(key,invalid);
@@ -209,4 +210,18 @@ it('F04 diagnostic is strictly redacted and never reads another account into UI 
   }
   expect(describeUncertainMomentIssue({localStorage:{getItem(){throw Error('TOP_SECRET')},setItem(){throw Error('NO')}}},'FIXE','owner',now)).toEqual({code:'unavailable'});
   expect(describeUncertainMomentIssue(view,'','owner',now)).toEqual({code:'unavailable'});
+});
+
+it('F04 expired unresolved receipts cannot be silently pruned by a later Twitch admission or clear',()=>{
+  const {view,data}=mockStorage(),now=1800000000000,key='sd3.f04.twitch-moment-uncertain.v1';
+  expect(rememberUncertainMoment(view,'FIXE','other',{id:uuid,kind:'clip'},now)).toBe(true);
+  const oldJournal=data.get(key)!;
+  const later=now+7*24*60*60*1000;
+  expect(diagnoseUncertainMomentStore(view,'FIXE','dam',later)).toEqual({state:'blocked'});
+  expect(describeUncertainMomentIssue(view,'FIXE','dam',later)).toEqual({code:'expired-unreviewed'});
+  expect(loadUncertainMoment(view,'FIXE','other',later)).toBeNull();
+  expect(rememberUncertainMoment(view,'FIXE','dam',{id:'743e0c2b-e8e4-4ccd-a82c-8ad0a05f19c5',kind:'marker'},later)).toBe(false);
+  expect(clearUncertainMoment(view,'FIXE','other',{id:uuid,kind:'clip'},later)).toBe(false);
+  expect(data.get(key)).toBe(oldJournal);
+  expect(readUncertainMomentBackup(view)).toBe(oldJournal);
 });

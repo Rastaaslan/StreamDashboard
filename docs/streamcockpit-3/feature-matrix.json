@@ -333,6 +333,10 @@
         {
           "path": "apps/mobile/control/streamcockpit-twitch-moment-pending.js",
           "kind": "2026-11-04 FIXE F04: opt-in, read-only redacted local journal diagnosis: fixed issue categories only, never an account, UUID, field value, raw exception or another-account count. Desktop/Android shared page offers diagnosis only while blocked; existing raw forensic copy remains separately marked confidential. RED 11 PASS/1 FAIL; final 43 PASS/0 FAIL/0 skipped across five targeted suites including eight actual Edge 320px and multitab tests; TypeScript, browser types and security (6726 files pre-doc) PASS, git diff --check PASS. No build, hardware, Twitch OAuth, power-loss or supervised repair qualified; F04 partial/G2 in_progress."
+        },
+        {
+          "path": "apps/mobile/control/streamcockpit-twitch-moment-pending.js",
+          "kind": "2026-11-04 RDC FIXE: expired unresolved UUIDs (>=7 days) no longer disappear during writes for any account; the whole journal blocks new Twitch admission/clear while preserving raw bytes and private backup. Expired IDs are not trusted for GET-only review. The redacted opt-in diagnosis reports expired-unreviewed without IDs. RED 12 PASS/1 FAIL, final 45 PASS/0 FAIL/0 skipped over 5 targeted suites including 9 real Edge 320px/multitab tests; TypeScript/browser types, security 6727 files and diff-check PASS. No build/package, Twitch action, hardware or supervised repair proven; F04 partial, G2 in_progress."
         }
       ],
       "verifiedTests": [
@@ -353,7 +357,7 @@
         "Physical FIXE/laptop/Android replay, provider marker and clip availability walkthroughs remain unqualified.",
         "Single-use confirmation stays volatile on FIXE. Bounded host/account-scoped localStorage UUID hint survives client reload; synthetic Windows child-exit proves authenticated read-only SQLite journal retrieval after a process exit, never a duplicate Twitch POST. Actual FIXE production restart, crash/power-loss, physical Android migration and receipts lost before client storage remain unqualified.",
         "OBS replay file validity, production Twitch OAuth/VOD configuration and real uncertain-command receipts still require reception.",
-        "Corrupt/inaccessible browser pending-confirmation storage blocks all F04 preview/POST/clearing. A unique structurally valid current-host/account receipt in an otherwise partly corrupt parseable journal can be inspected through paired GET only; malformed JSON can now be manually exported as an exact local raw .txt copy (at most 1 MiB) only by user click while blocked; this may contain sensitive or other-account data and must not be shared. Inaccessible/oversized storage, redaction, ambiguous/expired receipts, safe repair and full manual reconciliation still require supervised handling without dropping UUIDs.",
+        "Corrupt/inaccessible or expired-unreviewed browser pending-confirmation storage blocks F04 preview/POST/clearing globally, preserving the raw journal instead of silently dropping possible executed UUIDs after 7 days. A unique valid unexpired current-host/account receipt in an otherwise partly corrupt parseable journal permits paired GET only. Operator opt-in diagnostic is redacted; separate raw .txt copy (at most 1 MiB) may contain sensitive or other-account data and must not be shared. Oversized/inaccessible storage, ambiguous/expired receipts, safe repair and full manual reconciliation still require supervised handling. Until explicitly reconciled an expired UUID blocks new F04 actions, even for other accounts, by design.",
         "Native same-origin Web Locks required for F04 UI journal mutations: unsupported or insecure browser contexts fail closed. Edge two-tab contention was exercised but actual Android WebView support, noncooperative writers and simultaneous physical devices remain unqualified."
       ],
       "ownerJob": "streamcockpit/3.0-lot-d",
