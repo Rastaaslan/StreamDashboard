@@ -22,6 +22,19 @@ describe('F04 Windows executable provenance — read-only source admission, NOT 
     expect(result.reasons).toEqual([]);
     expect(result.files).toEqual(['ffmpeg.exe','ffprobe.exe','StreamCockpitClipJob.exe']);
   });
+  it('denies malformed executable evidence instead of throwing or accepting it',()=>{
+    const badEvidence:unknown[]=[
+      null,
+      {...fakeEvidence,ffmpeg:null},
+      {...fakeEvidence,ffmpeg:{...fakeEvidence.ffmpeg,sha256:42}},
+      {...fakeEvidence,ffprobe:{...fakeEvidence.ffprobe,certThumbprint:42}},
+      {...fakeEvidence,supervisor:{...fakeEvidence.supervisor,signatureStatus:null}},
+    ];
+    for(const candidate of badEvidence){
+      expect(assessWindowsClipBinaryEvidence(candidate as WindowsClipBinaryEvidence,pins))
+        .toMatchObject({qualified:false,reasons:['BINARY_EVIDENCE_INVALID']});
+    }
+  });
   it('fails closed if ANY actual signature is NotSigned, regardless of matching digest',()=>{
     const evidence=structuredClone(fakeEvidence);
     evidence.ffmpeg.signatureStatus='NotSigned';

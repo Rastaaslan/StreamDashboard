@@ -361,6 +361,10 @@
         {
           "path": "apps/mobile/control/streamcockpit-twitch-moment-pending.js",
           "kind": "2026-11-04 RDC FIXE F04: clearing a pending Twitch receipt no longer mistakes a transient post-write localStorage exception or null for verified absence; exact JSON string read-back after write is mandatory, even if the stored bytes are intact. RED 16 PASS/1 FAIL, final six targeted suites 52 PASS/0 FAIL/0 skipped, including 11 real Edge 320px/multitab tests; TypeScript, browser types, security 6735 files and git diff --check PASS. Mock storage, synthetic provider only; no public Twitch POST, hardware, power-loss, packaging or signatures. F04 partial/G2 in_progress."
+        },
+        {
+          "path": "apps/server/src/streamcockpit-clipforge-windows-provenance.ts",
+          "kind": "2026-11-04 RDC FIXE F04: hardened pure Windows Authenticode/FFmpeg/FFprobe/supervisor evidence admission so malformed hashes, thumbprints, statuses or missing role evidence deny as BINARY_EVIDENCE_INVALID rather than throwing or inferring trust. RED 4 PASS/1 FAIL/1 skipped; final 16 PASS/0 FAIL/2 skipped across 3 focused Vitest suites. TS/browser TS PASS; security 6735 files PASS; diff-check PASS. The skipped tests require real signed tools or a private ACL fixture. No release signature, actual binary qualification, installation, hardware acceptance or G2 certification; F04 partial and G2 in_progress."
         }
       ],
       "verifiedTests": [

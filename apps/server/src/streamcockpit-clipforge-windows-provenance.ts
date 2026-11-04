@@ -22,11 +22,21 @@ export type AdmissionResult = {qualified:boolean; reasons:string[]; files:string
 export function assessWindowsClipBinaryEvidence(
   evidence:WindowsClipBinaryEvidence,policy:WindowsClipBinaryPolicy): AdmissionResult {
   const reasons:string[]=[];
-  if (!policy || !evidence || keys.some(key=>{
-    const pin=policy[key], item=evidence[key];
-    return !pin || !item || typeof pin.sha256!=='string' || !hex64.test(pin.sha256) ||
-      typeof pin.certThumbprint!=='string' || !hex40.test(pin.certThumbprint);
+  if (!policy || keys.some(key=>{
+    const pin=policy[key];
+    return !pin || typeof pin!=='object' || typeof pin.sha256!=='string' ||
+      !hex64.test(pin.sha256) || typeof pin.certThumbprint!=='string' ||
+      !hex40.test(pin.certThumbprint);
   })) return {qualified:false,reasons:['TRUST_POLICY_MISSING'],files:keys.map(key=>names[key])};
+  // Treat missing/malformed observed evidence as a denial, never a TypeError.
+  // An unsigned binary may legitimately have no certificate, but is not trusted.
+  if (!evidence || keys.some(key=>{
+    const item=evidence[key];
+    return !item || typeof item!=='object' || typeof item.sha256!=='string' ||
+      !hex64.test(item.sha256) || typeof item.signatureStatus!=='string' ||
+      !(item.certThumbprint===null || (typeof item.certThumbprint==='string' &&
+        hex40.test(item.certThumbprint)));
+  })) return {qualified:false,reasons:['BINARY_EVIDENCE_INVALID'],files:keys.map(key=>names[key])};
   for (const key of keys) {
     const signed=evidence[key];
     if (signed.signatureStatus!=='Valid') reasons.push(key.toUpperCase()+'_NOT_SIGNED_AND_TRUSTED');
