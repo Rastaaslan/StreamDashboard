@@ -274,3 +274,36 @@ it('F04 never acknowledges clearing a receipt when the persisted journal becomes
   expect(diagnoseUncertainMomentStore(view,'FIXE','dam',now)).toEqual({state:'blocked'});
   expect(rememberUncertainMoment(view,'FIXE','other',{id:uuid,kind:'marker'},now)).toBe(false);
 });
+
+it('F04 does not acknowledge a clear if the final post-write journal read becomes unavailable',()=>{
+  const now=1800000000000,key='sd3.f04.twitch-moment-uncertain.v1';
+  const rows=new Map<string,string>();let armed=false,readsAfterWrite=0;
+  const view={localStorage:{
+    getItem:(k:string)=>{
+      if(armed&&++readsAfterWrite===2){armed=false;throw Error('TRANSIENT_STORAGE_READ_FAILURE')}
+      return rows.get(k)??null;
+    },
+    setItem:(k:string,value:string)=>{
+      rows.set(k,value);
+      if(value==='{"version":1,"rows":[]}'){armed=true;readsAfterWrite=0}
+    },
+  }};
+  expect(rememberUncertainMoment(view,'FIXE','dam',{id:uuid,kind:'clip'},now)).toBe(true);
+  // First post-write read verifies exact bytes; second read must also succeed.
+  expect(clearUncertainMoment(view,'FIXE','dam',{id:uuid,kind:'clip'},now)).toBe(false);
+  expect(rows.get(key)).toBe('{"version":1,"rows":[]}');
+  // The UI must not treat a transient read failure as evidence of a safe clear.
+  expect(diagnoseUncertainMomentStore(view,'FIXE','dam',now)).toEqual({state:'clear'});
+});
+
+it('F04 does not mistake a transient null storage read for proof that a clear succeeded',()=>{
+  const now=1800000000000,key='sd3.f04.twitch-moment-uncertain.v1';
+  const rows=new Map<string,string>();let armed=false,reads=0;
+  const view={localStorage:{
+    getItem:(k:string)=>armed&&++reads===2?null:rows.get(k)??null,
+    setItem:(k:string,value:string)=>{rows.set(k,value);if(value==='{"version":1,"rows":[]}'){armed=true;reads=0}},
+  }};
+  expect(rememberUncertainMoment(view,'FIXE','dam',{id:uuid,kind:'clip'},now)).toBe(true);
+  expect(clearUncertainMoment(view,'FIXE','dam',{id:uuid,kind:'clip'},now)).toBe(false);
+  expect(rows.get(key)).toBe('{"version":1,"rows":[]}');
+});

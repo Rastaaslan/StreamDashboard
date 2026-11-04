@@ -171,6 +171,10 @@ export function clearUncertainMoment(view,source,account,expected,now=Date.now()
     const index=rows.findIndex(r=>r.source===source&&r.account===account);
     if(index<0||rows[index].id!==expected.id||rows[index].kind!==expected.kind)return false;
     rows.splice(index,1);
-    return write(storage,rows)&&loadUncertainMoment(view,source,account,now)===null;
+    // loadUncertainMoment() returns null both when the receipt is absent AND
+    // when a post-write storage read fails. A transient failure must never
+    // acknowledge a successful provider reconciliation to the operator.
+    // Require the exact persisted JSON string again, not a nullable lookup.
+    return write(storage,rows)&&storage.getItem(KEY)===JSON.stringify({version:1,rows});
   }catch{return false}
 }

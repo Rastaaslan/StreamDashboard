@@ -357,6 +357,10 @@
         {
           "path": "apps/mobile/control/streamcockpit-twitch-moments.js",
           "kind": "2026-11-04 RDC FIXE F04: two real Edge tabs reproduced a transient external same-origin journal write+clear delivered after its final state was already clear, leaving an old preview consent active. The storage listener now invalidates pending/flight/sending UI work on every relevant event even if final state matches, and never retries provider actions. RED 0 PASS/1 FAIL; final 50 PASS/0 FAIL/0 skipped in six targeted suites including 11 real Edge cases at 320px/multitab; TS/browser types, security 6735 files and diff-check PASS. Only synthetic provider and isolated browser origin; no physical Android, OAuth Twitch, power-loss, packaging or publication; F04 partial, G2 in_progress."
+        },
+        {
+          "path": "apps/mobile/control/streamcockpit-twitch-moment-pending.js",
+          "kind": "2026-11-04 RDC FIXE F04: clearing a pending Twitch receipt no longer mistakes a transient post-write localStorage exception or null for verified absence; exact JSON string read-back after write is mandatory, even if the stored bytes are intact. RED 16 PASS/1 FAIL, final six targeted suites 52 PASS/0 FAIL/0 skipped, including 11 real Edge 320px/multitab tests; TypeScript, browser types, security 6735 files and git diff --check PASS. Mock storage, synthetic provider only; no public Twitch POST, hardware, power-loss, packaging or signatures. F04 partial/G2 in_progress."
         }
       ],
       "verifiedTests": [
