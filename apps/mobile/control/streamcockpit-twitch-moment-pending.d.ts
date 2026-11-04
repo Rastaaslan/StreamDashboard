@@ -15,3 +15,5 @@ export declare function loadUncertainMoment(view:MomentStorageView,source:string
 export declare function rememberUncertainMoment(view:MomentStorageView,source:string,account:string,receipt:MomentReceipt,now?:number):boolean;
 /** Clear only the receipt currently acknowledged; a stale tab must not clear a newer UUID. */
 export declare function clearUncertainMoment(view:MomentStorageView,source:string,account:string,expected:MomentReceipt,now?:number):boolean;
+/** Reconcile one expired canonical row only after explicit confidential backup + external Twitch verification, under an exclusive browser lock. */
+export declare function reconcileExpiredUncertainMoment(view:MomentStorageView,source:string,account:string,expected:MomentReceipt,exportedSnapshot:string,now?:number):boolean;

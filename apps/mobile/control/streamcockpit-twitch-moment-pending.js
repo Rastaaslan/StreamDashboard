@@ -178,3 +178,36 @@ export function clearUncertainMoment(view,source,account,expected,now=Date.now()
     return write(storage,rows)&&storage.getItem(KEY)===JSON.stringify({version:1,rows});
   }catch{return false}
 }
+// Expired receipts cannot be cleared by the normal path. After an operator has
+// explicitly downloaded an exact raw copy and externally verified Twitch, permit
+// reconciliation of ONE unambiguous, expired UUID under the caller's Web Lock.
+// Every other row (including other accounts) must survive byte-for-byte in data.
+// Invalid/noncanonical journals remain read-only and require separate review.
+export function reconcileExpiredUncertainMoment(view,source,account,expected,exportedSnapshot,now=Date.now()){
+  if(!validScope(source,account)||!expected||typeof expected!=='object'||
+    !UUID.test(expected.id)||!['clip','marker'].includes(expected.kind)||
+    typeof exportedSnapshot!=='string'||!exportedSnapshot)return false;
+  try{
+    const storage=store(view),raw=storage?.getItem(KEY);
+    if(!raw||raw!==exportedSnapshot||raw.length>8192)return false;
+    const data=parseCanonicalJournal(raw);
+    if(!knownJournal(data))return false;
+    const scopes=new Set();let index=-1;
+    for(let i=0;i<data.rows.length;i++){
+      const row=data.rows[i];
+      if(!safeRow(row,now))return false;
+      const scope=JSON.stringify([row.source,row.account]);
+      if(scopes.has(scope))return false;
+      scopes.add(scope);
+      if(row.source===source&&row.account===account){
+        if(validRow(row,now)||row.id!==expected.id||row.kind!==expected.kind)return false;
+        index=i;
+      }
+    }
+    if(index<0)return false;
+    const rows=data.rows.filter((_,i)=>i!==index);
+    const next=JSON.stringify({version:1,rows});
+    storage.setItem(KEY,next);
+    return storage.getItem(KEY)===next&&storage.getItem(KEY)===next;
+  }catch{return false}
+}

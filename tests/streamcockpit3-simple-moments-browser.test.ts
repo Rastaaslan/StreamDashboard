@@ -312,3 +312,61 @@ it.skipIf(process.env.SC3_FINAL_BROWSER_TEST!=='1')('F04 Edge 320px: old scoped 
     }
   }finally{await browser.close()}
 },30000);
+
+it.skipIf(process.env.SC3_FINAL_BROWSER_TEST!=='1')('F04 real Edge 320px: expired hint reconciles only after local download and external confirmation, preserving foreign rows',async()=>{
+  const bundle=await build({stdin:{contents:"import {mountTwitchMoments} from './apps/mobile/control/streamcockpit-twitch-moments.js';window.mountMoments=mountTwitchMoments;",resolveDir:process.cwd()},bundle:true,write:false,format:'iife',platform:'browser'});
+  const browser=await chromium.launch({channel:'msedge',headless:true});
+  try{
+    const context=await browser.newContext({acceptDownloads:true,viewport:{width:320,height:720},hasTouch:true});
+    const page=await context.newPage();
+    await page.route('**/*',r=>r.abort());
+    await page.route('http://127.0.0.1:38662/**',r=>r.fulfill({status:200,contentType:'text/html',body:'<main id="root"></main>'}));
+    await page.goto('http://127.0.0.1:38662/moments');
+    const key='sd3.f04.twitch-moment-uncertain.v1';
+    const raw=await page.evaluate(k=>{
+      const value=JSON.stringify({version:1,rows:[{source:'FIXE',account:'owner',id:'643e0c2b-e8e4-4ccd-a82c-8ad0a05f19c5',kind:'clip',createdAt:Date.now()-8*24*60*60*1000}]});
+      localStorage.setItem(k,value);return value;
+    },key);
+    await page.addScriptTag({content:bundle.outputFiles[0].text});
+    await page.evaluate(()=>{
+      const w=window as any;w.calls=[];
+      w.panel=w.mountMoments(document.getElementById('root'),{request:async(path:string)=>{
+        w.calls.push(path);throw Error('NO_PROVIDER');
+      }});
+      w.panel.update({online:true,sourceKey:'FIXE',accountKey:'owner'});
+    });
+    const preview=page.getByRole('button',{name:'Vérifier le moment sans publier'});
+    const downloadButton=page.getByRole('button',{name:'Exporter une copie locale du journal (confidentiel)'});
+    expect(await preview.isDisabled()).toBe(true);
+    expect(await page.getByRole('button',{name:'J’ai vérifié ce moment dans Twitch'}).isVisible()).toBe(false);
+    const downloadEvent=page.waitForEvent('download');
+    await downloadButton.click();
+    const download=await downloadEvent;
+    expect(download.suggestedFilename()).toMatch(/^streamcockpit-f04-journal-\d{8}\.txt$/);
+    expect(readFileSync(await download.path()!,'utf8')).toBe(raw);
+    const verify=page.getByRole('button',{name:'J’ai conservé la copie ET vérifié ce moment dans Twitch'});
+    expect(await verify.isVisible()).toBe(true);
+    // Another tab may have changed this journal after the operator downloaded it.
+    await page.evaluate(k=>{
+      const old=JSON.parse(localStorage.getItem(k)!);
+      old.rows.push({source:'FIXE',account:'other',id:'743e0c2b-e8e4-4ccd-a82c-8ad0a05f19c5',kind:'marker',createdAt:Date.now()-8*24*60*60*1000});
+      localStorage.setItem(k,JSON.stringify(old));
+    },key);
+    const changed=await page.evaluate(k=>localStorage.getItem(k),key);
+    await verify.click();
+    await expect.poll(()=>page.getByRole('status').textContent()).toContain('Référence locale non effacée');
+    expect(await page.evaluate(k=>localStorage.getItem(k),key)).toBe(changed);
+    expect(await preview.isDisabled()).toBe(true);
+    const second=page.waitForEvent('download');await downloadButton.click();
+    const copy=await second;
+    expect(readFileSync(await copy.path()!,'utf8')).toBe(changed);
+    await page.getByRole('button',{name:'J’ai conservé la copie ET vérifié ce moment dans Twitch'}).click();
+    await expect.poll(()=>page.getByRole('status').textContent()).toContain('D’autres références restent non réconciliées');
+    const final=JSON.parse((await page.evaluate(k=>localStorage.getItem(k),key))!);
+    expect(final.rows).toHaveLength(1);expect(final.rows[0].account).toBe('other');
+    expect(final.rows[0].id).toBe('743e0c2b-e8e4-4ccd-a82c-8ad0a05f19c5');
+    expect(await preview.isDisabled()).toBe(true);
+    expect(await page.evaluate(()=>(window as any).calls)).toEqual([]);
+    await page.evaluate(()=>(window as any).panel.destroy());
+  }finally{await browser.close()}
+},30000);

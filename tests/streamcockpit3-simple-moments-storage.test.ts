@@ -1,5 +1,5 @@
 import {it,expect} from 'vitest';
-import {loadUncertainMoment,rememberUncertainMoment,clearUncertainMoment,diagnoseUncertainMomentStore,recoverUncertainMomentForReview,readUncertainMomentBackup,describeUncertainMomentIssue} from '../apps/mobile/control/streamcockpit-twitch-moment-pending.js';
+import {loadUncertainMoment,rememberUncertainMoment,clearUncertainMoment,diagnoseUncertainMomentStore,recoverUncertainMomentForReview,readUncertainMomentBackup,describeUncertainMomentIssue,reconcileExpiredUncertainMoment} from '../apps/mobile/control/streamcockpit-twitch-moment-pending.js';
 const uuid='643e0c2b-e8e4-4ccd-a82c-8ad0a05f19c5';
 function mockStorage(){
   const data=new Map<string,string>();
@@ -306,4 +306,43 @@ it('F04 does not mistake a transient null storage read for proof that a clear su
   expect(rememberUncertainMoment(view,'FIXE','dam',{id:uuid,kind:'clip'},now)).toBe(true);
   expect(clearUncertainMoment(view,'FIXE','dam',{id:uuid,kind:'clip'},now)).toBe(false);
   expect(rows.get(key)).toBe('{"version":1,"rows":[]}');
+});
+
+it('F04 expired receipt requires exact exported snapshot and explicit scoped operator reconciliation; foreign UUIDs survive',()=>{
+  const {view,data}=mockStorage(),now=1800000000000,key='sd3.f04.twitch-moment-uncertain.v1';
+  const old=now-8*24*60*60*1000,other='743e0c2b-e8e4-4ccd-a82c-8ad0a05f19c5';
+  expect(rememberUncertainMoment(view,'FIXE','owner',{id:uuid,kind:'clip'},old)).toBe(true);
+  expect(rememberUncertainMoment(view,'FIXE','other',{id:other,kind:'marker'},old)).toBe(true);
+  const snapshot=data.get(key)!;
+  const receipt={id:uuid,kind:'clip'} as const;
+  expect(reconcileExpiredUncertainMoment(view,'FIXE','owner',receipt,'',now)).toBe(false);
+  expect(reconcileExpiredUncertainMoment(view,'FIXE','owner',{id:other,kind:'clip'},snapshot,now)).toBe(false);
+  expect(reconcileExpiredUncertainMoment(view,'FIXE','other',receipt,snapshot,now)).toBe(false);
+  expect(reconcileExpiredUncertainMoment(view,'FIXE','owner',receipt,snapshot+' ',now)).toBe(false);
+  expect(data.get(key)).toBe(snapshot);
+  expect(reconcileExpiredUncertainMoment(view,'FIXE','owner',receipt,snapshot,now)).toBe(true);
+  expect(data.get(key)).not.toContain(uuid);
+  expect(data.get(key)).toContain(other);
+  expect(diagnoseUncertainMomentStore(view,'FIXE','owner',now)).toEqual({state:'blocked'});
+  expect(reconcileExpiredUncertainMoment(view,'FIXE','owner',receipt,snapshot,now)).toBe(false);
+  const current=data.get(key)!;
+  expect(reconcileExpiredUncertainMoment(view,'FIXE','other',{id:other,kind:'marker'},current,now)).toBe(true);
+  expect(diagnoseUncertainMomentStore(view,'FIXE','owner',now)).toEqual({state:'clear'});
+});
+
+it('F04 supervised reconciliation refuses valid unexpired or noncanonical/corrupt journals without changing evidence',()=>{
+  const {view,data}=mockStorage(),now=1800000000000,key='sd3.f04.twitch-moment-uncertain.v1',receipt={id:uuid,kind:'marker'} as const;
+  expect(rememberUncertainMoment(view,'FIXE','owner',receipt,now)).toBe(true);
+  let snapshot=data.get(key)!;
+  expect(reconcileExpiredUncertainMoment(view,'FIXE','owner',receipt,snapshot,now)).toBe(false);
+  const stale=now-8*24*60*60*1000;
+  data.set(key,JSON.stringify({version:1,rows:[{source:'FIXE',account:'owner',...receipt,createdAt:stale}]}));
+  snapshot=data.get(key)!;
+  for(const bad of ['{bad',snapshot.replace('"rows"','"surprise":true,"rows"'),snapshot.replace('"id"','"id":"other","id"')]){
+    data.set(key,bad);
+    expect(reconcileExpiredUncertainMoment(view,'FIXE','owner',receipt,bad,now)).toBe(false);
+    expect(data.get(key)).toBe(bad);
+  }
+  data.set(key,snapshot);
+  expect(reconcileExpiredUncertainMoment(view,'FIXE','owner',receipt,snapshot,now)).toBe(true);
 });

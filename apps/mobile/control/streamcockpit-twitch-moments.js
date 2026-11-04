@@ -1,4 +1,4 @@
-import {rememberUncertainMoment,clearUncertainMoment,diagnoseUncertainMomentStore,describeUncertainMomentIssue,recoverUncertainMomentForReview,readUncertainMomentBackup,withExclusiveMomentJournal} from './streamcockpit-twitch-moment-pending.js';
+import {rememberUncertainMoment,clearUncertainMoment,reconcileExpiredUncertainMoment,diagnoseUncertainMomentStore,describeUncertainMomentIssue,recoverUncertainMomentForReview,readUncertainMomentBackup,withExclusiveMomentJournal} from './streamcockpit-twitch-moment-pending.js';
 // F04 simple provider moments, independent of the deferred video editor.
 export function mountTwitchMoments(root,{request}={}){
   const doc=root.ownerDocument,view=doc.defaultView,section=doc.createElement('section');
@@ -22,14 +22,17 @@ export function mountTwitchMoments(root,{request}={}){
   const diagnostic=doc.createElement('button');diagnostic.type='button';diagnostic.textContent='Afficher le diagnostic expurgé du journal';diagnostic.hidden=true;
   const backupWarning=doc.createElement('p');backupWarning.hidden=true;backupWarning.textContent='Sauvegarde manuelle brute sur cet appareil uniquement. Attention : le journal endommagé peut contenir des informations sensibles. Ne partagez pas le fichier. Cette copie ne répare rien et n’autorise aucune nouvelle demande Twitch.';
   section.append(heading,note,form,review,status,link,inspect,verified,diagnostic,backupWarning,backup);root.append(section);
-  let disposed=false,online=false,sourceKey='',accountKey='',revision=0,flight=false,sending=false,uncertain=false,storageBlocked=false,pending,uncertainReceipt;
+  let disposed=false,online=false,sourceKey='',accountKey='',revision=0,flight=false,sending=false,uncertain=false,storageBlocked=false,pending,uncertainReceipt,exportedSnapshot=null;
   const blockedText='Stockage des confirmations Twitch illisible ou inaccessible : aucune nouvelle demande autorisée. Conservez les données du navigateur et vérifiez les demandes dans Twitch et le journal FIXE avant toute réconciliation manuelle. Aucun renvoi automatique.';
   const connected=()=>!disposed&&root.isConnected&&online&&sourceKey&&view?.navigator?.onLine!==false&&doc.visibilityState!=='hidden';
   const cancel=()=>{pending=undefined;review.hidden=true;agree.checked=false};
-  const draw=()=>{const enabled=connected()&&!flight&&!sending&&!uncertain&&!storageBlocked&&typeof request==='function';kind.disabled=description.disabled=preview.disabled=!enabled;agree.disabled=!enabled||!pending;publish.disabled=!enabled||!pending||!agree.checked||Date.now()>=pending.expiresAt;verified.hidden=!uncertain||storageBlocked;
+  const draw=()=>{const enabled=connected()&&!flight&&!sending&&!uncertain&&!storageBlocked&&typeof request==='function';kind.disabled=description.disabled=preview.disabled=!enabled;agree.disabled=!enabled||!pending;publish.disabled=!enabled||!pending||!agree.checked||Date.now()>=pending.expiresAt;
+    const expiredReview=storageBlocked&&Boolean(exportedSnapshot)&&describeUncertainMomentIssue(view,sourceKey,accountKey).code==='expired-unreviewed';
+    verified.hidden=!uncertain||(storageBlocked&&!expiredReview);verified.disabled=!connected()||flight||sending;
+    verified.textContent=expiredReview?'J’ai conservé la copie ET vérifié ce moment dans Twitch':'J’ai vérifié ce moment dans Twitch';
     inspect.hidden=!uncertain||!uncertainReceipt;inspect.disabled=!connected()||flight||sending||typeof request!=='function';
     backupWarning.hidden=backup.hidden=diagnostic.hidden=!storageBlocked||!connected();backup.disabled=diagnostic.disabled=backup.hidden||flight||sending};
-  const invalidate=message=>{revision++;if(sending)uncertain=true;flight=false;cancel();link.hidden=true;link.removeAttribute('href');status.textContent=uncertain?'Résultat incertain : vérifiez Twitch avant une nouvelle demande. Aucun renvoi automatique.':storageBlocked?blockedText:message;draw()};
+  const invalidate=message=>{revision++;exportedSnapshot=null;if(sending)uncertain=true;flight=false;cancel();link.hidden=true;link.removeAttribute('href');status.textContent=uncertain?'Résultat incertain : vérifiez Twitch avant une nouvelle demande. Aucun renvoi automatique.':storageBlocked?blockedText:message;draw()};
   kind.addEventListener('change',()=>invalidate('Type modifié : nouvelle vérification requise.'));
   description.addEventListener('input',()=>{cancel();draw()});agree.addEventListener('change',draw);
   diagnostic.addEventListener('click',()=>{
@@ -58,20 +61,32 @@ export function mountTwitchMoments(root,{request}={}){
       url=view.URL.createObjectURL(new view.Blob([raw],{type:'text/plain;charset=utf-8'}));
       const a=doc.createElement('a');a.download='streamcockpit-f04-journal-'+new Date().toISOString().slice(0,10).replace(/-/g,'')+'.txt';a.href=url;a.hidden=true;section.append(a);a.click();a.remove();
       view.setTimeout(()=>view.URL.revokeObjectURL(url),10_000);
-      status.textContent='Copie locale demandée. Fichier confidentiel : ne pas partager. Journal d’origine inchangé et commandes Twitch toujours bloquées.';
+      // A requested download is not proof that the OS actually saved the file.
+      // The operator must inspect the local copy AND verify Twitch before using
+      // the explicitly worded, one-receipt manual reconciliation action.
+      exportedSnapshot=describeUncertainMomentIssue(view,sourceKey,accountKey).code==='expired-unreviewed'?raw:null;
+      status.textContent=exportedSnapshot?'Copie locale demandée : vérifiez qu’elle est bien enregistrée sur disque, puis vérifiez ce moment dans Twitch avant toute confirmation manuelle. Aucun renvoi automatique.':'Copie locale demandée. Fichier confidentiel : ne pas partager. Journal d’origine inchangé et commandes Twitch toujours bloquées.';
+      draw();
     }catch{if(url)view.URL.revokeObjectURL(url);status.textContent='Export local impossible. Journal d’origine inchangé, commandes Twitch toujours bloquées.'}
   });
   verified.addEventListener('click',async()=>{
     if(sending||flight||!uncertain||!uncertainReceipt)return;
-    const receipt=uncertainReceipt,target=sourceKey,account=accountKey,key=++revision;
+    const receipt=uncertainReceipt,target=sourceKey,account=accountKey,snapshot=exportedSnapshot,key=++revision;
     flight=true;draw();
     const cleared=await withExclusiveMomentJournal(view,()=>
       key===revision&&connected()&&target===sourceKey&&account===accountKey&&
-      clearUncertainMoment(view,target,account,receipt));
+      (storageBlocked?
+        snapshot&&describeUncertainMomentIssue(view,target,account).code==='expired-unreviewed'&&
+          reconcileExpiredUncertainMoment(view,target,account,receipt,snapshot):
+        clearUncertainMoment(view,target,account,receipt)));
     if(key!==revision)return;
     flight=false;
-    if(!cleared){status.textContent='Référence locale non effacée : verrou ou vérification indisponible, aucune nouvelle demande autorisée.';draw();return}
-    uncertain=false;uncertainReceipt=undefined;invalidate('Vérification externe confirmée. Une nouvelle prévisualisation est requise.');
+    if(!cleared){exportedSnapshot=null;status.textContent='Référence locale non effacée : journal modifié, copie non confirmée ou verrou indisponible. Aucune nouvelle demande autorisée.';draw();return}
+    uncertain=false;uncertainReceipt=undefined;
+    storageBlocked=diagnoseUncertainMomentStore(view,target,account).state==='blocked';
+    invalidate('Vérification externe confirmée. Une nouvelle prévisualisation est requise.');
+    if(storageBlocked)status.textContent=blockedText+' D’autres références restent non réconciliées.';
+    draw();
   });
   inspect.addEventListener('click',async()=>{
     if(!connected()||flight||sending||!uncertain||!uncertainReceipt||typeof request!=='function')return;
