@@ -309,6 +309,10 @@
         {
           "path": "apps/server/src/control-public-view.ts",
           "kind": "SC3-FINAL-DELIVERY-001: source integration and targeted software qualification only; hardware remains unqualified"
+        },
+        {
+          "path": "tests/streamcockpit3-simple-moments-multitab-browser.test.ts",
+          "kind": "2026-11-04 RDC FIXE: two true Microsoft Edge tabs sharing one real localStorage origin prove cross-window storage-event invalidation of a stale prepared Twitch confirmation, immediate read-only uncertain state, non-destructive corruption block and refusal to clear a newer UUID from a stale view. 36/36 targeted PASS across 5 suites including 5 actual Edge tests, TS/browser/build (143 assets), shipped JS (149) and security (6720 files) PASS. Synthetic provider, no simultaneous CAS atomicity or physical multi-device proof."
         }
       ],
       "verifiedTests": [
@@ -320,6 +324,7 @@
         "tests/streamcockpit3-f04-durable-status-windows.test.ts",
         "tests/streamcockpit3-simple-moments-browser.test.ts",
         "tests/streamcockpit3-simple-moments-storage.test.ts",
+        "tests/streamcockpit3-simple-moments-multitab-browser.test.ts",
         "tests/streamcockpit3-simple-replay-privacy.test.ts",
         "tests/streamcockpit3-release-scope.test.ts"
       ],

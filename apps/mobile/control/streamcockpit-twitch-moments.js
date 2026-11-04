@@ -85,8 +85,34 @@ export function mountTwitchMoments(root,{request}={}){
     }catch{if(key===revision&&target===sourceKey&&account===accountKey){uncertain=true;status.textContent='Résultat incertain : vérifiez Twitch avant une nouvelle demande. Aucun renvoi automatique.'}}
     finally{sending=false;if(key===revision)flight=false;draw()}
   });
+  // Other windows share localStorage, not this in-memory preview. Never present a
+  // stale "ready" preview after another window has recorded an uncertain Twitch POST.
+  const onJournalChange=event=>{
+    if(disposed||(event.key!==null&&event.key!=='sd3.f04.twitch-moment-uncertain.v1')||
+      event.storageArea!==view?.localStorage||!sourceKey||!accountKey)return;
+    const diagnosis=diagnoseUncertainMomentStore(view,sourceKey,accountKey);
+    const newReceipt=diagnosis.state==='pending'?diagnosis.receipt:undefined;
+    if((diagnosis.state==='blocked')===storageBlocked&&Boolean(newReceipt)===uncertain&&
+      (!newReceipt||(newReceipt.id===uncertainReceipt?.id&&newReceipt.kind===uncertainReceipt?.kind)))return;
+    const wasSending=sending;
+    invalidate('Journal Twitch modifié dans une autre fenêtre : nouvelle prévisualisation requise.');
+    if(wasSending){
+      // A pending provider POST may have succeeded despite a concurrent storage
+      // modification. Keep this view blocked, even if its old hint disappeared.
+      uncertain=true;
+      status.textContent='Résultat incertain : journal modifié pendant la demande. Vérifiez Twitch et le journal FIXE, sans renvoi.';
+    }else{
+      storageBlocked=diagnosis.state==='blocked';
+      uncertainReceipt=newReceipt;
+      uncertain=Boolean(newReceipt);
+      status.textContent=storageBlocked?blockedText:uncertain?
+        'Résultat incertain enregistré dans une autre fenêtre : vérifier Twitch ou le journal FIXE. Aucun renvoi automatique.':
+        'Journal Twitch actualisé depuis une autre fenêtre : nouvelle vérification requise.';
+    }
+    draw();
+  };
   const pause=()=>invalidate('Connexion ou vue interrompue : confirmation invalidée.');
-  view?.addEventListener('offline',pause);view?.addEventListener('online',pause);doc.addEventListener('visibilitychange',pause);
+  view?.addEventListener('offline',pause);view?.addEventListener('online',pause);view?.addEventListener('storage',onJournalChange);doc.addEventListener('visibilitychange',pause);
   status.textContent='Source non associée.';draw();
   return {update(c={}){if(disposed)return;const next=c.online===true,key=typeof c.sourceKey==='string'?c.sourceKey:'',account=typeof c.accountKey==='string'?c.accountKey:'';
     const identityChanged=key!==sourceKey||account!==accountKey,changed=next!==online||identityChanged;
@@ -99,5 +125,5 @@ export function mountTwitchMoments(root,{request}={}){
         else status.textContent=online?'Prêt à vérifier un moment.':'Source déconnectée.';
         draw();}
     }else draw()},
-    destroy(){disposed=true;invalidate('Vue fermée.');view?.removeEventListener('offline',pause);view?.removeEventListener('online',pause);doc.removeEventListener('visibilitychange',pause);section.remove()}};
+    destroy(){disposed=true;invalidate('Vue fermée.');view?.removeEventListener('offline',pause);view?.removeEventListener('online',pause);view?.removeEventListener('storage',onJournalChange);doc.removeEventListener('visibilitychange',pause);section.remove()}};
 }
