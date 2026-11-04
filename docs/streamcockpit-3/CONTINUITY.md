@@ -940,3 +940,9 @@
 - RED Edge statuts/erreurs longs/saisie agrandie : 337 px de dépassement Desktop, 653 px mobile ; régression fixture 353 px. Correction CSS de hauteur intrinsèque et enveloppe non compressible, scroll réservé aux messages.
 - GREEN : test de régression Edge six tailles 1/1 ; suites ciblées 16/16 ; types, sécurité 6724 fichiers, build 143 assets et JS 149 fichiers PASS ; détails CHAT_OVERLAP_FIX_20261104.md.
 - Livrables Windows/Android et réception matérielle à vérifier après un commit propre ; G2 in_progress, G3/G4/G5 open.
+
+## 2026-11-04 matin — Chat Twitch sans chevauchement, déploiement Windows QA double PC
+- Tests source a38305f RED puis GREEN et contrôle Edge sur six formats ; builds Windows/Android QA du même commit propre, Android 52 JUnit PASS, signature Debug v2, Windows NotSigned. Test de stress sur ressources réellement servies par FIXE après installation sans CSS injecté : aucun débordement interne du chat sur 1366x900 et 390x844.
+- Bascule QA a38305f sur FIXE et laptop après préflight OBS hors live/recording et minuteur arrêté, fermeture gracieuse c9aabaf, profils clonés, ancienne QA et RC2 préservées. Both Windows binaires SHA identiques, raccourcis mis à jour.
+- Nouveau blocage TCP entrant généré par Windows sur le nouvel EXE isolé ; règle scoped a38305f/48136/LAN, UDP Block maintenu. Laptop HTTPS santé 200, état sans autorisation 401, gestion sans autorisation 403. Les archives et serveur temporaire ont été retirés.
+- APK QA a38305f déposé sur Bureau FIXE pour mise à jour par l'utilisateur ; aucune installation physique Android ni réception G3/G4/G5 complète. Rapport CHAT_OVERLAP_DEPLOY_A38305F_20261104.md.
