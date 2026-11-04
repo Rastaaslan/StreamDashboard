@@ -6,9 +6,14 @@ const MAX_RECORDS=8;
 const UUID=/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const validScope=(source,account)=>typeof source==='string'&&source.length>0&&source.length<=512&&
   typeof account==='string'&&account.length>0&&account.length<=128;
-const validRow=(r,now)=>r&&validScope(r.source,r.account)&&UUID.test(r.id)&&
+// Validate the *entire* persisted journal before considering the time-bounded hints.
+// Filtering malformed rows would silently lose a UUID that may represent an executed POST.
+const safeRow=(r,now)=>r&&typeof r==='object'&&!Array.isArray(r)&&
+  Object.keys(r).length===5&&['source','account','id','kind','createdAt'].every(k=>Object.hasOwn(r,k))&&
+  validScope(r.source,r.account)&&UUID.test(r.id)&&
   (r.kind==='clip'||r.kind==='marker')&&Number.isSafeInteger(r.createdAt)&&
-  r.createdAt<=now&&now-r.createdAt<MAX_AGE_MS;
+  r.createdAt>=0&&r.createdAt<=now;
+const validRow=(r,now)=>safeRow(r,now)&&now-r.createdAt<MAX_AGE_MS;
 function store(view){try{return view?.localStorage}catch{return undefined}}
 function read(storage,now){
   const raw=storage.getItem(KEY);
@@ -16,8 +21,14 @@ function read(storage,now){
   if(raw.length>8192)throw Error('OVER_LIMIT');
   const data=JSON.parse(raw);
   if(data?.version!==1||!Array.isArray(data.rows)||data.rows.length>MAX_RECORDS)throw Error('BAD_STORAGE');
-  if(data.rows.some(r=>!r||typeof r!=='object'))throw Error('BAD_ROW');
-  return data.rows.filter(r=>validRow(r,now));
+  const scopes=new Set();
+  for(const row of data.rows){
+    if(!safeRow(row,now))throw Error('BAD_ROW');
+    const scope=JSON.stringify([row.source,row.account]);
+    if(scopes.has(scope))throw Error('DUPLICATE_SCOPE');
+    scopes.add(scope);
+  }
+  return data.rows.filter(r=>validRow(r,now)); // Expired hints obey the explicit 7-day retention policy.
 }
 function write(storage,rows){storage.setItem(KEY,JSON.stringify({version:1,rows}));}
 export function loadUncertainMoment(view,source,account,now=Date.now()){

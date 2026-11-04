@@ -291,6 +291,10 @@
           "kind": "2026-11-04 FIXE F04: per-host/account localStorage reconciliation hints (7-day expiry, maximum 8 entries, no credentials/links). Read-only journal lookup after reload, independent identity, no Twitch retry. Targeted 28/28 PASS including 2 real Edge tests; TypeScript/browser/security (6717 files) PASS; no hardware proof. 2026-11-04 subsequent F04 regression: prevents a second pending UUID from silently overwriting an unresolved same-host/account receipt before POST; red test 3 PASS/1 FAIL, final 29 PASS/0 FAIL/0 skipped across storage, HTTP, Edge 320px, V4 scope. TS/browser/build (143 public assets, 149 shipped JS) and security (6719 files) PASS; synthetic provider only, G2 partial."
         },
         {
+          "path": "tests/streamcockpit3-simple-moments-storage.test.ts",
+          "kind": "2026-11-04 FIXE F04: strict inspection of all persisted localStorage rows and unique host/account scope before any filtering or write. Invalid/missing/extra fields, bad UUID/kind, future timestamps and duplicate scopes fail closed without modifying possible Twitch receipt UUIDs or sending a new POST. RED 4 PASS/2 FAIL, then 31 PASS/0 FAIL/0 skipped across storage, HTTP, release scope and 2 real Edge 320px tests. TypeScript, browser types, build (143 public assets), shipped JS (149 files), security (6719 files) PASS. Synthetic providers only, 7-day expiry still policy, physical and power-loss evidence absent; F04 remains partial."
+        },
+        {
           "path": "tests/streamcockpit3-f04-durable-status-windows.test.ts",
           "kind": "2026-11-04 RDC FIXE: actual Windows child process durably records a Twitch clip observation then exits; newly opened SQLite journal serves paired read-only HTTP status, missing record stays non-retryable, revoked/unpaired actor is denied, and a repeated confirm after restart cannot POST Twitch. 30/30 targeted PASS across 3 files, TS/browser/security (6719 files) PASS. Synthetic provider/host; no actual production process restart, power loss, public Twitch action or Android device test."
         },

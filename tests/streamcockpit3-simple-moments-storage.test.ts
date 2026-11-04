@@ -60,3 +60,34 @@ it('F04 expires bounded local hints; invalid UUID and unavailable storage fail c
   data.set('sd3.f04.twitch-moment-uncertain.v1','bad-json');
   expect(rememberUncertainMoment(view,'fixe','dam',{id:uuid,kind:'clip'},now)).toBe(false);
 });
+
+it('F04 fails closed when another stored row is malformed instead of silently evicting it',()=>{
+  const {view,data}=mockStorage(),now=1800000000000;
+  const key='sd3.f04.twitch-moment-uncertain.v1';
+  expect(rememberUncertainMoment(view,'fixe','dam',{id:uuid,kind:'clip'},now)).toBe(true);
+  const valid=JSON.parse(data.get(key)!) as {version:number;rows:Record<string,unknown>[]};
+  for(const malformed of [
+    {source:'fixe',account:'other',id:'bad-uuid',kind:'clip',createdAt:now},
+    {source:'fixe',account:'other',id:uuid,kind:'unknown-kind',createdAt:now},
+    {source:'fixe',account:'other',id:uuid,kind:'clip',createdAt:now+60000},
+    {source:'fixe',account:'other',id:uuid,kind:'clip',createdAt:'not-a-number'},
+    {source:'fixe',account:'other',id:uuid,kind:'clip'},
+    {source:'fixe',account:'other',id:uuid,kind:'clip',createdAt:now,token:'MUST_NOT_COPY'},
+  ]){
+    const raw=JSON.stringify({...valid,rows:[...valid.rows,malformed]});
+    data.set(key,raw);
+    expect(loadUncertainMoment(view,'fixe','dam',now)).toBeNull();
+    expect(rememberUncertainMoment(view,'fixe','new-account',{id:uuid,kind:'marker'},now)).toBe(false);
+    expect(data.get(key)).toBe(raw); // never discard potentially executed commands
+  }
+});
+it('F04 rejects ambiguous duplicate host/account rows before accepting new Twitch confirmations',()=>{
+  const {view,data}=mockStorage(),now=1800000000000,key='sd3.f04.twitch-moment-uncertain.v1';
+  expect(rememberUncertainMoment(view,'fixe','dam',{id:uuid,kind:'clip'},now)).toBe(true);
+  const valid=JSON.parse(data.get(key)!) as {version:number;rows:Record<string,unknown>[]};
+  const raw=JSON.stringify({...valid,rows:[...valid.rows,{...valid.rows[0],id:'743e0c2b-e8e4-4ccd-a82c-8ad0a05f19c5'}]});
+  data.set(key,raw);
+  expect(loadUncertainMoment(view,'fixe','dam',now)).toBeNull();
+  expect(rememberUncertainMoment(view,'fixe','new-account',{id:uuid,kind:'marker'},now)).toBe(false);
+  expect(data.get(key)).toBe(raw);
+});
