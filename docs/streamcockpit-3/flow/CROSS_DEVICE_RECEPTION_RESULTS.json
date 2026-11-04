@@ -3,9 +3,9 @@
   "gate": "G3",
   "status": "open",
   "hardwareQualification": false,
-  "checkedAt": "2026-11-04T21:59:20.451Z",
+  "checkedAt": "2026-11-04T22:25:40.201Z",
   "currentSource": {
-    "FIXE": "NOT_TESTED_INSTALLED",
+    "FIXE": "ISOLATED_PACKAGED_AGENT_AND_TLS_PASS; actual OBS, accounts and user installation NOT_RECEIVED",
     "laptop": "NOT_TESTED",
     "Android": "NOT_TESTED"
   },
@@ -73,5 +73,6 @@
       "name": "reçus",
       "status": "NOT_TESTED_CURRENT_SOURCE"
     }
-  ]
+  ],
+  "sourceCommit": "73a6aae2a8e59c1c22c1f0d304cccb08c1586718"
 }

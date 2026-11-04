@@ -1,93 +1,93 @@
 {
   "schemaVersion": 1,
-  "checkedAt": "2026-11-04T21:59:20.451Z",
+  "checkedAt": "2026-11-04T22:25:40.201Z",
   "allFeaturesQualified": false,
   "features": [
     {
       "id": "F00",
       "status": "PARTIAL",
-      "software": "See evidence/qualification.json",
-      "physical": "NOT_TESTED_CURRENT_SOURCE",
+      "software": "SOFTWARE_CAMPAIGN_PASS; feature acceptance still PARTIAL",
+      "physical": "NOT_RECEIVED_CURRENT_SOURCE",
       "completeWalkthrough": false,
       "remaining": "--agent et tray existent. Ne pas lancer simultanément un nouveau writer et la régie installée ; réception Agent sans fenêtre requise."
     },
     {
       "id": "F01",
       "status": "PARTIAL",
-      "software": "See evidence/qualification.json",
-      "physical": "NOT_TESTED_CURRENT_SOURCE",
+      "software": "SOFTWARE_CAMPAIGN_PASS; feature acceptance still PARTIAL",
+      "physical": "NOT_RECEIVED_CURRENT_SOURCE",
       "completeWalkthrough": false,
       "remaining": "Batterie et VOD nécessitent les mesures et le matériel réel."
     },
     {
       "id": "F02",
       "status": "PARTIAL",
-      "software": "See evidence/qualification.json",
-      "physical": "NOT_TESTED_CURRENT_SOURCE",
+      "software": "SOFTWARE_CAMPAIGN_PASS; feature acceptance still PARTIAL",
+      "physical": "NOT_RECEIVED_CURRENT_SOURCE",
       "completeWalkthrough": false,
       "remaining": "Routage Android, permissions mobiles, reprise et reçus corrigés dans ce lot. Réception physique et OAuth réels non testés."
     },
     {
       "id": "F03",
       "status": "PARTIAL",
-      "software": "See evidence/qualification.json",
-      "physical": "NOT_TESTED_CURRENT_SOURCE",
+      "software": "SOFTWARE_CAMPAIGN_PASS; feature acceptance still PARTIAL",
+      "physical": "NOT_RECEIVED_CURRENT_SOURCE",
       "completeWalkthrough": false,
       "remaining": "Mappage effectif Intro/Jeu/Chatting/Pause/Fin et macros multi-étapes à recevoir sur les scènes réelles."
     },
     {
       "id": "F04",
       "status": "PARTIAL",
-      "software": "See evidence/qualification.json",
-      "physical": "NOT_TESTED_CURRENT_SOURCE",
+      "software": "SOFTWARE_CAMPAIGN_PASS; feature acceptance still PARTIAL",
+      "physical": "NOT_RECEIVED_CURRENT_SOURCE",
       "completeWalkthrough": false,
       "remaining": "ClipForge, montage et transcodage V4, hors livraison 3.0."
     },
     {
       "id": "F05",
       "status": "PARTIAL",
-      "software": "See evidence/qualification.json",
-      "physical": "NOT_TESTED_CURRENT_SOURCE",
+      "software": "SOFTWARE_CAMPAIGN_PASS; feature acceptance still PARTIAL",
+      "physical": "NOT_RECEIVED_CURRENT_SOURCE",
       "completeWalkthrough": false,
       "remaining": "Contrôle Spotify Windows sans connexion à un compte Spotify ; séparation VOD et routage PC jeu à recevoir."
     },
     {
       "id": "F06",
       "status": "PARTIAL",
-      "software": "See evidence/qualification.json",
-      "physical": "NOT_TESTED_CURRENT_SOURCE",
+      "software": "SOFTWARE_CAMPAIGN_PASS; feature acceptance still PARTIAL",
+      "physical": "NOT_RECEIVED_CURRENT_SOURCE",
       "completeWalkthrough": false,
       "remaining": "Pas de nouvelle connexion Google Android imposée. Conflits externes et publication réelle non testés dans ce lot."
     },
     {
       "id": "F07",
       "status": "PARTIAL",
-      "software": "See evidence/qualification.json",
-      "physical": "NOT_TESTED_CURRENT_SOURCE",
+      "software": "SOFTWARE_CAMPAIGN_PASS; feature acceptance still PARTIAL",
+      "physical": "NOT_RECEIVED_CURRENT_SOURCE",
       "completeWalkthrough": false,
       "remaining": "Navigation cinq onglets conservée ; chat et commandes de modération rendus accessibles à 320 px."
     },
     {
       "id": "F08",
       "status": "PARTIAL",
-      "software": "See evidence/qualification.json",
-      "physical": "NOT_TESTED_CURRENT_SOURCE",
+      "software": "SOFTWARE_CAMPAIGN_PASS; feature acceptance still PARTIAL",
+      "physical": "NOT_RECEIVED_CURRENT_SOURCE",
       "completeWalkthrough": false,
       "remaining": "Tests fournisseurs synthétiques seulement ; sondage/raid/prédiction/shoutout réel nécessite une autorisation distincte."
     },
     {
       "id": "F09",
       "status": "PARTIAL",
-      "software": "See evidence/qualification.json",
-      "physical": "NOT_TESTED_CURRENT_SOURCE",
+      "software": "SOFTWARE_CAMPAIGN_PASS; feature acceptance still PARTIAL",
+      "physical": "NOT_RECEIVED_CURRENT_SOURCE",
       "completeWalkthrough": false,
       "remaining": "Replays et Streamlabs alimentent le journal dans le code ; réception d'une session complète sur le trio à prouver."
     },
     {
       "id": "F10",
       "status": "PARTIAL",
-      "software": "See evidence/qualification.json",
-      "physical": "NOT_TESTED_CURRENT_SOURCE",
+      "software": "SOFTWARE_CAMPAIGN_PASS; feature acceptance still PARTIAL",
+      "physical": "NOT_RECEIVED_CURRENT_SOURCE",
       "completeWalkthrough": false,
       "remaining": "SDK de développement existant réutilisable. Certificat Windows et signature Android stable non configurés ; rollback matériel et compatibilité à recevoir."
     }
@@ -95,5 +95,7 @@
   "deferred": [
     "ClipForge avancé V4",
     "Disposition modulaire V3.1"
-  ]
+  ],
+  "softwareSourceCommit": "73a6aae2a8e59c1c22c1f0d304cccb08c1586718",
+  "softwareEvidence": "evidence/qualification.json"
 }

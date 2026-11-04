@@ -1,0 +1,863 @@
+{
+  "schemaVersion": 1,
+  "ticket": "SC3-FLOW-ONESHOT-001",
+  "sourceCommit": "73a6aae2a8e59c1c22c1f0d304cccb08c1586718",
+  "startedAt": "2026-11-04T22:17:03.613Z",
+  "softwareOnly": true,
+  "heavyConcurrency": 1,
+  "vitestWorkers": 2,
+  "stages": [
+    {
+      "name": "build_types",
+      "command": [
+        "cmd.exe",
+        "/d",
+        "/s",
+        "/c",
+        "npm run build:types"
+      ],
+      "startedAt": "2026-11-04T22:17:09.856Z",
+      "resources": {
+        "cpu": 1,
+        "freeMemoryKiB": 24159372,
+        "obs": 0,
+        "java": 0
+      },
+      "log": ".git/sc3-flow/build_types.log",
+      "exitCode": 0,
+      "signal": null,
+      "status": "PASS",
+      "finishedAt": "2026-11-04T22:17:18.396Z"
+    },
+    {
+      "name": "check_browser-types",
+      "command": [
+        "cmd.exe",
+        "/d",
+        "/s",
+        "/c",
+        "npm run check:browser-types"
+      ],
+      "startedAt": "2026-11-04T22:17:19.231Z",
+      "resources": {
+        "cpu": 3,
+        "freeMemoryKiB": 24171868,
+        "obs": 0,
+        "java": 0
+      },
+      "log": ".git/sc3-flow/check_browser-types.log",
+      "exitCode": 0,
+      "signal": null,
+      "status": "PASS",
+      "finishedAt": "2026-11-04T22:17:20.651Z"
+    },
+    {
+      "name": "security_check",
+      "command": [
+        "cmd.exe",
+        "/d",
+        "/s",
+        "/c",
+        "npm run security:check"
+      ],
+      "startedAt": "2026-11-04T22:17:21.456Z",
+      "resources": {
+        "cpu": 0,
+        "freeMemoryKiB": 24184168,
+        "obs": 0,
+        "java": 0
+      },
+      "log": ".git/sc3-flow/security_check.log",
+      "exitCode": 0,
+      "signal": null,
+      "status": "PASS",
+      "finishedAt": "2026-11-04T22:17:25.537Z"
+    },
+    {
+      "name": "vitest",
+      "command": [
+        "C:\\Users\\damie\\Documents\\Dowloader vod twitch\\.tools\\node-v22.22.3-win-x64\\node.exe",
+        "node_modules/vitest/vitest.mjs",
+        "run",
+        "--maxWorkers=2",
+        "--reporter=default",
+        "--reporter=json",
+        "--outputFile=.git/sc3-flow/full-vitest.json"
+      ],
+      "startedAt": "2026-11-04T22:17:26.409Z",
+      "resources": {
+        "cpu": 6,
+        "freeMemoryKiB": 24137788,
+        "obs": 0,
+        "java": 0
+      },
+      "log": ".git/sc3-flow/vitest.log",
+      "exitCode": 0,
+      "signal": null,
+      "status": "PASS",
+      "finishedAt": "2026-11-04T22:19:58.207Z"
+    },
+    {
+      "name": "build",
+      "command": [
+        "cmd.exe",
+        "/d",
+        "/s",
+        "/c",
+        "npm run build"
+      ],
+      "startedAt": "2026-11-04T22:19:59.086Z",
+      "resources": {
+        "cpu": 19,
+        "freeMemoryKiB": 21052716,
+        "obs": 0,
+        "java": 3
+      },
+      "log": ".git/sc3-flow/build.log",
+      "exitCode": 0,
+      "signal": null,
+      "status": "PASS",
+      "finishedAt": "2026-11-04T22:20:09.073Z"
+    },
+    {
+      "name": "check_shipped-js",
+      "command": [
+        "cmd.exe",
+        "/d",
+        "/s",
+        "/c",
+        "npm run check:shipped-js"
+      ],
+      "startedAt": "2026-11-04T22:20:09.964Z",
+      "resources": {
+        "cpu": 24,
+        "freeMemoryKiB": 20963840,
+        "obs": 0,
+        "java": 3
+      },
+      "log": ".git/sc3-flow/check_shipped-js.log",
+      "exitCode": 0,
+      "signal": null,
+      "status": "PASS",
+      "finishedAt": "2026-11-04T22:20:17.962Z"
+    },
+    {
+      "name": "node-built",
+      "command": [
+        "C:\\Users\\damie\\Documents\\Dowloader vod twitch\\.tools\\node-v22.22.3-win-x64\\node.exe",
+        "--test",
+        "--test-concurrency=1",
+        "tests\\agent-v2-status-panel.test.mjs",
+        "tests\\cb114-projection-ui.test.mjs",
+        "tests\\cb133-series-dialog.node.test.mjs",
+        "tests\\cb2-local.test.mjs",
+        "tests\\cb3-sync-center.test.mjs",
+        "tests\\cb52-planning.node.test.mjs",
+        "tests\\cb52-soundboard-recovery.node.test.mjs",
+        "tests\\connections-capabilities.node.test.mjs",
+        "tests\\desktop-audit.node.test.mjs",
+        "tests\\desktop-connections.node.test.mjs",
+        "tests\\desktop-interaction-manager.node.test.mjs",
+        "tests\\desktop-live-drafts.node.test.mjs",
+        "tests\\desktop-live-matrix.node.test.mjs",
+        "tests\\desktop-modal-completions.node.test.mjs",
+        "tests\\desktop-modal-creation.node.test.mjs",
+        "tests\\desktop-modal-drafts.node.test.mjs",
+        "tests\\desktop-obs-dialog-ordering.node.test.mjs",
+        "tests\\desktop-planning-editor.node.test.mjs",
+        "tests\\google-desktop-e2e.node.test.mjs",
+        "tests\\mobile-offline.node.test.mjs",
+        "tests\\node\\action-routing.test.mjs",
+        "tests\\node\\android-ci.test.mjs",
+        "tests\\node\\binary-hash.test.mjs",
+        "tests\\node\\browser-uuid.test.mjs",
+        "tests\\node\\cb7-integration.test.mjs",
+        "tests\\node\\configuration-transfer.test.mjs",
+        "tests\\node\\controller-bindings.test.mjs",
+        "tests\\node\\desktop-package-check.test.mjs",
+        "tests\\node\\device-accounts.test.mjs",
+        "tests\\node\\device-audio.test.mjs",
+        "tests\\node\\device-credentials.test.mjs",
+        "tests\\node\\device-executor.test.mjs",
+        "tests\\node\\device-planning.test.mjs",
+        "tests\\node\\device-platforms.test.mjs",
+        "tests\\node\\device-services.test.mjs",
+        "tests\\node\\device-streamlabs.test.mjs",
+        "tests\\node\\export-json.test.mjs",
+        "tests\\node\\live-controls.test.mjs",
+        "tests\\node\\local-executor.test.mjs",
+        "tests\\node\\mobile-performance.test.mjs",
+        "tests\\node\\obs-mobile-runtime.test.mjs",
+        "tests\\node\\peer-request.test.mjs",
+        "tests\\node\\planning-handoff.test.mjs",
+        "tests\\node\\prelive-diagnostic.test.mjs",
+        "tests\\node\\prelive-integration.test.mjs",
+        "tests\\node\\provider-bridge-compile.test.mjs",
+        "tests\\node\\provider-controls.test.mjs",
+        "tests\\node\\provider-diagnostics.test.mjs",
+        "tests\\node\\replica-identity.test.mjs",
+        "tests\\node\\setup-migration.test.mjs",
+        "tests\\node\\sound-library.test.mjs",
+        "tests\\node\\universal-installation.test.mjs",
+        "tests\\node\\youtube-chat.test.mjs",
+        "tests\\planning-bulk-delete.node.test.mjs",
+        "tests\\provider-retry-real-flow.node.test.mjs",
+        "tests\\thumbnails.node.test.mjs"
+      ],
+      "startedAt": "2026-11-04T22:20:18.839Z",
+      "resources": {
+        "cpu": 18,
+        "freeMemoryKiB": 20959924,
+        "obs": 0,
+        "java": 3
+      },
+      "log": ".git/sc3-flow/node-built.log",
+      "exitCode": 0,
+      "signal": null,
+      "status": "PASS",
+      "finishedAt": "2026-11-04T22:22:13.840Z"
+    },
+    {
+      "name": "playwright",
+      "command": [
+        "C:\\Users\\damie\\Documents\\Dowloader vod twitch\\.tools\\node-v22.22.3-win-x64\\node.exe",
+        "node_modules/@playwright/test/cli.js",
+        "test",
+        "-c",
+        ".git/sc3-flow/playwright.config.cjs"
+      ],
+      "startedAt": "2026-11-04T22:22:14.710Z",
+      "resources": {
+        "cpu": 30,
+        "freeMemoryKiB": 20942556,
+        "obs": 0,
+        "java": 3
+      },
+      "log": ".git/sc3-flow/playwright.log",
+      "exitCode": 0,
+      "signal": null,
+      "status": "PASS",
+      "finishedAt": "2026-11-04T22:22:51.628Z"
+    },
+    {
+      "name": "windows-package",
+      "command": [
+        "cmd.exe",
+        "/d",
+        "/s",
+        "/c",
+        "npm run desktop:package:built"
+      ],
+      "startedAt": "2026-11-04T22:22:52.519Z",
+      "resources": {
+        "cpu": 10,
+        "freeMemoryKiB": 21014976,
+        "obs": 0,
+        "java": 3
+      },
+      "log": ".git/sc3-flow/windows-package.log",
+      "exitCode": 0,
+      "signal": null,
+      "status": "PASS",
+      "finishedAt": "2026-11-04T22:23:13.015Z"
+    },
+    {
+      "name": "electron-agent-tls",
+      "command": [
+        "C:\\Users\\damie\\Documents\\Dowloader vod twitch\\.tools\\node-v22.22.3-win-x64\\node.exe",
+        "node_modules/@playwright/test/cli.js",
+        "test",
+        "-c",
+        "playwright.electron.config.ts",
+        "--grep",
+        "agent sans fenêtre|TLS réel"
+      ],
+      "startedAt": "2026-11-04T22:23:13.970Z",
+      "resources": {
+        "cpu": 22,
+        "freeMemoryKiB": 20880048,
+        "obs": 0,
+        "java": 3
+      },
+      "log": ".git/sc3-flow/electron-agent-tls.log",
+      "exitCode": 0,
+      "signal": null,
+      "status": "PASS",
+      "finishedAt": "2026-11-04T22:23:27.203Z"
+    },
+    {
+      "name": "android-sync",
+      "command": [
+        "cmd.exe",
+        "/d",
+        "/s",
+        "/c",
+        "npm run android:sync"
+      ],
+      "startedAt": "2026-11-04T22:23:28.123Z",
+      "resources": {
+        "cpu": 35,
+        "freeMemoryKiB": 20866652,
+        "obs": 0,
+        "java": 3
+      },
+      "log": ".git/sc3-flow/android-sync.log",
+      "exitCode": 0,
+      "signal": null,
+      "status": "PASS",
+      "finishedAt": "2026-11-04T22:23:30.511Z"
+    },
+    {
+      "name": "android-qa",
+      "command": [
+        "android/gradlew.bat",
+        "--no-daemon",
+        "--max-workers=1",
+        "testQaUnitTest",
+        "lintQa",
+        "assembleQa"
+      ],
+      "startedAt": "2026-11-04T22:23:31.375Z",
+      "resources": {
+        "cpu": 19,
+        "freeMemoryKiB": 20939404,
+        "obs": 0,
+        "java": 3
+      },
+      "log": ".git/sc3-flow/android-qa-final.log",
+      "exitCode": 0,
+      "signal": null,
+      "status": "PASS",
+      "finishedAt": "2026-11-04T22:25:40.201Z",
+      "previousAttempts": [
+        {
+          "status": "FAIL",
+          "exitCode": 1,
+          "log": ".git/sc3-flow/android-qa-command-failure.log",
+          "reason": "Quoted Gradle JVM property was passed as a task name; no Java compilation attempted."
+        }
+      ],
+      "workingDirectory": "android"
+    },
+    {
+      "name": "scope-final",
+      "command": [
+        "C:\\Users\\damie\\Documents\\Dowloader vod twitch\\.tools\\node-v22.22.3-win-x64\\node.exe",
+        "scripts/streamcockpit3-scope-check.mjs",
+        "--built"
+      ],
+      "startedAt": "2026-11-04T22:23:44.537Z",
+      "resources": {
+        "cpu": 23,
+        "freeMemoryKiB": 20912576,
+        "obs": 0,
+        "java": 3
+      },
+      "log": ".git/sc3-flow/scope-final.log",
+      "exitCode": 0,
+      "signal": null,
+      "status": "PASS",
+      "finishedAt": "2026-11-04T22:23:45.715Z"
+    }
+  ],
+  "publicProviderActions": 0,
+  "userInstallations": 0,
+  "finishedAt": "2026-11-04T22:25:40.201Z",
+  "finalGitStatus": "",
+  "kind": "SOFTWARE_QUALIFICATION_NOT_HARDWARE_ACCEPTANCE",
+  "artifacts": "artifacts.json",
+  "vitest": {
+    "passed": 2412,
+    "failed": 0,
+    "skipped": 110,
+    "total": 2522,
+    "files": 312
+  },
+  "node": {
+    "passed": 351,
+    "failed": 0,
+    "skipped": 6,
+    "total": 357
+  },
+  "playwright": {
+    "startTime": "2026-11-04T22:22:15.379Z",
+    "duration": 36229.143,
+    "expected": 59,
+    "skipped": 0,
+    "unexpected": 0,
+    "flaky": 0
+  },
+  "electron": {
+    "passed": 2,
+    "kind": "Actual Windows packaged EXE; temporary profile, headless agent and TLS; OBS/providers not production"
+  },
+  "java": {
+    "tests": 52,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 0,
+    "suites": 11,
+    "fromGradleCache": true,
+    "executedThisCampaign": false,
+    "note": "52 rapports de référence PASS ; Gradle a vérifié les entrées et réutilisé testQaUnitTest UP-TO-DATE. Aucun nouveau lancement JUnit revendiqué."
+  },
+  "skipDetails": [
+    {
+      "file": "agent-v2-lan-binding.test.ts",
+      "name": "permits only the pinned mTLS Controller over one local interface, then expires"
+    },
+    {
+      "file": "agent-v2-read-only-bridge.test.ts",
+      "name": "keeps Controller current only while real read-only polling succeeds (mock OBS lab)"
+    },
+    {
+      "file": "agent-v2-windows-secret-store.test.ts",
+      "name": "Node-only Windows Agent encrypted store rejects a symlinked record (requires OS file-link privilege on Windows)"
+    },
+    {
+      "file": "streamcockpit3-agent-headless-process.test.ts",
+      "name": "Windows autonomous Node Agent process with synthetic OBS and actual DPAPI/mTLS survives without Electron, renews beyond five seconds, reconciles receipts, and fences restart and disconnect"
+    },
+    {
+      "file": "streamcockpit3-clipforge-executor.test.ts",
+      "name": "passes fixed resource limits, low priority, no shell or inherited secrets, pinned FDs"
+    },
+    {
+      "file": "streamcockpit3-clipforge-executor.test.ts",
+      "name": "waits for close after cancellation and returns an uncertain termination"
+    },
+    {
+      "file": "streamcockpit3-clipforge-executor.test.ts",
+      "name": "kills on wall limit without silently retrying"
+    },
+    {
+      "file": "streamcockpit3-clipforge-executor.test.ts",
+      "name": "bounds diagnostic output and discards raw errors"
+    },
+    {
+      "file": "streamcockpit3-clipforge-executor.test.ts",
+      "name": "refuses invalid probe evidence invalid json"
+    },
+    {
+      "file": "streamcockpit3-clipforge-executor.test.ts",
+      "name": "refuses invalid probe evidence {\"streams\":[],\"format\":{\"duration\":\"2\"}}"
+    },
+    {
+      "file": "streamcockpit3-clipforge-executor.test.ts",
+      "name": "refuses invalid probe evidence {\"streams\":[{\"width\":360,\"height\":640}],\"format\":{\"duration\":\"NaN\"}}"
+    },
+    {
+      "file": "streamcockpit3-clipforge-executor.test.ts",
+      "name": "parses measured dimensions and duration"
+    },
+    {
+      "file": "streamcockpit3-clipforge-windows-acl.test.ts",
+      "name": "F04 Windows NTFS staging admission, never chmod-based assumptions reads actual FIXE TEMP DACL and refuses sandbox-shared staging in read-only mode"
+    },
+    {
+      "file": "streamcockpit3-clipforge-windows-lab.test.ts",
+      "name": "F04 Windows ClipForge offline laboratory, NOT a production API encodes real vertical MP4 from a private NTFS synthetic video and verifies its manifest"
+    },
+    {
+      "file": "streamcockpit3-clipforge-windows-lab.test.ts",
+      "name": "F04 Windows ClipForge offline laboratory, NOT a production API pins the original grant and clip request despite caller mutations during async filesystem work"
+    },
+    {
+      "file": "streamcockpit3-clipforge-windows-lab.test.ts",
+      "name": "F04 Windows ClipForge offline laboratory, NOT a production API refuses repeat or changed SHA without overwriting a confirmed artifact"
+    },
+    {
+      "file": "streamcockpit3-clipforge-windows-lab.test.ts",
+      "name": "F04 Windows ClipForge offline laboratory, NOT a production API keeps a failed encoder reservation UNKNOWN and never retries or deletes forensic staging"
+    },
+    {
+      "file": "streamcockpit3-clipforge-windows-lab.test.ts",
+      "name": "F04 Windows ClipForge offline laboratory, NOT a production API rejects a bad clip segment before reserving an output"
+    },
+    {
+      "file": "streamcockpit3-clipforge-windows-lab.test.ts",
+      "name": "F04 Windows ClipForge offline laboratory, NOT a production API allows exactly one prepared export across simultaneous job contenders"
+    },
+    {
+      "file": "streamcockpit3-clipforge-windows-lab.test.ts",
+      "name": "F04 Windows ClipForge offline laboratory, NOT a production API native Windows Job Object supervises child timeout and denies an extra child process"
+    },
+    {
+      "file": "streamcockpit3-clipforge-windows-lab.test.ts",
+      "name": "F04 Windows ClipForge offline laboratory, NOT a production API closing the supervisor kills its running child before the child timer expires"
+    },
+    {
+      "file": "streamcockpit3-clipforge-windows-lab.test.ts",
+      "name": "F04 Windows ClipForge offline laboratory, NOT a production API refuses invalid supervisor resource limits before spawning its child"
+    },
+    {
+      "file": "streamcockpit3-clipforge-windows-lab.test.ts",
+      "name": "F04 Windows ClipForge offline laboratory, NOT a production API refuses missing native Job Object supervisor without reserving or encoding"
+    },
+    {
+      "file": "streamcockpit3-clipforge-windows-provenance.test.ts",
+      "name": "F04 Windows executable provenance — read-only source admission, NOT release proof inspects actual FIXE FFmpeg Authenticode in read-only mode without executing it"
+    },
+    {
+      "file": "streamcockpit3-clipforge.test.ts",
+      "name": "ClipForge offline creates a deterministic verified manifest and sidecar without altering source"
+    },
+    {
+      "file": "streamcockpit3-clipforge.test.ts",
+      "name": "ClipForge offline rejects path ../source.mp4"
+    },
+    {
+      "file": "streamcockpit3-clipforge.test.ts",
+      "name": "ClipForge offline rejects path /source.mp4"
+    },
+    {
+      "file": "streamcockpit3-clipforge.test.ts",
+      "name": "ClipForge offline rejects path a/../../source.mp4"
+    },
+    {
+      "file": "streamcockpit3-clipforge.test.ts",
+      "name": "ClipForge offline rejects path a\\source.mp4"
+    },
+    {
+      "file": "streamcockpit3-clipforge.test.ts",
+      "name": "ClipForge offline rejects path file:source.mp4"
+    },
+    {
+      "file": "streamcockpit3-clipforge.test.ts",
+      "name": "ClipForge offline rejects path a//source.mp4"
+    },
+    {
+      "file": "streamcockpit3-clipforge.test.ts",
+      "name": "ClipForge offline rejects path x;touch x"
+    },
+    {
+      "file": "streamcockpit3-clipforge.test.ts",
+      "name": "ClipForge offline rejects hostile symlink leaf"
+    },
+    {
+      "file": "streamcockpit3-clipforge.test.ts",
+      "name": "ClipForge offline rejects hostile symlink ancestor"
+    },
+    {
+      "file": "streamcockpit3-clipforge.test.ts",
+      "name": "ClipForge offline rejects hostile symlink root"
+    },
+    {
+      "file": "streamcockpit3-clipforge.test.ts",
+      "name": "ClipForge offline rejects missing source, wrong authorization and directories"
+    },
+    {
+      "file": "streamcockpit3-clipforge.test.ts",
+      "name": "ClipForge offline refuses output collision .mp4 without overwrite"
+    },
+    {
+      "file": "streamcockpit3-clipforge.test.ts",
+      "name": "ClipForge offline refuses output collision .intent without overwrite"
+    },
+    {
+      "file": "streamcockpit3-clipforge.test.ts",
+      "name": "ClipForge offline refuses output collision .json without overwrite"
+    },
+    {
+      "file": "streamcockpit3-clipforge.test.ts",
+      "name": "ClipForge offline refuses output collision .vtt without overwrite"
+    },
+    {
+      "file": "streamcockpit3-clipforge.test.ts",
+      "name": "ClipForge offline does not retry after encoder failure or after restart"
+    },
+    {
+      "file": "streamcockpit3-clipforge.test.ts",
+      "name": "ClipForge offline never claims success on missing"
+    },
+    {
+      "file": "streamcockpit3-clipforge.test.ts",
+      "name": "ClipForge offline never claims success on empty"
+    },
+    {
+      "file": "streamcockpit3-clipforge.test.ts",
+      "name": "ClipForge offline never claims success on oversized"
+    },
+    {
+      "file": "streamcockpit3-clipforge.test.ts",
+      "name": "ClipForge offline never claims success on metrics"
+    },
+    {
+      "file": "streamcockpit3-clipforge.test.ts",
+      "name": "ClipForge offline never claims success on lost"
+    },
+    {
+      "file": "streamcockpit3-clipforge.test.ts",
+      "name": "ClipForge offline never claims success on null"
+    },
+    {
+      "file": "streamcockpit3-clipforge.test.ts",
+      "name": "ClipForge offline rejects changed source even when encoder exits zero"
+    },
+    {
+      "file": "streamcockpit3-clipforge.test.ts",
+      "name": "ClipForge offline cancels before work and during encode; suppresses late success"
+    },
+    {
+      "file": "streamcockpit3-clipforge.test.ts",
+      "name": "ClipForge offline rejects concurrent jobs on one instance"
+    },
+    {
+      "file": "streamcockpit3-clipforge.test.ts",
+      "name": "ClipForge offline reserves a job exclusively across independent instances"
+    },
+    {
+      "file": "streamcockpit3-clipforge.test.ts",
+      "name": "ClipForge offline keeps output and reports UNKNOWN when manifest persistence cannot complete"
+    },
+    {
+      "file": "streamcockpit3-clipforge.test.ts",
+      "name": "ClipForge offline rejects insecure output directory, overlapping roots and oversized source"
+    },
+    {
+      "file": "streamcockpit3-clipforge.test.ts",
+      "name": "ClipForge offline rejects exhausted disk before reserving or executing"
+    },
+    {
+      "file": "streamcockpit3-clipforge.test.ts",
+      "name": "ClipForge offline does not follow an output symlink or overwrite its target"
+    },
+    {
+      "file": "streamcockpit3-clipforge.test.ts",
+      "name": "ClipForge offline pins source descriptors against replacement during probe"
+    },
+    {
+      "file": "streamcockpit3-clipforge.test.ts",
+      "name": "ClipForge offline stops on probe disconnection without rendering or leaking error details"
+    },
+    {
+      "file": "streamcockpit3-clipforge.test.ts",
+      "name": "ClipForge offline fails closed when process resource launcher is absent"
+    },
+    {
+      "file": "streamcockpit3-context-integration-browser.test.ts",
+      "name": "preview at 320px: touch disclosure, XSS, offline/reconnect and zero requests"
+    },
+    {
+      "file": "streamcockpit3-master-clock-browser.test.ts",
+      "name": "F00 320px Home shows FIXE timer despite device wall-clock skew and fails closed when stale"
+    },
+    {
+      "file": "streamcockpit3-master-clock-resume.test.ts",
+      "name": "F00 real Edge touch 320px freezes on resume and recovers only after a new FIXE sample"
+    },
+    {
+      "file": "streamcockpit3-mixer-browser.test.ts",
+      "name": "F05 Plus mixer scrolls at 320px and fails closed after disconnect"
+    },
+    {
+      "file": "streamcockpit3-mixer-routing-browser.test.ts",
+      "name": "F05 real 320px browser: explicit routing read, no OBS writers, and revocation clears the UI"
+    },
+    {
+      "file": "streamcockpit3-moments-manual-browser.test.ts",
+      "name": "F09 manual creation is explicit and accessible at 320px without provider traffic"
+    },
+    {
+      "file": "streamcockpit3-moments-manual-browser.test.ts",
+      "name": "F09 Edge 320px recovers an uncertain marker via GET without POST replay"
+    },
+    {
+      "file": "streamcockpit3-moments-manual-browser.test.ts",
+      "name": "F09 Edge touch 320px explicitly verifies host OBS context without writing a marker"
+    },
+    {
+      "file": "streamcockpit3-moments-manual-browser.test.ts",
+      "name": "F09 Edge touch 320px binds a scheduled live only after explicit two-step selection"
+    },
+    {
+      "file": "streamcockpit3-moments-page-browser.test.ts",
+      "name": "F09 Plus timeline is readable at 320px and drops private markers on disconnect"
+    },
+    {
+      "file": "streamcockpit3-moments.test.ts",
+      "name": "durable POSIX file adapter and corruption survives reopening and leaves no temp or lock after success"
+    },
+    {
+      "file": "streamcockpit3-moments.test.ts",
+      "name": "durable POSIX file adapter and corruption reconciles an injected failure at synced-temp"
+    },
+    {
+      "file": "streamcockpit3-moments.test.ts",
+      "name": "durable POSIX file adapter and corruption reconciles an injected failure at renamed"
+    },
+    {
+      "file": "streamcockpit3-moments.test.ts",
+      "name": "durable POSIX file adapter and corruption recovers after actual process exit at synced-temp only after explicit stale-lock recovery"
+    },
+    {
+      "file": "streamcockpit3-moments.test.ts",
+      "name": "durable POSIX file adapter and corruption recovers after actual process exit at renamed only after explicit stale-lock recovery"
+    },
+    {
+      "file": "streamcockpit3-moments.test.ts",
+      "name": "durable POSIX file adapter and corruption does not overwrite a changed revision or bypass a foreign lock"
+    },
+    {
+      "file": "streamcockpit3-planning-assistant-browser.test.ts",
+      "name": "F06: real Microsoft Edge at 320px prepares then explicitly saves one local-only event"
+    },
+    {
+      "file": "streamcockpit3-planning-assistant-browser.test.ts",
+      "name": "F06: real Edge rejects source changes during local suggestion refresh"
+    },
+    {
+      "file": "streamcockpit3-planning-assistant-browser.test.ts",
+      "name": "F06: real Edge 320px duplicates one selected live into a local-only editor then explicit save"
+    },
+    {
+      "file": "streamcockpit3-planning-integration-browser.test.ts",
+      "name": "mounts Planning in Chromium, preserves an editor and makes zero requests"
+    },
+    {
+      "file": "streamcockpit3-twitch-poll-browser.test.ts",
+      "name": "F08 tactile 320px: deliberate preview, checkbox and exactly one explicit publication"
+    },
+    {
+      "file": "streamcockpit3-twitch-poll-browser.test.ts",
+      "name": "F08 disconnect discards pending preview and confidential draft, late response ignored"
+    },
+    {
+      "file": "streamcockpit3-twitch-poll-browser.test.ts",
+      "name": "F08 lost confirmation remains uncertain, never automatically retries a public Twitch POST"
+    },
+    {
+      "file": "streamcockpit3-twitch-prediction-browser.test.ts",
+      "name": "F08 Edge touch 320px prediction is manual, read-only and escapes Twitch text"
+    },
+    {
+      "file": "streamcockpit3-twitch-prediction-browser.test.ts",
+      "name": "F08 disconnect drops late private prediction response and has no automatic retry"
+    },
+    {
+      "file": "streamcockpit3-twitch-prediction-browser.test.ts",
+      "name": "F08 predicted state visibly expires instead of becoming stale forever"
+    },
+    {
+      "file": "streamcockpit3-twitch-prediction-create-browser.test.ts",
+      "name": "F08 real Edge 320px requires explicit preview, checkbox and unique publication"
+    },
+    {
+      "file": "streamcockpit3-twitch-prediction-create-browser.test.ts",
+      "name": "F08 lost Twitch POST receipt remains blocked even AFTER manual Twitch acknowledgement"
+    },
+    {
+      "file": "streamcockpit3-twitch-prediction-create-browser.test.ts",
+      "name": "F08 changing host during in-flight POST keeps uncertain state and ignores delayed receipt"
+    },
+    {
+      "file": "streamcockpit3-twitch-prediction-create-browser.test.ts",
+      "name": "F08 detached view during POST does not unlock when reattached with unchanged host"
+    },
+    {
+      "file": "streamcockpit3-twitch-prediction-create-browser.test.ts",
+      "name": "F08 fresh view reports persisted FIXE fence instead of offering automatic retry"
+    },
+    {
+      "file": "streamcockpit3-twitch-prediction-end-browser.test.ts",
+      "name": "F08 real Edge touch 320px resolves exact winning outcome with explicit consent"
+    },
+    {
+      "file": "streamcockpit3-twitch-prediction-end-browser.test.ts",
+      "name": "F08 active prediction offers cancellation only, never a false resolution"
+    },
+    {
+      "file": "streamcockpit3-twitch-prediction-end-browser.test.ts",
+      "name": "F08 provider or preview error cannot expose public consent or secrets"
+    },
+    {
+      "file": "streamcockpit3-twitch-prediction-end-browser.test.ts",
+      "name": "F08 lost PATCH or source change never replays an uncertain public end action"
+    },
+    {
+      "file": "streamcockpit3-twitch-prediction-end-browser.test.ts",
+      "name": "F08 missing PATCH acknowledgement disables reattempt through reconnect"
+    },
+    {
+      "file": "streamcockpit3-twitch-prediction-lock-browser.test.ts",
+      "name": "F08 Edge 320px lock is preview, explicit checkbox, one provider PATCH confirmation"
+    },
+    {
+      "file": "streamcockpit3-twitch-prediction-lock-browser.test.ts",
+      "name": "F08 preview errors and offline do not expose lock consent"
+    },
+    {
+      "file": "streamcockpit3-twitch-prediction-lock-browser.test.ts",
+      "name": "F08 lost PATCH acknowledgement stays uncertain, never retries after source reconnect"
+    },
+    {
+      "file": "streamcockpit3-twitch-prediction-lock-browser.test.ts",
+      "name": "F08 in-flight PATCH followed by a host change drops late receipt without retry"
+    },
+    {
+      "file": "streamcockpit3-twitch-prediction-release-browser.test.ts",
+      "name": "F08 Edge 320px release is inspect -> preview -> checkbox -> one explicit FIXE confirmation"
+    },
+    {
+      "file": "streamcockpit3-twitch-prediction-release-browser.test.ts",
+      "name": "F08 nonterminal, missing and unavailable states never expose consent or POST"
+    },
+    {
+      "file": "streamcockpit3-twitch-prediction-release-browser.test.ts",
+      "name": "F08 source change during ambiguous release discards late receipt and never retries"
+    },
+    {
+      "file": "streamcockpit3-twitch-prediction-release-browser.test.ts",
+      "name": "F08 lost local release receipt is uncertain and never auto-replayed"
+    },
+    {
+      "file": "streamcockpit3-twitch-prediction-release-browser.test.ts",
+      "name": "F08 detached root during host commit never treats lost confirmation as safe"
+    },
+    {
+      "file": "streamcockpit3-twitch-raid-browser.test.ts",
+      "name": "F08 Edge 320px raid requires separate preview and public-transfer consent"
+    },
+    {
+      "file": "streamcockpit3-twitch-raid-browser.test.ts",
+      "name": "F08 disconnect rejects late destination preview, erases private data"
+    },
+    {
+      "file": "streamcockpit3-twitch-raid-browser.test.ts",
+      "name": "F08 uncertain raid outcome disables further sends, no retry or leak"
+    },
+    {
+      "file": "streamcockpit3-twitch-raid-browser.test.ts",
+      "name": "F08 an in-flight raid remains uncertain across reconnection until explicit Twitch reconciliation"
+    },
+    {
+      "file": "streamcockpit3-twitch-shoutout-browser.test.ts",
+      "name": "F08 320px real Edge: voluntary preview, second consent, exactly one public command"
+    },
+    {
+      "file": "streamcockpit3-twitch-shoutout-browser.test.ts",
+      "name": "F08 disconnect drops private target, pending consent and delayed preview"
+    },
+    {
+      "file": "streamcockpit3-twitch-shoutout-browser.test.ts",
+      "name": "F08 lost Twitch receipt is uncertain and never silently re-sends"
+    }
+  ],
+  "hardwareQualification": false,
+  "publicTwitchActionsPerformed": 0,
+  "userInstallationsPerformed": 0,
+  "resourcePolicy": {
+    "priority": "BelowNormal requested on parent shells; sequential stages; max 2 Vitest workers and 1 Gradle worker",
+    "samples": "Before stages only; not continuous peak telemetry",
+    "otherProjectsModified": false,
+    "otherProjectProcessesStopped": false
+  },
+  "gates": {
+    "G0": "qualified_historical",
+    "G1": "qualified_historical",
+    "G2": "in_progress",
+    "G3": "open",
+    "G4": "open",
+    "G5": "open"
+  }
+}

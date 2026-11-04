@@ -5,8 +5,8 @@
   "flows": [
     {
       "id": "FLOW-01",
-      "source": "UI Windows FIXE",
-      "destination": "Runtime FIXE",
+      "source": "UI Windows de FIXE ou du laptop dans son espace local nommé",
+      "destination": "Runtime Windows local ; effets de régie délégables à FIXE",
       "transport": "HTTP loopback + IPC Electron",
       "direction": "source vers destination et réponse/notification selon transport",
       "category": "B",
@@ -166,12 +166,12 @@
     {
       "id": "FLOW-06",
       "source": "Twitch Chat",
-      "destination": "FIXE",
+      "destination": "Runtime Windows du compte (FIXE, ou compte local laptop explicite)",
       "transport": "EventSub WebSocket TLS",
       "direction": "source vers destination et réponse/notification selon transport",
       "category": "A",
       "owner": "Compte du client nommé ; OAuth distinct",
-      "authentication": "OAuth FIXE user:read:chat ; session EventSub",
+      "authentication": "OAuth propre au runtime Windows ; user:read:chat ; session EventSub. Le compte local laptop n’est pas une autorité OBS.",
       "scopes": "Voir authentification et contrat source ; aucun scope supposé accordé",
       "messageFormat": "Contrat existant dans le fichier de preuve ; JSON HTTP/événement ou messages OBS/IRC selon transport",
       "contractVersion": "Contrat existant conservé ; version exposée dans les routes/schémas, pas de nouveau protocole",
@@ -197,13 +197,13 @@
     },
     {
       "id": "FLOW-07",
-      "source": "FIXE",
+      "source": "Runtime Windows propriétaire du compte (FIXE ou espace local laptop explicite)",
       "destination": "Twitch Helix",
       "transport": "HTTPS REST",
       "direction": "source vers destination et réponse/notification selon transport",
       "category": "A",
       "owner": "Compte du client nommé ; OAuth distinct",
-      "authentication": "Jeton OAuth FIXE ; user:write:chat + scopes par action",
+      "authentication": "OAuth propre au runtime Windows ; user:write:chat et scopes par action. Aucun jeton partagé entre appareils.",
       "scopes": "Voir authentification et contrat source ; aucun scope supposé accordé",
       "messageFormat": "Contrat existant dans le fichier de preuve ; JSON HTTP/événement ou messages OBS/IRC selon transport",
       "contractVersion": "Contrat existant conservé ; version exposée dans les routes/schémas, pas de nouveau protocole",
@@ -707,5 +707,6 @@
       },
       "verification": "CODE_OBSERVED; software tests in evidence/qualification.json; physical not tested"
     }
-  ]
+  ],
+  "qualifiedSoftwareSourceCommit": "73a6aae2a8e59c1c22c1f0d304cccb08c1586718"
 }

@@ -1,0 +1,45 @@
+{
+  "schemaVersion": 1,
+  "ticket": "SC3-FLOW-ONESHOT-001",
+  "verifiedAt": "2026-11-04T22:25:42.163Z",
+  "sourceCommit": "73a6aae2a8e59c1c22c1f0d304cccb08c1586718",
+  "sourceTreeSha256": "9da384c3e69b69827576fc7d0e34c3f96d621199ddd8ac6e4eaea4581f9b9838",
+  "sourceTreeDirty": false,
+  "releaseEligible": false,
+  "kind": "QA_ONLY_NOT_A_RELEASE",
+  "windows": {
+    "path": "C:\\Users\\damie\\Dev\\StreamCockpit-3.0-FullExperience\\out\\sc3-flow-qa\\73a6aae2a8e5\\windows-x64\\StreamDashboard.exe",
+    "sha256": "bebfa95de3545166cd3158a5c0a8025c28edbe0d91c121123ab9a3be3b03dc11",
+    "asarSha256": "e8b43991f2f92c28ccdb1da84e150c9b2222ba3bde9629abe55ea252c0bdeac6",
+    "signature": "NotSigned",
+    "version": "3.0.0-alpha.1"
+  },
+  "android": {
+    "path": "C:\\Users\\damie\\Dev\\StreamCockpit-3.0-FullExperience\\out\\sc3-flow-qa\\73a6aae2a8e5\\Le-StreamCockpit-3.0-flow-android-qa.apk",
+    "sha256": "f41e65433c017b59fb1cde4c92e199e687f1a0bff2b5e76f1af8608423fad544",
+    "bytes": 3798929,
+    "signature": "Android Debug; verified v2; NOT production",
+    "applicationId": "com.rastaaslan.streamdashboard.remote.next.qa"
+  },
+  "provenance": {
+    "windows": {
+      "schemaVersion": 1,
+      "product": "Le StreamCockpit",
+      "version": "3.0.0-alpha.1",
+      "sourceCommit": "73a6aae2a8e59c1c22c1f0d304cccb08c1586718",
+      "sourceTreeSha256": "9da384c3e69b69827576fc7d0e34c3f96d621199ddd8ac6e4eaea4581f9b9838",
+      "sourceTreeDirty": false
+    },
+    "android": {
+      "schemaVersion": 1,
+      "product": "Le StreamCockpit",
+      "version": "3.0.0-alpha.1",
+      "sourceCommit": "73a6aae2a8e59c1c22c1f0d304cccb08c1586718",
+      "sourceTreeSha256": "9da384c3e69b69827576fc7d0e34c3f96d621199ddd8ac6e4eaea4581f9b9838",
+      "sourceTreeDirty": false
+    }
+  },
+  "installationsPerformed": 0,
+  "published": false,
+  "rollbackHardwareQualified": false
+}

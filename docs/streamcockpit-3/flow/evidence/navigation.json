@@ -1,0 +1,104 @@
+{
+  "status": "PASS",
+  "kind": "static-production-html-css-in-real-Edge",
+  "checks": [
+    {
+      "width": 320,
+      "innerWidth": 320,
+      "overflow": 0,
+      "groups": [],
+      "tabs": [
+        "home",
+        "live",
+        "sounds",
+        "planning",
+        "plus"
+      ],
+      "debug": [
+        {
+          "display": "none",
+          "rules": [
+            "nav .desktop-nav { display: none; }",
+            "nav > .cockpit-nav-group { display: block; padding: 14px 12px 4px; color: var(--muted,#a19baa); font-size: 10px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; }",
+            "nav > .cockpit-nav-group { display: none; }"
+          ]
+        },
+        {
+          "display": "none",
+          "rules": [
+            "nav .desktop-nav { display: none; }",
+            "nav > .cockpit-nav-group { display: block; padding: 14px 12px 4px; color: var(--muted,#a19baa); font-size: 10px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; }",
+            "nav > .cockpit-nav-group { display: none; }"
+          ]
+        }
+      ]
+    },
+    {
+      "width": 390,
+      "innerWidth": 390,
+      "overflow": 0,
+      "groups": [],
+      "tabs": [
+        "home",
+        "live",
+        "sounds",
+        "planning",
+        "plus"
+      ],
+      "debug": [
+        {
+          "display": "none",
+          "rules": [
+            "nav .desktop-nav { display: none; }",
+            "nav > .cockpit-nav-group { display: block; padding: 14px 12px 4px; color: var(--muted,#a19baa); font-size: 10px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; }",
+            "nav > .cockpit-nav-group { display: none; }"
+          ]
+        },
+        {
+          "display": "none",
+          "rules": [
+            "nav .desktop-nav { display: none; }",
+            "nav > .cockpit-nav-group { display: block; padding: 14px 12px 4px; color: var(--muted,#a19baa); font-size: 10px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; }",
+            "nav > .cockpit-nav-group { display: none; }"
+          ]
+        }
+      ]
+    },
+    {
+      "width": 1366,
+      "innerWidth": 1366,
+      "overflow": 0,
+      "groups": [
+        "Régie",
+        "Administration"
+      ],
+      "tabs": [
+        "live",
+        "sounds",
+        "deck",
+        "planning",
+        "settings",
+        "activity",
+        "manage"
+      ],
+      "debug": [
+        {
+          "display": "block",
+          "rules": [
+            "nav .desktop-nav { display: none; }",
+            "nav > .cockpit-nav-group { display: block; padding: 14px 12px 4px; color: var(--muted,#a19baa); font-size: 10px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; }",
+            "nav > .cockpit-nav-group { display: none; }"
+          ]
+        },
+        {
+          "display": "block",
+          "rules": [
+            "nav .desktop-nav { display: none; }",
+            "nav > .cockpit-nav-group { display: block; padding: 14px 12px 4px; color: var(--muted,#a19baa); font-size: 10px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; }",
+            "nav > .cockpit-nav-group { display: none; }"
+          ]
+        }
+      ]
+    }
+  ]
+}

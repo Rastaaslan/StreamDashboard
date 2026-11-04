@@ -1188,7 +1188,10 @@
   "flowAudit": {
     "ticket": "SC3-FLOW-ONESHOT-001",
     "path": "docs/streamcockpit-3/flow/FUNCTIONAL_AUDIT.json",
-    "softwareQualification": "pending_final_campaign",
-    "hardwareQualification": false
+    "sourceCommit": "73a6aae2a8e59c1c22c1f0d304cccb08c1586718",
+    "softwareQualification": "PASS_CURRENT_CAMPAIGN_WITH_DOCUMENTED_SKIPS",
+    "evidence": "docs/streamcockpit-3/flow/evidence/qualification.json",
+    "hardwareQualification": false,
+    "releaseEligible": false
   }
 }

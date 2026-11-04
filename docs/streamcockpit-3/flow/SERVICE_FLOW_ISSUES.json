@@ -17,7 +17,7 @@
         "Android local chat is explicit"
       ],
       "status": "FIXED_SOFTWARE_PHYSICAL_PENDING",
-      "commit": "See evidence/qualification.json sourceCommit",
+      "commit": "73a6aae2a8e59c1c22c1f0d304cccb08c1586718",
       "limits": "Les essais Edge/API synthétiques ne sont pas une réception physique Android ni un effet Twitch public."
     },
     {
@@ -34,7 +34,7 @@
         "paired chat offers permission-checked moderation"
       ],
       "status": "FIXED_SOFTWARE_PHYSICAL_PENDING",
-      "commit": "See evidence/qualification.json sourceCommit",
+      "commit": "73a6aae2a8e59c1c22c1f0d304cccb08c1586718",
       "limits": "Les essais Edge/API synthétiques ne sont pas une réception physique Android ni un effet Twitch public."
     },
     {
@@ -51,7 +51,7 @@
         "paired chat offers permission-checked moderation"
       ],
       "status": "FIXED_SOFTWARE_PHYSICAL_PENDING",
-      "commit": "See evidence/qualification.json sourceCommit",
+      "commit": "73a6aae2a8e59c1c22c1f0d304cccb08c1586718",
       "limits": "Les essais Edge/API synthétiques ne sont pas une réception physique Android ni un effet Twitch public."
     },
     {
@@ -68,7 +68,7 @@
         "chat resume fences reads"
       ],
       "status": "FIXED_SOFTWARE_PHYSICAL_PENDING",
-      "commit": "See evidence/qualification.json sourceCommit",
+      "commit": "73a6aae2a8e59c1c22c1f0d304cccb08c1586718",
       "limits": "Les essais Edge/API synthétiques ne sont pas une réception physique Android ni un effet Twitch public."
     },
     {
@@ -85,7 +85,7 @@
         "uncertain or rejected chat receipts"
       ],
       "status": "FIXED_SOFTWARE",
-      "commit": "See evidence/qualification.json sourceCommit",
+      "commit": "73a6aae2a8e59c1c22c1f0d304cccb08c1586718",
       "limits": "Les essais Edge/API synthétiques ne sont pas une réception physique Android ni un effet Twitch public."
     },
     {
@@ -101,8 +101,8 @@
       "tests": [
         "browser layout and navigation campaign"
       ],
-      "status": "IMPLEMENTED_SOFTWARE_UI_VERIFICATION_PENDING",
-      "commit": "See evidence/qualification.json sourceCommit",
+      "status": "FIXED_SOFTWARE_320_390_1366PX",
+      "commit": "73a6aae2a8e59c1c22c1f0d304cccb08c1586718",
       "limits": "Les essais Edge/API synthétiques ne sont pas une réception physique Android ni un effet Twitch public."
     },
     {
@@ -117,7 +117,7 @@
       "fix": "Limite explicitée ; pas de backend historique ajouté sans besoin démontré.",
       "tests": [],
       "status": "DOCUMENTED_LIMITATION",
-      "commit": "See evidence/qualification.json sourceCommit",
+      "commit": "73a6aae2a8e59c1c22c1f0d304cccb08c1586718",
       "limits": "Les essais Edge/API synthétiques ne sont pas une réception physique Android ni un effet Twitch public."
     },
     {
@@ -132,7 +132,7 @@
       "fix": "Préparer un seul couple QA commun ; conserver G4/G5 ouverts et aucune installation.",
       "tests": [],
       "status": "EXTERNAL_PREREQUISITE",
-      "commit": "See evidence/qualification.json sourceCommit",
+      "commit": "73a6aae2a8e59c1c22c1f0d304cccb08c1586718",
       "limits": "Les essais Edge/API synthétiques ne sont pas une réception physique Android ni un effet Twitch public."
     },
     {
@@ -144,14 +144,14 @@
       "symptom": "Campagne générale bloquée par 10 attentes de signature obsolètes et 5 scénarios navigateur multistream retiré.",
       "rootCause": "Suites ciblées historiques non requalifiées après changement de contrat et suppression YouTube.",
       "fix": "Assertions strictes avec confirmedChecklist explicite ; scénarios Twitch et preuve négative de non-réintroduction YouTube ; aucune relaxation des nombres d’appels.",
-      "status": "CORRECTED_PENDING_FINAL_CAMPAIGN",
+      "status": "FIXED_TEST_CONTRACTS_FINAL_CAMPAIGN_PASS",
       "tests": [
         "tests/control-keyboard-routes.test.ts",
         "tests/control-stop-twitch-priority.test.ts",
         "tests/twitch-stop-lag.test.ts",
         "tests/live-monitor-chat-ui.spec.ts"
       ],
-      "commit": "See evidence/qualification.json"
+      "commit": "73a6aae2a8e59c1c22c1f0d304cccb08c1586718"
     }
   ]
 }

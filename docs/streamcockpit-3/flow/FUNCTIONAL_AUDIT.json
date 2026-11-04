@@ -661,5 +661,8 @@
       ],
       "currentRevisionNote": "Aucune réception physique sur le code de ce lot. Les tests logiciels finaux sont référencés dans evidence/qualification.json."
     }
-  ]
+  ],
+  "qualifiedSoftwareSourceCommit": "73a6aae2a8e59c1c22c1f0d304cccb08c1586718",
+  "finalizedAt": "2026-11-04T22:28:22.771Z",
+  "softwareEvidence": "evidence/qualification.json"
 }

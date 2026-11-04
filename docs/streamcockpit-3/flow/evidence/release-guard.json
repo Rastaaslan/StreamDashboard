@@ -1,0 +1,6 @@
+{
+  "status": "EXPECTED_REFUSAL",
+  "exitCode": 1,
+  "sourceCommit": "73a6aae2a8e59c1c22c1f0d304cccb08c1586718",
+  "reasons": "F00-F10/G2-G5 non qualifiés ; signatures de production et vérification indépendante manquantes."
+}
