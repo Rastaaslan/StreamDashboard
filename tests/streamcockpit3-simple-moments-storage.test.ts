@@ -1,5 +1,5 @@
 import {it,expect} from 'vitest';
-import {loadUncertainMoment,rememberUncertainMoment,clearUncertainMoment,diagnoseUncertainMomentStore} from '../apps/mobile/control/streamcockpit-twitch-moment-pending.js';
+import {loadUncertainMoment,rememberUncertainMoment,clearUncertainMoment,diagnoseUncertainMomentStore,recoverUncertainMomentForReview} from '../apps/mobile/control/streamcockpit-twitch-moment-pending.js';
 const uuid='643e0c2b-e8e4-4ccd-a82c-8ad0a05f19c5';
 function mockStorage(){
   const data=new Map<string,string>();
@@ -129,4 +129,30 @@ it('F04 stale tab cannot erase a newer uncertain receipt for the same host/accou
   expect(clearUncertainMoment(view,'fixe','dam',undefined as never,now+2)).toBe(false);
   expect(loadUncertainMoment(view,'fixe','dam',now+2)).toEqual(fresh);
   expect(clearUncertainMoment(view,'fixe','dam',fresh,now+2)).toBe(true);
+});
+
+
+it('F04 corrupt journal permits only scoped read-only review of a unique valid receipt, never mutation or recovery authorization',()=>{
+  const {view,data}=mockStorage(),now=1800000000000,key='sd3.f04.twitch-moment-uncertain.v1';
+  expect(rememberUncertainMoment(view,'FIXE','owner',{id:uuid,kind:'clip'},now)).toBe(true);
+  const good=JSON.parse(data.get(key)!) as {version:number;rows:Record<string,unknown>[]};
+  const raw=JSON.stringify({version:1,rows:[...good.rows,{source:'FIXE',account:'someone-else',id:'invalid',kind:'marker',createdAt:now}]});
+  data.set(key,raw);
+  expect(diagnoseUncertainMomentStore(view,'FIXE','owner',now)).toEqual({state:'blocked'});
+  expect(recoverUncertainMomentForReview(view,'FIXE','owner',now)).toEqual({id:uuid,kind:'clip'});
+  expect(recoverUncertainMomentForReview(view,'FIXE','another',now)).toBeNull();
+  expect(rememberUncertainMoment(view,'FIXE','owner',{id:uuid,kind:'clip'},now)).toBe(false);
+  expect(clearUncertainMoment(view,'FIXE','owner',{id:uuid,kind:'clip'},now)).toBe(false);
+  expect(data.get(key)).toBe(raw);
+  for(const rows of [[...good.rows,{...good.rows[0]}],[{...good.rows[0],id:'bad'},...good.rows]]){
+    data.set(key,JSON.stringify({version:1,rows}));
+    expect(recoverUncertainMomentForReview(view,'FIXE','owner',now)).toBeNull();
+  }
+  for(const invalid of ['{broken',JSON.stringify({version:2,rows:good.rows})]){
+    data.set(key,invalid);
+    expect(recoverUncertainMomentForReview(view,'FIXE','owner',now)).toBeNull();
+  }
+  data.set(key,raw);
+  expect(recoverUncertainMomentForReview(view,'FIXE','owner',now+7*24*60*60*1000)).toBeNull();
+  expect(data.get(key)).toBe(raw);
 });

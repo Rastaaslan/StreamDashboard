@@ -158,3 +158,47 @@ it.skipIf(process.env.SC3_FINAL_BROWSER_TEST!=='1')('F04 real Edge 320px: corrup
     await page.evaluate(()=>(window as any).panel.destroy());
   }finally{await browser.close()}
 },30000);
+
+
+it.skipIf(process.env.SC3_FINAL_BROWSER_TEST!=='1')('F04 real Edge 320px: partially corrupt journal exposes one scoped GET-only receipt after reload, never repairs or posts',async()=>{
+  const bundle=await build({stdin:{contents:"import {mountTwitchMoments} from './apps/mobile/control/streamcockpit-twitch-moments.js';window.mountMoments=mountTwitchMoments;",resolveDir:process.cwd()},bundle:true,write:false,format:'iife',platform:'browser'});
+  const browser=await chromium.launch({channel:'msedge',headless:true});
+  try{
+    const page=await browser.newPage({viewport:{width:320,height:720},hasTouch:true});
+    await page.route('**/*',r=>r.abort());
+    await page.route('http://127.0.0.1:38654/**',r=>r.fulfill({status:200,contentType:'text/html',body:'<main id="root"></main>'}));
+    await page.goto('http://127.0.0.1:38654/moments');
+    const original=await page.evaluate(()=>{
+      const raw=JSON.stringify({version:1,rows:[
+        {source:'FIXE',account:'owner',id:'643e0c2b-e8e4-4ccd-a82c-8ad0a05f19c5',kind:'clip',createdAt:Date.now()},
+        {source:'OTHER',account:'another',id:'malformed',kind:'marker',createdAt:Date.now()},
+      ]});localStorage.setItem('sd3.f04.twitch-moment-uncertain.v1',raw);return raw;
+    });
+    const mount=async()=>{
+      await page.addScriptTag({content:bundle.outputFiles[0].text});
+      await page.evaluate(()=>{
+        const w=window as any;w.calls=[];w.panel=w.mountMoments(document.getElementById('root'),{request:async(path:string,_body:any,method:string)=>{
+          w.calls.push({path,method});
+          if(method==='GET')return {schemaVersion:1,kind:'streamcockpit-moment-status',retryable:false,status:'journal_observed',momentKind:'clip'};
+          throw Error('NO_POST_OR_PREVIEW_ALLOWED');
+        }});w.panel.update({online:true,sourceKey:'FIXE',accountKey:'owner'});
+      });
+    };
+    await mount();
+    for(let n=0;n<2;n++){
+      await expect.poll(()=>page.getByRole('status').textContent()).toContain('Stockage des confirmations Twitch illisible');
+      expect(await page.getByRole('button',{name:'Vérifier le moment sans publier'}).isDisabled()).toBe(true);
+      expect(await page.getByRole('button',{name:'J’ai vérifié ce moment dans Twitch'}).isVisible()).toBe(false);
+      const inspect=page.getByRole('button',{name:'Consulter le journal FIXE sans renvoyer'});
+      expect(await inspect.isVisible()).toBe(true);await inspect.click();
+      await expect.poll(()=>page.getByRole('status').textContent()).toContain('Stockage local toujours bloqué');
+      expect(await page.evaluate(()=>localStorage.getItem('sd3.f04.twitch-moment-uncertain.v1'))).toBe(original);
+      expect(await page.evaluate(()=>(window as any).calls.map((c:any)=>c.method))).toEqual(['GET']);
+      if(n===0){await page.reload();await mount()}
+    }
+    await page.evaluate(()=>(window as any).panel.update({online:true,sourceKey:'FIXE',accountKey:'other'}));
+    expect(await page.getByRole('button',{name:'Consulter le journal FIXE sans renvoyer'}).isVisible()).toBe(false);
+    expect(await page.evaluate(()=>document.documentElement.scrollWidth<=320)).toBe(true);
+    expect(await page.evaluate(()=>localStorage.getItem('sd3.f04.twitch-moment-uncertain.v1'))).toBe(original);
+  }finally{await browser.close()}
+},30000);

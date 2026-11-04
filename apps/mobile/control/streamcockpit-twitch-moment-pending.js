@@ -54,6 +54,26 @@ export function diagnoseUncertainMomentStore(view,source,account,now=Date.now())
     return row?{state:'pending',receipt:{id:row.id,kind:row.kind}}:{state:'clear'};
   }catch{return {state:'blocked'}}
 }
+// Narrow forensic lookup ONLY: a parseable but partially invalid journal can retain
+// one trustworthy current-scope UUID. Never repair, trim, clear, admit or retry.
+// An unparseable document or ambiguous/malformed row for this scope is UNKNOWN.
+export function recoverUncertainMomentForReview(view,source,account,now=Date.now()){
+  if(!validScope(source,account))return null;
+  try{
+    const storage=store(view),raw=storage?.getItem(KEY);
+    if(!raw||raw.length>8192)return null;
+    const data=JSON.parse(raw);
+    if(!data||data.version!==1||!Array.isArray(data.rows)||data.rows.length>MAX_RECORDS)return null;
+    let found=null;
+    for(const row of data.rows){
+      if(!row||typeof row!=='object'||Array.isArray(row))return null;
+      if(row.source!==source||row.account!==account)continue;
+      if(found||!validRow(row,now))return null;
+      found={id:row.id,kind:row.kind};
+    }
+    return found;
+  }catch{return null}
+}
 export function loadUncertainMoment(view,source,account,now=Date.now()){
   if(!validScope(source,account))return null;
   const storage=store(view);if(!storage)return null;
