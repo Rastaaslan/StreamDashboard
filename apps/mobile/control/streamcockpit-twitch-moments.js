@@ -118,12 +118,14 @@ export function mountTwitchMoments(root,{request}={}){
   });
   publish.addEventListener('click',async()=>{
     if(!connected()||flight||sending||uncertain||!pending||!agree.checked||Date.now()>=pending.expiresAt)return;
-    const id=pending.confirmationId,expected=pending.draft.kind,target=sourceKey,account=accountKey,key=++revision;
+    const id=pending.confirmationId,expected=pending.draft.kind,target=sourceKey,account=accountKey,expiresAt=pending.expiresAt,key=++revision;
     cancel();flight=true;draw();
     // Claim the same-origin native lock BEFORE touching the shared journal or POSTing.
+    // A suspended browser can resume after preview expiry between the click and
+    // lock acquisition. Recheck inside the lock, before recording any new UUID.
     // Contention, missing Web Locks and outdated previews fail closed, without retry.
     const stored=await withExclusiveMomentJournal(view,()=>
-      connected()&&key===revision&&target===sourceKey&&account===accountKey&&
+      connected()&&key===revision&&target===sourceKey&&account===accountKey&&Date.now()<expiresAt&&
       !uncertain&&!storageBlocked&&rememberUncertainMoment(view,target,account,{id,kind:expected}));
     if(key!==revision)return;
     if(!stored){

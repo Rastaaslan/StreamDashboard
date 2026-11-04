@@ -369,6 +369,10 @@
         {
           "path": "apps/mobile/control/streamcockpit-twitch-moments.js",
           "kind": "2026-11-04 RDC FIXE: canonical expired Twitch receipt can be reconciled in the shared Desktop/Android source UI only after an explicitly requested local confidential download and operator declaration of checking the saved copy and Twitch. Exclusive same-origin Web Lock, exact backup snapshot match, UUID/kind/account/host, whole journal validation and read-back are required. Other accounts\u0027 expired UUIDs survive; malformed/noncanonical evidence remains blocked; no retry or provider POST. RED storage 18 PASS/2 FAIL; targeted 54 PASS/0 FAIL/0 skipped (five suites, 11 real Edge tests with actual confidential download). TypeScript/browser checks and security 6735 files PASS. No physical Android, independently proven filesystem download, real Twitch verification, power-loss, packaging or gate promotion: F04 partial/G2 in_progress."
+        },
+        {
+          "path": "apps/mobile/control/streamcockpit-twitch-moments.js",
+          "kind": "2026-11-04 RDC FIXE F04: expired preview now fails closed on browser resume between click and native Web Lock callback. Recheck expiresAt inside the acquired lock before any UUID admission or Twitch POST; no automatic retry. Real Edge 320px RED 0 PASS/1 FAIL, corrected 1 PASS/0 FAIL; seven targeted suites 56 PASS/0 FAIL/0 skipped (13 real Edge scenarios), TypeScript/browser types PASS, security 6736 files PASS, diff-check PASS. Synthetic time jump, no Twitch public operation, physical Android, packaging/signatures, or release qualification. F04 partial, G2 in_progress."
         }
       ],
       "verifiedTests": [
@@ -382,6 +386,7 @@
         "tests/streamcockpit3-simple-moments-storage.test.ts",
         "tests/streamcockpit3-simple-moments-multitab-browser.test.ts",
         "tests/streamcockpit3-f04-ephemeral-journal-multitab.test.ts",
+        "tests/streamcockpit3-f04-expiring-lock-browser.test.ts",
         "tests/streamcockpit3-simple-replay-privacy.test.ts",
         "tests/streamcockpit3-release-scope.test.ts"
       ],
