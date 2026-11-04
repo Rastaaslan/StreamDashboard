@@ -14,6 +14,11 @@ const safeRow=(r,now)=>r&&typeof r==='object'&&!Array.isArray(r)&&
   (r.kind==='clip'||r.kind==='marker')&&Number.isSafeInteger(r.createdAt)&&
   r.createdAt>=0&&r.createdAt<=now;
 const validRow=(r,now)=>safeRow(r,now)&&now-r.createdAt<MAX_AGE_MS;
+// An unrecognized top-level field may contain a receipt from another schema.
+// Never overwrite or interpret such a journal as if it contained only rows.
+const knownJournal=data=>data&&typeof data==='object'&&!Array.isArray(data)&&
+  Object.keys(data).length===2&&Object.hasOwn(data,'version')&&Object.hasOwn(data,'rows')&&
+  data.version===1&&Array.isArray(data.rows)&&data.rows.length<=MAX_RECORDS;
 function store(view){try{return view?.localStorage}catch{return undefined}}
 // Forensic backup is strictly opt-in and local: preserve the exact raw journal,
 // including invalid JSON, without interpreting, trimming, clearing, or uploading it.
@@ -29,7 +34,7 @@ function read(storage,now){
   if(raw===null)return [];
   if(raw.length>8192)throw Error('OVER_LIMIT');
   const data=JSON.parse(raw);
-  if(data?.version!==1||!Array.isArray(data.rows)||data.rows.length>MAX_RECORDS)throw Error('BAD_STORAGE');
+  if(!knownJournal(data))throw Error('BAD_STORAGE');
   const scopes=new Set();
   for(const row of data.rows){
     if(!safeRow(row,now))throw Error('BAD_ROW');
@@ -72,7 +77,7 @@ export function recoverUncertainMomentForReview(view,source,account,now=Date.now
     const storage=store(view),raw=storage?.getItem(KEY);
     if(!raw||raw.length>8192)return null;
     const data=JSON.parse(raw);
-    if(!data||data.version!==1||!Array.isArray(data.rows)||data.rows.length>MAX_RECORDS)return null;
+    if(!knownJournal(data))return null;
     let found=null;
     for(const row of data.rows){
       if(!row||typeof row!=='object'||Array.isArray(row))return null;

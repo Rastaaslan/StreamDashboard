@@ -325,6 +325,10 @@
         {
           "path": "apps/mobile/control/streamcockpit-twitch-moment-pending.js",
           "kind": "2026-11-04 FIXE F04: user-click-only local raw backup (at most 1 MiB) for malformed pending-journal JSON via shared Desktop/Android panel, without mutation, repair, upload, logs or Twitch POST. Visible confidential-data warning; export only while paired/connected and storage blocked, never auto-export. RED 13 PASS/2 FAIL; final 41 PASS/0 FAIL/0 skipped over 5 targeted suites including 8 real Edge tests; TypeScript/browser types, development build 143 assets, shipped JS 149 and security 6721 files PASS (6722 after documentation). Source-only; Android physical, browser download UX and external manual reconciliation unqualified. Raw backup may include sensitive/other-scope fields: do not distribute."
+        },
+        {
+          "path": "apps/mobile/control/streamcockpit-twitch-moment-pending.js",
+          "kind": "2026-11-04 FIXE F04: strict top-level journal schema rejects unknown fields before any local write/clear or admission, avoiding silent loss of unexpected possibly executed receipts. Read-only partial recovery also refuses unknown top-level data, raw backup remains byte-for-byte unchanged. RED 10 PASS/1 FAIL; final 42 PASS/0 FAIL/0 skipped across five targeted suites including 8 actual Edge browser tests, all providers synthetic. TypeScript, browser types, development build, shipped JS (149) and security (6726 files before documentation) PASS. No physical Android/Twitch, power-loss or supervised reconciliation proof; F04 partial/G2 in_progress."
         }
       ],
       "verifiedTests": [

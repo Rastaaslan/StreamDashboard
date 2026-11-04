@@ -81,6 +81,21 @@ it('F04 fails closed when another stored row is malformed instead of silently ev
     expect(data.get(key)).toBe(raw); // never discard potentially executed commands
   }
 });
+it('F04 refuses unknown top-level journal fields and preserves every byte for manual reconciliation',()=>{
+  const {view,data}=mockStorage(),now=1800000000000,key='sd3.f04.twitch-moment-uncertain.v1';
+  expect(rememberUncertainMoment(view,'FIXE','owner',{id:uuid,kind:'clip'},now)).toBe(true);
+  const existing=JSON.parse(data.get(key)!) as {version:number;rows:Record<string,unknown>[]};
+  const raw=JSON.stringify({...existing,unrecognized:{originalReceipt:'KEEP_UNEXPECTED_UUID',token:'NEVER_PUBLISH'}});
+  data.set(key,raw);
+  expect(diagnoseUncertainMomentStore(view,'FIXE','owner',now)).toEqual({state:'blocked'});
+  expect(loadUncertainMoment(view,'FIXE','owner',now)).toBeNull();
+  expect(recoverUncertainMomentForReview(view,'FIXE','owner',now)).toBeNull();
+  expect(rememberUncertainMoment(view,'FIXE','other',{id:uuid,kind:'marker'},now)).toBe(false);
+  expect(clearUncertainMoment(view,'FIXE','owner',{id:uuid,kind:'clip'},now)).toBe(false);
+  expect(data.get(key)).toBe(raw);
+  expect(readUncertainMomentBackup(view)).toBe(raw);
+});
+
 it('F04 rejects ambiguous duplicate host/account rows before accepting new Twitch confirmations',()=>{
   const {view,data}=mockStorage(),now=1800000000000,key='sd3.f04.twitch-moment-uncertain.v1';
   expect(rememberUncertainMoment(view,'fixe','dam',{id:uuid,kind:'clip'},now)).toBe(true);
