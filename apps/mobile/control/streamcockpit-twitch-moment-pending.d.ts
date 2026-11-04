@@ -5,4 +5,5 @@ export interface MomentStorageView {readonly localStorage?: {getItem(key:string)
 export declare function diagnoseUncertainMomentStore(view:MomentStorageView,source:string,account:string,now?:number):{state:'blocked'|'clear'}|{state:'pending';receipt:MomentReceipt};
 export declare function loadUncertainMoment(view:MomentStorageView,source:string,account:string,now?:number):MomentReceipt|null;
 export declare function rememberUncertainMoment(view:MomentStorageView,source:string,account:string,receipt:MomentReceipt,now?:number):boolean;
-export declare function clearUncertainMoment(view:MomentStorageView,source:string,account:string,now?:number):boolean;
+/** Clear only the receipt currently acknowledged; a stale tab must not clear a newer UUID. */
+export declare function clearUncertainMoment(view:MomentStorageView,source:string,account:string,expected:MomentReceipt,now?:number):boolean;

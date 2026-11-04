@@ -18,7 +18,7 @@ it('F04 stores only a scoped UUID and kind before Twitch POST; lookup cannot gra
   expect(raw).not.toContain('credential');
   expect(raw).not.toContain('token');
   expect(raw).not.toContain('editUrl');
-  expect(clearUncertainMoment(view,'https://fixe','dam',now)).toBe(true);
+  expect(clearUncertainMoment(view,'https://fixe','dam',{id:uuid,kind:'clip'},now)).toBe(true);
   expect(loadUncertainMoment(view,'https://fixe','dam',now)).toBeNull();
 });
 it('F04 keeps other account/host pending hints independent and refuses to evict older uncertainty',()=>{
@@ -28,7 +28,7 @@ it('F04 keeps other account/host pending hints independent and refuses to evict 
   }
   expect(rememberUncertainMoment(view,'fixe','9',{id:uuid,kind:'clip'},now)).toBe(false);
   expect(loadUncertainMoment(view,'fixe','0',now)?.kind).toBe('marker');
-  expect(clearUncertainMoment(view,'fixe','5',now)).toBe(true);
+  expect(clearUncertainMoment(view,'fixe','5',{id:uuid,kind:'clip'},now)).toBe(true);
   expect(rememberUncertainMoment(view,'fixe','9',{id:uuid,kind:'clip'},now)).toBe(true);
   expect(loadUncertainMoment(view,'fixe','0',now)?.kind).toBe('marker');
 });
@@ -42,7 +42,7 @@ it('F04 never overwrites an unresolved receipt from the same host/account with a
   expect(rememberUncertainMoment(view,'https://fixe','dam',{id:uuid,kind:'clip'},now+1000)).toBe(false);
   expect([...data.values()][0]).toBe(original);
   expect(loadUncertainMoment(view,'https://fixe','dam',now+1000)).toEqual({id:uuid,kind:'clip'});
-  expect(clearUncertainMoment(view,'https://fixe','dam',now+1000)).toBe(true);
+  expect(clearUncertainMoment(view,'https://fixe','dam',{id:uuid,kind:'clip'},now+1000)).toBe(true);
   expect(rememberUncertainMoment(view,'https://fixe','dam',{id:newer,kind:'marker'},now+1000)).toBe(true);
   expect(loadUncertainMoment(view,'https://fixe','dam',now+1000)).toEqual({id:newer,kind:'marker'});
 });
@@ -111,4 +111,22 @@ it('F04 read-only diagnosis distinguishes corrupt or inaccessible storage withou
   expect(diagnoseUncertainMomentStore({get localStorage():never{throw Error('denied')}},'fixe','dam',now)).toEqual({state:'blocked'});
   expect(diagnoseUncertainMomentStore({localStorage:{getItem(){throw Error('denied')},setItem(){throw Error('NEVER')}}},'fixe','dam',now)).toEqual({state:'blocked'});
   expect(diagnoseUncertainMomentStore(view,'','dam',now)).toEqual({state:'blocked'});
+});
+
+it('F04 stale tab cannot erase a newer uncertain receipt for the same host/account',()=>{
+  const {view,data}=mockStorage(),now=1800000000000;
+  const newer='743e0c2b-e8e4-4ccd-a82c-8ad0a05f19c5';
+  const old={id:uuid,kind:'clip' as const},fresh={id:newer,kind:'marker' as const};
+  expect(rememberUncertainMoment(view,'fixe','dam',old,now)).toBe(true);
+  expect(clearUncertainMoment(view,'fixe','dam',old,now)).toBe(true);
+  expect(rememberUncertainMoment(view,'fixe','dam',fresh,now+1)).toBe(true);
+  const journal=[...data.values()][0];
+  // Tab A receives an old successful HTTP response after tab B has confirmed and started a new request.
+  expect(clearUncertainMoment(view,'fixe','dam',old,now+2)).toBe(false);
+  expect(data.get('sd3.f04.twitch-moment-uncertain.v1')).toBe(journal);
+  expect(loadUncertainMoment(view,'fixe','dam',now+2)).toEqual(fresh);
+  expect(clearUncertainMoment(view,'fixe','dam',{id:newer,kind:'clip'},now+2)).toBe(false);
+  expect(clearUncertainMoment(view,'fixe','dam',undefined as never,now+2)).toBe(false);
+  expect(loadUncertainMoment(view,'fixe','dam',now+2)).toEqual(fresh);
+  expect(clearUncertainMoment(view,'fixe','dam',fresh,now+2)).toBe(true);
 });

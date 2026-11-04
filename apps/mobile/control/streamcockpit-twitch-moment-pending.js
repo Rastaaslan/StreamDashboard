@@ -63,11 +63,18 @@ export function rememberUncertainMoment(view,source,account,receipt,now=Date.now
     return loadUncertainMoment(view,source,account,now)?.id===receipt.id;
   }catch{return false}
 }
-export function clearUncertainMoment(view,source,account,now=Date.now()){
-  if(!validScope(source,account))return false;
+// A stale tab must never clear a newer pending request. Require the exact receipt
+// acknowledged by this view, not just a host/account match.
+export function clearUncertainMoment(view,source,account,expected,now=Date.now()){
+  if(!validScope(source,account)||!expected||typeof expected!=='object'||
+    typeof expected.id!=='string'||typeof expected.kind!=='string'||
+    !UUID.test(expected.id)||!['clip','marker'].includes(expected.kind))return false;
   const storage=store(view);if(!storage)return false;
   try{
-    const rows=read(storage,now).filter(r=>r.source!==source||r.account!==account);
+    const rows=read(storage,now);
+    const index=rows.findIndex(r=>r.source===source&&r.account===account);
+    if(index<0||rows[index].id!==expected.id||rows[index].kind!==expected.kind)return false;
+    rows.splice(index,1);
     write(storage,rows);
     return loadUncertainMoment(view,source,account,now)===null;
   }catch{return false}

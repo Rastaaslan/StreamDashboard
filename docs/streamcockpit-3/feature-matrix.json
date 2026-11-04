@@ -303,6 +303,10 @@
           "kind": "2026-11-04 RDC FIXE: actual Windows child process durably records a Twitch clip observation then exits; newly opened SQLite journal serves paired read-only HTTP status, missing record stays non-retryable, revoked/unpaired actor is denied, and a repeated confirm after restart cannot POST Twitch. 30/30 targeted PASS across 3 files, TS/browser/security (6719 files) PASS. Synthetic provider/host; no actual production process restart, power loss, public Twitch action or Android device test."
         },
         {
+          "path": "apps/mobile/control/streamcockpit-twitch-moment-pending.js",
+          "kind": "2026-11-04 FIXE F04 stale-view race regression: clearUncertainMoment now requires the exact expected UUID + kind before removing an uncertain hint; UI automatic success and explicit external verification supply their own receipt, and a stale view cannot erase a newer request for the same host/account. RED 7 PASS/1 FAIL; final 34 PASS/0 FAIL/0 skipped across 4 targeted suites including 3 real Edge 320px tests; TS, browser types, build (143 assets), shipped JS (149 files), security (6719 files) PASS. Mock localStorage and Twitch provider; cross-process/tab atomicity, real hardware and manual recovery remain unqualified."
+        },
+        {
           "path": "apps/server/src/control-public-view.ts",
           "kind": "SC3-FINAL-DELIVERY-001: source integration and targeted software qualification only; hardware remains unqualified"
         }
