@@ -13,17 +13,20 @@
   "scenarios": [
     {
       "id": "G3-01",
-      "status": "pending",
-      "commit": null,
-      "observedAt": null,
-      "result": null,
-      "evidence": [],
+      "status": "pass",
+      "commit": "a38305fd0e2548043bfca772942ea26565c7dec9",
+      "observedAt": "2026-11-04T12:25:39.337Z",
+      "result": "Identity FIXE hash matched laptop master; one OBS executor, four routes to FIXE, HTTPS 200; Android pairing and commands reported by operator",
+      "evidence": [
+        "docs/streamcockpit-3/G3_QA_CAMPAIGN_20261104.md#G3-01"
+      ],
       "operatorConfirmation": {
         "result": "reported-pass",
         "date": "2026-11-04",
         "source": "user-checklist-this-conversation",
         "summary": "FIXE/laptop/Android, appairage et rôle unique validés par opérateur"
-      }
+      },
+      "provenance": "actual-fixe-laptop-readonly-plus-operator-android"
     },
     {
       "id": "G3-02",
@@ -55,16 +58,20 @@
     },
     {
       "id": "G3-04",
-      "status": "pending",
-      "commit": null,
-      "observedAt": null,
-      "result": null,
-      "evidence": [],
+      "status": "pass",
+      "commit": "a38305fd0e2548043bfca772942ea26565c7dec9",
+      "observedAt": "2026-11-04T12:17:22.1456776+00:00",
+      "result": "Real installed FIXE QA gracefully stopped/restarted, 54 planning entries and 39 receipts preserved; no OBS stream, timer, or replay change",
+      "evidence": [
+        "out/sc3-g3/20261104-operator-verified/g3-04-qa-restart.json",
+        "docs/streamcockpit-3/G3_QA_CAMPAIGN_20261104.md#G3-04"
+      ],
       "operatorConfirmation": {
         "result": "not-reported",
         "date": "2026-11-04",
         "source": "user-checklist-this-conversation"
-      }
+      },
+      "provenance": "actual-fixe-qa-hardware-graceful-restart"
     },
     {
       "id": "G3-05",
@@ -77,6 +84,14 @@
         "result": "not-reported",
         "date": "2026-11-04",
         "source": "user-checklist-this-conversation"
+      },
+      "isolatedTests": {
+        "result": "pass",
+        "testsGroup": "34-pass-synthetic-obs-agent-crash-and-ack",
+        "sourceCommit": "e6afd67bf28bf8c979c80bee6b24e0fab2ab6998",
+        "observedAt": "2026-11-04T12:25:39.338Z",
+        "log": "out/sc3-g3/20261104-operator-verified/g3-failure-resilience-vitest.log",
+        "hardwareEquivalent": false
       }
     },
     {
@@ -118,6 +133,14 @@
         "result": "not-reported",
         "date": "2026-11-04",
         "source": "user-checklist-this-conversation"
+      },
+      "isolatedTests": {
+        "result": "pass",
+        "testsGroup": "34-pass-synthetic-obs-agent-crash-and-ack",
+        "sourceCommit": "e6afd67bf28bf8c979c80bee6b24e0fab2ab6998",
+        "observedAt": "2026-11-04T12:25:39.338Z",
+        "log": "out/sc3-g3/20261104-operator-verified/g3-failure-resilience-vitest.log",
+        "hardwareEquivalent": false
       }
     },
     {
@@ -145,6 +168,14 @@
         "result": "not-reported",
         "date": "2026-11-04",
         "source": "user-checklist-this-conversation"
+      },
+      "isolatedTests": {
+        "result": "pass",
+        "testsGroup": "34-pass-synthetic-obs-agent-crash-and-ack",
+        "sourceCommit": "e6afd67bf28bf8c979c80bee6b24e0fab2ab6998",
+        "observedAt": "2026-11-04T12:25:39.338Z",
+        "log": "out/sc3-g3/20261104-operator-verified/g3-failure-resilience-vitest.log",
+        "hardwareEquivalent": false
       }
     }
   ],
@@ -186,5 +217,28 @@
       "operatorAccepted": false
     },
     "report": "G3_G4_G5_PROGRESS_20261104.md"
+  },
+  "latestCampaign": {
+    "date": "2026-11-04",
+    "report": "G3_QA_CAMPAIGN_20261104.md",
+    "qaCommit": "a38305fd0e2548043bfca772942ea26565c7dec9",
+    "sourceTestedHead": "e6afd67bf28bf8c979c80bee6b24e0fab2ab6998",
+    "actualHardwareScenariosPassed": [
+      "G3-01",
+      "G3-04"
+    ],
+    "operatorConfirmations": 6,
+    "isolatedAgentTestsPassed": 34,
+    "isolatedFailureScenarios": [
+      "G3-05",
+      "G3-08",
+      "G3-10"
+    ],
+    "remainingHardwareScenarios": [
+      "G3-05",
+      "G3-08",
+      "G3-10"
+    ],
+    "fullyQualified": false
   }
 }
