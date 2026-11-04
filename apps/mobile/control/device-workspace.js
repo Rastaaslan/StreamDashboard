@@ -20,6 +20,7 @@ export function newWorkspace(device) {
     ['micro','Micro','mic.toggle','','purple'],['scene-live','Jeu','mode.set','live','purple'],
     ['scene-pause','Pause','mode.set','pause','amber'],['scene-chat','Discussion','mode.set','chatting','purple'],
     ['clip-save','Sauvegarder un clip','replay.save','','green'],['scene-intro','Introduction','mode.set','intro','purple'],
+    ['scene-end','Fin','mode.set','end','red'],
   ].map(([id,label,type,value,color],i)=>({id,label,type,value,color,shortcut:`Control+Alt+Shift+F${i+1}`}));
   const settings = {streamerName:'Streamer',accent:'violet',confirmStop:true,obsUrl:'ws://127.0.0.1:4455',launchObs:false,modeScenes:{},startMode:'intro',remoteEnabled:false,streamerPingRewardIds:[]};
   return {workspace:'local:'+newId(),bundle:{savedAt:Date.now(),

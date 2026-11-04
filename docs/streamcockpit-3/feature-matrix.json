@@ -203,6 +203,10 @@
           "kind": "existing partial implementation only"
         },
         {
+          "path": "docs/streamcockpit-3/SCENE_MODES_AUDIT_20261104.md",
+          "kind": "2026-11-04 RDC FIXE: audited intro/pause/end command path and added missing default Fin button; 78 targeted PASS, TypeScript and security (6734 files) PASS. No real OBS scene mapping, device installation or hardware execution."
+        },
+        {
           "path": "apps/mobile/control/performance-ui.js",
           "kind": "existing partial implementation only"
         },
