@@ -105,8 +105,10 @@ export function diagnoseUncertainMomentStore(view,source,account,now=Date.now())
     return row?{state:'pending',receipt:{id:row.id,kind:row.kind}}:{state:'clear'};
   }catch{return {state:'blocked'}}
 }
-// Narrow forensic lookup ONLY: a parseable but partially invalid journal can retain
-// one trustworthy current-scope UUID. Never repair, trim, clear, admit or retry.
+// Narrow forensic lookup ONLY: a canonical but blocked journal may retain one
+// unambiguous current-scope UUID, including an expired reference. Expiration ends
+// trusted admission/clearing, not GET-only human review of a possibly executed POST.
+// Never repair, trim, clear, admit, retry, or reveal another account's reference.
 // An unparseable document or ambiguous/malformed row for this scope is UNKNOWN.
 export function recoverUncertainMomentForReview(view,source,account,now=Date.now()){
   if(!validScope(source,account))return null;
@@ -119,7 +121,18 @@ export function recoverUncertainMomentForReview(view,source,account,now=Date.now
     for(const row of data.rows){
       if(!row||typeof row!=='object'||Array.isArray(row))return null;
       if(row.source!==source||row.account!==account)continue;
-      if(found||!validRow(row,now))return null;
+      if(found||!safeRow(row,now))return null;
+      if(!validRow(row,now)){
+        // Expired hints are too old for trusted lookup. Permit GET-only review
+        // only if every row is unambiguous and structurally valid (no partial salvage).
+        const scopes=new Set();
+        for(const entry of data.rows){
+          if(!safeRow(entry,now))return null;
+          const scope=JSON.stringify([entry.source,entry.account]);
+          if(scopes.has(scope))return null;
+          scopes.add(scope);
+        }
+      }
       found={id:row.id,kind:row.kind};
     }
     return found;

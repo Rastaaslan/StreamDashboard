@@ -273,3 +273,42 @@ it.skipIf(process.env.SC3_FINAL_BROWSER_TEST!=='1')('F04 real Edge 320px: a seve
     }
   }finally{await browser.close()}
 },30000);
+
+it.skipIf(process.env.SC3_FINAL_BROWSER_TEST!=='1')('F04 Edge 320px: old scoped UUID offers GET-only verification but never clears expired evidence',async()=>{
+  const bundle=await build({stdin:{contents:"import {mountTwitchMoments} from './apps/mobile/control/streamcockpit-twitch-moments.js';window.mountMoments=mountTwitchMoments;",resolveDir:process.cwd()},bundle:true,write:false,format:'iife',platform:'browser'});
+  const browser=await chromium.launch({channel:'msedge',headless:true});
+  try{
+    const page=await browser.newPage({viewport:{width:320,height:720},hasTouch:true});
+    await page.route('**/*',r=>r.abort());
+    await page.route('http://127.0.0.1:38661/**',r=>r.fulfill({status:200,contentType:'text/html',body:'<main id="root"></main>'}));
+    await page.goto('http://127.0.0.1:38661/moments');
+    const raw=await page.evaluate(()=>{
+      const journal=JSON.stringify({version:1,rows:[{source:'FIXE',account:'owner',id:'643e0c2b-e8e4-4ccd-a82c-8ad0a05f19c5',kind:'clip',createdAt:Date.now()-8*24*60*60*1000}]});
+      localStorage.setItem('sd3.f04.twitch-moment-uncertain.v1',journal);return journal;
+    });
+    const mount=async()=>{
+      await page.addScriptTag({content:bundle.outputFiles[0].text});
+      await page.evaluate(()=>{
+        const w=window as any;w.calls=[];
+        w.panel=w.mountMoments(document.getElementById('root'),{request:async(path:string,_body:any,method:string)=>{
+          w.calls.push({path,method});
+          if(method==='GET')return {schemaVersion:1,kind:'streamcockpit-moment-status',status:'not_found_at_read',retryable:false};
+          throw Error('NO_PREVIEW_OR_POST');
+        }});w.panel.update({online:true,sourceKey:'FIXE',accountKey:'owner'});
+      });
+    };
+    for(let n=0;n<2;n++){
+      await mount();
+      expect(await page.getByRole('button',{name:'Vérifier le moment sans publier'}).isDisabled()).toBe(true);
+      const inspect=page.getByRole('button',{name:'Consulter le journal FIXE sans renvoyer'});
+      expect(await inspect.isVisible()).toBe(true);
+      expect(await page.getByRole('button',{name:'J’ai vérifié ce moment dans Twitch'}).isVisible()).toBe(false);
+      await inspect.click();
+      expect(await page.getByRole('status').textContent()).toContain('Aucune entrée trouvée');
+      expect(await page.evaluate(()=>(window as any).calls.map((c:any)=>c.method))).toEqual(['GET']);
+      expect(await page.evaluate(()=>localStorage.getItem('sd3.f04.twitch-moment-uncertain.v1'))).toBe(raw);
+      expect(await page.locator('main').textContent()).not.toContain('643e0c2b');
+      if(n===0)await page.reload();
+    }
+  }finally{await browser.close()}
+},30000);

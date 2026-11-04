@@ -230,6 +230,22 @@ it('F04 rejects noncanonical duplicate JSON keys that hide older provider UUIDs 
   }
 });
 
+it('F04 expired receipt is retrievable for scoped GET-only human review but never eligible for mutation',()=>{
+  const {view,data}=mockStorage(),now=1800000000000,key='sd3.f04.twitch-moment-uncertain.v1';
+  const expired=now-7*24*60*60*1000-1000;
+  expect(rememberUncertainMoment(view,'FIXE','owner',{id:uuid,kind:'clip'},expired)).toBe(true);
+  const raw=data.get(key)!;
+  expect(diagnoseUncertainMomentStore(view,'FIXE','owner',now)).toEqual({state:'blocked'});
+  expect(recoverUncertainMomentForReview(view,'FIXE','owner',now)).toEqual({id:uuid,kind:'clip'});
+  expect(recoverUncertainMomentForReview(view,'FIXE','other',now)).toBeNull();
+  expect(loadUncertainMoment(view,'FIXE','owner',now)).toBeNull();
+  expect(clearUncertainMoment(view,'FIXE','owner',{id:uuid,kind:'clip'},now)).toBe(false);
+  expect(rememberUncertainMoment(view,'FIXE','owner',{id:uuid,kind:'marker'},now)).toBe(false);
+  expect(data.get(key)).toBe(raw);
+  const parsed=JSON.parse(raw) as {version:number;rows:Record<string,unknown>[]};
+  data.set(key,JSON.stringify({version:1,rows:[...parsed.rows,{...parsed.rows[0],id:'743e0c2b-e8e4-4ccd-a82c-8ad0a05f19c5'}]}));
+  expect(recoverUncertainMomentForReview(view,'FIXE','owner',now)).toBeNull();
+});
 it('F04 expired unresolved receipts cannot be silently pruned by a later Twitch admission or clear',()=>{
   const {view,data}=mockStorage(),now=1800000000000,key='sd3.f04.twitch-moment-uncertain.v1';
   expect(rememberUncertainMoment(view,'FIXE','other',{id:uuid,kind:'clip'},now)).toBe(true);
