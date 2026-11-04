@@ -337,6 +337,10 @@
         {
           "path": "apps/mobile/control/streamcockpit-twitch-moment-pending.js",
           "kind": "2026-11-04 RDC FIXE: expired unresolved UUIDs (>=7 days) no longer disappear during writes for any account; the whole journal blocks new Twitch admission/clear while preserving raw bytes and private backup. Expired IDs are not trusted for GET-only review. The redacted opt-in diagnosis reports expired-unreviewed without IDs. RED 12 PASS/1 FAIL, final 45 PASS/0 FAIL/0 skipped over 5 targeted suites including 9 real Edge 320px/multitab tests; TypeScript/browser types, security 6727 files and diff-check PASS. No build/package, Twitch action, hardware or supervised repair proven; F04 partial, G2 in_progress."
+        },
+        {
+          "path": "apps/mobile/control/streamcockpit-twitch-moment-pending.js",
+          "kind": "2026-11-04 RDC FIXE F04: exact canonical JSON round-trip is required before accepting or read-only reviewing a local pending journal. JSON.parse silently loses duplicate root/row keys and potentially executed Twitch UUIDs; noncanonical evidence stays blocked and byte-preserved for manual review. RED 13 PASS/1 FAIL, final 46 PASS/0 FAIL/0 skipped across five targeted suites (9 actual Edge 320px/multitab tests); TS/browser types and security 6730 files PASS, diff check PASS. Synthetic Twitch provider; no build, real Android/Twitch/power loss or supervised recovery proof; F04 partial/G2 in_progress."
         }
       ],
       "verifiedTests": [

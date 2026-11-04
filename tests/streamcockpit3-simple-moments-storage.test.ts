@@ -212,6 +212,24 @@ it('F04 diagnostic is strictly redacted and never reads another account into UI 
   expect(describeUncertainMomentIssue(view,'','owner',now)).toEqual({code:'unavailable'});
 });
 
+it('F04 rejects noncanonical duplicate JSON keys that hide older provider UUIDs without modifying evidence',()=>{
+  const {view,data}=mockStorage(),now=1800000000000,key='sd3.f04.twitch-moment-uncertain.v1';
+  const row={source:'FIXE',account:'owner',id:uuid,kind:'clip',createdAt:now};
+  const different='743e0c2b-e8e4-4ccd-a82c-8ad0a05f19c5';
+  const duplicatedRoot=`{"version":1,"rows":[${JSON.stringify(row)}],"rows":[]}`;
+  const duplicatedRow=`{"version":1,"rows":[{"source":"FIXE","account":"owner","id":"${uuid}","id":"${different}","kind":"clip","createdAt":${now}}]}`;
+  for(const raw of [duplicatedRoot,duplicatedRow]){
+    data.set(key,raw);
+    expect(describeUncertainMomentIssue(view,'FIXE','owner',now)).toEqual({code:'unknown-schema'});
+    expect(diagnoseUncertainMomentStore(view,'FIXE','owner',now)).toEqual({state:'blocked'});
+    expect(recoverUncertainMomentForReview(view,'FIXE','owner',now)).toBeNull();
+    expect(rememberUncertainMoment(view,'FIXE','owner',{id:different,kind:'marker'},now)).toBe(false);
+    expect(clearUncertainMoment(view,'FIXE','owner',{id:uuid,kind:'clip'},now)).toBe(false);
+    expect(data.get(key)).toBe(raw);
+    expect(readUncertainMomentBackup(view)).toBe(raw);
+  }
+});
+
 it('F04 expired unresolved receipts cannot be silently pruned by a later Twitch admission or clear',()=>{
   const {view,data}=mockStorage(),now=1800000000000,key='sd3.f04.twitch-moment-uncertain.v1';
   expect(rememberUncertainMoment(view,'FIXE','other',{id:uuid,kind:'clip'},now)).toBe(true);

@@ -29,11 +29,19 @@ export function readUncertainMomentBackup(view){
     return typeof raw==='string'&&raw.length>0&&raw.length<=1024*1024?raw:null;
   }catch{return null}
 }
+// JSON.parse silently accepts duplicate keys, discarding earlier values (possibly
+// executed Twitch UUIDs). Trust only the exact canonical representation produced
+// by write(): noncanonical/edited journals must remain untouched for human review.
+function parseCanonicalJournal(raw){
+  const data=JSON.parse(raw);
+  if(JSON.stringify(data)!==raw)throw Error('BAD_STORAGE');
+  return data;
+}
 function read(storage,now){
   const raw=storage.getItem(KEY);
   if(raw===null)return [];
   if(raw.length>8192)throw Error('OVER_LIMIT');
-  const data=JSON.parse(raw);
+  const data=parseCanonicalJournal(raw);
   if(!knownJournal(data))throw Error('BAD_STORAGE');
   const scopes=new Set();
   for(const row of data.rows){
@@ -98,7 +106,7 @@ export function recoverUncertainMomentForReview(view,source,account,now=Date.now
   try{
     const storage=store(view),raw=storage?.getItem(KEY);
     if(!raw||raw.length>8192)return null;
-    const data=JSON.parse(raw);
+    const data=parseCanonicalJournal(raw);
     if(!knownJournal(data))return null;
     let found=null;
     for(const row of data.rows){
