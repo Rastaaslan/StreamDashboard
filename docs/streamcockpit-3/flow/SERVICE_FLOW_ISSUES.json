@@ -134,6 +134,24 @@
       "status": "EXTERNAL_PREREQUISITE",
       "commit": "See evidence/qualification.json sourceCommit",
       "limits": "Les essais Edge/API synthétiques ne sont pas une réception physique Android ni un effet Twitch public."
+    },
+    {
+      "id": "FLOW-QA-09",
+      "severity": "P2",
+      "feature": "F03/F07",
+      "device": "Software test harness",
+      "service": "Qualification",
+      "symptom": "Campagne générale bloquée par 10 attentes de signature obsolètes et 5 scénarios navigateur multistream retiré.",
+      "rootCause": "Suites ciblées historiques non requalifiées après changement de contrat et suppression YouTube.",
+      "fix": "Assertions strictes avec confirmedChecklist explicite ; scénarios Twitch et preuve négative de non-réintroduction YouTube ; aucune relaxation des nombres d’appels.",
+      "status": "CORRECTED_PENDING_FINAL_CAMPAIGN",
+      "tests": [
+        "tests/control-keyboard-routes.test.ts",
+        "tests/control-stop-twitch-priority.test.ts",
+        "tests/twitch-stop-lag.test.ts",
+        "tests/live-monitor-chat-ui.spec.ts"
+      ],
+      "commit": "See evidence/qualification.json"
     }
   ]
 }

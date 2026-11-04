@@ -242,14 +242,13 @@ test('monitor keeps public video frames stable and exposes creator tools alongsi
       identity: { broadcasterId: '123', userName: 'creator_test', displayName: 'Créateur test' }, accountConnected: true,
       capabilities: { chatRead: true, chatWrite: true }, chat: { connected: true, messages: [] },
     }) });
-    (document.querySelector('[data-youtube-web]') as HTMLDetailsElement).open = true;
     win.monitor.update(win.data, { online: true, sourceKey: 'regie' });
     win.videoFrame = document.querySelector('[data-monitor-slot="video"] iframe');
   });
-  await expect(page.getByRole('heading', { name: 'Retour plateforme & chats' })).toBeVisible();
-  await expect(page.locator('#monitor')).toContainText('publicités éventuelles');
+  await expect(page.getByRole('heading', { name: 'Retour Twitch & chat' })).toBeVisible();
+  await expect(page.locator('#monitor')).toContainText('Le chat Twitch utilise le compte connecté.');
   await expect(page.locator('[data-monitor-link="twitch-creator"]')).toHaveAttribute('href', 'https://dashboard.twitch.tv/u/creator_test/stream-manager');
-  await expect(page.locator('[data-monitor-link="youtube-creator"]')).toHaveAttribute('href', 'https://studio.youtube.com/video/Abc_1234-XY/livestreaming');
+  await expect(page.locator('[data-monitor-link="youtube-creator"]')).toHaveCount(0);
   await expect(page.locator('iframe[src*="twitch.tv/embed"], iframe[src*="twitch.tv/popout"]')).toHaveCount(0);
   const draft = page.getByLabel('Message Twitch', { exact: true });
   await expect(draft).toBeEnabled();
@@ -282,7 +281,6 @@ async function setupViewerSession(page: Page) {
       identity: { broadcasterId: '123', userName: 'creator_test', displayName: 'Créateur test' }, accountConnected: true,
       capabilities: { chatRead: true, chatWrite: true }, chat: { connected: true, messages: [] },
     }) });
-    (document.querySelector('[data-youtube-web]') as HTMLDetailsElement).open = true;
     win.monitor.update(win.data, { online: true, sourceKey: 'regie' });
     win.videoFrame = document.querySelector('[data-monitor-slot="video"] iframe');
     win.youtubeFrame = document.querySelector('[data-monitor-slot="youtube"] iframe');
@@ -295,12 +293,12 @@ test('viewer login is local and closing it reloads only Twitch without claiming 
   await expect(draft).toBeEnabled();
   await draft.fill('Brouillon conservé pendant la connexion');
   await page.getByRole('button', { name: 'Connexion visionneuse', exact: true }).click();
-  await expect(page.locator('[data-monitor-viewer-status]')).toContainText('fenêtre de cet appareil');
+  await expect(page.locator('[data-monitor-viewer-status]')).toContainText('fenêtre ouverte');
   await expect(page.locator('[data-monitor-connect]')).toBeDisabled();
   expect(await page.evaluate(() => (window as any).viewerCalls)).toEqual([{ channel: 'creator_test' }]);
   expect(await page.evaluate(() => (window as any).videoFrame === document.querySelector('[data-monitor-slot="video"] iframe'))).toBe(true);
   await page.evaluate(() => (window as any).closeViewer());
-  await expect(page.locator('[data-monitor-viewer-status]')).toContainText('Visionneuse rechargée');
+  await expect(page.locator('[data-monitor-viewer-status]')).toContainText('Visionneuse Twitch rechargée');
   expect(await page.evaluate(() => (window as any).videoFrame === document.querySelector('[data-monitor-slot="video"] iframe'))).toBe(false);
   expect(await page.evaluate(() => (window as any).youtubeFrame === document.querySelector('[data-monitor-slot="youtube"] iframe'))).toBe(true);
   await expect(draft).toHaveValue('Brouillon conservé pendant la connexion');
@@ -308,15 +306,13 @@ test('viewer login is local and closing it reloads only Twitch without claiming 
   await expect(page.locator('[data-monitor-viewer-status]')).not.toContainText('connectée');
 });
 
-test('a late viewer close cannot reload a newly selected source or the YouTube player', async ({ page }) => {
+test('a late viewer close cannot reload a hidden frame or a newly selected source', async ({ page }) => {
   await setupViewerSession(page);
   await page.getByRole('button', { name: 'Connexion visionneuse', exact: true }).click();
-  await page.getByRole('button', { name: 'YouTube', exact: true }).click();
-  await page.evaluate(() => { (window as any).currentFrame = document.querySelector('[data-monitor-slot="video"] iframe'); });
+  await page.getByRole('button', { name: 'Masquer les écrans', exact: true }).click();
   await page.evaluate(() => (window as any).closeViewer());
-  await expect(page.locator('[data-monitor-connect]')).toContainText('YouTube');
-  expect(await page.evaluate(() => (window as any).currentFrame === document.querySelector('[data-monitor-slot="video"] iframe'))).toBe(true);
-  await page.getByRole('button', { name: 'Twitch', exact: true }).click();
+  await expect(page.locator('#monitor iframe')).toHaveCount(0);
+  await page.getByRole('button', { name: 'Afficher les écrans', exact: true }).click();
   await page.getByRole('button', { name: 'Connexion visionneuse', exact: true }).click();
   await page.evaluate(() => {
     const win = window as any;
@@ -327,17 +323,18 @@ test('a late viewer close cannot reload a newly selected source or the YouTube p
   });
   await expect(page.locator('[data-monitor-connect]')).toBeEnabled();
   expect(await page.evaluate(() => (window as any).currentFrame === document.querySelector('[data-monitor-slot="video"] iframe'))).toBe(true);
-  await expect(page.locator('[data-monitor-viewer-status]')).not.toContainText('Visionneuse rechargée');
+  await expect(page.locator('[data-monitor-viewer-status]')).not.toContainText('Visionneuse Twitch rechargée');
+  await expect(page.locator('[data-monitor-slot="youtube"], iframe[src*="youtube.com"]')).toHaveCount(0);
 });
 
 test('native Twitch popup completion refreshes only an active Twitch frame and unsubscribes on destroy', async ({ page }) => {
   await setupViewerSession(page);
   await page.evaluate(() => (window as any).viewerClosed());
   expect(await page.evaluate(() => (window as any).videoFrame === document.querySelector('[data-monitor-slot="video"] iframe'))).toBe(false);
-  expect(await page.evaluate(() => (window as any).youtubeFrame === document.querySelector('[data-monitor-slot="youtube"] iframe'))).toBe(true);
-  await page.getByRole('button', { name: 'YouTube', exact: true }).click();
-  await page.evaluate(() => { const win = window as any; win.currentFrame = document.querySelector('[data-monitor-slot="video"] iframe'); win.viewerClosed(); });
-  expect(await page.evaluate(() => (window as any).currentFrame === document.querySelector('[data-monitor-slot="video"] iframe'))).toBe(true);
+  await expect(page.locator('[data-monitor-slot="youtube"]')).toHaveCount(0);
+  await page.getByRole('button', { name: 'Masquer les écrans', exact: true }).click();
+  await page.evaluate(() => (window as any).viewerClosed());
+  await expect(page.locator('#monitor iframe')).toHaveCount(0);
   await page.evaluate(() => { const win = window as any; win.monitor.destroy(); win.viewerClosed(); });
   expect(await page.evaluate(() => (window as any).viewerUnsubscribed)).toBe(true);
   await expect(page.locator('#monitor iframe')).toHaveCount(0);
@@ -488,26 +485,20 @@ test('Android opens the Twitch viewer in an isolated native session without expo
  await page.evaluate(()=>(window as any).monitor.destroy());
 });
 
-test('YouTube API chat remains visible without loading the failing web panel; reload refreshes the API',async({page})=>{
+test('Twitch-only production monitor ignores legacy YouTube configuration without opening frames or provider requests',async({page})=>{
  await page.evaluate(async()=>{
-  const win=window as any;win.youtubeReads=0;win.data={host:{monitor:{twitchLogin:'test'}},configuration:{youtube:{broadcastId:'Abc_1234-XY'}}};
+  const win=window as any;win.paths=[];win.data={host:{monitor:{twitchLogin:'test'}},configuration:{youtube:{broadcastId:'Abc_1234-XY'}}};
   const module=await import('/mobile/control/live-monitor.js' as string);
   win.monitor=module.createLiveMonitor(document.querySelector('#monitor'),{request:async(url:string)=>{
-   if(!url.includes('/youtube/chat'))return {};
-   win.youtubeReads++;return {account:'Chaîne test',channelId:'channel-test',status:'connected',message:'Chat connecté.',phaseMessage:'Diffusion en direct.',messages:win.youtubeReads===1?[]:[{author:'Spectateur',text:'Message après actualisation'}],nextPollAt:Date.now()+60000};
+   win.paths.push(url);
+   return {identity:{broadcasterId:'123',userName:'test',displayName:'Compte test'},accountConnected:true,
+     capabilities:{chatRead:true,chatWrite:true},chat:{connected:true,messages:[]}};
   }});win.monitor.update(win.data,{online:true,sourceKey:'regie'});
  });
- await expect(page.locator('[data-youtube-account]')).toContainText('Chaîne test');
- await expect(page.locator('.youtube-api-messages')).toContainText('aucun message reçu');
- await expect(page.locator('[data-monitor-slot="youtube"] iframe')).toHaveCount(0);
- await page.locator('[data-monitor-reload="youtube"]').click();
- await expect(page.locator('.youtube-api-messages')).toContainText('Message après actualisation');
- await page.locator('[data-youtube-web] summary').click();
- await expect(page.locator('[data-monitor-slot="youtube"] iframe')).toHaveCount(1);
- await expect(page.locator('[data-youtube-account]')).toBeVisible();
- await page.locator('[data-youtube-web] summary').click();
- await expect(page.locator('[data-monitor-slot="youtube"] iframe')).toHaveCount(0);
- await expect(page.locator('.youtube-api-messages')).toContainText('Message après actualisation');
+ await expect(page.locator('[data-twitch-identity]')).toContainText('Compte test');
+ await expect(page.locator('[data-youtube-account], [data-monitor-slot="youtube"], iframe[src*="youtube.com"]')).toHaveCount(0);
+ expect(await page.evaluate(()=>(window as any).paths.filter((url:string)=>url.includes('youtube')))).toEqual([]);
+ await page.evaluate(()=>(window as any).monitor.destroy());
 });
 
 test('YouTube preparation keeps an ambiguous request ID, requires an audience choice and selects only on explicit click',async({page})=>{

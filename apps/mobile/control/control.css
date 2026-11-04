@@ -220,3 +220,5 @@ html:not(.compact-app) [data-planning-assistant] .planning-assist-slots button {
 
 @media(min-width:701px){nav>.cockpit-nav-group{display:block;padding:14px 12px 4px;color:var(--muted,#a19baa);font-size:10px;font-weight:700;letter-spacing:.08em;text-transform:uppercase}}
 @media(max-width:700px){nav>.cockpit-nav-group{display:none}}
+
+.compact-app aside nav>.cockpit-nav-group{display:none!important}

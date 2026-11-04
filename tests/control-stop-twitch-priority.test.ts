@@ -21,7 +21,7 @@ describe('Stop always reaches the local outputs',()=>{
    settle:async()=>{throw Error('quotaExceeded');}
   });
   const result=await control.execute(command('live.stop','stop_quota_001'));
-  expect(vi.mocked(adapter.output).mock.calls).toEqual([['twitch',false]]);
+  expect(vi.mocked(adapter.output).mock.calls).toEqual([['twitch',false,false]]);
   expect(calls).toEqual(['stop:twitch']);
   expect(result.status).toBe('uncertain');expect(result.platforms?.twitch?.message).toContain('Vérifiez OBS');
   await control.stop();
@@ -29,7 +29,7 @@ describe('Stop always reaches the local outputs',()=>{
  it('does not let a slow Twitch confirmation delay the Twitch output stop',async()=>{
   const gate=deferred(),entered=deferred();const {control,adapter}=await open({settle:async p=>{if(p==='twitch'){entered.resolve();await gate.promise;}}});
   const pending=control.execute(command('live.stop','stop_parallel_1'));await entered.promise;
-  expect(adapter.output).toHaveBeenCalledWith('twitch',false);gate.resolve();expect((await pending).status).toBe('succeeded');await control.stop();
+  expect(adapter.output).toHaveBeenCalledWith('twitch',false,false);gate.resolve();expect((await pending).status).toBe('succeeded');await control.stop();
  });
  it('interrupts a start observation and stops without waiting 31 seconds or replaying the start',async()=>{
   const gate=deferred(),entered=deferred();let active=false,signal:AbortSignal|undefined;
@@ -42,7 +42,7 @@ describe('Stop always reaches the local outputs',()=>{
   const stopped=await control.execute(issued);
   expect(signal?.aborted).toBe(true);expect(stopped.status).toBe('succeeded');
   expect((await started).status).toBe('uncertain');expect(active).toBe(false);
-  gate.resolve();expect(vi.mocked(adapter.output).mock.calls).toEqual([['twitch',true],['twitch',false]]);await control.stop();
+  gate.resolve();expect(vi.mocked(adapter.output).mock.calls).toEqual([['twitch',true,false],['twitch',false,false]]);await control.stop();
  });
  it('cancels a preflight before any late start effect and prioritizes stop ahead of queued actions',async()=>{
   const gate=deferred(),entered=deferred(),order:string[]=[];
@@ -58,20 +58,20 @@ describe('Stop always reaches the local outputs',()=>{
   const {control,adapter}=await open({live:async()=>active,preflight:async()=>{entered.resolve();await gate.promise;},output:vi.fn(async(_p,wanted)=>{active=wanted;})});
   const started=control.execute(command('live.start','start_allowed_1','twitch'));await entered.promise;
   await expect(control.execute(command('live.stop','stop_denied_001','twitch'),()=>{throw Error('Permission revoked');})).rejects.toThrow('Permission revoked');
-  gate.resolve();expect((await started).status).toBe('succeeded');expect(adapter.output).toHaveBeenCalledExactlyOnceWith('twitch',true);await control.stop();
+  gate.resolve();expect((await started).status).toBe('succeeded');expect(adapter.output).toHaveBeenCalledExactlyOnceWith('twitch',true,false);await control.stop();
  });
  it('keeps an admitted stop executable even after a previous local action used its age budget',async()=>{
   const gate=deferred(),entered=deferred();const {control,adapter}=await open({action:async()=>{entered.resolve();await gate.promise;}});
   const action=control.execute(command('micro','micro_delayed_01'));await entered.promise;
   const stop=control.execute(command('live.stop','stop_delayed_01','twitch'));await Promise.resolve();
   const now=Date.now;vi.spyOn(Date,'now').mockImplementation(()=>now()+31000);gate.resolve();
-  expect((await stop).status).toBe('succeeded');await action;expect(adapter.output).toHaveBeenCalledWith('twitch',false);await control.stop();
+  expect((await stop).status).toBe('succeeded');await action;expect(adapter.output).toHaveBeenCalledWith('twitch',false,false);await control.stop();
  });
  it('does not cancel a start from a stale reassigned stop button',async()=>{
   const gate=deferred(),entered=deferred();let active=false;
   const {control,adapter}=await open({live:async()=>active,preflight:async()=>{entered.resolve();await gate.promise;},output:vi.fn(async(_p,wanted)=>{active=wanted;})});
   const started=control.execute(command('live.start','start_stale_001','twitch'));await entered.promise;
   await expect(control.execute({...command('live.stop','stop_stale_0001','twitch'),expectedAction:{id:'old_stop',type:'live.stop',label:'Old',value:'',shortcut:'',color:'red'}})).rejects.toThrow('Ce bouton a changé');
-  gate.resolve();expect((await started).status).toBe('succeeded');expect(adapter.output).toHaveBeenCalledExactlyOnceWith('twitch',true);await control.stop();
+  gate.resolve();expect((await started).status).toBe('succeeded');expect(adapter.output).toHaveBeenCalledExactlyOnceWith('twitch',true,false);await control.stop();
  });
 });

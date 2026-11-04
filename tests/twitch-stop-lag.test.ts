@@ -20,7 +20,7 @@ describe('Twitch-only live stop lag and idempotency', () => {
       expect(result.platforms?.twitch?.status).toBe('succeeded');
       expect(polls).toBeGreaterThanOrEqual(5);
       expect(output).toHaveBeenCalledTimes(1);
-      expect(output).toHaveBeenCalledWith('twitch',false);
+      expect(output).toHaveBeenCalledWith('twitch',false,false);
       await control.stop();
     } finally { await rm(dir,{recursive:true,force:true}); }
   });

@@ -105,7 +105,7 @@ describe('Keyboard action resolution on the authoritative server', () => {
     const result = await post(action, trigger);
     expect(result.status).toBe(200);
     expect(result.body).toMatchObject({ action: 'live.stop', status: 'succeeded' });
-    expect(vi.mocked(adapter.output).mock.calls).toEqual([['twitch', false]]);
+    expect(vi.mocked(adapter.output).mock.calls).toEqual([['twitch', false, false]]);
     expect(adapter.action).not.toHaveBeenCalled();
     expect(control.snapshot().receipts).toHaveLength(1);
   });

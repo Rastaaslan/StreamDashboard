@@ -132,3 +132,26 @@ it.skipIf(!enabled)('paired chat offers permission-checked moderation at 320px a
   expect(await page.evaluate(()=>document.documentElement.scrollWidth<=320)).toBe(true);
  }finally{await page.evaluate(()=>(window as any).panel.destroy());await page.close()}
 },30000);
+
+it.skipIf(!enabled)('production navigation keeps five mobile destinations and isolates Windows administration labels',async()=>{
+ for(const width of [320,390,1366]){
+  const page=await browser.newPage({viewport:{width,height:900}});
+  try{
+   await page.route('**/*',route=>route.abort());
+   await page.setContent(readFileSync('apps/mobile/control/index.html','utf8')
+    .replace(/<script[^>]*>[\s\S]*?<\/script>/g,'').replace(/<link[^>]*>/g,'')
+    .replace(/<meta http-equiv="Content-Security-Policy"[^>]*>/g,''));
+   for(const name of ['control.css','performance.css','twitch-chat.css','mobile-panes.css','mobile-ergonomics.css','alpha27-spontaneous-style.css','deck-action-layout.css','streamcockpit-timer.css','streamcockpit-mobile-v2.css'])
+    await page.addStyleTag({content:readFileSync('apps/mobile/control/'+name,'utf8')});
+   await page.evaluate(width=>{document.documentElement.classList.add('simple-nav');if(width<=700)document.documentElement.classList.add('compact-app','mobile-panes-active')},width);
+   const value=await page.evaluate(()=>{
+    const visible=(e:Element)=>e.getBoundingClientRect().width>0&&getComputedStyle(e).display!=='none';
+    return {overflow:document.documentElement.scrollWidth-innerWidth,groups:[...document.querySelectorAll('.cockpit-nav-group')].filter(visible).map(e=>e.textContent),
+     tabs:[...document.querySelectorAll<HTMLElement>('aside nav button')].filter(visible).sort((a,b)=>+getComputedStyle(a).order-+getComputedStyle(b).order).map(e=>e.dataset.page)};
+   });
+   expect(value.overflow).toBeLessThanOrEqual(1);
+   if(width<=700){expect(value.groups).toEqual([]);expect(value.tabs).toEqual(['home','live','sounds','planning','plus'])}
+   else expect(value.groups).toEqual(['Régie','Administration']);
+  }finally{await page.close()}
+ }
+},30000);

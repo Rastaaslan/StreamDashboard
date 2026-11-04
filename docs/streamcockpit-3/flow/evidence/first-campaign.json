@@ -1,0 +1,94 @@
+{
+  "schemaVersion": 1,
+  "sourceCommit": "9ce4215e9625379e2dbfe48b89525c30c4bb1249",
+  "finishedAt": "2026-11-04T22:12:10.154Z",
+  "vitest": {
+    "passed": 2401,
+    "failed": 10,
+    "skipped": 110,
+    "reason": "10 assertions strictes sur output(platform,start) ne tenaient pas compte du troisième argument confirmedChecklist=false déjà transmis par le runtime."
+  },
+  "playwright": {
+    "stats": {
+      "startTime": "2026-11-04T22:10:36.365Z",
+      "duration": 44929.023,
+      "expected": 54,
+      "skipped": 0,
+      "unexpected": 5,
+      "flaky": 0
+    },
+    "reason": "5 scénarios attendaient des contrôles YouTube retirés ; 4 parcours Twitch réactualisés et un scénario négatif prouve que la configuration historique YouTube est ignorée."
+  },
+  "androidQa": {
+    "status": "HARNESS_COMMAND_FAILED",
+    "reason": "Gradle exécuté depuis la racine sans -p android ; corrigé dans la seconde campagne. Aucun échec Java identifié par cette tentative."
+  },
+  "stageStatuses": [
+    {
+      "name": "build_types",
+      "status": "PASS",
+      "exitCode": 0
+    },
+    {
+      "name": "check_browser-types",
+      "status": "PASS",
+      "exitCode": 0
+    },
+    {
+      "name": "security_check",
+      "status": "PASS",
+      "exitCode": 0
+    },
+    {
+      "name": "vitest",
+      "status": "FAIL",
+      "exitCode": 1
+    },
+    {
+      "name": "build",
+      "status": "PASS",
+      "exitCode": 0
+    },
+    {
+      "name": "check_shipped-js",
+      "status": "PASS",
+      "exitCode": 0
+    },
+    {
+      "name": "node-built",
+      "status": "PASS",
+      "exitCode": 0
+    },
+    {
+      "name": "playwright",
+      "status": "FAIL",
+      "exitCode": 1
+    },
+    {
+      "name": "windows-package",
+      "status": "PASS",
+      "exitCode": 0
+    },
+    {
+      "name": "electron-agent-tls",
+      "status": "PASS",
+      "exitCode": 0
+    },
+    {
+      "name": "android-sync",
+      "status": "PASS",
+      "exitCode": 0
+    },
+    {
+      "name": "android-qa",
+      "status": "FAIL",
+      "exitCode": 1
+    },
+    {
+      "name": "scope-final",
+      "status": "PASS",
+      "exitCode": 0
+    }
+  ],
+  "note": "Les échecs initiaux ne sont pas réécrits en PASS. Les preuves de la source finale seront dans qualification.json."
+}
