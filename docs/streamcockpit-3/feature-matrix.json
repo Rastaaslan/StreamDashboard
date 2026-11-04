@@ -377,6 +377,10 @@
         {
           "path": "apps/mobile/control/streamcockpit-twitch-moment-pending.js",
           "kind": "2026-11-04 RDC FIXE F04: new admission compares three localStorage observations and the exact canonical parsed snapshot before writing an uncertain Twitch confirmation. A transient null/no-journal read no longer permits overwriting an older possibly executed UUID from a different account. RED 20 PASS/1 FAIL; final 55 PASS/0 FAIL/0 skipped across five targeted suites, including 11 actual Edge tests. TypeScript/browser types PASS; security 6736 files and git diff --check PASS. Synthetic flaky storage and provider only; no real Twitch, Android hardware, restart/power-loss durability, signed artifacts or release qualification. F04 partial, G2 in_progress."
+        },
+        {
+          "path": "apps/mobile/control/streamcockpit-twitch-moments.js",
+          "kind": "2026-11-04 RDC FIXE F04: same-host/account UI resynchronizes read-only pending Twitch receipts after offline/online or visible WebView resume, even when storage events were missed. Uncertain results remain sticky and no provider request/retry occurs. Real Edge 320px RED 1 FAIL, focused GREEN 1 PASS; final five suites 56 PASS/0 FAIL/0 skipped, including 12 actual Edge cases. TypeScript/browser types PASS, security 6736 files PASS, git diff --check PASS. Synthetic journal and provider only; no physical Android/Twitch provider, deployment/signature, electrical crash or G3 hardware qualification. F04 partial, G2 in_progress."
         }
       ],
       "verifiedTests": [

@@ -185,7 +185,28 @@ export function mountTwitchMoments(root,{request}={}){
     }
     draw();
   };
-  const pause=()=>invalidate('Connexion ou vue interrompue : confirmation invalidée.');
+  // A suspended WebView may miss all cross-tab storage events. Re-read the
+  // current host/account when it becomes visible or reconnects; never infer
+  // that a missing hint clears an in-memory uncertain provider response.
+  const resyncAfterInterruption=()=>{
+    if(sending||!sourceKey||!accountKey)return;
+    const diagnosis=diagnoseUncertainMomentStore(view,sourceKey,accountKey);
+    const receipt=diagnosis.state==='pending'?diagnosis.receipt:
+      diagnosis.state==='blocked'?recoverUncertainMomentForReview(view,sourceKey,accountKey):undefined;
+    if(diagnosis.state==='blocked')storageBlocked=true;
+    if(receipt){
+      if(uncertainReceipt&&(uncertainReceipt.id!==receipt.id||uncertainReceipt.kind!==receipt.kind))storageBlocked=true;
+      else uncertainReceipt=receipt;
+      uncertain=true;
+    }
+    if(storageBlocked)status.textContent=blockedText+(uncertainReceipt?' Une référence de ce compte reste consultable sans renvoi.':'');
+    else if(uncertain)status.textContent='Résultat incertain conservé après reprise : vérifiez Twitch et le journal FIXE, sans renvoi.';
+    draw();
+  };
+  const pause=event=>{
+    invalidate('Connexion ou vue interrompue : confirmation invalidée.');
+    if(event.type==='online'||(event.type==='visibilitychange'&&doc.visibilityState!=='hidden'))resyncAfterInterruption();
+  };
   view?.addEventListener('offline',pause);view?.addEventListener('online',pause);view?.addEventListener('storage',onJournalChange);doc.addEventListener('visibilitychange',pause);
   status.textContent='Source non associée.';draw();
   return {update(c={}){if(disposed)return;const next=c.online===true,key=typeof c.sourceKey==='string'?c.sourceKey:'',account=typeof c.accountKey==='string'?c.accountKey:'';
@@ -198,6 +219,7 @@ export function mountTwitchMoments(root,{request}={}){
         else if(uncertain)status.textContent='Résultat incertain conservé après rechargement : consulter le journal FIXE ou vérifier dans Twitch. Aucun renvoi automatique.';
         else status.textContent=online?'Prêt à vérifier un moment.':'Source déconnectée.';
         draw();}
+      else if(online)resyncAfterInterruption();
     }else draw()},
     destroy(){disposed=true;invalidate('Vue fermée.');view?.removeEventListener('offline',pause);view?.removeEventListener('online',pause);view?.removeEventListener('storage',onJournalChange);doc.removeEventListener('visibilitychange',pause);section.remove()}};
 }

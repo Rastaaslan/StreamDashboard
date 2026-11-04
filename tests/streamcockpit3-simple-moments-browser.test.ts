@@ -370,3 +370,53 @@ it.skipIf(process.env.SC3_FINAL_BROWSER_TEST!=='1')('F04 real Edge 320px: expire
     await page.evaluate(()=>(window as any).panel.destroy());
   }finally{await browser.close()}
 },30000);
+
+it.skipIf(process.env.SC3_FINAL_BROWSER_TEST!=='1')('F04 real Edge 320px: reconnect and visible resume rescan same-identity receipts without a provider call',async()=>{
+  const bundle=await build({stdin:{contents:"import {mountTwitchMoments} from './apps/mobile/control/streamcockpit-twitch-moments.js';window.mountMoments=mountTwitchMoments;",resolveDir:process.cwd()},bundle:true,write:false,format:'iife',platform:'browser'});
+  const browser=await chromium.launch({channel:'msedge',headless:true});
+  try{
+    const page=await browser.newPage({viewport:{width:320,height:720},hasTouch:true});
+    await page.route('**/*',r=>r.abort());
+    await page.route('http://127.0.0.1:38669/**',r=>r.fulfill({status:200,contentType:'text/html',body:'<main id="root"></main>'}));
+    await page.goto('http://127.0.0.1:38669/moments');
+    await page.addScriptTag({content:bundle.outputFiles[0].text});
+    await page.evaluate(()=>{
+      const w=window as any;w.calls=[];
+      w.panel=w.mountMoments(document.getElementById('root'),{request:async(...args:any[])=>{w.calls.push(args);throw Error('NO_PROVIDER_CALL')}});
+      w.panel.update({online:true,sourceKey:'FIXE',accountKey:'owner'});
+    });
+    const preview=page.getByRole('button',{name:'Vérifier le moment sans publier'});
+    expect(await preview.isEnabled()).toBe(true);
+    // Simulate an OS/WebView suspension that misses cross-document storage events:
+    // localStorage changes in this document itself do not dispatch a storage event.
+    await page.evaluate(()=>{
+      const w=window as any;
+      w.panel.update({online:false,sourceKey:'FIXE',accountKey:'owner'});
+      localStorage.setItem('sd3.f04.twitch-moment-uncertain.v1',JSON.stringify({version:1,rows:[
+        {source:'FIXE',account:'owner',id:'643e0c2b-e8e4-4ccd-a82c-8ad0a05f19c5',kind:'clip',createdAt:Date.now()}
+      ]}));
+      w.panel.update({online:true,sourceKey:'FIXE',accountKey:'owner'});
+    });
+    expect(await preview.isDisabled()).toBe(true);
+    expect(await page.getByRole('button',{name:'Consulter le journal FIXE sans renvoyer'}).isVisible()).toBe(true);
+    expect(await page.getByRole('status').textContent()).toContain('Résultat incertain');
+    // A second identity first sees no current-scope UUID. On visible resume,
+    // a newly discovered second-scope receipt must be surfaced immediately.
+    await page.evaluate(()=>{
+      (window as any).panel.update({online:true,sourceKey:'FIXE',accountKey:'secondary'});
+    });
+    expect(await preview.isEnabled()).toBe(true);
+    await page.evaluate(()=>{
+      const key='sd3.f04.twitch-moment-uncertain.v1';
+      const data=JSON.parse(localStorage.getItem(key)!);
+      data.rows.push({source:'FIXE',account:'secondary',id:'743e0c2b-e8e4-4ccd-a82c-8ad0a05f19c5',kind:'marker',createdAt:Date.now()});
+      localStorage.setItem(key,JSON.stringify(data));
+      document.dispatchEvent(new Event('visibilitychange'));
+    });
+    expect(await preview.isDisabled()).toBe(true);
+    expect(await page.getByRole('button',{name:'Consulter le journal FIXE sans renvoyer'}).isVisible()).toBe(true);
+    expect(await page.evaluate(()=>(window as any).calls.length)).toBe(0);
+    expect(await page.evaluate(()=>JSON.parse(localStorage.getItem('sd3.f04.twitch-moment-uncertain.v1')!).rows.length)).toBe(2);
+    await page.evaluate(()=>(window as any).panel.destroy());
+  }finally{await browser.close()}
+},30000);
