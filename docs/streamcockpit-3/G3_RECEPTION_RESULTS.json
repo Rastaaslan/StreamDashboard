@@ -17,7 +17,13 @@
       "commit": null,
       "observedAt": null,
       "result": null,
-      "evidence": []
+      "evidence": [],
+      "operatorConfirmation": {
+        "result": "reported-pass",
+        "date": "2026-11-04",
+        "source": "user-checklist-this-conversation",
+        "summary": "FIXE/laptop/Android, appairage et rôle unique validés par opérateur"
+      }
     },
     {
       "id": "G3-02",
@@ -25,7 +31,13 @@
       "commit": null,
       "observedAt": null,
       "result": null,
-      "evidence": []
+      "evidence": [],
+      "operatorConfirmation": {
+        "result": "reported-pass",
+        "date": "2026-11-04",
+        "source": "user-checklist-this-conversation",
+        "summary": "Minuteur unique observé sur FIXE/laptop/Android par opérateur"
+      }
     },
     {
       "id": "G3-03",
@@ -33,7 +45,13 @@
       "commit": null,
       "observedAt": null,
       "result": null,
-      "evidence": []
+      "evidence": [],
+      "operatorConfirmation": {
+        "result": "reported-pass",
+        "date": "2026-11-04",
+        "source": "user-checklist-this-conversation",
+        "summary": "Reconnexion Wi-Fi Android sans replay de commande validée par opérateur"
+      }
     },
     {
       "id": "G3-04",
@@ -41,7 +59,12 @@
       "commit": null,
       "observedAt": null,
       "result": null,
-      "evidence": []
+      "evidence": [],
+      "operatorConfirmation": {
+        "result": "not-reported",
+        "date": "2026-11-04",
+        "source": "user-checklist-this-conversation"
+      }
     },
     {
       "id": "G3-05",
@@ -49,7 +72,12 @@
       "commit": null,
       "observedAt": null,
       "result": null,
-      "evidence": []
+      "evidence": [],
+      "operatorConfirmation": {
+        "result": "not-reported",
+        "date": "2026-11-04",
+        "source": "user-checklist-this-conversation"
+      }
     },
     {
       "id": "G3-06",
@@ -57,7 +85,13 @@
       "commit": null,
       "observedAt": null,
       "result": null,
-      "evidence": []
+      "evidence": [],
+      "operatorConfirmation": {
+        "result": "reported-pass",
+        "date": "2026-11-04",
+        "source": "user-checklist-this-conversation",
+        "summary": "Planning Google identique sur trio validé par opérateur"
+      }
     },
     {
       "id": "G3-07",
@@ -65,7 +99,13 @@
       "commit": null,
       "observedAt": null,
       "result": null,
-      "evidence": []
+      "evidence": [],
+      "operatorConfirmation": {
+        "result": "reported-pass",
+        "date": "2026-11-04",
+        "source": "user-checklist-this-conversation",
+        "summary": "Commande de scène OBS depuis Android validée par opérateur"
+      }
     },
     {
       "id": "G3-08",
@@ -73,7 +113,12 @@
       "commit": null,
       "observedAt": null,
       "result": null,
-      "evidence": []
+      "evidence": [],
+      "operatorConfirmation": {
+        "result": "not-reported",
+        "date": "2026-11-04",
+        "source": "user-checklist-this-conversation"
+      }
     },
     {
       "id": "G3-09",
@@ -81,7 +126,13 @@
       "commit": null,
       "observedAt": null,
       "result": null,
-      "evidence": []
+      "evidence": [],
+      "operatorConfirmation": {
+        "result": "reported-pass",
+        "date": "2026-11-04",
+        "source": "user-checklist-this-conversation",
+        "summary": "Micro, son et piste VOD Spotify vérifiés par opérateur"
+      }
     },
     {
       "id": "G3-10",
@@ -89,7 +140,51 @@
       "commit": null,
       "observedAt": null,
       "result": null,
-      "evidence": []
+      "evidence": [],
+      "operatorConfirmation": {
+        "result": "not-reported",
+        "date": "2026-11-04",
+        "source": "user-checklist-this-conversation"
+      }
     }
-  ]
+  ],
+  "operatorChecklist": {
+    "date": "2026-11-04",
+    "p0": {
+      "confirmed": 6,
+      "total": 6
+    },
+    "p1": {
+      "confirmed": 4,
+      "total": 4
+    },
+    "g2": {
+      "operatorAccepted": true,
+      "independentEvidenceStillRequired": true
+    },
+    "g3": {
+      "operatorConfirmedScenarios": [
+        "G3-01",
+        "G3-02",
+        "G3-03",
+        "G3-06",
+        "G3-07",
+        "G3-09"
+      ],
+      "unreportedScenarios": [
+        "G3-04",
+        "G3-05",
+        "G3-08",
+        "G3-10"
+      ]
+    },
+    "g4": {
+      "isolatedTestsPassed": 79,
+      "productionSigningComplete": false
+    },
+    "g5": {
+      "operatorAccepted": false
+    },
+    "report": "G3_G4_G5_PROGRESS_20261104.md"
+  }
 }
