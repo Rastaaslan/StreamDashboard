@@ -102,8 +102,8 @@ header{height:auto;min-height:98px;gap:18px}header>div:first-child{min-width:0;o
  html:not(.compact-app) .monitor-grid-with-activity .monitor-slot{flex:1;min-height:0;height:auto}
  html:not(.compact-app) .monitor-grid-with-activity .video-slot{min-height:300px;aspect-ratio:auto}
  html:not(.compact-app) .monitor-grid-with-activity .video-slot iframe{min-height:300px}
- html:not(.compact-app) .monitor-grid-with-activity [data-twitch-native]{flex:1;min-height:0}
- html:not(.compact-app) .monitor-grid-with-activity .twitch-native-chat{flex:0 0 auto;height:min(490px,55dvh);min-height:300px;gap:8px}
+ html:not(.compact-app) .monitor-grid-with-activity [data-twitch-native]{flex:0 0 auto;min-height:auto}
+ html:not(.compact-app) .monitor-grid-with-activity .twitch-native-chat{flex:0 0 auto;height:auto;min-height:min(490px,55dvh);gap:8px}
  html:not(.compact-app) .monitor-grid-with-activity .monitor-native-twitch>section{min-width:0;max-width:100%;overflow-wrap:anywhere}
  html:not(.compact-app) .monitor-grid-with-activity .monitor-native-twitch button,html:not(.compact-app) .monitor-grid-with-activity .monitor-native-twitch select{max-width:100%;white-space:normal}
  html:not(.compact-app) .monitor-grid-with-activity .monitor-native-twitch .twitch-chat-account{flex-wrap:wrap}

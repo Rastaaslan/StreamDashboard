@@ -1,4 +1,9 @@
-.twitch-native-chat{display:flex;flex-direction:column;gap:10px;min-width:0;min-height:440px;height:440px}
+.twitch-native-chat{display:flex;flex-direction:column;gap:10px;min-width:0;max-width:100%;min-height:440px;height:auto}
+/* A long status, an expanded composer or an error must grow the chat rather than
+   spill over the following Twitch controls. Only the message log scrolls. */
+.twitch-native-chat>.twitch-chat-account,.twitch-native-chat>[data-twitch-status],.twitch-native-chat>.twitch-chat-compose,.twitch-native-chat>.twitch-chat-resume,.twitch-native-chat>.twitch-chat-connect{flex-shrink:0;min-width:0}
+.twitch-native-chat .twitch-chat-log{min-height:90px;max-height:430px;flex:1 1 150px}
+.twitch-native-chat .twitch-chat-compose{overflow-wrap:anywhere}
 .twitch-chat-account{display:flex;align-items:center;justify-content:space-between;gap:10px}
 .twitch-chat-account p{font-size:12px;font-weight:650;margin:0;overflow-wrap:anywhere}
 .twitch-chat-account button{font-size:11px;padding:8px 10px;min-height:34px}
