@@ -243,3 +243,18 @@ it('F04 expired unresolved receipts cannot be silently pruned by a later Twitch 
   expect(data.get(key)).toBe(oldJournal);
   expect(readUncertainMomentBackup(view)).toBe(oldJournal);
 });
+
+it('F04 never acknowledges clearing a receipt when the persisted journal becomes corrupt',()=>{
+  const now=1800000000000,key='sd3.f04.twitch-moment-uncertain.v1';
+  const rows=new Map<string,string>();let corruptOnWrite=false;
+  const view={localStorage:{
+    getItem:(k:string)=>rows.get(k)??null,
+    setItem:(k:string,value:string)=>rows.set(k,corruptOnWrite?'{unreadable':value),
+  }};
+  expect(rememberUncertainMoment(view,'FIXE','dam',{id:uuid,kind:'clip'},now)).toBe(true);
+  corruptOnWrite=true; // Simulate an interfering or faulty storage implementation after setItem.
+  expect(clearUncertainMoment(view,'FIXE','dam',{id:uuid,kind:'clip'},now)).toBe(false);
+  expect(rows.get(key)).toBe('{unreadable');
+  expect(diagnoseUncertainMomentStore(view,'FIXE','dam',now)).toEqual({state:'blocked'});
+  expect(rememberUncertainMoment(view,'FIXE','other',{id:uuid,kind:'marker'},now)).toBe(false);
+});

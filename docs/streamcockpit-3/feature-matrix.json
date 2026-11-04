@@ -341,6 +341,10 @@
         {
           "path": "apps/mobile/control/streamcockpit-twitch-moment-pending.js",
           "kind": "2026-11-04 RDC FIXE F04: exact canonical JSON round-trip is required before accepting or read-only reviewing a local pending journal. JSON.parse silently loses duplicate root/row keys and potentially executed Twitch UUIDs; noncanonical evidence stays blocked and byte-preserved for manual review. RED 13 PASS/1 FAIL, final 46 PASS/0 FAIL/0 skipped across five targeted suites (9 actual Edge 320px/multitab tests); TS/browser types and security 6730 files PASS, diff check PASS. Synthetic Twitch provider; no build, real Android/Twitch/power loss or supervised recovery proof; F04 partial/G2 in_progress."
+        },
+        {
+          "path": "apps/mobile/control/streamcockpit-twitch-moment-pending.js",
+          "kind": "2026-11-04 RDC FIXE F04: exact localStorage read-back verification after every remember/clear write fixes a false-positive clear when a faulty/interfering storage implementation instead persists malformed data. RED 14 PASS/1 FAIL; final 47 PASS/0 FAIL/0 skipped over five targeted suites with SC3_FINAL_BROWSER_TEST=1 (9 actual Edge 320px/multitab tests); without this flag 38 PASS/9 skipped. TypeScript and browser types PASS, security 6733 files PASS, diff check PASS. No production POST, build, packaging, real Android/Twitch, power-failure or independent storage durability evidence; F04 partial and G2 in_progress."
         }
       ],
       "verifiedTests": [

@@ -56,7 +56,14 @@ function read(storage,now){
   if(data.rows.some(r=>!validRow(r,now)))throw Error('EXPIRED_UNREVIEWED');
   return data.rows;
 }
-function write(storage,rows){storage.setItem(KEY,JSON.stringify({version:1,rows}));}
+// A false read-back of a corrupt or missing journal must never count as a
+// successful clear: loadUncertainMoment() deliberately returns null on errors.
+// Verify the exact bytes stored before acknowledging any journal mutation.
+function write(storage,rows){
+  const raw=JSON.stringify({version:1,rows});
+  storage.setItem(KEY,raw);
+  return storage.getItem(KEY)===raw;
+}
 // localStorage alone cannot atomically claim a receipt across different tabs.
 // The browser's native same-origin Web Lock serializes all *production UI* journal
 // mutations. Never wait/retry a contested lock or fall back to an unlocked POST.
@@ -136,8 +143,7 @@ export function rememberUncertainMoment(view,source,account,receipt,now=Date.now
     if(rows.some(r=>r.source===source&&r.account===account))return false;
     if(rows.length>=MAX_RECORDS)return false; // Never silently evict a pending receipt.
     rows.push({source,account,id:receipt.id,kind:receipt.kind,createdAt:now});
-    write(storage,rows);
-    return loadUncertainMoment(view,source,account,now)?.id===receipt.id;
+    return write(storage,rows)&&loadUncertainMoment(view,source,account,now)?.id===receipt.id;
   }catch{return false}
 }
 // A stale tab must never clear a newer pending request. Require the exact receipt
@@ -152,7 +158,6 @@ export function clearUncertainMoment(view,source,account,expected,now=Date.now()
     const index=rows.findIndex(r=>r.source===source&&r.account===account);
     if(index<0||rows[index].id!==expected.id||rows[index].kind!==expected.kind)return false;
     rows.splice(index,1);
-    write(storage,rows);
-    return loadUncertainMoment(view,source,account,now)===null;
+    return write(storage,rows)&&loadUncertainMoment(view,source,account,now)===null;
   }catch{return false}
 }
