@@ -150,7 +150,13 @@ export function rememberUncertainMoment(view,source,account,receipt,now=Date.now
   if(!validScope(source,account)||!validRow({...receipt,source,account,createdAt:now},now))return false;
   const storage=store(view);if(!storage)return false;
   try{
+    // A transient null from localStorage must not masquerade as an empty journal.
+    // Compare the parsed admission snapshot with independent reads before writing:
+    // losing a previous UUID could hide an already executed Twitch POST.
+    const before=storage.getItem(KEY);
     const rows=read(storage,now);
+    if(storage.getItem(KEY)!==before||
+      (before===null?rows.length!==0:JSON.stringify({version:1,rows})!==before))return false;
     // Never replace an older uncertain confirmation, even for the same host/account.
     // Its provider POST may have succeeded and its original UUID is required for GET-only reconciliation.
     if(rows.some(r=>r.source===source&&r.account===account))return false;

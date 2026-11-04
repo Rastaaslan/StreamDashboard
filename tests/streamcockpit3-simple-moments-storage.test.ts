@@ -46,6 +46,23 @@ it('F04 never overwrites an unresolved receipt from the same host/account with a
   expect(rememberUncertainMoment(view,'https://fixe','dam',{id:newer,kind:'marker'},now+1000)).toBe(true);
   expect(loadUncertainMoment(view,'https://fixe','dam',now+1000)).toEqual({id:newer,kind:'marker'});
 });
+it('F04 rejects a transient missing-journal read instead of overwriting an older Twitch UUID',()=>{
+  const {view,data}=mockStorage(),now=1800000000000,key='sd3.f04.twitch-moment-uncertain.v1';
+  expect(rememberUncertainMoment(view,'FIXE','owner',{id:uuid,kind:'clip'},now)).toBe(true);
+  const original=data.get(key)!;
+  const latest='743e0c2b-e8e4-4ccd-a82c-8ad0a05f19c5';
+  for(const missingRead of [1,2]){
+    let reads=0;
+    const flaky={localStorage:{
+      getItem:(k:string)=>++reads===missingRead?null:view.localStorage.getItem(k),
+      setItem:(k:string,value:string)=>view.localStorage.setItem(k,value),
+    }};
+    // A stale or transient null must not count as proof that the journal was empty.
+    expect(rememberUncertainMoment(flaky,'FIXE','other',{id:latest,kind:'marker'},now+1000)).toBe(false);
+    expect(data.get(key)).toBe(original);
+  }
+});
+
 it('F04 expires bounded local hints; invalid UUID and unavailable storage fail closed before sending',()=>{
   const {view,data}=mockStorage(),now=1800000000000;
   expect(rememberUncertainMoment(view,'fixe','dam',{id:'not-uuid',kind:'clip'},now)).toBe(false);
