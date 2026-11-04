@@ -78,3 +78,56 @@ it.skipIf(process.env.SC3_FINAL_BROWSER_TEST!=='1')('F04 two real Edge tabs: sta
     expect(await read()).toEqual({id:newer,kind:'marker'});
   }finally{await browser.close()}
 },30000);
+
+it.skipIf(process.env.SC3_FINAL_BROWSER_TEST!=='1')('F04 real Edge tabs: native journal lock contention forbids a provider POST, then allows an explicit new attempt',async()=>{
+  const bundle=await build({stdin:{
+    contents:"import {mountTwitchMoments} from './apps/mobile/control/streamcockpit-twitch-moments.js';window.mountMoments=mountTwitchMoments;",
+    resolveDir:process.cwd()},bundle:true,write:false,format:'iife',platform:'browser'});
+  const browser=await chromium.launch({channel:'msedge',headless:true});
+  try{
+    const context=await browser.newContext({viewport:{width:320,height:720},hasTouch:true});
+    await context.route('**/*',route=>route.abort());
+    await context.route(origin+'/**',route=>route.fulfill({status:200,contentType:'text/html',body:'<main id="root"></main>'}));
+    const a=await context.newPage(),b=await context.newPage();
+    await a.goto(origin+'/lock');await b.goto(origin+'/lock');
+    await b.addScriptTag({content:bundle.outputFiles[0].text});
+    await b.evaluate(id=>{
+      const w=window as any;w.calls=[];
+      w.panel=w.mountMoments(document.querySelector('#root'),{request:async(path:string,body:any,method:string)=>{
+        w.calls.push({path,method});
+        if(path.endsWith('/preview'))return {schemaVersion:1,kind:'streamcockpit-moment-preview',confirmationId:id,expiresAt:Date.now()+30_000,draft:body.draft};
+        throw Error('SYNTHETIC_PROVIDER_FAILURE');
+      }});
+      w.panel.update({online:true,sourceKey:'FIXE',accountKey:'owner'});
+    },uuid);
+    // A browser/WebView without Web Locks must never fall back to an unlocked POST.
+    await b.evaluate(()=>Object.defineProperty(navigator,'locks',{configurable:true,value:undefined}));
+    await b.getByRole('button',{name:'Vérifier le moment sans publier'}).click();
+    await b.getByLabel('Confirmer le moment Twitch').check();
+    await b.getByRole('button',{name:'Créer ce moment sur Twitch'}).click();
+    await expect.poll(()=>b.getByRole('status').textContent()).toContain('Sauvegarde locale de la demande impossible');
+    expect(await b.evaluate(()=>(window as any).calls.filter((c:any)=>c.path.endsWith('/confirm')).length)).toBe(0);
+    expect(await b.evaluate(()=>localStorage.getItem('sd3.f04.twitch-moment-uncertain.v1'))).toBeNull();
+    await b.evaluate(()=>{delete (navigator as any).locks});
+    await a.evaluate(()=>{
+      const w=window as any;
+      void navigator.locks.request('sd3.f04.twitch-moment-journal.v1',{mode:'exclusive'},async()=>{
+        w.held=true;await new Promise<void>(resolve=>{w.release=resolve});
+      });
+    });
+    await expect.poll(()=>a.evaluate(()=>(window as any).held===true)).toBe(true);
+    await b.getByRole('button',{name:'Vérifier le moment sans publier'}).click();
+    await b.getByLabel('Confirmer le moment Twitch').check();
+    await b.getByRole('button',{name:'Créer ce moment sur Twitch'}).click();
+    await expect.poll(()=>b.getByRole('status').textContent()).toContain('Sauvegarde locale de la demande impossible');
+    expect(await b.evaluate(()=>(window as any).calls.filter((c:any)=>c.path.endsWith('/confirm')).length)).toBe(0);
+    expect(await b.evaluate(()=>localStorage.getItem('sd3.f04.twitch-moment-uncertain.v1'))).toBeNull();
+    await a.evaluate(()=>(window as any).release());
+    await expect.poll(async()=>a.evaluate(async()=>!((await navigator.locks!.query()).held??[]).some(lock=>lock.name==='sd3.f04.twitch-moment-journal.v1'))).toBe(true);
+    await b.getByRole('button',{name:'Vérifier le moment sans publier'}).click();
+    await b.getByLabel('Confirmer le moment Twitch').check();
+    await b.getByRole('button',{name:'Créer ce moment sur Twitch'}).click();
+    await expect.poll(()=>b.getByRole('status').textContent()).toContain('Résultat incertain');
+    expect(await b.evaluate(()=>(window as any).calls.filter((c:any)=>c.path.endsWith('/confirm')).length)).toBe(1);
+  }finally{await browser.close()}
+},30000);

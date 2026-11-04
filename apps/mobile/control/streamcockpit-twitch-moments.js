@@ -1,4 +1,4 @@
-import {rememberUncertainMoment,clearUncertainMoment,diagnoseUncertainMomentStore} from './streamcockpit-twitch-moment-pending.js';
+import {rememberUncertainMoment,clearUncertainMoment,diagnoseUncertainMomentStore,withExclusiveMomentJournal} from './streamcockpit-twitch-moment-pending.js';
 // F04 simple provider moments, independent of the deferred video editor.
 export function mountTwitchMoments(root,{request}={}){
   const doc=root.ownerDocument,view=doc.defaultView,section=doc.createElement('section');
@@ -28,9 +28,18 @@ export function mountTwitchMoments(root,{request}={}){
   const invalidate=message=>{revision++;if(sending)uncertain=true;flight=false;cancel();link.hidden=true;link.removeAttribute('href');status.textContent=uncertain?'Résultat incertain : vérifiez Twitch avant une nouvelle demande. Aucun renvoi automatique.':storageBlocked?blockedText:message;draw()};
   kind.addEventListener('change',()=>invalidate('Type modifié : nouvelle vérification requise.'));
   description.addEventListener('input',()=>{cancel();draw()});agree.addEventListener('change',draw);
-  verified.addEventListener('click',()=>{if(sending)return;
-    if(!clearUncertainMoment(view,sourceKey,accountKey,uncertainReceipt)){status.textContent='Référence locale non effacée : vérification conservée, aucune nouvelle demande autorisée.';return}
-    uncertain=false;uncertainReceipt=undefined;invalidate('Vérification externe confirmée. Une nouvelle prévisualisation est requise.')});
+  verified.addEventListener('click',async()=>{
+    if(sending||flight||!uncertain||!uncertainReceipt)return;
+    const receipt=uncertainReceipt,target=sourceKey,account=accountKey,key=++revision;
+    flight=true;draw();
+    const cleared=await withExclusiveMomentJournal(view,()=>
+      key===revision&&connected()&&target===sourceKey&&account===accountKey&&
+      clearUncertainMoment(view,target,account,receipt));
+    if(key!==revision)return;
+    flight=false;
+    if(!cleared){status.textContent='Référence locale non effacée : verrou ou vérification indisponible, aucune nouvelle demande autorisée.';draw();return}
+    uncertain=false;uncertainReceipt=undefined;invalidate('Vérification externe confirmée. Une nouvelle prévisualisation est requise.');
+  });
   inspect.addEventListener('click',async()=>{
     if(!connected()||flight||sending||!uncertain||!uncertainReceipt||typeof request!=='function')return;
     const receipt=uncertainReceipt,target=sourceKey,account=accountKey,key=++revision;flight=true;draw();
@@ -61,12 +70,19 @@ export function mountTwitchMoments(root,{request}={}){
   publish.addEventListener('click',async()=>{
     if(!connected()||flight||sending||uncertain||!pending||!agree.checked||Date.now()>=pending.expiresAt)return;
     const id=pending.confirmationId,expected=pending.draft.kind,target=sourceKey,account=accountKey,key=++revision;
-    cancel();
-    if(!rememberUncertainMoment(view,target,account,{id,kind:expected})){
+    cancel();flight=true;draw();
+    // Claim the same-origin native lock BEFORE touching the shared journal or POSTing.
+    // Contention, missing Web Locks and outdated previews fail closed, without retry.
+    const stored=await withExclusiveMomentJournal(view,()=>
+      connected()&&key===revision&&target===sourceKey&&account===accountKey&&
+      !uncertain&&!storageBlocked&&rememberUncertainMoment(view,target,account,{id,kind:expected}));
+    if(key!==revision)return;
+    if(!stored){
+      flight=false;
       if(diagnoseUncertainMomentStore(view,target,account).state==='blocked')storageBlocked=true;
-      status.textContent=storageBlocked?blockedText:'Sauvegarde locale de la demande impossible : aucun moment envoyé sur Twitch.';draw();return;
+      status.textContent=storageBlocked?blockedText:'Sauvegarde locale de la demande impossible (verrou ou référence existante) : aucun moment envoyé sur Twitch.';draw();return;
     }
-    uncertainReceipt={id,kind:expected};flight=true;sending=true;draw();
+    uncertainReceipt={id,kind:expected};sending=true;draw();
     try{
       const r=await request('/api/v1/twitch/advanced/moment/confirm',{confirmationId:id,confirmed:true},'POST',target);
       if(!connected()||key!==revision||target!==sourceKey||account!==accountKey){if(key===revision)uncertain=true;return}
@@ -80,8 +96,12 @@ export function mountTwitchMoments(root,{request}={}){
           url.port||url.search||url.hash||url.pathname!==`/${r.id}/edit`)throw Error('UNVERIFIED');
         link.href=url.href;link.hidden=false;
       }else if(r.editUrl!==undefined)throw Error('UNVERIFIED');
-      if(clearUncertainMoment(view,target,account,{id,kind:expected}))uncertainReceipt=undefined;
-      else {uncertain=true;status.textContent+=' Référence locale toujours présente : vérifier dans Twitch avant une nouvelle demande.'}
+      const cleared=await withExclusiveMomentJournal(view,()=>
+        key===revision&&target===sourceKey&&account===accountKey&&
+        clearUncertainMoment(view,target,account,{id,kind:expected}));
+      if(key!==revision||target!==sourceKey||account!==accountKey)return;
+      if(cleared)uncertainReceipt=undefined;
+      else {uncertain=true;status.textContent+=' Référence locale toujours présente (verrou ou journal indisponible) : vérifier dans Twitch avant une nouvelle demande.'}
     }catch{if(key===revision&&target===sourceKey&&account===accountKey){uncertain=true;status.textContent='Résultat incertain : vérifiez Twitch avant une nouvelle demande. Aucun renvoi automatique.'}}
     finally{sending=false;if(key===revision)flight=false;draw()}
   });

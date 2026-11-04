@@ -313,6 +313,10 @@
         {
           "path": "tests/streamcockpit3-simple-moments-multitab-browser.test.ts",
           "kind": "2026-11-04 RDC FIXE: two true Microsoft Edge tabs sharing one real localStorage origin prove cross-window storage-event invalidation of a stale prepared Twitch confirmation, immediate read-only uncertain state, non-destructive corruption block and refusal to clear a newer UUID from a stale view. 36/36 targeted PASS across 5 suites including 5 actual Edge tests, TS/browser/build (143 assets), shipped JS (149) and security (6720 files) PASS. Synthetic provider, no simultaneous CAS atomicity or physical multi-device proof."
+        },
+        {
+          "path": "apps/mobile/control/streamcockpit-twitch-moment-pending.js",
+          "kind": "2026-11-04 RDC FIXE F04: production browser UI now protects admission and exact-UUID clearing with exclusive same-origin native Web Locks (ifAvailable, no wait, no automatic retry). Missing or contended locks refuse new Twitch POST and preserve journal. RED: 2 PASS/1 FAIL in real Edge (native lock ignored before fix); final 37 PASS/0 FAIL/0 skipped in 5 targeted suites, including 6 actual Edge tests and lock-held, no-API, recovery scenarios. TypeScript and browser types PASS, production development build 143 assets PASS, shipped JS 149 PASS, security 6720 files PASS. Providers simulated; no physical Android WebView compatibility, adversarial noncooperative writer or power-loss evidence; F04 remains partial."
         }
       ],
       "verifiedTests": [
@@ -333,7 +337,8 @@
         "Physical FIXE/laptop/Android replay, provider marker and clip availability walkthroughs remain unqualified.",
         "Single-use confirmation stays volatile on FIXE. Bounded host/account-scoped localStorage UUID hint survives client reload; synthetic Windows child-exit proves authenticated read-only SQLite journal retrieval after a process exit, never a duplicate Twitch POST. Actual FIXE production restart, crash/power-loss, physical Android migration and receipts lost before client storage remain unqualified.",
         "OBS replay file validity, production Twitch OAuth/VOD configuration and real uncertain-command receipts still require reception.",
-        "Corrupt or inaccessible browser pending-confirmation storage now blocks F04 Twitch UI with read-only diagnostic; manual reconciliation and recovery of raw journal without losing possible provider POST UUIDs remain unimplemented and require operator supervision."
+        "Corrupt or inaccessible browser pending-confirmation storage now blocks F04 Twitch UI with read-only diagnostic; manual reconciliation and recovery of raw journal without losing possible provider POST UUIDs remain unimplemented and require operator supervision.",
+        "Native same-origin Web Locks required for F04 UI journal mutations: unsupported or insecure browser contexts fail closed. Edge two-tab contention was exercised but actual Android WebView support, noncooperative writers and simultaneous physical devices remain unqualified."
       ],
       "ownerJob": "streamcockpit/3.0-lot-d",
       "integrationNote": "2026-11-03 SC3-FINAL-DELIVERY-001: ClipForge and all advanced processing deferred to V4. Historical code/tests/evidence retained and explicitly excluded from 3.0 acceptance. Simple replay/clip/marker paths still require integrated qualification; status remains partial. Simple Twitch markers and clips now use explicit consent, paired chat/cloud/clips grants and fresh FIXE OBS/Twitch authority. Clip creation response stays accepted, not playable-video verified. F09 receives only opaque provider references for a bound live session; journal failure is distinct from provider outcome. Recovered replay paths are removed from HTTP/autonomy projections. ClipForge source and evidence retained exclusively for V4; production routes/commands and packaged modules explicitly excluded.",

@@ -110,7 +110,7 @@ it.skipIf(process.env.SC3_FINAL_BROWSER_TEST!=='1')('F04 real Edge: uncertain Tw
     await page.evaluate(()=>(window as any).panel.update({online:true,sourceKey:'FIXE',accountKey:'owner'}));
     expect(await page.getByRole('button',{name:'Vérifier le moment sans publier'}).isDisabled()).toBe(true);
     await page.getByRole('button',{name:'J’ai vérifié ce moment dans Twitch'}).click();
-    expect(await page.getByRole('button',{name:'Vérifier le moment sans publier'}).isEnabled()).toBe(true);
+    await expect.poll(()=>page.getByRole('button',{name:'Vérifier le moment sans publier'}).isEnabled()).toBe(true);
     await page.reload();await mount();
     expect(await page.getByRole('button',{name:'Vérifier le moment sans publier'}).isEnabled()).toBe(true);
     expect(await page.getByRole('button',{name:'Consulter le journal FIXE sans renvoyer'}).isVisible()).toBe(false);

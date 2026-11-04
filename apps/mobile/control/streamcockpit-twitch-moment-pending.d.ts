@@ -1,6 +1,8 @@
 /** Browser persistence is only a reconciliation hint, never a command authorization. */
 export interface MomentReceipt {id:string;kind:'clip'|'marker'}
 export interface MomentStorageView {readonly localStorage?: {getItem(key:string):string|null;setItem(key:string,value:string):void}}
+/** The production UI must claim an exclusive same-origin Web Lock before *every* journal mutation. Missing/contended locks fail closed. */
+export declare function withExclusiveMomentJournal(view:MomentStorageView & {readonly navigator?: {readonly locks?: {request(name:string,options:{mode:'exclusive';ifAvailable:true},callback:(lock:unknown)=>boolean):Promise<boolean>}}},operation:()=>boolean):Promise<boolean>;
 /** Non-destructive journal status; blocked includes corrupt or unavailable localStorage. */
 export declare function diagnoseUncertainMomentStore(view:MomentStorageView,source:string,account:string,now?:number):{state:'blocked'|'clear'}|{state:'pending';receipt:MomentReceipt};
 export declare function loadUncertainMoment(view:MomentStorageView,source:string,account:string,now?:number):MomentReceipt|null;

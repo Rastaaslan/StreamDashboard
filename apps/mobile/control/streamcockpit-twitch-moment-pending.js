@@ -31,6 +31,19 @@ function read(storage,now){
   return data.rows.filter(r=>validRow(r,now)); // Expired hints obey the explicit 7-day retention policy.
 }
 function write(storage,rows){storage.setItem(KEY,JSON.stringify({version:1,rows}));}
+// localStorage alone cannot atomically claim a receipt across different tabs.
+// The browser's native same-origin Web Lock serializes all *production UI* journal
+// mutations. Never wait/retry a contested lock or fall back to an unlocked POST.
+// This guard protects the local hint only; it never grants permission to send.
+export async function withExclusiveMomentJournal(view,operation){
+  try{
+    const locks=view?.navigator?.locks;
+    if(typeof locks?.request!=='function'||typeof operation!=='function')return false;
+    const result=await locks.request('sd3.f04.twitch-moment-journal.v1',
+      {mode:'exclusive',ifAvailable:true},lock=>lock?operation()===true:false);
+    return result===true;
+  }catch{return false}
+}
 // Read-only diagnostic: never erase or interpret an invalid journal as an empty one.
 // It reveals neither raw journal data nor account/host identifiers to the UI.
 export function diagnoseUncertainMomentStore(view,source,account,now=Date.now()){
