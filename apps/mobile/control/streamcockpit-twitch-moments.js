@@ -146,7 +146,10 @@ export function mountTwitchMoments(root,{request}={}){
       event.storageArea!==view?.localStorage||!sourceKey||!accountKey)return;
     const diagnosis=diagnoseUncertainMomentStore(view,sourceKey,accountKey);
     const newReceipt=diagnosis.state==='pending'?diagnosis.receipt:diagnosis.state==='blocked'?recoverUncertainMomentForReview(view,sourceKey,accountKey):undefined;
-    if((diagnosis.state==='blocked')===storageBlocked&&Boolean(newReceipt)===uncertain&&
+    // Even if another tab wrote and cleared a receipt before delivery of this
+    // event, its side effect can make an already consented preview obsolete.
+    // A same-state storage event must therefore invalidate active UI work.
+    if(!pending&&!flight&&!sending&&(diagnosis.state==='blocked')===storageBlocked&&Boolean(newReceipt)===uncertain&&
       (!newReceipt||(newReceipt.id===uncertainReceipt?.id&&newReceipt.kind===uncertainReceipt?.kind)))return;
     const wasSending=sending;
     invalidate('Journal Twitch modifié dans une autre fenêtre : nouvelle prévisualisation requise.');

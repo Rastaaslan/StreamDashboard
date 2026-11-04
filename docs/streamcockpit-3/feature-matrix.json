@@ -353,6 +353,10 @@
         {
           "path": "apps/mobile/control/streamcockpit-twitch-moment-pending.js",
           "kind": "2026-11-04 RDC FIXE F04: expired (7+ days) UUID for exact current host/account can now be retrieved only for paired GET-only journal consultation if canonical JSON and all rows are structurally valid with distinct scopes. Ambiguous/malformed or foreign-scope data is not exposed; expired UUID remains blocked for all POST, preview, clearing and automatic retry, raw bytes unchanged. RED 14 PASS/1 FAIL, final 49 PASS/0 FAIL/0 skipped across five targeted suites including 10 real Microsoft Edge tests at 320px/multitab; TS/browser types and security 6733 files PASS, no distribution build or real Twitch/Android/power-loss/supervised repair. F04 partial, G2 in_progress."
+        },
+        {
+          "path": "apps/mobile/control/streamcockpit-twitch-moments.js",
+          "kind": "2026-11-04 RDC FIXE F04: two real Edge tabs reproduced a transient external same-origin journal write+clear delivered after its final state was already clear, leaving an old preview consent active. The storage listener now invalidates pending/flight/sending UI work on every relevant event even if final state matches, and never retries provider actions. RED 0 PASS/1 FAIL; final 50 PASS/0 FAIL/0 skipped in six targeted suites including 11 real Edge cases at 320px/multitab; TS/browser types, security 6735 files and diff-check PASS. Only synthetic provider and isolated browser origin; no physical Android, OAuth Twitch, power-loss, packaging or publication; F04 partial, G2 in_progress."
         }
       ],
       "verifiedTests": [
@@ -365,6 +369,7 @@
         "tests/streamcockpit3-simple-moments-browser.test.ts",
         "tests/streamcockpit3-simple-moments-storage.test.ts",
         "tests/streamcockpit3-simple-moments-multitab-browser.test.ts",
+        "tests/streamcockpit3-f04-ephemeral-journal-multitab.test.ts",
         "tests/streamcockpit3-simple-replay-privacy.test.ts",
         "tests/streamcockpit3-release-scope.test.ts"
       ],
