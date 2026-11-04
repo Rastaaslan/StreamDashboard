@@ -1,4 +1,4 @@
-import {rememberUncertainMoment,clearUncertainMoment,diagnoseUncertainMomentStore,recoverUncertainMomentForReview,withExclusiveMomentJournal} from './streamcockpit-twitch-moment-pending.js';
+import {rememberUncertainMoment,clearUncertainMoment,diagnoseUncertainMomentStore,recoverUncertainMomentForReview,readUncertainMomentBackup,withExclusiveMomentJournal} from './streamcockpit-twitch-moment-pending.js';
 // F04 simple provider moments, independent of the deferred video editor.
 export function mountTwitchMoments(root,{request}={}){
   const doc=root.ownerDocument,view=doc.defaultView,section=doc.createElement('section');
@@ -18,16 +18,32 @@ export function mountTwitchMoments(root,{request}={}){
   const link=doc.createElement('a');link.textContent='Ouvrir le clip dans Twitch';link.target='_blank';link.rel='noopener noreferrer';link.hidden=true;
   const verified=doc.createElement('button');verified.type='button';verified.textContent='J’ai vérifié ce moment dans Twitch';verified.hidden=true;
   const inspect=doc.createElement('button');inspect.type='button';inspect.textContent='Consulter le journal FIXE sans renvoyer';inspect.hidden=true;
-  section.append(heading,note,form,review,status,link,inspect,verified);root.append(section);
+  const backup=doc.createElement('button');backup.type='button';backup.textContent='Exporter une copie locale du journal (confidentiel)';backup.hidden=true;
+  const backupWarning=doc.createElement('p');backupWarning.hidden=true;backupWarning.textContent='Sauvegarde manuelle brute sur cet appareil uniquement. Attention : le journal endommagé peut contenir des informations sensibles. Ne partagez pas le fichier. Cette copie ne répare rien et n’autorise aucune nouvelle demande Twitch.';
+  section.append(heading,note,form,review,status,link,inspect,verified,backupWarning,backup);root.append(section);
   let disposed=false,online=false,sourceKey='',accountKey='',revision=0,flight=false,sending=false,uncertain=false,storageBlocked=false,pending,uncertainReceipt;
   const blockedText='Stockage des confirmations Twitch illisible ou inaccessible : aucune nouvelle demande autorisée. Conservez les données du navigateur et vérifiez les demandes dans Twitch et le journal FIXE avant toute réconciliation manuelle. Aucun renvoi automatique.';
   const connected=()=>!disposed&&root.isConnected&&online&&sourceKey&&view?.navigator?.onLine!==false&&doc.visibilityState!=='hidden';
   const cancel=()=>{pending=undefined;review.hidden=true;agree.checked=false};
   const draw=()=>{const enabled=connected()&&!flight&&!sending&&!uncertain&&!storageBlocked&&typeof request==='function';kind.disabled=description.disabled=preview.disabled=!enabled;agree.disabled=!enabled||!pending;publish.disabled=!enabled||!pending||!agree.checked||Date.now()>=pending.expiresAt;verified.hidden=!uncertain||storageBlocked;
-    inspect.hidden=!uncertain||!uncertainReceipt;inspect.disabled=!connected()||flight||sending||typeof request!=='function'};
+    inspect.hidden=!uncertain||!uncertainReceipt;inspect.disabled=!connected()||flight||sending||typeof request!=='function';
+    backupWarning.hidden=backup.hidden=!storageBlocked||!connected();backup.disabled=backup.hidden||flight||sending};
   const invalidate=message=>{revision++;if(sending)uncertain=true;flight=false;cancel();link.hidden=true;link.removeAttribute('href');status.textContent=uncertain?'Résultat incertain : vérifiez Twitch avant une nouvelle demande. Aucun renvoi automatique.':storageBlocked?blockedText:message;draw()};
   kind.addEventListener('change',()=>invalidate('Type modifié : nouvelle vérification requise.'));
   description.addEventListener('input',()=>{cancel();draw()});agree.addEventListener('change',draw);
+  backup.addEventListener('click',()=>{
+    if(!connected()||!storageBlocked||sending||flight||diagnoseUncertainMomentStore(view,sourceKey,accountKey).state!=='blocked')return;
+    // Explicit user click only. Do not put raw data in DOM, console, URL, or a remote request.
+    const raw=readUncertainMomentBackup(view);
+    if(raw===null){status.textContent='Copie impossible (stockage indisponible ou taille supérieure à 1 Mio). Ne supprimez pas le journal ; réconciliation manuelle nécessaire.';return}
+    let url;
+    try{
+      url=view.URL.createObjectURL(new view.Blob([raw],{type:'text/plain;charset=utf-8'}));
+      const a=doc.createElement('a');a.download='streamcockpit-f04-journal-'+new Date().toISOString().slice(0,10).replace(/-/g,'')+'.txt';a.href=url;a.hidden=true;section.append(a);a.click();a.remove();
+      view.setTimeout(()=>view.URL.revokeObjectURL(url),10_000);
+      status.textContent='Copie locale demandée. Fichier confidentiel : ne pas partager. Journal d’origine inchangé et commandes Twitch toujours bloquées.';
+    }catch{if(url)view.URL.revokeObjectURL(url);status.textContent='Export local impossible. Journal d’origine inchangé, commandes Twitch toujours bloquées.'}
+  });
   verified.addEventListener('click',async()=>{
     if(sending||flight||!uncertain||!uncertainReceipt)return;
     const receipt=uncertainReceipt,target=sourceKey,account=accountKey,key=++revision;

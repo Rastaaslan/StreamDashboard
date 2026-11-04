@@ -202,3 +202,33 @@ it.skipIf(process.env.SC3_FINAL_BROWSER_TEST!=='1')('F04 real Edge 320px: partia
     expect(await page.evaluate(()=>localStorage.getItem('sd3.f04.twitch-moment-uncertain.v1'))).toBe(original);
   }finally{await browser.close()}
 },30000);
+
+it.skipIf(process.env.SC3_FINAL_BROWSER_TEST!=='1')('F04 real Edge 320px: explicit local forensic backup retains malformed bytes, without any POST or journal mutation',async()=>{
+  const bundle=await build({stdin:{contents:"import {mountTwitchMoments} from './apps/mobile/control/streamcockpit-twitch-moments.js';window.mountMoments=mountTwitchMoments;",resolveDir:process.cwd()},bundle:true,write:false,format:'iife',platform:'browser'});
+  const browser=await chromium.launch({channel:'msedge',headless:true});
+  try{
+    const page=await browser.newPage({viewport:{width:320,height:720},hasTouch:true,acceptDownloads:true});
+    await page.route('**/*',r=>r.abort());
+    await page.route('http://127.0.0.1:38659/**',r=>r.fulfill({status:200,contentType:'text/html',body:'<main id="root"></main>'}));
+    await page.goto('http://127.0.0.1:38659/moments');
+    const raw='{truncated-json private-raw-MUST-NOT-APPEAR-ON-PAGE';
+    await page.evaluate(value=>localStorage.setItem('sd3.f04.twitch-moment-uncertain.v1',value),raw);
+    await page.addScriptTag({content:bundle.outputFiles[0].text});
+    await page.evaluate(()=>{
+      const w=window as any;w.calls=[];w.panel=w.mountMoments(document.getElementById('root'),{request:async(...args:any[])=>{w.calls.push(args);throw Error('NO_PROVIDER_CALL')}});
+      w.panel.update({online:true,sourceKey:'FIXE',accountKey:'owner'});
+    });
+    const backup=page.getByRole('button',{name:'Exporter une copie locale du journal (confidentiel)'});
+    expect(await backup.isVisible()).toBe(true);
+    expect(await page.locator('main').textContent()).not.toContain('private-raw-MUST');
+    expect(await page.getByRole('button',{name:'Vérifier le moment sans publier'}).isDisabled()).toBe(true);
+    const downloaded=page.waitForEvent('download');await backup.click();
+    const file=await downloaded;
+    expect(file.suggestedFilename()).toMatch(/^streamcockpit-f04-journal-\d{8}\.txt$/);
+    expect(readFileSync(await file.path(),'utf8')).toBe(raw);
+    expect(await page.evaluate(()=>localStorage.getItem('sd3.f04.twitch-moment-uncertain.v1'))).toBe(raw);
+    expect(await page.evaluate(()=>(window as any).calls.length)).toBe(0);
+    expect(await page.getByRole('button',{name:'Vérifier le moment sans publier'}).isDisabled()).toBe(true);
+    expect(await page.evaluate(()=>document.documentElement.scrollWidth<=320)).toBe(true);
+  }finally{await browser.close()}
+},30000);

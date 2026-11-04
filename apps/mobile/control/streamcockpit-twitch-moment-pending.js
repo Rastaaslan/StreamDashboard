@@ -15,6 +15,15 @@ const safeRow=(r,now)=>r&&typeof r==='object'&&!Array.isArray(r)&&
   r.createdAt>=0&&r.createdAt<=now;
 const validRow=(r,now)=>safeRow(r,now)&&now-r.createdAt<MAX_AGE_MS;
 function store(view){try{return view?.localStorage}catch{return undefined}}
+// Forensic backup is strictly opt-in and local: preserve the exact raw journal,
+// including invalid JSON, without interpreting, trimming, clearing, or uploading it.
+// The caller MUST warn that unknown corrupt fields may contain sensitive data.
+export function readUncertainMomentBackup(view){
+  try{
+    const raw=store(view)?.getItem(KEY);
+    return typeof raw==='string'&&raw.length>0&&raw.length<=1024*1024?raw:null;
+  }catch{return null}
+}
 function read(storage,now){
   const raw=storage.getItem(KEY);
   if(raw===null)return [];

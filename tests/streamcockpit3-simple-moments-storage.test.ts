@@ -1,5 +1,5 @@
 import {it,expect} from 'vitest';
-import {loadUncertainMoment,rememberUncertainMoment,clearUncertainMoment,diagnoseUncertainMomentStore,recoverUncertainMomentForReview} from '../apps/mobile/control/streamcockpit-twitch-moment-pending.js';
+import {loadUncertainMoment,rememberUncertainMoment,clearUncertainMoment,diagnoseUncertainMomentStore,recoverUncertainMomentForReview,readUncertainMomentBackup} from '../apps/mobile/control/streamcockpit-twitch-moment-pending.js';
 const uuid='643e0c2b-e8e4-4ccd-a82c-8ad0a05f19c5';
 function mockStorage(){
   const data=new Map<string,string>();
@@ -155,4 +155,19 @@ it('F04 corrupt journal permits only scoped read-only review of a unique valid r
   data.set(key,raw);
   expect(recoverUncertainMomentForReview(view,'FIXE','owner',now+7*24*60*60*1000)).toBeNull();
   expect(data.get(key)).toBe(raw);
+});
+
+it('F04 forensic backup reads exact corrupt bytes only on request, without modifying or parsing the journal',()=>{
+  const {view,data}=mockStorage(),key='sd3.f04.twitch-moment-uncertain.v1';
+  expect(readUncertainMomentBackup(view)).toBeNull();
+  for(const raw of ['{truncated-json',JSON.stringify({version:1,rows:[{id:uuid,token:'SENSITIVE_DO_NOT_LOG'}]})]){
+    data.set(key,raw);
+    expect(readUncertainMomentBackup(view)).toBe(raw);
+    expect(data.get(key)).toBe(raw);
+  }
+  data.set(key,'x'.repeat(1024*1024+1));
+  expect(readUncertainMomentBackup(view)).toBeNull();
+  expect(data.get(key)).toHaveLength(1024*1024+1);
+  expect(readUncertainMomentBackup({get localStorage():never{throw Error('DENIED')}})).toBeNull();
+  expect(readUncertainMomentBackup({localStorage:{getItem(){throw Error('DENIED')},setItem(){throw Error('WRITE_NOT_ALLOWED')}}})).toBeNull();
 });
