@@ -8,7 +8,7 @@ import { defaultControlData, wizebotPresets, type ActionResult, type ControlData
 export interface ControlAdapter {
   live(platform: Platform, signal?: AbortSignal): Promise<boolean>;
   preflight?(platform: Platform, start: boolean, signal?: AbortSignal): Promise<void>;
-  output(platform: Platform, start: boolean): Promise<void>;
+  output(platform: Platform, start: boolean, confirmedChecklist?: boolean): Promise<void>;
   outputActive?(platform: Platform): boolean | null;
   settle?(platform: Platform, start: boolean, requestId?: string, signal?: AbortSignal): Promise<void>;
   metadata(platform: Platform, value: LiveMetadata): Promise<void>;
@@ -121,6 +121,8 @@ export class ControlService {
     if (this.stopped) return Promise.reject(new Error('Hôte en cours d’arrêt.'));
     if (!request || !/^[A-Za-z0-9_-]{8,100}$/.test(request.id) || typeof request.action !== 'string' || request.action.length > 100 || (request.platform !== undefined && !platforms.includes(request.platform))) return Promise.reject(new Error('Commande invalide.'));
     if (request.soundId !== undefined && (request.action !== 'sound.play' || !/^[A-Za-z0-9._:-]{1,100}$/.test(request.soundId))) return Promise.reject(new Error('Son invalide.'));
+    if (request.confirmed !== undefined && typeof request.confirmed !== 'boolean') return Promise.reject(new Error('Confirmation invalide.'));
+    if (request.action === 'live.start' && request.confirmed === true && request.expectedContextToken !== undefined) return Promise.reject(new Error('Confirmation du démarrage à effectuer depuis le panneau de diffusion.'));
     if (request.expectedContextToken !== undefined && (typeof request.expectedContextToken !== 'string' || !/^[0-9a-f-]{36}$/i.test(request.expectedContextToken))) return Promise.reject(new Error('Contexte invalide.'));
     const fingerprint = createHash('sha256').update(JSON.stringify({expectedContextToken:request.expectedContextToken,action:request.action, platform:request.platform, metadata:request.metadata, soundId:request.soundId, expectedRevision:request.expectedRevision, expectedAction:request.expectedAction, confirmed:request.confirmed, youtubeBaseline:request.youtubeBaseline})).digest('hex');
     const previous = this.data.receipts.find(r => r.id === request.id);
@@ -180,7 +182,7 @@ export class ControlService {
                   // An unknown dispatch result permits observation, never an automatic second command.
                   let observeOnly = false;
                   live = undefined;
-                  try { await this.adapter.output(p, wanted); outputSent = true; }
+                  try { await this.adapter.output(p, wanted, wanted && request.confirmed === true); outputSent = true; }
                   catch (error) {
                     if (!(error instanceof Error) || error.name !== 'ACTION_UNCERTAIN') throw error;
                     confirmationError = error.message; observeOnly = true; outputSent = true;
@@ -238,7 +240,7 @@ export class ControlService {
           else for (const platform of selected) await runPlatform(platform);
           const values = Object.values(receipt.platforms);
           receipt.status = values.every(v => v.status === 'succeeded') ? 'succeeded' : values.some(v => v.status === 'succeeded') ? 'partial' : values.some(v => v.status === 'pending') ? 'pending' : values.some(v => v.status === 'uncertain') ? 'uncertain' : 'failed';
-          receipt.message = receipt.status === 'succeeded' ? 'Commande confirmée' : receipt.status === 'partial' ? 'Résultat partiel : une plateforme nécessite votre attention' : 'Commande non confirmée';
+          receipt.message = receipt.status === 'succeeded' ? 'Commande confirmée' : receipt.status === 'partial' ? 'Résultat partiel : une plateforme nécessite votre attention' : receipt.status === 'failed' ? (values.find(v => v.status === 'failed')?.message || 'Commande non confirmée') : 'Commande non confirmée';
         } else {
           const action: DeckAction | undefined = ['sound.stop','replay.save','replay.start','replay.stop'].includes(request.action) || (request.action === 'sound.play' && request.soundId)
             ? { id: request.action, label: request.action, type: request.action as DeckAction['type'], value: request.soundId ?? '', color: 'green', shortcut: '' }

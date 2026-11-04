@@ -35,6 +35,17 @@ async function fixture(t,options={}){
   data.host.monitor={twitchLogin:''};
   data.host.platforms={twitch:{live:true},youtube:{id:'old-live',channelId:'qa-channel',live:false,broadcastState:'ready',ingestionStatus:'active',bound:true}};
   data.host.outputStatus={twitch:{kind:'main',name:'',active:true},youtube:{kind:'aitum-suite',name:'YouTube Output',active:true}};
+  if(options.readyToStart){
+    data.host.state.obs.streaming=false;
+    data.host.platforms.twitch.live=false;
+    data.host.outputStatus.twitch.active=false;
+    data.host.state.checklist=[
+      {id:'obs',label:'OBS connecté',done:false},
+      {id:'audio',label:'Audio vérifié',done:false},
+      {id:'title',label:'Titre vérifié',done:false},
+      {id:'water',label:'Eau prête',done:false},
+    ];
+  }
   model.bundle.sounds.available=true;
   model.replay={active:false,enabled:true,seconds:30,directory:'',error:''};
   if(options.empty)model.items=[];
@@ -84,31 +95,33 @@ async function fixture(t,options={}){
   const bundled=chromium.executablePath();
   const executablePath=process.env.SD_TEST_CHROMIUM||(existsSync(bundled)?bundled:existsSync('/usr/bin/chromium')?'/usr/bin/chromium':undefined);
   const browser=await chromium.launch({headless:true,args:['--no-sandbox'],...(executablePath?{executablePath}:{})});
-  const context=await browser.newContext({viewport:{width:1440,height:1100},locale:'fr-FR',timezoneId:'Europe/Paris',serviceWorkers:'block'});
+  const context=await browser.newContext({viewport:options.compact?{width:390,height:844}:{width:1440,height:1100},locale:'fr-FR',timezoneId:'Europe/Paris',serviceWorkers:'block'});
   const page=await context.newPage();
   page.setDefaultTimeout(8_000);
   const pageErrors=[],dialogs=[],external=[];
   page.on('pageerror',error=>pageErrors.push(error.message));
-  page.on('dialog',async dialog=>{dialogs.push({type:dialog.type(),message:dialog.message()});await dialog.dismiss();});
+  page.on('dialog',async dialog=>{dialogs.push({type:dialog.type(),message:dialog.message()});if(options.acceptChecklist)await dialog.accept();else await dialog.dismiss();});
   await context.route('**/*',route=>{
     const url=new URL(route.request().url());
     if(url.origin===origin)return route.continue();
     external.push(url.origin);
     return route.abort('blockedbyclient');
   });
-  await page.addInitScript(({origin})=>{
+  await page.addInitScript(({origin,compact})=>{
     localStorage.setItem('sd2.device',JSON.stringify({version:1,name:'QA browser',role:'stream',configured:true}));
     localStorage.setItem('sd2.server',origin);
     localStorage.setItem('sd2.workspace-mode','paired');
     localStorage.setItem('sd2.page','live');
-  },{origin});
+    if(compact)localStorage.setItem('sd2.mobile.pane:live','control');
+  },{origin,compact:!!options.compact});
   t.after(async()=>{
     model.catalogGate?.release();model.actionGate?.release();
     await browser.close();
     server.closeAllConnections();
     await new Promise(resolve=>server.close(resolve));
     assert.deepEqual(pageErrors,[],'No uncaught controller exceptions');
-    assert.deepEqual(dialogs,[],'No prompts, alerts or confirmations in these flows');
+    if(options.expectChecklist){assert.equal(dialogs.length,1,'Exactly one explicit checklist confirmation expected');assert.equal(dialogs[0].type,'confirm');assert.ok(dialogs[0].message.includes('OBS connecté')&&dialogs[0].message.includes('Eau prête'));}
+    else assert.deepEqual(dialogs,[],'No prompts, alerts or confirmations in these flows');
     assert.deepEqual(model.unexpectedWrites,[],'Only explicitly mocked effects are permitted');
   });
   await page.goto(origin+'/mobile/control/');
@@ -247,4 +260,25 @@ test('A stopped replay buffer opens preparation without dispatching SaveReplayBu
   await expect(page.locator('#replay-dialog-root [data-action="replay.start"]')).toBeVisible();
   assert.equal(model.actions.length,0,'Clip requires preparation before any command is dispatched');
   assert.equal(model.requests.some(value=>value.method==='POST'&&value.path==='/api/v2/actions'),false);
+});
+
+test('Unchecked Twitch checklist on Desktop requires explicit review and cancellation never dispatches',async t=>{
+  const {page,model}=await fixture(t,{readyToStart:true,expectChecklist:true});
+  const start=page.locator('#live-controls [data-action="live.start"]').first();
+  await expect(start).toBeEnabled();
+  await start.click();
+  assert.equal(model.actions.length,0,'Cancel must not send Twitch start');
+  assert.equal(model.requests.filter(r=>r.path==='/api/v2/actions'&&r.method==='POST').length,0);
+});
+
+test('Unchecked Twitch checklist on compact UI sends explicit consent with a single action',async t=>{
+  const {page,model}=await fixture(t,{readyToStart:true,expectChecklist:true,acceptChecklist:true,compact:true});
+  const start=page.locator('#live-controls [data-action="live.start"]').first();
+  await expect(start).toBeEnabled();
+  await start.click();
+  await expect.poll(()=>model.actions.length,waitOptions).toBe(1);
+  assert.equal(model.actions[0].action,'live.start');
+  assert.equal(model.actions[0].confirmed,true);
+  assert.ok(model.actions[0].id);
+  assert.equal(model.requests.filter(r=>r.path==='/api/v2/actions'&&r.method==='POST').length,1,'Consent must not create extra starts');
 });

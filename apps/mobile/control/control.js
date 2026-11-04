@@ -894,6 +894,7 @@ async function runLocalAction(action,type,configured,soundId){
 }
 async function runAction(action,platform,soundId,contextToken){
  const configured=data?.configuration.actions.find(value=>value.id===action),type=configured?.type||action;
+ let confirmedStart=false;
  if(commandsBlocked()&&!(action==='sound.stop'&&!macroContextChanging)){toast('Synchronisez les réglages en attente avant de déclencher une commande.');return;}
  if(contextToken&&(!configured||actionRouter.binding(configured))){toast('Cette action contextuelle exige son association courante sur la régie sélectionnée. Utilisez les banques manuelles pour une autre destination.');return;}
  if(configured&&actionRouter.binding(configured)){
@@ -913,12 +914,18 @@ async function runAction(action,platform,soundId,contextToken){
   const current=liveControlState(data,online);
   if(platform&&platform!=='twitch'){toast('YouTube désactivé.');return;}if(platform?current.destinations[platform].live===true:current.anyActive){toast(platform?`${platform==='youtube'?'YouTube':'Twitch'} est déjà en direct.`:'Une diffusion est déjà en cours. Utilisez le contrôle de la destination à compléter.');return;}
   if(current.running||!(platform?current.destinations[platform].canStart:current.canStartBoth)){toast('Vérifiez la configuration et l’état des destinations avant de lancer le live.');return;}
+  const unchecked=(data.host.state.checklist||[]).filter(item=>item.done!==true);
+  if(unchecked.length){
+   const labels=unchecked.map(item=>'• '+item.label).join('\n');
+   if(!confirm('Ces vérifications ne sont pas cochées :\n'+labels+'\n\nTu confirmes avoir vérifié et vouloir lancer Twitch quand même ?'))return;
+   confirmedStart=true;
+  }
  }
  if(type==='live.stop'&&!confirm(`Arrêter la diffusion ${platform?(platform==='youtube'?'YouTube':'Twitch'):'Twitch'} ?`))return;
  activeCommands++;busy=true;
  try{
   render();
-  const result=await api('/api/v2/actions',{id:uuid(),issuedAt:new Date().toISOString(),action:['live.start','live.stop'].includes(configured?.type)?configured.type:action,...(platform?{platform}:{}),...(soundId?{soundId}:{}),...(configured?{expectedAction:configured}:{}),...(contextToken?{expectedContextToken:contextToken}:{})});
+  const result=await api('/api/v2/actions',{id:uuid(),issuedAt:new Date().toISOString(),action:['live.start','live.stop'].includes(configured?.type)?configured.type:action,...(platform?{platform}:{}),...(soundId?{soundId}:{}),...(configured?{expectedAction:configured}:{}),...(contextToken?{expectedContextToken:contextToken}:{}),...(confirmedStart?{confirmed:true}:{})});
   toast(`${labels[result.status]} · ${result.message}`);globalThis.StreamDashboardNative?.haptic(result.status==='succeeded'?'light':'heavy');
  }catch(error){toast(`Résultat non reçu : ${error.message}. Vérifiez le journal avant de recommencer.`);}
  finally{busy=--activeCommands>0;await refresh(true);if(dialog.open&&$('#replay-dialog-root'))replayDialog();}

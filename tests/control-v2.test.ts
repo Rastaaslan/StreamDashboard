@@ -67,6 +67,35 @@ describe('Shared durable controller',()=>{
   expect(second.status).toBe('succeeded');expect(a.output).toHaveBeenCalledTimes(1);
   await control.stop();
  });
+ it('starts Twitch with explicit unchecked-checklist consent only after confirmation, never silently',async()=>{
+  let live=false;const a=adapter();
+  a.live=vi.fn(async()=>live);
+  a.output=vi.fn(async(_p:Platform,start:boolean)=>{live=start;});
+  const control=await ControlService.open(path.join(await temporary(),'control.json'),a,()=>{},async()=>{});
+  const accepted=await control.execute({...request('live.start','manual_confirmed_start_01'),confirmed:true});
+  expect(accepted.status).toBe('succeeded');
+  expect(a.output).toHaveBeenNthCalledWith(1,'twitch',true,true);
+  const stopped=await control.execute(request('live.stop','manual_stop_01'));
+  expect(stopped.status).toBe('succeeded');
+  expect(a.output).toHaveBeenNthCalledWith(2,'twitch',false,false);
+  const ordinary=await control.execute(request('live.start','manual_default_start_01'));
+  expect(ordinary.status).toBe('succeeded');
+  expect(a.output).toHaveBeenNthCalledWith(3,'twitch',true,false);
+  await expect(control.execute({...request('live.start','manual_invalid_start_01'),confirmed:'yes' as unknown as boolean}))
+    .rejects.toThrow('Confirmation invalide');
+  await control.stop();
+ });
+ it('returns the real uncompleted-checklist reason instead of a generic Twitch error',async()=>{
+  const a=adapter();
+  a.output=vi.fn(async()=>{throw new Error('Certaines vérifications ne sont pas terminées.');});
+  const control=await ControlService.open(path.join(await temporary(),'control.json'),a,()=>{},async()=>{});
+  const denied=await control.execute(request('live.start','unchecked_start_01'));
+  expect(denied.status).toBe('failed');
+  expect(denied.message).toBe('Certaines vérifications ne sont pas terminées.');
+  expect(denied.platforms?.twitch?.status).toBe('failed');
+  expect(a.output).toHaveBeenCalledExactlyOnceWith('twitch',true,false);
+  await control.stop();
+ });
  it('does not declare OBS dispatch a successful live without platform confirmation',async()=>{
   const a=adapter();const control=await ControlService.open(path.join(await temporary(),'control.json'),a,()=>{},async()=>{});
   const result=await control.execute(request('live.start'));expect(result.status).toBe('uncertain');expect(result.platforms?.twitch?.live).toBe(false);

@@ -1282,13 +1282,13 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
       if(platform!=='twitch')throw new Error('Twitch uniquement.');
     },
     outputActive: platform => outputStatus[platform]?.active ?? null,
-    output: async (platform, start) => {
+    output: async (platform, start, confirmedChecklist = false) => {
       const target = control.snapshot().configuration.outputs[platform];
       if (target.kind === 'unconfigured') throw new Error(`Sélectionnez la sortie OBS ${platform} dans Configuration.`);
       if (target.kind === 'main') {
         await obs.refresh();
         if (!obs.state.connected || !obs.state.streamingKnown) throw new Error('État de diffusion OBS indisponible.');
-        if (obs.state.streaming !== start) await commands.execute({ type: start ? 'session.start' : 'session.stop' });
+        if (obs.state.streaming !== start) await commands.execute(start ? { type: 'session.start', ...(confirmedChecklist ? { force: true } : {}) } : { type: 'session.stop' });
       } else if (target.kind === 'aitum-suite') await obs.setStreamSuiteOutput(target.name, start);
       else await obs.setOutput(target.name, start);
       if (outputObservation) await outputObservation;
