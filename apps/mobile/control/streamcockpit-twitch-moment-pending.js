@@ -31,6 +31,16 @@ function read(storage,now){
   return data.rows.filter(r=>validRow(r,now)); // Expired hints obey the explicit 7-day retention policy.
 }
 function write(storage,rows){storage.setItem(KEY,JSON.stringify({version:1,rows}));}
+// Read-only diagnostic: never erase or interpret an invalid journal as an empty one.
+// It reveals neither raw journal data nor account/host identifiers to the UI.
+export function diagnoseUncertainMomentStore(view,source,account,now=Date.now()){
+  if(!validScope(source,account))return {state:'blocked'};
+  const storage=store(view);if(!storage)return {state:'blocked'};
+  try{
+    const row=read(storage,now).find(r=>r.source===source&&r.account===account);
+    return row?{state:'pending',receipt:{id:row.id,kind:row.kind}}:{state:'clear'};
+  }catch{return {state:'blocked'}}
+}
 export function loadUncertainMoment(view,source,account,now=Date.now()){
   if(!validScope(source,account))return null;
   const storage=store(view);if(!storage)return null;

@@ -1,4 +1,4 @@
-import {loadUncertainMoment,rememberUncertainMoment,clearUncertainMoment} from './streamcockpit-twitch-moment-pending.js';
+import {rememberUncertainMoment,clearUncertainMoment,diagnoseUncertainMomentStore} from './streamcockpit-twitch-moment-pending.js';
 // F04 simple provider moments, independent of the deferred video editor.
 export function mountTwitchMoments(root,{request}={}){
   const doc=root.ownerDocument,view=doc.defaultView,section=doc.createElement('section');
@@ -19,12 +19,13 @@ export function mountTwitchMoments(root,{request}={}){
   const verified=doc.createElement('button');verified.type='button';verified.textContent='J’ai vérifié ce moment dans Twitch';verified.hidden=true;
   const inspect=doc.createElement('button');inspect.type='button';inspect.textContent='Consulter le journal FIXE sans renvoyer';inspect.hidden=true;
   section.append(heading,note,form,review,status,link,inspect,verified);root.append(section);
-  let disposed=false,online=false,sourceKey='',accountKey='',revision=0,flight=false,sending=false,uncertain=false,pending,uncertainReceipt;
+  let disposed=false,online=false,sourceKey='',accountKey='',revision=0,flight=false,sending=false,uncertain=false,storageBlocked=false,pending,uncertainReceipt;
+  const blockedText='Stockage des confirmations Twitch illisible ou inaccessible : aucune nouvelle demande autorisée. Conservez les données du navigateur et vérifiez les demandes dans Twitch et le journal FIXE avant toute réconciliation manuelle. Aucun renvoi automatique.';
   const connected=()=>!disposed&&root.isConnected&&online&&sourceKey&&view?.navigator?.onLine!==false&&doc.visibilityState!=='hidden';
   const cancel=()=>{pending=undefined;review.hidden=true;agree.checked=false};
-  const draw=()=>{const enabled=connected()&&!flight&&!sending&&!uncertain&&typeof request==='function';kind.disabled=description.disabled=preview.disabled=!enabled;agree.disabled=!enabled||!pending;publish.disabled=!enabled||!pending||!agree.checked||Date.now()>=pending.expiresAt;verified.hidden=!uncertain;
+  const draw=()=>{const enabled=connected()&&!flight&&!sending&&!uncertain&&!storageBlocked&&typeof request==='function';kind.disabled=description.disabled=preview.disabled=!enabled;agree.disabled=!enabled||!pending;publish.disabled=!enabled||!pending||!agree.checked||Date.now()>=pending.expiresAt;verified.hidden=!uncertain;
     inspect.hidden=!uncertain||!uncertainReceipt;inspect.disabled=!connected()||flight||sending||typeof request!=='function'};
-  const invalidate=message=>{revision++;if(sending)uncertain=true;flight=false;cancel();link.hidden=true;link.removeAttribute('href');status.textContent=uncertain?'Résultat incertain : vérifiez Twitch avant une nouvelle demande. Aucun renvoi automatique.':message;draw()};
+  const invalidate=message=>{revision++;if(sending)uncertain=true;flight=false;cancel();link.hidden=true;link.removeAttribute('href');status.textContent=uncertain?'Résultat incertain : vérifiez Twitch avant une nouvelle demande. Aucun renvoi automatique.':storageBlocked?blockedText:message;draw()};
   kind.addEventListener('change',()=>invalidate('Type modifié : nouvelle vérification requise.'));
   description.addEventListener('input',()=>{cancel();draw()});agree.addEventListener('change',draw);
   verified.addEventListener('click',()=>{if(sending)return;
@@ -62,7 +63,8 @@ export function mountTwitchMoments(root,{request}={}){
     const id=pending.confirmationId,expected=pending.draft.kind,target=sourceKey,account=accountKey,key=++revision;
     cancel();
     if(!rememberUncertainMoment(view,target,account,{id,kind:expected})){
-      status.textContent='Sauvegarde locale de la demande impossible : aucun moment envoyé sur Twitch.';draw();return;
+      if(diagnoseUncertainMomentStore(view,target,account).state==='blocked')storageBlocked=true;
+      status.textContent=storageBlocked?blockedText:'Sauvegarde locale de la demande impossible : aucun moment envoyé sur Twitch.';draw();return;
     }
     uncertainReceipt={id,kind:expected};flight=true;sending=true;draw();
     try{
@@ -90,8 +92,11 @@ export function mountTwitchMoments(root,{request}={}){
     const identityChanged=key!==sourceKey||account!==accountKey,changed=next!==online||identityChanged;
     online=next;sourceKey=key;accountKey=account;
     if(changed){invalidate(online?'Prêt à vérifier un moment.':'Source déconnectée.');
-      if(identityChanged){uncertainReceipt=loadUncertainMoment(view,key,account);uncertain=Boolean(uncertainReceipt);
-        if(uncertain)status.textContent='Résultat incertain conservé après rechargement : consulter le journal FIXE ou vérifier dans Twitch. Aucun renvoi automatique.';
+      if(identityChanged){const diagnosis=diagnoseUncertainMomentStore(view,key,account);
+        storageBlocked=diagnosis.state==='blocked';uncertainReceipt=diagnosis.state==='pending'?diagnosis.receipt:undefined;uncertain=Boolean(uncertainReceipt);
+        if(storageBlocked)status.textContent=blockedText;
+        else if(uncertain)status.textContent='Résultat incertain conservé après rechargement : consulter le journal FIXE ou vérifier dans Twitch. Aucun renvoi automatique.';
+        else status.textContent=online?'Prêt à vérifier un moment.':'Source déconnectée.';
         draw();}
     }else draw()},
     destroy(){disposed=true;invalidate('Vue fermée.');view?.removeEventListener('offline',pause);view?.removeEventListener('online',pause);doc.removeEventListener('visibilitychange',pause);section.remove()}};

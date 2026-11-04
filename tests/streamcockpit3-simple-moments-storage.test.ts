@@ -1,5 +1,5 @@
 import {it,expect} from 'vitest';
-import {loadUncertainMoment,rememberUncertainMoment,clearUncertainMoment} from '../apps/mobile/control/streamcockpit-twitch-moment-pending.js';
+import {loadUncertainMoment,rememberUncertainMoment,clearUncertainMoment,diagnoseUncertainMomentStore} from '../apps/mobile/control/streamcockpit-twitch-moment-pending.js';
 const uuid='643e0c2b-e8e4-4ccd-a82c-8ad0a05f19c5';
 function mockStorage(){
   const data=new Map<string,string>();
@@ -90,4 +90,25 @@ it('F04 rejects ambiguous duplicate host/account rows before accepting new Twitc
   expect(loadUncertainMoment(view,'fixe','dam',now)).toBeNull();
   expect(rememberUncertainMoment(view,'fixe','new-account',{id:uuid,kind:'marker'},now)).toBe(false);
   expect(data.get(key)).toBe(raw);
+});
+
+it('F04 read-only diagnosis distinguishes corrupt or inaccessible storage without discarding any confirmation UUID',()=>{
+  const {view,data}=mockStorage(),now=1800000000000,key='sd3.f04.twitch-moment-uncertain.v1';
+  expect(diagnoseUncertainMomentStore(view,'fixe','dam',now)).toEqual({state:'clear'});
+  expect(rememberUncertainMoment(view,'fixe','dam',{id:uuid,kind:'clip'},now)).toBe(true);
+  const good=data.get(key)!;
+  expect(diagnoseUncertainMomentStore(view,'fixe','dam',now)).toEqual({state:'pending',receipt:{id:uuid,kind:'clip'}});
+  expect(diagnoseUncertainMomentStore(view,'fixe','other',now)).toEqual({state:'clear'});
+  expect(data.get(key)).toBe(good);
+  expect(diagnoseUncertainMomentStore(view,'fixe','dam',now+7*24*60*60*1000)).toEqual({state:'clear'});
+  expect(data.get(key)).toBe(good); // inspection does not perform expiry cleanup
+  for(const invalid of ['{',JSON.stringify({version:1,rows:[{source:'fixe',account:'dam',id:'bad',kind:'clip',createdAt:now}]})]){
+    data.set(key,invalid);
+    expect(diagnoseUncertainMomentStore(view,'fixe','dam',now)).toEqual({state:'blocked'});
+    expect(diagnoseUncertainMomentStore(view,'other','user',now)).toEqual({state:'blocked'});
+    expect(data.get(key)).toBe(invalid);
+  }
+  expect(diagnoseUncertainMomentStore({get localStorage():never{throw Error('denied')}},'fixe','dam',now)).toEqual({state:'blocked'});
+  expect(diagnoseUncertainMomentStore({localStorage:{getItem(){throw Error('denied')},setItem(){throw Error('NEVER')}}},'fixe','dam',now)).toEqual({state:'blocked'});
+  expect(diagnoseUncertainMomentStore(view,'','dam',now)).toEqual({state:'blocked'});
 });

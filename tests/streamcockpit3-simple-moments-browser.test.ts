@@ -123,3 +123,38 @@ it.skipIf(process.env.SC3_FINAL_BROWSER_TEST!=='1')('F04 real Edge: uncertain Tw
     expect(await page.evaluate(()=>(window as any).calls.filter((c:any)=>c.path.endsWith('/confirm')).length)).toBe(0);
   }finally{await browser.close()}
 },30000);
+
+it.skipIf(process.env.SC3_FINAL_BROWSER_TEST!=='1')('F04 real Edge 320px: corrupted pending journal shows a read-only block across reload, never a Twitch POST',async()=>{
+  const bundle=await build({stdin:{contents:"import {mountTwitchMoments} from './apps/mobile/control/streamcockpit-twitch-moments.js';window.mountMoments=mountTwitchMoments;",resolveDir:process.cwd()},bundle:true,write:false,format:'iife',platform:'browser'});
+  const browser=await chromium.launch({channel:'msedge',headless:true});
+  try{
+    const page=await browser.newPage({viewport:{width:320,height:720},hasTouch:true});
+    await page.route('**/*',route=>route.abort());
+    await page.route('http://127.0.0.1:38651/**',route=>route.fulfill({status:200,contentType:'text/html',body:'<main id="root"></main>'}));
+    const mount=async()=>{
+      await page.addScriptTag({content:bundle.outputFiles[0].text});
+      await page.evaluate(()=>{
+        const w=window as any;w.calls=[];
+        w.panel=w.mountMoments(document.querySelector('#root'),{request:async(...args:any[])=>{w.calls.push(args);throw Error('PROVIDER_MUST_NOT_BE_CALLED')}});
+        w.panel.update({online:true,sourceKey:'FIXE',accountKey:'owner'});
+      });
+    };
+    await page.goto('http://127.0.0.1:38651/moments');
+    await page.evaluate(()=>localStorage.setItem('sd3.f04.twitch-moment-uncertain.v1','{bad-json'));await mount();
+    await expect.poll(()=>page.getByRole('status').textContent()).toContain('Stockage des confirmations Twitch illisible');
+    expect(await page.getByRole('button',{name:'Vérifier le moment sans publier'}).isDisabled()).toBe(true);
+    expect(await page.getByRole('button',{name:'Consulter le journal FIXE sans renvoyer'}).isVisible()).toBe(false);
+    expect(await page.evaluate(()=>[localStorage.getItem('sd3.f04.twitch-moment-uncertain.v1'),(window as any).calls.length])).toEqual(['{bad-json',0]);
+    await page.reload();await mount();
+    await expect.poll(()=>page.getByRole('status').textContent()).toContain('Stockage des confirmations Twitch illisible');
+    expect(await page.getByRole('button',{name:'Vérifier le moment sans publier'}).isDisabled()).toBe(true);
+    expect(await page.evaluate(()=>[localStorage.getItem('sd3.f04.twitch-moment-uncertain.v1'),(window as any).calls.length])).toEqual(['{bad-json',0]);
+    await page.evaluate(()=>{window.dispatchEvent(new Event('offline'));window.dispatchEvent(new Event('online'))});
+    await expect.poll(()=>page.getByRole('status').textContent()).toContain('Stockage des confirmations Twitch illisible');
+    await page.evaluate(()=>(window as any).panel.update({online:true,sourceKey:'OTHER',accountKey:'owner'}));
+    expect(await page.getByRole('button',{name:'Vérifier le moment sans publier'}).isDisabled()).toBe(true);
+    expect(await page.evaluate(()=>[localStorage.getItem('sd3.f04.twitch-moment-uncertain.v1'),(window as any).calls.length])).toEqual(['{bad-json',0]);
+    expect(await page.evaluate(()=>document.documentElement.scrollWidth<=320)).toBe(true);
+    await page.evaluate(()=>(window as any).panel.destroy());
+  }finally{await browser.close()}
+},30000);
