@@ -81,7 +81,7 @@ if(compact&&!localStorage.getItem('sd2.mobile-five-tabs-v1')){
  localStorage.setItem('sd2.mobile-five-tabs-v1','1');
 }
 const masterClock=createMasterClockProjection();
-let data, sounds, replay, soundError='', soundCategory='', deckCategory='all', online=false, page=localStorage.getItem('sd2.page') || (compact?'home':'live'), tab='obs', busy=false, refreshFlight, pointerHeld=false, configurationDraft, profileDraft, noticeTimer;
+let data, sounds, replay, soundError='', soundCategory='', deckCategory='all', online=false, page=localStorage.getItem('sd2.page') || (compact?'home':'live'), tab='overview', busy=false, refreshFlight, pointerHeld=false, configurationDraft, profileDraft, noticeTimer;
 let deckScope, deckPreferences, deckEditing=false, deckEditBank='all', activeCommands=0;
 const clientRole=new URL(location.href).searchParams.get('role')==='client';
 let device=readDevice(localStorage,native);
@@ -488,7 +488,7 @@ function soundsPage(){
  return `<div class="performance-head"><div><span class="eyebrow">${server?'SONS SUR L’APPAREIL SÉLECTIONNÉ':'SONS SUR CET APPAREIL'}</span><h1>Soundboard</h1></div><span class="pill">${catalog.length} sons</span></div><div class="tabs pad-tabs">${[['','Tous'],['favorites','★ Favoris'],...categories.map(c=>[c,c])].map(([id,label])=>`<button class="${soundCategory===id?'':'secondary'}" data-sound-category="${esc(id)}">${esc(label)}</button>`).join('')}</div>${soundError?`<p class="warn">${esc(soundError)}</p>`:''}<div class="sound-transport"><p aria-live="polite">${!online&&!deviceAudio?'État audio inconnu · régie déconnectée':sounds?.currentPlayback?'♫ '+(sounds.activePlaybacks?.length>1?sounds.activePlaybacks.length+' sons en cours':esc(catalog.find(s=>s.id===sounds.currentPlayback.soundId)?.name||'Lecture en cours')):'Prêt · aucun son en cours'}</p>${stopAudioButton()}</div><div class="deck performance-deck sound-pads">${shown.map(s=>`<div class="sound-pad"><button class="green ${(sounds?.activePlaybacks||[sounds?.currentPlayback]).some(p=>p?.soundId===s.id)?'pad-active':''}" data-play-sound="${esc(s.id)}" ${(!online&&!deviceAudio)||busy||!s.enabled||!s.sourceAvailable?'disabled':''}><span>♫</span><b>${esc(s.name)}</b><small>${!online&&!deviceAudio?'Régie déconnectée':!s.enabled?'Désactivé':!s.sourceAvailable?'Fichier indisponible':(sounds?.activePlaybacks||[sounds?.currentPlayback]).some(p=>p?.soundId===s.id)?'Lecture en cours':esc(s.category)}</small></button><button class="favorite secondary" data-favorite-sound="${esc(s.id)}" aria-label="${s.favorite?'Retirer des':'Ajouter aux'} favoris" aria-pressed="${!!s.favorite}">${s.favorite?'★':'☆'}</button></div>`).join('')||'<p class="empty">Aucun son ici. Importez vos fichiers depuis Gestion → Bibliothèque audio.</p>'}</div><section class="last-feedback">${resultRows()}</section>`;
 }
 function actionsPage(){return `<div class="section-heading"><div><h1>Boutons & macros</h1><p class="subtitle">Les associations sont partagées par le Deck et le clavier.</p></div><button data-task="new-action">+ Ajouter</button></div><section class="panel"><div class="table-wrap"><table><thead><tr><th>Bouton</th><th>Raccourci clavier</th><th></th></tr></thead><tbody>${data.configuration.actions.map(a=>`<tr><td>${esc(a.label)}</td><td>${esc(a.shortcut||'—')}</td><td><button class="secondary" data-edit-action="${esc(a.id)}">Modifier</button><button class="secondary" data-task="action-route" data-action-id="${esc(a.id)}">Destination</button></td></tr>`).join('')}</tbody></table></div></section>`;}
-function managePage(){return `<h1>Gestion</h1><p class="subtitle">Votre planning, vos contenus et tous les réglages de la régie.</p><div class="management-grid"><button class="secondary" data-page="planning"><span>▤</span>Planning & événements<small>Agenda, séries, publications, export</small></button><button class="secondary" data-page="actions"><span>▦</span>Boutons & macros<small>Clavier, scènes, alertes et messages</small></button><button class="secondary" data-task="sounds"><span>♫</span>Bibliothèque audio<small>Importer, renommer, volume et destinations</small></button><button class="secondary" data-page="settings"><span>⚙</span>Configuration<small>OBS, comptes, appareils et intégrations</small></button></div>`;}
+function managePage(){return `<h1>Gestion</h1><p class="subtitle">Votre planning, vos contenus et tous les réglages de la régie.</p><div class="management-grid"><button class="secondary" data-page="planning"><span>▤</span>Planning & événements<small>Agenda, séries, publications, export</small></button><button class="secondary" data-page="actions"><span>▦</span>Boutons & macros<small>Clavier, scènes, alertes et messages</small></button><button class="secondary" data-task="sounds"><span>♫</span>Bibliothèque audio<small>Importer, renommer, volume et destinations</small></button><button class="secondary" data-page="settings"><span>⚙</span>Paramètres<small>FIXE, laptop, Android Deck et intégrations</small></button></div>`;}
 function timerClock(value){if(!Number.isFinite(value))return '--:--:--';const r=Math.max(0,Math.ceil(value));return [Math.floor(r/3600),Math.floor(r/60)%60,r%60].map(x=>String(x).padStart(2,'0')).join(':');}
 function timerStatus(t){return !online?'Hôte indisponible · dernier état reçu':t.running&&hostTimerSeconds(t)===null?'Horloge du fixe à resynchroniser':t.running?'En cours sur la régie':t.remaining<=0?'Terminé':t.remaining<t.duration?'En pause':'Prêt à démarrer';}
 const input=(label,name,value='',type='text',extra='')=>`<label>${label}<input name="${name}" type="${type}" value="${esc(value)}" ${extra}></label>`;
@@ -533,7 +533,7 @@ const floatingMic=createFloatingMicBattery($('#floating-mic-battery'),{
  },
 });
 
-function settingsPage(){if(native&&!server&&tab==='obs')tab='platforms';return renderSettings({data,native,server,tab,online,device,localEndpoint,deviceExecutor,macroConfigurationError,installation:installationUI.current,knownPairedServer:localStorage.getItem('sd2.server')||'',esc,input,select,check});}
+function settingsPage(){if(native&&!server&&tab==='obs')tab='overview';return renderSettings({data,native,server,tab,online,device,localEndpoint,deviceExecutor,macroConfigurationError,installation:installationUI.current,knownPairedServer:localStorage.getItem('sd2.server')||'',esc,input,select,check,compact});}
 
 function render({passive=false}={}){
  if(passive&&(pointerHeld||dialog.open||editingForm($('#content')))){shell();if(!online){healthPage?.unavailable();mixerPage?.unavailable();momentsPage?.unavailable();contextDeck?.unavailable();}return;}
@@ -1095,7 +1095,13 @@ document.addEventListener('click',async event=>{const b=event.target.closest('bu
  if(await wizebotManagement.click(b))return;
  if(b.dataset.playSound){await runAction('sound.play',undefined,b.dataset.playSound);return;}
  if(b.dataset.favoriteSound){const sound=sounds.sounds.find(s=>s.id===b.dataset.favoriteSound);await api('/api/v1/soundboard/sounds/'+encodeURIComponent(sound.id),{favorite:!sound.favorite},'PUT');await refresh(true);return;}
+ if(b.dataset.settingsTab){
+   const selected=b.dataset.settingsTab;
+   if(!['overview','obs','platforms','profile','integrations','devices'].includes(selected))return;
+   tab=selected;page='settings';localStorage.setItem('sd2.page',page);resetPerformanceView();return;
+ }
  if(b.dataset.page){
+   if(b.dataset.page==='settings'&&page!=='settings')tab='overview';
    // Re-selecting Sons, or opening the Sons shortcut inside the adaptive deck,
    // must actually reveal the soundboard instead of retaining the Deck pane.
    if(compact&&b.dataset.page==='sounds'&&page==='sounds'&&

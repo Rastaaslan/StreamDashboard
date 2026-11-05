@@ -715,9 +715,14 @@
         {
           "path": "apps/mobile/control/settings-simplified.js",
           "kind": "2026-11-05 FIXE Settings UX: FIXE/laptop/Android Deck topologies displayed distinctly; Double-PC preset is not an Android pairing grant; no second OBS writer or token migration. 25 targeted PASS including Edge 320/390/1366 px, TS/browser/security 6755 files PASS. Installed QA 73a6aae unchanged; no Android/G3/G4 reception. See SETTINGS_UX_ANDROID_DECK_20261105.md."
+        },
+        {
+          "path": "apps/mobile/control/settings-navigation.js",
+          "kind": "2026-11-05 FIXE: Settings UX parity for Android 5 tabs (under Plus) and Windows Regie/Administration (overview); paired vs local account owner and Android Deck deep link remain explicit. Six targeted Vitest files 36 PASS / 0 FAIL / 0 skipped incl Edge 320/390/1366 px, TS/browser JS/security 6757 files PASS. No builds or physical Android G3/G4 proof; see SETTINGS_NAVIGATION_UI_PARITY_20261105.md."
         }
       ],
       "verifiedTests": [
+        "tests/streamcockpit3-settings-navigation-browser.test.ts",
         "tests/streamcockpit3-settings-topology-browser.test.ts",
         "tests/streamcockpit3-context.test.ts",
         "tests/streamcockpit3-context-integration.test.ts",

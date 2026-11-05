@@ -26,7 +26,7 @@ afterEach(()=>vi.unstubAllGlobals());
 
 it('Windows client sees distinct FIXE, laptop, Android Deck and no fake online phone',()=>{
  const html=fixture().render('devices');
- expect(html).toContain('Appareils & Deck');
+ expect(html).toContain('Appareils &amp; Deck');
  expect(html).toContain('data-device-kind="master"');
  expect(html).toContain('data-device-kind="client"');
  expect(html).toContain('data-device-kind="android"');

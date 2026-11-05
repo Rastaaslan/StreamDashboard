@@ -120,9 +120,9 @@ export function renderMobilePlus({data,online,server,esc}){
       ${link('Centre de santé','Observations horodatées · lecture seule','data-page="health"')}
       ${link('🎚 Mixeur OBS','Gains et muets observés sur le fixe · lecture seule','data-page="mixer"')}
       ${link('✦ Moments marquants','Consulter un journal de session existant · lecture seule','data-page="moments"')}
-      ${link('⚙ Configuration','OBS, Twitch, Google Agenda, services','data-page="settings"')}
+      ${link('⚙ Paramètres','Régie, comptes, appareils et préférences','data-page="settings"')}
       ${link('☷ Gestion','Bibliothèque audio, actions, planning','data-page="manage"')}
-      ${link('◉ Appareils et connexion','Association et empreinte de la régie','data-task="connection"')}
+      ${link('▦ Appareils & Deck','FIXE, laptop, Android : rôles et association','data-settings-tab="devices"')}
       ${link('♧ Mes comptes','Connexions indépendantes de l’appareil','data-task="device-accounts"')}
       ${link('↺ Synchronisation','État des modifications et conflits','data-task="sync-status"')}
     </div>
