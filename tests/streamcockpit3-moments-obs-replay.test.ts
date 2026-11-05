@@ -135,6 +135,20 @@ it('never retries an uncertain replay after dedup capacity and renews only on a 
   expect(f.record).toHaveBeenCalledTimes(513);
 });
 
+it('does not retry an uncertain OBS replay when only the WebSocket connection generation changes', async () => {
+  const f = fixture();
+  f.record.mockRejectedValueOnce(new Error('MOMENTS_WRITE_UNCERTAIN'));
+  await expect(f.producer.observe(event)).rejects.toThrow('MOMENTS_WRITE_UNCERTAIN');
+  f.state.connectionGeneration = 8; // OBS WebSocket reconnect, no verified new stream transition.
+  const reconnected = { ...event, connectionGeneration: 8 };
+  expect(await f.producer.observe(reconnected)).toBe('ignored');
+  expect(f.record).toHaveBeenCalledTimes(1);
+  // Only an actual stream-epoch change may reopen replay admission.
+  f.state.streamEpoch = 4;
+  expect(await f.producer.observe({ ...reconnected, streamEpoch: 4 })).toBe('recorded');
+  expect(f.record).toHaveBeenCalledTimes(2);
+});
+
 const onWindows = process.platform === 'win32' ? it : it.skip;
 onWindows('reopens the automatically observed OBS marker from Windows SQLite EXTRA after process-level storage reopening', async () => {
   const directory = await mkdtemp(join(tmpdir(), 'sc3-obs-replay-'));

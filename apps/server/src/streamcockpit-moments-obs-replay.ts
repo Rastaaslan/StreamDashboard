@@ -20,7 +20,7 @@ interface ObsSnapshot {
 
 export class ObsReplayMomentProducer {
   private readonly attempted = new Set<string>();
-  private activeEpoch: string | undefined;
+  private activeEpoch: number | undefined;
   constructor(private readonly options: {
     snapshot(): ObsSnapshot;
     hostEligible(): Promise<boolean>;
@@ -47,10 +47,13 @@ export class ObsReplayMomentProducer {
         state.connectionGeneration === event.connectionGeneration && state.streamEpoch === event.streamEpoch;
     };
     if (!valid()) return 'ignored';
-    const epoch = event.connectionGeneration + ':' + event.streamEpoch;
-    if (this.activeEpoch !== epoch) {
-      // Only a verified current OBS epoch may reset the replay dedup guard.
-      // Old/foreign notifications must never evict an uncertain attempt.
+    // WebSocket reconnects change connectionGeneration without necessarily
+    // ending the live. They must not reopen an uncertain journal attempt.
+    // Admission still checks generation above, but dedup resets only on a
+    // verified, strictly newer OBS stream-transition epoch.
+    const epoch = event.streamEpoch;
+    if (this.activeEpoch !== undefined && epoch < this.activeEpoch) return 'ignored';
+    if (this.activeEpoch === undefined || epoch > this.activeEpoch) {
       this.attempted.clear();
       this.activeEpoch = epoch;
     }

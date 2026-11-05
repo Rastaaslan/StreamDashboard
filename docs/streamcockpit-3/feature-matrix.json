@@ -264,6 +264,10 @@
       "acceptance": "Marqueurs OBS/Twitch, sauvegarde du tampon OBS et clips Twitch simples : permissions, horodatage, reçus exacts et parcours Desktop/Android ; sans montage ni transcodage.",
       "evidence": [
         {
+          "path": "docs/streamcockpit-3/F04_OBS_RECONNECT_NO_RETRY_20261105.md",
+          "kind": "2026-11-05 RDC FIXE F04: uncertain OBS SQLite replay must not be retried after WebSocket reconnection in the same verified stream epoch. RED 13 PASS/1 FAIL/0 skipped; after change targeted Vitest 44 PASS/0 FAIL/0 skipped across three suites, TypeScript and browser types PASS, security 6750 files PASS, diff-check PASS. New strictly increasing stream epoch alone resets dedup; generation remains checked as an identity fence. Synthetic OBS events and temporary Windows storage only, no physical reconnect, real OBS replay or Android; F04 partial, G2 in_progress, G3-G5 open."
+        },
+        {
           "path": "docs/streamcockpit-3/F04_OBS_SAVED_LOCAL_PATH_GATE_20261105.md",
           "kind": "2026-11-05 FIXE F04: prevent OBS ReplayBufferSaved UNC/device/NTFS ADS paths from reaching Windows lstat; RED 0 PASS/1 FAIL/22 skipped (intercepted, no real network), final targeted 43 PASS/0 FAIL/0 skipped; TypeScript/browser/security 6750/diff PASS. Simulated OBS and NTFS fixture only, no real replay/Android validation. F04 partial and G2 in_progress."
         },
