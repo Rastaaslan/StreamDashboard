@@ -27,3 +27,36 @@ it('does not follow a configuration symlink or NTFS junction and keeps empty ins
  const empty=await mkdtemp(path.join(os.tmpdir(),'sd-empty-'));roots.push(empty);
  expect(await ensureRc117Backup(empty)).toBeUndefined();
 });
+
+// A backup accepted for migration must include exactly the actual stored payload files.
+it('refuses an existing backup whose manifest silently omits one stored credential file',async()=>{
+ const root=await fixture(),backup=(await ensureRc117Backup(root))!;
+ const manifestPath=path.join(backup,'manifest.json');
+ const manifest=JSON.parse(await readFile(manifestPath,'utf8'));
+ manifest.files=manifest.files.filter((row:{path:string})=>row.path!=='secure/credentials.dat');
+ await writeFile(manifestPath,JSON.stringify(manifest));
+ await expect(ensureRc117Backup(root)).rejects.toThrow('inventaire');
+});
+it('refuses an existing backup containing a payload absent from its manifest',async()=>{
+ const root=await fixture(),backup=(await ensureRc117Backup(root))!;
+ await writeFile(path.join(backup,'files','secure','untracked.json'),'not acknowledged');
+ await expect(ensureRc117Backup(root)).rejects.toThrow('inventaire');
+});
+it('refuses a duplicate manifest entry even when its repeated hash is valid',async()=>{
+ const root=await fixture(),backup=(await ensureRc117Backup(root))!;
+ const manifestPath=path.join(backup,'manifest.json');
+ const manifest=JSON.parse(await readFile(manifestPath,'utf8'));
+ manifest.files.push({...manifest.files[0]});
+ await writeFile(manifestPath,JSON.stringify(manifest));
+ await expect(ensureRc117Backup(root)).rejects.toThrow('inventaire');
+});
+it('refuses case-folded duplicate manifest paths on NTFS',async()=>{
+ const root=await fixture(),backup=(await ensureRc117Backup(root))!;
+ const manifestPath=path.join(backup,'manifest.json');
+ const manifest=JSON.parse(await readFile(manifestPath,'utf8'));
+ manifest.files.push({...manifest.files[0],path:manifest.files[0].path.toUpperCase()});
+ await writeFile(manifestPath,JSON.stringify(manifest));
+ await expect(ensureRc117Backup(root)).rejects.toThrow('inventaire');
+ await expect(new InstallationStore(root).read()).rejects.toThrow('inventaire');
+ await expect(readFile(path.join(root,'installation-v2.json'))).rejects.toMatchObject({code:'ENOENT'});
+});

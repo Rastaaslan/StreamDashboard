@@ -24,8 +24,21 @@ export async function ensureRc117Backup(directory:string):Promise<string|undefin
  try{existing=JSON.parse(await readFile(manifestFile,'utf8'));}catch(error){if(!absent(error))throw error;}
  if(existing){
   if(existing.format!=='StreamDashboard-RC11.7-backup'||existing.version!==1||!Array.isArray(existing.files)||!existing.files.length||existing.files.length>10000)throw Error('Sauvegarde RC11.7 incompatible. Conservez les fichiers avant de poursuivre.');
-  await inspect(target,'files',[]);
-  for(const entry of existing.files){if(!relativeFile(entry.path))throw Error('Chemin de sauvegarde invalide.');const file=path.join(target,'files',entry.path);if((await lstat(file)).isSymbolicLink())throw Error('Lien dans la sauvegarde RC11.7.');const bytes=await readFile(file);if(bytes.length!==entry.bytes||digest(bytes)!==entry.sha256)throw Error('Sauvegarde RC11.7 altérée. Aucune migration appliquée.');}
+  // The manifest must describe the complete immutable payload, not just a verified subset.
+  const observed:string[]=[];await inspect(target,'files',observed);
+  const listed:string[]=[];
+  for(const entry of existing.files){
+   if(!entry||!relativeFile(entry.path)||!Number.isSafeInteger(entry.bytes)||entry.bytes<0||
+      typeof entry.sha256!=='string'||!/^[a-f0-9]{64}$/.test(entry.sha256))
+    throw Error('Sauvegarde RC11.7 : inventaire invalide. Aucune migration appliquée.');
+   listed.push(entry.path);
+  }
+  // Case-insensitive duplicate paths must be rejected for Windows even in offline QA.
+  const normalized=(names:string[])=>names.map(name=>name.toLowerCase()).sort();
+  const expected=normalized(listed),actual=normalized(observed.map(name=>name.slice('files/'.length)));
+  if(new Set(expected).size!==expected.length||JSON.stringify(expected)!==JSON.stringify(actual))
+   throw Error('Sauvegarde RC11.7 : inventaire incomplet ou incohérent. Aucune migration appliquée.');
+  for(const entry of existing.files){const file=path.join(target,'files',entry.path);if((await lstat(file)).isSymbolicLink())throw Error('Lien dans la sauvegarde RC11.7.');const bytes=await readFile(file);if(bytes.length!==entry.bytes||digest(bytes)!==entry.sha256)throw Error('Sauvegarde RC11.7 altérée. Aucune migration appliquée.');}
   return target;
  }
  const names:string[]=[];for(const root of roots)await inspect(directory,root,names);
