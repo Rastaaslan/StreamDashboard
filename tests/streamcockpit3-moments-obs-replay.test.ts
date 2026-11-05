@@ -42,6 +42,19 @@ it('writes only a host-witnessed OBS save into the single journal, without path 
   expect(f.record).toHaveBeenCalledTimes(1);
 });
 
+it('refuses noncanonical replay IDs before creating a durable OBS marker', async () => {
+  for (const sourceEventId of [
+    'obs_replay_not_a_digest',
+    'obs_replay_' + 'G'.repeat(64),
+    'obs_replay_' + 'a'.repeat(63),
+    'obs_replay_' + 'a'.repeat(65),
+  ]) {
+    const f = fixture();
+    expect(await f.producer.observe({ ...event, sourceEventId })).toBe('ignored');
+    expect(f.record).not.toHaveBeenCalled();
+  }
+});
+
 it('does not create OBS moments for unknown/stopped/disconnected outputs or foreign generations', async () => {
   for (const change of [
     { connected: false }, { streaming: false }, { streamingKnown: false }, { connectionGeneration: 8 }, { streamEpoch: 4 },

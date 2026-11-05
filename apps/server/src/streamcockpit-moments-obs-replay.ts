@@ -38,7 +38,9 @@ export class ObsReplayMomentProducer {
         !Number.isSafeInteger(event.streamEpoch) || event.streamEpoch < 0)
       return 'ignored';
     try { momentIdentifier(event.sourceEventId); } catch { return 'ignored'; }
-    if (!event.sourceEventId.startsWith('obs_replay_')) return 'ignored';
+    // Must match the lowercase SHA-256 HMAC ID emitted by the trusted FIXE OBS adapter.
+    // Shape alone does not attest provenance; authority and live-epoch checks still apply.
+    if (!/^obs_replay_[a-f0-9]{64}$/.test(event.sourceEventId)) return 'ignored';
     const valid = () => {
       const state = this.options.snapshot();
       return state.connected && state.streamingKnown && state.streaming &&
