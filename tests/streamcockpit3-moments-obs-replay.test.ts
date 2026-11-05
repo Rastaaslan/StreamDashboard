@@ -106,6 +106,22 @@ it('never silently retries an uncertain SQLite write, even after a duplicate not
   expect(f.record).toHaveBeenCalledTimes(1);
 });
 
+it('never retries an uncertain replay after dedup capacity and renews only on a new OBS stream epoch', async () => {
+  const f = fixture();
+  f.record.mockRejectedValueOnce(new Error('MOMENTS_WRITE_UNCERTAIN'));
+  await expect(f.producer.observe(event)).rejects.toThrow('MOMENTS_WRITE_UNCERTAIN');
+  for (let i = 0; i < 512; i++) {
+    const unique = { ...event, sourceEventId: 'obs_replay_' + i.toString(16).padStart(64, '0') };
+    expect(await f.producer.observe(unique)).toBe(i < 511 ? 'recorded' : 'ignored');
+  }
+  // Even if the first write was uncertain, an old notification may never be re-attempted.
+  expect(await f.producer.observe(event)).toBe('ignored');
+  expect(f.record).toHaveBeenCalledTimes(512);
+  f.state.streamEpoch = 4;
+  expect(await f.producer.observe({ ...event, streamEpoch: 4 })).toBe('recorded');
+  expect(f.record).toHaveBeenCalledTimes(513);
+});
+
 const onWindows = process.platform === 'win32' ? it : it.skip;
 onWindows('reopens the automatically observed OBS marker from Windows SQLite EXTRA after process-level storage reopening', async () => {
   const directory = await mkdtemp(join(tmpdir(), 'sc3-obs-replay-'));

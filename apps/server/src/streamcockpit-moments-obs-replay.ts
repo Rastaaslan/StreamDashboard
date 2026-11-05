@@ -20,6 +20,7 @@ interface ObsSnapshot {
 
 export class ObsReplayMomentProducer {
   private readonly attempted = new Set<string>();
+  private activeEpoch: string | undefined;
   constructor(private readonly options: {
     snapshot(): ObsSnapshot;
     hostEligible(): Promise<boolean>;
@@ -38,17 +39,23 @@ export class ObsReplayMomentProducer {
       return 'ignored';
     try { momentIdentifier(event.sourceEventId); } catch { return 'ignored'; }
     if (!event.sourceEventId.startsWith('obs_replay_')) return 'ignored';
-    const key = event.connectionGeneration + ':' + event.streamEpoch + ':' + event.sourceEventId;
-    if (this.attempted.has(key)) return 'ignored';
-    this.attempted.add(key);
-    if (this.attempted.size > 512) this.attempted.delete(this.attempted.values().next().value!);
-
     const valid = () => {
       const state = this.options.snapshot();
       return state.connected && state.streamingKnown && state.streaming &&
         state.connectionGeneration === event.connectionGeneration && state.streamEpoch === event.streamEpoch;
     };
     if (!valid()) return 'ignored';
+    const epoch = event.connectionGeneration + ':' + event.streamEpoch;
+    if (this.activeEpoch !== epoch) {
+      // Only a verified current OBS epoch may reset the replay dedup guard.
+      // Old/foreign notifications must never evict an uncertain attempt.
+      this.attempted.clear();
+      this.activeEpoch = epoch;
+    }
+    if (this.attempted.has(event.sourceEventId) || this.attempted.size >= 512) return 'ignored';
+    // Fail closed after 512 distinct saves in one live rather than evicting an
+    // uncertain UUID and accidentally trying its write again.
+    this.attempted.add(event.sourceEventId);
     const first = await this.options.activeSessionId();
     if (!first || !valid()) return 'ignored';
     if (!await this.options.hostEligible() || !valid()) return 'ignored';

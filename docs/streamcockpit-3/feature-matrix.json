@@ -272,6 +272,10 @@
           "kind": "2026-11-02 FIXE ReplayBufferSaved marker now requires a point-in-time nonempty regular-file lstat on FIXE (synthetic OBS plus temporary NTFS file tests); no real OBS clip, immutable file binding, file durability or clip-link export qualified"
         },
         {
+          "path": "docs/streamcockpit-3/F04_OBS_REPLAY_DEDUP_EPOCH_20261105.md",
+          "kind": "2026-11-05 RDC FIXE F04: synthetic 513 ReplayBufferSaved notifications reproduced retry after 512-entry dedup eviction (RED 1 FAIL). Fixed fail-closed per-OBS-epoch cap with reset only for a verified new live epoch. Targeted 39 PASS/0 FAIL/6 skipped, TypeScript/browser types/security/diff PASS. Synthetic load and temporary Windows SQLite only; no real OBS/Android acceptance, F04 partial and G2 in_progress."
+        },
+        {
           "path": "scripts/streamcockpit-windows-clip-job.cs",
           "kind": "2026-11-02 FIXE compiled-in-test C# Win32 Job Object CREATE_SUSPENDED/Assign/Resume, kill-on-close, process count, idle priority, CPU and memory limits; unsigned native helper not installed"
         },
