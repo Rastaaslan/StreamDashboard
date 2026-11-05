@@ -32,10 +32,10 @@ export function renderDevicesSettings({
   const laptopDetail = 'Aucune horloge ou exécution OBS de secours n’est créée sur le laptop. Ses boutons agissent sur FIXE seulement après association autorisée.';
   const androidSummary = androidDevices.length
     ? androidDevices.map(item => esc(item.name)).join(', ') + ' · déclaré' + (androidDevices.length > 1 ? 's' : '')
-    : deckPreset ? 'Prévu dans le modèle, pas encore enregistré ici' : 'Non déclaré dans cette installation';
+    : deckPreset ? 'Prévu dans le modèle, pas encore enregistré ici' : 'Non déclaré dans cette installation (modèle local uniquement)';
   const androidDetail = androidDevices.length
     ? 'Appareil connu dans cette configuration. Son état de connexion réel doit être confirmé sur le téléphone et sur FIXE.'
-    : 'Android Deck est l’application du téléphone, pas un module Windows à installer. Le modèle Double-PC ne l’ajoute pas automatiquement ; associez le téléphone directement à FIXE.';
+    : 'Android Deck est l’application du téléphone, pas un module Windows à installer. Le modèle Double-PC ne l’ajoute pas automatiquement. Le modèle local ne recense pas les télécommandes déjà associées : vérifiez leur liste sur FIXE avant de créer un nouvel appairage.';
   const controllerAction = isMaster
     ? '<button type="button" class="secondary" data-task="pairing">Créer un code d’association sur FIXE</button>'
     : '<button type="button" class="secondary" data-task="connection">Associer FIXE depuis cet appareil</button>';
@@ -56,6 +56,7 @@ export function renderDevicesSettings({
       <button type="button" data-task="device-setup">Voir mon installation et les rôles</button>
       <button type="button" class="secondary" data-page="actions">Configurer les boutons Deck</button>
       <button type="button" class="secondary" data-task="connection">Associer une régie</button>
+      ${isMaster && localEndpoint ? '<button type="button" class="secondary" data-task="paired-devices">Voir les appareils associés à FIXE</button>' : ''}
     </div>
     <details class="settings-advanced"><summary>Comptes et connexions locales</summary>
       <p class="small muted">Les comptes et les jetons sont propres à chaque appareil. Associer Android au PC stream ne copie aucun secret du laptop.</p>

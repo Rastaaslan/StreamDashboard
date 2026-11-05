@@ -20,6 +20,7 @@ import {renderMobileSoundboard} from './mobile-soundboard-pane.js';
 import {ACTIONS,OUTCOME_LABELS} from '../shared/action-registry.js';
 import {randomUuid} from '../shared/uuid.js';
 import {renderSettings} from './settings-view.js';
+import {renderPairedDevicesSummary} from './paired-devices-summary.js';
 import {replaceMarkup, editingForm, createDraftWriter} from './render-policy.js';
 import {configurationTransferSupport} from '../shared/configuration-transfer.js';
 import {createExecutorSync} from './executor-sync.js';
@@ -992,6 +993,12 @@ async function task(name,b){
  if(name==='sync-now'){await refresh();syncDialog();return;}
  if(name==='sync-export'){await exportJSON(autonomy?.store.record,'StreamDashboard-copie-locale.json');return;}
  if(!data)throw new Error('Connectez la régie.');
+ if(name==='paired-devices'){
+  if(clientRole||device?.role!=='stream'||!localEndpoint)throw new Error('Les associations réelles sont consultables uniquement sur FIXE.');
+  const devices=await network('/api/v1/remote/devices',undefined,'GET',localEndpoint,'');
+  modal(renderPairedDevicesSummary(devices,esc));
+  return;
+ }
  if(name==='metadata'){metadataDialog();return;}
  if(name==='spontaneous-live'){
    // One tap opens a preview, NEVER starts OBS. No planning event is created.
