@@ -63,6 +63,50 @@ it('Twitch account status is never presented as connected on an offline or stale
  expect(fresh).toMatch(/Compte Twitch de la régie connecté/i);
  expect(fresh).toMatch(/droits|autorisations/i);
 });
+it('does not offer host-only Discord or WizeBot configuration without reachable FIXE',()=>{
+ for(const options of [
+  {server:'',online:false,role:'mobile' as const},
+  {server:'',online:false,role:'control' as const},
+  {server:'https://fixe.example:48136',online:false,role:'mobile' as const}
+ ]){
+  const html=render(options);
+  expect(html).toContain('data-host-integrations-hint');
+  expect(html).toContain('data-task="discord" disabled');
+  expect(html).toContain('data-task="wizebot-catalog" disabled');
+  expect(html).toContain('data-task="connection"');
+  // Only host-dependent controls are gated: local Google and Streamlabs remain visible.
+  expect(html).toContain('data-task="google-connect"');
+  expect(html).toContain('data-task="streamlabs"');
+  expect(html).not.toContain('data-task="streamlabs" disabled');
+ }
+ for(const options of [
+  {server:'https://fixe.example:48136',online:true,role:'mobile' as const},
+  {server:'http://127.0.0.1:48133',online:true,role:'stream' as const}
+ ]){
+  const html=render(options);
+  expect(html).toContain('data-task="discord"');
+  expect(html).not.toContain('data-task="discord" disabled');
+  expect(html).not.toContain('data-task="wizebot-catalog" disabled');
+  expect(html).not.toContain('data-host-integrations-hint');
+ }
+});
+it.skipIf(process.env.SC3_SETTINGS_BROWSER_TEST!=='1')('real Edge 320 px shows disabled host-only integrations on offline Android without side effects',async()=>{
+ const browser=await chromium.launch({channel:'msedge',headless:true});
+ try{
+  const page=await browser.newPage({viewport:{width:320,height:760},hasTouch:true});
+  const network:string[]=[],errors:string[]=[];
+  page.on('pageerror',error=>errors.push(error.message));
+  await page.route('**/*',route=>{network.push(route.request().url());return route.abort()});
+  await page.setContent('<meta name="viewport" content="width=device-width,initial-scale=1"><main>'+render({server:'',online:false,role:'mobile'})+'</main>');
+  await page.addStyleTag({content:readFileSync('apps/mobile/control/control.css','utf8')});
+  expect(await page.locator('[data-task="discord"]').isDisabled()).toBe(true);
+  expect(await page.locator('[data-task="wizebot-catalog"]').isDisabled()).toBe(true);
+  expect(await page.locator('[data-task="streamlabs"]').isEnabled()).toBe(true);
+  expect(await page.locator('[data-task="connection"]').isEnabled()).toBe(true);
+  expect(await page.evaluate(()=>document.documentElement.scrollWidth)).toBeLessThanOrEqual(320);
+  expect(network).toEqual([]);expect(errors).toEqual([]);
+ }finally{await browser.close()}
+},25000);
 it('never copies a provider status or an unknown string into the HTML',()=>{
  const html=render({statuses:{discord:'<img src=x onerror=alert(1)>',streamlabs:'CONNECTING',wizebot:'NOT_SUPPORTED'}});
  expect(html).not.toContain('<img src=x');
