@@ -14,6 +14,12 @@ export function renderSettings({data,native,server,tab,online,device,localEndpoi
  const integrationStatus=id=>{
   if(!server&&device?.role!=='stream')return 'État sur FIXE inconnu : associez la régie pour vérifier ce service.';
   if(!online)return 'Régie indisponible : état du service non vérifiable.';
+  // A reachable client can still hold an old host snapshot after suspend/reconnect.
+  // The host timestamp is evidence of observation, not proof of OAuth permissions.
+  const at=data.host.state?.at;
+  const observedAt=typeof at==='string'?Date.parse(at):NaN;
+  const age=Date.now()-observedAt;
+  if(!Number.isFinite(observedAt)||age>90_000||age < -15_000)return 'État de FIXE périmé : observation non vérifiable (actualiser la régie).';
   const status=data.host.state.controlHub?.integrations?.[id]?.status;
   const labels={
    CONNECTED:'Dernier état de FIXE : connecté (droits à vérifier).',

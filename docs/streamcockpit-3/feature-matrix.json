@@ -134,6 +134,10 @@
         {
           "path": "docs/streamcockpit-3/SETTINGS_INTEGRATION_STATUS_SCOPE_20261105.md",
           "kind": "2026-11-05 SETTINGS-P03 configuration ownership and targeted software test evidence; no gate promotion"
+        },
+        {
+          "path": "docs/streamcockpit-3/SETTINGS_PROVIDER_FRESHNESS_20261105.md",
+          "kind": "2026-11-05 SETTINGS-P04 fail-closed visibility for missing/stale/future FIXE integration state.at, 11 targeted PASS with 2 real Edge cases, TypeScript/browser/security 6761 PASS; synthetic states only, F01 partial and G2 in_progress"
         }
       ],
       "verifiedTests": [

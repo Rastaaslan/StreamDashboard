@@ -5,10 +5,11 @@ import {readFileSync} from 'node:fs';
 import {renderSettings} from '../apps/mobile/control/settings-view.js';
 
 const esc=(value:unknown)=>String(value??'').replace(/[&<>"']/g,ch=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch]!));
-function render({server='https://fixe.example:48136',online=true,role='mobile',statuses={}}:{
- server?:string;online?:boolean;role?:'mobile'|'control'|'stream';statuses?:Record<string,string>
+function render({server='https://fixe.example:48136',online=true,role='mobile',statuses={},observedAt=new Date().toISOString()}:{
+ server?:string;online?:boolean;role?:'mobile'|'control'|'stream';statuses?:Record<string,string>;observedAt?:string|null
 }={}){
  const data={host:{hostname:'FIXE',settingsRevision:'1',settings:{},state:{
+  at:observedAt,
   obs:{inputs:{},scenes:[]},google:{connected:true},twitch:{connected:true},
   controlHub:{integrations:Object.fromEntries(Object.entries(statuses).map(([key,status])=>[key,{status}]))}
  }},configuration:{revision:1,outputs:{twitch:{kind:'unconfigured',name:''}}}};
@@ -37,6 +38,17 @@ it('refuses stale CONNECTED states while FIXE is offline or the client has no pa
   expect(html).toMatch(/data-integration-status="discord"[^>]*>[^<]*(non vérifi|inconnu)/i);
  }
 });
+it('fails closed on missing, expired or implausibly future host observations even when online',()=>{
+ const statuses={discord:'CONNECTED',streamlabs:'CONNECTED',wizebot:'CONNECTED'};
+ for(const observedAt of [null,'invalid',new Date(Date.now()-120_000).toISOString(),new Date(Date.now()+120_000).toISOString()]){
+  const html=render({online:true,observedAt,statuses});
+  for(const id of Object.keys(statuses)){
+   expect(html).toMatch(new RegExp('data-integration-status="'+id+'"[^>]*>[^<]*périmé','i'));
+   expect(html).not.toMatch(new RegExp('data-integration-status="'+id+'"[^>]*>[^<]*: connecté','i'));
+  }
+ }
+ expect(render({statuses})).toMatch(/data-integration-status="discord"[^>]*>[^<]*connecté/i);
+});
 it('never copies a provider status or an unknown string into the HTML',()=>{
  const html=render({statuses:{discord:'<img src=x onerror=alert(1)>',streamlabs:'CONNECTING',wizebot:'NOT_SUPPORTED'}});
  expect(html).not.toContain('<img src=x');
@@ -56,6 +68,12 @@ it.skipIf(process.env.SC3_SETTINGS_BROWSER_TEST!=='1')('real Edge 320 px shows u
   await page.addStyleTag({content:readFileSync('apps/mobile/control/control.css','utf8')});
   for(const key of ['discord','streamlabs','wizebot']){
    expect(await page.locator('[data-integration-status="'+key+'"]').innerText()).toContain('non vérifiable');
+  }
+  const stale=render({online:true,observedAt:new Date(Date.now()-120_000).toISOString(),
+   statuses:{discord:'CONNECTED',streamlabs:'CONNECTED',wizebot:'CONNECTED'}});
+  await page.setContent('<meta name="viewport" content="width=device-width,initial-scale=1"><main>'+stale+'</main>');
+  for(const key of ['discord','streamlabs','wizebot']){
+   expect(await page.locator('[data-integration-status="'+key+'"]').innerText()).toContain('périmé');
   }
   expect(await page.evaluate(()=>document.documentElement.scrollWidth)).toBeLessThanOrEqual(320);
   expect(network).toEqual([]);expect(errors).toEqual([]);
