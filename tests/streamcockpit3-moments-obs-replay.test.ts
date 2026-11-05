@@ -154,3 +154,38 @@ onWindows('reopens the automatically observed OBS marker from Windows SQLite EXT
     expect(recovered?.markers[0]?.sourceEventId).toBe(event.sourceEventId);
   } finally { await rm(directory, { recursive: true, force: true }); }
 });
+
+it('deduplicates concurrent OBS replay notifications even while the first journal commit is pending', async () => {
+  const f = fixture();
+  let release!: () => void;
+  const blocked = new Promise<void>(resolve => { release = resolve; });
+  f.record.mockImplementationOnce(async input => {
+    await blocked;
+    return f.pipeline.record(input);
+  });
+  const first = f.producer.observe(event);
+  await vi.waitFor(() => expect(f.record).toHaveBeenCalledTimes(1));
+  expect(await f.producer.observe(event)).toBe('ignored');
+  release();
+  expect(await first).toBe('recorded');
+  expect(f.record).toHaveBeenCalledTimes(1);
+  expect((await f.pipeline.exportObserved('unplanned_1'))?.markers).toHaveLength(1);
+});
+
+it('fences an in-flight OBS save across an overlapping new stream epoch', async () => {
+  const f = fixture();
+  let release!: () => void;
+  const blocked = new Promise<void>(resolve => { release = resolve; });
+  f.hostEligible.mockImplementationOnce(async () => { await blocked; return true; });
+  const old = f.producer.observe(event);
+  await vi.waitFor(() => expect(f.hostEligible).toHaveBeenCalledTimes(1));
+  f.state.streamEpoch = 4;
+  const fresh = { ...event, streamEpoch: 4, sourceEventId: 'obs_replay_' + 'b'.repeat(64) };
+  expect(await f.producer.observe(fresh)).toBe('recorded');
+  release();
+  expect(await old).toBe('ignored');
+  expect(await f.producer.observe(event)).toBe('ignored');
+  expect(await f.producer.observe(fresh)).toBe('ignored');
+  expect(f.record).toHaveBeenCalledTimes(1);
+  expect((await f.pipeline.exportObserved('unplanned_1'))?.markers[0]?.sourceEventId).toBe(fresh.sourceEventId);
+});

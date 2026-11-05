@@ -280,6 +280,10 @@
           "kind": "2026-11-05 RDC FIXE F04: replay producer now rejects malformed OBS replay IDs that merely start with obs_replay_, before durable journal attempt. Only lowercase HMAC-SHA256 64-hex shape from trusted OBS adapter accepted; shape is NOT a cryptographic provenance proof. RED 0 PASS/1 FAIL/10 skipped; final three targeted suites 20 PASS/0 FAIL/0 skipped, TS/browser types/security 6750 files and diff PASS. Synthetic events, Windows SQLite temporary fixture only; F04 partial, G2 in_progress, G3-G5 open."
         },
         {
+          "path": "docs/streamcockpit-3/F04_REPLAY_CONCURRENT_EPOCH_QA_20261105.md",
+          "kind": "2026-11-05 FIXE F04 concurrent OBS replay and stream-epoch overlap regressions added (2 new tests). Three targeted suites 22 PASS/0 FAIL/0 skipped including temporary Windows SQLite, TypeScript/browser types/security 6750 files and diff PASS. Producer code unchanged, synthetic callback interleaving only, hardware and G3-G5 unqualified."
+        },
+        {
           "path": "scripts/streamcockpit-windows-clip-job.cs",
           "kind": "2026-11-02 FIXE compiled-in-test C# Win32 Job Object CREATE_SUSPENDED/Assign/Resume, kill-on-close, process count, idle priority, CPU and memory limits; unsigned native helper not installed"
         },
