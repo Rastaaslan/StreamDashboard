@@ -15,8 +15,9 @@ export function renderDevicesSettings({
 }) {
   const current = installation && typeof installation === 'object' ? installation : null;
   const devices = Array.isArray(current?.devices) ? current.devices : [];
-  const local = devices.find(item => item.id === current?.localDeviceId);
-  const isMaster = local ? local.roles?.includes('obs-executor') : device?.role === 'stream';
+  // Saved installation roles describe a proposed topology, never the runtime OBS owner.
+  // A stale client preset must not display local FIXE pairing/administration controls.
+  const isMaster = device?.role === 'stream';
   const isClient = device?.role === 'control';
   const androidDevices = devices.filter(item => item.platform === 'android' && item.enabled !== false);
   const presetLabel = current?.preset && SETUPS[current.preset] ? SETUPS[current.preset] : 'Non renseignée sur cet appareil';

@@ -38,6 +38,36 @@ it('Windows client sees distinct FIXE, laptop, Android Deck and no fake online p
  expect(html).not.toContain('téléphone connecté');
 });
 
+it('saved installation roles cannot promote a client into the FIXE OBS authority or demote FIXE',()=>{
+ const client=fixture({role:'control',preset:'dual-pc-deck'});
+ client.installation.devices[0].roles=['controller','obs-executor']; // stale/wrong local preset
+ const clientHtml=client.render('devices');
+ expect(clientHtml).toContain('Connexion à FIXE non vérifiée');
+ expect(clientHtml).not.toContain('Régie de cet ordinateur');
+ expect(clientHtml).not.toContain('data-task="pairing"');
+ const fixe=fixture({role:'stream',server:'http://127.0.0.1:48133',online:true});
+ fixe.installation.devices[0].roles=['controller']; // stale preset cannot demote the runtime OBS owner
+ const fixeHtml=fixe.render('devices');
+ expect(fixeHtml).toContain('Régie de cet ordinateur');
+ expect(fixeHtml).toContain('data-task="pairing"');
+});
+it.skipIf(process.env.SC3_SETTINGS_BROWSER_TEST!=='1')('real Edge at 320px does not show a client-only device as the OBS master from an obsolete preset',async()=>{
+ const client=fixture({role:'control',preset:'dual-pc-deck'});
+ client.installation.devices[0].roles=['controller','obs-executor'];
+ const browser=await chromium.launch({channel:'msedge',headless:true});
+ try{
+  const page=await browser.newPage({viewport:{width:320,height:780},hasTouch:true});
+  const requests:string[]=[];
+  await page.route('**/*',route=>{requests.push(route.request().url());return route.abort()});
+  await page.setContent('<meta name="viewport" content="width=device-width,initial-scale=1"><main>'+client.render('devices')+'</main>');
+  await page.addStyleTag({content:readFileSync('apps/mobile/control/control.css','utf8')});
+  expect(await page.locator('[data-device-kind="master"]').innerText()).toContain('Connexion à FIXE non vérifiée');
+  expect(await page.locator('[data-task="pairing"]').count()).toBe(0);
+  expect(await page.evaluate(()=>document.documentElement.scrollWidth)).toBeLessThanOrEqual(320);
+  expect(requests).toEqual([]);
+  await page.close();
+ }finally{await browser.close()}
+},25000);
 it('Double-PC + Android Deck preset does not claim an Android is paired',()=>{
  const html=fixture({preset:'dual-pc-deck'}).render('devices');
  expect(html).toContain('Double-PC Windows + Android Deck');

@@ -69,6 +69,14 @@
         {
           "path": "docs/streamcockpit-3/SETTINGS_OBS_SELECT_PRESERVATION_20261105.md",
           "kind": "2026-11-05 owner/configuration mapping and fail-safe Settings UX evidence; no G2/G3 gate promotion"
+        },
+        {
+          "path": "apps/mobile/control/settings-simplified.js",
+          "kind": "2026-11-05 RDC FIXE Settings: runtime device role, not stale installation preset roles, determines local OBS-master/pairing presentation; RED 7 PASS/2 FAIL, GREEN five suites 29 PASS/0 FAIL/0 skipped with 6 real Edge checks, TypeScript/browser/security (6761 files) PASS. UI only, no hardware or authority-server change."
+        },
+        {
+          "path": "docs/streamcockpit-3/SETTINGS_RUNTIME_ROLE_GUARD_20261105.md",
+          "kind": "2026-11-05 Settings ownership mapping and fail-closed UI evidence for conflicting saved topology; F00 partial/G2 in_progress, G3-G5 open"
         }
       ],
       "verifiedTests": [
@@ -84,7 +92,8 @@
         "tests/streamcockpit3-master-clock-browser.test.ts",
         "tests/streamcockpit3-master-clock-resume.test.ts",
         "tests/streamcockpit3-settings-preserve-options.test.ts",
-        "tests/streamcockpit3-desktop-settings-role.test.ts"
+        "tests/streamcockpit3-desktop-settings-role.test.ts",
+        "tests/streamcockpit3-settings-topology-browser.test.ts"
       ],
       "hardwareEvidence": [],
       "blockers": [
