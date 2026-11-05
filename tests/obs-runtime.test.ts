@@ -234,6 +234,28 @@ describe('confirmed replay saves',()=>{
     off();
   } finally { await rm(folder, { recursive: true, force: true }); }
  });
+ it('keeps the replay epoch and verified host grant across duplicate stream-state notifications', async()=>{
+  const folder = await mkdtemp(join(tmpdir(), 'sc3-duplicate-obs-state-'));
+  const file = join(folder, 'verified-replay.mkv');
+  try {
+    await writeFile(file, 'synthetic replay fixture');
+    const observed = vi.fn(); obs.onReplaySaved(observed);
+    await obs.connect(); await obs.stream(true);
+    socket().emit('ReplayBufferSaved', { savedReplayPath: file });
+    await vi.waitFor(() => expect(observed).toHaveBeenCalledTimes(1));
+    const id = observed.mock.calls[0][0].sourceEventId;
+    const firstEpoch = obs.streamTransitionEpoch;
+    expect(await obs.withSavedReplayForHost(id, async () => true)).toBe(true);
+    socket().emit('StreamStateChanged', { outputActive: true });
+    expect(obs.streamTransitionEpoch).toBe(firstEpoch);
+    expect(await obs.withSavedReplayForHost(id, async () => true)).toBe(true);
+    await obs.stream(false);
+    expect(obs.streamTransitionEpoch).toBe(firstEpoch + 1);
+    socket().emit('StreamStateChanged', { outputActive: false });
+    expect(obs.streamTransitionEpoch).toBe(firstEpoch + 1);
+    expect(await obs.withSavedReplayForHost(id, async () => true)).toBeUndefined();
+  } finally { await rm(folder, { recursive: true, force: true }); }
+ });
  it('refuses missing, empty, relative and directory replay paths without ever publishing a marker', async()=>{
   const folder = await mkdtemp(join(tmpdir(), 'sc3-invalid-replay-'));
   try {

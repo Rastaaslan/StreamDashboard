@@ -284,6 +284,10 @@
           "kind": "2026-11-05 FIXE F04 concurrent OBS replay and stream-epoch overlap regressions added (2 new tests). Three targeted suites 22 PASS/0 FAIL/0 skipped including temporary Windows SQLite, TypeScript/browser types/security 6750 files and diff PASS. Producer code unchanged, synthetic callback interleaving only, hardware and G3-G5 unqualified."
         },
         {
+          "path": "docs/streamcockpit-3/F04_DUPLICATE_OBS_STREAMSTATE_20261105.md",
+          "kind": "2026-11-05 FIXE: duplicate StreamStateChanged with unchanged outputActive previously advanced OBS replay epoch and revoked private host grant. RED 0 PASS/1 FAIL/21 skipped; now epoch changes only on actual transition or unknown->known, while true stop still revokes grant. Three targeted suites 42 PASS/0 FAIL/0 skipped, TS/browser/security 6750 PASS, diff PASS. Simulated OBS and temporary Windows files only, no physical reception; F04 partial, G2 in_progress, G3-G5 open."
+        },
+        {
           "path": "scripts/streamcockpit-windows-clip-job.cs",
           "kind": "2026-11-02 FIXE compiled-in-test C# Win32 Job Object CREATE_SUSPENDED/Assign/Resume, kill-on-close, process count, idle priority, CPU and memory limits; unsigned native helper not installed"
         },

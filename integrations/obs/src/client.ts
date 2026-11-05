@@ -308,7 +308,20 @@ export class ObsClient {
       if (!this.suppressReconnect) this.schedule();
     });
     on('CurrentProgramSceneChanged', ({ sceneName }) => { if (!this.ready) return; this.state.scene = sceneName; this.notify(); this.scheduleRefresh(); });
-    on('StreamStateChanged', ({ outputActive }) => { if (!this.ready) return; this.replayStreamEpoch++; this.replayHostSources.clear(); this.state.streaming = outputActive; this.state.streamingKnown = true; this.micHealthWatch.updateStream(outputActive); void this.updateMicSubscription(); this.notify(); });
+    on('StreamStateChanged', ({ outputActive }) => {
+      if (!this.ready) return;
+      // Duplicate OBS notifications are not a new live; keep replay grants and
+      // dedup receipts bound to the same authoritative stream epoch.
+      if (!this.state.streamingKnown || this.state.streaming !== outputActive) {
+        this.replayStreamEpoch++;
+        this.replayHostSources.clear();
+      }
+      this.state.streaming = outputActive;
+      this.state.streamingKnown = true;
+      this.micHealthWatch.updateStream(outputActive);
+      void this.updateMicSubscription();
+      this.notify();
+    });
     // InputVolumeMeters is a high-volume event. Do not increment the client's
     // revision or trigger a full OBS refresh for each meter frame.
     client.on('InputVolumeMeters', payload => {
