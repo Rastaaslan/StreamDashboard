@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import {test} from 'node:test';
-import {liveControlState} from '../../apps/mobile/control/live-controls.js';
+import {liveControlState, liveStartBlockReason} from '../../apps/mobile/control/live-controls.js';
 
 /** Production contract is Twitch-only. Legacy dual-platform fixtures archived
  * under docs/legacy-tests, not silently deleted or treated as current behavior.
@@ -99,4 +99,25 @@ test('future cloud snapshots beyond the clock-skew allowance are not trusted',()
   const data=fixture();data.host.platforms.twitch.observedAt=at(now+10_000);
   assert.equal(liveControlState(data,true,now).destinations.twitch.live,null);
   assert.equal(liveControlState(data,true,now).destinations.twitch.canStart,false);
+});
+
+// G2 live-start diagnosis: never relax the OBS/Twitch preconditions to make the button clickable.
+test('explains why start is disabled without changing Twitch-only start authority', () => {
+  assert.equal(liveStartBlockReason(fixture(), true, now), '');
+  assert.match(liveStartBlockReason(fixture(), false, now), /FIXE.*d.connect.e/i);
+  const obsDisconnected=fixture();obsDisconnected.host.state.obs.connected=false;
+  assert.match(liveStartBlockReason(obsDisconnected, true, now), /OBS.*connect/i);
+  const obsUnknown=fixture();obsUnknown.host.state.obs.streamingKnown=false;
+  assert.match(liveStartBlockReason(obsUnknown, true, now), /OBS.*inconnu/i);
+  const twitchStale=fixture();twitchStale.host.platforms.twitch.observedAt=at(now-60_000);
+  assert.match(liveStartBlockReason(twitchStale, true, now), /Twitch.*p.rim./i);
+  const unconfigured=fixture();unconfigured.configuration.outputs.twitch.kind='unconfigured';
+  assert.match(liveStartBlockReason(unconfigured, true, now), /Twitch.*configur/i);
+  const active=fixture();active.host.state.obs.streaming=true;
+  assert.match(liveStartBlockReason(active, true, now), /d.j. en cours/i);
+  const pending=fixture();pending.receipts=[{action:'live.start',status:'running'}];
+  assert.match(liveStartBlockReason(pending, true, now), /commande.*en cours/i);
+  // Every blocked diagnostic must preserve the original fail-closed decision.
+  for (const data of [obsDisconnected, obsUnknown, twitchStale, unconfigured, active, pending])
+    assert.equal(liveControlState(data, true, now).canStartBoth, false);
 });

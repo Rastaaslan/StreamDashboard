@@ -38,3 +38,23 @@ export function liveControlState(data, online, now = Date.now()) {
     heading: !online ? 'Régie déconnectée' : pending ? 'Commande de diffusion en cours' : bothLive ? 'En direct sur Twitch' : anyActive ? 'Diffusion en cours' : unconfirmed ? 'État de diffusion à vérifier' : 'Préparer votre live',
   };
 }
+
+/** Read-only explanation for a blocked Twitch start. Never changes canStartBoth or command authority. */
+export function liveStartBlockReason(data, online, now = Date.now()) {
+  const view = liveControlState(data, online, now);
+  if (view.canStartBoth) return '';
+  if (!online) return 'Régie FIXE déconnectée : aucune commande live possible.';
+  if (view.running) return 'Commande de diffusion déjà en cours : attendre sa confirmation.';
+  if (view.anyActive) return 'Diffusion déjà en cours dans OBS ou Twitch : vérifier avant de redémarrer.';
+  const obs = data?.host?.state?.obs || {};
+  if (!obs.connected) return 'OBS non connecté au FIXE : vérifier la liaison OBS.';
+  if (obs.streamingKnown === false || typeof obs.streaming !== 'boolean')
+    return 'État de diffusion OBS inconnu : attendre une relecture du FIXE.';
+  if (!view.destinations.twitch.configured)
+    return 'Destination Twitch non configurée sur FIXE.';
+  if (view.destinations.twitch.live === null)
+    return 'État Twitch périmé ou absent : actualiser la connexion Twitch.';
+  if (view.destinations.twitch.active === null)
+    return 'État de sortie OBS inconnu : attendre une observation confirmée.';
+  return 'Préflight de diffusion Twitch non confirmé : revérifier la régie.';
+}
