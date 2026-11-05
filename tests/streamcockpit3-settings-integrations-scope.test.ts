@@ -5,15 +5,15 @@ import {readFileSync} from 'node:fs';
 import {renderSettings} from '../apps/mobile/control/settings-view.js';
 
 const esc=(value:unknown)=>String(value??'').replace(/[&<>"']/g,ch=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch]!));
-function render({server='https://fixe.example:48136',online=true,role='mobile',statuses={},observedAt=new Date().toISOString()}:{
- server?:string;online?:boolean;role?:'mobile'|'control'|'stream';statuses?:Record<string,string>;observedAt?:string|null
+function render({server='https://fixe.example:48136',online=true,role='mobile',statuses={},observedAt=new Date().toISOString(),tab='integrations'}:{
+ server?:string;online?:boolean;role?:'mobile'|'control'|'stream';statuses?:Record<string,string>;observedAt?:string|null;tab?:'integrations'|'platforms'
 }={}){
  const data={host:{hostname:'FIXE',settingsRevision:'1',settings:{},state:{
   at:observedAt,
   obs:{inputs:{},scenes:[]},google:{connected:true},twitch:{connected:true},
   controlHub:{integrations:Object.fromEntries(Object.entries(statuses).map(([key,status])=>[key,{status}]))}
  }},configuration:{revision:1,outputs:{twitch:{kind:'unconfigured',name:''}}}};
- return renderSettings({data,server,online,native:role==='mobile',tab:'integrations',device:{role,name:'Test'},
+ return renderSettings({data,server,online,native:role==='mobile',tab,device:{role,name:'Test'},
    localEndpoint:'',deviceExecutor:false,installation:{devices:[]},macroConfigurationError:'',
    knownPairedServer:'',esc,input:()=>'',select:()=>'',check:()=>''});
 }
@@ -49,6 +49,20 @@ it('fails closed on missing, expired or implausibly future host observations eve
  }
  expect(render({statuses})).toMatch(/data-integration-status="discord"[^>]*>[^<]*connecté/i);
 });
+it('Twitch account status is never presented as connected on an offline or stale FIXE',()=>{
+ const stale=new Date(Date.now()-120_000).toISOString();
+ const offline=render({tab:'platforms',role:'control',online:false});
+ const expired=render({tab:'platforms',role:'control',observedAt:stale});
+ const unpaired=render({tab:'platforms',role:'stream',server:'',online:false});
+ for(const html of [offline,expired,unpaired]){
+  expect(html).toMatch(/compte Twitch/i);
+  expect(html).toMatch(/non vérifiable|non joignable|périmé/i);
+  expect(html).not.toContain('Twitch de la régie sélectionnée : connecté');
+ }
+ const fresh=render({tab:'platforms',role:'control'});
+ expect(fresh).toMatch(/Compte Twitch de la régie connecté/i);
+ expect(fresh).toMatch(/droits|autorisations/i);
+});
 it('never copies a provider status or an unknown string into the HTML',()=>{
  const html=render({statuses:{discord:'<img src=x onerror=alert(1)>',streamlabs:'CONNECTING',wizebot:'NOT_SUPPORTED'}});
  expect(html).not.toContain('<img src=x');
@@ -75,6 +89,11 @@ it.skipIf(process.env.SC3_SETTINGS_BROWSER_TEST!=='1')('real Edge 320 px shows u
   for(const key of ['discord','streamlabs','wizebot']){
    expect(await page.locator('[data-integration-status="'+key+'"]').innerText()).toContain('périmé');
   }
+  await page.setContent('<meta name="viewport" content="width=device-width,initial-scale=1"><main>'+render({
+   tab:'platforms',online:true,observedAt:new Date(Date.now()-120_000).toISOString()
+  })+'</main>');
+  expect(await page.locator('[data-twitch-account-status]').innerText()).toContain('périmé');
+  expect(await page.locator('[data-twitch-account-status]').innerText()).not.toContain('régie connecté');
   expect(await page.evaluate(()=>document.documentElement.scrollWidth)).toBeLessThanOrEqual(320);
   expect(network).toEqual([]);expect(errors).toEqual([]);
   await page.close();

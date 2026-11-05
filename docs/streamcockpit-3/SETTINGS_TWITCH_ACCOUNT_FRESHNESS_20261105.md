@@ -1,0 +1,16 @@
+# SETTINGS-P05 — Statut Twitch hôte : ne pas afficher une connexion périmée
+
+**Date :** 2026-11-05, ~22:24 CET. **Machine :** FIXE Windows 11 via Remote Desktop Commander uniquement. **Source :** `streamcockpit/3.0-full-experience`, base `3ba00e3`.
+
+## Préflight et propriété
+PLAN.md, feature-matrix.json, CONTINUITY.md et MIGRATION_TO_FIXE_20261101.md lus. Remote GitHub conforme, pas de lock Git/merge/rebase. QA utilisateur `73a6aae` et OBS seulement observés comme processus ; aucune installation, aucun compte, secret, profil ou OBS/Twitch public modifié. Au démarrage, les 3 sources du mixeur F05, son test et CONTINUITY.md étaient **déjà modifiés par un autre propriétaire** : aucun de ces fichiers n'a été modifié ni indexé par ce lot. Manifeste historique : `lotComplete:true`, `missionDelivered:false`, `publicationAuthorized:false`.
+
+## Défaut et correction
+La page **Paramètres > Twitch** considérait `state.twitch.connected` vrai dès que l'interface indiquait `online`, même avec une observation FIXE de plus de 90 s, une observation future invraisemblable ou sans état communiqué. Cela confondait l'authentification du compte et la disponibilité des droits OAuth / la diffusion en cours. Correction de présentation **lecture seule** dans `apps/mobile/control/settings-view.js` : même horodatage de fraîcheur que Google et les connecteurs intégrés, statut explicitement « non vérifiable » sans régie/connexion/observation fraîche, message « connecté » limité au compte avec droits et diffusion à vérifier. Aucun secret, modèle de compte, route, session ou commande modifiés. L'interface client sans régie conserve son message de raccordement existant.
+
+## Preuves et limites
+- La première tentative RED de la nouvelle assertion : **4 PASS / 1 FAIL / 1 skipped**, mais l'assertion échouait sur une différence de casse « compte Twitch » ; elle ne constitue **pas** une reproduction RED produit valide. Assertion corrigée avant le passage final.
+- Qualification finale : **13 PASS / 0 FAIL / 0 skipped** sur 2 suites Vitest, avec **deux scénarios Edge réels** (topologie 320/390/1366 px et écran des services/Twitch à 320 px), uniquement états/fournisseurs synthétiques. Log `%TEMP%\sc3-settings-twitch-status-green-final-20261105.log`.
+- `npm run build:types` : PASS ; `npm run check:browser-types` : PASS ; `npm run security:check` : PASS (**6761 fichiers**). `git diff --check` : PASS, avertissement de fin de ligne CRLF non bloquant. Journaux `%TEMP%\sc3-settings-twitch-20261105-{types,browser,security}.log`. Revue des deux diffs : UI + test uniquement, pas de build ni package.
+- Cette correction **n'est pas installée** sur la QA `73a6aae` du FIXE ni sur laptop/Android. Elle ne répare **pas** le problème `invalid_client` observé sur une QA utilisateur précédente, ni les identités/pairings ou le démarrage du live. Les profils utilisateur sont hors périmètre et restent intacts. Recevoir sur les trois appareils, et vérifier le vrai compte/fournisseur Google, reste nécessaire.
+- **Statuts inchangés** : F00-F10 partial, G2 in_progress, G3/G4/G5 open. Aucun accord de livraison G0-G5, aucune publication. La continuité déjà modifiée par le propriétaire F05 n'est pas réécrite ici ; intégrer ce reçu une fois sa propriété libérée. La matrice n'est pas promue sans preuve matérielle.
