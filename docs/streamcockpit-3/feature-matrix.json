@@ -662,6 +662,10 @@
         {
           "path": "apps/server/src/streamcockpit-planning-assisted.ts",
           "kind": "2026-11-02 FIXE host rechecks assisted local-only time slot INSIDE serialized planning queue before creating event, using canonical recurrence/imported Google conflict inspector; no remote availability or durable transaction claimed"
+        },
+        {
+          "path": "docs/streamcockpit-3/SETTINGS_OFFLINE_GOOGLE_SCOPE_20261105.md",
+          "kind": "2026-11-05 FIXE Settings: Google connection from stale host snapshots no longer appears connected when selected master is offline; same offline scope labels host vs local settings. RED 5 PASS/2 FAIL; final 20 PASS/0 FAIL/0 skipped incl. 2 Edge tests, TS/browser/security 6757 files/diff PASS. Synthetic host; F06 partial, gates unchanged."
         }
       ],
       "verifiedTests": [
@@ -671,7 +675,8 @@
         "tests/streamcockpit3-planning-integration-browser.test.ts",
         "tests/streamcockpit3-planning-assisted-draft.test.ts",
         "tests/streamcockpit3-planning-assisted-host.test.ts",
-        "tests/streamcockpit3-planning-assistant-browser.test.ts"
+        "tests/streamcockpit3-planning-assistant-browser.test.ts",
+        "tests/streamcockpit3-settings-navigation-browser.test.ts"
       ],
       "hardwareEvidence": [],
       "blockers": [

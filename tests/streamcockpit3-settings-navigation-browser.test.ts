@@ -78,6 +78,39 @@ it('direct settings access retains OBS, Twitch and Google forms and does not dup
  const devices=f.render('devices');expect(devices).toContain('Android Deck');
  expect(devices).toContain('Le modèle décrit une organisation prévue');
 });
+it('selected FIXE Google account is not shown as connected from a stale offline snapshot',()=>{
+ vi.stubGlobal('localStorage',{getItem:()=>null});
+ const stale=fixture({role:'mobile',server:'https://FIXE.test:48136',online:false});
+ stale.data.host.state.google.connected=true;
+ const offline=stale.render('integrations');
+ expect(offline).toContain('Régie indisponible : état du compte Google non vérifiable.');
+ expect(offline).toContain('Régie sélectionnée hors ligne : configuration distante non vérifiée.');
+ expect(offline).not.toContain('Compte Google de la régie connecté');
+ expect(offline).not.toContain('Compte Google de la régie non connecté');
+ const live=fixture({role:'mobile',server:'https://FIXE.test:48136',online:true});
+ live.data.host.state.google.connected=true;
+ expect(live.render('integrations')).toContain('Compte Google de la régie connecté');
+ live.data.host.state.google.connected=false;
+ expect(live.render('integrations')).toContain('Compte Google de la régie non connecté');
+});
+it.skipIf(process.env.SC3_SETTINGS_BROWSER_TEST!=='1')('real Edge 320px shows Google host connection as unknown while FIXE is offline',async()=>{
+ vi.stubGlobal('localStorage',{getItem:()=>null});
+ const f=fixture({role:'mobile',server:'https://FIXE.test:48136',online:false});
+ f.data.host.state.google.connected=true;
+ const browser=await chromium.launch({channel:'msedge',headless:true});
+ try{
+  const page=await browser.newPage({viewport:{width:320,height:780},hasTouch:true});
+  const network:string[]=[];
+  await page.route('**/*',route=>{network.push(route.request().url());return route.abort()});
+  await page.setContent('<meta name="viewport" content="width=device-width,initial-scale=1"><main id="root">'+f.render('integrations')+'</main>');
+  await page.addStyleTag({content:readFileSync('apps/mobile/control/control.css','utf8')});
+  expect(await page.locator('.config-panel [role="status"]').innerText()).toContain('Régie indisponible : état du compte Google non vérifiable.');
+  expect(await page.getByText('Compte Google de la régie connecté',{exact:false}).count()).toBe(0);
+  expect(await page.evaluate(()=>document.documentElement.scrollWidth)).toBeLessThanOrEqual(320);
+  expect(network).toEqual([]);
+  await page.close();
+ }finally{await browser.close()}
+},20000);
 it.skipIf(process.env.SC3_SETTINGS_BROWSER_TEST!=='1')('real Edge responsive settings and Android Plus shortcuts preserve navigation and accessibility',async()=>{
  vi.stubGlobal('localStorage',{getItem:()=>null});
  const browser=await chromium.launch({channel:'msedge',headless:true});

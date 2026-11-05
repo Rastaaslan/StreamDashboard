@@ -82,7 +82,8 @@ export function renderDevicesSettings({
 }
 
 export function settingsScope({ data, device, server, online, esc }) {
-  if (server && online) {
+  if (server) {
+    if (!online) return 'Régie sélectionnée hors ligne : configuration distante non vérifiée. Navigation et stockage restent locaux ; aucune deuxième régie OBS.';
     return `Régie sélectionnée : ${esc(data.host.hostname || 'FIXE')}. Les réglages de régie ciblent cet agent ; les comptes et secrets locaux restent sur leur appareil.`;
   }
   if (device?.role === 'control') {
