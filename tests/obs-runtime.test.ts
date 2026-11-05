@@ -389,3 +389,38 @@ describe('confirmed replay saves',()=>{
   const first=obs.saveReplay();await expect(obs.saveReplay()).rejects.toThrow('déjà en cours');await expect(first).rejects.toMatchObject({name:'ACTION_UNCERTAIN'});expect(dispatched).toBe(true);
  });
 });
+
+it.skipIf(process.platform !== 'win32')('F04 direct replay save never probes UNC/device/ADS paths after an OBS acknowledgement', async () => {
+  // The passive ReplayBufferSaved observer already rejects these paths.
+  // Exercise the separate explicit SaveReplayBuffer acknowledgement/polling path.
+  const paths = [
+    '\\\\untrusted-host\\share\\replay.mkv',
+    '\\\\?\\C:\\recordings\\replay.mkv',
+    'C:\\recordings\\replay.mkv:alternate',
+  ];
+  replayFileGate.forbiddenProbe = true;
+  for (const savedReplayPath of paths) {
+    await obs.connect();
+    const original = socket().call.getMockImplementation()!;
+    let lastReplayReads = 0;
+    socket().call.mockImplementation(async (type, args) => {
+      if (type === 'GetReplayBufferStatus') return { outputActive: true };
+      if (type === 'GetLastReplayBufferReplay') {
+        // End the fake connection on the first polling read: no 10 s timeout.
+        if (++lastReplayReads === 2) socket().emit('ConnectionClosed');
+        return { savedReplayPath: 'prior.mkv' };
+      }
+      if (type === 'SaveReplayBuffer') {
+        socket().emit('ReplayBufferSaved', { savedReplayPath });
+        return {};
+      }
+      return original(type, args);
+    });
+    await expect(obs.saveReplay()).rejects.toMatchObject({ name: 'ACTION_UNCERTAIN' });
+    expect(lastReplayReads).toBe(2);
+    expect(socket().call.mock.calls.filter(([type]) => type === 'SaveReplayBuffer')).toHaveLength(1);
+    await obs.close();
+    obs = new ObsClient();
+  }
+  expect(replayFileGate.unsafeProbes).toEqual([]);
+});

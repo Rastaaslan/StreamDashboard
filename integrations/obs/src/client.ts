@@ -147,7 +147,7 @@ export class ObsClient {
       // relative, directory or symlink path must never be reported as success.
       // Keep polling within the existing bound: never issue SaveReplayBuffer twice.
       const verifiedFile = async (candidate: string): Promise<boolean> => {
-        if (!candidate || !isAbsolute(candidate)) return false;
+        if (!localReplayFilePath(candidate)) return false;
         try {
           const file = await lstat(candidate);
           return file.isFile() && !file.isSymbolicLink() && file.size > 0;

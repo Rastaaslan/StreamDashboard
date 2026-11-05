@@ -264,6 +264,10 @@
       "acceptance": "Marqueurs OBS/Twitch, sauvegarde du tampon OBS et clips Twitch simples : permissions, horodatage, reçus exacts et parcours Desktop/Android ; sans montage ni transcodage.",
       "evidence": [
         {
+          "path": "docs/streamcockpit-3/F04_DIRECT_SAVE_LOCAL_PATH_20261105.md",
+          "kind": "2026-11-05 RDC FIXE F04: explicit SaveReplayBuffer verification (separate from passive ReplayBufferSaved observer) formerly probed UNC/device/NTFS ADS paths with lstat. RED 56 PASS/1 FAIL/2 skipped across default F04 test selection, intercept confirmed 3 unsafe metadata probes; fix reuses localReplayFilePath before lstat. Corrected obs-runtime 24 PASS/0 FAIL/0 skipped and final 3-suite run 42 PASS/0 FAIL/0 skipped, TypeScript/browser types/security 6750 files/diff-check PASS. Synthetic OBS socket and interception only; no physical network access, real OBS replay, hardware qualification or installation. F04 partial, G2 in_progress, G3-G5 open."
+        },
+        {
           "path": "docs/streamcockpit-3/F04_HOST_AUTHORITY_REVOKED_FINAL_AWAIT_20261105.md",
           "kind": "2026-11-05 RDC FIXE F04: closing final async session-read race with revoked FIXE host authority before an OBS replay journal write. RED 14 PASS/1 FAIL/0 skipped; fixed 46 PASS/0 FAIL/0 skipped across 3 targeted Vitest suites, TypeScript/browser types PASS, security 6750 files PASS, diff-check PASS. Reserved event remains non-retryable after authority returns. Synthetic OBS state and temporary Windows SQLite only; no real OBS/hardware proof, F04 partial/G2 in_progress/G3-G5 open."
         },
