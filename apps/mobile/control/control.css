@@ -222,3 +222,12 @@ html:not(.compact-app) [data-planning-assistant] .planning-assist-slots button {
 @media(max-width:700px){nav>.cockpit-nav-group{display:none}}
 
 .compact-app aside nav>.cockpit-nav-group{display:none!important}
+
+/* Settings 3.0: keep the master, client and Android Deck roles distinct. */
+.settings-topology-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,225px),1fr));gap:12px;margin:16px 0}
+.settings-device-card{min-width:0;border:1px solid var(--line);background:#211c2d;border-radius:12px;padding:16px}
+.settings-device-card h3{color:#efe3ff;margin-bottom:10px}
+.settings-device-card p{overflow-wrap:anywhere;margin:7px 0}
+.settings-device-card button{font-size:12px;width:100%;margin-top:10px}
+.settings-primary-actions{justify-content:flex-start}
+.settings-advanced>.form-grid{margin-top:10px}

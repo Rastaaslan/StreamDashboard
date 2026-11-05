@@ -711,9 +711,14 @@
         {
           "path": "apps/mobile/control/streamcockpit-master-context.js",
           "kind": "SC3-FINAL-DELIVERY-001: master OBS notification provenance, authenticated paired-controller role, existing deterministic selector, fixed scene/game/state banks, 12-second actor/context proof and existing durable action journal; 129 targeted tests PASS including real DashboardServer and Edge 320px. No physical Android/laptop qualification."
+        },
+        {
+          "path": "apps/mobile/control/settings-simplified.js",
+          "kind": "2026-11-05 FIXE Settings UX: FIXE/laptop/Android Deck topologies displayed distinctly; Double-PC preset is not an Android pairing grant; no second OBS writer or token migration. 25 targeted PASS including Edge 320/390/1366 px, TS/browser/security 6755 files PASS. Installed QA 73a6aae unchanged; no Android/G3/G4 reception. See SETTINGS_UX_ANDROID_DECK_20261105.md."
         }
       ],
       "verifiedTests": [
+        "tests/streamcockpit3-settings-topology-browser.test.ts",
         "tests/streamcockpit3-context.test.ts",
         "tests/streamcockpit3-context-integration.test.ts",
         "tests/streamcockpit3-context-integration-browser.test.ts",

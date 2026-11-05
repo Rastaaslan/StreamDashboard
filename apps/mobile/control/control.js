@@ -533,7 +533,7 @@ const floatingMic=createFloatingMicBattery($('#floating-mic-battery'),{
  },
 });
 
-function settingsPage(){if(native&&!server&&tab==='obs')tab='platforms';return renderSettings({data,native,server,tab,online,device,localEndpoint,deviceExecutor,macroConfigurationError,esc,input,select,check});}
+function settingsPage(){if(native&&!server&&tab==='obs')tab='platforms';return renderSettings({data,native,server,tab,online,device,localEndpoint,deviceExecutor,macroConfigurationError,installation:installationUI.current,knownPairedServer:localStorage.getItem('sd2.server')||'',esc,input,select,check});}
 
 function render({passive=false}={}){
  if(passive&&(pointerHeld||dialog.open||editingForm($('#content')))){shell();if(!online){healthPage?.unavailable();mixerPage?.unavailable();momentsPage?.unavailable();contextDeck?.unavailable();}return;}

@@ -18,7 +18,7 @@ export async function createInstallationUI({ device, native, localEndpoint = '',
   function open() {
     pending = undefined;
     const device = own();
-    modal(`<h2>Mon installation</h2><p>Une application commune. Les rôles indiquent ce que cet appareil exécute.</p><form id="installation-form" data-revision="${current.revision}">
+    modal(`<h2>Mon installation</h2><p>Une application commune. Les rôles indiquent ce que cet appareil exécute. Un modèle « Double-PC + Android Deck » décrit le matériel souhaité : il ne connecte pas automatiquement le téléphone. Associez Android directement à FIXE, sans ajouter de seconde régie OBS.</p><form id="installation-form" data-revision="${current.revision}">
       <label>Installation<select name="preset">${Object.entries(SETUPS).map(([id,label])=>`<option value="${id}" ${id===current.preset?'selected':''}>${esc(label)}</option>`).join('')}</select></label>
       <label>Nom de cet appareil<input name="name" value="${esc(device.name)}" required maxlength="80"></label>
       <fieldset><legend>Responsabilités sur cet appareil</legend>${Object.entries(ROLES).map(([id,label])=>`<label class="check"><input type="checkbox" name="role-${id}" ${device.roles.includes(id)?'checked':''} ${id==='obs-executor'&&!device.capabilities.includes('obs')?'disabled':''}> ${esc(label)}</label>`).join('')}</fieldset>
