@@ -61,6 +61,14 @@
         {
           "path": "apps/mobile/control/control.js",
           "kind": "2026-11-02 FIXE F00: invalidates read-only master clock on visibility/BFCache, pairing/workspace changes and failed sync; in-flight GET must retain the pre-request revision before rearming; resume performs fresh host sync"
+        },
+        {
+          "path": "apps/mobile/control/settings-view.js",
+          "kind": "2026-11-05 FIXE SETTINGS-P01: preserve saved OBS scene and microphone selection when disconnected or undetected; synthetic DOM + real Edge, no OBS hardware or account validation"
+        },
+        {
+          "path": "docs/streamcockpit-3/SETTINGS_OBS_SELECT_PRESERVATION_20261105.md",
+          "kind": "2026-11-05 owner/configuration mapping and fail-safe Settings UX evidence; no G2/G3 gate promotion"
         }
       ],
       "verifiedTests": [
@@ -74,7 +82,9 @@
         "tests/streamcockpit-timer-authority.test.ts",
         "tests/streamcockpit3-master-clock.test.ts",
         "tests/streamcockpit3-master-clock-browser.test.ts",
-        "tests/streamcockpit3-master-clock-resume.test.ts"
+        "tests/streamcockpit3-master-clock-resume.test.ts",
+        "tests/streamcockpit3-settings-preserve-options.test.ts",
+        "tests/streamcockpit3-desktop-settings-role.test.ts"
       ],
       "hardwareEvidence": [],
       "blockers": [
