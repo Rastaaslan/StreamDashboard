@@ -19,6 +19,24 @@ function localReplayFilePath(file: unknown): file is string {
     !Array.from(part).some(char => char.charCodeAt(0) < 32));
 }
 
+/** Never inspect a replay through an NTFS junction/symlink ancestor. Checking
+ * the leaf alone follows parent reparse points (including redirected folders).
+ * This is fail-closed metadata evidence, not a race-free descriptor grant. */
+async function localReplayFileStat(file: unknown) {
+  if (!localReplayFilePath(file)) return undefined;
+  if (process.platform === 'win32') {
+    const root = win32.parse(file).root;
+    let parent = root;
+    for (const part of file.slice(root.length).split(/[\\/]/).slice(0, -1)) {
+      parent = win32.join(parent, part);
+      const metadata = await lstat(parent);
+      if (!metadata.isDirectory() || metadata.isSymbolicLink()) return undefined;
+    }
+  }
+  const metadata = await lstat(file);
+  return metadata.isFile() && !metadata.isSymbolicLink() && metadata.size > 0 ? metadata : undefined;
+}
+
 function friendlyError(error: unknown) {
   const message = error instanceof Error ? error.message : String(error);
   if ((error as { code?: number } | null)?.code === 4009 || /authentication|required|identified/i.test(message)) return 'Mot de passe OBS incorrect ou manquant.';
@@ -147,11 +165,8 @@ export class ObsClient {
       // relative, directory or symlink path must never be reported as success.
       // Keep polling within the existing bound: never issue SaveReplayBuffer twice.
       const verifiedFile = async (candidate: string): Promise<boolean> => {
-        if (!localReplayFilePath(candidate)) return false;
-        try {
-          const file = await lstat(candidate);
-          return file.isFile() && !file.isSymbolicLink() && file.size > 0;
-        } catch { return false; }
+        try { return Boolean(await localReplayFileStat(candidate)); }
+        catch { return false; }
       };
       for (let n = 0; n < 40; n++) {
         if (generation !== this.generation) throw new Error('Connexion OBS interrompue pendant la sauvegarde.');
@@ -353,8 +368,7 @@ export class ObsClient {
           !localReplayFilePath(savedReplayPath)) return;
       const connectionGeneration = this.generation, streamEpoch = this.replayStreamEpoch, observedAt = Date.now();
       void (async () => {
-        const file = await lstat(savedReplayPath);
-        if (!file.isFile() || file.isSymbolicLink() || file.size <= 0) return;
+        if (!await localReplayFileStat(savedReplayPath)) return;
         // A disconnect, stop or reconnect while NTFS/network metadata was read
         // invalidates the event. No retry or backfill of a missed observation.
         if (!this.ready || !this.state.connected || !this.state.streamingKnown || !this.state.streaming ||

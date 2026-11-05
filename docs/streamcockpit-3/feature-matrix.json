@@ -498,6 +498,10 @@
         {
           "path": "apps/server/src/streamcockpit-clipforge-windows-staging.ts",
           "kind": "2026-11-03 FIXE host-only NTFS replay staging with UNKNOWN intent and private-root ACL; SHA source plus independent throttled 8 MiB/s SHA-256 re-read of staged bytes, compare NTFS file ID/dev and size/timestamps to descriptor of original copy, reject changed destination with UNKNOWN/DEST_CHANGED and never retry; 11/11 Windows staging fixture tests, 11 PASS/1 skipped replay grant + ACL, TypeScript/browser/security 897 files PASS. Synthetic only: no encode/API/UX; NTFS power-loss directory durability and adversarial races unqualified."
+        },
+        {
+          "path": "integrations/obs/src/client.ts",
+          "kind": "2026-11-05 RDC FIXE F04: a real temporary NTFS junction demonstrated that direct lstat of an apparently local replay child can cross a redirected ancestor. Shared localReplayFileStat now rejects junction/symlink ancestors before leaf metadata probes in both ReplayBufferSaved and explicit saveReplay; one SaveReplayBuffer maximum and uncertain receipt preserved. RED 0 PASS/1 FAIL/24 skipped; final three focused suites 43 PASS/0 FAIL/0 skipped; TS/browser-types and security 6750 files PASS, git diff --check PASS. Evidence docs/streamcockpit-3/F04_REPLAY_NTFS_ANCESTOR_FENCE_20261105.md; no real OBS/hardware or guarantee against all NTFS reparse/mapped drive/TOCTOU; F04 partial/G2 in_progress/G3-G5 open."
         }
       ],
       "historicalDeferredTests": [

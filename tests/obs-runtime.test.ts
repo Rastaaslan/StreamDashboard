@@ -1,14 +1,15 @@
 import { EventEmitter } from 'node:events';
-import { mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { mkdtemp, rm, symlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const replayFileGate = vi.hoisted(() => ({ wait: null as Promise<void> | null, entered: false,
-  forbiddenProbe: false, unsafeProbes: [] as string[] }));
+  forbiddenProbe: false, unsafeProbes: [] as string[], probedPaths: [] as string[] }));
 vi.mock('node:fs/promises', async (importOriginal) => {
   const real = await importOriginal<typeof import('node:fs/promises')>();
   return { ...real, lstat: async (...args: Parameters<typeof real.lstat>) => {
+    replayFileGate.probedPaths.push(String(args[0]));
     if (replayFileGate.forbiddenProbe) {
       replayFileGate.unsafeProbes.push(String(args[0]));
       throw Error('TEST_BLOCKED_UNSAFE_FILESYSTEM_PROBE');
@@ -51,7 +52,7 @@ const { attestWindowsObsReplaySource } = await import('../apps/server/src/stream
 let obs: InstanceType<typeof ObsClient>;
 const socket = () => sockets.at(-1)!;
 beforeEach(() => { vi.useFakeTimers(); replayFileGate.wait = null; replayFileGate.entered = false;
-  replayFileGate.forbiddenProbe = false; replayFileGate.unsafeProbes.length = 0;
+  replayFileGate.forbiddenProbe = false; replayFileGate.unsafeProbes.length = 0; replayFileGate.probedPaths.length = 0;
   sockets.length = 0; available = true; obs = new ObsClient(); });
 afterEach(async () => { await obs.close(); vi.useRealTimers(); });
 
@@ -278,6 +279,44 @@ describe('confirmed replay saves',()=>{
     expect(obs.streamTransitionEpoch).toBe(firstEpoch + 1);
     expect(await obs.withSavedReplayForHost(id, async () => true)).toBeUndefined();
   } finally { await rm(folder, { recursive: true, force: true }); }
+ });
+ it.skipIf(process.platform !== 'win32')('F04 refuses replay under an NTFS junction before inspecting its target', async()=>{
+  const root = await mkdtemp(join(tmpdir(), 'sc3-replay-reparse-'));
+  const target = join(root, 'actual'), linked = join(root, 'linked');
+  const clip = join(linked, 'clip.mkv');
+  try {
+    const { mkdir } = await import('node:fs/promises');
+    await mkdir(target);
+    await writeFile(join(target, 'clip.mkv'), 'simulated replay');
+    await symlink(target, linked, 'junction');
+    const observed = vi.fn();
+    obs.onReplaySaved(observed);
+    await obs.connect(); await obs.stream(true);
+    socket().emit('ReplayBufferSaved', { savedReplayPath: clip });
+    await vi.advanceTimersByTimeAsync(180);
+    expect(observed).not.toHaveBeenCalled();
+    expect(replayFileGate.probedPaths).not.toContain(clip);
+    // The explicit SaveReplayBuffer path must share the exact same fence.
+    replayFileGate.probedPaths.length = 0;
+    const original = socket().call.getMockImplementation()!;
+    let reads = 0;
+    socket().call.mockImplementation(async (type, args) => {
+      if (type === 'GetReplayBufferStatus') return { outputActive: true };
+      if (type === 'GetLastReplayBufferReplay') {
+        if (++reads === 2) socket().emit('ConnectionClosed');
+        return { savedReplayPath: 'previous.mkv' };
+      }
+      if (type === 'SaveReplayBuffer') {
+        socket().emit('ReplayBufferSaved', { savedReplayPath: clip });
+        return {};
+      }
+      return original(type, args);
+    });
+    await expect(obs.saveReplay()).rejects.toMatchObject({name:'ACTION_UNCERTAIN'});
+    expect(reads).toBe(2);
+    expect(replayFileGate.probedPaths).not.toContain(clip);
+    expect(socket().call.mock.calls.filter(([type]) => type === 'SaveReplayBuffer')).toHaveLength(1);
+  } finally { await rm(root, { recursive:true, force:true }); }
  });
  it('refuses missing, empty, relative and directory replay paths without ever publishing a marker', async()=>{
   const folder = await mkdtemp(join(tmpdir(), 'sc3-invalid-replay-'));
