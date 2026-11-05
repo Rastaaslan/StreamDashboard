@@ -39,7 +39,9 @@ describe('StreamCockpit 3.0 offline release artifact verification', () => {
   });
 
   it('refuses zero, multiple or wrong APK signer digests even when text mentions success', () => {
-    const one = 'Verifies\nSigner #1 certificate SHA-256 digest: ' + 'b'.repeat(64) + '\n';
+    const one = 'Verifies\nVerified using v1 scheme (JAR signing): true\n' +
+      'Verified using v2 scheme (APK Signature Scheme v2): true\n' +
+      'Signer #1 certificate SHA-256 digest: ' + 'b'.repeat(64) + '\n';
     expect(checkApkSignerOutput(one, 'b'.repeat(64))).toBe(true);
     for (const message of [
       'Verifies\n',
@@ -47,6 +49,26 @@ describe('StreamCockpit 3.0 offline release artifact verification', () => {
       one.replace('b'.repeat(64), 'a'.repeat(64)),
     ]) expect(() => checkApkSignerOutput(message, 'b'.repeat(64)))
       .toThrow('SC3_ARTIFACT_ANDROID_SIGNER_MISMATCH');
+  });
+
+  it('refuses an APK signed only with v1 even if apksigner says Verifies and its certificate is pinned', () => {
+    const digest = 'Signer #1 certificate SHA-256 digest: ' + 'b'.repeat(64) + '\n';
+    const v1Only = 'Verifies\nVerified using v1 scheme (JAR signing): true\n' +
+      'Verified using v2 scheme (APK Signature Scheme v2): false\n' +
+      'Verified using v3 scheme (APK Signature Scheme v3): false\n' + digest;
+    expect(() => checkApkSignerOutput(v1Only, 'b'.repeat(64)))
+      .toThrow('SC3_ARTIFACT_ANDROID_STRONG_SCHEME_MISSING');
+  });
+
+  it('accepts v3 signing but rejects an unconfirmed or mismatched strong-scheme claim', () => {
+    const cert = 'Signer #1 certificate SHA-256 digest: ' + 'b'.repeat(64) + '\n';
+    const v3 = 'Verifies\nVerified using v2 scheme (APK Signature Scheme v2): false\n' +
+      'Verified using v3 scheme (APK Signature Scheme v3): true\n' + cert;
+    expect(checkApkSignerOutput(v3, 'b'.repeat(64))).toBe(true);
+    expect(() => checkApkSignerOutput(v3.replace('Verifies\n', ''), 'b'.repeat(64)))
+      .toThrow('SC3_ARTIFACT_ANDROID_VERIFY_UNCONFIRMED');
+    expect(() => checkApkSignerOutput(v3.replace('APK Signature Scheme v3', 'APK Signature Scheme v2'), 'b'.repeat(64)))
+      .toThrow('SC3_ARTIFACT_ANDROID_STRONG_SCHEME_MISSING');
   });
 
   it('rejects a missing manifest before any packaging or provider call', () => {

@@ -98,6 +98,11 @@ export function checkApkSignerOutput(output, expectedSha256) {
     .filter(Boolean);
   if (matches.length !== 1 || matches[0][1].toLowerCase() !== expectedSha256)
     fail('ANDROID_SIGNER_MISMATCH');
+  // A pinned certificate is not sufficient: a v1-only APK may still print
+  // "Verifies". G4 requires a verified APK Signature Scheme v2 or v3.
+  if (!/^Verifies[ \t]*$/mi.test(output)) fail('ANDROID_VERIFY_UNCONFIRMED');
+  if (!/^Verified using (v[23]) scheme \(APK Signature Scheme \1\): true[ \t]*$/mi.test(output))
+    fail('ANDROID_STRONG_SCHEME_MISSING');
   return true;
 }
 
@@ -108,8 +113,6 @@ function verifyAndroidSignature(file, expectedSha256, apksignerJar) {
       !/\.jar$/i.test(apksignerJar) || !existsSync(apksignerJar))
     fail('APKSIGNER_MISSING');
   const output = command('java', ['-jar', apksignerJar, 'verify', '--verbose', '--print-certs', file]);
-  if (!/Verifies\s*$/mi.test(output) && !/Verified using v[234] scheme \(APK Signature Scheme v[234]\): true/mi.test(output))
-    fail('ANDROID_VERIFY_UNCONFIRMED');
   checkApkSignerOutput(output, expectedSha256);
 }
 

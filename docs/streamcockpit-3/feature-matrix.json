@@ -1035,6 +1035,10 @@
         {
           "path": "apps/desktop/src/streamcockpit-upgrade-qa-checkpoint.ts",
           "kind": "2026-11-03 F10 isolated QA-only Windows filesystem checkpoint and fresh-directory restore: 6 new test cases verify SHA-256 bytes, binary/SQLite, tamper, path traversal, and no overwrites. No production installer/rollback or power-loss guarantee."
+        },
+        {
+          "path": "scripts/streamcockpit3-artifact-verifier.mjs",
+          "kind": "2026-11-05 FIXE G4 fail-closed Android apksigner output guard: v1-only APK with a pinned certificate is rejected unless a confirmed v2/v3 scheme is verified. Synthetic parser evidence only; no release signing, installed device or complete G4 verification."
         }
       ],
       "verifiedTests": [
@@ -1044,7 +1048,8 @@
         "tests/streamcockpit3-readiness.test.ts",
         "tests/desktop-updater-safety.test.ts",
         "tests/desktop-restart-safety.test.ts",
-        "tests/streamcockpit3-upgrade-qa-checkpoint.test.ts"
+        "tests/streamcockpit3-upgrade-qa-checkpoint.test.ts",
+        "tests/streamcockpit3-artifact-verifier.test.ts"
       ],
       "hardwareEvidence": [],
       "blockers": [
