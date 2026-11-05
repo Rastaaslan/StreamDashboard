@@ -32,6 +32,14 @@ describe('StreamCockpit 3.0 offline release artifact verification', () => {
     ]) expect(() => validateArtifactManifest(changed)).toThrow('SC3_ARTIFACT_MANIFEST_INVALID');
   });
 
+  it('rejects NTFS alternate-data-stream manifest paths, even with valid exe/apk suffixes', () => {
+    for (const changed of [
+      { ...valid, windows: { ...valid.windows, file: String.raw`C:\SC3\StreamCockpit.exe:payload.exe` } },
+      { ...valid, android: { ...valid.android, file: String.raw`C:\SC3\StreamCockpit.apk:shadow.apk` } },
+      { ...valid, windows: { ...valid.windows, file: String.raw`C:/SC3/StreamCockpit.exe:payload.exe` } },
+    ]) expect(() => validateArtifactManifest(changed)).toThrow('SC3_ARTIFACT_MANIFEST_INVALID');
+  });
+
   it('requires trusted independent signer pins (never a self-attested manifest signer)', () => {
     expect(checkPinnedCerts(pins)).toEqual({
       windowsThumbprint: 'A'.repeat(40), androidCertSha256: 'b'.repeat(64),

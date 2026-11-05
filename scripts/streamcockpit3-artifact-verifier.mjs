@@ -15,6 +15,9 @@ const manifestAbsolute = value => typeof value === 'string' &&
   // On Windows path.isAbsolute() accepts UNC shares and device namespaces.
   // Release bundles must be local drive files, never network/device paths.
   !/^[\\/]{2}/.test(value) &&
+  // Windows permits alternate data streams after a second colon. A release
+  // manifest must designate an ordinary EXE/APK file, never an NTFS stream.
+  !(/^[A-Za-z]:[\\/]/.test(value) && value.slice(2).includes(':')) &&
   (/^[A-Za-z]:[\\/]/.test(value) || (process.platform !== 'win32' && isAbsolute(value)));
 const exactKeys = (obj, names) => obj && typeof obj === 'object' && !Array.isArray(obj) &&
   Object.keys(obj).sort().join(',') === [...names].sort().join(',');

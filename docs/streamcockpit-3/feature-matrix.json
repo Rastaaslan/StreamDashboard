@@ -1043,6 +1043,10 @@
         {
           "path": "docs/streamcockpit-3/G4_ARTIFACT_LOCAL_PATH_GUARD_20261105.md",
           "kind": "2026-11-05 FIXE: Windows manifest validation now rejects UNC/device/root-relative release paths after RED regression; 7 targeted PASS, TypeScript/browser/security PASS, no signing or hardware qualification. F10/G4 unchanged."
+        },
+        {
+          "path": "docs/streamcockpit-3/G4_NTFS_ADS_MANIFEST_GUARD_20261105.md",
+          "kind": "2026-11-05 FIXE G4: fail-closed Windows NTFS alternate-data-stream filenames refused by manifest schema; RED 7 PASS/1 FAIL, final 11 PASS/0 FAIL, types/browser/security PASS. Path-string test only; no signed release, hardware acceptance, provenance or rollback evidence."
         }
       ],
       "verifiedTests": [
