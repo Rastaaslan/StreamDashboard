@@ -67,6 +67,9 @@ export class ObsReplayMomentProducer {
     const second = await this.options.activeSessionId();
     if (first !== second || !valid()) return 'ignored';
     try { momentIdentifier(second); } catch { return 'ignored'; }
+    // Host authority can be revoked while the second session read is pending.
+    // Revalidate it after that await, directly before the journal write.
+    if (!await this.options.hostEligible() || !valid()) return 'ignored';
     await this.options.record({
       sessionId: second,
       source: 'obs', status: 'observed', instant: event.observedAt,

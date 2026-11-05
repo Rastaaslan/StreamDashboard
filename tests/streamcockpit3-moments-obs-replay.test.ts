@@ -111,6 +111,22 @@ it('drops the event if the authoritative FIXE session changed during checks', as
   expect(f.record).not.toHaveBeenCalled();
 });
 
+it('refuses a replay when FIXE host ownership is revoked during the final session lookup', async () => {
+  const f = fixture();
+  f.activeSessionId.mockImplementationOnce(async () => 'unplanned_1')
+    .mockImplementationOnce(async () => {
+      // The session identifier stays the same, but the host is no longer eligible.
+      f.host(false);
+      return 'unplanned_1';
+    });
+  expect(await f.producer.observe(event)).toBe('ignored');
+  expect(f.record).not.toHaveBeenCalled();
+  f.host(true);
+  // The first attempt was reserved before revocation; no silent second write.
+  expect(await f.producer.observe(event)).toBe('ignored');
+  expect(f.record).not.toHaveBeenCalled();
+});
+
 it('never silently retries an uncertain SQLite write, even after a duplicate notification', async () => {
   const f = fixture();
   f.record.mockRejectedValueOnce(new Error('MOMENTS_WRITE_UNCERTAIN'));
