@@ -104,7 +104,7 @@ it.skipIf(process.env.SC3_SETTINGS_BROWSER_TEST!=='1')('real Edge 320px shows Go
   await page.route('**/*',route=>{network.push(route.request().url());return route.abort()});
   await page.setContent('<meta name="viewport" content="width=device-width,initial-scale=1"><main id="root">'+f.render('integrations')+'</main>');
   await page.addStyleTag({content:readFileSync('apps/mobile/control/control.css','utf8')});
-  expect(await page.locator('.config-panel [role="status"]').innerText()).toContain('Régie indisponible : état du compte Google non vérifiable.');
+  expect(await page.locator('.config-panel section:first-of-type [role="status"]').innerText()).toContain('Régie indisponible : état du compte Google non vérifiable.');
   expect(await page.getByText('Compte Google de la régie connecté',{exact:false}).count()).toBe(0);
   expect(await page.evaluate(()=>document.documentElement.scrollWidth)).toBeLessThanOrEqual(320);
   expect(network).toEqual([]);
