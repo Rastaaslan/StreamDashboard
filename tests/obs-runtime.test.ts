@@ -4,10 +4,15 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-const replayFileGate = vi.hoisted(() => ({ wait: null as Promise<void> | null, entered: false }));
+const replayFileGate = vi.hoisted(() => ({ wait: null as Promise<void> | null, entered: false,
+  forbiddenProbe: false, unsafeProbes: [] as string[] }));
 vi.mock('node:fs/promises', async (importOriginal) => {
   const real = await importOriginal<typeof import('node:fs/promises')>();
   return { ...real, lstat: async (...args: Parameters<typeof real.lstat>) => {
+    if (replayFileGate.forbiddenProbe) {
+      replayFileGate.unsafeProbes.push(String(args[0]));
+      throw Error('TEST_BLOCKED_UNSAFE_FILESYSTEM_PROBE');
+    }
     if (replayFileGate.wait) { replayFileGate.entered = true; await replayFileGate.wait; }
     return real.lstat(...args);
   } };
@@ -45,7 +50,9 @@ const { ObsClient } = await import('../integrations/obs/src/client.js');
 const { attestWindowsObsReplaySource } = await import('../apps/server/src/streamcockpit-clipforge-windows-replay-grant.js');
 let obs: InstanceType<typeof ObsClient>;
 const socket = () => sockets.at(-1)!;
-beforeEach(() => { vi.useFakeTimers(); replayFileGate.wait = null; replayFileGate.entered = false; sockets.length = 0; available = true; obs = new ObsClient(); });
+beforeEach(() => { vi.useFakeTimers(); replayFileGate.wait = null; replayFileGate.entered = false;
+  replayFileGate.forbiddenProbe = false; replayFileGate.unsafeProbes.length = 0;
+  sockets.length = 0; available = true; obs = new ObsClient(); });
 afterEach(async () => { await obs.close(); vi.useRealTimers(); });
 
 describe('OBS runtime resilience', () => {
@@ -179,6 +186,22 @@ it('includes global OBS audio devices even outside scene items', async () => {
 
 
 describe('confirmed replay saves',()=>{
+ it.skipIf(process.platform!=='win32')('rejects unsafe OBS replay paths before any network or NTFS metadata probe',async()=>{
+  const observed=vi.fn();obs.onReplaySaved(observed);
+  await obs.connect();await obs.stream(true);
+  replayFileGate.forbiddenProbe=true;
+  for(const savedReplayPath of [
+    '\\\\attacker\\share\\replay.mkv',
+    '\\\\?\\C:\\recordings\\replay.mkv',
+    '\\\\.\\C:\\recordings\\replay.mkv',
+    'C:\\recordings\\replay.mkv:alt',
+    'C:\\recordings\\replay.mkv\\..\\other.mkv',
+    'C:\\recordings\\replay.mkv' + String.fromCharCode(0) + 'x',
+  ]) socket().emit('ReplayBufferSaved',{savedReplayPath});
+  await Promise.resolve();
+  expect(replayFileGate.unsafeProbes).toEqual([]);
+  expect(observed).not.toHaveBeenCalled();
+ });
  it.skipIf(process.platform!=='win32')('offers a bounded HMAC-bound replay source ONLY to the host for read-only F04 attestation',async()=>{
   const root=await mkdtemp(join(tmpdir(),'sc3-f04-obs-host-'));
   const file=join(root,'obs_replay_clip.mkv');

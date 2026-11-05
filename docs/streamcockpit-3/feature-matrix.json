@@ -264,6 +264,10 @@
       "acceptance": "Marqueurs OBS/Twitch, sauvegarde du tampon OBS et clips Twitch simples : permissions, horodatage, reçus exacts et parcours Desktop/Android ; sans montage ni transcodage.",
       "evidence": [
         {
+          "path": "docs/streamcockpit-3/F04_OBS_SAVED_LOCAL_PATH_GATE_20261105.md",
+          "kind": "2026-11-05 FIXE F04: prevent OBS ReplayBufferSaved UNC/device/NTFS ADS paths from reaching Windows lstat; RED 0 PASS/1 FAIL/22 skipped (intercepted, no real network), final targeted 43 PASS/0 FAIL/0 skipped; TypeScript/browser/security 6750/diff PASS. Simulated OBS and NTFS fixture only, no real replay/Android validation. F04 partial and G2 in_progress."
+        },
+        {
           "path": "apps/server/src/replay-auto-start.ts",
           "kind": "existing partial implementation only"
         },

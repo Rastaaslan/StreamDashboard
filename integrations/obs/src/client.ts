@@ -1,11 +1,23 @@
 import OBSWebSocket, { EventSubscription } from 'obs-websocket-js';
 import { createHmac, randomBytes } from 'node:crypto';
 import { lstat } from 'node:fs/promises';
-import { isAbsolute } from 'node:path';
+import { isAbsolute, win32 } from 'node:path';
 import { MicHealthWatch } from './mic-health.js';
 import { AitumSuiteOutputs } from './aitum-suite.js';
 import { isObsRequestRejection, uncertainOutput } from './output-result.js';
 import type { ObsState } from '../../../packages/contracts/src/index.js';
+
+// ReplayBufferSaved paths originate in OBS websocket payloads. Do not touch
+// UNC/device/ADS locations (nor trigger network authentication) before the
+// host-only F04 source attestation can establish authority and provenance.
+function localReplayFilePath(file: unknown): file is string {
+  if (typeof file !== 'string' || file.length > 32767 || file.includes(String.fromCharCode(0))) return false;
+  if (process.platform !== 'win32') return isAbsolute(file);
+  if (!/^[A-Za-z]:[\\/]/.test(file) || !win32.isAbsolute(file)) return false;
+  return file.slice(3).split(/[\\/]/).every(part => part.length > 0 &&
+    part !== '.' && part !== '..' && !/[<>:"|?*]/.test(part) && !/[. ]$/.test(part) &&
+    !Array.from(part).some(char => char.charCodeAt(0) < 32));
+}
 
 function friendlyError(error: unknown) {
   const message = error instanceof Error ? error.message : String(error);
@@ -338,7 +350,7 @@ export class ObsClient {
     // Never publish the local filename to remote clients or the moments journal.
     on('ReplayBufferSaved', ({ savedReplayPath }) => {
       if (!this.ready || !this.state.connected || !this.state.streamingKnown || !this.state.streaming ||
-          typeof savedReplayPath !== 'string' || !isAbsolute(savedReplayPath)) return;
+          !localReplayFilePath(savedReplayPath)) return;
       const connectionGeneration = this.generation, streamEpoch = this.replayStreamEpoch, observedAt = Date.now();
       void (async () => {
         const file = await lstat(savedReplayPath);
