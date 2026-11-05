@@ -24,6 +24,10 @@ describe('StreamCockpit 3.0 offline release artifact verification', () => {
       { ...valid, android: { ...valid.android, file: 'https://bad.example/c.apk' } },
       { ...valid, android: { ...valid.android, file: valid.windows.file } },
       { ...valid, windows: { ...valid.windows, file: 'relative.exe' } },
+      // Windows UNC shares and device paths must never become release inputs.
+      { ...valid, windows: { ...valid.windows, file: String.raw`\\fileserver\share\StreamCockpit.exe` } },
+      { ...valid, windows: { ...valid.windows, file: String.raw`\\?\C:\SC3\StreamCockpit.exe` } },
+      { ...valid, windows: { ...valid.windows, file: String.raw`\Windows\Temp\StreamCockpit.exe` } },
       { ...valid, android: { ...valid.android, file: 'C:\\SC3\\file.zip' } },
     ]) expect(() => validateArtifactManifest(changed)).toThrow('SC3_ARTIFACT_MANIFEST_INVALID');
   });

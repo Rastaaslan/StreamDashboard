@@ -2,7 +2,7 @@ import { createHash } from 'node:crypto';
 import { createReadStream, existsSync, lstatSync, realpathSync } from 'node:fs';
 import { readFile } from 'node:fs/promises';
 import { spawnSync } from 'node:child_process';
-import { isAbsolute, resolve, win32 } from 'node:path';
+import { isAbsolute, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const HEX40 = /^[a-f0-9]{40}$/i, HEX64 = /^[a-f0-9]{64}$/i;
@@ -11,8 +11,11 @@ const root = resolve(fileURLToPath(new URL('..', import.meta.url)));
 // Manifest schema is portable: CI on Linux must recognize a local Windows
 // drive path without allowing UNC/network locations or relative paths.
 // Actual file verification remains native and requires Windows Authenticode.
-const manifestAbsolute = value => isAbsolute(value) ||
-  (win32.isAbsolute(value) && /^[A-Za-z]:[\\/]/.test(value));
+const manifestAbsolute = value => typeof value === 'string' &&
+  // On Windows path.isAbsolute() accepts UNC shares and device namespaces.
+  // Release bundles must be local drive files, never network/device paths.
+  !/^[\\/]{2}/.test(value) &&
+  (/^[A-Za-z]:[\\/]/.test(value) || (process.platform !== 'win32' && isAbsolute(value)));
 const exactKeys = (obj, names) => obj && typeof obj === 'object' && !Array.isArray(obj) &&
   Object.keys(obj).sort().join(',') === [...names].sort().join(',');
 

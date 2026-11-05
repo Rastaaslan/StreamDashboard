@@ -1039,6 +1039,10 @@
         {
           "path": "scripts/streamcockpit3-artifact-verifier.mjs",
           "kind": "2026-11-05 FIXE G4 fail-closed Android apksigner output guard: v1-only APK with a pinned certificate is rejected unless a confirmed v2/v3 scheme is verified. Synthetic parser evidence only; no release signing, installed device or complete G4 verification."
+        },
+        {
+          "path": "docs/streamcockpit-3/G4_ARTIFACT_LOCAL_PATH_GUARD_20261105.md",
+          "kind": "2026-11-05 FIXE: Windows manifest validation now rejects UNC/device/root-relative release paths after RED regression; 7 targeted PASS, TypeScript/browser/security PASS, no signing or hardware qualification. F10/G4 unchanged."
         }
       ],
       "verifiedTests": [
