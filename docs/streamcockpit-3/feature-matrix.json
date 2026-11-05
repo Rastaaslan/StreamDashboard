@@ -679,6 +679,10 @@
         {
           "path": "docs/streamcockpit-3/SETTINGS_OFFLINE_GOOGLE_SCOPE_20261105.md",
           "kind": "2026-11-05 FIXE Settings: Google connection from stale host snapshots no longer appears connected when selected master is offline; same offline scope labels host vs local settings. RED 5 PASS/2 FAIL; final 20 PASS/0 FAIL/0 skipped incl. 2 Edge tests, TS/browser/security 6757 files/diff PASS. Synthetic host; F06 partial, gates unchanged."
+        },
+        {
+          "path": "docs/streamcockpit-3/SETTINGS_GOOGLE_OBSERVATION_FRESHNESS_20261105.md",
+          "kind": "2026-11-05 FIXE Settings: online paired Google state is UNKNOWN if FIXE snapshot timestamp missing, stale or future, or Google observation absent; RED 8 PASS/1 FAIL/2 skipped, final 16 PASS/0 FAIL/0 skipped including real Edge 320px, TypeScript/browser/security 6761 files/diff PASS. Synthetic snapshots; F06 partial and G2-G5 unchanged."
         }
       ],
       "verifiedTests": [

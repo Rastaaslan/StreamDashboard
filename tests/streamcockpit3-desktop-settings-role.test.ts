@@ -3,7 +3,7 @@ import {expect,it} from 'vitest';
 import {renderSettings} from '../apps/mobile/control/settings-view.js';
 const esc=(v:unknown)=>String(v??'').replaceAll('&','&amp;').replaceAll('<','&lt;');
 function render(server:string,connected:boolean,role:'stream'|'control',tab='integrations'){
- const data={host:{settings:{},state:{google:{connected},twitch:{connected:false},obs:{inputs:{},scenes:[]}},hostname:'FIXE',settingsRevision:'r'},configuration:{revision:1,outputs:{twitch:{kind:'unconfigured',name:''}}}};
+ const data={host:{settings:{},state:{at:new Date().toISOString(),google:{connected},twitch:{connected:false},obs:{inputs:{},scenes:[]}},hostname:'FIXE',settingsRevision:'r'},configuration:{revision:1,outputs:{twitch:{kind:'unconfigured',name:''}}}};
  return renderSettings({data,native:false,server,tab,online:true,
   device:{role,name:'QA'},localEndpoint:'',deviceExecutor:false,macroConfigurationError:'',
   esc,input:()=>'',select:()=>'',check:()=>''});

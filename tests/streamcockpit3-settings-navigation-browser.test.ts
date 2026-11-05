@@ -22,7 +22,7 @@ function fixture(options:{role?:'control'|'stream'|'mobile';server?:string;onlin
  const data={host:{hostname:server||role==='stream'?'FIXE':'Laptop-damien',settingsRevision:'rev1',settings:{
   obsUrl:'ws://127.0.0.1:4555',obsPasswordSet:true,modeScenes:{intro:'INTRO',live:'JEU',pause:'PAUSE',end:'FIN'},chattingScene:'CHATTING',primaryMicInput:'Micro',startMode:'intro',
   remoteEnabled:true,streamerName:'QA',accent:'violet',confirmStop:true,tagPreferences:{},streamerPingRewardIds:[],
- },state:{obs:{connected:false,inputs:{},scenes:[]},google:{connected:false},twitch:{connected:false}}},configuration:{revision:1,outputs:{twitch:{kind:'unconfigured',name:''}}}};
+ },state:{at:new Date().toISOString(),obs:{connected:false,inputs:{},scenes:[]},google:{connected:false},twitch:{connected:false}}},configuration:{revision:1,outputs:{twitch:{kind:'unconfigured',name:''}}}};
  return {
   render:(tab=options.tab||'overview')=>renderSettings({data,native,server,tab,online,compact,device:{role,name:role==='stream'?'FIXE':'Laptop-damien'},localEndpoint:role==='stream'?'http://127.0.0.1:48133':'',deviceExecutor:false,knownPairedServer:'',installation,macroConfigurationError:'',esc,input,select,check}),
   data
@@ -93,6 +93,19 @@ it('selected FIXE Google account is not shown as connected from a stale offline 
  live.data.host.state.google.connected=false;
  expect(live.render('integrations')).toContain('Compte Google de la régie non connecté');
 });
+it('does not present an unverified Google account as connected when the host timestamp is stale or absent',()=>{
+ const f=fixture({role:'mobile',server:'https://FIXE.test:48136',online:true});
+ f.data.host.state.google.connected=true;
+ for(const at of ['', 'bad', new Date(Date.now()-120_000).toISOString(), new Date(Date.now()+120_000).toISOString()]){
+  f.data.host.state.at=at;
+  const html=f.render('integrations');
+  expect(html).toContain('compte Google non vérifiable');
+  expect(html).not.toContain('Compte Google de la régie connecté');
+ }
+ f.data.host.state.at=new Date().toISOString();
+ Object.assign(f.data.host.state,{google:undefined});
+ expect(f.render('integrations')).toContain('État du compte Google non communiqué par FIXE.');
+});
 it.skipIf(process.env.SC3_SETTINGS_BROWSER_TEST!=='1')('real Edge 320px shows Google host connection as unknown while FIXE is offline',async()=>{
  vi.stubGlobal('localStorage',{getItem:()=>null});
  const f=fixture({role:'mobile',server:'https://FIXE.test:48136',online:false});
@@ -105,6 +118,12 @@ it.skipIf(process.env.SC3_SETTINGS_BROWSER_TEST!=='1')('real Edge 320px shows Go
   await page.setContent('<meta name="viewport" content="width=device-width,initial-scale=1"><main id="root">'+f.render('integrations')+'</main>');
   await page.addStyleTag({content:readFileSync('apps/mobile/control/control.css','utf8')});
   expect(await page.locator('.config-panel section:first-of-type [role="status"]').innerText()).toContain('Régie indisponible : état du compte Google non vérifiable.');
+  expect(await page.getByText('Compte Google de la régie connecté',{exact:false}).count()).toBe(0);
+  const stale=fixture({role:'mobile',server:'https://FIXE.test:48136',online:true});
+  stale.data.host.state.google.connected=true;
+  stale.data.host.state.at=new Date(Date.now()-120_000).toISOString();
+  await page.setContent('<meta name="viewport" content="width=device-width,initial-scale=1"><main id="root">'+stale.render('integrations')+'</main>');
+  expect(await page.locator('.config-panel section:first-of-type [role="status"]').innerText()).toContain('compte Google non vérifiable');
   expect(await page.getByText('Compte Google de la régie connecté',{exact:false}).count()).toBe(0);
   expect(await page.evaluate(()=>document.documentElement.scrollWidth)).toBeLessThanOrEqual(320);
   expect(network).toEqual([]);
