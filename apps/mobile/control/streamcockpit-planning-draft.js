@@ -1,4 +1,5 @@
 import { inspectPlanningSlot } from './streamcockpit-planning.js';
+import { projectRecurrence } from '../shared/recurrence.js';
 
 /**
  * F06 — local-only preflight for an assistant slot.
@@ -55,16 +56,44 @@ export function assistedDuplicateSourceFingerprint(item) {
   return JSON.stringify(copy);
 }
 
-/** Duplicate a single reviewed live into an UNSAVED, LOCAL-ONLY editor.
- * Never clone IDs, recurrence, provider projections or publication authority.
+/** Resolve a witnessed series occurrence without treating its master as a live copy.
+ * Select by the canonical occurrence key, never an editable label/index.
+ * A full master fingerprint fences changes to series rules AND exceptions across
+ * both FIXE reads; the effective event contains only the chosen override.
  */
-export function prepareAssistedLocalDuplicate(items, sourceId, slot, now = Date.now()) {
-  const base = prepareAssistedLocalDraft(items, slot, now);
+export function assistedDuplicateSelection(items, sourceId, occurrenceKey, now = Date.now()) {
+  if (!Array.isArray(items) || typeof sourceId !== 'string' || !sourceId ||
+      !Number.isFinite(now)) throw new Error('Session source introuvable ou ambiguë.');
   const found = items.filter(item => item?.id === sourceId);
-  if (typeof sourceId !== 'string' || !sourceId || found.length !== 1)
-    throw new Error('Session source introuvable ou ambiguë.');
-  const source = found[0];
-  assistedDuplicateSourceFingerprint(source);
+  if (found.length !== 1) throw new Error('Session source introuvable ou ambiguë.');
+  const master = found[0];
+  if (!master.recurrence) {
+    if (occurrenceKey !== undefined && occurrenceKey !== '')
+      throw new Error('Occurrence source non valable.');
+    return {source: master, fingerprint: assistedDuplicateSourceFingerprint(master)};
+  }
+  if (typeof occurrenceKey !== 'string' || !/^.+:[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}$/.test(occurrenceKey) ||
+      !occurrenceKey.startsWith(sourceId + ':')) throw new Error('Occurrence source non valable.');
+  // Prevent an unsupported/custom, corrupt or remote-pending series from being
+  // silently accepted merely because one projected occurrence looks valid.
+  assistedDuplicateSourceFingerprint({...master, recurrence: undefined});
+  const from = new Date(now - 86_400_000).toISOString();
+  const to = new Date(now + 30 * 86_400_000).toISOString();
+  const projected = projectRecurrence(master, {windowStart:from, windowEnd:to});
+  const matches = projected.filter(item => item.occurrenceKey === occurrenceKey);
+  if (matches.length !== 1) throw new Error('Occurrence source annulée, déplacée hors période ou indisponible.');
+  const source = {...matches[0], recurrence: undefined};
+  const fingerprint = assistedDuplicateSourceFingerprint(source);
+  return {source, fingerprint: JSON.stringify({master, fingerprint})};
+}
+
+/** Duplicate a reviewed one-off live OR one selected recurrence occurrence into
+ * an UNSAVED, LOCAL-ONLY editor. Never clone IDs, recurrence, provider projections
+ * or publication authority. Both are rechecked on FIXE before saving.
+ */
+export function prepareAssistedLocalDuplicate(items, sourceId, slot, now = Date.now(), occurrenceKey) {
+  const base = prepareAssistedLocalDraft(items, slot, now);
+  const {source} = assistedDuplicateSelection(items, sourceId, occurrenceKey, now);
   if (source.tags && (!Array.isArray(source.tags.values) ||
       !source.tags.values.every(value => typeof value === 'string')))
     throw new Error('Tags de la session source invalides.');

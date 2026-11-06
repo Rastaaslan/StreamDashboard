@@ -749,6 +749,10 @@
         {
           "path": "docs/streamcockpit-3/SETTINGS_GOOGLE_OBSERVATION_FRESHNESS_20261105.md",
           "kind": "2026-11-05 FIXE Settings: online paired Google state is UNKNOWN if FIXE snapshot timestamp missing, stale or future, or Google observation absent; RED 8 PASS/1 FAIL/2 skipped, final 16 PASS/0 FAIL/0 skipped including real Edge 320px, TypeScript/browser/security 6761 files/diff PASS. Synthetic snapshots; F06 partial and G2-G5 unchanged."
+        },
+        {
+          "path": "docs/streamcockpit-3/F06_RECURRING_OCCURRENCE_DUPLICATION_20261106.md",
+          "kind": "2026-11-06 FIXE F06: individual recurring occurrences and effective exceptions can be duplicated to an unpublished local-only draft, re-fingerprinting entire source master plus selected occurrence at two FIXE reads and checking local conflicts at host save. RED 2 PASS/3 FAIL; GREEN 56 PASS/0 FAIL/0 skipped across four suites including real Edge 320px. TS/browser/security 6799 files/diff PASS. No Google/Twitch writes or physical acceptance; F06 partial and G2-G5 unchanged."
         }
       ],
       "verifiedTests": [
@@ -757,6 +761,7 @@
         "tests/streamcockpit3-planning-integration.test.ts",
         "tests/streamcockpit3-planning-integration-browser.test.ts",
         "tests/streamcockpit3-planning-assisted-draft.test.ts",
+        "tests/streamcockpit3-planning-recurring-duplicate.test.ts",
         "tests/streamcockpit3-planning-assisted-host.test.ts",
         "tests/streamcockpit3-planning-assistant-browser.test.ts",
         "tests/streamcockpit3-settings-navigation-browser.test.ts"
@@ -765,10 +770,10 @@
       "blockers": [
         "Google and Twitch live availability are UNKNOWN; only cached imported events are considered local blockers and no remote publishing is attempted",
         "Host queue now rechecks conflicts just before assisted local creation; no atomic transaction with external Google/Twitch state or durable storage, and post-COMMIT power-loss/reconciliation is unqualified",
-        "Assisted copy of simple one-off live is now available and tested in Edge 320px; recurring occurrence duplication remains excluded. Physical Android/FIXE/laptop reconnection and real Google publishing/rollback remain unqualified"
+        "Assisted copy supports one-off lives and selected future recurring occurrences with double host-source reread and local-only submit; physical Android/FIXE/laptop reconnection and real Google publishing/rollback remain unqualified"
       ],
       "ownerJob": "streamcockpit/3.0-lot-g",
-      "integrationNote": "2026-11-03 FIXE: assisted new slot and one-off live copy both open the same local-only editor, with pre-open and pre-POST selected-host/source revalidation. A lost POST receipt is never retried; existing host assistedLocalSlot:true queue conflict guard unchanged. 42/42 targeted PASS across 4 suites, including 3 real Edge 320px tests and Chromium. TypeScript/browser/security 1399 files PASS. Recurring occurrences, external Google/Twitch availability, physical devices and durable atomic storage remain unqualified; F06 partial, G2 in_progress."
+      "integrationNote": "2026-11-03 FIXE: assisted new slot and one-off live copy both open the same local-only editor, with pre-open and pre-POST selected-host/source revalidation. A lost POST receipt is never retried; existing host assistedLocalSlot:true queue conflict guard unchanged. 42/42 targeted PASS across 4 suites, including 3 real Edge 320px tests and Chromium. TypeScript/browser/security 1399 files PASS. 2026-11-06 occurrence duplication on master recurrence and selected exception now verified with 56 PASS (including Edge 320px) and unchanged local-only host queue guard. External Google/Twitch availability, physical devices and durable atomic storage remain unqualified; F06 partial, G2 in_progress."
     },
     {
       "id": "F07",

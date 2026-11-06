@@ -1,6 +1,6 @@
 import { renderPlanningAssistant } from './streamcockpit-planning.js';
 import { prepareAssistedLocalDraft, prepareAssistedLocalDuplicate,
-  assistedDuplicateSourceFingerprint } from './streamcockpit-planning-draft.js';
+  assistedDuplicateSelection } from './streamcockpit-planning-draft.js';
 import { expandEditableRecurringItems, recurrenceSummary } from '../shared/recurrence.js';
 import { filterPlanningTemporal, paginatePlanning, periodBounds } from '../planning-model.js';
 import { localDate } from '../shared/planning-editor.js';
@@ -133,9 +133,11 @@ export function createPlanning({getData,api,esc,input,select,check,modal,close,t
       if(!getConnection() || getData()?.host?.hostname!==assistedSession.hostname)
         throw new Error('La régie a changé pendant la relecture. Aucun événement créé.');
       if(assistedSession.sourceId){
-        const sources=getData()?.host?.planning?.filter(x=>x?.id===assistedSession.sourceId)||[];
-        if(sources.length!==1 ||
-           assistedDuplicateSourceFingerprint(sources[0])!==assistedSession.sourceFingerprint)
+        let reviewed;
+        try{reviewed=assistedDuplicateSelection(getData()?.host?.planning,
+          assistedSession.sourceId,assistedSession.occurrenceKey,assistedSession.referenceNow);}
+        catch{throw new Error('Session source modifiée pendant la relecture. Aucun événement créé.');}
+        if(reviewed.fingerprint!==assistedSession.sourceFingerprint)
           throw new Error('Session source modifiée pendant la relecture. Aucun événement créé.');
       }
       prepareAssistedLocalDraft(getData()?.host?.planning,
@@ -175,13 +177,15 @@ export function createPlanning({getData,api,esc,input,select,check,modal,close,t
     // A DOM suggestion is not authority. Re-read the selected FIXE host, and
     // reject a changed source event or an unavailable target before editing.
     const slot={from:b.dataset.from,to:b.dataset.to};
-    let sourceId,sourceFingerprint;
+    let sourceId,sourceFingerprint,occurrenceKey,referenceNow;
     if(task==='assist-duplicate'){
-      sourceId=b.dataset.sourceId || (typeof document==='undefined' ? undefined :
-        document.querySelector('[data-planning-assistant] [data-planning-assist-source]')?.value);
-      const sources=getData()?.host?.planning?.filter(x=>x?.id===sourceId)||[];
-      if(!sourceId||sources.length!==1)throw new Error('Session source introuvable ou ambiguë.');
-      sourceFingerprint=assistedDuplicateSourceFingerprint(sources[0]);
+      const selected=typeof document==='undefined'?undefined:
+        document.querySelector('[data-planning-assistant] [data-planning-assist-source]')?.selectedOptions?.[0];
+      sourceId=b.dataset.sourceId || selected?.value;
+      occurrenceKey=b.dataset.occurrenceKey || selected?.dataset.occurrenceKey;
+      referenceNow=Date.now();
+      sourceFingerprint=assistedDuplicateSelection(getData()?.host?.planning,
+        sourceId,occurrenceKey,referenceNow).fingerprint;
     }
     assistFlight=true;
     try{
@@ -190,14 +194,17 @@ export function createPlanning({getData,api,esc,input,select,check,modal,close,t
         throw new Error('Source de planning changée pendant la vérification.');
       let prepared;
       if(sourceId){
-        const sources=getData()?.host?.planning?.filter(x=>x?.id===sourceId)||[];
-        if(sources.length!==1 ||
-           assistedDuplicateSourceFingerprint(sources[0])!==sourceFingerprint)
+        let reviewed;
+        try{reviewed=assistedDuplicateSelection(getData()?.host?.planning,
+          sourceId,occurrenceKey,referenceNow);}
+        catch{throw new Error('Session source modifiée pendant la vérification.');}
+        if(reviewed.fingerprint!==sourceFingerprint)
           throw new Error('Session source modifiée pendant la vérification.');
-        prepared=prepareAssistedLocalDuplicate(getData()?.host?.planning,sourceId,slot,Date.now());
+        prepared=prepareAssistedLocalDuplicate(getData()?.host?.planning,
+          sourceId,slot,Date.now(),occurrenceKey);
       }else prepared=prepareAssistedLocalDraft(getData()?.host?.planning,slot,Date.now());
       open(prepared);
-      assistedSession={hostname,...(sourceId?{sourceId,sourceFingerprint}:{})};
+      assistedSession={hostname,...(sourceId?{sourceId,sourceFingerprint,occurrenceKey,referenceNow}:{})};
       toast('Créneau et source revérifiés sur FIXE. Brouillon local non sauvegardé ; Google/Twitch restent inconnus.');
     }finally{assistFlight=false;}
     return true;

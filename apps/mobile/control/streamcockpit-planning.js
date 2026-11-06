@@ -1,3 +1,5 @@
+import {projectRecurrence} from '../shared/recurrence.js';
+
 /** Read-only projection of the in-memory agenda, NOT a provider observation.
  * Google is excluded from the calculation, never declared available/disabled remotely.
  * Cached imported events remain blockers with their original provenance displayed.
@@ -9,17 +11,38 @@ export function renderPlanningAssistant(items, { esc, online = false, googleConn
   const warning = '<p>Suggestion locale non publiée · Google / Twitch : UNKNOWN pour les disponibilités. Fraîcheur distante inconnue ; aucune disponibilité ni synchronisation garantie.</p>' +
     '<p>' + esc(googleIdentity) + '</p>' +
     '<p>' + (online ? 'Connexion régie disponible' : 'Hors ligne / connexion non vérifiée') + ' · calcul sur la copie locale uniquement, sans réservation.</p>';
-  const sources = Array.isArray(items) ? items.filter(item =>
-    typeof item?.id === 'string' && item.id && item.category === 'live' &&
-    typeof item.title === 'string' && item.title.trim() && !item.recurrence &&
-    !item.allDay && !item.deletionPending && !item.conflict &&
+  // Source choices include individual future recurrence occurrences, not a
+  // naked recurring master. A cancelled/custom/uncertain series is ineligible.
+  // A selection carries the immutable canonical occurrence key for FIXE rereads.
+  const eligible = item => typeof item?.id === 'string' && item.id && item.category === 'live' &&
+    typeof item.title === 'string' && item.title.trim() && !item.allDay &&
+    !item.deletionPending && !item.conflict && !item.transferId && !item.transferredTo &&
     Number.isFinite(Date.parse(item.startAtUtc)) && Number.isFinite(Date.parse(item.endAtUtc)) &&
     Date.parse(item.endAtUtc) > Date.parse(item.startAtUtc) &&
-    !Object.values(item.providers || {}).some(p => !p || ['conflict','error','pending'].includes(p.status))
-  ).slice(0,8) : [];
+    !Object.values(item.providers || {}).some(p => !p || ['conflict','error','pending'].includes(p.status));
+  const candidates = [];
+  if (Array.isArray(items) && Number.isFinite(now)) {
+    for (const master of items) {
+      if (!eligible(master)) continue;
+      if (!master.recurrence) candidates.push({sourceId:master.id,item:master});
+      else {
+        try {
+          const series = projectRecurrence(master,{windowStart:new Date(now-86_400_000).toISOString(),
+            windowEnd:new Date(now+30*86_400_000).toISOString()});
+          for (const item of series.slice(0,8)) if (eligible(item))
+            candidates.push({sourceId:master.id,occurrenceKey:item.occurrenceKey,item});
+        } catch { /* Unsupported recurrence is never offered for copying. */ }
+      }
+      if (candidates.length >= 8) break;
+    }
+  }
+  const sources = candidates.slice(0,8);
   const sourceSelect = sources.length ? '<label>Live à copier <select data-planning-assist-source>' +
-    sources.map(item => '<option value="' + esc(item.id) + '">' + esc(item.title) + '</option>').join('') +
-    '</select></label>' : '';
+    sources.map(({sourceId,occurrenceKey,item}) => '<option value="' + esc(sourceId) + '"' +
+      (occurrenceKey?' data-occurrence-key="'+esc(occurrenceKey)+'"':'')+'>' +
+      esc(item.title+(occurrenceKey?' · '+new Date(item.startAtUtc).toLocaleString('fr-FR',
+        {timeZone:PLANNING_ZONE,day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'}):'')) +
+      '</option>').join('') + '</select></label>' : '';
   const footer = sources.length ? '<p>Duplication : brouillon local non enregistré, aucune publication automatique.</p></section>' :
     '<button type="button" disabled>Dupliquer vers un brouillon (indisponible)</button><p>Aucun live simple éligible dans la copie locale.</p></section>';
   try {
