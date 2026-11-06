@@ -120,6 +120,42 @@ async function verifiedBackup(root:string):Promise<{report:QaCheckpointReport;fo
     fail('BACKUP_TAMPERED');
   return {report,folder};
 }
+// AutoMod attempts are a one-way replay barrier. Restoring an older SQLite
+// snapshot can authorize an already-attempted Twitch decision a second time.
+// QA MUST refuse a backup whose fence is absent or no longer byte-identical
+// to the current isolated active journal. This is not an online merge or a
+// production-grade cross-process lock: G4 still requires quiescence/rollback QA.
+const AUTOMOD_FENCE='streamcockpit-automod-action-intents.sqlite';
+async function requireCurrentAutoModFence(root:string,report:QaCheckpointReport){
+  const liveRoot=join(root,'active');
+  try{
+    const directory=await lstat(liveRoot);
+    if(!directory.isDirectory()||directory.isSymbolicLink()||await realpath(liveRoot)!==liveRoot)
+      fail('AUTOMOD_FENCE_CHANGED');
+  }catch{fail('AUTOMOD_FENCE_CHANGED')}
+  const expected=report.entries.find(entry=>entry.path===AUTOMOD_FENCE);
+  const file=join(liveRoot,AUTOMOD_FENCE);
+  let before:Awaited<ReturnType<typeof lstat>>|undefined;
+  try{before=await lstat(file)}
+  catch(error){
+    if((error as NodeJS.ErrnoException).code!=='ENOENT')fail('AUTOMOD_FENCE_CHANGED');
+  }
+  if(!before){
+    if(expected)fail('AUTOMOD_FENCE_CHANGED');
+    return;
+  }
+  if(expected===undefined)throw new Error('QA_CHECKPOINT_AUTOMOD_FENCE_CHANGED');
+  if(!before.isFile()||before.isSymbolicLink()||before.nlink!==1||
+    before.size>limitBytes)fail('AUTOMOD_FENCE_CHANGED');
+  try{
+    const bytes=await readFile(file),after=await lstat(file);
+    if(!after.isFile()||after.isSymbolicLink()||after.nlink!==1||
+      after.ino!==before.ino||after.mtimeMs!==before.mtimeMs||
+      after.size!==before.size||bytes.length!==expected.bytes||
+      hash(bytes)!==expected.sha256)fail('AUTOMOD_FENCE_CHANGED');
+  }catch{fail('AUTOMOD_FENCE_CHANGED')}
+}
+
 /** Restore immutable checkpoint ONLY to a new workspace/restored directory.
  * Never replace active or existing data; verify every backed-up byte first.
  */
@@ -128,12 +164,14 @@ export async function restoreQaProfile(workspace:string):Promise<QaCheckpointRep
   try{await lstat(restored);fail('RESTORE_ALREADY_EXISTS')}
   catch(error){if((error as NodeJS.ErrnoException).code!=='ENOENT')throw error}
   const {report,folder}=await verifiedBackup(root);
+  await requireCurrentAutoModFence(root,report);
   const pending=join(root,'restored-pending-'+randomUUID());
   await mkdir(pending,{mode:0o700});
   try{
     await copyVerified(folder,pending,report.entries);
     const verified=await list(pending);
     if(JSON.stringify(verified.files)!==JSON.stringify(report.entries))fail('RESTORE_MISMATCH');
+    await requireCurrentAutoModFence(root,report);
     await rename(pending,restored);
     return structuredClone(report);
   }catch(error){await rm(pending,{recursive:true,force:true});throw error}
@@ -148,6 +186,7 @@ export async function migrateQaProfileCopy(workspace:string,toVersion:number,mig
   try{await lstat(destination);fail('MIGRATED_ALREADY_EXISTS')}
   catch(error){if((error as NodeJS.ErrnoException).code!=='ENOENT')throw error}
   const {report,folder}=await verifiedBackup(root);
+  await requireCurrentAutoModFence(root,report);
   const setting='configuration/settings.json';
   if(!report.entries.some(entry=>entry.path===setting))fail('SETTINGS_NOT_IN_BACKUP');
   const pending=join(root,'migrated-pending-'+randomUUID());
@@ -174,6 +213,7 @@ export async function migrateQaProfileCopy(workspace:string,toVersion:number,mig
     }
     const migrated=actual.files.find(entry=>entry.path===setting)!;
     if(migrated.sha256!==hash(output))fail('MIGRATED_VERIFY_FAILED');
+    await requireCurrentAutoModFence(root,report);
     await rename(pending,destination);
     return {schemaVersion:1 as const,kind:'SC3_UPGRADE_QA_MIGRATION' as const,
       fromVersion,toVersion,oldHash:earlier.get(setting)!.sha256,newHash:migrated.sha256};

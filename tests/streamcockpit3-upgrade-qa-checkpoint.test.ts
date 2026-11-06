@@ -1,5 +1,6 @@
 import {afterEach,describe,expect,it} from 'vitest';
 import {checkpointQaProfile,restoreQaProfile,migrateQaProfileCopy} from '../apps/desktop/src/streamcockpit-upgrade-qa-checkpoint.js';
+import {AutoModActionIntentSqlite} from '../apps/server/src/streamcockpit-automod-action-intent-sqlite.js';
 import {mkdtemp,mkdir,readFile,readdir,rm,stat,writeFile} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import {dirname,join} from 'node:path';
@@ -125,5 +126,67 @@ describe('F10 QA backup -> detached migration -> independent recovery, no instal
     await expect(stat(join(f.root,'migrated'))).rejects.toMatchObject({code:'ENOENT'});
     expect((await readFile(join(f.active,'journals','commands.sqlite'))).equals(
       f.files['journals/commands.sqlite'])).toBe(true);
+  });
+});
+
+describe('F10 QA upgrade must preserve the F02 one-way AutoMod replay fence',()=>{
+  const journal='streamcockpit-automod-action-intents.sqlite';
+  const steps=[{from:1,to:2,apply:(copy:any)=>({...copy,schemaVersion:2,upgradeFlag:true})}];
+  it('copies a REAL SQLite F02 reservation through backup, migration and restore unchanged',async()=>{
+    const f=await fixture(),activeFile=join(f.active,journal);
+    const fence=new AutoModActionIntentSqlite(activeFile);
+    expect(fence.reserve('42','held-A','12','ALLOW')).toBe(true);
+    const original=await readFile(activeFile);
+    const report=await checkpointQaProfile(f.root);
+    expect(report.entries.find(row=>row.path===journal)).toMatchObject({bytes:original.length});
+    await migrateQaProfileCopy(f.root,2,steps);
+    await restoreQaProfile(f.root);
+    for(const folder of ['backup/files','migrated','restored']){
+      const file=join(f.root,...folder.split('/'),journal);
+      expect(await readFile(file)).toEqual(original);
+      expect(new AutoModActionIntentSqlite(file).isBlocked('42','held-A')).toBe(true);
+    }
+    expect(new AutoModActionIntentSqlite(activeFile).isBlocked('42','held-A')).toBe(true);
+  });
+  it('refuses an OLD backup after a newer F02 decision, without publishing rollback bytes',async()=>{
+    const f=await fixture(),activeFile=join(f.active,journal);
+    const fence=new AutoModActionIntentSqlite(activeFile);
+    expect(fence.reserve('42','held-A','12','ALLOW')).toBe(true);
+    await checkpointQaProfile(f.root);
+    const previous=await readFile(join(f.root,'backup','files',journal));
+    expect(fence.reserve('42','held-B','12','DENY')).toBe(true);
+    await expect(restoreQaProfile(f.root)).rejects.toThrow('QA_CHECKPOINT_AUTOMOD_FENCE_CHANGED');
+    await expect(migrateQaProfileCopy(f.root,2,steps)).rejects.toThrow('QA_CHECKPOINT_AUTOMOD_FENCE_CHANGED');
+    expect(await readFile(join(f.root,'backup','files',journal))).toEqual(previous);
+    expect(new AutoModActionIntentSqlite(activeFile).isBlocked('42','held-B')).toBe(true);
+    for(const folder of ['restored','migrated'])await expect(stat(join(f.root,folder))).rejects.toMatchObject({code:'ENOENT'});
+  });
+  it('fails closed if a F02 decision commits DURING the detached migration',async()=>{
+    const f=await fixture(),activeFile=join(f.active,journal);
+    const fence=new AutoModActionIntentSqlite(activeFile);
+    expect(fence.reserve('42','held-A','12','ALLOW')).toBe(true);
+    await checkpointQaProfile(f.root);
+    let reachedMigration=false;
+    await expect(migrateQaProfileCopy(f.root,2,[{from:1,to:2,apply:(copy:any)=>{
+      reachedMigration=true;
+      expect(fence.reserve('42','held-after-copy','12','DENY')).toBe(true);
+      return {...copy,schemaVersion:2};
+    }}])).rejects.toThrow('QA_CHECKPOINT_AUTOMOD_FENCE_CHANGED');
+    expect(reachedMigration).toBe(true);
+    expect(new AutoModActionIntentSqlite(activeFile).isBlocked('42','held-after-copy')).toBe(true);
+    await expect(stat(join(f.root,'migrated'))).rejects.toMatchObject({code:'ENOENT'});
+    expect((await readdir(f.root)).some(name=>name.startsWith('migrated-pending-'))).toBe(false);
+  });
+  it('refuses backup missing a newly created F02 journal or a removed live journal',async()=>{
+    const noInitial=await fixture(),newFile=join(noInitial.active,journal);
+    await checkpointQaProfile(noInitial.root);
+    expect(new AutoModActionIntentSqlite(newFile).reserve('42','held-C','12','DENY')).toBe(true);
+    await expect(restoreQaProfile(noInitial.root)).rejects.toThrow('QA_CHECKPOINT_AUTOMOD_FENCE_CHANGED');
+    await expect(migrateQaProfileCopy(noInitial.root,2,steps)).rejects.toThrow('QA_CHECKPOINT_AUTOMOD_FENCE_CHANGED');
+    const removed=await fixture(),file=join(removed.active,journal);
+    expect(new AutoModActionIntentSqlite(file).reserve('42','held-D','12','ALLOW')).toBe(true);
+    await checkpointQaProfile(removed.root);await rm(file);
+    await expect(restoreQaProfile(removed.root)).rejects.toThrow('QA_CHECKPOINT_AUTOMOD_FENCE_CHANGED');
+    await expect(migrateQaProfileCopy(removed.root,2,steps)).rejects.toThrow('QA_CHECKPOINT_AUTOMOD_FENCE_CHANGED');
   });
 });
