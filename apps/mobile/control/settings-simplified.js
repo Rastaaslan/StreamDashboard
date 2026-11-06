@@ -40,6 +40,11 @@ export function renderDevicesSettings({
     ? '<button type="button" class="secondary" data-task="pairing">Créer un code d’association sur FIXE</button>'
     : '<button type="button" class="secondary" data-task="connection">Associer FIXE depuis cet appareil</button>';
   const localName = esc(device?.name || 'Cet appareil');
+  // FIXE already exposes pairing on the Android card; the laptop does so on its client card.
+  // Keep the local-agent tools, including pairing, available on Android only when it runs an executor.
+  const localAgentTools = ((isMaster && (localEndpoint || data.host.local)) || (native && deviceExecutor))
+    ? `${!isMaster && native && deviceExecutor ? '<button type="button" class="secondary" data-task="pairing">Créer un code d’association</button>' : ''}<button type="button" class="secondary" data-task="local-permissions">Permissions des appareils</button><button type="button" class="secondary" data-task="transport">Connexion sécurisée de cet agent</button>`
+    : '';
 
   return `<h2>Appareils et Android Deck</h2>
     <p class="small muted" data-topology-preset>Modèle de cet appareil : <strong>${esc(presetLabel)}</strong>.
@@ -55,14 +60,14 @@ export function renderDevicesSettings({
     <div class="form-actions settings-primary-actions">
       <button type="button" data-task="device-setup">Voir mon installation et les rôles</button>
       <button type="button" class="secondary" data-page="actions">Configurer les boutons Deck</button>
-      <button type="button" class="secondary" data-task="connection">Associer une régie</button>
+      ${!isMaster && (native || !isClient) ? '<button type="button" class="secondary" data-task="connection">Associer une régie</button>' : ''}
       ${isMaster && localEndpoint ? '<button type="button" class="secondary" data-task="paired-devices">Voir les appareils associés à FIXE</button>' : ''}
     </div>
     <details class="settings-advanced"><summary>Comptes et connexions locales</summary>
       <p class="small muted">Les comptes et les jetons sont propres à chaque appareil. Associer Android au PC stream ne copie aucun secret du laptop.</p>
       <div class="form-actions">
         <button type="button" data-task="device-accounts">Mes comptes sur cet appareil</button>
-        ${((isMaster && (localEndpoint || data.host.local)) || (native && deviceExecutor)) ? '<button type="button" class="secondary" data-task="pairing">Créer un code d’association</button><button type="button" class="secondary" data-task="local-permissions">Permissions des appareils</button><button type="button" class="secondary" data-task="transport">Connexion sécurisée de cet agent</button>' : ''}
+        ${localAgentTools}
         <button type="button" class="secondary" data-task="use-local">Ouvrir mon espace local</button>
         ${knownPairedServer ? '<button type="button" class="secondary" data-task="use-paired">Retrouver ma régie</button>' : ''}
         ${server ? '<button type="button" class="secondary" data-task="import-local">Transférer mes créations locales</button>' : ''}
