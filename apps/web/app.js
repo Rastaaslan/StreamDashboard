@@ -946,6 +946,8 @@ function socket() {
     $('#socket').innerHTML = '<i></i> Temps réel';
   };
   const expireSnapshot = () => {
+    // Invalidate any HTTP sample initiated before this observation expired.
+    if (socketTrusted) observationRevision++;
     socketTrusted = false;
     if (state) {
       state = {...state, uiObservationTrusted:false};
@@ -953,7 +955,7 @@ function socket() {
     }
     $('#socket').textContent = 'Connexion · état périmé à vérifier';
   };
-  const healthTimer = setInterval(() => {
+  const checkObservation = () => {
     if (activeSocket !== ws || ws.readyState !== WebSocket.OPEN) return;
     const now = performance.now();
     if (socketTrusted && now - lastVerifiedAt >= OBSERVATION_TTL_MS) expireSnapshot();
@@ -971,7 +973,13 @@ function socket() {
     }).catch(() => {
       if (activeSocket === ws && !socketTrusted) $('#socket').textContent = 'Connexion · état non vérifié';
     }).finally(() => { probePending = false; });
-  }, 5000);
+  };
+  // Background tabs may suspend intervals. Re-evaluate immediately when the
+  // operator returns, before a stale READY button can be used.
+  const onVisibilityChange = () => { if (!document.hidden) checkObservation(); };
+  document.addEventListener('visibilitychange', onVisibilityChange);
+  window.addEventListener('pageshow', checkObservation);
+  const healthTimer = setInterval(checkObservation, 5000);
   ws.onopen = () => {
     if (activeSocket !== ws) return;
     $('#socket').textContent = 'Connexion · vérification…';
@@ -1000,6 +1008,8 @@ function socket() {
   };
   ws.onclose = () => {
     clearInterval(healthTimer);
+    document.removeEventListener('visibilitychange', onVisibilityChange);
+    window.removeEventListener('pageshow', checkObservation);
     if (activeSocket !== ws) return;
     socketTrusted = false;
     if (state) {
