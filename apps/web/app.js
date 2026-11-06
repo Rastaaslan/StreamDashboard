@@ -190,9 +190,11 @@ function preflightBlock() {
 
 function prepare() {
   const done = state.checklist.filter(item => item.done).length;
+  const fullyReady = classicDashboardReadiness(state).ready;
+  const readinessStatus = fullyReady ? 'Tout est prêt' : done < state.checklist.length || !state.checklist.length ? 'Préparation incomplète' : 'Préparation à vérifier';
   const percent = state.checklist.length ? done / state.checklist.length * 100 : 0;
   const timerSource = state.settings.timerBrowserSource;
-  return `${preflightBlock()}<div class="panel"><div class="section-head"><div><span class="label">CHECKLIST AVANT LIVE</span><h3 id="check-count">${done}/${state.checklist.length} vérifications terminées</h3></div><div class="button-row"><button class="ghost compact" data-command="checklist.reset">Réinitialiser</button>${timerSource ? `<button class="ghost compact" data-command="obs.browser.refresh" data-value="${encodeURIComponent(timerSource)}">Rafraîchir timer OBS</button>` : ''}</div></div><div class="progress"><i id="check-progress" style="width:${percent}%"></i></div><div class="checklist">${state.checklist.map(item => `<button class="check ${item.done ? 'done' : ''}" data-check-id="${esc(item.id)}" data-command="checklist.toggle" data-value="${encodeURIComponent(item.id)}"><i>${item.done ? '✓' : ''}</i><span><b>${esc(item.label)}</b><small>${item.done ? 'Validé' : 'À vérifier'}</small></span></button>`).join('')}</div><div class="launch"><div><b id="prepare-status">${done === state.checklist.length ? 'Tout est prêt' : 'Préparation incomplète'}</b><small id="prepare-obs">${state.obs.connected ? `OBS répond correctement. Démarrage prévu sur ${esc(state.settings.startMode === 'live' ? 'Live' : 'Intro')}.` : esc(state.obs.error || 'OBS est hors ligne : connectez-le avant de diffuser.')}</small></div><button class="primary" ${!state.obs.connected || state.obs.streaming ? 'disabled' : ''} data-command="session.start">${state.obs.streaming ? 'Live déjà actif' : 'Démarrer le live'}</button></div></div>`;
+  return `${preflightBlock()}<div class="panel"><div class="section-head"><div><span class="label">CHECKLIST AVANT LIVE</span><h3 id="check-count">${done}/${state.checklist.length} vérifications terminées</h3></div><div class="button-row"><button class="ghost compact" data-command="checklist.reset">Réinitialiser</button>${timerSource ? `<button class="ghost compact" data-command="obs.browser.refresh" data-value="${encodeURIComponent(timerSource)}">Rafraîchir timer OBS</button>` : ''}</div></div><div class="progress"><i id="check-progress" style="width:${percent}%"></i></div><div class="checklist">${state.checklist.map(item => `<button class="check ${item.done ? 'done' : ''}" data-check-id="${esc(item.id)}" data-command="checklist.toggle" data-value="${encodeURIComponent(item.id)}"><i>${item.done ? '✓' : ''}</i><span><b>${esc(item.label)}</b><small>${item.done ? 'Validé' : 'À vérifier'}</small></span></button>`).join('')}</div><div class="launch"><div><b id="prepare-status">${readinessStatus}</b><small id="prepare-obs">${state.obs.connected ? `OBS répond correctement. Démarrage prévu sur ${esc(state.settings.startMode === 'live' ? 'Live' : 'Intro')}.` : esc(state.obs.error || 'OBS est hors ligne : connectez-le avant de diffuser.')}</small></div><button class="primary" ${!state.obs.connected || state.obs.streaming ? 'disabled' : ''} data-command="session.start">${state.obs.streaming ? 'Live déjà actif' : 'Démarrer le live'}</button></div></div>`;
 }
 
 function preparation() {
@@ -358,10 +360,10 @@ function updateHeader() {
 
   const quick = $('#quick-actions');
   if (quick) {
-    const preflightReady = state.preflight?.status === 'ready';
+    // The quick start must use the same complete readiness gate as the banner.
     quick.innerHTML = state.obs.streaming
       ? `<button class="quick-action" data-action="go" data-value="live">Live</button><button class="quick-action" data-command="mode.set" data-value="pause">Pause</button><button class="quick-action" data-action="toggle-primary-mic">Micro</button><button class="quick-action" data-action="go" data-value="deck">Scènes</button>`
-      : `${preflightReady && state.obs.connected ? '<button class="quick-action primary-inline" data-command="session.start">Démarrer</button>' : '<button class="quick-action primary-inline" data-action="go" data-value="prepare">Préparer</button>'}<button class="quick-action" data-action="go" data-value="planning">Planning</button><button class="quick-action" data-action="go" data-value="deck">Scènes</button>`;
+      : `${healthy ? '<button class="quick-action primary-inline" data-command="session.start">Démarrer</button>' : '<button class="quick-action primary-inline" data-action="go" data-value="prepare">Préparer</button>'}<button class="quick-action" data-action="go" data-value="planning">Planning</button><button class="quick-action" data-action="go" data-value="deck">Scènes</button>`;
   }
 }
 function dirtyForm() { return document.querySelector('#view form[data-dirty="true"]'); }
@@ -415,7 +417,7 @@ function updateChecklist() {
   const start = document.querySelector('.launch [data-command="session.start"]');
   if (count) count.textContent = `${done}/${state.checklist.length} vérifications terminées`;
   if (bar) bar.style.width = `${state.checklist.length ? done / state.checklist.length * 100 : 0}%`;
-  if (status) status.textContent = done === state.checklist.length ? 'Tout est prêt' : 'Préparation incomplète';
+  if (status) status.textContent = classicDashboardReadiness(state).ready ? 'Tout est prêt' : done < state.checklist.length || !state.checklist.length ? 'Préparation incomplète' : 'Préparation à vérifier';
   if (obs) obs.textContent = state.obs.connected ? `OBS répond correctement. Démarrage prévu sur ${state.settings.startMode === 'live' ? 'Live' : 'Intro'}.` : state.obs.error || 'OBS est hors ligne.';
   if (start) {
     start.disabled = !state.obs.connected || state.obs.streaming;
