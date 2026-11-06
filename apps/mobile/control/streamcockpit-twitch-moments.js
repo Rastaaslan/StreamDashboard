@@ -109,7 +109,19 @@ export function mountTwitchMoments(root,{request}={}){
     finally{if(key===revision){flight=false;draw()}}
   });
   form.addEventListener('submit',async e=>{
-    e.preventDefault();if(!connected()||flight||sending||uncertain||typeof request!=='function')return;
+    e.preventDefault();if(!connected()||flight||sending||uncertain||storageBlocked||typeof request!=='function')return;
+    // Disabled UI is not an authorization boundary: synthetic form submits and
+    // resumed WebViews may skip the storage event that would update this view.
+    // Read the journal again before even requesting a provider preview.
+    const journal=diagnoseUncertainMomentStore(view,sourceKey,accountKey);
+    if(journal.state!=='clear'){
+      storageBlocked=journal.state==='blocked';
+      uncertainReceipt=journal.state==='pending'?journal.receipt:storageBlocked?recoverUncertainMomentForReview(view,sourceKey,accountKey):undefined;
+      uncertain=Boolean(uncertainReceipt);
+      invalidate('Référence Twitch enregistrée : vérifier le journal FIXE avant une nouvelle demande.');
+      if(storageBlocked)status.textContent=blockedText;
+      draw();return;
+    }
     cancel();link.hidden=true;const target=sourceKey,key=++revision,draft={kind:kind.value,description:description.value.trim()};flight=true;draw();
     try{
       const r=await request('/api/v1/twitch/advanced/moment/preview',{draft},'POST',target);

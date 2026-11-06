@@ -317,6 +317,10 @@
       "acceptance": "Marqueurs OBS/Twitch, sauvegarde du tampon OBS et clips Twitch simples : permissions, horodatage, reçus exacts et parcours Desktop/Android ; sans montage ni transcodage.",
       "evidence": [
         {
+          "path": "docs/streamcockpit-3/F04_BLOCKED_FORM_SUBMIT_20261106.md",
+          "kind": "2026-11-06 RDC FIXE F04: disabled preview button was bypassable by a synthetic submit event under corrupt localStorage; live preview submission now checks storageBlocked and re-diagnoses the journal even after a missed storage event. Real Edge RED 0 PASS/1 FAIL; GREEN five suites 56 PASS/0 FAIL/0 skipped including 14 real Edge cases, TypeScript/browser/JS syntax and security 6773 files PASS, diff-check PASS. Synthetic localStorage/provider only, no Twitch POST, physical Android, signing or G3 hardware proof. F04 partial, G2 in_progress."
+        },
+        {
           "path": "docs/streamcockpit-3/F04_DIRECT_SAVE_LOCAL_PATH_20261105.md",
           "kind": "2026-11-05 RDC FIXE F04: explicit SaveReplayBuffer verification (separate from passive ReplayBufferSaved observer) formerly probed UNC/device/NTFS ADS paths with lstat. RED 56 PASS/1 FAIL/2 skipped across default F04 test selection, intercept confirmed 3 unsafe metadata probes; fix reuses localReplayFilePath before lstat. Corrected obs-runtime 24 PASS/0 FAIL/0 skipped and final 3-suite run 42 PASS/0 FAIL/0 skipped, TypeScript/browser types/security 6750 files/diff-check PASS. Synthetic OBS socket and interception only; no physical network access, real OBS replay, hardware qualification or installation. F04 partial, G2 in_progress, G3-G5 open."
         },
@@ -498,6 +502,7 @@
         "tests/streamcockpit3-f04-ephemeral-journal-multitab.test.ts",
         "tests/streamcockpit3-f04-expiring-lock-browser.test.ts",
         "tests/streamcockpit3-f04-preview-description-race-browser.test.ts",
+        "tests/streamcockpit3-f04-blocked-submit-guard.test.ts",
         "tests/streamcockpit3-simple-replay-privacy.test.ts",
         "tests/streamcockpit3-release-scope.test.ts"
       ],
