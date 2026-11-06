@@ -1277,6 +1277,10 @@
         {
           "path": "docs/streamcockpit-3/F10_AUTHENTICATED_DIRECTORY_PREPARATION_20261106.md",
           "kind": "2026-11-06 FIXE F10: concrete publisher-authenticated directory staging, real immutable app/profile backups and byte-preserving same-schema preparation composed with the existing SQLite planner/install/readback/rollback. Ed25519 verifies full manifest/image against independently pinned public-key policy; no injected successful preparation receipts. 16 suites 238 PASS/0 FAIL/0 skipped incl. 27 new cases; real temporary Windows files/SQLite and ephemeral in-memory test-only cryptographic keys. Types/browser types/security 6818 files/diff PASS. Native installed identity/live guard simulated; no production keys, Authenticode certification, updater activation, Squirrel/Android deployment or G3-G5 qualification."
+        },
+        {
+          "path": "docs/streamcockpit-3/F10_EXTERNAL_MAINTENANCE_COORDINATION_20261106.md",
+          "kind": "2026-11-06 FIXE F10: independent external-maintenance coordination library binds exact runtime upgrade directory, fresh independent offline/live evidence, native-signer witness and operator consent to existing Ed25519 release preparation, durable SQLite planner, explicit directory replacement and rollback. 5 focused suites 115 PASS/0 FAIL/0 skipped with 15 new tests, including real temporary Windows child-process prepare/install/rollback, receipt-preserving SQLite and loss-of-ACK refusal; global types, browser types, security 6820 files and diff PASS. Native Authenticode/live/approval witnesses TEST-ONLY simulated; no production CLI, installed profile, Squirrel/Android or G3-G5 proof."
         }
       ],
       "verifiedTests": [
@@ -1306,7 +1310,7 @@
       "hardwareEvidence": [],
       "blockers": [
         "Production Windows/Android native signatures and independently provisioned release trust remain unqualified.",
-        "2026-11-06: upgrade journal/exclusion, protected host journals, full Desktop main ownership, directory replacement/readback and concrete publisher-authenticated stage/backup/same-schema preparation are source-integrated. The new preparation uses real crypto/copies with test-only keys in qualification, not production native signatures. External maintenance executor, independently provisioned production trust, Authenticode/native Squirrel/Android deployment, schema migrations, legacy/noncooperative process coverage and hardware recovery remain unqualified; startUpdater stays blocked.",
+        "2026-11-06: upgrade journal/exclusion, protected host journals, full Desktop main ownership, signed directory stage/backup/same-schema preparation, app/profile replacement/readback and an external coordination library are source-integrated. The library requires a same-profile mutex, fresh independent offline/native-signer/other-writer evidence and operator consent, verified only with injected TEST-ONLY witnesses on isolated Windows processes. A real standalone maintenance installer, independently provisioned production trust, Authenticode/native Squirrel/Android deployment, schema migrations, legacy/noncooperative process coverage and hardware recovery remain unqualified; startUpdater stays blocked.",
         "2026-11-06: embedded same-commit EXE/ASAR+APK verifier exists and passes on old debug QA artifacts, but production-signed artifacts from exact current HEAD, physical recovery, and operator gates remain unavailable; release:check still fails closed"
       ],
       "ownerJob": "streamcockpit/3.0-lot-p",

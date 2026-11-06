@@ -1,6 +1,7 @@
 import {afterEach,beforeEach,expect,it,vi} from 'vitest';
 import * as fs from 'node:fs/promises';
 import {createHash,generateKeyPairSync,sign} from 'node:crypto';
+import {spawnSync} from 'node:child_process';
 import {dirname,join,relative,sep} from 'node:path';
 import {tmpdir} from 'node:os';
 import {createSignedWindowsDirectoryUpgradePlanner,directoryReleaseImageHash,directoryReleaseSigningPayload,
@@ -10,7 +11,8 @@ import {AutoModActionIntentSqlite} from '../apps/server/src/streamcockpit-automo
 import {PredictionIntentSqlite} from '../apps/server/src/streamcockpit-prediction-intent-sqlite.js';
 import {MomentsSqliteStorage} from '../apps/server/src/streamcockpit-moments-sqlite.js';
 import {SqliteUpgradeJournal} from '../apps/desktop/src/streamcockpit-upgrade-journal.js';
-import {startWithRuntimeUpgradeOwnership} from '../apps/desktop/src/streamcockpit-runtime-ownership.js';
+import {startWithRuntimeUpgradeOwnership,runtimeUpgradeDirectory} from '../apps/desktop/src/streamcockpit-runtime-ownership.js';
+import {runExternalWindowsMaintenance,type ExternalMaintenanceDependencies} from '../apps/desktop/src/streamcockpit-external-maintenance.js';
 import type {UpgradeManifest} from '../packages/core/src/streamcockpit-upgrade.js';
 
 vi.mock('node:fs/promises',async original=>{const actual=await original<typeof import('node:fs/promises')>();
@@ -146,4 +148,144 @@ onWindows('does not mistake publisher authentication for native installed-identi
  const f=await fixture();f.attestInstalled.mockResolvedValue(undefined);const p=f.make();await p.register(f.options.manifest,f.paths.sourcePackage);
  const result=await p.install();expect(result.installed).toBe(false);expect(result.pending?.operation).toBe('install');
  expect((await f.make().install()).pending?.operation).toBe('install');await receipts(f.paths.profileRoot);
+});
+
+async function externalFixture(){
+ const f=await fixture();
+ const applicationData=join(f.root,'appdata');
+ await fs.mkdir(applicationData);
+ const rootUserData=f.paths.profileRoot;
+ const coordinator=runtimeUpgradeDirectory(applicationData,rootUserData);
+ await fs.mkdir(coordinator,{recursive:true});
+ f.options.journalDirectory=coordinator;
+ const observation=()=>({authority:'fixe-independent' as const,session:'independent-fixture-session',observedAt:Date.now(),
+   obs:'idle' as const,twitch:'offline' as const});
+ const observeOffline=vi.fn(async()=>observation());
+ const verifyNativeSigner=vi.fn(async(path:string)=>({status:'valid' as const,
+   signer:f.options.trust.windowsSigner,path,observedAt:Date.now()}));
+ const authorize=vi.fn(async()=>true);
+ const noOtherWriters=vi.fn(async()=>true);
+ const assessRestartSafety=vi.fn(async()=>({safe:true}));
+ const deps:ExternalMaintenanceDependencies={observeOffline,verifyNativeSigner,authorize,noOtherWriters,assessRestartSafety};
+ const run=(action:'prepare'|'install'|'rollback')=>runExternalWindowsMaintenance(
+  {action,applicationData,rootUserData,options:f.options},deps);
+ return {...f,applicationData,rootUserData,coordinator,deps,run,observeOffline,verifyNativeSigner,authorize,noOtherWriters,assessRestartSafety};
+}
+onWindows('F10 external maintenance coordinates genuine temporary SQLite/files and preserves all three receipts through explicit prepare-install-rollback',async()=>{
+ const f=await externalFixture();
+ const before=await inventory(f.paths.profileRoot);
+ const verified=await f.run('prepare');
+ expect(verified).toMatchObject({phase:'verified',installed:false,pending:false});
+ expect(f.authorize).not.toHaveBeenCalled();
+ expect(await inventory(f.paths.packageRoot)).toEqual(f.options.rollback.packageFiles);
+ const installed=await f.run('install');
+ expect(installed).toMatchObject({phase:'installed',installed:true,pending:false});
+ expect(await inventory(f.paths.packageRoot)).toEqual(f.options.target.packageFiles);
+ expect(await inventory(f.paths.profileRoot)).toEqual(before);await receipts(f.paths.profileRoot);
+ const restored=await f.run('rollback');
+ expect(restored).toMatchObject({phase:'rolledBack',installed:true,rolledBack:true,pending:false});
+ expect(await inventory(f.paths.packageRoot)).toEqual(f.options.rollback.packageFiles);
+ expect(await inventory(f.paths.profileRoot)).toEqual(before);await receipts(f.paths.profileRoot);
+ expect(f.authorize).toHaveBeenCalledTimes(2);
+ expect(f.verifyNativeSigner).toHaveBeenCalledTimes(3);
+});
+onWindows.each(['offline-unknown','stale-observation','missing-native','wrong-native','active-writers','live','no-consent','wrong-coordinator'] as const)
+ ('F10 external executor refuses %s before application replacement',async issue=>{
+ const f=await externalFixture();
+ if(issue==='offline-unknown')f.observeOffline.mockResolvedValue({authority:'fixe-independent',session:'x',observedAt:Date.now(),obs:'unknown',twitch:'offline'} as never);
+ if(issue==='stale-observation')f.observeOffline.mockResolvedValue({authority:'fixe-independent',session:'x',observedAt:Date.now()-6000,obs:'idle',twitch:'offline'});
+ if(issue==='missing-native')f.verifyNativeSigner.mockResolvedValue(undefined as never);
+ if(issue==='wrong-native')f.verifyNativeSigner.mockImplementation(async path=>({status:'valid' as const,signer:'F'.repeat(40),path,observedAt:Date.now()}));
+ if(issue==='active-writers')f.noOtherWriters.mockResolvedValue(false);
+ if(issue==='live')f.assessRestartSafety.mockResolvedValue({safe:false});
+ if(issue==='no-consent')f.authorize.mockResolvedValue(false);
+ if(issue==='wrong-coordinator')f.options.journalDirectory=join(f.root,'other-journal');
+ const before=await inventory(f.paths.profileRoot);
+ await expect(f.run('install')).rejects.toThrow();
+ expect(await inventory(f.paths.packageRoot)).toEqual(f.options.rollback.packageFiles);
+ expect(await inventory(f.paths.profileRoot)).toEqual(before);await receipts(f.paths.profileRoot);
+ expect(fs.copyFile).not.toHaveBeenCalled();
+});
+onWindows('F10 external maintenance refuses when real Desktop runtime owns the same SQLite coordinator even if stopped-check lies',async()=>{
+ const f=await externalFixture();
+ const runtime=await startWithRuntimeUpgradeOwnership(f.coordinator,'2.1.0',async()=>({stop:async()=>undefined}));
+ try{await expect(f.run('install')).rejects.toThrow('BUSY');
+  expect(fs.copyFile).not.toHaveBeenCalled();
+  expect(await inventory(f.paths.packageRoot)).toEqual(f.options.rollback.packageFiles);
+ }finally{await runtime.stop()}
+});
+onWindows('F10 external executor retains uncertain signed-copy intent and does not replay the incomplete stage',async()=>{
+ const f=await externalFixture();
+ const actual=await vi.importActual<typeof import('node:fs/promises')>('node:fs/promises');
+ let lost=false;
+ vi.mocked(fs.copyFile).mockImplementation(async(from,to,flags)=>{
+  await actual.copyFile(from,to,flags);
+  if(!lost&&String(to).startsWith(f.paths.preparedPackage+sep)){lost=true;throw Error('lost staged ACK - PRIVATE_FIXTURE')}
+ });
+ const first=await f.run('install');
+ expect(first).toMatchObject({pending:true,installed:false});
+ const copies=vi.mocked(fs.copyFile).mock.calls.length;
+ const second=await f.run('install');
+ expect(second).toMatchObject({pending:true,installed:false});
+ expect(vi.mocked(fs.copyFile)).toHaveBeenCalledTimes(copies);
+ expect(await inventory(f.paths.packageRoot)).toEqual(f.options.rollback.packageFiles);await receipts(f.paths.profileRoot);
+});
+
+onWindows('F10 external TEST-ONLY child processes use the same durable coordinator across prepare/install/rollback without touching an installed profile',async()=>{
+ const f=await externalFixture();
+ const config=join(f.root,'qa-external.json');
+ const script=join(process.cwd(),'tests/fixtures/streamcockpit3-external-maintenance-process.ts');
+ const baseline=await inventory(f.paths.profileRoot);
+ const command=(action:'prepare'|'install'|'rollback')=>{
+  // These bytes are temporary; no production key, installation, host or provider.
+  const child=spawnSync(process.execPath,['--import','tsx',script,action,config],{
+   cwd:process.cwd(),encoding:'utf8',windowsHide:true,timeout:15000,maxBuffer:1024*1024
+  });
+  expect(child.error).toBeUndefined();
+  expect(child.status,child.stderr).toBe(0);
+  return JSON.parse(child.stdout.trim()) as {phase:string;pending:boolean;installed:boolean;rolledBack:boolean};
+ };
+ for(const action of ['prepare','install','rollback'] as const){
+  await fs.writeFile(config,JSON.stringify({
+   action,applicationData:f.applicationData,rootUserData:f.rootUserData,options:f.options
+  }));
+  const result=command(action);
+  expect(result.pending).toBe(false);
+  expect(result.phase).toBe(action==='prepare'?'verified':action==='install'?'installed':'rolledBack');
+  expect(await inventory(f.paths.profileRoot)).toEqual(baseline);
+  await receipts(f.paths.profileRoot);
+ }
+ expect(await inventory(f.paths.packageRoot)).toEqual(f.options.rollback.packageFiles);
+ const store=new SqliteUpgradeJournal(f.coordinator);
+ expect((await store.exclusive(()=>store.read()))?.phase).toBe('rolledBack');
+},45000);
+
+onWindows('F10 external rollback verifies original signed backup even if new release source is no longer available',async()=>{
+ const f=await externalFixture();
+ expect((await f.run('install')).installed).toBe(true);
+ await fs.rm(f.paths.sourcePackage,{recursive:true,force:true});
+ const restored=await f.run('rollback');
+ expect(restored).toMatchObject({phase:'rolledBack',pending:false,rolledBack:true});
+ expect(await inventory(f.paths.packageRoot)).toEqual(f.options.rollback.packageFiles);
+ await receipts(f.paths.profileRoot);
+ expect(f.verifyNativeSigner.mock.calls.at(-1)?.[0]).toBe(join(f.paths.backupPackage,'StreamCockpit.exe'));
+});
+onWindows('F10 external rollback refuses missing native trust on OLD backup instead of erasing post-upgrade image',async()=>{
+ const f=await externalFixture();
+ expect((await f.run('install')).installed).toBe(true);
+ f.verifyNativeSigner.mockResolvedValue(undefined as never);
+ const current=await inventory(f.paths.packageRoot);
+ await expect(f.run('rollback')).rejects.toThrow('NATIVE_SIGNER_UNVERIFIED');
+ expect(await inventory(f.paths.packageRoot)).toEqual(current);
+ await receipts(f.paths.profileRoot);
+});
+
+onWindows('F10 external maintenance authenticates publisher before any operator consent request',async()=>{
+ const f=await externalFixture();
+ f.options.manifest.signature.value='A'.repeat(86)+'==';
+ await expect(f.run('install')).rejects.toThrow('SIGNATURE_INVALID');
+ expect(f.authorize).not.toHaveBeenCalled();
+ expect(fs.copyFile).not.toHaveBeenCalled();
+ expect(await inventory(f.paths.packageRoot)).toEqual(f.options.rollback.packageFiles);
+ await receipts(f.paths.profileRoot);
 });

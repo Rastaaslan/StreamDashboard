@@ -1,0 +1,24 @@
+# F10 — coordination de la maintenance Windows externe (source intégrée, pas déployée)
+
+06/11/2026 — exclusivement RDC sur FIXE, branche `streamcockpit/3.0-full-experience`, base `91ef3509dcdaacde30cf206958c1442657161681`. PLAN, matrice, CONTINUITY, MIGRATION et audit G2 consultés avant écriture. F05 et CONTINUITY demeurent propriété de leurs chantiers ; rien n'y a été modifié. Aucun accès à l'installation ou au profil utilisateur, à OBS/Twitch, à d'autres machines ni aux certificats de production.
+
+## Blocage et raccordement réel
+
+L'intégration F10 disposait d'un planificateur SQLite durable, d'un verrou commun au Desktop, de la préparation Ed25519 et de copies/rollback effectifs sur des répertoires explicites, mais **aucun chemin externe cohérent n'assemblait ces capacités**. Un appelant aurait pu choisir un autre coordinateur, admettre une observation OBS/Twitch inconnue ou présenter une préparation éditeur comme une preuve de signature Windows.
+
+`runExternalWindowsMaintenance` assemble désormais le parcours `prepare → install → rollback` derrière le **même chemin de coordination calculé par `runtimeUpgradeDirectory(applicationData,rootUserData)`**. Il refuse un journal situé ailleurs ou un profil différent, exige une observation indépendante fraîche montrant OBS inactif et Twitch hors ligne, le contrôle d'absence d'autres écrivains, un témoin natif de signature pour la nouvelle image ou l'ancienne sauvegarde lors d'un rollback, une empreinte exacte de toute l'image concernée, la sûreté de redémarrage et un consentement explicite spécifique à `install` ou `rollback`. Ces contrôles sont renouvelés lors des étapes susceptibles d'écrire ; la clôture refuse un changement d'identité/session de la source d'observation.
+
+Le module s'appuie sur **le planificateur et l'authentification de release existants** : intentions durables avant copie, verrou SQLite entre processus, reçus complets, conservation des trois journaux d'anti-rejeu F02/F08/F09, refus des transformations de schéma et absence de répétition automatique après acquittement perdu. Les résultats externes sont limités à phase/pending/installed/rolledBack, sans secrets. Pas de nouveau verrou, service, réseau, CLI de production, installation implicite ni raccourci `autoUpdater.quitAndInstall`.
+
+## Qualification
+
+- Tests réels sous Windows dans des arborescences **temporaires** : préparation cryptographiquement signée par une clé Ed25519 éphémère, installation par copies/renommages NTFS, sauvegarde/restauration et comparaison réelle des SQLite AutoMod, prédictions et moments.
+- Régressions ajoutées : réussite séquentielle des trois opérations ; refus d'une observation hors ligne inconnue/périmée, signature native absente ou divergente, écrivain actif, sûreté insuffisante, consentement absent et coordinateur différent ; contention du vrai verrou runtime ; perte d'ACK du stage avec intention bloquée et zéro répétition.
+- **Campagne finale sur les sources revues : 5 suites / 115 PASS / 0 FAIL / 0 skipped**, dont **15 nouveaux cas** ; journal `.git/sc3-external-maintenance-final-tests.log`. Un test lance réellement `prepare`, `install`, `rollback` dans **trois processus enfants Windows distincts**, sous `%TEMP%/sc3-signed-prep-*` uniquement. Un autre confirme qu'un rollback reste possible depuis l'ancienne sauvegarde authentifiée même après disparition de la nouvelle image source, sans accepter une sauvegarde non attestée. Les contrôles `build:types`, `check:browser-types`, `security:check` (**6 820 fichiers**) et `git diff --check` ont tous renvoyé **0**. Aucun test navigateur requis : aucun comportement de rendu modifié.
+- Les fournisseurs, l'observation indépendante, l'attestation native et le consentement sont **injectés/simulés dans les tests** ; les fichiers temporaires et SQLite Windows sont réels. Cela ne démontre pas l'arrêt réel des applications installées ni une signature de production.
+
+## Limites de livraison
+
+**Ce n'est PAS un exécutable de maintenance autonome certifié ni un installateur Squirrel/Android.** Il reste à fournir et qualifier les adaptateurs OS d'identité Authenticode, d'observation live indépendante, de détection des écrivains non coopératifs, de consentement opérateur, la protection des services externes, les certificats réellement approuvés et la migration/rollback de profils réels. Pas de vraie paire EXE/APK signée de l'actuel HEAD, ni réception sur trois appareils ou panne secteur. `startUpdater` demeure bloqué. **F10 partial ; G2 in_progress ; G3/G4/G5 open**.
+
+**Prochaine priorité :** implémenter la vérification Authenticode Windows indépendante à partir d'un fichier déjà préparé, en lecture seule et avec refus démontré pour les fichiers non signés ; ensuite seulement associer l'exécutant natif externe à cette coordination, sous accord et signatures réelles.
