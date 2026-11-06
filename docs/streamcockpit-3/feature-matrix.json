@@ -1047,6 +1047,10 @@
           "kind": "2026-11-06 FIXE F09: 53 targeted PASS / 0 FAIL / 6 skipped across 5 suites including 9 real Windows migration tests (independent child restart, corruption, collisions, lock, hardlinks and simulated interruption). TypeScript/browser-types/security 6778 files PASS. Source-only; no live migration, power-loss, hardware or installer attestation."
         },
         {
+          "path": "docs/streamcockpit-3/F09_F10_LEGACY_QA_CONVERGENCE_20261106.md",
+          "kind": "2026-11-06 FIXE F09/F10: existing explicit canonical F09 checksummed JSON -> SQLite converter now reused under opt-in detached F10 QA backup/migration/independent-recovery and cooperative F02/F08/F09 writer gate, original+archived bytes and F02/F08 one-way journals preserved. RED 1 PASS/8 FAIL, GREEN 13 suites 175 PASS/0 FAIL/6 skipped incl. real Windows SQLite and source-change refusals, types/browser/security/diff PASS. No live profile migration, multi-process writer pause, installer/signatures or G3-G5 evidence; F09 partial."
+        },
+        {
           "path": "integrations/obs/src/client.ts",
           "kind": "2026-11-02 FIXE F09 ReplayBufferSaved observation while connected and streaming: requires absolute path and nonempty regular-file metadata; checks generation and stop-start stream epoch after async lstat, then forwards both epochs without private path; runtime-only HMAC digest, no OBS command; actual file/codec/durability unqualified"
         },
@@ -1100,6 +1104,7 @@
         "tests/streamcockpit3-moments-observed.test.ts",
         "tests/streamcockpit3-moments-sqlite.test.ts",
         "tests/streamcockpit3-moments-legacy-migration.test.ts",
+        "tests/streamcockpit3-moments-legacy-qa-migration.test.ts",
         "tests/streamcockpit3-moments-obs-replay.test.ts",
         "tests/obs-runtime.test.ts",
         "tests/streamcockpit3-moments-page.test.ts",
@@ -1221,6 +1226,10 @@
         {
           "path": "docs/streamcockpit-3/F10_DURABLE_WRITER_QUIESCENCE_QA_20261106.md",
           "kind": "2026-11-06 FIXE F10: added QA-only shared in-process F02/F08/F09 writer gate, drains in-flight operations, blocks new writes during maintenance, blocks permanently on uncertain writer/maintenance failure; QA orchestrator performs checkpoint -> detached migration -> recovery under this gate with real Windows SQLite. 124 PASS/0 FAIL/0 skipped across 10 targeted suites; TypeScript/browser/security 6789 files PASS. Gate NOT YET wired to production server writers or cross-process locks, no signed/installed release or hardware evidence. F10 partial, G2 in_progress, G3-G5 open."
+        },
+        {
+          "path": "docs/streamcockpit-3/F09_F10_LEGACY_QA_CONVERGENCE_20261106.md",
+          "kind": "2026-11-06 FIXE F10: explicit opt-in inherited F09 JSON migration incorporated in detached checkpoint -> SQLite + original JSON archive -> independent recovery under the three-host-writer in-process QA gate; source hash rechecked before and after, unexpected files and sidecars rejected. 175 PASS/0 FAIL/6 skipped across 13 suites including real Windows SQLite; TS/browser/security/diff PASS, no production installation or multi-process exclusion. F10 partial, G2 in_progress, G3-G5 open."
         }
       ],
       "verifiedTests": [
@@ -1232,6 +1241,7 @@
         "tests/desktop-restart-safety.test.ts",
         "tests/streamcockpit3-upgrade-qa-checkpoint.test.ts",
         "tests/streamcockpit3-durable-writer-quiescence.test.ts",
+        "tests/streamcockpit3-moments-legacy-qa-migration.test.ts",
         "tests/streamcockpit3-artifact-verifier.test.ts",
         "tests/migration-backup.test.ts"
       ],

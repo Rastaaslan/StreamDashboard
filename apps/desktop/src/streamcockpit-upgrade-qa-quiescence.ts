@@ -12,14 +12,14 @@ import {checkpointQaProfile,migrateQaProfileCopy,restoreQaProfile} from './strea
  */
 export async function runQuiescedQaUpgrade(
   workspace:string,toVersion:number,migrations:UpgradeMigration[],
-  gate:HostDurableWriterQuiescence,
+  gate:HostDurableWriterQuiescence,options:{migrateLegacyMoments?:true}={},
 ){
   return gate.withQuiesced(async()=>{
     gate.assertQuiesced();
     const checkpoint=await checkpointQaProfile(workspace);
     // No protected writer may re-enter between checkpoint and final recovery.
     gate.assertQuiesced();
-    const migration=await migrateQaProfileCopy(workspace,toVersion,migrations);
+    const migration=await migrateQaProfileCopy(workspace,toVersion,migrations,options);
     gate.assertQuiesced();
     const recovery=await restoreQaProfile(workspace);
     gate.assertQuiesced();

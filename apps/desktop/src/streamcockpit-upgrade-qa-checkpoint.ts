@@ -3,6 +3,8 @@ import {copyFile,lstat,mkdir,open,readFile,readdir,realpath,rename,rm,writeFile}
 import {basename,dirname,isAbsolute,join,resolve} from 'node:path';
 import {tmpdir} from 'node:os';
 import {migrateUpgradeData,type UpgradeData,type UpgradeMigration} from '../../../packages/core/src/streamcockpit-upgrade.js';
+import {assertLegacyMomentsInventory,verifyActiveLegacyMoments,convertLegacyMomentsInPending,
+  LEGACY_MOMENTS,SQLITE_MOMENTS,ARCHIVED_LEGACY_MOMENTS} from './streamcockpit-moments-legacy-qa.js';
 
 /** F10 filesystem QA evidence. NEVER a production installer or a profile restore.
  * The caller must create a fresh DIRECT child of OS temp named sc3-upgrade-qa-*.
@@ -196,12 +198,17 @@ export async function restoreQaProfile(workspace:string):Promise<QaCheckpointRep
  * writes to active/restored profiles. The caller owns the synthetic workspace.
  * Reuses the same complete hash-verified backup as explicit QA rollback.
  */
-export async function migrateQaProfileCopy(workspace:string,toVersion:number,migrations:UpgradeMigration[]){
+export async function migrateQaProfileCopy(workspace:string,toVersion:number,migrations:UpgradeMigration[],
+  options:{migrateLegacyMoments?:true}={}){
   const root=await sandbox(workspace),destination=join(root,'migrated');
   try{await lstat(destination);fail('MIGRATED_ALREADY_EXISTS')}
   catch(error){if((error as NodeJS.ErrnoException).code!=='ENOENT')throw error}
   const {report,folder}=await verifiedBackup(root);
   await requireCurrentDurableJournals(root,report);
+  // This is explicit opt-in, never a side effect of an ordinary settings migration.
+  // The active legacy journal MUST still match the immutable backed-up revision.
+  const legacy=options.migrateLegacyMoments===true?assertLegacyMomentsInventory(report.entries):undefined;
+  if(legacy)await verifyActiveLegacyMoments(root,legacy);
   const setting='configuration/settings.json';
   if(!report.entries.some(entry=>entry.path===setting))fail('SETTINGS_NOT_IN_BACKUP');
   const pending=join(root,'migrated-pending-'+randomUUID());
@@ -218,19 +225,35 @@ export async function migrateQaProfileCopy(workspace:string,toVersion:number,mig
     const handle=await open(temp,'r+');
     try{await handle.sync()}finally{await handle.close()}
     await rename(temp,settingsPath);
+    const legacyMoments=legacy?await convertLegacyMomentsInPending(pending,legacy):undefined;
     const actual=await list(pending),earlier=new Map(report.entries.map(entry=>[entry.path,entry]));
-    if(actual.files.length!==report.entries.length)fail('MIGRATED_FILE_SET_CHANGED');
+    // Legacy->SQLite adds exactly one explicit archived JSON sidecar inside
+    // the detached migrated profile. The backup and restored original are intact.
+    if(actual.files.length!==report.entries.length+(legacyMoments?1:0))
+      fail('MIGRATED_FILE_SET_CHANGED');
     for(const entry of actual.files){
       const original=earlier.get(entry.path);
-      if(!original||(entry.path!==setting &&
-        (entry.bytes!==original.bytes||entry.sha256!==original.sha256)))
+      if(entry.path===SQLITE_MOMENTS&&legacyMoments){
+        if(original||entry.sha256!==legacyMoments.sqliteSha256)fail('MIGRATED_DATA_CHANGED');
+      }else if(entry.path===ARCHIVED_LEGACY_MOMENTS&&legacyMoments){
+        if(original||!legacy||entry.bytes!==legacy.bytes||entry.sha256!==legacy.sha256)
+          fail('MIGRATED_DATA_CHANGED');
+      }else if(!original||(entry.path!==setting &&
+        (entry.bytes!==original.bytes||entry.sha256!==original.sha256))){
         fail('MIGRATED_DATA_CHANGED');
+      }
     }
+    if(legacyMoments&&(actual.files.some(entry=>entry.path===LEGACY_MOMENTS)||
+      !actual.files.some(entry=>entry.path===SQLITE_MOMENTS)||
+      !actual.files.some(entry=>entry.path===ARCHIVED_LEGACY_MOMENTS)))
+      fail('MIGRATED_FILE_SET_CHANGED');
     const migrated=actual.files.find(entry=>entry.path===setting)!;
     if(migrated.sha256!==hash(output))fail('MIGRATED_VERIFY_FAILED');
     await requireCurrentDurableJournals(root,report);
+    if(legacy)await verifyActiveLegacyMoments(root,legacy);
     await rename(pending,destination);
     return {schemaVersion:1 as const,kind:'SC3_UPGRADE_QA_MIGRATION' as const,
-      fromVersion,toVersion,oldHash:earlier.get(setting)!.sha256,newHash:migrated.sha256};
+      fromVersion,toVersion,oldHash:earlier.get(setting)!.sha256,newHash:migrated.sha256,
+      ...(legacyMoments?{legacyMoments}: {})};
   }catch(error){await rm(pending,{recursive:true,force:true});throw error}
 }
