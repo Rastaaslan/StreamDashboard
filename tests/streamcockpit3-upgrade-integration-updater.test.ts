@@ -71,3 +71,42 @@ it('exposes diagnostic preflight without starting Electron update checks in deve
   expect(mocks.feed).not.toHaveBeenCalled(); expect(mocks.check).not.toHaveBeenCalled();
   expect(vi.getTimerCount()).toBe(0); expect(mocks.quit).not.toHaveBeenCalled();
 });
+
+
+it('routes an explicit updater choice to the native prepared transaction, never to Squirrel quitAndInstall', async () => {
+  const native = vi.fn(async (isCurrent: () => boolean) => { expect(isCurrent()).toBe(true); });
+  stop = startUpdater({} as never, { assessRestartSafety: assess } as never, logger, cleanup, undefined, native);
+  await vi.advanceTimersByTimeAsync(1);
+  expect(native).not.toHaveBeenCalled();
+  autoUpdater.emit('update-downloaded'); await drain();
+  expect(mocks.show).toHaveBeenCalledTimes(1);
+  expect(mocks.show.mock.calls[0][1].buttons).toEqual(['Plus tard', 'Choisir le contrat signé']);
+  expect(assess).toHaveBeenCalledTimes(2); expect(native).toHaveBeenCalledOnce();
+  expect(cleanup).not.toHaveBeenCalled(); expect(mocks.quit).not.toHaveBeenCalled();
+  await vi.advanceTimersByTimeAsync(60_000); expect(native).toHaveBeenCalledOnce();
+});
+it('invalidates native updater authority when disposed during the existing native dialog', async () => {
+  let finish!: () => void, current!: () => boolean;
+  const native = vi.fn((isCurrent: () => boolean) => { current = isCurrent; return new Promise<void>(r => { finish = r; }); });
+  stop = startUpdater({} as never, { assessRestartSafety: assess } as never, logger, cleanup, undefined, native);
+  autoUpdater.emit('update-downloaded'); await drain(); expect(native).toHaveBeenCalledOnce();
+  expect(current()).toBe(true); stop(); expect(current()).toBe(false); finish(); await drain();
+  expect(cleanup).not.toHaveBeenCalled(); expect(mocks.quit).not.toHaveBeenCalled();
+});
+it.each(['operator-deferred', 'live-after-dialog'] as const)('does not open native maintenance for %s', async reason => {
+  const native = vi.fn(async () => undefined);
+  mocks.show.mockImplementation(async () => {
+    if (reason === 'live-after-dialog') assess.mockResolvedValue({safe:false});
+    return {response:reason === 'operator-deferred' ? 0 : 1};
+  });
+  stop = startUpdater({} as never, { assessRestartSafety: assess } as never, logger, cleanup, undefined, native);
+  autoUpdater.emit('update-downloaded'); await drain();
+  expect(native).not.toHaveBeenCalled(); expect(cleanup).not.toHaveBeenCalled(); expect(mocks.quit).not.toHaveBeenCalled();
+});
+it('does not replay or expose provider details after a native maintenance failure', async () => {
+  const native = vi.fn(async () => { throw Error('Bearer TEST_ONLY_NATIVE_SECRET'); });
+  stop = startUpdater({} as never, { assessRestartSafety: assess } as never, logger, cleanup, undefined, native);
+  autoUpdater.emit('update-downloaded'); await drain(); await vi.advanceTimersByTimeAsync(60_000);
+  expect(native).toHaveBeenCalledOnce(); expect(mocks.quit).not.toHaveBeenCalled(); expect(cleanup).not.toHaveBeenCalled();
+  expect(JSON.stringify(logger.error.mock.calls)).not.toContain('TEST_ONLY_NATIVE_SECRET');
+});

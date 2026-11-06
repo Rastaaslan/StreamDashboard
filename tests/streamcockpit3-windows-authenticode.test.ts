@@ -3,7 +3,7 @@ import {mkdtemp,readFile,rm,writeFile,link} from 'node:fs/promises';
 import {join} from 'node:path';
 import {tmpdir} from 'node:os';
 import {createHash} from 'node:crypto';
-import {decodeWindowsSignatureOutput,inspectWindowsAuthenticode,windowsApplicationEntry} from '../apps/desktop/src/streamcockpit-windows-authenticode.js';
+import {decodeWindowsSignatureOutput,inspectWindowsAuthenticode,windowsApplicationEntry,windowsVersionMatches} from '../apps/desktop/src/streamcockpit-windows-authenticode.js';
 import {createNativeWindowsImageAttester} from '../apps/desktop/src/streamcockpit-native-maintenance.js';
 const dirs:string[]=[];
 afterEach(async()=>{for(const dir of dirs.splice(0))await rm(dir,{recursive:true,force:true})});
@@ -48,3 +48,11 @@ windows('does not attest a signed identity from expected metadata alone when rea
  const attest=createNativeWindowsImageAttester(dir,[expected]);
  expect(await attest()).toBeUndefined();expect(await readFile(file)).toEqual(bytes);
 },25000);
+
+it('matches the actual Forge numeric PE version without conflating different signed SemVer inventories',()=>{
+ expect(windowsVersionMatches('3.0.0','3.0.0-alpha.1')).toBe(true);
+ expect(windowsVersionMatches('3.0.0.0','3.0.0-alpha.1')).toBe(true);
+ expect(windowsVersionMatches('3.0.0-alpha.1','3.0.0-alpha.1')).toBe(true);
+ for(const observed of ['3.0.1','3.0.0.1','3.0.0-alpha.2','3.0.0 trailing',''])
+  expect(windowsVersionMatches(observed,'3.0.0-alpha.1')).toBe(false);
+});

@@ -5,7 +5,7 @@ async function files(root){const out=[];for(const entry of await readdir(root,{w
 const inputs=['package.json','package-lock.json','forge.config.cjs','tsconfig.json','tsconfig.runtime.json','tsconfig.browser-js.json',...(await Promise.all(['apps','packages','integrations','scripts','resources'].map(files))).flat()].sort();
 const hash=createHash('sha256');for(const file of inputs){hash.update(file+'\0');hash.update(await readFile(file));}
 const sourceHash=hash.digest('hex'),file='.build/build-proof.json';
-const outputFiles=[],outputs=createHash('sha256');for(const output of (await Promise.all(['dist','.build/public'].map(files))).flat().sort()){const bytes=await readFile(output);outputs.update(output+'\0');outputs.update(bytes);outputFiles.push({path:output,sha256:createHash('sha256').update(bytes).digest('hex')});}
+const outputFiles=[],outputs=createHash('sha256');for(const output of (await Promise.all(['dist','.build/public','.build/maintenance'].map(files))).flat().sort()){const bytes=await readFile(output);outputs.update(output+'\0');outputs.update(bytes);outputFiles.push({path:output,sha256:createHash('sha256').update(bytes).digest('hex')});}
 const outputHash=outputs.digest('hex');
 if(process.argv.includes('--verify')){
   const saved=JSON.parse(await readFile(file));if(saved.sourceHash!==sourceHash||saved.outputHash!==outputHash)throw new Error('Sources changed since build. Run npm run build before packaging.');

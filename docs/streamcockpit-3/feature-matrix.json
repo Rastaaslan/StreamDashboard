@@ -1301,6 +1301,10 @@
         {
           "path": "docs/streamcockpit-3/F09_F10_SIGNED_LEGACY_MIGRATION_20261106.md",
           "kind": "2026-11-06 FIXE F09/F10: explicit publisher-signed canonical legacy JSON-to-SQLite conversion now runs inside the existing directory preparation/install/rollback and external maintenance path, preserving F02/F05/F08 journals and exact F09 payload including uncertain clips. Read-only recovery after completed conversion and actual Windows child exit; partial conversion remains pending without replay. 20 suites 312 PASS/0 FAIL/0 skipped incl. 17 new tests; TS/browser types/security 6832 files/diff PASS. Real temporary Windows files/SQLite; in-memory test signing keys and simulated positive native/live/writer proofs. No installed profile, native Squirrel/Android delivery or G3-G5 qualification."
+        },
+        {
+          "path": "docs/streamcockpit-3/SC3_CLOTURE_UNIQUE_20261106.md",
+          "kind": "2026-11-06 FIXE single-closure source integration: native Desktop/menu and explicit updater choice now reach the existing durable maintenance planner through independently observed OBS/Helix state, Windows writer inspection, Authenticode and an external staged-image Node helper; normal old-app exit and stopped-profile hashes preserve shutdown writes. 27 targeted suites 378 PASS/0 FAIL/0 skipped/0 todo; types/browser types/security 6846 files/diff PASS. Real temporary Windows SQLite/files, native rejection/writer inspection and bundled Electron Node refusal; positive OS trust, Electron UI and provider/live proofs simulated. Foreign F03/F05/CONTINUITY unchanged. Full CDC closure, production trust, native Squirrel/Android transaction, complete paired artifacts and G3-G5 remain pending."
         }
       ],
       "verifiedTests": [
@@ -1327,12 +1331,17 @@
         "tests/streamcockpit3-application-ownership.test.ts",
         "tests/streamcockpit3-upgrade-signed-preparation.test.ts",
         "tests/streamcockpit3-windows-authenticode.test.ts",
-        "tests/streamcockpit3-upgrade-moments-migration.test.ts"
+        "tests/streamcockpit3-upgrade-moments-migration.test.ts",
+        "tests/streamcockpit3-maintenance-observer.test.ts",
+        "tests/streamcockpit3-maintenance-cli.test.ts",
+        "tests/streamcockpit3-maintenance-launcher.test.ts",
+        "tests/streamcockpit3-native-maintenance-main.test.ts",
+        "tests/streamcockpit3-native-maintenance-runtime.test.ts"
       ],
       "hardwareEvidence": [],
       "blockers": [
         "Production Windows/Android native signatures and independently provisioned release trust remain unqualified.",
-        "2026-11-06: durable update journal, application-wide exclusion, authenticated directory preparation, canonical F09 legacy conversion/recovery, external coordination and native Windows Authenticode/full-image readback are source-integrated. Production native trust is not qualified. Distributed standalone installer, native Squirrel/Android transaction, independent live/writer OS adapters, other schema migrations, legacy process coverage and hardware acceptance remain incomplete; installed updater stays blocked.",
+        "2026-11-06: the existing directory maintenance planner is now wired to native Desktop/operator consent, an external packaged CJS helper, independent read-only OBS/Helix observation, native writer/signature inspection and final stopped-profile capture. Source tests pass; only a real unsigned/refusal path is native-attested. Independently provisioned production trust and a signed package, native Squirrel registration/update and Android PackageInstaller/rollback, deployed-profile recovery, unregistered writer coverage and hardware reception remain unqualified. Current installed version has not been modified.",
         "2026-11-06: embedded same-commit EXE/ASAR+APK verifier exists and passes on old debug QA artifacts, but production-signed artifacts from exact current HEAD, physical recovery, and operator gates remain unavailable; release:check still fails closed"
       ],
       "ownerJob": "streamcockpit/3.0-lot-p",

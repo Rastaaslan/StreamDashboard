@@ -1,5 +1,5 @@
 import {join} from 'node:path';
-import {inspectWindowsAuthenticode,windowsApplicationEntry} from './streamcockpit-windows-authenticode.js';
+import {inspectWindowsAuthenticode,windowsApplicationEntry,windowsVersionMatches} from './streamcockpit-windows-authenticode.js';
 import {runExternalWindowsMaintenance,type ExternalMaintenanceRequest,type ExternalMaintenanceDependencies} from './streamcockpit-external-maintenance.js';
 import {verifyUpgradeReadbackFiles,type UpgradeReadbackExpectation,type UpgradeReadbackIdentity} from './streamcockpit-upgrade-readback.js';
 
@@ -25,7 +25,7 @@ export function createNativeWindowsImageAttester(packageRoot:string,images:Upgra
     const entry=windowsApplicationEntry(image.packageFiles);
     const native=await inspectWindowsAuthenticode(join(packageRoot,entry.path));
     if(!native||native.status!=='valid'||native.signer!==image.identity.signer.toUpperCase()||
-     native.sha256!==entry.sha256||native.version!==image.identity.version||
+     native.sha256!==entry.sha256||!windowsVersionMatches(native.version,image.identity.version)||
      !await verifyUpgradeReadbackFiles(packageRoot,image.packageFiles))continue;
     return {...image.identity,observedAt:native.observedAt};
    }

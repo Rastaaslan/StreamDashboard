@@ -12,6 +12,13 @@ const local=(p:string)=>typeof p==='string'&&isAbsolute(p)&&/^[A-Za-z]:[\\/]/.te
 export interface NativeWindowsSignature extends MaintenanceSignerWitness {
  sha256:string;version:string;
 }
+/** Forge writes numeric PE components while the signed inventory retains the exact
+ * SemVer. This comparison is only used alongside full-image hash + OS signer. */
+export function windowsVersionMatches(actual:string,expected:string):boolean{
+ if(!/^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/.test(expected))return false;
+ const numeric=expected.split('-')[0];
+ return actual===expected||actual===numeric||actual===numeric+'.0';
+}
 /** Known application names, never an arbitrary DLL/helper chosen by enumeration. */
 export function windowsApplicationEntry(files:UpgradeReadbackFile[]):UpgradeReadbackFile{
  const matches=files.filter(f=>['streamdashboard.exe','streamcockpit.exe'].includes(f.path.toLowerCase()));

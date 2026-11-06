@@ -15,12 +15,15 @@ module.exports = {
       await fs.cp(paths.resolve('.build/public/mobile'), paths.join(buildPath,'apps/mobile'), {recursive:true});
       await fs.cp(paths.resolve('.build/public/web'), paths.join(buildPath,'apps/web'), {recursive:true});
       await fs.copyFile(paths.resolve('.build/public/mobile/streamcockpit-build.json'), paths.join(buildPath,'resources/streamcockpit-build.json'));
+      // Optional independently provisioned PUBLIC release trust. No generated keys.
+      try { await fs.copyFile(paths.resolve('.build/maintenance/maintenance-trust.json'), paths.join(buildPath,'resources/maintenance-trust.json')); }
+      catch (error) { if (error.code !== 'ENOENT') throw error; }
       const manifestPath = paths.join(buildPath, 'package.json');
       const manifest = JSON.parse(await fs.readFile(manifestPath, 'utf8'));
       manifest.version = applicationVersion;
       await fs.writeFile(manifestPath, JSON.stringify(manifest, null, 2) + '\n');
     }],
-    extraResource: ['./resources/dji-mic3'],
+    extraResource: ['./resources/dji-mic3', './.build/maintenance/streamcockpit-maintenance.cjs'],
     executableName: 'StreamDashboard',
     appBundleId: 'com.rastaaslan.streamdashboard',
     icon: './resources/streamdashboard',

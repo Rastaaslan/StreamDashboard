@@ -10,6 +10,9 @@ export function startUpdater(
   // Kept for caller compatibility; cleanup must never run for a blocked preflight.
   _beforeInstall: () => Promise<void> = async () => undefined,
   preflightDependencies?: Omit<DesktopUpgradePreflightDependencies, 'assessRestartSafety'>,
+  // The native application owns signature checks, consent and graceful exit.
+  // A downloaded Squirrel notification is not itself installation permission.
+  preparedMaintenance?: (isCurrent: () => boolean) => Promise<void>,
 ) {
   const preflight = () => preflightDesktopUpgrade({
     ...preflightDependencies,
@@ -37,7 +40,10 @@ export function startUpdater(
       if (!active || !ready) return;
       const choice = await dialog.showMessageBox(window, {
         type: 'info', title: 'Mise à jour téléchargée', message: 'Une mise à jour de StreamDashboard doit être vérifiée.',
-        detail: 'Vérifier les conditions de mise à jour. L’installation transactionnelle n’est pas encore disponible.', buttons: ['Plus tard', 'Vérifier le préflight'], defaultId: 0, cancelId: 0,
+        detail: preparedMaintenance
+          ? 'Le téléchargement seul ne permet pas une installation. Choisissez le contrat de maintenance signé ; il sera vérifié avant toute fermeture. Aucun redémarrage automatique.'
+          : 'Vérifier les conditions de mise à jour. Aucun parcours de maintenance natif n’est raccordé dans cette instance.',
+        buttons: ['Plus tard', preparedMaintenance ? 'Choisir le contrat signé' : 'Vérifier le préflight'], defaultId: 0, cancelId: 0,
       });
       if (choice.response === 1) {
         if (!active || !ready) return;
@@ -45,6 +51,10 @@ export function startUpdater(
         catch { logError('Installation différée : une diffusion est active ou non confirmée'); return; }
         if (!active || !ready) return;
         ready = false;
+        if (preparedMaintenance) {
+          await preparedMaintenance(() => active);
+          return;
+        }
         const report = await preflight();
         logError('Installation bloquée par le préflight', report);
         if (active) await dialog.showMessageBox(window, {

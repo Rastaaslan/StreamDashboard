@@ -1,5 +1,5 @@
 import {isAbsolute,resolve,join} from 'node:path';
-import {inspectWindowsAuthenticode,windowsApplicationEntry} from './streamcockpit-windows-authenticode.js';
+import {inspectWindowsAuthenticode,windowsApplicationEntry,windowsVersionMatches} from './streamcockpit-windows-authenticode.js';
 import {runtimeUpgradeDirectory} from './streamcockpit-runtime-ownership.js';
 import {createSignedWindowsDirectoryUpgradePlanner,type SignedDirectoryUpgradeOptions} from './streamcockpit-upgrade-signed-preparation.js';
 import {verifyUpgradeReadbackFiles} from './streamcockpit-upgrade-readback.js';
@@ -114,7 +114,7 @@ export async function runExternalWindowsMaintenance(
   if(!validSigner(native,binary,sourceSigner,now()))fail('NATIVE_SIGNER_UNVERIFIED');
   if(native?.sha256!==undefined&&native.sha256!==application.sha256)fail('SIGNED_SOURCE_CHANGED');
   const sourceVersion=request.action==='rollback'?o.rollback.identity.version:o.image.identity.version;
-  if(native?.version!==undefined&&native.version!==sourceVersion)fail('NATIVE_VERSION_MISMATCH');
+  if(native?.version!==undefined&&!windowsVersionMatches(native.version,sourceVersion))fail('NATIVE_VERSION_MISMATCH');
   if(!await verifyUpgradeReadbackFiles(sourceRoot,sourceFiles))fail('SIGNED_SOURCE_CHANGED');
   if(!await deps.assessRestartSafety().then(x=>x.safe===true,()=>false))
     fail('RESTART_NOT_SAFE');

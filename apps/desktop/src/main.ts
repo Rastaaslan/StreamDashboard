@@ -7,6 +7,8 @@ import { startDesktopRuntime, type DesktopRuntime } from './lifecycle.js';
 import { acquireDesktopApplicationOwnership, type DesktopApplicationOwnership } from './streamcockpit-application-ownership.js';
 import { handleSquirrelStartup } from './squirrel.js';
 import { startUpdater } from './updater.js';
+import {prepareNativeMaintenanceLaunch} from './streamcockpit-maintenance-launcher.js';
+import {validateMaintenanceTrust} from './streamcockpit-maintenance-cli.js';
 import { DesktopLogger } from './logger.js';
 import { presentWindow } from './presentation.js';
 import { openTwitchViewerSession } from './twitch-viewer.js';
@@ -102,6 +104,53 @@ const autonomous=new AutonomousExecutor(()=>`http://127.0.0.1:${controllerRole?4
   return {endpoint:`http://127.0.0.1:${controllerRole?48135:48133}`,device:activeDevice};
 });
 
+let maintenanceDialog = false;
+let startupMaintenanceHandled = false;
+async function offerPreparedMaintenance(selectedFile?: string, isCurrent: () => boolean = () => true) {
+  if (!app.isPackaged || process.platform !== 'win32' || maintenanceDialog || quitting || !runtime || !isCurrent()) return;
+  maintenanceDialog = true;
+  let child: Awaited<ReturnType<Awaited<ReturnType<typeof prepareNativeMaintenanceLaunch>>['launch']>> | undefined;
+  try {
+    const current = runtime;
+    // This public policy is part of the installed distribution, never chosen by
+    // a release, remote caller or renderer. Missing production trust stays blocked.
+    const trust = validateMaintenanceTrust(JSON.parse(await readFile(path.join(app.getAppPath(), 'resources', 'maintenance-trust.json'), 'utf8')));
+    await requireDesktopRestartSafety(() => current.dashboard.assessRestartSafety());
+    if (quitting || current !== runtime || !isCurrent()) return;
+    if (!selectedFile) {
+      const choice = await dialog.showOpenDialog({title:'Mise à jour ou retour arrière préparé',properties:['openFile'],
+        filters:[{name:'Contrat de maintenance StreamCockpit',extensions:['json']}]});
+      if (choice.canceled || choice.filePaths.length !== 1) return;
+      selectedFile = choice.filePaths[0];
+    }
+    if (quitting || current !== runtime || !isCurrent()) return;
+    const plan = await prepareNativeMaintenanceLaunch(selectedFile!, trust, {
+      applicationData:app.getPath('appData'),rootUserData:app.getPath('userData'),
+      packageRoot:path.dirname(process.execPath),version:app.getVersion(),
+    });
+    if (quitting || current !== runtime || !isCurrent()) return;
+    const label = plan.action === 'rollback' ? 'Restaurer la version précédente' : plan.action === 'prepare' ? 'Préparer sans installer' : 'Installer la version vérifiée';
+    const decision = await dialog.showMessageBox({type:'warning',title:'Maintenance hors live uniquement',
+      message:label,detail:plan.releaseId+' — '+plan.fromVersion+' → '+plan.version+'\nStreamCockpit va se fermer normalement. OBS ne sera ni arrêté ni redémarré. Les états inconnus et les opérations interrompues bloquent la mise à jour.',
+      buttons:['Annuler',label],defaultId:0,cancelId:0});
+    if (decision.response !== 1 || quitting || current !== runtime) return;
+    await requireDesktopRestartSafety(() => current.dashboard.assessRestartSafety());
+    const observation = await current.dashboard.maintenanceObservationConfiguration?.();
+    if (!observation || quitting || current !== runtime || !isCurrent()) throw new Error('MAINTENANCE_AUTHORITY_UNAVAILABLE');
+    child = await plan.launch(observation);
+    await requireDesktopRestartSafety(() => current.dashboard.assessRestartSafety());
+    if (quitting || current !== runtime || !isCurrent()) { child.cancel(); return; }
+    // Child has its OWN read-only observation connection and waits for OS exit.
+    // Normal cleanup drains accepted commands, journals, macros and native work.
+    child.handoff();
+    app.quit();
+  } catch {
+    child?.cancel();
+    if (!quitting && isCurrent()) dialog.showErrorBox('Maintenance non confirmée',
+      'Aucune installation confirmée. Vérifiez le contrat préparé, la politique de signature et l’arrêt des diffusions. Aucun redémarrage forcé ni nouvelle tentative automatique.');
+  } finally { maintenanceDialog = false; }
+}
+
 function ensureTray() {
   if (tray || !backgroundEnabled()) return;
   const icon = nativeImage.createFromPath(path.join(app.getAppPath(), 'resources', 'streamdashboard.ico'));
@@ -109,6 +158,7 @@ function ensureTray() {
   tray.setToolTip('Le StreamCockpit — agent actif');
   tray.setContextMenu(Menu.buildFromTemplate([
     { label: 'Ouvrir StreamDashboard', click: present },
+    { label: 'Mise à jour / retour arrière préparé…', click: () => { void offerPreparedMaintenance(); } },
     { label: 'Quitter l’agent et les macros', click: () => app.quit() },
   ]));
   tray.on('double-click', present);
@@ -264,6 +314,7 @@ function boot(): Promise<void> {
       }
       window = createDashboardWindow(targetUrl, path.join(import.meta.dirname, 'preload.cjs'), 'Le StreamCockpit — Démarrage…');
       const owner = window;
+      owner.setMenu?.(Menu.buildFromTemplate([{label:'Application',submenu:[{label:'Mise à jour / retour arrière préparé…',click:()=>{void offerPreparedMaintenance();}}]}]));
       let closing = false;
       owner.on('close', () => { closing = true; });
       owner.on('closed', () => { closing = true; if(window === owner)window = null; if(!backgroundEnabled())app.quit(); });
@@ -304,11 +355,19 @@ function boot(): Promise<void> {
       enableDjiHostWarningWatcher();
       log('Local runtime ready; loading renderer');
       // Candidate stays isolated: production updater must not replace it or the stable installation.
-      if (!closing && process.argv.includes('--enable-candidate-updater')) stopUpdater = startUpdater(owner, runtime.dashboard, logger, cleanupRuntime);
+      if (!closing && process.argv.includes('--enable-candidate-updater')) stopUpdater = startUpdater(owner, runtime.dashboard, logger, cleanupRuntime, undefined,
+        isCurrent => offerPreparedMaintenance(undefined, isCurrent));
       await loadWindow(targetUrl);
       log('Renderer loaded');
     } catch (error) { await fail(error); }
-  })().finally(() => { booting = false; });
+  })().finally(() => {
+    booting = false;
+    if (!startupMaintenanceHandled && runtime && !quitting) {
+      startupMaintenanceHandled = true;
+      const requested = process.argv.filter(value => value.startsWith('--maintenance-request='));
+      if (requested.length === 1) void offerPreparedMaintenance(requested[0].slice('--maintenance-request='.length));
+    }
+  });
 }
 
 void app.whenReady().then(() => primary ? boot() : undefined).catch(fail);

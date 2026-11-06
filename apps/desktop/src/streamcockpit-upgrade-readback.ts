@@ -66,7 +66,8 @@ function matchesIdentity(actual:UpgradeReadbackIdentity|undefined,expected:Upgra
   return actual.version===expected.identity.version&&actual.revision===expected.identity.revision&&
     actual.applicationId===expected.identity.applicationId&&actual.signer===expected.identity.signer;
 }
-async function inventory(root:string):Promise<UpgradeReadbackFile[]>{
+/** Capture after native writers have stopped; hashes only, never private contents. */
+export async function snapshotUpgradeReadbackFiles(root:string):Promise<UpgradeReadbackFile[]>{
   const canonical=await realpath(root),base=await lstat(root);
   if(!base.isDirectory()||base.isSymbolicLink()||comparable(canonical)!==comparable(root))
     throw Error('UNTRUSTED_ROOT');
@@ -109,7 +110,7 @@ function sameInventory(observed:UpgradeReadbackFile[],expected:UpgradeReadbackFi
 export async function verifyUpgradeReadbackFiles(root:string,entries:UpgradeReadbackFile[]):Promise<boolean>{
   const pinned=structuredClone(entries);
   checkInventory(pinned);
-  try{return sameInventory(await inventory(validRoot(root)),pinned)}catch{return false}
+  try{return sameInventory(await snapshotUpgradeReadbackFiles(validRoot(root)),pinned)}catch{return false}
 }
 
 /** Returns a durable-looking receipt ONLY after complete, exact on-disk image
@@ -135,7 +136,7 @@ export function createUpgradeReadbackReconciler(options:UpgradeReadbackOptions):
       const first=await options.attestInstalled();
       const now=(options.now??Date.now)();
       if(!matchesIdentity(first,expected,now))return undefined;
-      const [program,profile]=await Promise.all([inventory(packageRoot),inventory(profileRoot)]);
+      const [program,profile]=await Promise.all([snapshotUpgradeReadbackFiles(packageRoot),snapshotUpgradeReadbackFiles(profileRoot)]);
       if(!sameInventory(program,expected.packageFiles)||!sameInventory(profile,expected.profileFiles))
         return undefined;
       const final=await options.attestInstalled(),later=(options.now??Date.now)();

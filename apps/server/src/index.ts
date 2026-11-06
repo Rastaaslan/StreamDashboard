@@ -233,6 +233,11 @@ export interface DashboardServerOptions {
 export interface DashboardServerHandle {
   /** Main-process capability, never returned by an HTTP endpoint. */
   issueLocalTwitchCredential?(): Promise<string>;
+  /** Native main-process capability only; NEVER returned by HTTP, IPC or state. */
+  maintenanceObservationConfiguration?(): Promise<{
+    obs:{url:string;password:string};outputs:Record<string,{kind:string;name:string}>;
+    twitch:{clientId:string;accessToken:string;broadcasterId:string};
+  }>;
   remotePort?:number;
   port: number;
   url: string;
@@ -3838,6 +3843,12 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
       if (!remoteAuth.canManage(localTwitchSession.deviceId)) throw new Error('LOCAL_TWITCH_SESSION_REVOKED');
       return localTwitchSession.credential;
     }, remotePort:tlsPort||undefined,port: actualPort, url: `http://${urlHost}:${actualPort}`, state: snapshot, providersReady, server, stop,
+    maintenanceObservationConfiguration: async () => {
+      if (stopPromise || options.obsEnabled === false || options.timerAuthority === false || control.hasPendingActions || commands.hasPendingCommands)
+        throw new Error('MAINTENANCE_AUTHORITY_UNAVAILABLE');
+      return {obs:{url:local.settings.obsUrl,password:currentObsPassword},
+        outputs:structuredClone(control.snapshot().configuration.outputs),twitch:{...advancedTwitchCredentials()}};
+    },
     assessRestartSafety: () => assessRestartSafety({ obsEnabled: options.obsEnabled !== false, stopped: () => Boolean(stopPromise),
       pending: () => control.hasPendingActions || commands.hasPendingCommands,
       revision: () => JSON.stringify([commands.activityRevision, control.snapshot().receipts.map(receipt => [receipt.id, receipt.status])]),
