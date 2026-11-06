@@ -11,10 +11,15 @@ export function renderPairedDevicesSummary(devices, esc, now = Date.now()) {
     const lastSeen = Number.isFinite(timestamp) && timestamp > 0 && timestamp <= now + 60000
       ? `Dernier contact enregistré : ${new Date(timestamp).toLocaleString('fr-FR')}`
       : 'Dernier contact non vérifiable';
-    return `<li><strong>${esc(name)}</strong> <small>${esc(lastSeen)}</small></li>`;
+    const session = item.webSocketOpen === true
+      ? 'Session WebSocket ouverte au contrôle (pas une garantie de disponibilité)'
+      : item.webSocketOpen === false
+        ? 'Aucune session WebSocket ouverte au contrôle (les requêtes HTTP restent possibles)'
+        : 'Présence WebSocket non mesurée';
+    return `<li><strong>${esc(name)}</strong> <small>${esc(lastSeen)}</small><br><small>${esc(session)}</small></li>`;
   }).join('');
   return `<section data-paired-devices-summary><h2>Télécommandes associées à FIXE</h2>
-    <p role="status">${associated.length} association(s) enregistrée(s) sur FIXE. Ces données ne prouvent pas la présence en ligne.</p>
+    <p role="status">${associated.length} association(s) enregistrée(s) sur FIXE. Observation serveur du ${esc(new Date(now).toLocaleString('fr-FR'))}. Une session WebSocket ouverte n'est pas une vérification de disponibilité physique.</p>
     ${rows ? `<ul>${rows}</ul>` : '<p>Aucune télécommande associée enregistrée sur cette régie.</p>'}
     <p class="small muted">Le modèle Mono-PC / Double-PC et les appareils associés sont deux listes distinctes. Un téléphone peut être associé sans être déclaré dans le modèle.</p>
     <button type="button" class="secondary" data-task="close-dialog">Fermer</button></section>`;

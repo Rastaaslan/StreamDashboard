@@ -1915,6 +1915,14 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
     if (!requireLocal(req, res)) return;
     res.json(remoteAuth.list());
   });
+  // Snapshot of authenticated remote WebSocket sessions, not a device heartbeat.
+  // In particular an absent/closing socket does NOT prove that an HTTP client is offline.
+  app.get('/api/v1/remote/devices/presence', (req, res) => {
+    if (!requireLocal(req, res)) return;
+    const openIds = new Set([...socketDevices].filter(([ws]) => ws.readyState === 1).map(([, id]) => id));
+    res.setHeader('Cache-Control', 'private, no-store');
+    res.json({ observedAt: new Date().toISOString(), devices: remoteAuth.list().map(device => ({ ...device, webSocketOpen: !device.revokedAt && openIds.has(device.id) })) });
+  });
   app.put('/api/v1/remote/devices/:id/permissions',async(req,res,next)=>{
     try {
       if(!requireLocal(req,res))return;

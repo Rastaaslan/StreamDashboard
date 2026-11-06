@@ -105,3 +105,36 @@ it.skipIf(process.env.SC3_AUDIT_BROWSER_TEST!=='1')('real Edge 320px shows the p
   expect(requests).toEqual([]);
  } finally {await browser.close()}
 },30000);
+
+it('paired list distinguishes an authenticated WS session from stored pairing, without claiming physical online presence',()=>{
+ const observation=Date.parse('2026-11-06T01:45:00.000Z');
+ const rows=[
+  {id:'private-id-a',name:'Téléphone',webSocketOpen:true,lastSeenAt:'2026-11-06T01:44:00.000Z'},
+  {id:'private-id-b',name:'Laptop HTTP',webSocketOpen:false,lastSeenAt:'2026-11-06T01:45:00.000Z'},
+  {id:'private-id-c',name:'Inconnu',webSocketOpen:'true',lastSeenAt:'2026-11-06T01:43:00.000Z'}
+ ];
+ const html=renderPairedDevicesSummary(rows,esc,observation);
+ expect(html).toContain('3 association(s)');
+ expect(html).toContain('Session WebSocket ouverte au contrôle');
+ expect(html).toContain('Aucune session WebSocket ouverte au contrôle (les requêtes HTTP restent possibles)');
+ expect(html).toContain('Présence WebSocket non mesurée');
+ expect(html).not.toContain('private-id-a');
+ expect(html).not.toContain('private-id-b');
+ expect(html).not.toContain('En ligne : oui');
+});
+it.skipIf(process.env.SC3_AUDIT_BROWSER_TEST!=='1')('real Edge 320px renders measured session labels without implicit reconnection or overflow',async()=>{
+ const observed=Date.parse('2026-11-06T01:45:00.000Z');
+ const html=renderPairedDevicesSummary([{name:'Téléphone',webSocketOpen:true,lastSeenAt:'2026-11-06T01:40:00.000Z'},{name:'Laptop HTTP',webSocketOpen:false}],esc,observed);
+ const browser=await chromium.launch({channel:'msedge',headless:true});
+ try{
+  const page=await browser.newPage({viewport:{width:320,height:780},hasTouch:true});
+  const requests:string[]=[];
+  await page.route('**/*',route=>{requests.push(route.request().url());return route.abort()});
+  await page.setContent('<meta name="viewport" content="width=device-width,initial-scale=1"><main>'+html+'</main>');
+  await page.addStyleTag({content:readFileSync('apps/mobile/control/control.css','utf8')});
+  expect(await page.locator('[data-paired-devices-summary] li').count()).toBe(2);
+  expect(await page.locator('[data-paired-devices-summary]').innerText()).toContain('requêtes HTTP restent possibles');
+  expect(await page.evaluate(()=>document.documentElement.scrollWidth)).toBeLessThanOrEqual(320);
+  expect(requests).toEqual([]);
+ }finally{await browser.close()}
+},30000);

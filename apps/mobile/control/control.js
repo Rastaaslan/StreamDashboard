@@ -996,8 +996,10 @@ async function task(name,b){
  if(!data)throw new Error('Connectez la régie.');
  if(name==='paired-devices'){
   if(clientRole||device?.role!=='stream'||!localEndpoint)throw new Error('Les associations réelles sont consultables uniquement sur FIXE.');
-  const devices=await network('/api/v1/remote/devices',undefined,'GET',localEndpoint,'');
-  modal(renderPairedDevicesSummary(devices,esc));
+  const snapshot=await network('/api/v1/remote/devices/presence',undefined,'GET',localEndpoint,'');
+  const observedAt=Date.parse(snapshot?.observedAt);
+  if(!Array.isArray(snapshot?.devices)||!Number.isFinite(observedAt))throw new Error('Présence des appareils non vérifiable sur FIXE.');
+  modal(renderPairedDevicesSummary(snapshot.devices,esc,observedAt));
   return;
  }
  if(name==='metadata'){metadataDialog();return;}
