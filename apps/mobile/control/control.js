@@ -21,6 +21,7 @@ import {ACTIONS,OUTCOME_LABELS} from '../shared/action-registry.js';
 import {randomUuid} from '../shared/uuid.js';
 import {renderSettings} from './settings-view.js';
 import {obsPasswordChange} from './obs-password-change.js';
+import {observeHostReadOnly} from './read-only-host-refresh.js';
 import {renderPairedDevicesSummary} from './paired-devices-summary.js';
 import {replaceMarkup, editingForm, createDraftWriter} from './render-policy.js';
 import {configurationTransferSupport} from '../shared/configuration-transfer.js';
@@ -847,6 +848,30 @@ async function switchWorkspace(local){
 }
 function metadataDialog(planned,platform){platform=platform==='twitch'?'twitch':'';const m=planned?{...data.configuration.metadata,title:planned.title,description:planned.description||'',twitchGameId:planned.twitchCategoryId||'',tags:planned.tags?.values||data.configuration.metadata.tags}:(autonomy?.store.record.drafts.metadata||data.configuration.metadata);const source=server||localEndpoint,cacheKey=id=>source+'\u001f'+id;const channel=data.host.state.twitch||{};const name=twitchGameNames.get(cacheKey(m.twitchGameId))||(channel.gameId===m.twitchGameId?channel.gameName:'')||(data.host.state.controlHub?.live?.categoryId===m.twitchGameId?data.host.state.controlHub.live.category:'')||(planned?.twitchCategoryId===m.twitchGameId?planned.twitchCategoryName:'')||'';modal(`<h2>Informations Twitch</h2><p class="small muted">Le titre, le jeu et les tags sont transmis uniquement à Twitch.</p><form id="metadata-form" data-platform="${esc(platform||'')}" data-revision="${data.configuration.revision}">${input('Titre Twitch','title',m.title,'text','required maxlength="100"')}<div class="form-grid"><div><label>Rechercher un jeu ou une catégorie Twitch<input type="search" id="twitch-game-query" placeholder="Ex. Minecraft, Just Chatting…" autocomplete="off"></label><input type="hidden" name="twitchGameId" value="${esc(m.twitchGameId)}"><p id="twitch-game-selected" class="small muted" role="status"></p></div></div>${input('Tags communs, séparés par une virgule','tags',m.tags.join(', '))}<button type="button" class="secondary" data-twitch-category-search>Rechercher sur Twitch</button><div id="category-results" aria-live="polite"></div><div class="form-actions"><button name="intent" value="draft" class="secondary">Conserver le brouillon</button><button name="intent" value="apply" ${!online&&!(native&&!server)?'disabled':''}>${platform?'Valider et reprendre '+esc(platform):'Appliquer à Twitch'}</button></div></form>`);const form=$('#metadata-form');createTwitchCategoryPicker(form,{request:path=>api(path),isCurrent:()=>dialog.open&&$('#metadata-form')===form&&source===(server||localEndpoint),initialName:name,remember:game=>twitchGameNames.set(cacheKey(game.id),game.name)});}
 function editAction(id){if(data.configuration.actions.find(a=>a.id===id)?.type==='wizebot.command'){editWizebot(id);return;}configurationDraft=structuredClone(data.configuration);const a=configurationDraft.actions.find(x=>x.id===id)||{id:'action_'+uuid().slice(0,8),label:'',type:'sound.play',value:'',color:'purple',shortcut:''};modal(`<h2>${id?'Modifier':'Ajouter'} un bouton</h2><form id="action-form" data-id="${esc(a.id)}">${input('Libellé','label',a.label,'text','required maxlength="80"')}${select(server?'Action sur le PC de stream':'Action du bouton','type',Object.keys(ACTIONS).filter(type=>!native||server||!['obs','clips'].includes(ACTIONS[type].capability)||type===a.type).map(type=>[type,ACTIONS[type].label]),a.type)}${input('Paramètre (source, scène, ID son, secondes ou twitch:message)','value',a.value)}<p class="small muted">Micro : vide pour utiliser le micro principal. Modes : intro, live, pause, end, chatting. Les sons sont joués ${server?'par OBS':'sur cet appareil'}.</p>${select('Couleur','color',[['purple','Violet'],['green','Vert'],['amber','Ambre'],['red','Rouge']],a.color)}${select('Macro clavier','shortcut',[['','Aucun'],...Array.from({length:24},(_,i)=>[`Control+Alt+Shift+F${i+1}`,`Ctrl + Alt + Maj + F${i+1}`])],a.shortcut)}<div class="form-actions">${id?`<button type="button" class="danger" data-remove-action="${esc(a.id)}">Supprimer</button>`:''}<button>Enregistrer</button></div></form>`);}
+// Settings-only recovery: observe FIXE with GET, cache locally, never flush queued edits.
+async function refreshHostReadOnly(){
+ if(!server||!autonomy||macroContextChanging)throw new Error('Sélectionnez une régie FIXE avant de vérifier son état.');
+ if(refreshFlight){toast('Une synchronisation est déjà en cours. Réessayez après sa fin.');return;}
+ const origin=server,owner=autonomy,token=origin===localEndpoint?'':credential;
+ const isCurrent=()=>origin===server&&owner===autonomy&&!macroContextChanging;
+ const flight=(async()=>{
+  try{
+   const fresh=await observeHostReadOnly({workspace:owner.store.record.workspace,isCurrent,
+    request:(path,method)=>network(path,undefined,method,origin,token),
+    accept:response=>owner.store.accept(response)});
+   if(!fresh)return;
+   applyWorkspaceBundle(owner.store.view());online=true;shell();render();
+   toast('État de FIXE actualisé en lecture seule. Modifications locales en attente non envoyées par ce bouton.');
+  }catch(error){
+   if(isCurrent()){
+    online=false;masterClock.invalidate();shell();render();
+    toast('Observation de FIXE non confirmée : '+(error?.message||'réponse invalide'));
+   }
+  }
+ })().finally(()=>{if(refreshFlight===flight)refreshFlight=undefined;});
+ refreshFlight=flight;
+ return flight;
+}
 async function refresh(force=false){
  if(macroContextChanging)return;
  if(force&&server&&!online&&data){render();if(!refreshFlight)void refresh().catch(()=>{});return;}
@@ -1045,6 +1070,7 @@ async function task(name,b){
    await runAction('live.start');
    return;
  }
+ if(name==='refresh-host-readonly'){await refreshHostReadOnly();return;}
  if(name==='refresh-live'){await refresh(true);return;}
  if(name==='replay-config'){replayDialog();return;}
  if(name==='refresh-replay'){replay=await api('/api/v2/replay');if(dialog.open&&$('#replay-dialog-root'))replayDialog();else render();return;}

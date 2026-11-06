@@ -220,13 +220,13 @@ it('stale or offline selected FIXE has one explicit refresh action without OAuth
   render({server:'https://fixe.example:48136',online:false})
  ]){
   expect(html).toContain('data-host-integrations-hint');
-  expect(html.match(/data-task="refresh-live"/g)).toHaveLength(1);
+  expect(html.match(/data-task="refresh-host-readonly"/g)).toHaveLength(1);
   expect(html).toContain('Actualiser l’état de FIXE');
   expect(html).toContain('data-task="discord" disabled');
   expect(html).toContain('data-task="wizebot-catalog" disabled');
  }
  for(const html of [render(),render({server:'',online:false})])
-  expect(html).not.toContain('data-task="refresh-live"');
+  expect(html).not.toContain('data-task="refresh-host-readonly"');
 });
 it.skipIf(process.env.SC3_SETTINGS_BROWSER_TEST!=='1')('real Edge 320px provides a refresh affordance but no accidental OAuth or network request',async()=>{
  const browser=await chromium.launch({channel:'msedge',headless:true});
@@ -238,7 +238,7 @@ it.skipIf(process.env.SC3_SETTINGS_BROWSER_TEST!=='1')('real Edge 320px provides
   await page.setContent('<meta name="viewport" content="width=device-width,initial-scale=1"><main>'+
    render({server:'https://fixe.example:48136',online:true,observedAt:new Date(Date.now()-120_000).toISOString()})+'</main>');
   await page.addStyleTag({content:readFileSync('apps/mobile/control/control.css','utf8')});
-  const refreshButton=page.locator('[data-task="refresh-live"]');
+  const refreshButton=page.locator('[data-task="refresh-host-readonly"]');
   expect(await refreshButton.count()).toBe(1);
   expect(await refreshButton.isEnabled()).toBe(true);
   expect(await page.locator('[data-task="discord"]').isDisabled()).toBe(true);
