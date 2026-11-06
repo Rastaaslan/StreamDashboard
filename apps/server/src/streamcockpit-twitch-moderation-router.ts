@@ -3,12 +3,14 @@ import {Router,type Request} from 'express';
 import {AdvancedTwitchError} from '../../../integrations/twitch/src/streamcockpit-advanced.js';
 import {ModerationTwitch,type ModerationTarget} from '../../../integrations/twitch/src/streamcockpit-moderation.js';
 import {HeldAutoModActionTwitch,type HeldActionTarget} from '../../../integrations/twitch/src/streamcockpit-automod-action.js';
+import type {AutoModActionAttemptFence} from './streamcockpit-automod-action-intent-sqlite.js';
 import type {TwitchActor} from './streamcockpit-twitch-service.js';
 
 const exact=(v:unknown,keys:string[])=>v!==null&&typeof v==='object'&&!Array.isArray(v)&&Object.keys(v).sort().join(',')===[...keys].sort().join(',');
 /** Separate voluntary preview and confirmation; actor/token/host rechecked. */
 export function createTwitchModerationRouter(options:{
-  api:ModerationTwitch;actionApi?:HeldAutoModActionTwitch;actor(req:Request):TwitchActor|Promise<TwitchActor>;
+  api:ModerationTwitch;actionApi?:HeldAutoModActionTwitch;actionAttempts?:AutoModActionAttemptFence;
+  actor(req:Request):TwitchActor|Promise<TwitchActor>;
   host():string|undefined|Promise<string|undefined>;now?:()=>number;
   /** Host-only EventSub observations, not a complete Twitch queue. */
   held?():{schemaVersion:1;kind:'streamcockpit-automod-observed';status:'partial-observation'|'unavailable';
@@ -87,7 +89,7 @@ export function createTwitchModerationRouter(options:{
       if(req.method!=='POST'){res.set('Allow','POST').status(405).json({error:{code:'METHOD_NOT_ALLOWED'}});return;}
       let sent=false,ownsBusy=false;
       try{
-        if(!options.actionApi)throw new AdvancedTwitchError('unavailable');
+        if(!options.actionApi||!options.actionAttempts)throw new AdvancedTwitchError('unavailable');
         const context=await check(req);
         if(operation==='preview'){
           if(!exact(req.body,['messageId','userId','decision'])||
@@ -99,7 +101,9 @@ export function createTwitchModerationRouter(options:{
           });
           await check(req,context);
           witnessed(target);
-          if(attempted.has(target.messageId))throw new AdvancedTwitchError('precondition');
+          if(attempted.has(target.messageId)||
+            options.actionAttempts.isBlocked(target.broadcasterId,target.messageId))
+            throw new AdvancedTwitchError('precondition');
           for(const [id,row] of actionPending)if(row.until<=now())actionPending.delete(id);
           if(actionPending.size>=100||attempted.size>=1000)throw new AdvancedTwitchError('unavailable');
           const confirmationId=randomUUID(),expiresAt=now()+30_000;
@@ -119,7 +123,13 @@ export function createTwitchModerationRouter(options:{
             witnessed(entry.target);
             if(attempted.has(entry.target.messageId)||attempted.size>=1000)
               throw new AdvancedTwitchError('precondition');
-            attempted.add(entry.target.messageId);sent=true;
+            // Persist the one-way reservation BEFORE any possible Helix POST.
+            // Never evict or auto-release, including after a lost HTTP response.
+            attempted.add(entry.target.messageId);
+            if(!options.actionAttempts!.reserve(entry.target.broadcasterId,entry.target.messageId,
+              entry.target.userId,entry.target.decision))
+              throw new AdvancedTwitchError('precondition');
+            sent=true;
           });
           await check(req,context);
           res.json({schemaVersion:1,kind:'streamcockpit-automod-action-receipt',...result});

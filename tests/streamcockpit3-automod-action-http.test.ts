@@ -2,6 +2,10 @@ import {expect,it,vi} from 'vitest';
 import express from 'express';
 import {request as httpRequest} from 'node:http';
 import type {AddressInfo} from 'node:net';
+import {mkdtempSync,rmSync} from 'node:fs';
+import {tmpdir} from 'node:os';
+import {join} from 'node:path';
+import {AutoModActionIntentSqlite} from '../apps/server/src/streamcockpit-automod-action-intent-sqlite.js';
 import {RemoteAuth} from '../apps/server/src/remote-auth.js';
 import {twitchPollActor} from '../apps/server/src/streamcockpit-twitch-poll-router.js';
 import {createTwitchModerationRouter} from '../apps/server/src/streamcockpit-twitch-moderation-router.js';
@@ -16,6 +20,7 @@ const update=()=>({metadata:{message_type:'notification',subscription_type:'auto
   payload:{event:{broadcaster_user_id:'42',message_id:'hold-1',status:'approved'}}});
 const draft={messageId:'hold-1',userId:'12',decision:'ALLOW'};
 async function fixture(run:(f:any)=>Promise<void>){
+  const folder=mkdtempSync(join(tmpdir(),'sc3-f02-http-'));
   const auth=new RemoteAuth(),p=auth.createPairing(undefined,true,['chat','cloud']),paired=auth.pair(p.id,p.code,'Android');
   let clock=Date.now(),host='FIXE',mode='ok',writes=0;
   const creds={clientId:'client',accessToken:'SECRET_AUTH_TOKEN',broadcasterId:'42'};
@@ -36,6 +41,7 @@ async function fixture(run:(f:any)=>Promise<void>){
   const app=express();app.use(express.json());
   app.use('/moderation',createTwitchModerationRouter({
     api:{} as never,actionApi:new HeldAutoModActionTwitch(()=>creds,fetchApi as typeof fetch,()=>clock),
+    actionAttempts:new AutoModActionIntentSqlite(join(folder,'automod-action-intents.sqlite')),
     actor:req=>twitchPollActor(req,auth,false,true),host:()=>host,now:()=>clock,
     held:()=>queue.snapshot('42',true),
   }));
@@ -51,7 +57,8 @@ async function fixture(run:(f:any)=>Promise<void>){
   try{await run({call,paired,auth,queue,creds,fetchApi,
     setMode:(v:string)=>{mode=v},setHost:(v:string)=>{host=v},advance:(ms:number)=>{clock+=ms},
     state:()=>({writes,clock})});}
-  finally{server.closeAllConnections();await new Promise<void>(resolve=>server.close(()=>resolve()))}
+  finally{server.closeAllConnections();await new Promise<void>(resolve=>server.close(()=>resolve()));
+    rmSync(folder,{recursive:true,force:true});}
 }
 it('F02 manual observed hold: preview reads scope, explicit one-use confirm sends exactly one POST and does not claim approval',async()=>fixture(async f=>{
   const route='/v1/twitch/advanced/moderation/held-action/';

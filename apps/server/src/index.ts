@@ -73,6 +73,7 @@ import { createTwitchPredictionRouter } from './streamcockpit-twitch-prediction-
 import { PredictionCreateTwitch } from '../../../integrations/twitch/src/streamcockpit-prediction-create.js';
 import { StreamcockpitPredictionCreateService } from './streamcockpit-twitch-prediction-create-service.js';
 import { PredictionIntentSqlite } from './streamcockpit-prediction-intent-sqlite.js';
+import {AutoModActionIntentSqlite} from './streamcockpit-automod-action-intent-sqlite.js';
 import { createTwitchPredictionCreateRouter } from './streamcockpit-twitch-prediction-create-router.js';
 import { TwitchClient, TwitchHttpError } from '../../../integrations/twitch/src/client.js';
 import { TwitchPreflight } from '../../../integrations/twitch/src/preflight.js';
@@ -743,6 +744,7 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
   const predictionLockTwitch = new PredictionLockTwitch(advancedTwitchCredentials, runtimeFetch());
   const predictionEndTwitch = new PredictionEndTwitch(advancedTwitchCredentials, runtimeFetch());
   const predictionFence = new PredictionIntentSqlite(path.join(dataDir, 'streamcockpit-prediction-intents.sqlite'));
+  const automodAttempts = new AutoModActionIntentSqlite(path.join(dataDir, 'streamcockpit-automod-action-intents.sqlite'));
   const predictionCreate = new StreamcockpitPredictionCreateService(
     new PredictionCreateTwitch(advancedTwitchCredentials, runtimeFetch()), Date.now, predictionFence);
   const tagIntelligence = new TwitchTagIntelligence((gameId, signal) => twitch.getStreamsForGame(gameId, signal), () => local.planning, Date.now, undefined, undefined, () => local.settings.tagPreferences ?? {});
@@ -2047,6 +2049,7 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
   app.use('/api/v1/twitch/advanced/moderation', createTwitchModerationRouter({
     api: new ModerationTwitch(advancedTwitchCredentials, runtimeFetch()),
     actionApi: new HeldAutoModActionTwitch(advancedTwitchCredentials, runtimeFetch()),
+    actionAttempts: automodAttempts,
     actor: pairedF08Actor,
     held:()=>observedAutoMod.snapshot(twitch.publicIdentity().broadcasterId,
       twitch.state.connected&&twitch.automodEventSubRequested()),
