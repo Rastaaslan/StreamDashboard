@@ -1288,6 +1288,10 @@
         {
           "path": "docs/streamcockpit-3/F10_EXTERNAL_MAINTENANCE_COORDINATION_20261106.md",
           "kind": "2026-11-06 FIXE F10: independent external-maintenance coordination library binds exact runtime upgrade directory, fresh independent offline/live evidence, native-signer witness and operator consent to existing Ed25519 release preparation, durable SQLite planner, explicit directory replacement and rollback. 5 focused suites 115 PASS/0 FAIL/0 skipped with 15 new tests, including real temporary Windows child-process prepare/install/rollback, receipt-preserving SQLite and loss-of-ACK refusal; global types, browser types, security 6820 files and diff PASS. Native Authenticode/live/approval witnesses TEST-ONLY simulated; no production CLI, installed profile, Squirrel/Android or G3-G5 proof."
+        },
+        {
+          "path": "docs/streamcockpit-3/F10_NATIVE_WINDOWS_ATTESTATION_20261106.md",
+          "kind": "2026-11-06 FIXE F10: actual read-only Windows Authenticode adapter now defaults into external maintenance; full native image attester binds OS signer, EXE hash and PE version to authenticated inventories for install/rollback. Real unsigned temporary EXE rejection before journal admission; positive OS trust simulated in end-to-end temporary copy/SQLite tests. 19 combined F05/F10 suites 241 PASS/0 FAIL/0 skipped, 20 new native cases; TS/browser types/security 6829 files/diff PASS. No installed runtime, production signature, standalone installer, Squirrel/Android or G3-G5 acceptance."
         }
       ],
       "verifiedTests": [
@@ -1312,12 +1316,13 @@
         "tests/streamcockpit3-runtime-ownership.test.ts",
         "tests/streamcockpit3-runtime-ownership-lifecycle.test.ts",
         "tests/streamcockpit3-application-ownership.test.ts",
-        "tests/streamcockpit3-upgrade-signed-preparation.test.ts"
+        "tests/streamcockpit3-upgrade-signed-preparation.test.ts",
+        "tests/streamcockpit3-windows-authenticode.test.ts"
       ],
       "hardwareEvidence": [],
       "blockers": [
         "Production Windows/Android native signatures and independently provisioned release trust remain unqualified.",
-        "2026-11-06: upgrade journal/exclusion, protected host journals, full Desktop main ownership, signed directory stage/backup/same-schema preparation, app/profile replacement/readback and an external coordination library are source-integrated. The library requires a same-profile mutex, fresh independent offline/native-signer/other-writer evidence and operator consent, verified only with injected TEST-ONLY witnesses on isolated Windows processes. A real standalone maintenance installer, independently provisioned production trust, Authenticode/native Squirrel/Android deployment, schema migrations, legacy/noncooperative process coverage and hardware recovery remain unqualified; startUpdater stays blocked.",
+        "2026-11-06: durable update journal, application-wide exclusion, authenticated directory preparation, external coordination and real read-only Windows Authenticode/full-image attestation are source-integrated. Actual native verifier rejects unsigned temporary files; positive production signature remains unqualified. Distributed standalone installer, native Squirrel/Android transaction, independent live/writer OS adapters, schema migration/recovery, legacy process coverage and hardware acceptance are still incomplete; installed updater remains blocked.",
         "2026-11-06: embedded same-commit EXE/ASAR+APK verifier exists and passes on old debug QA artifacts, but production-signed artifacts from exact current HEAD, physical recovery, and operator gates remain unavailable; release:check still fails closed"
       ],
       "ownerJob": "streamcockpit/3.0-lot-p",

@@ -1,0 +1,24 @@
+# F10 — Vérification Windows native raccordée à la maintenance et à la relecture
+
+06/11/2026 — FIXE uniquement via RDC, base `fca77d372e65ab1a7d253bb1c15383b9290f758d`. Même session CDC que le lot F05 durable ; propriété des fichiers vérifiée avant extension du lot. Aucun fichier UI mixeur concurrent ni CONTINUITY modifié ; aucun profil installé, secret, certificat de production, autre machine ou service OBS/Twitch accédé.
+
+## Écart fermé dans les sources
+La coordination externe ne savait vérifier un signataire Windows que par un callback obligatoire, simulé dans ses tests. `inspectWindowsAuthenticode` utilise maintenant le vérificateur Windows réel, en lecture seule, et retourne l'état de signature, l'empreinte du certificat, le SHA-256 des octets inspectés et la version PE. L'application inspectée n'est jamais exécutée. PowerShell est appelé depuis son chemin système explicite, sans shell, sans profil utilisateur, avec chemin de fichier encodé ; durée et sortie sont bornées. Aucun certificat importé/généré, aucune modification de politique système.
+
+Pendant l'inspection, un handle FileShare.Read interdit les écritures/suppressions ordinaires du fichier ; l'identité filesystem et les métadonnées sont revérifiées après l'appel. Les chemins réseau/streams NTFS, fichiers absents, liens et formats de résultat invalides sont refusés. Un état non signé/non approuvé n'est jamais promu en « valide ». Ces protections ne constituent pas une qualification de panne électrique ou d'un adversaire administrateur.
+
+`runExternalWindowsMaintenance` utilise cet adaptateur par défaut en l'absence d'un fournisseur explicitement injecté. Il compare aussi le hash/version natifs à l'inventaire authentifié. Le nom du véritable EXE est sélectionné dans l'inventaire : `StreamDashboard.exe` ou l'alias explicite `StreamCockpit.exe`, jamais un helper arbitraire. L'ancien nom unique codé en dur ne pouvait pas désigner le paquet StreamDashboard existant.
+
+`runNativeWindowsMaintenance` raccorde en plus la relecture des images installée/restaurée à l'adaptateur natif, sans accepter les callbacks de signature/identité de l'appelant à leur place. `createNativeWindowsImageAttester` vérifie l'inventaire complet, le signataire Windows épinglé, la version PE et l'empreinte de l'EXE, puis l'inventaire complet une seconde fois. Le commit et l'identité applicative restent liés à l'inventaire authentifié fourni, pas découverts dans une inscription au registre Windows. Le contrôle indépendant EXE/APK même commit reste distinct.
+
+## Qualification
+- Nouvelle campagne native ciblée : **3 suites / 68 PASS / 0 FAIL / 0 skipped**, `.git/sc3-native-attestation-focused.json`.
+- Campagne combinée F05/F10 finale : **19 suites / 241 PASS / 0 FAIL / 0 skipped**, `.git/sc3-cdc-combined-final.json` et `.git/sc3-cdc-combined-final.log`. **20 nouveaux tests sur ce lot**, en plus des 35 nouveaux tests F05 du commit précédent ; aucun cumul de campagnes présenté comme un nombre de tests uniques.
+- Le vrai vérificateur Windows refuse un fichier EXE temporaire non signé, y compris un chemin contenant crochets/apostrophe, sans modifier ses octets. La maintenance sans callback refuse effectivement la source non signée avant toute inscription dans le journal. Une image dont les métadonnées déclarent un signataire ne devient pas une identité native attestée.
+- Parcours complet préparation/installation/rollback : vrais fichiers/SQLite temporaires et vérification Ed25519 avec clé éphémère de test existante ; **réponse Authenticode positive simulée**. Ce cas prouve le raccordement et les contrôles hash/version, pas une signature Windows de production. Les observations live/écrivains et le consentement restent simulés dans ces fixtures. Aucune clé de signature Windows ou Android créée.
+- `build:types`, `check:browser-types`, `security:check` (**6 829 fichiers**) et `git diff --check` : PASS, codes 0. HEAD stable pendant les contrôles. Un worker à priorité basse ; aucun build global/package/RC. Les deux parcours Edge F05 sont également repassés dans la campagne combinée.
+
+## Développement restant — pas de promotion à 100 %
+L'adaptateur est désormais concret et raccordé, mais **ce n'est toujours pas l'installateur natif de production**. Restent le lancement/exécutable externe effectivement distribué, la transaction Squirrel/Android, les adaptateurs d'observation indépendante live/écrivains, les migrations de schéma et leur parcours de récupération intégré. Les certificats de production, la réception matérielle et les signatures d'une paire du même commit restent des qualifications séparées. L'updater installé n'est pas activé. F10 partial, G2 in_progress, G3–G5 open.
+
+Priorité suivante : fermer les raccordements d'installation natifs et les migrations, sans ajouter de nouveaux niveaux de validation détachés ; la vue historique/routage F05 et le patch UI concurrent restent à intégrer sous propriété explicite.

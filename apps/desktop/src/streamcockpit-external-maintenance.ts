@@ -1,4 +1,5 @@
 import {isAbsolute,resolve,join} from 'node:path';
+import {inspectWindowsAuthenticode,windowsApplicationEntry} from './streamcockpit-windows-authenticode.js';
 import {runtimeUpgradeDirectory} from './streamcockpit-runtime-ownership.js';
 import {createSignedWindowsDirectoryUpgradePlanner,type SignedDirectoryUpgradeOptions} from './streamcockpit-upgrade-signed-preparation.js';
 import {verifyUpgradeReadbackFiles} from './streamcockpit-upgrade-readback.js';
@@ -16,12 +17,14 @@ export interface MaintenanceOfflineWitness {
 }
 export interface MaintenanceSignerWitness {
   status:'valid'|'invalid'|'unknown'; signer:string; path:string; observedAt:number;
+  /** Present on the native adapter: hash of the bytes held during verification. */
+  sha256?:string;version?:string;
 }
 export interface ExternalMaintenanceDependencies {
   /** Independent observer, NOT a disconnected DashboardServer false/live flag. */
   observeOffline():Promise<MaintenanceOfflineWitness|undefined>;
   /** Actual OS trust adapter must verify Authenticode and its certificate chain. */
-  verifyNativeSigner(path:string):Promise<MaintenanceSignerWitness|undefined>;
+  verifyNativeSigner?(path:string):Promise<MaintenanceSignerWitness|undefined>;
   /** Explicit authorization, bound to THIS exact release and action. */
   authorize(action:'install'|'rollback',releaseId:string):Promise<boolean>;
   /** OS process/service check, in addition to the shared SQLite mutex. */
@@ -76,7 +79,7 @@ export async function runExternalWindowsMaintenance(
   request:ExternalMaintenanceRequest,deps:ExternalMaintenanceDependencies,
 ):Promise<ExternalMaintenanceResult>{
   validateRoots(request);
-  if(!deps||!['observeOffline','verifyNativeSigner','authorize','noOtherWriters','assessRestartSafety']
+  if(!deps||!['observeOffline','authorize','noOtherWriters','assessRestartSafety']
     .every(key=>typeof deps[key as keyof ExternalMaintenanceDependencies]==='function'))
     fail('PROOF_ADAPTER_MISSING');
   // Detach data contracts but preserve executable proof callbacks (functions
@@ -105,9 +108,13 @@ export async function runExternalWindowsMaintenance(
   const sourceRoot=request.action==='rollback'?o.backupPackage:o.sourcePackage;
   const sourceFiles=request.action==='rollback'?o.rollback.packageFiles:o.image.packageFiles;
   const sourceSigner=request.action==='rollback'?o.rollback.identity.signer:o.trust.windowsSigner;
-  const binary=join(sourceRoot,'StreamCockpit.exe');
-  const native=await deps.verifyNativeSigner(binary);
+  const application=windowsApplicationEntry(sourceFiles);
+  const binary=join(sourceRoot,application.path);
+  const native=await (deps.verifyNativeSigner??inspectWindowsAuthenticode)(binary);
   if(!validSigner(native,binary,sourceSigner,now()))fail('NATIVE_SIGNER_UNVERIFIED');
+  if(native?.sha256!==undefined&&native.sha256!==application.sha256)fail('SIGNED_SOURCE_CHANGED');
+  const sourceVersion=request.action==='rollback'?o.rollback.identity.version:o.image.identity.version;
+  if(native?.version!==undefined&&native.version!==sourceVersion)fail('NATIVE_VERSION_MISMATCH');
   if(!await verifyUpgradeReadbackFiles(sourceRoot,sourceFiles))fail('SIGNED_SOURCE_CHANGED');
   if(!await deps.assessRestartSafety().then(x=>x.safe===true,()=>false))
     fail('RESTART_NOT_SAFE');

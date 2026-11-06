@@ -289,3 +289,37 @@ onWindows('F10 external maintenance authenticates publisher before any operator 
  expect(await inventory(f.paths.packageRoot)).toEqual(f.options.rollback.packageFiles);
  await receipts(f.paths.profileRoot);
 });
+
+onWindows('F10 missing injected signer now invokes real Windows trust and refuses unsigned source BEFORE journal registration',async()=>{
+ const f=await externalFixture();delete f.deps.verifyNativeSigner;
+ await expect(f.run('install')).rejects.toThrow('NATIVE_SIGNER_UNVERIFIED');
+ expect(await fs.readdir(f.coordinator)).toEqual([]);expect(fs.copyFile).not.toHaveBeenCalled();
+ expect(await inventory(f.paths.packageRoot)).toEqual(f.options.rollback.packageFiles);
+},25000);
+onWindows.each(['hash','version'])('F10 refuses a native %s inconsistent with the publisher-bound source',async field=>{
+ const f=await externalFixture();
+ f.verifyNativeSigner.mockImplementation(async path=>({status:'valid' as const,signer:f.options.trust.windowsSigner,
+  path,observedAt:Date.now(),...(field==='hash'?{sha256:'f'.repeat(64)}:{version:'9.9.9'})}));
+ await expect(f.run('install')).rejects.toThrow(field==='hash'?'SIGNED_SOURCE_CHANGED':'NATIVE_VERSION_MISMATCH');
+ expect(fs.copyFile).not.toHaveBeenCalled();expect(await fs.readdir(f.coordinator)).toEqual([]);
+});
+onWindows('F10 native wiring replaces injectable trust/readback with the native adapter and verifies complete installed bytes (OS response simulated)',async()=>{
+ const f=await externalFixture();
+ const native=await import('../apps/desktop/src/streamcockpit-windows-authenticode.js');
+ const {runNativeWindowsMaintenance}=await import('../apps/desktop/src/streamcockpit-native-maintenance.js');
+ const verify=vi.spyOn(native,'inspectWindowsAuthenticode').mockImplementation(async path=>{
+  const bytes=await fs.readFile(path);
+  return {status:'valid',signer:f.options.trust.windowsSigner,path,observedAt:Date.now(),
+   sha256:hash(bytes),version:bytes.toString().startsWith('NEW')?'3.0.0':'2.1.0'};
+ });
+ // These old injected attesters must NOT be used by the concrete native entry.
+ f.attestInstalled.mockResolvedValue(undefined);f.verifyNativeSigner.mockResolvedValue(undefined as never);
+ const run=(action:'prepare'|'install'|'rollback')=>runNativeWindowsMaintenance(
+  {action,applicationData:f.applicationData,rootUserData:f.rootUserData,options:f.options},f.deps);
+ expect(await run('prepare')).toMatchObject({phase:'verified',installed:false});
+ expect(await run('install')).toMatchObject({phase:'installed',pending:false});
+ expect(await inventory(f.paths.packageRoot)).toEqual(f.options.target.packageFiles);
+ expect(await run('rollback')).toMatchObject({phase:'rolledBack',pending:false});
+ expect(await inventory(f.paths.packageRoot)).toEqual(f.options.rollback.packageFiles);await receipts(f.paths.profileRoot);
+ expect(verify).toHaveBeenCalled();expect(f.attestInstalled).not.toHaveBeenCalled();expect(f.verifyNativeSigner).not.toHaveBeenCalled();
+});
