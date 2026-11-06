@@ -1,6 +1,9 @@
 # Le StreamCockpit 3.0 — Full Experience
 _Date de lancement : 2026-11-01. Référence métier : plan de refonte validé fin octobre._
 
+## Directive de clôture unique — Dam, 06/11/2026
+La suite forme **un seul lot de clôture du CDC existant**, puis une réception par Dam en live : `SC3_CLOTURE_UNIQUE_20261106.md`. Cette directive remplace le découpage historique en petits lots/rendus successifs, sans élargir F00–F10 ni rouvrir A–P. Terminer les raccordements et intégrer les travaux déjà engagés ; aucune fonctionnalité facultative, refonte ou nouvelle architecture. L'audit autonome séparé est désactivé ; la convergence poursuit ce lot unique. Les propriétaires de fichiers déjà actifs restent protégés jusqu'au transfert explicite. Une seule restitution consolidée de livraison ; les migrations, mises à jour et rollback se qualifient hors live. Aucun 100 %, signature ou réception matérielle fabriqués.
+
 ## Contrat produit
 Le StreamCockpit 3.0 est une régie de streaming Twitch-only, pilotable depuis FIXE (PC stream), laptop (PC jeu) et Android, avec un **unique propriétaire des commandes OBS, des minuteurs et du planning** : l'Agent léger du PC stream. L'interface Desktop sur FIXE doit devenir facultative. Les fonctions mobiles ne doivent pas créer une deuxième régie.
 **La RC2 est le repli**, et reste dans la branche `streamcockpit/fc1-integration-active-20261101` au commit `1cbb1d9`. Le chantier 3.0 se fait exclusivement dans `streamcockpit/3.0-full-experience`, sans écraser les installations ou données de l'utilisateur.
