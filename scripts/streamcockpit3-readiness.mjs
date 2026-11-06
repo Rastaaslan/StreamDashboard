@@ -49,10 +49,10 @@ export function assessStreamCockpit3(matrix) {
       else if (!evidence(gate.verifiedEvidence)) blockers.push(gate.id + '_EVIDENCE_MISSING');
     }
   }
-  // A manually edited status cannot certify unsigned or mismatched release artifacts.
-  // A future G4 verifier must inspect Authenticode, Android production signer,
-  // SHA-256 of both artifacts, exact source commit and tested rollback.
-  blockers.push('G4_REAL_ARTIFACT_SIGNATURE_VERIFIER_MISSING');
+  // A manually edited gate cannot certify production signatures or archives.
+  // The independent embedded-provenance verifier now exists, but this matrix
+  // preflight has no signed exact-HEAD Windows/APK bundle or G4 receipt.
+  blockers.push('G4_SIGNED_SAME_COMMIT_ARTIFACT_EVIDENCE_MISSING');
   return {
     schemaVersion: 1,
     target: 'StreamCockpit 3.0',

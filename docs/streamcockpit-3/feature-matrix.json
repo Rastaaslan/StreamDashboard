@@ -1230,6 +1230,10 @@
         {
           "path": "docs/streamcockpit-3/F09_F10_LEGACY_QA_CONVERGENCE_20261106.md",
           "kind": "2026-11-06 FIXE F10: explicit opt-in inherited F09 JSON migration incorporated in detached checkpoint -> SQLite + original JSON archive -> independent recovery under the three-host-writer in-process QA gate; source hash rechecked before and after, unexpected files and sidecars rejected. 175 PASS/0 FAIL/6 skipped across 13 suites including real Windows SQLite; TS/browser/security/diff PASS, no production installation or multi-process exclusion. F10 partial, G2 in_progress, G3-G5 open."
+        },
+        {
+          "path": "docs/streamcockpit-3/G4_EMBEDDED_SAME_COMMIT_VERIFIER_20261106.md",
+          "kind": "2026-11-06 FIXE G4: verifier now checks actual EXE PE x64/ASAR header integrity and embedded build info against actual APK ZIP embedded build info, HEAD and SHA256; 14 targeted PASS/0 FAIL/0 skipped, prior QA EXE+APK same-commit 73a6aae verified read-only, TS/browser/security 6795 files/diff PASS. Production signatures, newly packaged HEAD, physical device rollback and G3-G5 remain unqualified."
         }
       ],
       "verifiedTests": [
@@ -1243,13 +1247,14 @@
         "tests/streamcockpit3-durable-writer-quiescence.test.ts",
         "tests/streamcockpit3-moments-legacy-qa-migration.test.ts",
         "tests/streamcockpit3-artifact-verifier.test.ts",
+        "tests/streamcockpit3-embedded-provenance.test.ts",
         "tests/migration-backup.test.ts"
       ],
       "hardwareEvidence": [],
       "blockers": [
         "Real Windows/Android trusted signing and staged bytes verification unavailable",
         "QA-only byte-exact profile checkpoint and restore are verified on isolated temporary directories; durable real installer, migration/recovery and rollback on hardware remain unintegrated.",
-        "2026-11-03: StreamCockpit3 release:check correctly refuses G2-G5 unqualified and missing cryptographic same-commit artifact verifier; raw build commands do not certify publication"
+        "2026-11-06: embedded same-commit EXE/ASAR+APK verifier exists and passes on old debug QA artifacts, but production-signed artifacts from exact current HEAD, physical recovery, and operator gates remain unavailable; release:check still fails closed"
       ],
       "ownerJob": "streamcockpit/3.0-lot-p",
       "integrationNote": "F10 lot P preflight read-only integrated 2026-11-01; 71/71 targeted PASS, types/security PASS; transaction Squirrel, real signatures and hardware rollback absent. No quitAndInstall enabled. Common Git commit/source SHA-256 provenance is generated for Windows resources and Android assets. ASAR checker rejects dirty or mismatched source and cross-artifact provenance. 2026-11-03 isolated QA checkpoint: 65/65 targeted F10 PASS (including 6 new real filesystem backup/restore tests), no production data or app installation touched; cryptographic release signing, Squirrel transaction and real hardware migration/rollback remain unqualified. This is packaging preparation, not a signed APK/EXE or qualified rollback."

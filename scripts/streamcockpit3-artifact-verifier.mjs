@@ -4,6 +4,7 @@ import { readFile } from 'node:fs/promises';
 import { spawnSync } from 'node:child_process';
 import { isAbsolute, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import {verifyEmbeddedArtifactProvenance} from './streamcockpit3-embedded-provenance.mjs';
 
 const HEX40 = /^[a-f0-9]{40}$/i, HEX64 = /^[a-f0-9]{64}$/i;
 const fail = code => { throw new Error('SC3_ARTIFACT_' + code); };
@@ -136,10 +137,18 @@ export async function verifyArtifactBundle(manifest, policy) {
     if ((await hashFile(manifest[key].file)) !== manifest[key].sha256.toLowerCase())
       fail('FILE_CHANGED');
   verifySourceCommit(manifest.sourceCommit);
-  // Manifest metadata is SELF-ATTESTED. Correct hashes and trusted signatures
-  // are insufficient to prove that *both artifact bytes* embed this Git HEAD.
-  // An independent embedded commit/provenance verifier is mandatory for G4.
-  fail('EMBEDDED_SAME_COMMIT_ATTESTATION_MISSING');
+  // Inspect both actual archives, not their self-attested manifest fields:
+  // Windows PE ASAR integrity resource -> ASAR build info, APK ZIP asset.
+  // This never substitutes for stable production signing or operator G4 tests.
+  const provenance=verifyEmbeddedArtifactProvenance(manifest.windows.file,
+    manifest.android.file,manifest.sourceCommit);
+  for(const key of ['windows','android'])
+    if((await hashFile(manifest[key].file))!==manifest[key].sha256.toLowerCase())
+      fail('FILE_CHANGED');
+  verifySourceCommit(manifest.sourceCommit);
+  return {verified:true,sourceCommit:manifest.sourceCommit,
+    windowsSha256:manifest.windows.sha256,androidSha256:manifest.android.sha256,
+    embeddedSourceTreeSha256:provenance.sourceTreeSha256};
 }
 
 async function main() {

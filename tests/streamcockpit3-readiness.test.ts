@@ -17,7 +17,7 @@ describe('StreamCockpit 3.0 release readiness must fail closed', () => {
     expect(result.releaseEligible).toBe(false);
     expect(result.blockers).toContain('F08_NOT_QUALIFIED');
     expect(result.blockers).toContain('G3_NOT_QUALIFIED');
-    expect(result.blockers).toContain('G4_REAL_ARTIFACT_SIGNATURE_VERIFIER_MISSING');
+    expect(result.blockers).toContain('G4_SIGNED_SAME_COMMIT_ARTIFACT_EVIDENCE_MISSING');
   });
 
   it('refuses missing, duplicate or foreign workstreams even when G5 is manually marked qualified', () => {
@@ -47,7 +47,7 @@ describe('StreamCockpit 3.0 release readiness must fail closed', () => {
     expect(result.sourceQualification).toBe(true);
     expect(result.verifiedGates).toHaveLength(6);
     expect(result.releaseEligible).toBe(false);
-    expect(result.blockers).toContain('G4_REAL_ARTIFACT_SIGNATURE_VERIFIER_MISSING');
+    expect(result.blockers).toContain('G4_SIGNED_SAME_COMMIT_ARTIFACT_EVIDENCE_MISSING');
   });
 
   it('requires separate hardware evidence before even considering a feature qualified', () => {
