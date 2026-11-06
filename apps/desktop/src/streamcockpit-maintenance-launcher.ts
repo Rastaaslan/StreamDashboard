@@ -1,14 +1,16 @@
 import {spawn,type ChildProcessWithoutNullStreams} from 'node:child_process';
 import {resolve} from 'node:path';
+import {windowsDistribution} from './streamcockpit-windows-distribution.js';
 import {readPreparedMaintenanceRequest,verifyMaintenanceCarrier,type MaintenanceEnvelope,type PreparedMaintenanceRequest} from './streamcockpit-maintenance-cli.js';
 import type {DirectoryReleaseTrust} from './streamcockpit-upgrade-signed-preparation.js';
-import {validateMaintenanceObserverConfiguration,type MaintenanceObserverConfiguration} from './streamcockpit-maintenance-observer.js';
+import {validateMaintenanceObserverConfiguration,type MaintenanceObserverInput as MaintenanceObserverConfiguration} from './streamcockpit-maintenance-observer.js';
 
 export interface InstalledMaintenanceContext {applicationData:string;rootUserData:string;packageRoot:string;version:string}
 const same=(a:string,b:string)=>resolve(a).toLowerCase()===resolve(b).toLowerCase();
 const fail=(code:string)=>new Error('SC3_MAINTENANCE_LAUNCH_'+code);
 /** Native UI preparation only: no shutdown, process launch or profile write. */
 export async function prepareNativeMaintenanceLaunch(file:string,trust:DirectoryReleaseTrust,current:InstalledMaintenanceContext){
+ if(await windowsDistribution(current.packageRoot)!=='directory')throw fail('SQUIRREL_REQUIRES_NATIVE_DISTRIBUTION');
  const request=await readPreparedMaintenanceRequest(file,trust),o=request.options;
  if(!same(request.applicationData,current.applicationData)||!same(request.rootUserData,current.rootUserData)||
   !same(o.packageRoot,current.packageRoot)||

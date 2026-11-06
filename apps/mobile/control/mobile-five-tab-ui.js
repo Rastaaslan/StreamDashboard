@@ -125,6 +125,7 @@ export function renderMobilePlus({data,online,server,esc}){
       ${link('▦ Appareils & Deck','FIXE, laptop, Android : rôles et association','data-settings-tab="devices"')}
       ${link('♧ Mes comptes','Connexions indépendantes de l’appareil','data-task="device-accounts"')}
       ${link('↺ Synchronisation','État des modifications et conflits','data-task="sync-status"')}
+      ${typeof globalThis.StreamDashboardNative?.openUpdate==='function'?link('Mise à jour Android','Préparer, reporter et installer hors live','data-task="native-update"'):''}
     </div>
   </div>`;
 }

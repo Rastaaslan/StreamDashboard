@@ -1,4 +1,5 @@
 import { app, autoUpdater, dialog, type BrowserWindow } from 'electron';
+import {readAvailableWindowsRelease} from './streamcockpit-release-availability.js';
 import type { DashboardServerHandle } from '../../server/src/index.js';
 import { requireDesktopRestartSafety } from './restart-safety.js';
 import { preflightDesktopUpgrade, type DesktopUpgradePreflightDependencies } from './streamcockpit-upgrade.js';
@@ -13,6 +14,7 @@ export function startUpdater(
   // The native application owns signature checks, consent and graceful exit.
   // A downloaded Squirrel notification is not itself installation permission.
   preparedMaintenance?: (isCurrent: () => boolean) => Promise<void>,
+  availability: (current:string)=>Promise<string|undefined> = readAvailableWindowsRelease,
 ) {
   const preflight = () => preflightDesktopUpgrade({
     ...preflightDependencies,
@@ -21,8 +23,10 @@ export function startUpdater(
   if (!app.isPackaged || process.platform !== 'win32' || process.env.NODE_ENV === 'test') {
     return Object.assign(() => undefined, { preflight });
   }
-  const feed = `https://update.electronjs.org/Rastaaslan/StreamDashboard/${process.platform}-${process.arch}/${app.getVersion()}`;
-  autoUpdater.setFeedURL({ url: feed });
+  // Availability cannot download or apply Squirrel packages before consent.
+  let checking = false;
+  let availableVersion = '';
+  let handledVersion = '';
   let ready = false;
   let dialogOpen = false;
   let deferredUntil = 0;
@@ -39,7 +43,7 @@ export function startUpdater(
       catch { return; }
       if (!active || !ready) return;
       const choice = await dialog.showMessageBox(window, {
-        type: 'info', title: 'Mise à jour téléchargée', message: 'Une mise à jour de StreamDashboard doit être vérifiée.',
+        type: 'info', title: 'Mise à jour disponible', message: 'Une mise à jour de StreamDashboard doit être vérifiée.',
         detail: preparedMaintenance
           ? 'Le téléchargement seul ne permet pas une installation. Choisissez le contrat de maintenance signé ; il sera vérifié avant toute fermeture. Aucun redémarrage automatique.'
           : 'Vérifier les conditions de mise à jour. Aucun parcours de maintenance natif n’est raccordé dans cette instance.',
@@ -51,6 +55,7 @@ export function startUpdater(
         catch { logError('Installation différée : une diffusion est active ou non confirmée'); return; }
         if (!active || !ready) return;
         ready = false;
+        handledVersion = availableVersion;
         if (preparedMaintenance) {
           await preparedMaintenance(() => active);
           return;
@@ -76,14 +81,17 @@ export function startUpdater(
   autoUpdater.on('update-downloaded', onDownloaded);
   autoUpdater.on('error', onError);
 
-  const checkNow = () => {
-    if (!active) return;
+  const checkNow = async () => {
+    if (!active || checking) return;
+    checking = true;
     try {
-      void Promise.resolve(autoUpdater.checkForUpdates()).catch(() => logError('Vérification updater impossible (détails masqués)'));
-    } catch {
-      // Some Electron backends throw synchronously before returning a promise.
-      logError('Vérification updater impossible (détails masqués)');
-    }
+      const version = await availability(app.getVersion());
+      if (active && version && version !== handledVersion) {
+        availableVersion = version; ready = true;
+        void offerWhenSafe();
+      }
+    } catch { logError('Vérification updater impossible (détails masqués)'); }
+    finally { checking = false; }
   };
   const firstCheck = setTimeout(checkNow, process.argv.includes('--squirrel-firstrun') ? 10_000 : 0);
   const check = setInterval(checkNow, 30 * 60_000); check.unref();

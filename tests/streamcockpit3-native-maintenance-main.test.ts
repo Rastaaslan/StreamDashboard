@@ -3,7 +3,7 @@ import {mkdtemp,mkdir,rm,writeFile} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 const f=vi.hoisted(()=>({paths:{} as Record<string,string>,ready:undefined as (()=>void)|undefined,
- windows:[] as any[],prepare:vi.fn(),launch:vi.fn(),handoff:vi.fn(),cancel:vi.fn(),safe:vi.fn(),configuration:vi.fn(),
+ windows:[] as any[],client:false,peer:vi.fn(),prepare:vi.fn(),launch:vi.fn(),handoff:vi.fn(),cancel:vi.fn(),safe:vi.fn(),configuration:vi.fn(),
  show:vi.fn(),choose:vi.fn(),errorBox:vi.fn(),stop:vi.fn(),info:vi.fn(),updater:vi.fn(),leases:[] as Array<{stop():Promise<void>}>}));
 vi.mock('electron',async()=>{
  const {EventEmitter}=await import('node:events');
@@ -23,7 +23,7 @@ vi.mock('../apps/desktop/src/window.js',async()=>{const {EventEmitter}=await imp
 vi.mock('../apps/desktop/src/presentation.js',()=>({presentWindow:vi.fn()}));
 vi.mock('../apps/desktop/src/installation-store.js',()=>({InstallationStore:class{
  async recover(){return {version:2,revision:0,localDeviceId:'fixture',runtimeProfile:'root',background:false,configured:true,
-  devices:[{id:'fixture',name:'Test',roles:['controller','obs-executor'],enabled:true}]}}
+  devices:[{id:'fixture',name:'Test',roles:f.client?['controller']:['controller','obs-executor'],enabled:true}]}}
  async read(){return this.recover()}
 }}));
 vi.mock('../apps/desktop/src/lifecycle.js',()=>({startDesktopRuntime:async()=>({dashboard:{url:'http://127.0.0.1:48133',
@@ -38,6 +38,7 @@ vi.mock('../apps/desktop/src/dji-host-warning-watcher.js',()=>({DjiHostWarningWa
 vi.mock('../apps/desktop/src/controller.js',()=>({installControllerKeys:()=>()=>{},startControllerAssets:vi.fn()}));
 vi.mock('../apps/desktop/src/login-startup.js',()=>({configureLoginStartup:vi.fn()}));
 vi.mock('../apps/desktop/src/squirrel.js',()=>({handleSquirrelStartup:()=>false}));
+vi.mock('../apps/desktop/src/streamcockpit-controller-maintenance.js',()=>({controllerMaintenanceObservation:f.peer}));
 vi.mock('../apps/desktop/src/updater.js',()=>({startUpdater:f.updater}));
 vi.mock('../apps/desktop/src/streamcockpit-maintenance-launcher.js',()=>({prepareNativeMaintenanceLaunch:f.prepare}));
 vi.mock('../apps/desktop/src/streamcockpit-application-ownership.js',async original=>{
@@ -50,7 +51,7 @@ let root='',exceptions:NodeJS.UncaughtExceptionListener[]=[],rejections:NodeJS.U
 const observer={obs:{url:'ws://127.0.0.1:9',password:'TEST_ONLY_PASSWORD'},outputs:{twitch:{kind:'main',name:''}},
  twitch:{clientId:'TEST_CLIENT',accessToken:'TEST_ONLY_TOKEN',broadcasterId:'42'}};
 beforeEach(async()=>{
- vi.resetModules();vi.resetAllMocks();f.windows=[];f.leases=[];f.updater.mockReturnValue(()=>{});
+ vi.resetModules();vi.resetAllMocks();f.client=false;f.windows=[];f.leases=[];f.updater.mockReturnValue(()=>{});
  root=await mkdtemp(join(tmpdir(),'sc3-main-maintenance-'));f.paths={appData:join(root,'app-data'),userData:join(root,'old'),image:join(root,'image')};
  await mkdir(f.paths.appData);await mkdir(join(f.paths.image,'resources'),{recursive:true});
  await writeFile(join(f.paths.image,'resources/maintenance-trust.json'),JSON.stringify({keyId:'TEST_ONLY',publicKeyPem:'-----BEGIN PUBLIC KEY-----\nTEST_ONLY_NOT_USED',
@@ -127,4 +128,11 @@ it.each(['selection','helper-ready'] as const)('revokes the actual main maintena
   if(phase==='selection'){expect(f.prepare).not.toHaveBeenCalled();expect(f.launch).not.toHaveBeenCalled()}
   else expect(f.cancel).toHaveBeenCalledOnce();
  }finally{process.argv=argv}
+});
+
+it('a Windows device without OBS ownership uses its existing paired FIXE observation through the same helper',async()=>{
+ f.client=true;const peer={peer:{origin:'https://fixe.test:19443',fingerprint:'a'.repeat(64),credential:'TEST_ONLY_CONTROLLER_CREDENTIAL'}};f.peer.mockResolvedValue(peer);
+ const open=await boot(),{app}=await import('electron');open();await vi.waitFor(()=>expect(app.exit).toHaveBeenCalledWith(0));
+ expect(f.peer).toHaveBeenCalledOnce();expect(f.configuration).not.toHaveBeenCalled();expect(f.launch).toHaveBeenCalledExactlyOnceWith(peer);
+ expect(f.handoff).toHaveBeenCalledOnce();expect(f.stop).toHaveBeenCalledOnce();
 });

@@ -93,6 +93,10 @@
         {
           "path": "docs/streamcockpit-3/SETTINGS_ANDROID_STALE_ROLE_INTEGRATIONS_20261106.md",
           "kind": "2026-11-06 FIXE Settings: stale Android 'stream' role without selected FIXE endpoint cannot enable Discord/WizeBot or present cached CONNECTED statuses as verified; unpaired Android retains explicit association route. RED 8 PASS/2 FAIL, GREEN 22 PASS/0 FAIL/0 skipped incl. 6 actual Edge browser checks with providers simulated; types/browser/security/JS/diff PASS. No physical Android, OBS/Twitch or G3-G5 evidence."
+        },
+        {
+          "path": "docs/streamcockpit-3/evidence/SC3-CLOTURE-UNIQUE-FINISH-001/software-validation.json",
+          "kind": "2026-11-07 FIXE: current consolidated software regression, 3013 PASS / 0 FAIL / 61 ignored, 352 built Node PASS / 0 FAIL / 6 ignored. Real isolated browser/files/TLS/SQLite and simulated providers; not physical or production-signature acceptance."
         }
       ],
       "verifiedTests": [
@@ -172,6 +176,10 @@
         {
           "path": "docs/streamcockpit-3/SETTINGS_HOST_ONLY_ACTIONS_20261106.md",
           "kind": "2026-11-06 FIXE code audit and host integration UX scope proof; HEAD source changes only, F01 partial/G2 in_progress, G3-G5 open"
+        },
+        {
+          "path": "docs/streamcockpit-3/evidence/SC3-CLOTURE-UNIQUE-FINISH-001/software-validation.json",
+          "kind": "2026-11-07 FIXE: current consolidated software regression, 3013 PASS / 0 FAIL / 61 ignored, 352 built Node PASS / 0 FAIL / 6 ignored. Real isolated browser/files/TLS/SQLite and simulated providers; not physical or production-signature acceptance."
         }
       ],
       "verifiedTests": [
@@ -258,6 +266,10 @@
         {
           "path": "docs/streamcockpit-3/F02_VIEWER_HISTORY_RECOVERY_20261106.md",
           "kind": "2026-11-06 FIXE F02: manual viewer-ID GET on paired Desktop/Android without held message, plus 15-minute observed-only AutoMod outcome preserved through same-broadcaster EventSub reconnect (old held actions discarded). Real Edge 320px late-result and account-switch fences; 11 suites 48 PASS/0 FAIL/0 skipped including 8 Edge synthetic cases; TypeScript/browser types/security 6814 files/diff PASS. Memory-only, no Twitch-wide historical view, no production OAuth, native Android or G3-G5 proof; F02 partial/G2 in_progress."
+        },
+        {
+          "path": "docs/streamcockpit-3/evidence/SC3-CLOTURE-UNIQUE-FINISH-001/software-validation.json",
+          "kind": "2026-11-07 FIXE: current consolidated software regression, 3013 PASS / 0 FAIL / 61 ignored, 352 built Node PASS / 0 FAIL / 6 ignored. Real isolated browser/files/TLS/SQLite and simulated providers; not physical or production-signature acceptance."
         }
       ],
       "verifiedTests": [
@@ -323,6 +335,10 @@
         {
           "path": "docs/streamcockpit-3/SC3_CLOTURE_UNIQUE_20261106.md",
           "kind": "2026-11-06 FIXE explicit operator ownership transfer: inherited manual 2-5 existing OBS-step macros integrated in the actual editor, ControlService queue, actor/context authorization and durable step receipts. Own acknowledged scene transitions advance only the private sequence context; stale global proofs never reauthorize another action. New operator confirmation, no keyboard/public Twitch/live/nested sequence bypass. Full Vitest 2898 PASS/0 FAIL/129 skipped; Node built 352 PASS/0 FAIL/6 skipped; integrated F03/F05 revalidation 31 PASS/0 FAIL/0 skipped with 10 real Edge scenarios. Runtime build, TS/browser types/shipped JS/security 6856 files/diff PASS. Temporary files and simulated providers, not physical G3-G5 reception or distribution."
+        },
+        {
+          "path": "docs/streamcockpit-3/evidence/SC3-CLOTURE-UNIQUE-FINISH-001/software-validation.json",
+          "kind": "2026-11-07 FIXE: current consolidated software regression, 3013 PASS / 0 FAIL / 61 ignored, 352 built Node PASS / 0 FAIL / 6 ignored. Real isolated browser/files/TLS/SQLite and simulated providers; not physical or production-signature acceptance."
         }
       ],
       "verifiedTests": [
@@ -525,6 +541,10 @@
         {
           "path": "docs/streamcockpit-3/F04_PREVIEW_DESCRIPTION_REVISION_20261106.md",
           "kind": "2026-11-06 FIXE F04: queued input event during asynchronous Twitch preview could restore a stale moment confirmation for the old description; revision-fenced invalidation now discards late preview and preserves uncertain provider status. Real Edge RED 0 PASS/1 FAIL, final five focused suites 55 PASS/0 FAIL/0 skipped including 13 real Edge checks at 320px/multitab; TypeScript/browser types, JS syntax, security 6771 files and diff check PASS. Synthetic host/Twitch only, no public POST, physical Android, packaging or G3 qualification. F04 partial, G2 in_progress."
+        },
+        {
+          "path": "docs/streamcockpit-3/evidence/SC3-CLOTURE-UNIQUE-FINISH-001/software-validation.json",
+          "kind": "2026-11-07 FIXE: current consolidated software regression, 3013 PASS / 0 FAIL / 61 ignored, 352 built Node PASS / 0 FAIL / 6 ignored. Real isolated browser/files/TLS/SQLite and simulated providers; not physical or production-signature acceptance."
         }
       ],
       "verifiedTests": [
@@ -702,6 +722,10 @@
         {
           "path": "docs/streamcockpit-3/SC3_CLOTURE_UNIQUE_20261106.md",
           "kind": "2026-11-06 FIXE explicit ownership transfer: inherited mixer UI completed with paged durable receipt history and fresh-consent rollback; the existing gain/mute consent+SQLite+OBS bus now handles six source-track flags and monitoring with fresh UUID/state readback. Stale routing replies after offline/new inspection cannot re-enable controls. Full Vitest 2898 PASS/0 FAIL/129 skipped; built Node 352 PASS/0 FAIL/6 skipped; current integrated UI 31 PASS/0 FAIL/0 skipped including 10 real Edge scenarios. Build/types/browser types/shipped JS/security 6856 files/diff PASS. Only temporary Windows data and loopback OBS simulator; actual game-PC system audio, VOD output mapping, physical audibility and power-loss/migration reception unqualified."
+        },
+        {
+          "path": "docs/streamcockpit-3/evidence/SC3-CLOTURE-UNIQUE-FINISH-001/software-validation.json",
+          "kind": "2026-11-07 FIXE: current consolidated software regression, 3013 PASS / 0 FAIL / 61 ignored, 352 built Node PASS / 0 FAIL / 6 ignored. Real isolated browser/files/TLS/SQLite and simulated providers; not physical or production-signature acceptance."
         }
       ],
       "verifiedTests": [
@@ -777,6 +801,10 @@
         {
           "path": "docs/streamcockpit-3/F06_RECURRING_OCCURRENCE_DUPLICATION_20261106.md",
           "kind": "2026-11-06 FIXE F06: individual recurring occurrences and effective exceptions can be duplicated to an unpublished local-only draft, re-fingerprinting entire source master plus selected occurrence at two FIXE reads and checking local conflicts at host save. RED 2 PASS/3 FAIL; GREEN 56 PASS/0 FAIL/0 skipped across four suites including real Edge 320px. TS/browser/security 6799 files/diff PASS. No Google/Twitch writes or physical acceptance; F06 partial and G2-G5 unchanged."
+        },
+        {
+          "path": "docs/streamcockpit-3/evidence/SC3-CLOTURE-UNIQUE-FINISH-001/software-validation.json",
+          "kind": "2026-11-07 FIXE: current consolidated software regression, 3013 PASS / 0 FAIL / 61 ignored, 352 built Node PASS / 0 FAIL / 6 ignored. Real isolated browser/files/TLS/SQLite and simulated providers; not physical or production-signature acceptance."
         }
       ],
       "verifiedTests": [
@@ -836,6 +864,10 @@
         {
           "path": "apps/mobile/control/settings-navigation.js",
           "kind": "2026-11-05 FIXE: Settings UX parity for Android 5 tabs (under Plus) and Windows Regie/Administration (overview); paired vs local account owner and Android Deck deep link remain explicit. Six targeted Vitest files 36 PASS / 0 FAIL / 0 skipped incl Edge 320/390/1366 px, TS/browser JS/security 6757 files PASS. No builds or physical Android G3/G4 proof; see SETTINGS_NAVIGATION_UI_PARITY_20261105.md."
+        },
+        {
+          "path": "docs/streamcockpit-3/evidence/SC3-CLOTURE-UNIQUE-FINISH-001/software-validation.json",
+          "kind": "2026-11-07 FIXE: current consolidated software regression, 3013 PASS / 0 FAIL / 61 ignored, 352 built Node PASS / 0 FAIL / 6 ignored. Real isolated browser/files/TLS/SQLite and simulated providers; not physical or production-signature acceptance."
         }
       ],
       "verifiedTests": [
@@ -994,6 +1026,10 @@
         {
           "path": "apps/desktop/src/preload.cts",
           "kind": "SC3-FINAL-DELIVERY-001: source integration and targeted software qualification only; hardware remains unqualified"
+        },
+        {
+          "path": "docs/streamcockpit-3/evidence/SC3-CLOTURE-UNIQUE-FINISH-001/software-validation.json",
+          "kind": "2026-11-07 FIXE: current consolidated software regression, 3013 PASS / 0 FAIL / 61 ignored, 352 built Node PASS / 0 FAIL / 6 ignored. Real isolated browser/files/TLS/SQLite and simulated providers; not physical or production-signature acceptance."
         }
       ],
       "verifiedTests": [
@@ -1122,6 +1158,10 @@
         {
           "path": "docs/streamcockpit-3/F09_F10_SIGNED_LEGACY_MIGRATION_20261106.md",
           "kind": "2026-11-06 FIXE F09/F10: explicit publisher-signed canonical legacy JSON-to-SQLite conversion now runs inside the existing directory preparation/install/rollback and external maintenance path, preserving F02/F05/F08 journals and exact F09 payload including uncertain clips. Read-only recovery after completed conversion and actual Windows child exit; partial conversion remains pending without replay. 20 suites 312 PASS/0 FAIL/0 skipped incl. 17 new tests; TS/browser types/security 6832 files/diff PASS. Real temporary Windows files/SQLite; in-memory test signing keys and simulated positive native/live/writer proofs. No installed profile, native Squirrel/Android delivery or G3-G5 qualification."
+        },
+        {
+          "path": "docs/streamcockpit-3/evidence/SC3-CLOTURE-UNIQUE-FINISH-001/software-validation.json",
+          "kind": "2026-11-07 FIXE: current consolidated software regression, 3013 PASS / 0 FAIL / 61 ignored, 352 built Node PASS / 0 FAIL / 6 ignored. Real isolated browser/files/TLS/SQLite and simulated providers; not physical or production-signature acceptance."
         }
       ],
       "verifiedTests": [
@@ -1316,6 +1356,34 @@
         {
           "path": "docs/streamcockpit-3/SC3_CLOTURE_UNIQUE_20261106.md",
           "kind": "2026-11-06 FIXE single-closure source integration: native Desktop/menu and explicit updater choice now reach the existing durable maintenance planner through independently observed OBS/Helix state, Windows writer inspection, Authenticode and an external staged-image Node helper; normal old-app exit and stopped-profile hashes preserve shutdown writes. 27 targeted suites 378 PASS/0 FAIL/0 skipped/0 todo; types/browser types/security 6846 files/diff PASS. Real temporary Windows SQLite/files, native rejection/writer inspection and bundled Electron Node refusal; positive OS trust, Electron UI and provider/live proofs simulated. Foreign F03/F05/CONTINUITY unchanged. Full CDC closure, production trust, native Squirrel/Android transaction, complete paired artifacts and G3-G5 remain pending."
+        },
+        {
+          "path": "docs/streamcockpit-3/evidence/SC3-CLOTURE-UNIQUE-FINISH-001/software-validation.json",
+          "kind": "2026-11-07 FIXE: current consolidated software regression, 3013 PASS / 0 FAIL / 61 ignored, 352 built Node PASS / 0 FAIL / 6 ignored. Real isolated browser/files/TLS/SQLite and simulated providers; not physical or production-signature acceptance."
+        },
+        {
+          "path": "apps/desktop/src/streamcockpit-peer-maintenance-observer.ts",
+          "kind": "Same closure: native Android PackageInstaller and paired Windows directory maintenance, read-only availability/safety, explicit consent and independent readback; production/device acceptance unqualified."
+        },
+        {
+          "path": "apps/desktop/src/streamcockpit-controller-maintenance.ts",
+          "kind": "Same closure: native Android PackageInstaller and paired Windows directory maintenance, read-only availability/safety, explicit consent and independent readback; production/device acceptance unqualified."
+        },
+        {
+          "path": "apps/desktop/src/streamcockpit-release-availability.ts",
+          "kind": "Same closure: native Android PackageInstaller and paired Windows directory maintenance, read-only availability/safety, explicit consent and independent readback; production/device acceptance unqualified."
+        },
+        {
+          "path": "apps/desktop/src/streamcockpit-windows-distribution.ts",
+          "kind": "Same closure: native Android PackageInstaller and paired Windows directory maintenance, read-only availability/safety, explicit consent and independent readback; production/device acceptance unqualified."
+        },
+        {
+          "path": "apps/mobile/control/streamcockpit-native-update.js",
+          "kind": "Same closure: native Android PackageInstaller and paired Windows directory maintenance, read-only availability/safety, explicit consent and independent readback; production/device acceptance unqualified."
+        },
+        {
+          "path": "android/app/src/main/java/com/rastaaslan/streamdashboard/remote/NativeUpdateManager.java",
+          "kind": "Same closure: native Android PackageInstaller and paired Windows directory maintenance, read-only availability/safety, explicit consent and independent readback; production/device acceptance unqualified."
         }
       ],
       "verifiedTests": [
@@ -1347,16 +1415,22 @@
         "tests/streamcockpit3-maintenance-cli.test.ts",
         "tests/streamcockpit3-maintenance-launcher.test.ts",
         "tests/streamcockpit3-native-maintenance-main.test.ts",
-        "tests/streamcockpit3-native-maintenance-runtime.test.ts"
+        "tests/streamcockpit3-native-maintenance-runtime.test.ts",
+        "tests/streamcockpit3-maintenance-paired-e2e.test.ts",
+        "tests/streamcockpit3-maintenance-client-gate.test.ts",
+        "tests/streamcockpit3-peer-maintenance-observer.test.ts",
+        "tests/streamcockpit3-native-android-update.test.ts",
+        "tests/streamcockpit3-release-availability.test.ts"
       ],
       "hardwareEvidence": [],
       "blockers": [
-        "Production Windows/Android native signatures and independently provisioned release trust remain unqualified.",
-        "2026-11-06: the existing directory maintenance planner is now wired to native Desktop/operator consent, an external packaged CJS helper, independent read-only OBS/Helix observation, native writer/signature inspection and final stopped-profile capture. Source tests pass; only a real unsigned/refusal path is native-attested. Independently provisioned production trust and a signed package, native Squirrel registration/update and Android PackageInstaller/rollback, deployed-profile recovery, unregistered writer coverage and hardware reception remain unqualified. Current installed version has not been modified.",
-        "2026-11-06: embedded same-commit EXE/ASAR+APK verifier exists and passes on old debug QA artifacts, but production-signed artifacts from exact current HEAD, physical recovery, and operator gates remain unavailable; release:check still fails closed"
+        "Production Windows Authenticode, Android stable signing and independently provisioned public release trust remain unqualified. QA signing is not production signing.",
+        "2026-11-07: the actual FIXE process was observed under a portable QA app directory. The existing directory planner now covers OBS-owner and paired-controller roles; Android source now connects preparation/signature identity/version/consent/PackageInstaller/result readback and supported forward recovery. Real installed-data recovery, Android OS installer result, provider and trio acceptance remain unqualified.",
+        "Native Squirrel installed-distribution transaction is not implemented by the directory maintenance adapter. A detected Squirrel installation is explicitly refused, never silently converted to portable. The existing Squirrel maker is preserved.",
+        "Current frozen-source Windows/APK provenance, checksums, native signature observations and QA compatibility must be read from out/sc3-reception-unique/<sourceCommit12>/reception-manifest.json. No RC/release or G3/G4/G5 promotion is authorized."
       ],
       "ownerJob": "streamcockpit/3.0-lot-p",
-      "integrationNote": "F10 lot P preflight read-only integrated 2026-11-01; 71/71 targeted PASS, types/security PASS; transaction Squirrel, real signatures and hardware rollback absent. No quitAndInstall enabled. Common Git commit/source SHA-256 provenance is generated for Windows resources and Android assets. ASAR checker rejects dirty or mismatched source and cross-artifact provenance. 2026-11-03 isolated QA checkpoint: 65/65 targeted F10 PASS (including 6 new real filesystem backup/restore tests), no production data or app installation touched; cryptographic release signing, Squirrel transaction and real hardware migration/rollback remain unqualified. This is packaging preparation, not a signed APK/EXE or qualified rollback."
+      "integrationNote": "F10 lot P preflight read-only integrated 2026-11-01; 71/71 targeted PASS, types/security PASS; transaction Squirrel, real signatures and hardware rollback absent. No quitAndInstall enabled. Common Git commit/source SHA-256 provenance is generated for Windows resources and Android assets. ASAR checker rejects dirty or mismatched source and cross-artifact provenance. 2026-11-03 isolated QA checkpoint: 65/65 targeted F10 PASS (including 6 new real filesystem backup/restore tests), no production data or app installation touched; cryptographic release signing, Squirrel transaction and real hardware migration/rollback remain unqualified. This is packaging preparation, not a signed APK/EXE or qualified rollback. 2026-11-07 SC3-CLOTURE-UNIQUE-FINISH-001: Windows distribution was identified as portable QA; controls share the existing planner through independent paired TLS observation. Availability no longer invokes a Squirrel download before consent. Android native update source is connected; 57 Java PASS and complete isolated software regression, no physical install. Squirrel native transaction remains absent and is declared explicitly."
     }
   ],
   "gates": [

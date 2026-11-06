@@ -34,9 +34,9 @@ it('connects candidate updater to a blocked report without cleanup, install or a
 });
 it('redacts credentials from updater, check and dialog provider errors', async () => {
   const externalError = new Error('Authorization: Bearer LEAK_SECRET_123');
-  mocks.check.mockRejectedValueOnce(externalError);
+  const availability=vi.fn(async()=>{throw externalError});
   mocks.show.mockRejectedValueOnce(externalError);
-  stop = startUpdater({} as never, { assessRestartSafety: assess } as never, logger, cleanup);
+  stop = startUpdater({} as never, { assessRestartSafety: assess } as never, logger, cleanup, undefined, undefined, availability);
   autoUpdater.emit('error', externalError);
   autoUpdater.emit('update-downloaded');
   await vi.advanceTimersByTimeAsync(1);
@@ -49,9 +49,9 @@ it('redacts credentials from updater, check and dialog provider errors', async (
   expect(cleanup).not.toHaveBeenCalled();
   expect(mocks.quit).not.toHaveBeenCalled();
 });
-it('contains a synchronous Electron check failure without exposing its details', async () => {
-  mocks.check.mockImplementationOnce(() => { throw new Error('Authorization: Bearer LEAK_SECRET_SYNC'); });
-  stop = startUpdater({} as never, { assessRestartSafety: assess } as never, logger, cleanup);
+it('contains a synchronous availability-reader failure without exposing its details', async () => {
+  const availability=()=>{throw new Error('Authorization: Bearer LEAK_SECRET_SYNC')};
+  stop = startUpdater({} as never, { assessRestartSafety: assess } as never, logger, cleanup, undefined, undefined, availability);
   await vi.advanceTimersByTimeAsync(1);
   expect(logger.error).toHaveBeenCalledWith('Vérification updater impossible (détails masqués)');
   expect(JSON.stringify(logger.error.mock.calls)).not.toContain('LEAK_SECRET_SYNC');
@@ -110,3 +110,5 @@ it('does not replay or expose provider details after a native maintenance failur
   expect(native).toHaveBeenCalledOnce(); expect(mocks.quit).not.toHaveBeenCalled(); expect(cleanup).not.toHaveBeenCalled();
   expect(JSON.stringify(logger.error.mock.calls)).not.toContain('TEST_ONLY_NATIVE_SECRET');
 });
+
+vi.mock('../apps/desktop/src/streamcockpit-release-availability.js',()=>({readAvailableWindowsRelease:vi.fn(async()=>undefined)}));

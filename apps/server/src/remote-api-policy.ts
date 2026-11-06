@@ -2,6 +2,7 @@ import type { DeckAction } from '../../../packages/contracts/src/control.js';
 import { actionCapability } from '../../mobile/shared/action-definition.js';
 import type { DevicePermission } from '../../mobile/shared/device-permissions.js';
 const GET_EXACT = new Set([
+  '/v1/maintenance/safety',
   '/v1/streamcockpit-mixer/control/history',
   '/v1/streamcockpit-context',
   '/v1/twitch/advanced/capabilities','/v1/twitch/advanced/moderation/held','/v1/twitch/advanced/prediction','/v1/twitch/advanced/prediction/reconcile','/v1/twitch/advanced/prediction/end/inspect','/v1/streamcockpit-health','/v1/streamcockpit-mixer','/v1/streamcockpit-mixer/routing','/v1/state','/v1/profile','/v1/connections','/v1/control-hub','/v1/events','/v1/soundboard',
@@ -17,7 +18,7 @@ export function isManagementApiAllowed(method: string, path: string) {
   if ((method === 'GET' && path === '/v2/autonomy') || (method === 'POST' && path === '/v2/autonomy/sync')) return true;
   if (path.startsWith('/v2/')) return isRemoteApiAllowed(method, path);
   const routes: Record<string, string[]> = {
-    GET: ['/v1/profile','/v1/google/calendars','/v1/google/oauth/config','/v1/soundboard/obs/status','/v1/supports/streamlabs/oauth/status','/v1/supports/streamlabs/history/status','/v1/wizebot'],
+    GET: ['/v1/maintenance/safety','/v1/profile','/v1/google/calendars','/v1/google/oauth/config','/v1/soundboard/obs/status','/v1/supports/streamlabs/oauth/status','/v1/supports/streamlabs/history/status','/v1/wizebot'],
     PUT: ['/v1/supports/streamlabs/oauth/config','/v1/profile','/v1/google/target','/v1/discord/token','/v1/supports/streamlabs/config','/v1/supports/streamlabs/history/config','/v1/wizebot/config','/v1/soundboard/catalog'],
     POST: ['/v1/google/oauth/config','/v1/google/oauth/start','/v1/google/sync','/v1/profile/import','/v1/soundboard/obs/setup','/v1/soundboard/sounds','/v1/supports/streamlabs/oauth/start','/v1/supports/streamlabs/oauth/config'],
     DELETE: ['/v1/google/oauth/config','/v1/discord/token','/v1/supports/streamlabs/config','/v1/supports/streamlabs/history/config','/v1/wizebot/config'],

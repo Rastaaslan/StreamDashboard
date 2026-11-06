@@ -1,0 +1,419 @@
+{
+  "schemaVersion": 1,
+  "ticket": "SC3-CLOTURE-UNIQUE-FINISH-001",
+  "base": "086442c09c22dbf7c18fd73624f1cf7c219967df",
+  "version": "3.0.0-alpha.2",
+  "software": {
+    "vitest": {
+      "files": 370,
+      "pass": 3013,
+      "fail": 0,
+      "skipped": 61
+    },
+    "nodeBuilt": {
+      "pass": 352,
+      "fail": 0,
+      "skipped": 6
+    },
+    "android": {
+      "pass": 57,
+      "fail": 0,
+      "skipped": 0,
+      "reports": 12
+    },
+    "checks": {
+      "startedAt": "2026-11-06T23:22:21.3813833Z",
+      "base": "086442c09c22dbf7c18fd73624f1cf7c219967df",
+      "types": 0,
+      "browser-types": 0,
+      "security": 0,
+      "runtime": 0,
+      "shipped": 0,
+      "diff": 0,
+      "vitest": 0,
+      "node": 0,
+      "finishedAt": "2026-11-06T23:33:36.6677679Z"
+    }
+  },
+  "ignored": [
+    {
+      "file": "tests/agent-v2-windows-secret-store.test.ts",
+      "name": "Node-only Windows Agent encrypted store rejects a symlinked record (requires OS file-link privilege on Windows)",
+      "category": "privilege_liens_Windows_non_disponible"
+    },
+    {
+      "file": "tests/streamcockpit3-clipforge-executor.test.ts",
+      "name": "passes fixed resource limits, low priority, no shell or inherited secrets, pinned FDs",
+      "category": "hors_perimetre_V4"
+    },
+    {
+      "file": "tests/streamcockpit3-clipforge-executor.test.ts",
+      "name": "waits for close after cancellation and returns an uncertain termination",
+      "category": "hors_perimetre_V4"
+    },
+    {
+      "file": "tests/streamcockpit3-clipforge-executor.test.ts",
+      "name": "kills on wall limit without silently retrying",
+      "category": "hors_perimetre_V4"
+    },
+    {
+      "file": "tests/streamcockpit3-clipforge-executor.test.ts",
+      "name": "bounds diagnostic output and discards raw errors",
+      "category": "hors_perimetre_V4"
+    },
+    {
+      "file": "tests/streamcockpit3-clipforge-executor.test.ts",
+      "name": "refuses invalid probe evidence invalid json",
+      "category": "hors_perimetre_V4"
+    },
+    {
+      "file": "tests/streamcockpit3-clipforge-executor.test.ts",
+      "name": "refuses invalid probe evidence {\"streams\":[],\"format\":{\"duration\":\"2\"}}",
+      "category": "hors_perimetre_V4"
+    },
+    {
+      "file": "tests/streamcockpit3-clipforge-executor.test.ts",
+      "name": "refuses invalid probe evidence {\"streams\":[{\"width\":360,\"height\":640}],\"format\":{\"duration\":\"NaN\"}}",
+      "category": "hors_perimetre_V4"
+    },
+    {
+      "file": "tests/streamcockpit3-clipforge-executor.test.ts",
+      "name": "parses measured dimensions and duration",
+      "category": "hors_perimetre_V4"
+    },
+    {
+      "file": "tests/streamcockpit3-clipforge-windows-acl.test.ts",
+      "name": "F04 Windows NTFS staging admission, never chmod-based assumptions reads actual FIXE TEMP DACL and refuses sandbox-shared staging in read-only mode",
+      "category": "hors_perimetre_V4"
+    },
+    {
+      "file": "tests/streamcockpit3-clipforge-windows-lab.test.ts",
+      "name": "F04 Windows ClipForge offline laboratory, NOT a production API encodes real vertical MP4 from a private NTFS synthetic video and verifies its manifest",
+      "category": "hors_perimetre_V4"
+    },
+    {
+      "file": "tests/streamcockpit3-clipforge-windows-lab.test.ts",
+      "name": "F04 Windows ClipForge offline laboratory, NOT a production API pins the original grant and clip request despite caller mutations during async filesystem work",
+      "category": "hors_perimetre_V4"
+    },
+    {
+      "file": "tests/streamcockpit3-clipforge-windows-lab.test.ts",
+      "name": "F04 Windows ClipForge offline laboratory, NOT a production API refuses repeat or changed SHA without overwriting a confirmed artifact",
+      "category": "hors_perimetre_V4"
+    },
+    {
+      "file": "tests/streamcockpit3-clipforge-windows-lab.test.ts",
+      "name": "F04 Windows ClipForge offline laboratory, NOT a production API keeps a failed encoder reservation UNKNOWN and never retries or deletes forensic staging",
+      "category": "hors_perimetre_V4"
+    },
+    {
+      "file": "tests/streamcockpit3-clipforge-windows-lab.test.ts",
+      "name": "F04 Windows ClipForge offline laboratory, NOT a production API rejects a bad clip segment before reserving an output",
+      "category": "hors_perimetre_V4"
+    },
+    {
+      "file": "tests/streamcockpit3-clipforge-windows-lab.test.ts",
+      "name": "F04 Windows ClipForge offline laboratory, NOT a production API allows exactly one prepared export across simultaneous job contenders",
+      "category": "hors_perimetre_V4"
+    },
+    {
+      "file": "tests/streamcockpit3-clipforge-windows-lab.test.ts",
+      "name": "F04 Windows ClipForge offline laboratory, NOT a production API native Windows Job Object supervises child timeout and denies an extra child process",
+      "category": "hors_perimetre_V4"
+    },
+    {
+      "file": "tests/streamcockpit3-clipforge-windows-lab.test.ts",
+      "name": "F04 Windows ClipForge offline laboratory, NOT a production API closing the supervisor kills its running child before the child timer expires",
+      "category": "hors_perimetre_V4"
+    },
+    {
+      "file": "tests/streamcockpit3-clipforge-windows-lab.test.ts",
+      "name": "F04 Windows ClipForge offline laboratory, NOT a production API refuses invalid supervisor resource limits before spawning its child",
+      "category": "hors_perimetre_V4"
+    },
+    {
+      "file": "tests/streamcockpit3-clipforge-windows-lab.test.ts",
+      "name": "F04 Windows ClipForge offline laboratory, NOT a production API refuses missing native Job Object supervisor without reserving or encoding",
+      "category": "hors_perimetre_V4"
+    },
+    {
+      "file": "tests/streamcockpit3-clipforge-windows-provenance.test.ts",
+      "name": "F04 Windows executable provenance — read-only source admission, NOT release proof inspects actual FIXE FFmpeg Authenticode in read-only mode without executing it",
+      "category": "hors_perimetre_V4"
+    },
+    {
+      "file": "tests/streamcockpit3-clipforge.test.ts",
+      "name": "ClipForge offline creates a deterministic verified manifest and sidecar without altering source",
+      "category": "hors_perimetre_V4"
+    },
+    {
+      "file": "tests/streamcockpit3-clipforge.test.ts",
+      "name": "ClipForge offline rejects path ../source.mp4",
+      "category": "hors_perimetre_V4"
+    },
+    {
+      "file": "tests/streamcockpit3-clipforge.test.ts",
+      "name": "ClipForge offline rejects path /source.mp4",
+      "category": "hors_perimetre_V4"
+    },
+    {
+      "file": "tests/streamcockpit3-clipforge.test.ts",
+      "name": "ClipForge offline rejects path a/../../source.mp4",
+      "category": "hors_perimetre_V4"
+    },
+    {
+      "file": "tests/streamcockpit3-clipforge.test.ts",
+      "name": "ClipForge offline rejects path a\\source.mp4",
+      "category": "hors_perimetre_V4"
+    },
+    {
+      "file": "tests/streamcockpit3-clipforge.test.ts",
+      "name": "ClipForge offline rejects path file:source.mp4",
+      "category": "hors_perimetre_V4"
+    },
+    {
+      "file": "tests/streamcockpit3-clipforge.test.ts",
+      "name": "ClipForge offline rejects path a//source.mp4",
+      "category": "hors_perimetre_V4"
+    },
+    {
+      "file": "tests/streamcockpit3-clipforge.test.ts",
+      "name": "ClipForge offline rejects path x;touch x",
+      "category": "hors_perimetre_V4"
+    },
+    {
+      "file": "tests/streamcockpit3-clipforge.test.ts",
+      "name": "ClipForge offline rejects hostile symlink leaf",
+      "category": "hors_perimetre_V4"
+    },
+    {
+      "file": "tests/streamcockpit3-clipforge.test.ts",
+      "name": "ClipForge offline rejects hostile symlink ancestor",
+      "category": "hors_perimetre_V4"
+    },
+    {
+      "file": "tests/streamcockpit3-clipforge.test.ts",
+      "name": "ClipForge offline rejects hostile symlink root",
+      "category": "hors_perimetre_V4"
+    },
+    {
+      "file": "tests/streamcockpit3-clipforge.test.ts",
+      "name": "ClipForge offline rejects missing source, wrong authorization and directories",
+      "category": "hors_perimetre_V4"
+    },
+    {
+      "file": "tests/streamcockpit3-clipforge.test.ts",
+      "name": "ClipForge offline refuses output collision .mp4 without overwrite",
+      "category": "hors_perimetre_V4"
+    },
+    {
+      "file": "tests/streamcockpit3-clipforge.test.ts",
+      "name": "ClipForge offline refuses output collision .intent without overwrite",
+      "category": "hors_perimetre_V4"
+    },
+    {
+      "file": "tests/streamcockpit3-clipforge.test.ts",
+      "name": "ClipForge offline refuses output collision .json without overwrite",
+      "category": "hors_perimetre_V4"
+    },
+    {
+      "file": "tests/streamcockpit3-clipforge.test.ts",
+      "name": "ClipForge offline refuses output collision .vtt without overwrite",
+      "category": "hors_perimetre_V4"
+    },
+    {
+      "file": "tests/streamcockpit3-clipforge.test.ts",
+      "name": "ClipForge offline does not retry after encoder failure or after restart",
+      "category": "hors_perimetre_V4"
+    },
+    {
+      "file": "tests/streamcockpit3-clipforge.test.ts",
+      "name": "ClipForge offline never claims success on missing",
+      "category": "hors_perimetre_V4"
+    },
+    {
+      "file": "tests/streamcockpit3-clipforge.test.ts",
+      "name": "ClipForge offline never claims success on empty",
+      "category": "hors_perimetre_V4"
+    },
+    {
+      "file": "tests/streamcockpit3-clipforge.test.ts",
+      "name": "ClipForge offline never claims success on oversized",
+      "category": "hors_perimetre_V4"
+    },
+    {
+      "file": "tests/streamcockpit3-clipforge.test.ts",
+      "name": "ClipForge offline never claims success on metrics",
+      "category": "hors_perimetre_V4"
+    },
+    {
+      "file": "tests/streamcockpit3-clipforge.test.ts",
+      "name": "ClipForge offline never claims success on lost",
+      "category": "hors_perimetre_V4"
+    },
+    {
+      "file": "tests/streamcockpit3-clipforge.test.ts",
+      "name": "ClipForge offline never claims success on null",
+      "category": "hors_perimetre_V4"
+    },
+    {
+      "file": "tests/streamcockpit3-clipforge.test.ts",
+      "name": "ClipForge offline rejects changed source even when encoder exits zero",
+      "category": "hors_perimetre_V4"
+    },
+    {
+      "file": "tests/streamcockpit3-clipforge.test.ts",
+      "name": "ClipForge offline cancels before work and during encode; suppresses late success",
+      "category": "hors_perimetre_V4"
+    },
+    {
+      "file": "tests/streamcockpit3-clipforge.test.ts",
+      "name": "ClipForge offline rejects concurrent jobs on one instance",
+      "category": "hors_perimetre_V4"
+    },
+    {
+      "file": "tests/streamcockpit3-clipforge.test.ts",
+      "name": "ClipForge offline reserves a job exclusively across independent instances",
+      "category": "hors_perimetre_V4"
+    },
+    {
+      "file": "tests/streamcockpit3-clipforge.test.ts",
+      "name": "ClipForge offline keeps output and reports UNKNOWN when manifest persistence cannot complete",
+      "category": "hors_perimetre_V4"
+    },
+    {
+      "file": "tests/streamcockpit3-clipforge.test.ts",
+      "name": "ClipForge offline rejects insecure output directory, overlapping roots and oversized source",
+      "category": "hors_perimetre_V4"
+    },
+    {
+      "file": "tests/streamcockpit3-clipforge.test.ts",
+      "name": "ClipForge offline rejects exhausted disk before reserving or executing",
+      "category": "hors_perimetre_V4"
+    },
+    {
+      "file": "tests/streamcockpit3-clipforge.test.ts",
+      "name": "ClipForge offline does not follow an output symlink or overwrite its target",
+      "category": "hors_perimetre_V4"
+    },
+    {
+      "file": "tests/streamcockpit3-clipforge.test.ts",
+      "name": "ClipForge offline pins source descriptors against replacement during probe",
+      "category": "hors_perimetre_V4"
+    },
+    {
+      "file": "tests/streamcockpit3-clipforge.test.ts",
+      "name": "ClipForge offline stops on probe disconnection without rendering or leaking error details",
+      "category": "hors_perimetre_V4"
+    },
+    {
+      "file": "tests/streamcockpit3-clipforge.test.ts",
+      "name": "ClipForge offline fails closed when process resource launcher is absent",
+      "category": "hors_perimetre_V4"
+    },
+    {
+      "file": "tests/streamcockpit3-moments.test.ts",
+      "name": "durable POSIX file adapter and corruption survives reopening and leaves no temp or lock after success",
+      "category": "environnement_POSIX"
+    },
+    {
+      "file": "tests/streamcockpit3-moments.test.ts",
+      "name": "durable POSIX file adapter and corruption reconciles an injected failure at synced-temp",
+      "category": "environnement_POSIX"
+    },
+    {
+      "file": "tests/streamcockpit3-moments.test.ts",
+      "name": "durable POSIX file adapter and corruption reconciles an injected failure at renamed",
+      "category": "environnement_POSIX"
+    },
+    {
+      "file": "tests/streamcockpit3-moments.test.ts",
+      "name": "durable POSIX file adapter and corruption recovers after actual process exit at synced-temp only after explicit stale-lock recovery",
+      "category": "environnement_POSIX"
+    },
+    {
+      "file": "tests/streamcockpit3-moments.test.ts",
+      "name": "durable POSIX file adapter and corruption recovers after actual process exit at renamed only after explicit stale-lock recovery",
+      "category": "environnement_POSIX"
+    },
+    {
+      "file": "tests/streamcockpit3-moments.test.ts",
+      "name": "durable POSIX file adapter and corruption does not overwrite a changed revision or bypass a foreign lock",
+      "category": "environnement_POSIX"
+    }
+  ],
+  "ignoredNode": [
+    {
+      "name": "ok 85 - metadata uses the product package and checked-in version, refusing stale package identity and unsupported versions # SKIP Android CI shell fixtures target the Linux runner.",
+      "category": "harnais_CI_Android_shell_Linux"
+    },
+    {
+      "name": "ok 86 - release keeps Twitch mandatory but accepts the public distribution ID without a Google ID or secrets # SKIP Android CI shell fixtures target the Linux runner.",
+      "category": "harnais_CI_Android_shell_Linux"
+    },
+    {
+      "name": "ok 87 - stable signing refuses every missing secret and malformed fingerprint before writing the keystore # SKIP Android CI shell fixtures target the Linux runner.",
+      "category": "harnais_CI_Android_shell_Linux"
+    },
+    {
+      "name": "ok 88 - QA verifies both product and preview identities without claiming a stable signer # SKIP Android CI shell fixtures target the Linux runner.",
+      "category": "harnais_CI_Android_shell_Linux"
+    },
+    {
+      "name": "ok 89 - release accepts only the expected signer, normalizing the public SHA-256 notation # SKIP Android CI shell fixtures target the Linux runner.",
+      "category": "harnais_CI_Android_shell_Linux"
+    },
+    {
+      "name": "ok 90 - a valid signature cannot conceal an old Android package, version name or version code # SKIP Android CI shell fixtures target the Linux runner.",
+      "category": "harnais_CI_Android_shell_Linux"
+    }
+  ],
+  "real": [
+    "Microsoft Edge headless, y compris les trois parcours F06 corrigés",
+    "HTTP et HTTPS de test, pairing observe et gestion, pin TLS, refus de credential invalide",
+    "SQLite/fichiers et processus Windows temporaires, DPAPI/mTLS de laboratoire dans la campagne activée"
+  ],
+  "simulated": [
+    "OBS, Twitch/Helix, Google et autres fournisseurs",
+    "Succès Authenticode de production et consentements natifs des essais unitaires"
+  ],
+  "notExecuted": [
+    "installation Android physique et PackageInstaller sur appareil",
+    "démarrage graphique de la nouvelle EXE sur les ports en usage",
+    "actions publiques Twitch, démarrage/arrêt OBS ou live",
+    "migrations/rollback sur profils installés, coupure électrique"
+  ],
+  "history": [
+    {
+      "evidence": ".git/sc3-finish-native-first.json",
+      "pass": 81,
+      "fail": 4,
+      "cause": "Le nouveau mock configure OBS retournait void au lieu de Promise<ObsState>; corrigé sans modifier les assertions."
+    },
+    {
+      "evidence": ".git/sc3-finish-full-vitest-first.json",
+      "pass": 2948,
+      "fail": 1,
+      "cause": "Le contrôle texte global 999 pouvait correspondre à un UUID ou à une échéance légitime. Contrat public exact désormais testé, avec échéance déterministe contenant 999."
+    },
+    {
+      "evidence": ".git/sc3-finish-full-vitest-final.json",
+      "pass": 3007,
+      "fail": 3,
+      "cause": "Les tests F06 ne dépliaient pas le volet existant des propositions. Parcours réel corrigé, assertions de non-publication conservées."
+    },
+    {
+      "evidence": ".git/sc3-finish-paired-red.json",
+      "pass": 0,
+      "fail": 2,
+      "cause": "La nouvelle lecture hors live manquait au périmètre remote; le v2 exige en plus la gestion complète. Raccordement final au GET v1 observe existant, protections v2 inchangées."
+    }
+  ],
+  "openDevelopment": [
+    "La transaction native d’une installation Squirrel n’est pas implémentée par le parcours de remplacement par dossiers. Elle est détectée et refusée; aucun remplacement silencieux par un portable."
+  ],
+  "physicalAcceptance": false,
+  "productionQualified": false,
+  "gatesPromoted": false,
+  "recordedAt": "2026-11-06T23:35:53.385Z"
+}

@@ -9,6 +9,7 @@ import { handleSquirrelStartup } from './squirrel.js';
 import { startUpdater } from './updater.js';
 import {prepareNativeMaintenanceLaunch} from './streamcockpit-maintenance-launcher.js';
 import {validateMaintenanceTrust} from './streamcockpit-maintenance-cli.js';
+import {controllerMaintenanceObservation} from './streamcockpit-controller-maintenance.js';
 import { DesktopLogger } from './logger.js';
 import { presentWindow } from './presentation.js';
 import { openTwitchViewerSession } from './twitch-viewer.js';
@@ -135,7 +136,7 @@ async function offerPreparedMaintenance(selectedFile?: string, isCurrent: () => 
       buttons:['Annuler',label],defaultId:0,cancelId:0});
     if (decision.response !== 1 || quitting || current !== runtime) return;
     await requireDesktopRestartSafety(() => current.dashboard.assessRestartSafety());
-    const observation = await current.dashboard.maintenanceObservationConfiguration?.();
+    const observation = !activeDevice.roles.includes('obs-executor') ? await controllerMaintenanceObservation(desktopSecrets,peers) : await current.dashboard.maintenanceObservationConfiguration?.();
     if (!observation || quitting || current !== runtime || !isCurrent()) throw new Error('MAINTENANCE_AUTHORITY_UNAVAILABLE');
     child = await plan.launch(observation);
     await requireDesktopRestartSafety(() => current.dashboard.assessRestartSafety());
@@ -355,7 +356,7 @@ function boot(): Promise<void> {
       enableDjiHostWarningWatcher();
       log('Local runtime ready; loading renderer');
       // Candidate stays isolated: production updater must not replace it or the stable installation.
-      if (!closing && process.argv.includes('--enable-candidate-updater')) stopUpdater = startUpdater(owner, runtime.dashboard, logger, cleanupRuntime, undefined,
+      if (!closing && app.isPackaged && process.platform === 'win32') stopUpdater = startUpdater(owner, runtime.dashboard, logger, cleanupRuntime, undefined,
         isCurrent => offerPreparedMaintenance(undefined, isCurrent));
       await loadWindow(targetUrl);
       log('Renderer loaded');

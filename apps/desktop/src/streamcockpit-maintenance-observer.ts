@@ -1,4 +1,5 @@
 import OBSWebSocket from 'obs-websocket-js';
+import {createPeerMaintenanceObserver,validatePeerMaintenanceObserver,type PeerMaintenanceObserverConfiguration} from './streamcockpit-peer-maintenance-observer.js';
 import {randomUUID} from 'node:crypto';
 import {execFile} from 'node:child_process';
 import {promisify} from 'node:util';
@@ -14,9 +15,11 @@ export interface MaintenanceObserverConfiguration {
   outputs:Record<string,{kind:string;name:string}>;
   twitch:{clientId:string;accessToken:string;broadcasterId:string};
 }
+export type MaintenanceObserverInput=MaintenanceObserverConfiguration|PeerMaintenanceObserverConfiguration;
 const refused=()=>new Error('SC3_MAINTENANCE_OBSERVATION_UNAVAILABLE');
 const text=(v:unknown,max:number):v is string=>typeof v==='string'&&v.length>0&&v.length<=max&&!/[\x00-\x1f\x7f]/.test(v);
-export function validateMaintenanceObserverConfiguration(value:unknown):MaintenanceObserverConfiguration {
+export function validateMaintenanceObserverConfiguration(value:unknown):MaintenanceObserverInput {
+  if(value&&typeof value==='object'&&'peer' in value)return validatePeerMaintenanceObserver(value);
   const c=value as MaintenanceObserverConfiguration;
   if(!c||!c.obs||!c.twitch||typeof c.obs.password!=='string'||c.obs.password.length>4096||
     !text(c.obs.url,2048)||!text(c.twitch.clientId,256)||!text(c.twitch.accessToken,4096)||
@@ -32,9 +35,11 @@ export function validateMaintenanceObserverConfiguration(value:unknown):Maintena
 /** Independent read-only connection survives the old Desktop's exit. Reuses
  * the established OBS/Aitum restart assessment, with real Helix GETs. No OBS
  * launch/stop/mutation, no automatic reconnect, no token refresh or disk I/O. */
-export async function createIndependentMaintenanceObserver(input:MaintenanceObserverConfiguration,
+export async function createIndependentMaintenanceObserver(input:MaintenanceObserverInput,
   io:{fetchApi?:typeof fetch;now?:()=>number}={}) {
-  const config=validateMaintenanceObserverConfiguration(input),fetchApi=io.fetchApi??fetch,now=io.now??Date.now;
+  const config=validateMaintenanceObserverConfiguration(input);
+  if('peer' in config)return createPeerMaintenanceObserver(config);
+  const fetchApi=io.fetchApi??fetch,now=io.now??Date.now;
   const ws=new OBSWebSocket(),session=randomUUID();
   let closed=false,connected=false,generation=0,flight:Promise<MaintenanceOfflineWitness|undefined>|undefined;
   const state={connected:false,streamingKnown:false,streaming:false,recording:false};

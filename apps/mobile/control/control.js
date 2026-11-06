@@ -16,6 +16,7 @@ import {createMobilePanes,MOBILE_PANES} from './mobile-panes.js';
 import {createFloatingMicBattery} from './floating-mic-battery.js';
 import {arrangeMobileLivePanes} from './mobile-live-layout.js';
 import {renderMobileHome,renderMobilePlus} from './mobile-five-tab-ui.js';
+import {installNativeUpdateGate} from './streamcockpit-native-update.js';
 import {renderMobileSoundboard} from './mobile-soundboard-pane.js';
 import {ACTIONS,OUTCOME_LABELS} from '../shared/action-registry.js';
 import {renderMacroProgress,mountMacroSequenceEditor} from './streamcockpit-macro-progress.js';
@@ -1012,6 +1013,7 @@ async function task(name,b){
  if(await configurationCopyUI.task(name,b))return;
  if(await soundLibraryUI.task(name,b))return;
  if(name==='navigation-mode'){const classic=localStorage.getItem('sd2.navigation')==='classic';localStorage.setItem('sd2.navigation',classic?'simple':'classic');document.documentElement.classList.toggle('simple-nav',classic);render();return;}
+ if(name==='native-update'){globalThis.StreamDashboardNative?.openUpdate?.();return;}
  if(name==='keep-awake'){const active=localStorage.getItem('sd2.keep-awake')!=='false';localStorage.setItem('sd2.keep-awake',String(!active));globalThis.StreamDashboardNative?.setKeepAwake(!active);render();toast(!active?'Écran maintenu allumé.':'Veille normale du téléphone rétablie.');return;}
  if(name==='device-accounts'){await deviceAccounts.open();return;}
  if(name==='use-local'||name==='use-paired'){await switchWorkspace(name==='use-local');return;}
@@ -1244,6 +1246,7 @@ document.addEventListener('submit',async event=>{const f=event.target;submitting
 document.addEventListener('keydown',event=>{if(globalThis.streamDashboardDesktop)return;if(event.ctrlKey&&event.altKey&&event.shiftKey&&!event.repeat&&online){const a=data?.configuration.actions.find(a=>a.shortcut===`Control+Alt+Shift+${event.key}`);if(a){event.preventDefault();void runAction(a.id);}}});
 const initial=new URL(location.href);if(initial.searchParams.has('pair')){connectionDialog();$('#connection-form').elements.link.value=location.href;history.replaceState(null,'',location.pathname);}
 globalThis.streamDashboardDesktop?.onControllerReceipt?.(receipt=>{toast(`${labels[receipt.status]||'Macro'} · ${receipt.message}`);void refresh(true);});
+installNativeUpdateGate({origin:()=>server,request:path=>network(path,undefined,'GET')});
 globalThis.StreamDashboardNative?.setKeepAwake(localStorage.getItem('sd2.keep-awake')!=='false');
 globalThis.StreamDashboardHandleBack=()=>{if(dialog.open){dialog.close();return true;}if(deckEditing){deckEditing=false;resetPerformanceView();return true;}const first=compact&&MOBILE_PANES[page]?.[0]?.id;if(first&&mobilePanes.get(page)!==first){mobilePanes.select(page,first);return true;}if(page!==(compact?'home':'deck')){page=compact?'home':'deck';localStorage.setItem('sd2.page',page);resetPerformanceView();return true;}return false;};
 compactViewport.addEventListener('change',()=>{

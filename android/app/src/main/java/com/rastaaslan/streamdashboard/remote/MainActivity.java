@@ -64,9 +64,12 @@ public class MainActivity extends Activity {
   private WebViewAssetLoader assetLoader;
   private Uri pendingDeepLink;
   private boolean pageReady = false;
+  static volatile NativeUpdateManager activeUpdates;
+  private NativeUpdateManager updates;
 
   @Override public void onCreate(Bundle state) {
     super.onCreate(state);
+    updates = new NativeUpdateManager(this); activeUpdates = updates;
     getWindow().setStatusBarColor(Color.rgb(9, 9, 20));
     webView = new WebView(this);
     WebSettings settings = webView.getSettings();
@@ -130,6 +133,7 @@ public class MainActivity extends Activity {
 
   @Override protected void onResume() {
     super.onResume();
+    if (updates != null) updates.observe();
     deliverPendingDeepLink();
     if (pageReady) webView.evaluateJavascript("document.dispatchEvent(new Event('visibilitychange'))", null);
   }
@@ -181,6 +185,8 @@ public class MainActivity extends Activity {
 
   @Override protected void onDestroy() {
     pageReady=false;
+    if (activeUpdates == updates) activeUpdates = null;
+    if (updates != null) updates.close();
     if(fileSelection!=null){fileSelection.onReceiveValue(null);fileSelection=null;}
     if(providerBridge!=null)providerBridge.close();
     if(peerBridge!=null)peerBridge.close();
@@ -244,6 +250,10 @@ public class MainActivity extends Activity {
 
   @Override protected void onActivityResult(int requestCode, int resultCode, Intent data) {
     super.onActivityResult(requestCode, resultCode, data);
+    if (requestCode == NativeUpdateManager.PICK_APK) {
+      if (resultCode == RESULT_OK && data != null && updates != null) updates.selected(data.getData());
+      return;
+    }
     if(requestCode==AUDIO_FILE_REQUEST){
       ValueCallback<Uri[]> callback=fileSelection;fileSelection=null;
       if(callback!=null){
@@ -255,7 +265,14 @@ public class MainActivity extends Activity {
     if (providerBridge != null) providerBridge.acceptGoogleResult(requestCode, resultCode, data);
   }
 
+  void requestUpdateSafety(String id) {
+    if (!pageReady || webView == null) return;
+    webView.evaluateJavascript("window.dispatchEvent(new CustomEvent('native-update-safety',{detail:{id:" + org.json.JSONObject.quote(id) + "}}))", null);
+  }
+
   public final class NativeBridge {
+    @JavascriptInterface public void openUpdate() { runOnUiThread(() -> { if (updates != null && pageReady) updates.open(); }); }
+    @JavascriptInterface public void updateSafety(String id, boolean safe) { if (updates != null) updates.safety(id, safe); }
     @JavascriptInterface public String buildCapabilities() {
       try {
         return new org.json.JSONObject(BuildCapabilities.json(BuildConfig.PREVIEW_MODE, BuildConfig.GOOGLE_ANDROID_CLIENT_ID, BuildConfig.TWITCH_ANDROID_CLIENT_ID))

@@ -8,7 +8,7 @@ import {verifyUpgradeReadbackFiles,snapshotUpgradeReadbackFiles,type UpgradeRead
 import {runtimeUpgradeDirectory} from './streamcockpit-runtime-ownership.js';
 import {runNativeWindowsMaintenance} from './streamcockpit-native-maintenance.js';
 import {createIndependentMaintenanceObserver,inspectWindowsMaintenanceWriters,validateMaintenanceObserverConfiguration,
- type MaintenanceObserverConfiguration} from './streamcockpit-maintenance-observer.js';
+ type MaintenanceObserverInput as MaintenanceObserverConfiguration} from './streamcockpit-maintenance-observer.js';
 import type {ExternalMaintenanceRequest,ExternalMaintenanceResult} from './streamcockpit-external-maintenance.js';
 
 export type PreparedMaintenanceRequest={action:ExternalMaintenanceRequest['action'];applicationData:string;rootUserData:string;

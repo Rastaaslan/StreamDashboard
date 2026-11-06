@@ -57,6 +57,8 @@ it.skipIf(process.env.PLANNING_ASSIST_BROWSER_TEST!=='1')(
         w.planner.submit(e.target).catch((error:any)=>w.errors.push(error.message));
       });
     });
+    await page.locator('[data-planning-assistant] summary').click();
+    await expect.poll(()=>page.locator('[data-planning-assistant] details[open]').count()).toBe(1);
     const suggested=page.getByRole('button',{name:'Vérifier et préparer un brouillon local'});
     expect(await suggested.count()).toBeGreaterThan(0);
     expect(await page.evaluate(()=>(window as any).calls.length)).toBe(0);
@@ -105,6 +107,7 @@ it.skipIf(process.env.PLANNING_ASSIST_BROWSER_TEST!=='1')(
         if(button)w.planner.click(button).catch((error:any)=>w.errors.push(error.message));
       });
     });
+    await page.locator('[data-planning-assistant] summary').click();
     await page.getByRole('button',{name:'Vérifier et préparer un brouillon local'}).first().click();
     await expect.poll(()=>page.evaluate(()=>(window as any).errors.length)).toBe(1);
     expect(await page.evaluate(()=>(window as any).errors[0])).toContain('Source de planning changée');
@@ -171,6 +174,8 @@ it.skipIf(process.env.PLANNING_ASSIST_BROWSER_TEST!=='1')(
     });
     const choice=page.locator('[data-planning-assistant] [data-planning-assist-source]');
     expect(await choice.inputValue()).toBe('old-live');
+    await page.locator('[data-planning-assistant] summary').click();
+    await expect.poll(()=>page.locator('[data-planning-assistant] details[open]').count()).toBe(1);
     const duplicate=page.getByRole('button',{name:'Dupliquer vers un brouillon local'});
     expect(await duplicate.count()).toBeGreaterThan(0);
     await duplicate.first().click();

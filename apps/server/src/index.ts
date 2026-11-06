@@ -3097,6 +3097,20 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
     if (req.path.startsWith('/api/v2/') && req.body.expectedRevision !== planningFingerprint(id)) throw Object.assign(new Error('Événement modifié sur un autre appareil. Rechargez avant d’enregistrer.'), { name: 'REVISION_CONFLICT' });
   };
   const controlHostState = () => ({ hostname: hostname(), timerObservedAt: Date.now(), chat: { connected: twitch.state.connected, canSend: twitch.controlCapabilities().chatWrite, channel: twitch.publicIdentity().userName || '' }, replayAutoStartError, monitor: { twitchLogin: twitch.publicIdentity().userName || '' }, micHealth:obs.micHealth(local.settings.primaryMicInput || ''), djiBatteryRelay:djiBatteryRelay.snapshot(), state: toRemoteDashboardState(snapshot()), settings: publicSettings(), settingsRevision: settingsFingerprint(), planning: structuredClone(local.planning), occurrences: expandEditableRecurringItems(local.planning, { from: Date.now() - DAY_MS, to: Date.now() + 90 * DAY_MS }), planningRevisions: Object.fromEntries(local.planning.map(item => [item.id, planningFingerprint(item.id)])), platforms: structuredClone(platformLive), outputStatus: structuredClone(outputStatus), local: true });
+  app.get('/api/v1/maintenance/safety', async (_req,res,next) => {
+    try {
+      const authority = options.obsEnabled !== false && options.timerAuthority !== false;
+      const epoch=obs.connectionGeneration,started=Date.now(),configuration=JSON.stringify(control.snapshot().configuration.outputs);
+      const result = authority ? await assessRestartSafety({obsEnabled:true,stopped:()=>Boolean(stopPromise),
+        pending:()=>control.hasPendingActions || commands.hasPendingCommands,
+        revision:()=>JSON.stringify([commands.activityRevision,control.snapshot().receipts.map(r=>[r.id,r.status])]),
+        configuration:()=>control.snapshot().configuration,obs}) : {safe:false};
+      let providerOffline=false;
+      if(authority&&result.safe){try{providerOffline=(await twitch.getLiveState()).isLive===false;}catch{/* Unknown is never offline. */}}
+      res.setHeader('Cache-Control','no-store');
+      res.json({authority:authority?'fixe':'control',safe:result.safe===true&&providerOffline&&Date.now()-started<4500&&epoch===obs.connectionGeneration&&configuration===JSON.stringify(control.snapshot().configuration.outputs)&&obs.state.streamingKnown===true&&!stopPromise&&!control.hasPendingActions&&!commands.hasPendingCommands&&obs.state.connected&&obs.state.streaming===false&&obs.state.recording===false,observedAt:Date.now()});
+    } catch (error) { next(error); }
+  });
   registerControlRoutes({ app, control, obs, wizebotCommands, timerSource: () => local.settings.timerBrowserSource, settings: settingsUpdate, planningCreate, planningUpdate, planningDelete, recurrence: recurrenceException, isLocal: isLocalRequest, port: () => runtimePort, observe: observePlatforms, state: controlHostState, verifyContext: (req, action) => masterContext.assert(req, req.body.expectedContextToken, action), sequenceContext:(req,action)=>masterContext.sequence(req,req.body.expectedContextToken,action) });
   // Device-owned clients call their loopback runtime, never a paired PC. The
   // narrow adapter reuses provider credentials and all existing remote guards.

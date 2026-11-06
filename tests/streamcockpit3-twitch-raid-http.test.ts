@@ -19,7 +19,7 @@ type Harness = {
   setMode:(value:string)=>void; setEpoch:(value:string|undefined)=>void;
   changeOnLookup:()=>void; rotateToken:()=>void;
 };
-async function fixture(run:(h:Harness)=>Promise<void>) {
+async function fixture(run:(h:Harness)=>Promise<void>, now?:()=>number) {
   const auth = new RemoteAuth(), offer=auth.createPairing(undefined,true);
   const paired=auth.pair(offer.id,offer.code,'Raid test');
   const credentials={clientId:'client',accessToken:'TEST_ONLY_TOKEN',broadcasterId:'123'};
@@ -56,7 +56,7 @@ async function fixture(run:(h:Harness)=>Promise<void>) {
   });
   const service=new StreamcockpitRaidService(new RaidTwitch(
     ()=>credentials,fetchApi as typeof fetch
-  ));
+  ),now);
   const app=express();app.use(express.json({limit:'8kb'}));
   app.use('/api/v1/twitch/advanced/raid',createTwitchRaidRouter({
     service,actor:(req:Request)=>twitchPollActor(req,auth,false,true),hostLive:()=>epoch,
@@ -121,7 +121,13 @@ it('F08 raid preview is GET-only; a second one-use consent queues one POST, neve
   const p=await first.json();
   expect(p).toMatchObject({schemaVersion:1,kind:'streamcockpit-raid-preview',targetLogin:login});
   expect(p.warning).toContain('90 secondes');
-  expect(JSON.stringify(p)).not.toContain('999');
+  // No target identifier field or provider display-name is public. Digits in
+  // an independent UUID/expiry are not a leaked broadcaster identifier.
+  expect(Object.keys(p).sort()).toEqual(['confirmationId','expiresAt','kind','schemaVersion','targetLogin','warning']);
+  expect(p.confirmationId).toMatch(/^[a-f0-9-]{36}$/);
+  expect(p.expiresAt).toBe(1794000999000); // Legitimate opaque metadata contains 999.
+  expect(p.targetLogin).toBe(login);
+  expect(p.warning).not.toContain('PRIVATE_TEST_TOKEN');
   expect(h.writes).not.toHaveBeenCalled();
   const result=await h.call('confirm',{confirmationId:p.confirmationId,confirmed:true});
   expect(result.status).toBe(200);
@@ -136,7 +142,7 @@ it('F08 raid preview is GET-only; a second one-use consent queues one POST, neve
   expect(query.searchParams.get('to_broadcaster_id')).toBe('999');
   expect((await h.call('confirm',{confirmationId:p.confirmationId,confirmed:true})).status).toBe(409);
   expect(h.writes).toHaveBeenCalledTimes(1);
-}));
+},()=>1794000954000));
 
 it('F08 raid invalid consent cannot send, stopped or replaced OBS live revokes preview',()=>fixture(async h=>{
   for(const bad of [{},{confirmationId:'bad',confirmed:true},

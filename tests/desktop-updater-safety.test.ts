@@ -105,3 +105,5 @@ describe('desktop updater uses current restart safety around its confirmation di
     }));
   });
 });
+
+vi.mock('../apps/desktop/src/streamcockpit-release-availability.js',()=>({readAvailableWindowsRelease:vi.fn(async()=>undefined)}));
