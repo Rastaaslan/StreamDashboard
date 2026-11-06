@@ -1217,6 +1217,10 @@
         {
           "path": "docs/streamcockpit-3/F10_THREE_SQLITE_JOURNALS_QA_GUARD_20261106.md",
           "kind": "2026-11-06 FIXE F10: QA restore/migrate now rechecks exact live bytes for host F02 AutoMod, F08 prediction and F09 moments SQLite against an immutable backup, rejects stale/new/deleted journals and main-file-only backups with SQLite transaction sidecars. RED 14 PASS/4 FAIL, corrected 113 PASS/0 FAIL/0 skipped across 8 suites with real temporary Windows SQLite F08/F09 adapters. TypeScript/browser/security and diff PASS; no exclusive live writers, signed production installer, power loss or physical device reception. F10 partial, G2 in_progress, G3-G5 open."
+        },
+        {
+          "path": "docs/streamcockpit-3/F10_DURABLE_WRITER_QUIESCENCE_QA_20261106.md",
+          "kind": "2026-11-06 FIXE F10: added QA-only shared in-process F02/F08/F09 writer gate, drains in-flight operations, blocks new writes during maintenance, blocks permanently on uncertain writer/maintenance failure; QA orchestrator performs checkpoint -> detached migration -> recovery under this gate with real Windows SQLite. 124 PASS/0 FAIL/0 skipped across 10 targeted suites; TypeScript/browser/security 6789 files PASS. Gate NOT YET wired to production server writers or cross-process locks, no signed/installed release or hardware evidence. F10 partial, G2 in_progress, G3-G5 open."
         }
       ],
       "verifiedTests": [
@@ -1227,6 +1231,7 @@
         "tests/desktop-updater-safety.test.ts",
         "tests/desktop-restart-safety.test.ts",
         "tests/streamcockpit3-upgrade-qa-checkpoint.test.ts",
+        "tests/streamcockpit3-durable-writer-quiescence.test.ts",
         "tests/streamcockpit3-artifact-verifier.test.ts",
         "tests/migration-backup.test.ts"
       ],
