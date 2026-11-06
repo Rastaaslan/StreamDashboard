@@ -16,6 +16,9 @@ const secondaryPages = {
 
 let page = 'overview';
 let state;
+// A WebSocket handshake alone is not proof that a saved OBS/Twitch snapshot is current.
+let socketTrusted = false;
+let activeSocket;
 let productProfile;
 let moduleStates = [];
 let connectionProjection = [];
@@ -176,7 +179,7 @@ function overview() {
   const next = state.nextLive;
   const done = state.checklist.filter(item => item.done).length;
   const {ready, live} = classicDashboardReadiness(state);
-  return `<div class="hero minimal-hero"><div><span class="kicker">${live ? 'EN DIRECT' : ready ? 'TOUT EST PRÊT' : 'À VÉRIFIER'}</span><h2>${live ? 'Le direct est en cours.' : ready ? 'Prêt pour le prochain live.' : 'Préparation à vérifier avant le live.'}</h2><p>${next ? `${esc(next.title)} · ${eventRange(next)}` : 'Aucun live planifié.'}</p></div><button class="primary big" data-action="go" data-value="prepare">Préparer <b>→</b></button></div><div class="status-strip overview-status"><span>OBS <b>${state.obs.connected ? 'Prêt' : 'Hors ligne'}</b></span><span>Live <b>${state.obs.streaming ? 'En direct' : 'Arrêté'}</b></span><span>Prépa <b>${done}/${state.checklist.length}</b></span><span>Timer <b>${duration(timerRemaining())}</b></span></div><div class="section-head minimal-section-head"><div><span class="label">ACCÈS RAPIDE</span></div></div><div class="quick minimal-quick"><button data-action="go" data-value="live"><i>●</i><b>Live</b><small>Diffusion et timer</small></button><button data-action="go" data-value="deck"><i>⌘</i><b>Scènes & audio</b><small>Contrôle OBS</small></button><button data-action="go" data-value="planning"><i>▣</i><b>Planning</b><small>Prochains lives</small></button></div>`;
+  return `<div class="hero minimal-hero"><div><span class="kicker">${live ? 'EN DIRECT' : ready ? 'TOUT EST PRÊT' : 'À VÉRIFIER'}</span><h2>${live ? 'Le direct est en cours.' : ready ? 'Prêt pour le prochain live.' : 'Préparation à vérifier avant le live.'}</h2><p>${next ? `${esc(next.title)} · ${eventRange(next)}` : 'Aucun live planifié.'}</p></div><button class="primary big" data-action="go" data-value="prepare">Préparer <b>→</b></button></div><div class="status-strip overview-status"><span>OBS <b>${state.uiObservationTrusted === false ? 'À vérifier' : state.obs.connected ? 'Prêt' : 'Hors ligne'}</b></span><span>Live <b>${state.uiObservationTrusted === false ? 'État inconnu' : state.obs.streaming ? 'En direct' : 'Arrêté'}</b></span><span>Prépa <b>${done}/${state.checklist.length}</b></span><span>Timer <b>${duration(timerRemaining())}</b></span></div><div class="section-head minimal-section-head"><div><span class="label">ACCÈS RAPIDE</span></div></div><div class="quick minimal-quick"><button data-action="go" data-value="live"><i>●</i><b>Live</b><small>Diffusion et timer</small></button><button data-action="go" data-value="deck"><i>⌘</i><b>Scènes & audio</b><small>Contrôle OBS</small></button><button data-action="go" data-value="planning"><i>▣</i><b>Planning</b><small>Prochains lives</small></button></div>`;
 }
 
 function preflightBlock() {
@@ -194,7 +197,7 @@ function prepare() {
   const readinessStatus = fullyReady ? 'Tout est prêt' : done < state.checklist.length || !state.checklist.length ? 'Préparation incomplète' : 'Préparation à vérifier';
   const percent = state.checklist.length ? done / state.checklist.length * 100 : 0;
   const timerSource = state.settings.timerBrowserSource;
-  return `${preflightBlock()}<div class="panel"><div class="section-head"><div><span class="label">CHECKLIST AVANT LIVE</span><h3 id="check-count">${done}/${state.checklist.length} vérifications terminées</h3></div><div class="button-row"><button class="ghost compact" data-command="checklist.reset">Réinitialiser</button>${timerSource ? `<button class="ghost compact" data-command="obs.browser.refresh" data-value="${encodeURIComponent(timerSource)}">Rafraîchir timer OBS</button>` : ''}</div></div><div class="progress"><i id="check-progress" style="width:${percent}%"></i></div><div class="checklist">${state.checklist.map(item => `<button class="check ${item.done ? 'done' : ''}" data-check-id="${esc(item.id)}" data-command="checklist.toggle" data-value="${encodeURIComponent(item.id)}"><i>${item.done ? '✓' : ''}</i><span><b>${esc(item.label)}</b><small>${item.done ? 'Validé' : 'À vérifier'}</small></span></button>`).join('')}</div><div class="launch"><div><b id="prepare-status">${readinessStatus}</b><small id="prepare-obs">${state.obs.connected ? `OBS répond correctement. Démarrage prévu sur ${esc(state.settings.startMode === 'live' ? 'Live' : 'Intro')}.` : esc(state.obs.error || 'OBS est hors ligne : connectez-le avant de diffuser.')}</small></div><button class="primary" ${!state.obs.connected || state.obs.streaming ? 'disabled' : ''} data-command="session.start">${state.obs.streaming ? 'Live déjà actif' : 'Démarrer le live'}</button></div></div>`;
+  return `${preflightBlock()}<div class="panel"><div class="section-head"><div><span class="label">CHECKLIST AVANT LIVE</span><h3 id="check-count">${done}/${state.checklist.length} vérifications terminées</h3></div><div class="button-row"><button class="ghost compact" data-command="checklist.reset">Réinitialiser</button>${timerSource ? `<button class="ghost compact" data-command="obs.browser.refresh" data-value="${encodeURIComponent(timerSource)}">Rafraîchir timer OBS</button>` : ''}</div></div><div class="progress"><i id="check-progress" style="width:${percent}%"></i></div><div class="checklist">${state.checklist.map(item => `<button class="check ${item.done ? 'done' : ''}" data-check-id="${esc(item.id)}" data-command="checklist.toggle" data-value="${encodeURIComponent(item.id)}"><i>${item.done ? '✓' : ''}</i><span><b>${esc(item.label)}</b><small>${item.done ? 'Validé' : 'À vérifier'}</small></span></button>`).join('')}</div><div class="launch"><div><b id="prepare-status">${readinessStatus}</b><small id="prepare-obs">${state.uiObservationTrusted === false ? 'État OBS non vérifié : reconnectez la régie.' : state.obs.connected ? `OBS répond correctement. Démarrage prévu sur ${esc(state.settings.startMode === 'live' ? 'Live' : 'Intro')}.` : esc(state.obs.error || 'OBS est hors ligne : connectez-le avant de diffuser.')}</small></div><button class="primary" ${state.uiObservationTrusted === false || !state.obs.connected || state.obs.streaming ? 'disabled' : ''} data-command="session.start">${state.obs.streaming ? 'Live déjà actif' : 'Démarrer le live'}</button></div></div>`;
 }
 
 function preparation() {
@@ -348,20 +351,23 @@ function render() {
 
 function updateHeader() {
   const {ready:healthy, live} = classicDashboardReadiness(state);
-  $('#pc-pill').textContent = live ? '● DIRECT EN COURS' : healthy ? '✓ TOUT EST PRÊT' : `PC ${state.runtime ? 'CONNECTÉ' : 'HORS LIGNE'}`;
+  const trusted = state.uiObservationTrusted !== false;
+  $('#pc-pill').textContent = !trusted ? 'RÉGIE À VÉRIFIER' : live ? '● DIRECT EN COURS' : healthy ? '✓ TOUT EST PRÊT' : `PC ${state.runtime ? 'CONNECTÉ' : 'HORS LIGNE'}`;
   $('#pc-pill').className = `status-pill ${healthy ? 'ready-summary' : ''}`;
   $('#obs-pill').hidden = healthy;
   $('#twitch-pill').hidden = healthy;
-  $('#obs-pill').textContent = `OBS ${state.obs.connected ? 'CONNECTÉ' : 'HORS LIGNE'}`;
-  $('#obs-pill').className = `obs-pill ${state.obs.connected ? 'ok' : ''}`;
-  $('#live-pill').textContent = state.obs.streaming ? '● EN DIRECT' : 'HORS LIGNE';
-  $('#live-pill').className = `live-pill ${state.obs.streaming ? 'on' : ''}`;
-  $('#twitch-pill').textContent = `TWITCH ${state.twitch.connected ? 'CONNECTÉ' : 'DÉCONNECTÉ'}`;
+  $('#obs-pill').textContent = trusted ? `OBS ${state.obs.connected ? 'CONNECTÉ' : 'HORS LIGNE'}` : 'OBS NON VÉRIFIÉ';
+  $('#obs-pill').className = `obs-pill ${trusted && state.obs.connected ? 'ok' : ''}`;
+  $('#live-pill').textContent = trusted ? (live ? '● EN DIRECT' : 'HORS LIGNE') : 'ÉTAT INCONNU';
+  $('#live-pill').className = `live-pill ${trusted && live ? 'on' : ''}`;
+  $('#twitch-pill').textContent = trusted ? `TWITCH ${state.twitch.connected ? 'CONNECTÉ' : 'DÉCONNECTÉ'}` : 'TWITCH NON VÉRIFIÉ';
 
   const quick = $('#quick-actions');
   if (quick) {
     // The quick start must use the same complete readiness gate as the banner.
-    quick.innerHTML = state.obs.streaming
+    quick.innerHTML = !trusted
+      ? '<button class="quick-action primary-inline" data-action="go" data-value="prepare">Vérifier la régie</button><button class="quick-action" data-action="go" data-value="planning">Planning</button>'
+      : live
       ? `<button class="quick-action" data-action="go" data-value="live">Live</button><button class="quick-action" data-command="mode.set" data-value="pause">Pause</button><button class="quick-action" data-action="toggle-primary-mic">Micro</button><button class="quick-action" data-action="go" data-value="deck">Scènes</button>`
       : `${healthy ? '<button class="quick-action primary-inline" data-command="session.start">Démarrer</button>' : '<button class="quick-action primary-inline" data-action="go" data-value="prepare">Préparer</button>'}<button class="quick-action" data-action="go" data-value="planning">Planning</button><button class="quick-action" data-action="go" data-value="deck">Scènes</button>`;
   }
@@ -379,7 +385,9 @@ function updateSettingsRuntime() {
 }
 function applyStateUpdate(next, force = false) {
   const previous = state;
-  state = next;
+  // Discard any "trusted" marker supplied by a remote snapshot: only this
+  // browser's authenticated state channel can grant freshness to its UI.
+  state = {...next, uiObservationTrusted:socketTrusted};
   if (!previous || force) { render(); return; }
   document.documentElement.dataset.accent = state.settings.accent;
   updateHeader();
@@ -418,9 +426,9 @@ function updateChecklist() {
   if (count) count.textContent = `${done}/${state.checklist.length} vérifications terminées`;
   if (bar) bar.style.width = `${state.checklist.length ? done / state.checklist.length * 100 : 0}%`;
   if (status) status.textContent = classicDashboardReadiness(state).ready ? 'Tout est prêt' : done < state.checklist.length || !state.checklist.length ? 'Préparation incomplète' : 'Préparation à vérifier';
-  if (obs) obs.textContent = state.obs.connected ? `OBS répond correctement. Démarrage prévu sur ${state.settings.startMode === 'live' ? 'Live' : 'Intro'}.` : state.obs.error || 'OBS est hors ligne.';
+  if (obs) obs.textContent = state.uiObservationTrusted === false ? 'État OBS non vérifié : reconnectez la régie.' : state.obs.connected ? `OBS répond correctement. Démarrage prévu sur ${state.settings.startMode === 'live' ? 'Live' : 'Intro'}.` : state.obs.error || 'OBS est hors ligne.';
   if (start) {
-    start.disabled = !state.obs.connected || state.obs.streaming;
+    start.disabled = state.uiObservationTrusted === false || !state.obs.connected || state.obs.streaming;
     start.textContent = state.obs.streaming ? 'Live déjà actif' : 'Démarrer le live';
   }
 }
@@ -918,17 +926,43 @@ document.addEventListener('click', event => {
 
 function socket() {
   const ws = new WebSocket(`${location.protocol === 'https:' ? 'wss' : 'ws'}://${location.host}/ws/v1`);
+  activeSocket = ws;
+  socketTrusted = false;
   ws.onopen = () => {
-    $('#socket').innerHTML = '<i></i> Temps réel';
+    if (activeSocket !== ws) return;
+    $('#socket').textContent = 'Connexion · vérification…';
     $('#socket').classList.add('online');
-  };
-  ws.onmessage = event => {
-    try {
-      const message = JSON.parse(event.data);
-      if (message.type === 'state.updated') applyStateUpdate(message.data);
-    } catch { toast('Événement temps réel invalide.', true); }
+    // OPEN is a transport handshake, not a fresh OBS/Twitch observation.
+    // Do not apply a delayed GET over a newer WebSocket state.updated.
+    let receivedUpdate = false;
+    ws.onmessage = event => {
+      if (activeSocket !== ws) return;
+      try {
+        const message = JSON.parse(event.data);
+        if (message.type === 'state.updated') {
+          receivedUpdate = true;
+          socketTrusted = true;
+          applyStateUpdate(message.data);
+          $('#socket').innerHTML = '<i></i> Temps réel';
+        }
+      } catch { toast('Événement temps réel invalide.', true); }
+    };
+    request('/api/v1/state').then(next => {
+      if (activeSocket !== ws || ws.readyState !== WebSocket.OPEN || receivedUpdate) return;
+      socketTrusted = true;
+      applyStateUpdate(next, true);
+      $('#socket').innerHTML = '<i></i> Temps réel';
+    }).catch(() => {
+      if (activeSocket === ws && !socketTrusted) $('#socket').textContent = 'Connexion · état non vérifié';
+    });
   };
   ws.onclose = () => {
+    if (activeSocket !== ws) return;
+    socketTrusted = false;
+    if (state) {
+      state = {...state, uiObservationTrusted:false};
+      render();
+    }
     $('#socket').textContent = 'Reconnexion…';
     $('#socket').classList.remove('online');
     setTimeout(socket, 1500);
