@@ -479,6 +479,10 @@
         {
           "path": "apps/mobile/control/streamcockpit-twitch-moments.js",
           "kind": "2026-11-04 RDC FIXE F04: same-host/account UI resynchronizes read-only pending Twitch receipts after offline/online or visible WebView resume, even when storage events were missed. Uncertain results remain sticky and no provider request/retry occurs. Real Edge 320px RED 1 FAIL, focused GREEN 1 PASS; final five suites 56 PASS/0 FAIL/0 skipped, including 12 actual Edge cases. TypeScript/browser types PASS, security 6736 files PASS, git diff --check PASS. Synthetic journal and provider only; no physical Android/Twitch provider, deployment/signature, electrical crash or G3 hardware qualification. F04 partial, G2 in_progress."
+        },
+        {
+          "path": "docs/streamcockpit-3/F04_PREVIEW_DESCRIPTION_REVISION_20261106.md",
+          "kind": "2026-11-06 FIXE F04: queued input event during asynchronous Twitch preview could restore a stale moment confirmation for the old description; revision-fenced invalidation now discards late preview and preserves uncertain provider status. Real Edge RED 0 PASS/1 FAIL, final five focused suites 55 PASS/0 FAIL/0 skipped including 13 real Edge checks at 320px/multitab; TypeScript/browser types, JS syntax, security 6771 files and diff check PASS. Synthetic host/Twitch only, no public POST, physical Android, packaging or G3 qualification. F04 partial, G2 in_progress."
         }
       ],
       "verifiedTests": [
@@ -493,6 +497,7 @@
         "tests/streamcockpit3-simple-moments-multitab-browser.test.ts",
         "tests/streamcockpit3-f04-ephemeral-journal-multitab.test.ts",
         "tests/streamcockpit3-f04-expiring-lock-browser.test.ts",
+        "tests/streamcockpit3-f04-preview-description-race-browser.test.ts",
         "tests/streamcockpit3-simple-replay-privacy.test.ts",
         "tests/streamcockpit3-release-scope.test.ts"
       ],

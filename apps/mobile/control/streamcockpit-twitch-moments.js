@@ -34,7 +34,11 @@ export function mountTwitchMoments(root,{request}={}){
     backupWarning.hidden=backup.hidden=diagnostic.hidden=!storageBlocked||!connected();backup.disabled=diagnostic.disabled=backup.hidden||flight||sending};
   const invalidate=message=>{revision++;exportedSnapshot=null;if(sending)uncertain=true;flight=false;cancel();link.hidden=true;link.removeAttribute('href');status.textContent=uncertain?'Résultat incertain : vérifiez Twitch avant une nouvelle demande. Aucun renvoi automatique.':storageBlocked?blockedText:message;draw()};
   kind.addEventListener('change',()=>invalidate('Type modifié : nouvelle vérification requise.'));
-  description.addEventListener('input',()=>{cancel();draw()});agree.addEventListener('change',draw);
+  // Invalidate the preview revision too: queued IME/input events can arrive while
+  // an older host preview is in flight, even after the field becomes disabled.
+  // A late confirmation response must never restore consent for the old text.
+  description.addEventListener('input',()=>invalidate('Description modifiée : nouvelle vérification requise.'));
+  agree.addEventListener('change',draw);
   diagnostic.addEventListener('click',()=>{
     if(!connected()||!storageBlocked||sending||flight)return;
     // Fixed phrases only: never render the journal, UUIDs, account labels or thrown errors.
