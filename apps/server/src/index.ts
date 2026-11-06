@@ -74,6 +74,7 @@ import { PredictionCreateTwitch } from '../../../integrations/twitch/src/streamc
 import { StreamcockpitPredictionCreateService } from './streamcockpit-twitch-prediction-create-service.js';
 import { PredictionIntentSqlite } from './streamcockpit-prediction-intent-sqlite.js';
 import {AutoModActionIntentSqlite} from './streamcockpit-automod-action-intent-sqlite.js';
+import { HostWindowsDurableJournals } from './streamcockpit-host-journals.js';
 import { createTwitchPredictionCreateRouter } from './streamcockpit-twitch-prediction-create-router.js';
 import { TwitchClient, TwitchHttpError } from '../../../integrations/twitch/src/client.js';
 import { TwitchPreflight } from '../../../integrations/twitch/src/preflight.js';
@@ -514,17 +515,14 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
   if (!LOOPBACK_HOSTS.has(host) && host !== '0.0.0.0') throw new Error('Adresse d’écoute LAN invalide.');
 
   const dataDir = path.resolve(options.dataDir ?? process.env.DATA_DIR ?? path.dirname(process.env.DATA_FILE ?? 'data/dashboard.json'));
-  // F09: read-only journal. On Windows, SQLite's durable transactions replace
-  // the unsupported directory fsync; older JSON journals require migration.
-  // Lazy import: an unavailable backend must not stop the main cockpit server.
+  // On FIXE Windows, F02/F08/F09 share the actual protected writers. This
+  // registration never invokes maintenance or an updater and cannot stop OBS.
+  const hostJournals = process.platform === 'win32'
+    ? new HostWindowsDurableJournals(dataDir) : undefined;
+  // F09 stays lazy so an unavailable optional journal cannot prevent startup.
+  // One shared protected storage per server, never one raw writer per request.
   const observedMomentsPipeline = async () => {
-    if (process.platform === 'win32') {
-      const { MomentsSqliteStorage } = await import('./streamcockpit-moments-sqlite.js');
-      return new MomentsPipeline(new MomentsSqliteStorage(
-        path.join(dataDir, 'streamcockpit-moments.sqlite'),
-        path.join(dataDir, 'streamcockpit-moments.json'),
-      ));
-    }
+    if (hostJournals) return new MomentsPipeline(await hostJournals.momentsStorage());
     return new MomentsPipeline(new MomentsFileStorage(
       path.join(dataDir, 'streamcockpit-moments.json'),
     ));
@@ -743,8 +741,10 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
   const predictionTwitch = new PredictionTwitch(advancedTwitchCredentials, runtimeFetch());
   const predictionLockTwitch = new PredictionLockTwitch(advancedTwitchCredentials, runtimeFetch());
   const predictionEndTwitch = new PredictionEndTwitch(advancedTwitchCredentials, runtimeFetch());
-  const predictionFence = new PredictionIntentSqlite(path.join(dataDir, 'streamcockpit-prediction-intents.sqlite'));
-  const automodAttempts = new AutoModActionIntentSqlite(path.join(dataDir, 'streamcockpit-automod-action-intents.sqlite'));
+  const predictionFence = hostJournals?.prediction
+    ?? new PredictionIntentSqlite(path.join(dataDir, 'streamcockpit-prediction-intents.sqlite'));
+  const automodAttempts = hostJournals?.automod
+    ?? new AutoModActionIntentSqlite(path.join(dataDir, 'streamcockpit-automod-action-intents.sqlite'));
   const predictionCreate = new StreamcockpitPredictionCreateService(
     new PredictionCreateTwitch(advancedTwitchCredentials, runtimeFetch()), Date.now, predictionFence);
   const tagIntelligence = new TwitchTagIntelligence((gameId, signal) => twitch.getStreamsForGame(gameId, signal), () => local.planning, Date.now, undefined, undefined, () => local.settings.tagPreferences ?? {});
