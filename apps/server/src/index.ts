@@ -3001,6 +3001,7 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
         const newUrl = input.obsUrl !== undefined ? normalizeObsUrl(String(input.obsUrl).trim()) : local.settings.obsUrl;
         const clearPassword = input.clearObsPassword === true;
         const suppliedPassword = typeof input.obsPassword === 'string' && input.obsPassword.length ? input.obsPassword : undefined;
+        if (clearPassword && suppliedPassword) throw new Error('Choisissez soit un nouveau mot de passe OBS, soit son effacement, pas les deux.');
         if (suppliedPassword && suppliedPassword.length > 500) throw new Error('Mot de passe OBS trop long.');
         const newPassword = clearPassword ? '' : suppliedPassword ?? currentObsPassword;
         const obsChanged = newUrl !== local.settings.obsUrl || newPassword !== currentObsPassword;

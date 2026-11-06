@@ -81,6 +81,10 @@
         {
           "path": "docs/streamcockpit-3/SETTINGS_OBS_PASSWORD_CLEAR_20261106.md",
           "kind": "2026-11-06 FIXE Settings: explicit confirmed OBS password clear only on online local master with saved secret; blank retains and conflict rejected, 20 targeted PASS/0 FAIL/1 skipped including 3 real Edge browser tests, TS/browser/security 6765 files PASS. No actual user secret mutation or G3 evidence; F00 partial, G2 in_progress."
+        },
+        {
+          "path": "docs/streamcockpit-3/SETTINGS_OBS_PASSWORD_SERVER_GUARD_20261106.md",
+          "kind": "2026-11-06 FIXE server settings v1/v2 OBS password clear-vs-replace conflict fail-closed before any mutation; RED HTTP 1 PASS/1 FAIL, GREEN four suites 26 PASS/0 FAIL/0 skipped including 5 Edge simulated UI and 2 temporary HTTP server cases; types/browser/security (6766 files) PASS; no real secrets, OBS, Android or G3 evidence."
         }
       ],
       "verifiedTests": [
