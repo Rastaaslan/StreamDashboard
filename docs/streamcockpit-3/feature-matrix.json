@@ -246,6 +246,10 @@
         {
           "path": "docs/streamcockpit-3/F02_VIEWER_AUTOMOD_OBSERVATIONS_20261106.md",
           "kind": "2026-11-06 FIXE F02: viewer-selected read-only EventSub AutoMod history for last 15 minutes, bounded per message/identity and after disconnect, wired from master cache through paired GET policy to shared Desktop/Android UI. RED 7 PASS/1 FAIL; GREEN six suites 29 PASS/0 FAIL/0 skipped including 4 real Edge 320px cases, with synthetic provider and loopback paired HTTP. Types/browser/security/diff PASS. No complete Twitch viewer history, actual OAuth, hardware or AutoMod action qualification; F02 partial, G2 in_progress, G3-G5 open."
+        },
+        {
+          "path": "docs/streamcockpit-3/F02_AUTOMOD_HELD_DECISIONS_20261106.md",
+          "kind": "2026-11-06 FIXE F02: paired held-message scoped ALLOW/DENY preview + one-use confirmed Helix action with token/host/actor revalidation, simulated POST receipt submitted-unverified, explicit no replay on uncertain result, shared desktop/Android panel. 9 targeted suites 38 PASS/0 FAIL/0 skipped including 4 real Edge 320px cases; types/browser/security 6781 files/diff PASS. No real provider/device, durable cross-restart attempt journal or G3 proof; F02 partial, G2 in_progress."
         }
       ],
       "verifiedTests": [
@@ -258,11 +262,13 @@
         "tests/streamcockpit3-flow-chat-browser.test.ts",
         "tests/streamcockpit3-automod-observation.test.ts",
         "tests/streamcockpit3-automod-observation-http.test.ts",
-        "tests/streamcockpit3-automod-observation-browser.test.ts"
+        "tests/streamcockpit3-automod-observation-browser.test.ts",
+        "tests/streamcockpit3-automod-action-http.test.ts",
+        "tests/streamcockpit3-automod-action-browser.test.ts"
       ],
       "hardwareEvidence": [],
       "blockers": [
-        "AutoMod held-message management and viewer history remain incomplete.",
+        "AutoMod held-message decisions and viewer history are now source-integrated with observed-only EventSub; a 204 is submitted-unverified and missing provider outcome, durable post-attempt receipts and complete viewer history are not qualified.",
         "Production OAuth and physical FIXE/laptop/Android reception of moderation remain unqualified."
       ],
       "ownerJob": "streamcockpit/3.0-lot-b",

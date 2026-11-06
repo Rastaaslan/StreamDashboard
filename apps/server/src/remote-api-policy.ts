@@ -37,6 +37,7 @@ const POST_EXACT = new Set([
   '/v1/twitch/channel','/v1/twitch/tags/suggest','/v1/twitch/chat/messages','/v1/twitch/clips','/v1/twitch/moderation/bans',
   '/v1/twitch/advanced/moment/preview','/v1/twitch/advanced/moment/confirm',
   '/v1/twitch/advanced/moderation/preview','/v1/twitch/advanced/moderation/confirm',
+  '/v1/twitch/advanced/moderation/held-action/preview','/v1/twitch/advanced/moderation/held-action/confirm',
   '/v1/twitch/advanced/poll/preview','/v1/twitch/advanced/poll/confirm',
   '/v1/twitch/advanced/prediction/preview','/v1/twitch/advanced/prediction/confirm',
   '/v1/twitch/advanced/prediction/reconcile/preview','/v1/twitch/advanced/prediction/reconcile/confirm',
@@ -107,6 +108,7 @@ export function requiredDevicePermissions(method:string,path:string,body:unknown
   if(method==='GET'&&/^\/v1\/twitch\/advanced\/moment\/status\/[0-9a-f-]{36}$/i.test(path))return ['chat','cloud','clips'];
   if(method==='POST'&&[
     '/v1/twitch/advanced/moderation/preview','/v1/twitch/advanced/moderation/confirm',
+    '/v1/twitch/advanced/moderation/held-action/preview','/v1/twitch/advanced/moderation/held-action/confirm',
     '/v1/twitch/advanced/poll/preview','/v1/twitch/advanced/poll/confirm',
     '/v1/twitch/advanced/prediction/preview','/v1/twitch/advanced/prediction/confirm',
     '/v1/twitch/advanced/prediction/reconcile/preview','/v1/twitch/advanced/prediction/reconcile/confirm',

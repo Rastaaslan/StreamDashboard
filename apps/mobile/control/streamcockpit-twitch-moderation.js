@@ -26,18 +26,40 @@ export function mountTwitchModeration(root,{request}={}){
   const heldList=doc.createElement('ul');heldList.setAttribute('aria-label','Retenues AutoMod observées');
   const viewerStatus=doc.createElement('p');viewerStatus.setAttribute('aria-live','polite');
   const viewerList=doc.createElement('ul');viewerList.setAttribute('aria-label','Activité AutoMod observée du viewer');
-  section.append(title,note,form,review,status,reconcile,heldTitle,heldRefresh,heldStatus,heldList,viewerStatus,viewerList);root.append(section);
+  const actionPanel=doc.createElement('div');actionPanel.hidden=true;
+  const actionSummary=doc.createElement('p'),actionLabel=doc.createElement('label'),actionAgree=doc.createElement('input');
+  actionAgree.type='checkbox';actionAgree.setAttribute('aria-label','Confirmer la décision AutoMod');
+  const actionAgreement=doc.createElement('span');actionAgreement.textContent='Je confirme cette décision sur le message retenu.';
+  actionLabel.append(actionAgree,actionAgreement);
+  const actionConfirm=doc.createElement('button');actionConfirm.type='button';actionConfirm.textContent='Envoyer la décision à Twitch';
+  actionPanel.append(actionSummary,actionLabel,actionConfirm);
+  const actionStatus=doc.createElement('p');actionStatus.setAttribute('aria-live','polite');
+  const actionReconcile=doc.createElement('button');actionReconcile.type='button';
+  actionReconcile.textContent='J’ai vérifié la décision dans Twitch';actionReconcile.hidden=true;
+  section.append(title,note,form,review,status,reconcile,heldTitle,heldRefresh,heldStatus,heldList,viewerStatus,viewerList,actionPanel,actionStatus,actionReconcile);root.append(section);
   let disposed=false,online=false,declaredOnline=false,sourceKey='',accountKey='',revision=0,flight=false,sending=false,uncertain=false,pending;
   let heldFlight=false,heldRevision=0,viewerRevision=0,viewerFlight=false;
+  let actionRevision=0,actionFlight=false,actionSending=false,actionUncertain=false,actionPending;
   const connected=()=>!disposed&&root.isConnected&&online&&sourceKey&&view?.navigator?.onLine!==false&&doc.visibilityState!=='hidden';
   const cancel=()=>{pending=undefined;review.hidden=true;agree.checked=false};
   const draw=()=>{
     const enabled=connected()&&!flight&&!uncertain&&typeof request==='function';
     select.disabled=preview.disabled=!enabled;agree.disabled=!enabled||!pending;
     confirm.disabled=!enabled||!pending||!agree.checked||Date.now()>=pending.expiresAt;reconcile.hidden=!uncertain;
-    heldRefresh.disabled=!connected()||heldFlight||typeof request!=='function';
+    heldRefresh.disabled=!connected()||heldFlight||actionSending||typeof request!=='function';
+    actionAgree.disabled=!connected()||actionFlight||actionUncertain||!actionPending;
+    actionConfirm.disabled=actionAgree.disabled||!actionAgree.checked||Date.now()>=actionPending.expiresAt;
+    actionReconcile.hidden=!actionUncertain;actionReconcile.disabled=!connected()||actionSending;
   };
-  const invalidate=message=>{revision++;heldRevision++;viewerRevision++;viewerFlight=false;heldList.replaceChildren();viewerList.replaceChildren();viewerStatus.textContent='';heldStatus.textContent='Observations effacées : relecture manuelle nécessaire.';if(sending)uncertain=true;flight=false;cancel();status.textContent=uncertain?'Issue incertaine. Vérifiez le réglage dans Twitch ; aucun renvoi automatique.':message;draw()};
+  const invalidate=message=>{
+    revision++;heldRevision++;viewerRevision++;actionRevision++;viewerFlight=false;
+    heldList.replaceChildren();viewerList.replaceChildren();viewerStatus.textContent='';
+    heldStatus.textContent='Observations effacées : relecture manuelle nécessaire.';
+    if(sending)uncertain=true;if(actionSending)actionUncertain=true;
+    flight=false;actionFlight=false;cancel();actionPending=undefined;actionAgree.checked=false;actionPanel.hidden=true;
+    actionStatus.textContent=actionUncertain?'Décision potentiellement envoyée : vérifiez Twitch, jamais de renvoi automatique.':'';
+    status.textContent=uncertain?'Issue incertaine. Vérifiez le réglage dans Twitch ; aucun renvoi automatique.':message;draw();
+  };
   const change=()=>{
     const [kind,value]=select.value.split(':');
     return {kind,value:kind==='shield'?value==='true':Number(value)};
@@ -101,10 +123,65 @@ export function mountTwitchModeration(root,{request}={}){
       if(key===viewerRevision&&connected()){viewerList.replaceChildren();viewerStatus.textContent='Historique local indisponible. Aucun accès au compte ou à la file Twitch prétendu.';}
     }finally{if(key===viewerRevision)viewerFlight=false;}
   };
+  // An observed hold can be acted on ONLY after a read-only scope/identity
+  // preflight and a second explicit confirmation. A 204 is not an EventSub receipt.
+  const beginHeldAction=async(item,decision)=>{
+    if(!connected()||actionFlight||actionSending||actionUncertain||typeof request!=='function')return;
+    if(typeof item?.id!=='string'||!/^[A-Za-z0-9_-]{1,200}$/.test(item.id)||
+      typeof item?.userId!=='string'||!/^[0-9]{1,30}$/.test(item.userId))return;
+    const target=sourceKey,key=++actionRevision;actionPending=undefined;
+    actionAgree.checked=false;actionPanel.hidden=true;actionFlight=true;draw();
+    actionStatus.textContent='Vérification du message observé et des droits Twitch, sans envoyer de décision…';
+    try{
+      const result=await request('/api/v1/twitch/advanced/moderation/held-action/preview',
+        {messageId:item.id,userId:item.userId,decision},'POST',target);
+      if(key!==actionRevision||target!==sourceKey||!connected())return;
+      if(result?.kind!=='streamcockpit-automod-action-preview'||result.schemaVersion!==1||
+        result.messageId!==item.id||result.userId!==item.userId||result.decision!==decision||
+        typeof result.confirmationId!=='string'||!Number.isFinite(result.expiresAt)||
+        result.expiresAt<=Date.now()||result.expiresAt>Date.now()+30_000)throw Error('INVALID_PREVIEW');
+      actionPending=result;actionSummary.textContent=(decision==='ALLOW'?'Autoriser':'Refuser')+
+        ' le message de '+String(item.userName||'ce viewer').slice(0,100)+' ? Une décision Twitch peut être définitive.';
+      actionPanel.hidden=false;actionStatus.textContent='Aucune décision envoyée. Confirmation explicite requise.';
+    }catch{
+      if(key===actionRevision&&connected())actionStatus.textContent='Décision impossible : observation périmée, droits ou régie indisponibles. Aucun envoi effectué.';
+    }finally{if(key===actionRevision){actionFlight=false;draw();}}
+  };
+  actionAgree.addEventListener('change',draw);
+  actionReconcile.addEventListener('click',()=>{
+    if(actionSending||!connected())return;
+    actionUncertain=false;actionPending=undefined;actionAgree.checked=false;actionPanel.hidden=true;
+    actionRevision++;heldList.replaceChildren();
+    actionStatus.textContent='Vérification déclarée. Relisez manuellement les messages observés avant toute autre décision.';
+    draw();
+  });
+  actionConfirm.addEventListener('click',async()=>{
+    if(!connected()||actionFlight||actionSending||actionUncertain||!actionPending||
+      !actionAgree.checked||Date.now()>=actionPending.expiresAt)return;
+    const id=actionPending.confirmationId,target=sourceKey,key=++actionRevision;
+    const decision=actionPending.decision;
+    actionPending=undefined;actionAgree.checked=false;actionPanel.hidden=true;
+    actionFlight=true;actionSending=true;draw();
+    actionStatus.textContent='Demande transmise au FIXE ; état Twitch à vérifier.';
+    try{
+      const result=await request('/api/v1/twitch/advanced/moderation/held-action/confirm',
+        {confirmationId:id,confirmed:true},'POST',target);
+      if(key!==actionRevision||target!==sourceKey||!connected()){actionUncertain=true;return;}
+      if(result?.kind!=='streamcockpit-automod-action-receipt'||result.schemaVersion!==1||
+        result.decision!==decision||result.status!=='submitted-unverified')throw Error('INVALID_RECEIPT');
+      actionUncertain=true; // Never offer an automatic retry, even after HTTP 204.
+      actionStatus.textContent='Demande reçue par Twitch, mais décision non relue. Vérifiez sur Twitch ou attendez EventSub avant une nouvelle action.';
+    }catch{
+      actionUncertain=true;
+      if(key===actionRevision)actionStatus.textContent='Issue incertaine : vérifiez dans Twitch. Aucun nouvel envoi automatique.';
+    }finally{actionSending=false;if(key===actionRevision)actionFlight=false;draw();}
+  });
   heldRefresh.addEventListener('click',async()=>{
     if(!connected()||heldFlight||typeof request!=='function')return;
     const target=sourceKey,key=++heldRevision;
-    heldFlight=true;viewerRevision++;viewerFlight=false;heldList.replaceChildren();viewerList.replaceChildren();viewerStatus.textContent='';
+    heldFlight=true;viewerRevision++;viewerFlight=false;actionRevision++;
+    actionPending=undefined;actionAgree.checked=false;actionPanel.hidden=true;
+    heldList.replaceChildren();viewerList.replaceChildren();viewerStatus.textContent='';
     heldStatus.textContent='Lecture des retenues observées par FIXE…';draw();
     try{
       const data=await request('/api/v1/twitch/advanced/moderation/held',undefined,'GET',target);
@@ -122,6 +199,14 @@ export function mountTwitchModeration(root,{request}={}){
           historyButton.type='button';historyButton.textContent='Voir l’activité AutoMod observée';
           historyButton.addEventListener('click',()=>{void showViewerHistory(item.userId)});
           li.append(historyButton);
+          if(typeof item.broadcasterId==='string'&&/^[0-9]{1,30}$/.test(item.broadcasterId)&&
+            typeof item.id==='string'&&/^[A-Za-z0-9_-]{1,200}$/.test(item.id)){
+            for(const [decision,label] of [['ALLOW','Autoriser via Twitch'],['DENY','Refuser via Twitch']]){
+              const button=doc.createElement('button');button.type='button';button.textContent=label;
+              button.disabled=actionUncertain;button.addEventListener('click',()=>{void beginHeldAction(item,decision)});
+              li.append(button);
+            }
+          }
         }
         heldList.append(li);
       }

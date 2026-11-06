@@ -53,6 +53,7 @@ import { AdvancedTwitch } from '../../../integrations/twitch/src/streamcockpit-a
 import { StreamcockpitTwitchService } from './streamcockpit-twitch-service.js';
 import { createTwitchCapabilitiesRouter, twitchReadActor } from './streamcockpit-twitch-router.js';
 import { ModerationTwitch } from '../../../integrations/twitch/src/streamcockpit-moderation.js';
+import { HeldAutoModActionTwitch } from '../../../integrations/twitch/src/streamcockpit-automod-action.js';
 import { SimpleMomentsTwitch } from '../../../integrations/twitch/src/streamcockpit-simple-moments.js';
 import { createTwitchMomentRouter, twitchMomentActor } from './streamcockpit-twitch-moment-router.js';
 import { createTwitchModerationRouter } from './streamcockpit-twitch-moderation-router.js';
@@ -2045,6 +2046,7 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
   // F02 settings remain available off-air; they never start/stop a stream.
   app.use('/api/v1/twitch/advanced/moderation', createTwitchModerationRouter({
     api: new ModerationTwitch(advancedTwitchCredentials, runtimeFetch()),
+    actionApi: new HeldAutoModActionTwitch(advancedTwitchCredentials, runtimeFetch()),
     actor: pairedF08Actor,
     held:()=>observedAutoMod.snapshot(twitch.publicIdentity().broadcasterId,
       twitch.state.connected&&twitch.automodEventSubRequested()),
