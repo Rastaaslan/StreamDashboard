@@ -17,7 +17,9 @@ export function renderDevicesSettings({
   const devices = Array.isArray(current?.devices) ? current.devices : [];
   // Saved installation roles describe a proposed topology, never the runtime OBS owner.
   // A stale client preset must not display local FIXE pairing/administration controls.
-  const isMaster = device?.role === 'stream';
+  // A native Android profile must never advertise the Windows FIXE OBS authority,
+  // even if an obsolete saved device role still says "stream".
+  const isMaster = !native && device?.role === 'stream';
   const isClient = device?.role === 'control';
   const androidDevices = devices.filter(item => item.platform === 'android' && item.enabled !== false);
   const presetLabel = current?.preset && SETUPS[current.preset] ? SETUPS[current.preset] : 'Non renseignée sur cet appareil';

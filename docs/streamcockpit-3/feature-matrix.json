@@ -85,6 +85,10 @@
         {
           "path": "docs/streamcockpit-3/SETTINGS_OBS_PASSWORD_SERVER_GUARD_20261106.md",
           "kind": "2026-11-06 FIXE server settings v1/v2 OBS password clear-vs-replace conflict fail-closed before any mutation; RED HTTP 1 PASS/1 FAIL, GREEN four suites 26 PASS/0 FAIL/0 skipped including 5 Edge simulated UI and 2 temporary HTTP server cases; types/browser/security (6766 files) PASS; no real secrets, OBS, Android or G3 evidence."
+        },
+        {
+          "path": "docs/streamcockpit-3/SETTINGS_ANDROID_RUNTIME_MASTER_GUARD_20261106.md",
+          "kind": "2026-11-06 FIXE Settings Android native stream-role stale model rejected as OBS authority (UI only); RED 1 PASS/2 FAIL/1 skipped, final 10 suites 55 PASS/0 FAIL/1 skipped including 11 real Edge synthetic scenarios; TypeScript/browser/security 6768 files PASS; no physical Android, OBS or G3/G4/G5 evidence."
         }
       ],
       "verifiedTests": [
@@ -101,7 +105,8 @@
         "tests/streamcockpit3-master-clock-resume.test.ts",
         "tests/streamcockpit3-settings-preserve-options.test.ts",
         "tests/streamcockpit3-desktop-settings-role.test.ts",
-        "tests/streamcockpit3-settings-topology-browser.test.ts"
+        "tests/streamcockpit3-settings-topology-browser.test.ts",
+        "tests/streamcockpit3-settings-android-master-guard.test.ts"
       ],
       "hardwareEvidence": [],
       "blockers": [
