@@ -47,6 +47,8 @@ async function request(url, method = 'GET', body) {
   try {
     const response = await fetch(url, {
       method,
+      // A readiness probe must not replay an HTTP cache snapshot.
+      cache: method === 'GET' && url === '/api/v1/state' ? 'no-store' : 'default',
       headers: { 'content-type': 'application/json' },
       body: body === undefined ? undefined : JSON.stringify(body),
       signal: controller.signal,
@@ -928,6 +930,48 @@ function socket() {
   const ws = new WebSocket(`${location.protocol === 'https:' ? 'wss' : 'ws'}://${location.host}/ws/v1`);
   activeSocket = ws;
   socketTrusted = false;
+  // A TCP connection may stay OPEN despite a suspended/dead peer. No WS
+  // heartbeat protocol is assumed: a bounded, read-only GET can renew trust.
+  const OBSERVATION_TTL_MS = 45_000;
+  const RECHECK_AFTER_MS = 20_000;
+  let lastVerifiedAt = -Infinity;
+  let lastProbeAt = performance.now();
+  let observationRevision = 0;
+  let probePending = false;
+  const confirmSnapshot = (next, force = false) => {
+    observationRevision++;
+    lastVerifiedAt = performance.now();
+    socketTrusted = true;
+    applyStateUpdate(next, force);
+    $('#socket').innerHTML = '<i></i> Temps réel';
+  };
+  const expireSnapshot = () => {
+    socketTrusted = false;
+    if (state) {
+      state = {...state, uiObservationTrusted:false};
+      render();
+    }
+    $('#socket').textContent = 'Connexion · état périmé à vérifier';
+  };
+  const healthTimer = setInterval(() => {
+    if (activeSocket !== ws || ws.readyState !== WebSocket.OPEN) return;
+    const now = performance.now();
+    if (socketTrusted && now - lastVerifiedAt >= OBSERVATION_TTL_MS) expireSnapshot();
+    if (probePending || now - lastProbeAt < RECHECK_AFTER_MS
+      || (socketTrusted && now - lastVerifiedAt < RECHECK_AFTER_MS)) return;
+    // One outstanding request and one probe at most every 20 s. A new WS
+    // update outranks the GET even if the GET response arrives later.
+    probePending = true;
+    lastProbeAt = now;
+    const expectedRevision = observationRevision;
+    request('/api/v1/state').then(next => {
+      if (activeSocket !== ws || ws.readyState !== WebSocket.OPEN
+        || observationRevision !== expectedRevision) return;
+      confirmSnapshot(next, true);
+    }).catch(() => {
+      if (activeSocket === ws && !socketTrusted) $('#socket').textContent = 'Connexion · état non vérifié';
+    }).finally(() => { probePending = false; });
+  }, 5000);
   ws.onopen = () => {
     if (activeSocket !== ws) return;
     $('#socket').textContent = 'Connexion · vérification…';
@@ -935,28 +979,27 @@ function socket() {
     // OPEN is a transport handshake, not a fresh OBS/Twitch observation.
     // Do not apply a delayed GET over a newer WebSocket state.updated.
     let receivedUpdate = false;
+    probePending = true;
+    lastProbeAt = performance.now();
     ws.onmessage = event => {
       if (activeSocket !== ws) return;
       try {
         const message = JSON.parse(event.data);
         if (message.type === 'state.updated') {
           receivedUpdate = true;
-          socketTrusted = true;
-          applyStateUpdate(message.data);
-          $('#socket').innerHTML = '<i></i> Temps réel';
+          confirmSnapshot(message.data);
         }
       } catch { toast('Événement temps réel invalide.', true); }
     };
     request('/api/v1/state').then(next => {
       if (activeSocket !== ws || ws.readyState !== WebSocket.OPEN || receivedUpdate) return;
-      socketTrusted = true;
-      applyStateUpdate(next, true);
-      $('#socket').innerHTML = '<i></i> Temps réel';
+      confirmSnapshot(next, true);
     }).catch(() => {
       if (activeSocket === ws && !socketTrusted) $('#socket').textContent = 'Connexion · état non vérifié';
-    });
+    }).finally(() => { probePending = false; });
   };
   ws.onclose = () => {
+    clearInterval(healthTimer);
     if (activeSocket !== ws) return;
     socketTrusted = false;
     if (state) {
