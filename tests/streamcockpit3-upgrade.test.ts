@@ -235,4 +235,20 @@ describe('versioned copy migration', () => {
     expect(() => migrateUpgradeData(snapshot, 2, [step, step])).toThrow('ambiguë');
     expect(() => migrateUpgradeData(snapshot, 2, [step])).toThrow('Migration');
   });
+  it('never silently loses or rewrites unknown user data during a versioned migration', () => {
+    const before = structuredClone(snapshot);
+    const dropping = [{ from: 1, to: 2, apply: (copy: UpgradeData) => ({
+      schemaVersion: 2, associations: copy.associations, profiles: copy.profiles,
+    }) }];
+    expect(() => migrateUpgradeData(snapshot, 2, dropping)).toThrow('Données');
+    expect(() => migrateUpgradeData(snapshot, 2, [{
+      from: 1, to: 2, apply: (copy: UpgradeData) => ({ ...copy, schemaVersion: 2, other: ['replaced'] }),
+    }])).toThrow('Données');
+    const declared = migrateUpgradeData(snapshot, 2, [{
+      from: 1, to: 2, mutableKeys: ['other'],
+      apply: (copy: UpgradeData) => ({ ...copy, schemaVersion: 2, other: ['explicit-migration'] }),
+    }]);
+    expect(declared).toMatchObject({ schemaVersion: 2, other: ['explicit-migration'] });
+    expect(snapshot).toEqual(before);
+  });
 });

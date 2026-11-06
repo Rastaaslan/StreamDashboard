@@ -2,6 +2,7 @@ import {createHash,randomUUID} from 'node:crypto';
 import {copyFile,lstat,mkdir,open,readFile,readdir,realpath,rename,rm,writeFile} from 'node:fs/promises';
 import {basename,dirname,isAbsolute,join,resolve} from 'node:path';
 import {tmpdir} from 'node:os';
+import {migrateUpgradeData,type UpgradeData,type UpgradeMigration} from '../../../packages/core/src/streamcockpit-upgrade.js';
 
 /** F10 filesystem QA evidence. NEVER a production installer or a profile restore.
  * The caller must create a fresh DIRECT child of OS temp named sc3-upgrade-qa-*.
@@ -96,14 +97,9 @@ export async function checkpointQaProfile(workspace:string):Promise<QaCheckpoint
     return structuredClone(report);
   }catch(error){await rm(stage,{recursive:true,force:true});throw error}
 }
-/** Restore immutable checkpoint ONLY to a new workspace/restored directory.
- * Never replace active or existing data; verify every backed-up byte first.
- */
-export async function restoreQaProfile(workspace:string):Promise<QaCheckpointReport>{
-  const root=await sandbox(workspace);
-  const backup=join(root,'backup'),restored=join(root,'restored');
-  try{await lstat(restored);fail('RESTORE_ALREADY_EXISTS')}
-  catch(error){if((error as NodeJS.ErrnoException).code!=='ENOENT')throw error}
+/** Verify a complete immutable snapshot before any restore or migration copy. */
+async function verifiedBackup(root:string):Promise<{report:QaCheckpointReport;folder:string}>{
+  const backup=join(root,'backup');
   const status=await lstat(backup);
   if(!status.isDirectory()||status.isSymbolicLink())fail('BACKUP_UNTRUSTED');
   const report=JSON.parse(await readFile(join(backup,'manifest.json'),'utf8')) as QaCheckpointReport;
@@ -122,6 +118,16 @@ export async function restoreQaProfile(workspace:string):Promise<QaCheckpointRep
   const actual=await list(folder);
   if(JSON.stringify(actual.files)!==JSON.stringify(report.entries)||actual.totalBytes!==report.totalBytes)
     fail('BACKUP_TAMPERED');
+  return {report,folder};
+}
+/** Restore immutable checkpoint ONLY to a new workspace/restored directory.
+ * Never replace active or existing data; verify every backed-up byte first.
+ */
+export async function restoreQaProfile(workspace:string):Promise<QaCheckpointReport>{
+  const root=await sandbox(workspace),restored=join(root,'restored');
+  try{await lstat(restored);fail('RESTORE_ALREADY_EXISTS')}
+  catch(error){if((error as NodeJS.ErrnoException).code!=='ENOENT')throw error}
+  const {report,folder}=await verifiedBackup(root);
   const pending=join(root,'restored-pending-'+randomUUID());
   await mkdir(pending,{mode:0o700});
   try{
@@ -130,5 +136,46 @@ export async function restoreQaProfile(workspace:string):Promise<QaCheckpointRep
     if(JSON.stringify(verified.files)!==JSON.stringify(report.entries))fail('RESTORE_MISMATCH');
     await rename(pending,restored);
     return structuredClone(report);
+  }catch(error){await rm(pending,{recursive:true,force:true});throw error}
+}
+
+/** QA-only end-to-end backup -> detached versioned migration. No installer, no
+ * writes to active/restored profiles. The caller owns the synthetic workspace.
+ * Reuses the same complete hash-verified backup as explicit QA rollback.
+ */
+export async function migrateQaProfileCopy(workspace:string,toVersion:number,migrations:UpgradeMigration[]){
+  const root=await sandbox(workspace),destination=join(root,'migrated');
+  try{await lstat(destination);fail('MIGRATED_ALREADY_EXISTS')}
+  catch(error){if((error as NodeJS.ErrnoException).code!=='ENOENT')throw error}
+  const {report,folder}=await verifiedBackup(root);
+  const setting='configuration/settings.json';
+  if(!report.entries.some(entry=>entry.path===setting))fail('SETTINGS_NOT_IN_BACKUP');
+  const pending=join(root,'migrated-pending-'+randomUUID());
+  await mkdir(pending,{mode:0o700});
+  try{
+    await copyVerified(folder,pending,report.entries);
+    const settingsPath=join(pending,'configuration','settings.json');
+    const data=JSON.parse(await readFile(settingsPath,'utf8')) as UpgradeData;
+    const fromVersion=data.schemaVersion;
+    const updated=migrateUpgradeData(data,toVersion,migrations);
+    const output=Buffer.from(JSON.stringify(updated),'utf8');
+    const temp=settingsPath+'.new';
+    await writeFile(temp,output,{flag:'wx',mode:0o600});
+    const handle=await open(temp,'r+');
+    try{await handle.sync()}finally{await handle.close()}
+    await rename(temp,settingsPath);
+    const actual=await list(pending),earlier=new Map(report.entries.map(entry=>[entry.path,entry]));
+    if(actual.files.length!==report.entries.length)fail('MIGRATED_FILE_SET_CHANGED');
+    for(const entry of actual.files){
+      const original=earlier.get(entry.path);
+      if(!original||(entry.path!==setting &&
+        (entry.bytes!==original.bytes||entry.sha256!==original.sha256)))
+        fail('MIGRATED_DATA_CHANGED');
+    }
+    const migrated=actual.files.find(entry=>entry.path===setting)!;
+    if(migrated.sha256!==hash(output))fail('MIGRATED_VERIFY_FAILED');
+    await rename(pending,destination);
+    return {schemaVersion:1 as const,kind:'SC3_UPGRADE_QA_MIGRATION' as const,
+      fromVersion,toVersion,oldHash:earlier.get(setting)!.sha256,newHash:migrated.sha256};
   }catch(error){await rm(pending,{recursive:true,force:true});throw error}
 }

@@ -81,6 +81,8 @@ export type UpgradeData = {
 export interface UpgradeMigration {
   from: number;
   to: number;
+  /** Explicit existing top-level fields allowed to change. Never associations/profiles. */
+  mutableKeys?: string[];
   apply(copy: UpgradeData): UpgradeData;
 }
 
@@ -96,9 +98,27 @@ export function migrateUpgradeData(snapshot: UpgradeData, to: number, migrations
     const candidates = migrations.filter(step => step.from === result.schemaVersion && step.to === step.from + 1);
     if (candidates.length !== 1) throw new Error('Migration versionnée manquante ou ambiguë');
     const step = candidates[0];
+    const mutableKeys = step.mutableKeys ?? [];
+    if (!Array.isArray(mutableKeys) || new Set(mutableKeys).size !== mutableKeys.length ||
+        mutableKeys.some(key => typeof key !== 'string' || !/^[a-zA-Z][a-zA-Z0-9_]{0,100}$/.test(key) ||
+          ['schemaVersion','associations','profiles'].includes(key))) {
+      throw new Error('Migration : champs mutables invalides');
+    }
+    const previous = result;
     result = step.apply(structuredClone(result));
-    if (result.schemaVersion !== step.to || JSON.stringify(result.associations) !== associations
+    if (!result || typeof result !== 'object' || Array.isArray(result) ||
+        result.schemaVersion !== step.to || JSON.stringify(result.associations) !== associations
       || JSON.stringify(result.profiles) !== profiles) throw new Error('Migration altère associations ou profils');
+    // Unknown fields are user data. Preserve every existing key (including future
+    // feature records) unless the migration explicitly declares a value change.
+    // Even an allowed change cannot delete an existing key.
+    for (const key of Object.keys(previous)) {
+      if (!Object.hasOwn(result,key) ||
+          (key !== 'schemaVersion' && !mutableKeys.includes(key) &&
+           JSON.stringify(previous[key]) !== JSON.stringify(result[key]))) {
+        throw new Error('Données utilisateur effacées ou modifiées sans migration explicite');
+      }
+    }
   }
   return structuredClone(result);
 }

@@ -1194,6 +1194,10 @@
         {
           "path": "docs/streamcockpit-3/G4_LEGACY_BACKUP_INVENTORY_20261105.md",
           "kind": "2026-11-05 FIXE F10/G4 migration backup source enforces exact manifest/payload inventory before first installation write. RED 3 PASS/3 FAIL; final 67 targeted PASS/0 FAIL/0 skipped on synthetic temporary profiles, TS/browser/security 6750 PASS. No user-profile migration, production signing, hardware rollback or G4 qualification."
+        },
+        {
+          "path": "docs/streamcockpit-3/F10_QA_MIGRATION_ROLLBACK_CONVERGENCE_20261106.md",
+          "kind": "2026-11-06 FIXE F10: a QA-only Windows temporary-directory pipeline links SHA-256-verified backup, detached schema migration and independent fresh-directory restore. Existing unknown keys cannot be lost or modified without explicit declared migration; no automatic install or user-profile write. RED 1 FAIL, corrected 98 PASS/0 FAIL/0 skipped across 9 suites, TS/browser/security 6778 files PASS. Synthetic QA profile, no production Squirrel/Android signatures, power-loss or hardware."
         }
       ],
       "verifiedTests": [
