@@ -1259,6 +1259,10 @@
         {
           "path": "docs/streamcockpit-3/F10_DIRECTORY_APPLY_ROLLBACK_20261106.md",
           "kind": "2026-11-06 FIXE F10: concrete explicit-directory Windows app/profile copy-and-swap plus rollback connected to the existing durable planner and full readback. Four interrupted rename stages preserve pending intent; changed runtime/profile or F02/F08/F09 journal transformations are refused. 13 suites 171 PASS/0 FAIL/0 skipped, 24 new tests with real temporary files and SQLite; release preparation, signer identity and stopped-runtime authority simulated. TypeScript/browser types/security 6808 files/diff PASS. No production Squirrel/Android adapter activation, real service-wide exclusion, installed data or G3-G5 qualification."
+        },
+        {
+          "path": "docs/streamcockpit-3/F10_RUNTIME_UPGRADE_EXCLUSION_20261106.md",
+          "kind": "2026-11-06 FIXE F10: actual Windows startDesktopRuntime now holds the existing upgrade-journal cross-process mutex before acquiring configuration/providers/OBS and through server/audio shutdown. Pending intents and mismatched target/rollback versions prevent startup without replay. 18 suites 194 PASS/0 FAIL/0 skipped incl. 18 new tests, real Windows child processes and isolated HTTP servers with OBS disabled, plus Electron lifecycle mocks. Types/browser types/security 6812 files/diff PASS. Cooperative runtime exclusion only: early main/InstallationStore/logging, legacy or external processes, signed native Squirrel/Android maintenance and G3-G5 remain unqualified."
         }
       ],
       "verifiedTests": [
@@ -1279,12 +1283,14 @@
         "tests/streamcockpit3-producer-drain-server.test.ts",
         "tests/streamcockpit3-upgrade-readback.test.ts",
         "tests/streamcockpit3-host-journals-runtime.test.ts",
-        "tests/streamcockpit3-upgrade-directory.test.ts"
+        "tests/streamcockpit3-upgrade-directory.test.ts",
+        "tests/streamcockpit3-runtime-ownership.test.ts",
+        "tests/streamcockpit3-runtime-ownership-lifecycle.test.ts"
       ],
       "hardwareEvidence": [],
       "blockers": [
         "Real Windows/Android trusted signing and staged bytes verification unavailable",
-        "2026-11-06: SQLite upgrade intent/exclusion, actual FIXE F02/F08/F09 in-process fence and producer drain are source-integrated. A concrete explicit-directory app/profile replacement and rollback factory now uses the durable planner and readback, qualified on synthetic Windows trees only. Real service-wide/process exclusion, trusted signer/preparation, native Squirrel/Android deployment, journal-format migration and hardware recovery remain unqualified; startUpdater stays blocked.",
+        "2026-11-06: SQLite upgrade intent/exclusion, actual FIXE F02/F08/F09 fence, producer drain, explicit-directory replacement/readback and Windows Desktop runtime ownership are source-integrated. The runtime now holds the SAME updater mutex through full server/audio stop; early Electron main operations, direct Node entrypoints and unregistered/legacy processes are not covered. External maintenance runner, trusted release preparation, native Squirrel/Android deployment, journal-format migration and hardware recovery remain unqualified; startUpdater stays blocked.",
         "2026-11-06: embedded same-commit EXE/ASAR+APK verifier exists and passes on old debug QA artifacts, but production-signed artifacts from exact current HEAD, physical recovery, and operator gates remain unavailable; release:check still fails closed"
       ],
       "ownerJob": "streamcockpit/3.0-lot-p",

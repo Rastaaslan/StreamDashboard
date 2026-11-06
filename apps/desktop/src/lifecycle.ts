@@ -2,7 +2,8 @@ import { DesktopAudioPlayback } from './audio-player.js';
 import {createAgentCertificate,certificateFingerprint,type AgentCertificate} from './agent-certificate.js';
 import type { InstallationDevice } from '../../mobile/shared/installation.js';
 import { app } from 'electron';
-import { readFile } from 'node:fs/promises';
+import { mkdir, readFile } from 'node:fs/promises';
+import { runtimeUpgradeDirectory, startWithRuntimeUpgradeOwnership } from './streamcockpit-runtime-ownership.js';
 import path from 'node:path';
 import { startDashboardServer, type DashboardServerHandle } from '../../server/src/index.js';
 import { ElectronSecretStore } from './secrets.js';
@@ -12,6 +13,18 @@ import { launchObsIfRequested } from './obs-launcher.js';
 export interface DesktopRuntime { dashboard: DashboardServerHandle; logger: DesktopLogger; ensureObsRunning(): ReturnType<typeof launchObsIfRequested>; stop(): Promise<void> }
 
 export async function startDesktopRuntime(logger = new DesktopLogger(path.join(app.getPath('userData'), 'logs')), signal?: AbortSignal, controller = false, obsEnabled = !controller, deviceDescriptor?: () => Promise<InstallationDevice>): Promise<DesktopRuntime> {
+  signal?.throwIfAborted();
+  if (process.platform !== 'win32') return acquireDesktopRuntime(logger, signal, controller, obsEnabled, deviceDescriptor);
+  // All Desktop roles, including --agent, share the root-profile coordinator.
+  // Acquire BEFORE reading configuration, opening providers or launching OBS.
+  const coordination = runtimeUpgradeDirectory(app.getPath('appData'), app.getPath('userData'));
+  await mkdir(coordination, { recursive: true, mode: 0o700 });
+  signal?.throwIfAborted();
+  return startWithRuntimeUpgradeOwnership(coordination, app.getVersion(),
+    () => acquireDesktopRuntime(logger, signal, controller, obsEnabled, deviceDescriptor));
+}
+
+async function acquireDesktopRuntime(logger: DesktopLogger, signal: AbortSignal | undefined, controller: boolean, obsEnabled: boolean, deviceDescriptor?: () => Promise<InstallationDevice>): Promise<DesktopRuntime> {
   signal?.throwIfAborted();
   let distribution: { twitchClientId?: string; googleClientId?: string } = {};
   try { distribution = JSON.parse(await readFile(path.join(app.getAppPath(), 'resources', 'distribution.json'), 'utf8')); } catch (error) { if ((error as NodeJS.ErrnoException).code !== 'ENOENT' || app.isPackaged) throw new Error('Configuration publique Desktop absente ou illisible. Réinstallez le paquet.'); }
