@@ -89,6 +89,10 @@
         {
           "path": "docs/streamcockpit-3/SETTINGS_ANDROID_RUNTIME_MASTER_GUARD_20261106.md",
           "kind": "2026-11-06 FIXE Settings Android native stream-role stale model rejected as OBS authority (UI only); RED 1 PASS/2 FAIL/1 skipped, final 10 suites 55 PASS/0 FAIL/1 skipped including 11 real Edge synthetic scenarios; TypeScript/browser/security 6768 files PASS; no physical Android, OBS or G3/G4/G5 evidence."
+        },
+        {
+          "path": "docs/streamcockpit-3/SETTINGS_ANDROID_STALE_ROLE_INTEGRATIONS_20261106.md",
+          "kind": "2026-11-06 FIXE Settings: stale Android 'stream' role without selected FIXE endpoint cannot enable Discord/WizeBot or present cached CONNECTED statuses as verified; unpaired Android retains explicit association route. RED 8 PASS/2 FAIL, GREEN 22 PASS/0 FAIL/0 skipped incl. 6 actual Edge browser checks with providers simulated; types/browser/security/JS/diff PASS. No physical Android, OBS/Twitch or G3-G5 evidence."
         }
       ],
       "verifiedTests": [

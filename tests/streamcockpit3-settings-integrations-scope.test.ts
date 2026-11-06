@@ -5,15 +5,15 @@ import {readFileSync} from 'node:fs';
 import {renderSettings} from '../apps/mobile/control/settings-view.js';
 
 const esc=(value:unknown)=>String(value??'').replace(/[&<>"']/g,ch=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch]!));
-function render({server='https://fixe.example:48136',online=true,role='mobile',statuses={},observedAt=new Date().toISOString(),tab='integrations'}:{
- server?:string;online?:boolean;role?:'mobile'|'control'|'stream';statuses?:Record<string,string>;observedAt?:string|null;tab?:'integrations'|'platforms'
+function render({server='https://fixe.example:48136',online=true,role='mobile',nativeOverride,statuses={},observedAt=new Date().toISOString(),tab='integrations'}:{
+ server?:string;online?:boolean;role?:'mobile'|'control'|'stream';nativeOverride?:boolean;statuses?:Record<string,string>;observedAt?:string|null;tab?:'integrations'|'platforms'
 }={}){
  const data={host:{hostname:'FIXE',settingsRevision:'1',settings:{},state:{
   at:observedAt,
   obs:{inputs:{},scenes:[]},google:{connected:true},twitch:{connected:true},
   controlHub:{integrations:Object.fromEntries(Object.entries(statuses).map(([key,status])=>[key,{status}]))}
  }},configuration:{revision:1,outputs:{twitch:{kind:'unconfigured',name:''}}}};
- return renderSettings({data,server,online,native:role==='mobile',tab,device:{role,name:'Test'},
+ return renderSettings({data,server,online,native:nativeOverride??role==='mobile',tab,device:{role,name:'Test'},
    localEndpoint:'',deviceExecutor:false,installation:{devices:[]},macroConfigurationError:'',
    knownPairedServer:'',esc,input:()=>'',select:()=>'',check:()=>''});
 }
@@ -143,3 +143,39 @@ it.skipIf(process.env.SC3_SETTINGS_BROWSER_TEST!=='1')('real Edge 320 px shows u
   await page.close();
  }finally{await browser.close()}
 },25000);
+
+// A stale persisted 'stream' role on a native Android is never FIXE authority.
+it('fails closed for an unpaired native Android with a stale stream role, even when its local runtime responds',()=>{
+ const html=render({server:'',online:true,role:'stream',nativeOverride:true,
+  statuses:{discord:'CONNECTED',streamlabs:'CONNECTED',wizebot:'CONNECTED'}});
+ expect(html).toContain('data-host-integrations-hint');
+ expect(html).toContain('data-task="discord" disabled');
+ expect(html).toContain('data-task="wizebot-catalog" disabled');
+ expect(html).toContain('data-task="connection">Associer FIXE</button>');
+ for(const provider of ['discord','wizebot','streamlabs']) {
+  expect(html).toMatch(new RegExp('data-integration-status="'+provider+'"[^>]*>[^<]*(inconnu|non vérifiable)','i'));
+  expect(html).not.toMatch(new RegExp('data-integration-status="'+provider+'"[^>]*>[^<]*: connecté','i'));
+ }
+ expect(html).toContain('data-task="google-connect"');
+ expect(html).toContain('data-task="streamlabs"');
+});
+
+it.skipIf(process.env.SC3_SETTINGS_BROWSER_TEST!=='1')('real Edge 320 px refuses Android stale-master host integration controls without network effects',async()=>{
+ const html=render({server:'',online:true,role:'stream',nativeOverride:true,
+  statuses:{discord:'CONNECTED',streamlabs:'CONNECTED',wizebot:'CONNECTED'}});
+ const browser=await chromium.launch({channel:'msedge',headless:true});
+ try {
+  const page=await browser.newPage({viewport:{width:320,height:770},hasTouch:true});
+  const network:string[]=[],errors:string[]=[];
+  page.on('pageerror',e=>errors.push(e.message));
+  await page.route('**/*',route=>{network.push(route.request().url());return route.abort()});
+  await page.setContent('<meta name="viewport" content="width=device-width,initial-scale=1"><main>'+html+'</main>');
+  await page.addStyleTag({content:readFileSync('apps/mobile/control/control.css','utf8')});
+  expect(await page.locator('[data-task="discord"]').isDisabled()).toBe(true);
+  expect(await page.locator('[data-task="wizebot-catalog"]').isDisabled()).toBe(true);
+  expect(await page.locator('[data-task="connection"]').isEnabled()).toBe(true);
+  expect(await page.locator('[data-integration-status="discord"]').innerText()).toContain('inconnu');
+  expect(await page.evaluate(()=>document.documentElement.scrollWidth)).toBeLessThanOrEqual(320);
+  expect(network).toEqual([]);expect(errors).toEqual([]);
+ }finally{await browser.close()}
+},30000);
