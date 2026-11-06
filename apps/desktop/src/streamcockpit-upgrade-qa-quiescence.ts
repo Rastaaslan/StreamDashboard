@@ -1,6 +1,7 @@
 import type {UpgradeMigration} from '../../../packages/core/src/streamcockpit-upgrade.js';
 import type {HostDurableWriterQuiescence} from '../../server/src/streamcockpit-durable-writer-quiescence.js';
 import {checkpointQaProfile,migrateQaProfileCopy,restoreQaProfile} from './streamcockpit-upgrade-qa-checkpoint.js';
+import {withExclusiveQaUpgradeLease} from './streamcockpit-upgrade-qa-lease.js';
 
 /**
  * F10 LAB ONLY: one bounded, voluntary maintenance sequence on a synthetic
@@ -14,7 +15,7 @@ export async function runQuiescedQaUpgrade(
   workspace:string,toVersion:number,migrations:UpgradeMigration[],
   gate:HostDurableWriterQuiescence,options:{migrateLegacyMoments?:true}={},
 ){
-  return gate.withQuiesced(async()=>{
+  return withExclusiveQaUpgradeLease(workspace,()=>gate.withQuiesced(async()=>{
     gate.assertQuiesced();
     const checkpoint=await checkpointQaProfile(workspace);
     // No protected writer may re-enter between checkpoint and final recovery.
@@ -24,5 +25,5 @@ export async function runQuiescedQaUpgrade(
     const recovery=await restoreQaProfile(workspace);
     gate.assertQuiesced();
     return {checkpoint,migration,recovery};
-  });
+  }));
 }
