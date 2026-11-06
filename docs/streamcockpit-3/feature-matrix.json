@@ -1247,6 +1247,10 @@
         {
           "path": "docs/streamcockpit-3/F10_RUNTIME_PRODUCER_DRAIN_20261106.md",
           "kind": "2026-11-06 FIXE F10: actual DashboardServer stop closes automation/OBS replay/Streamlabs producer admission, awaits accepted action and persistence completion before closing executors, finishes cleanup and refuses clean shutdown on uncertain persistence. 15 targeted suites 141 PASS/0 FAIL/0 skipped including 14 new tests and two actual temporary HTTP servers with OBS disabled/providers simulated. Global TypeScript, browser types, security 6802 files and diff PASS. No installed runtime restart, production service-wide exclusion, installer activation or hardware qualification; G2 in_progress, G3-G5 open."
+        },
+        {
+          "path": "docs/streamcockpit-3/F10_UPGRADE_READBACK_20261106.md",
+          "kind": "2026-11-06 FIXE F10: independent read-only Windows image/profile SHA-256 inventory and two fresh identity attestations for pending install/rollback, attached to durable SQLite planner in synthetic Windows filesystem tests. 13 suites 162 PASS/0 FAIL/0 skipped, 6 new cases; types/browser/security 6804 files/diff PASS. No actual OS signer trust, production installer, user data, deployment or hardware qualification."
         }
       ],
       "verifiedTests": [
@@ -1264,12 +1268,13 @@
         "tests/migration-backup.test.ts",
         "tests/streamcockpit3-upgrade-journal.test.ts",
         "tests/streamcockpit3-producer-drain.test.ts",
-        "tests/streamcockpit3-producer-drain-server.test.ts"
+        "tests/streamcockpit3-producer-drain-server.test.ts",
+        "tests/streamcockpit3-upgrade-readback.test.ts"
       ],
       "hardwareEvidence": [],
       "blockers": [
         "Real Windows/Android trusted signing and staged bytes verification unavailable",
-        "2026-11-06: the existing Desktop planner has SQLite intent persistence and cooperative cross-process upgrade exclusion; normal DashboardServer shutdown now drains accepted automation, replay and Streamlabs producer writes. Comprehensive service-wide/multi-process quiescence, real installer adapters, version/data reconciliation and hardware migration/rollback remain unqualified; startUpdater still cannot install.",
+        "2026-11-06: the existing Desktop planner has SQLite intent persistence and cooperative cross-process upgrade exclusion; normal DashboardServer shutdown now drains accepted automation, replay and Streamlabs producer writes. Service-wide/multi-process quiescence, independently verified Windows signer trust, real installer adapters and separately pinned complete profile inventories remain unqualified; readback/rollback confirmed only on synthetic Windows folders. Hardware migration/rollback remain unqualified; startUpdater still cannot install.",
         "2026-11-06: embedded same-commit EXE/ASAR+APK verifier exists and passes on old debug QA artifacts, but production-signed artifacts from exact current HEAD, physical recovery, and operator gates remain unavailable; release:check still fails closed"
       ],
       "ownerJob": "streamcockpit/3.0-lot-p",
