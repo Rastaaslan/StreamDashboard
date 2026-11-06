@@ -107,6 +107,39 @@ it.skipIf(process.env.SC3_SETTINGS_BROWSER_TEST!=='1')('real Edge 320 px shows d
   expect(network).toEqual([]);expect(errors).toEqual([]);
  }finally{await browser.close()}
 },25000);
+it('stale FIXE observations cannot authorize host-only Discord/WizeBot settings even when transport says online',()=>{
+ for(const observedAt of [null,new Date(Date.now()-120_000).toISOString(),new Date(Date.now()+120_000).toISOString()]){
+  const html=render({server:'https://fixe.example:48136',online:true,role:'mobile',observedAt,
+   statuses:{discord:'CONNECTED',wizebot:'CONNECTED'}});
+  expect(html).toContain('data-host-integrations-hint');
+  expect(html).toMatch(/data-host-integrations-hint[^>]*>[^<]*périmé/i);
+  expect(html).toContain('data-task="discord" disabled');
+  expect(html).toContain('data-task="wizebot-catalog" disabled');
+  expect(html).toContain('data-task="google-connect"');
+  expect(html).toContain('data-task="streamlabs"');
+ }
+ const fresh=render({server:'https://fixe.example:48136',online:true,role:'mobile'});
+ expect(fresh).not.toContain('data-host-integrations-hint');
+ expect(fresh).not.toContain('data-task="discord" disabled');
+});
+it.skipIf(process.env.SC3_SETTINGS_BROWSER_TEST!=='1')('real Edge 320px does not expose privileged provider config from a stale FIXE snapshot',async()=>{
+ const browser=await chromium.launch({channel:'msedge',headless:true});
+ try{
+  const page=await browser.newPage({viewport:{width:320,height:760},hasTouch:true});
+  const requests:string[]=[];const errors:string[]=[];
+  page.on('pageerror',e=>errors.push(e.message));
+  await page.route('**/*',route=>{requests.push(route.request().url());return route.abort()});
+  await page.setContent('<meta name="viewport" content="width=device-width,initial-scale=1"><main>'+
+   render({online:true,observedAt:new Date(Date.now()-120_000).toISOString(),statuses:{discord:'CONNECTED',wizebot:'CONNECTED'}})+'</main>');
+  await page.addStyleTag({content:readFileSync('apps/mobile/control/control.css','utf8')});
+  expect(await page.locator('[data-task="discord"]').isDisabled()).toBe(true);
+  expect(await page.locator('[data-task="wizebot-catalog"]').isDisabled()).toBe(true);
+  expect(await page.locator('[data-host-integrations-hint]').innerText()).toMatch(/périmé/i);
+  expect(await page.locator('[data-task="google-connect"]').isEnabled()).toBe(true);
+  expect(requests).toEqual([]); expect(errors).toEqual([]);
+  expect(await page.evaluate(()=>document.documentElement.scrollWidth)).toBeLessThanOrEqual(320);
+ }finally{await browser.close()}
+},25000);
 it('never copies a provider status or an unknown string into the HTML',()=>{
  const html=render({statuses:{discord:'<img src=x onerror=alert(1)>',streamlabs:'CONNECTING',wizebot:'NOT_SUPPORTED'}});
  expect(html).not.toContain('<img src=x');
