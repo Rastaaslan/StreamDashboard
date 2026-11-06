@@ -536,7 +536,11 @@ const floatingMic=createFloatingMicBattery($('#floating-mic-battery'),{
  },
 });
 
-function settingsPage(){if(native&&!server&&tab==='obs')tab='overview';return renderSettings({data,native,server,tab,online,device,localEndpoint,deviceExecutor,macroConfigurationError,installation:installationUI.current,knownPairedServer:localStorage.getItem('sd2.server')||'',esc,input,select,check,compact});}
+function settingsPage(){
+ if(native&&!server&&tab==='obs')tab='overview';
+ const pendingOps=autonomy?.store.record.pending||[];
+ return renderSettings({data,native,server,tab,online,device,localEndpoint,deviceExecutor,macroConfigurationError,installation:installationUI.current,knownPairedServer:localStorage.getItem('sd2.server')||'',esc,input,select,check,compact,pendingSyncCount:pendingOps.length,pendingConflictCount:pendingOps.filter(op=>op.issue).length});
+}
 
 function render({passive=false}={}){
  if(passive&&(pointerHeld||dialog.open||editingForm($('#content')))){shell();if(!online){healthPage?.unavailable();mixerPage?.unavailable();momentsPage?.unavailable();contextDeck?.unavailable();}return;}
