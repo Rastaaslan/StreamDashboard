@@ -42,22 +42,23 @@ const validRoot=(root:string)=>{
 const validRelative=(name:string)=>typeof name==='string'&&name.length<=512&&
   !name.includes('\0')&&!name.includes('\\')&&!name.includes(':')&&
   name.split('/').every(part=>part.length>0&&part!=='.'&&part!=='..')&&!isAbsolute(name);
+function checkInventory(entries:UpgradeReadbackFile[]){
+  if(!Array.isArray(entries)||!entries.length||entries.length>MAX_FILES)
+    throw Error('UPGRADE_READBACK_INVENTORY_INVALID');
+  const seen=new Set<string>();let bytes=0;
+  for(const file of entries){
+    if(!file||!validRelative(file.path)||!validHash(file.sha256)||
+      !Number.isSafeInteger(file.bytes)||file.bytes<0||file.bytes>MAX_FILE_BYTES||
+      seen.has(file.path.toLowerCase()))throw Error('UPGRADE_READBACK_INVENTORY_INVALID');
+    seen.add(file.path.toLowerCase());bytes+=file.bytes;
+    if(bytes>MAX_TOTAL_BYTES)throw Error('UPGRADE_READBACK_INVENTORY_INVALID');
+  }
+}
 function checkExpectation(expected:UpgradeReadbackExpectation,version:string){
   if(!expected||expected.identity.version!==version||
     !/^[a-f0-9]{40}$/.test(expected.identity.revision)||!expected.identity.applicationId?.trim()||
     !expected.identity.signer?.trim())throw Error('UPGRADE_READBACK_IDENTITY_UNPINNED');
-  for(const entries of [expected.packageFiles,expected.profileFiles]){
-    if(!Array.isArray(entries)||!entries.length||entries.length>MAX_FILES)
-      throw Error('UPGRADE_READBACK_INVENTORY_INVALID');
-    const seen=new Set<string>();let bytes=0;
-    for(const file of entries){
-      if(!file||!validRelative(file.path)||!validHash(file.sha256)||
-        !Number.isSafeInteger(file.bytes)||file.bytes<0||file.bytes>MAX_FILE_BYTES||
-        seen.has(file.path.toLowerCase()))throw Error('UPGRADE_READBACK_INVENTORY_INVALID');
-      seen.add(file.path.toLowerCase());bytes+=file.bytes;
-      if(bytes>MAX_TOTAL_BYTES)throw Error('UPGRADE_READBACK_INVENTORY_INVALID');
-    }
-  }
+  checkInventory(expected.packageFiles);checkInventory(expected.profileFiles);
 }
 function matchesIdentity(actual:UpgradeReadbackIdentity|undefined,expected:UpgradeReadbackExpectation,now:number){
   if(!actual||!Number.isSafeInteger(now)||!Number.isFinite(actual.observedAt)||
@@ -103,6 +104,14 @@ function sameInventory(observed:UpgradeReadbackFile[],expected:UpgradeReadbackFi
     return item?.bytes===entry.bytes&&item.sha256===entry.sha256;
   });
 }
+/** Shared read-only file verification for detached copy and applied image.
+ * Equality alone does not authenticate a release or authorize any replacement. */
+export async function verifyUpgradeReadbackFiles(root:string,entries:UpgradeReadbackFile[]):Promise<boolean>{
+  const pinned=structuredClone(entries);
+  checkInventory(pinned);
+  try{return sameInventory(await inventory(validRoot(root)),pinned)}catch{return false}
+}
+
 /** Returns a durable-looking receipt ONLY after complete, exact on-disk image
  * + profile readback and two fresh independent identity checks. The caller's
  * UpgradePlanner must already hold its cross-process journal lease and possess
