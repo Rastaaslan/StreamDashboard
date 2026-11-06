@@ -238,6 +238,10 @@
         {
           "path": "apps/mobile/control/twitch-chat.css",
           "kind": "SC3-FLOW-ONESHOT-001 : relais FIXE Android par défaut, compte Android explicite, lifecycle et modération tactile ; logiciels seulement."
+        },
+        {
+          "path": "docs/streamcockpit-3/F02_AUTOMOD_OBSERVATION_TTL_20261106.md",
+          "kind": "2026-11-06 FIXE F02: AutoMod observed hold events expire from private memory after 15 minutes or clock rollback, never presented as Twitch queue truth; RED 6 PASS/1 FAIL, GREEN 12 PASS/0 FAIL/0 skipped in 3 suites incl. 1 real Edge 320px; TypeScript/browser/security (6775 files)/diff PASS. Synthetic provider only, no hardware or OAuth reception; F02 partial/G2 in_progress."
         }
       ],
       "verifiedTests": [
@@ -247,7 +251,10 @@
         "tests/streamcockpit3-twitch-mobile.test.ts",
         "tests/streamcockpit3-moderation-http.test.ts",
         "tests/streamcockpit3-moderation-browser.test.ts",
-        "tests/streamcockpit3-flow-chat-browser.test.ts"
+        "tests/streamcockpit3-flow-chat-browser.test.ts",
+        "tests/streamcockpit3-automod-observation.test.ts",
+        "tests/streamcockpit3-automod-observation-http.test.ts",
+        "tests/streamcockpit3-automod-observation-browser.test.ts"
       ],
       "hardwareEvidence": [],
       "blockers": [

@@ -72,4 +72,19 @@ describe('F02 EventSub AutoMod observations — never an authoritative full Twit
     v.push({...v[0],id:'fake'});
     expect(q.snapshot('42',true).messages).toMatchObject([{text:'Please review this message'}]);
   });
+  it('expires old observations without implying Twitch has an empty queue',()=>{
+    let clock=1000;
+    const q=new ObservedAutoModQueue(()=>clock);q.connection('CONNECTED','42');
+    expect(q.receive(parseAutomodNotification(hold())!)).toBe(true);
+    expect(q.snapshot('42',true).messages).toHaveLength(1);
+    clock+=15*60*1000;
+    expect(q.snapshot('42',true)).toMatchObject({status:'partial-observation',messages:[]});
+    clock+=1000;
+    expect(q.snapshot('42',true).messages).toHaveLength(0);
+    // A new witnessed hold is displayable, never a claim of queue completeness.
+    expect(q.receive(parseAutomodNotification(hold())!)).toBe(true);
+    expect(q.snapshot('42',true).messages).toHaveLength(1);
+    clock-=60*60*1000;
+    expect(q.snapshot('42',true)).toMatchObject({status:'partial-observation',messages:[]});
+  });
 });

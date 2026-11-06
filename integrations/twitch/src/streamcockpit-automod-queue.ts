@@ -8,6 +8,9 @@ const object = (v: unknown): RecordValue =>
 const numericId = (v: unknown): v is string => typeof v === 'string' && /^\d{1,30}$/.test(v);
 const messageId = (v: unknown): v is string =>
   typeof v === 'string' && /^[A-Za-z0-9_-]{1,200}$/.test(v);
+// An EventSub hold is only a witnessed event, not proof the message is still held.
+// Bound its display lifetime when an approval/denial update is missed.
+const OBSERVATION_MAX_AGE_MS = 15 * 60_000;
 
 export interface HeldAutoModMessage {
   id: string;
@@ -54,7 +57,7 @@ export function parseAutomodNotification(value: unknown): AutomodObservation | n
 
 /** Private, short-lived and session-bound cache. Never infer an empty Twitch queue. */
 export class ObservedAutoModQueue {
-  private observed = new Map<string,HeldAutoModMessage>();
+  private observed = new Map<string,{message:HeldAutoModMessage;receivedAt:number}>();
   private completed = new Map<string,number>();
   private broadcasterId = '';
   private connected = false;
@@ -91,7 +94,7 @@ export class ObservedAutoModQueue {
     } else {
       if (this.completed.has(notice.message.id)) return false;
       this.observed.delete(notice.message.id);
-      this.observed.set(notice.message.id,{...notice.message});
+      this.observed.set(notice.message.id,{message:{...notice.message},receivedAt:now});
       while(this.observed.size>50) this.observed.delete(this.observed.keys().next().value!);
     }
     this.observedAt = now;
@@ -99,13 +102,23 @@ export class ObservedAutoModQueue {
   }
   snapshot(broadcasterId:string,allowed:boolean) {
     const available=allowed && this.connected && broadcasterId===this.broadcasterId;
+    // Manual read prunes only in-memory stale observations; this never contacts
+    // Twitch, changes a moderation decision, or claims an empty remote queue.
+    if(available){
+      const now=this.now();
+      for(const [id,entry] of this.observed){
+        const age=now-entry.receivedAt;
+        if(!Number.isFinite(age)||age<0||age>=OBSERVATION_MAX_AGE_MS)
+          this.observed.delete(id);
+      }
+    }
     return {
       schemaVersion:1 as const,
       kind:'streamcockpit-automod-observed' as const,
       status:available?'partial-observation' as const:'unavailable' as const,
       observedAt:available?this.observedAt:null,
       // Deliberately never expose a "complete/empty on Twitch" claim.
-      messages:available?[...this.observed.values()].map(v=>({...v})):[],
+      messages:available?[...this.observed.values()].map(v=>({...v.message})):[],
     };
   }
 }
