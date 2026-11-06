@@ -69,7 +69,8 @@ function preserveDurableJournals(before:UpgradeReadbackFile[],after:UpgradeReadb
 async function exact(folder:string,files:UpgradeReadbackFile[]){
   if(!await verifyUpgradeReadbackFiles(folder,files))throw failure('INVENTORY_CHANGED');
 }
-async function detachedCopy(source:string,destination:string,files:UpgradeReadbackFile[]){
+/** Byte-exact copy into a new tree; caller owns exclusion and authenticated inventories. */
+export async function copyVerifiedUpgradeTree(source:string,destination:string,files:UpgradeReadbackFile[]){
   await exact(source,files);
   await directory(dirname(destination));await absent(destination);
   await mkdir(destination,{mode:0o700});
@@ -149,7 +150,7 @@ export function createWindowsDirectoryUpgradePlanner(input:DirectoryUpgradeOptio
     // Original immutable backups must still exist for either direction.
     await exact(roots.backupPackage,rollback.packageFiles);await exact(roots.backupProfile,rollback.profileFiles);
     for(const p of plans){await absent(p.candidate);await absent(p.previous)}
-    for(let i=0;i<plans.length;i++)await detachedCopy(sources[i]!,plans[i]!.candidate,entries[i]!);
+    for(let i=0;i<plans.length;i++)await copyVerifiedUpgradeTree(sources[i]!,plans[i]!.candidate,entries[i]!);
     await requireStopped();
     await exact(roots.packageRoot,current.packageFiles);await exact(roots.profileRoot,current.profileFiles);
     for(let i=0;i<plans.length;i++){

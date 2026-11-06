@@ -1273,6 +1273,10 @@
         {
           "path": "docs/streamcockpit-3/F10_APPLICATION_LIFETIME_EXCLUSION_20261106.md",
           "kind": "2026-11-06 FIXE F10: real Electron main source acquires the existing upgrade mutex before profile migration, logs, peers, macros or windows, borrows a private in-process capability for its runtime, drains accepted main IPC/boot/macro restoration and retains exclusion until OS process exit. 22 suites 251 PASS/0 FAIL/0 skipped incl. 13 new main/capability cases, real temporary SQLite and existing Windows child-process regressions; Electron/OBS/providers simulated. Global types/browser types/security 6816 files/diff PASS. No installed runtime, native Squirrel/Android executor, production signatures or G3-G5 qualification."
+        },
+        {
+          "path": "docs/streamcockpit-3/F10_AUTHENTICATED_DIRECTORY_PREPARATION_20261106.md",
+          "kind": "2026-11-06 FIXE F10: concrete publisher-authenticated directory staging, real immutable app/profile backups and byte-preserving same-schema preparation composed with the existing SQLite planner/install/readback/rollback. Ed25519 verifies full manifest/image against independently pinned public-key policy; no injected successful preparation receipts. 16 suites 238 PASS/0 FAIL/0 skipped incl. 27 new cases; real temporary Windows files/SQLite and ephemeral in-memory test-only cryptographic keys. Types/browser types/security 6818 files/diff PASS. Native installed identity/live guard simulated; no production keys, Authenticode certification, updater activation, Squirrel/Android deployment or G3-G5 qualification."
         }
       ],
       "verifiedTests": [
@@ -1296,12 +1300,13 @@
         "tests/streamcockpit3-upgrade-directory.test.ts",
         "tests/streamcockpit3-runtime-ownership.test.ts",
         "tests/streamcockpit3-runtime-ownership-lifecycle.test.ts",
-        "tests/streamcockpit3-application-ownership.test.ts"
+        "tests/streamcockpit3-application-ownership.test.ts",
+        "tests/streamcockpit3-upgrade-signed-preparation.test.ts"
       ],
       "hardwareEvidence": [],
       "blockers": [
-        "Real Windows/Android trusted signing and staged bytes verification unavailable",
-        "2026-11-06: upgrade journal/exclusion, protected host journals, producer drain and explicit-directory replacement/readback are source-integrated. Windows main now owns the SAME mutex before application profile/log/macro operations through OS exit; its runtime borrows an authenticated in-process capability. Direct Node/legacy/external processes and native Chromium internals are not qualified. External maintenance executor, authenticated release preparation, native Squirrel/Android deployment, journal-format migration and hardware recovery remain unqualified; startUpdater stays blocked.",
+        "Production Windows/Android native signatures and independently provisioned release trust remain unqualified.",
+        "2026-11-06: upgrade journal/exclusion, protected host journals, full Desktop main ownership, directory replacement/readback and concrete publisher-authenticated stage/backup/same-schema preparation are source-integrated. The new preparation uses real crypto/copies with test-only keys in qualification, not production native signatures. External maintenance executor, independently provisioned production trust, Authenticode/native Squirrel/Android deployment, schema migrations, legacy/noncooperative process coverage and hardware recovery remain unqualified; startUpdater stays blocked.",
         "2026-11-06: embedded same-commit EXE/ASAR+APK verifier exists and passes on old debug QA artifacts, but production-signed artifacts from exact current HEAD, physical recovery, and operator gates remain unavailable; release:check still fails closed"
       ],
       "ownerJob": "streamcockpit/3.0-lot-p",
