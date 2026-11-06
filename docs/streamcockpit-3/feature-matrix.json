@@ -77,6 +77,10 @@
         {
           "path": "docs/streamcockpit-3/SETTINGS_RUNTIME_ROLE_GUARD_20261105.md",
           "kind": "2026-11-05 Settings ownership mapping and fail-closed UI evidence for conflicting saved topology; F00 partial/G2 in_progress, G3-G5 open"
+        },
+        {
+          "path": "docs/streamcockpit-3/SETTINGS_OBS_PASSWORD_CLEAR_20261106.md",
+          "kind": "2026-11-06 FIXE Settings: explicit confirmed OBS password clear only on online local master with saved secret; blank retains and conflict rejected, 20 targeted PASS/0 FAIL/1 skipped including 3 real Edge browser tests, TS/browser/security 6765 files PASS. No actual user secret mutation or G3 evidence; F00 partial, G2 in_progress."
         }
       ],
       "verifiedTests": [
