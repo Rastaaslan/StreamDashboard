@@ -58,6 +58,8 @@ export function parseAutomodNotification(value: unknown): AutomodObservation | n
 /** Private, short-lived and session-bound cache. Never infer an empty Twitch queue. */
 export class ObservedAutoModQueue {
   private observed = new Map<string,{message:HeldAutoModMessage;receivedAt:number}>();
+  // Private observation only; no chat contents, never a provider-wide viewer history.
+  private viewerEvents = new Map<string,{userId:string;status:'held'|'approved'|'denied'|'expired';observedAt:number}>();
   private completed = new Map<string,number>();
   private broadcasterId = '';
   private connected = false;
@@ -68,6 +70,7 @@ export class ObservedAutoModQueue {
     if (status !== 'CONNECTED' || !numericId(broadcasterId)) {
       this.connected = false;
       this.observed.clear();
+      this.viewerEvents.clear();
       this.completed.clear();
       this.broadcasterId = '';
       this.observedAt = null;
@@ -75,6 +78,7 @@ export class ObservedAutoModQueue {
     }
     if (this.broadcasterId !== broadcasterId) {
       this.observed.clear();
+      this.viewerEvents.clear();
       this.completed.clear();
       this.observedAt = null;
     }
@@ -86,32 +90,54 @@ export class ObservedAutoModQueue {
       (notice.kind==='hold' ? notice.message.broadcasterId : notice.broadcasterId) !== this.broadcasterId) return false;
     const now=this.now();
     if (!Number.isFinite(now)) return false;
-    for (const [id,completedAt] of this.completed) if (now-completedAt>15*60_000) this.completed.delete(id);
+    for (const [id,completedAt] of this.completed) if (now-completedAt>=OBSERVATION_MAX_AGE_MS||now<completedAt) this.completed.delete(id);
+    this.prune(now);
     if (notice.kind === 'update') {
       this.observed.delete(notice.id);
+      const prior=this.viewerEvents.get(notice.id);
+      if(prior){prior.status=notice.status as 'approved'|'denied'|'expired';prior.observedAt=now;}
       this.completed.set(notice.id,now);
       if (this.completed.size>200) this.completed.delete(this.completed.keys().next().value!);
     } else {
       if (this.completed.has(notice.message.id)) return false;
       this.observed.delete(notice.message.id);
       this.observed.set(notice.message.id,{message:{...notice.message},receivedAt:now});
+      this.viewerEvents.delete(notice.message.id);
+      this.viewerEvents.set(notice.message.id,{userId:notice.message.userId,status:'held',observedAt:now});
+      while(this.viewerEvents.size>100)this.viewerEvents.delete(this.viewerEvents.keys().next().value!);
       while(this.observed.size>50) this.observed.delete(this.observed.keys().next().value!);
     }
     this.observedAt = now;
     return true;
   }
+  private prune(now:number){
+    for(const [id,entry] of this.observed){
+      const age=now-entry.receivedAt;
+      if(!Number.isFinite(age)||age<0||age>=OBSERVATION_MAX_AGE_MS)this.observed.delete(id);
+    }
+    for(const [id,entry] of this.viewerEvents){
+      const age=now-entry.observedAt;
+      if(!Number.isFinite(age)||age<0||age>=OBSERVATION_MAX_AGE_MS)this.viewerEvents.delete(id);
+    }
+  }
+  /** Only witnessed, short-lived AutoMod outcomes for one selected viewer, never Twitch account history. */
+  viewerHistory(broadcasterId:string,userId:string,allowed:boolean){
+    const available=allowed&&this.connected&&broadcasterId===this.broadcasterId&&numericId(userId);
+    if(available)this.prune(this.now());
+    return {
+      schemaVersion:1 as const,kind:'streamcockpit-automod-viewer-observed' as const,
+      status:available?'partial-observation' as const:'unavailable' as const,
+      observedAt:available?this.observedAt:null,
+      entries:available?[...this.viewerEvents.values()].filter(v=>v.userId===userId)
+        .sort((a,b)=>b.observedAt-a.observedAt).slice(0,20)
+        .map(v=>({status:v.status,observedAt:v.observedAt})):[],
+    };
+  }
   snapshot(broadcasterId:string,allowed:boolean) {
     const available=allowed && this.connected && broadcasterId===this.broadcasterId;
     // Manual read prunes only in-memory stale observations; this never contacts
     // Twitch, changes a moderation decision, or claims an empty remote queue.
-    if(available){
-      const now=this.now();
-      for(const [id,entry] of this.observed){
-        const age=now-entry.receivedAt;
-        if(!Number.isFinite(age)||age<0||age>=OBSERVATION_MAX_AGE_MS)
-          this.observed.delete(id);
-      }
-    }
+    if(available)this.prune(this.now());
     return {
       schemaVersion:1 as const,
       kind:'streamcockpit-automod-observed' as const,

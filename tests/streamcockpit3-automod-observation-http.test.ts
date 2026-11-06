@@ -9,7 +9,7 @@ import {ObservedAutoModQueue,parseAutomodNotification} from '../integrations/twi
 import {isRemoteApiAllowed,requiredDevicePermissions} from '../apps/server/src/remote-api-policy.js';
 
 async function fixture(run:(data:{
-  call:(method?:string,token?:string)=>Promise<{status:number;body:any;headers:any}>;
+  call:(method?:string,token?:string,path?:string)=>Promise<{status:number;body:any;headers:any}>;
   queue:ObservedAutoModQueue;auth:RemoteAuth;paired:{deviceId:string;credential:string};
   setHost:(value:string)=>void;onRead:(callback:()=>void)=>void;
 })=>Promise<void>) {
@@ -24,11 +24,12 @@ async function fixture(run:(data:{
     actor:req=>twitchPollActor(req,auth,false,true),
     host:()=>{reads++;onRead();return host;},
     held:()=>queue.snapshot('42',true),
+    viewerHistory:userId=>queue.viewerHistory('42',userId,true),
   }));
   const server=app.listen(0,'127.0.0.1');
   await new Promise<void>(resolve=>server.once('listening',resolve));
-  const call=(method='GET',token=paired.credential)=>new Promise<{status:number;body:any;headers:any}>((resolve,reject)=>{
-    const req=httpRequest('http://127.0.0.1:'+(server.address()as AddressInfo).port+'/v1/twitch/advanced/moderation/held',{
+  const call=(method='GET',token=paired.credential,path='held')=>new Promise<{status:number;body:any;headers:any}>((resolve,reject)=>{
+    const req=httpRequest('http://127.0.0.1:'+(server.address()as AddressInfo).port+'/v1/twitch/advanced/moderation/'+path,{
       method,headers:{Authorization:'Device '+token}},res=>{
       const chunks:Buffer[]=[];res.on('data',c=>chunks.push(c));res.on('error',reject);
       res.on('end',()=>{try{resolve({status:res.statusCode||0,body:JSON.parse(Buffer.concat(chunks).toString()),headers:res.headers})}catch(e){reject(e)}});
@@ -73,5 +74,35 @@ describe('F02 read-only paired observed AutoMod, never Twitch queue completeness
   it('returns unavailable after disconnect without claiming an empty Twitch queue',async()=>fixture(async f=>{
     f.queue.connection('DEGRADED','42');
     expect((await f.call()).body).toMatchObject({status:'unavailable',messages:[]});
+  }));
+  it('selected viewer has strictly scoped read-only AutoMod observations, with pairing and host fences',async()=>fixture(async f=>{
+    const hold={metadata:{message_type:'notification',subscription_type:'automod.message.hold',subscription_version:'2'},
+      payload:{event:{broadcaster_user_id:'42',message_id:'held1',user_id:'12',user_name:'Viewer',
+        reason:'automod',held_at:'2026-11-03T15:00:00Z',message:{text:'PRIVATE_MESSAGE'}}}};
+    f.queue.receive(parseAutomodNotification(hold)!);
+    f.queue.receive(parseAutomodNotification({
+      metadata:{message_type:'notification',subscription_type:'automod.message.update',subscription_version:'2'},
+      payload:{event:{broadcaster_user_id:'42',message_id:'held1',status:'approved'}},
+    })!);
+    const path='/v1/twitch/advanced/moderation/viewer/12';
+    expect(isRemoteApiAllowed('GET',path)).toBe(true);
+    expect(isRemoteApiAllowed('POST',path)).toBe(false);
+    expect(requiredDevicePermissions('GET',path,{})).toEqual(['chat','cloud']);
+    const r=await f.call('GET',f.paired.credential,'viewer/12');
+    expect(r.status).toBe(200);expect(r.headers['cache-control']).toBe('private, no-store');
+    expect(r.body).toMatchObject({kind:'streamcockpit-automod-viewer-observed',
+      status:'partial-observation',entries:[{status:'approved',observedAt:10000}]});
+    expect(JSON.stringify(r.body)).not.toContain('PRIVATE_MESSAGE');
+    expect((await f.call('GET',f.paired.credential,'viewer/987')).body.entries).toHaveLength(0);
+    expect((await f.call('GET',f.paired.credential,'viewer/invalid')).status).toBe(400);
+    expect((await f.call('POST',f.paired.credential,'viewer/12')).status).toBe(405);
+    expect((await f.call('GET','wrong','viewer/12')).status).toBe(401);
+    let reads=0;f.onRead(()=>{if(++reads===2)f.setHost('NEW_FIXE')});
+    expect((await f.call('GET',f.paired.credential,'viewer/12')).status).toBe(409);
+    f.onRead(()=>{});f.setHost('FIXE');
+    f.auth.setPermissions(f.paired.deviceId,['chat']);
+    expect((await f.call('GET',f.paired.credential,'viewer/12')).status).toBe(403);
+    f.queue.connection('DISCONNECTED','42');f.queue.connection('CONNECTED','42');
+    expect(f.queue.viewerHistory('42','12',true).entries).toHaveLength(0);
   }));
 });

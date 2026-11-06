@@ -12,6 +12,9 @@ export function createTwitchModerationRouter(options:{
   /** Host-only EventSub observations, not a complete Twitch queue. */
   held?():{schemaVersion:1;kind:'streamcockpit-automod-observed';status:'partial-observation'|'unavailable';
     observedAt:number|null;messages:unknown[]};
+  viewerHistory?(userId:string):{schemaVersion:1;kind:'streamcockpit-automod-viewer-observed';
+    status:'partial-observation'|'unavailable';observedAt:number|null;
+    entries:{status:'held'|'approved'|'denied'|'expired';observedAt:number}[]};
 }){
   const now=options.now??Date.now,pending=new Map<string,{actor:string;host:string;until:number;target:ModerationTarget}>();
   let busy=false;
@@ -37,6 +40,26 @@ export function createTwitchModerationRouter(options:{
     }catch(error){
       const code=error instanceof AdvancedTwitchError?error.code:'unavailable';
       res.status(code==='unauthorized'?401:code==='forbidden'?403:code==='precondition'?409:503).json({
+        error:{code:'MODERATION_'+code.toUpperCase().replaceAll('-','_'),retryable:false},
+      });
+    }
+  });
+  // Selected viewer only: witnessed AutoMod holds/updates since this FIXE EventSub session.
+  // No provider query and no complete viewer-history claim.
+  router.all('/viewer/:userId',async(req,res)=>{
+    if(req.method!=='GET'){res.set('Allow','GET').status(405).json({error:{code:'METHOD_NOT_ALLOWED'}});return;}
+    try{
+      const userId=req.params.userId;
+      if(typeof userId!=='string'||!/^\d{1,30}$/.test(userId))throw new AdvancedTwitchError('invalid');
+      const context=await check(req);
+      const value=options.viewerHistory?.(userId)??{schemaVersion:1 as const,
+        kind:'streamcockpit-automod-viewer-observed' as const,status:'unavailable' as const,
+        observedAt:null,entries:[]};
+      await check(req,context);
+      res.json(value);
+    }catch(error){
+      const code=error instanceof AdvancedTwitchError?error.code:'unavailable';
+      res.status(code==='invalid'?400:code==='unauthorized'?401:code==='forbidden'?403:code==='precondition'?409:503).json({
         error:{code:'MODERATION_'+code.toUpperCase().replaceAll('-','_'),retryable:false},
       });
     }

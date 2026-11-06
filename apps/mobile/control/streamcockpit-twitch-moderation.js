@@ -24,9 +24,11 @@ export function mountTwitchModeration(root,{request}={}){
   const heldRefresh=doc.createElement('button');heldRefresh.type='button';heldRefresh.textContent='Lire les retenues observées';
   const heldStatus=doc.createElement('p');heldStatus.setAttribute('aria-live','polite');
   const heldList=doc.createElement('ul');heldList.setAttribute('aria-label','Retenues AutoMod observées');
-  section.append(title,note,form,review,status,reconcile,heldTitle,heldRefresh,heldStatus,heldList);root.append(section);
+  const viewerStatus=doc.createElement('p');viewerStatus.setAttribute('aria-live','polite');
+  const viewerList=doc.createElement('ul');viewerList.setAttribute('aria-label','Activité AutoMod observée du viewer');
+  section.append(title,note,form,review,status,reconcile,heldTitle,heldRefresh,heldStatus,heldList,viewerStatus,viewerList);root.append(section);
   let disposed=false,online=false,declaredOnline=false,sourceKey='',accountKey='',revision=0,flight=false,sending=false,uncertain=false,pending;
-  let heldFlight=false,heldRevision=0;
+  let heldFlight=false,heldRevision=0,viewerRevision=0,viewerFlight=false;
   const connected=()=>!disposed&&root.isConnected&&online&&sourceKey&&view?.navigator?.onLine!==false&&doc.visibilityState!=='hidden';
   const cancel=()=>{pending=undefined;review.hidden=true;agree.checked=false};
   const draw=()=>{
@@ -35,7 +37,7 @@ export function mountTwitchModeration(root,{request}={}){
     confirm.disabled=!enabled||!pending||!agree.checked||Date.now()>=pending.expiresAt;reconcile.hidden=!uncertain;
     heldRefresh.disabled=!connected()||heldFlight||typeof request!=='function';
   };
-  const invalidate=message=>{revision++;heldRevision++;heldList.replaceChildren();heldStatus.textContent='Observations effacées : relecture manuelle nécessaire.';if(sending)uncertain=true;flight=false;cancel();status.textContent=uncertain?'Issue incertaine. Vérifiez le réglage dans Twitch ; aucun renvoi automatique.':message;draw()};
+  const invalidate=message=>{revision++;heldRevision++;viewerRevision++;viewerFlight=false;heldList.replaceChildren();viewerList.replaceChildren();viewerStatus.textContent='';heldStatus.textContent='Observations effacées : relecture manuelle nécessaire.';if(sending)uncertain=true;flight=false;cancel();status.textContent=uncertain?'Issue incertaine. Vérifiez le réglage dans Twitch ; aucun renvoi automatique.':message;draw()};
   const change=()=>{
     const [kind,value]=select.value.split(':');
     return {kind,value:kind==='shield'?value==='true':Number(value)};
@@ -74,10 +76,35 @@ export function mountTwitchModeration(root,{request}={}){
   });
   // Voluntary read-only refresh; unlike the settings button it never makes
   // a Twitch write. Data only covers messages witnessed by FIXE EventSub.
+  const showViewerHistory=async userId=>{
+    if(!connected()||viewerFlight||typeof request!=='function'||!/^[0-9]{1,30}$/.test(userId))return;
+    const target=sourceKey,key=++viewerRevision;viewerFlight=true;
+    viewerList.replaceChildren();viewerStatus.textContent='Lecture des seules décisions AutoMod observées par FIXE…';
+    try{
+      const data=await request('/api/v1/twitch/advanced/moderation/viewer/'+userId,undefined,'GET',target);
+      if(key!==viewerRevision||target!==sourceKey||!connected())return;
+      if(data?.kind!=='streamcockpit-automod-viewer-observed'||data.schemaVersion!==1||
+        !['partial-observation','unavailable'].includes(data.status)||
+        !Array.isArray(data.entries)||data.entries.length>20)throw Error('INVALID_VIEWER_HISTORY');
+      const labels={held:'Retenu',approved:'Approuvé',denied:'Refusé',expired:'Expiré'};
+      for(const entry of data.entries){
+        if(!Object.hasOwn(labels,entry?.status)||!Number.isFinite(entry.observedAt)||
+          entry.observedAt<0)throw Error('INVALID_VIEWER_EVENT');
+        const li=doc.createElement('li');
+        li.textContent=labels[entry.status]+' — observation '+new Date(entry.observedAt).toLocaleString('fr-FR');
+        viewerList.append(li);
+      }
+      viewerStatus.textContent=data.status==='unavailable'
+        ?'Observations indisponibles. Consulter Twitch pour l’historique réel.'
+        :'Activité AutoMod partielle : '+data.entries.length+' décision(s) vues sur FIXE (15 dernières minutes maximum). Ce n’est pas l’historique complet du viewer.';
+    }catch{
+      if(key===viewerRevision&&connected()){viewerList.replaceChildren();viewerStatus.textContent='Historique local indisponible. Aucun accès au compte ou à la file Twitch prétendu.';}
+    }finally{if(key===viewerRevision)viewerFlight=false;}
+  };
   heldRefresh.addEventListener('click',async()=>{
     if(!connected()||heldFlight||typeof request!=='function')return;
     const target=sourceKey,key=++heldRevision;
-    heldFlight=true;heldList.replaceChildren();
+    heldFlight=true;viewerRevision++;viewerFlight=false;heldList.replaceChildren();viewerList.replaceChildren();viewerStatus.textContent='';
     heldStatus.textContent='Lecture des retenues observées par FIXE…';draw();
     try{
       const data=await request('/api/v1/twitch/advanced/moderation/held',undefined,'GET',target);
@@ -90,6 +117,12 @@ export function mountTwitchModeration(root,{request}={}){
           typeof item?.userName!=='string'||typeof item?.heldAt!=='string')throw Error('INVALID_ITEM');
         const li=doc.createElement('li');
         li.textContent=item.userName.slice(0,100)+' : '+item.text.slice(0,500);
+        if(typeof item.userId==='string'&&/^[0-9]{1,30}$/.test(item.userId)){
+          const historyButton=doc.createElement('button');
+          historyButton.type='button';historyButton.textContent='Voir l’activité AutoMod observée';
+          historyButton.addEventListener('click',()=>{void showViewerHistory(item.userId)});
+          li.append(historyButton);
+        }
         heldList.append(li);
       }
       heldStatus.textContent=data.status==='unavailable'

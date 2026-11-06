@@ -87,4 +87,29 @@ describe('F02 EventSub AutoMod observations — never an authoritative full Twit
     clock-=60*60*1000;
     expect(q.snapshot('42',true)).toMatchObject({status:'partial-observation',messages:[]});
   });
+  it('records ONLY observed viewer AutoMod outcomes, never text or global Twitch history',()=>{
+    let clock=1000;
+    const q=new ObservedAutoModQueue(()=>clock);q.connection('CONNECTED','42');
+    q.receive(parseAutomodNotification(hold())!);
+    expect(q.viewerHistory('42','123',true)).toMatchObject({
+      kind:'streamcockpit-automod-viewer-observed',status:'partial-observation',
+      entries:[{status:'held',observedAt:1000}],
+    });
+    expect(JSON.stringify(q.viewerHistory('42','123',true))).not.toContain('Please review');
+    q.receive(parseAutomodNotification(update('denied'))!);
+    expect(q.snapshot('42',true).messages).toHaveLength(0);
+    expect(q.viewerHistory('42','123',true).entries).toMatchObject([{status:'denied'}]);
+    expect(q.viewerHistory('42','987',true).entries).toHaveLength(0);
+    expect(q.viewerHistory('43','123',true)).toMatchObject({status:'unavailable',entries:[]});
+    expect(q.viewerHistory('42','invalid',true)).toMatchObject({status:'unavailable',entries:[]});
+    expect(q.viewerHistory('42','123',false)).toMatchObject({status:'unavailable',entries:[]});
+    clock+=15*60*1000;
+    expect(q.viewerHistory('42','123',true).entries).toHaveLength(0);
+    q.receive(parseAutomodNotification(hold())!);
+    expect(q.viewerHistory('42','123',true).entries).toHaveLength(1);
+    clock-=3600_000;
+    expect(q.viewerHistory('42','123',true).entries).toHaveLength(0);
+    q.connection('DISCONNECTED','42');q.connection('CONNECTED','42');
+    expect(q.viewerHistory('42','123',true).entries).toHaveLength(0);
+  });
 });

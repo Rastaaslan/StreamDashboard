@@ -2048,6 +2048,8 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
     actor: pairedF08Actor,
     held:()=>observedAutoMod.snapshot(twitch.publicIdentity().broadcasterId,
       twitch.state.connected&&twitch.automodEventSubRequested()),
+    viewerHistory:(userId)=>observedAutoMod.viewerHistory(twitch.publicIdentity().broadcasterId,
+      userId,twitch.state.connected&&twitch.automodEventSubRequested()),
     host: async () => {
       if (options.obsEnabled === false || options.timerAuthority === false) return undefined;
       const device = await options.deviceDescriptor?.().catch(() => undefined);
