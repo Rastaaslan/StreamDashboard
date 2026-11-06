@@ -1269,6 +1269,10 @@
         {
           "path": "docs/streamcockpit-3/F10_RUNTIME_UPGRADE_EXCLUSION_20261106.md",
           "kind": "2026-11-06 FIXE F10: actual Windows startDesktopRuntime now holds the existing upgrade-journal cross-process mutex before acquiring configuration/providers/OBS and through server/audio shutdown. Pending intents and mismatched target/rollback versions prevent startup without replay. 18 suites 194 PASS/0 FAIL/0 skipped incl. 18 new tests, real Windows child processes and isolated HTTP servers with OBS disabled, plus Electron lifecycle mocks. Types/browser types/security 6812 files/diff PASS. Cooperative runtime exclusion only: early main/InstallationStore/logging, legacy or external processes, signed native Squirrel/Android maintenance and G3-G5 remain unqualified."
+        },
+        {
+          "path": "docs/streamcockpit-3/F10_APPLICATION_LIFETIME_EXCLUSION_20261106.md",
+          "kind": "2026-11-06 FIXE F10: real Electron main source acquires the existing upgrade mutex before profile migration, logs, peers, macros or windows, borrows a private in-process capability for its runtime, drains accepted main IPC/boot/macro restoration and retains exclusion until OS process exit. 22 suites 251 PASS/0 FAIL/0 skipped incl. 13 new main/capability cases, real temporary SQLite and existing Windows child-process regressions; Electron/OBS/providers simulated. Global types/browser types/security 6816 files/diff PASS. No installed runtime, native Squirrel/Android executor, production signatures or G3-G5 qualification."
         }
       ],
       "verifiedTests": [
@@ -1291,12 +1295,13 @@
         "tests/streamcockpit3-host-journals-runtime.test.ts",
         "tests/streamcockpit3-upgrade-directory.test.ts",
         "tests/streamcockpit3-runtime-ownership.test.ts",
-        "tests/streamcockpit3-runtime-ownership-lifecycle.test.ts"
+        "tests/streamcockpit3-runtime-ownership-lifecycle.test.ts",
+        "tests/streamcockpit3-application-ownership.test.ts"
       ],
       "hardwareEvidence": [],
       "blockers": [
         "Real Windows/Android trusted signing and staged bytes verification unavailable",
-        "2026-11-06: SQLite upgrade intent/exclusion, actual FIXE F02/F08/F09 fence, producer drain, explicit-directory replacement/readback and Windows Desktop runtime ownership are source-integrated. The runtime now holds the SAME updater mutex through full server/audio stop; early Electron main operations, direct Node entrypoints and unregistered/legacy processes are not covered. External maintenance runner, trusted release preparation, native Squirrel/Android deployment, journal-format migration and hardware recovery remain unqualified; startUpdater stays blocked.",
+        "2026-11-06: upgrade journal/exclusion, protected host journals, producer drain and explicit-directory replacement/readback are source-integrated. Windows main now owns the SAME mutex before application profile/log/macro operations through OS exit; its runtime borrows an authenticated in-process capability. Direct Node/legacy/external processes and native Chromium internals are not qualified. External maintenance executor, authenticated release preparation, native Squirrel/Android deployment, journal-format migration and hardware recovery remain unqualified; startUpdater stays blocked.",
         "2026-11-06: embedded same-commit EXE/ASAR+APK verifier exists and passes on old debug QA artifacts, but production-signed artifacts from exact current HEAD, physical recovery, and operator gates remain unavailable; release:check still fails closed"
       ],
       "ownerJob": "streamcockpit/3.0-lot-p",

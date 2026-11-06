@@ -30,6 +30,11 @@ vi.mock('../apps/desktop/src/installation-store.js', () => ({ InstallationStore:
   change=state.change;
 } }));
 vi.mock('../apps/desktop/src/lifecycle.js', () => ({ startDesktopRuntime: state.start }));
+// This legacy window harness uses /unused paths; real SQLite ownership and early
+// main admission are exercised in streamcockpit3-application-ownership.test.ts.
+vi.mock('../apps/desktop/src/streamcockpit-application-ownership.js', () => ({
+  acquireDesktopApplicationOwnership: async () => ({ stop: async () => undefined }),
+}));
 vi.mock('../apps/desktop/src/controller.js', () => ({ installControllerKeys: state.installKeys, startControllerAssets: state.assets }));
 vi.mock('../apps/desktop/src/squirrel.js', () => ({ handleSquirrelStartup: () => false }));
 vi.mock('../apps/desktop/src/updater.js', () => ({ startUpdater: () => vi.fn() }));

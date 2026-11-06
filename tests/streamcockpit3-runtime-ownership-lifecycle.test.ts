@@ -5,6 +5,7 @@ import {join,resolve} from 'node:path';
 import {tmpdir} from 'node:os';
 import {SqliteUpgradeJournal} from '../apps/desktop/src/streamcockpit-upgrade-journal.js';
 import {startDesktopRuntime} from '../apps/desktop/src/lifecycle.js';
+import {acquireDesktopApplicationOwnership} from '../apps/desktop/src/streamcockpit-application-ownership.js';
 
 const fake=vi.hoisted(()=>({appData:'',userData:'',packageRoot:'',start:vi.fn(),stop:vi.fn(),audioStop:vi.fn(),launch:vi.fn()}));
 vi.mock('electron',()=>({app:{getPath:(name:string)=>name==='appData'?fake.appData:fake.userData,
@@ -60,4 +61,32 @@ onWindows('does not acquire or launch a runtime after pre-cancelled startup',asy
  await expect(startDesktopRuntime(f.logger as never,abort.signal,false,false)).rejects.toThrow('cancelled');
  expect(fake.start).not.toHaveBeenCalled();expect(fake.launch).not.toHaveBeenCalled();
  await expect(new SqliteUpgradeJournal(f.coordination).exclusive(async()=>true)).resolves.toBe(true);
+});
+
+onWindows.each([false,true])('borrows the genuine application capability without nested mutex acquisition (controller=%s)',async controller=>{
+ const f=await fixture(),lease=await acquireDesktopApplicationOwnership(fake.appData,fake.userData,'2.1.0');
+ let runtime:Awaited<ReturnType<typeof startDesktopRuntime>>|undefined;
+ try{
+  runtime=await startDesktopRuntime(f.logger as never,undefined,controller,false,undefined,lease);
+  await expect(new SqliteUpgradeJournal(f.coordination).exclusive(async()=>true)).rejects.toThrow('BUSY');
+  await runtime.stop();
+  expect(fake.stop).toHaveBeenCalledTimes(1);expect(fake.audioStop).toHaveBeenCalledTimes(1);
+  // Runtime drain alone must not release the application owner or admit a second runtime.
+  await expect(new SqliteUpgradeJournal(f.coordination).exclusive(async()=>true)).rejects.toThrow('BUSY');
+  await expect(startDesktopRuntime(f.logger as never,undefined,controller,false,undefined,lease))
+   .rejects.toThrow('SC3_APPLICATION_OWNERSHIP_REQUIRED');
+  expect(fake.start).toHaveBeenCalledTimes(1);
+ }finally{await runtime?.stop();await lease.stop()}
+ await expect(new SqliteUpgradeJournal(f.coordination).exclusive(async()=>true)).resolves.toBe(true);
+});
+onWindows.each(['forged','wrong-profile','wrong-version','released']as const)('refuses a %s application capability before any runtime side effect',async kind=>{
+ const f=await fixture();
+ const lease=kind==='forged'?{stop:async()=>undefined}:
+  await acquireDesktopApplicationOwnership(fake.appData,kind==='wrong-profile'?join(fake.userData,'other'):fake.userData,kind==='wrong-version'?'2.2.0':'2.1.0');
+ if(kind==='released')await lease.stop();
+ try{
+  await expect(startDesktopRuntime(f.logger as never,undefined,false,false,undefined,lease))
+   .rejects.toThrow('SC3_APPLICATION_OWNERSHIP_REQUIRED');
+  expect(fake.start).not.toHaveBeenCalled();expect(fake.launch).not.toHaveBeenCalled();
+ }finally{await lease.stop()}
 });

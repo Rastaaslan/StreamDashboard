@@ -4,6 +4,7 @@ import { copyFile, mkdir, readFile, rename, stat, unlink } from 'node:fs/promise
 import { randomUUID } from 'node:crypto';
 import { createDashboardWindow, isAllowedExternalAuthUrl, isAllowedTwitchUrl } from './window.js';
 import { startDesktopRuntime, type DesktopRuntime } from './lifecycle.js';
+import { acquireDesktopApplicationOwnership, type DesktopApplicationOwnership } from './streamcockpit-application-ownership.js';
 import { handleSquirrelStartup } from './squirrel.js';
 import { startUpdater } from './updater.js';
 import { DesktopLogger } from './logger.js';
@@ -38,14 +39,41 @@ const desktopSecrets=new ElectronSecretStore(app.getPath('userData'));
 const peers=new PeerTransport(desktopSecrets);
 const peerRequests=new Map<string,AbortController>();
 const nodeAgent=new ControllerAgentLink(()=>loadManagedControllerPeer(process.env));
-const log = (event: string) => { void logger.info(event, { pid: process.pid }).catch(() => undefined); };
+let applicationOwnership: DesktopApplicationOwnership | undefined;
+let applicationOwnershipPromise: Promise<DesktopApplicationOwnership> | undefined;
+const profileAccessAllowed = () => process.platform !== 'win32' || Boolean(applicationOwnership);
+const log = (event: string) => { if (profileAccessAllowed()) void logger.info(event, { pid: process.pid }).catch(() => undefined); };
+const pendingMainWork = new Set<Promise<void>>();
+// UI completion promises can outlive their windows. Native session writes remain
+// covered by process-lifetime ownership until exit; do not await window closure.
+const presentationOnly = new Set(['viewer:open-twitch-session', 'soundboard:select-file',
+  'app:open-external-auth', 'app:open-twitch-activation', 'app:open-logs']);
+function registerMainHandler(channel: string, handler: Parameters<typeof ipcMain.handle>[1]) {
+  ipcMain.handle(channel, (event, ...args) => {
+    if (quitting || !profileAccessAllowed()) throw new Error('APPLICATION_NOT_READY');
+    if (presentationOnly.has(channel)) return handler(event, ...args);
+    // Register before calling out, including a reentrant request to quit. Keep
+    // synchronous return/throw semantics required by existing trusted handlers.
+    let settle!: () => void;
+    const pending = new Promise<void>(resolve => { settle = resolve; });
+    pendingMainWork.add(pending);
+    const finish = () => { pendingMainWork.delete(pending); settle(); };
+    try {
+      const result: unknown = handler(event, ...args);
+      if (result && typeof (result as PromiseLike<unknown>).then === 'function')
+        return Promise.resolve(result).then(value => { finish(); return value; }, error => { finish(); throw error; });
+      finish(); return result;
+    } catch (error) { finish(); throw error; }
+  });
+}
 const primary = !squirrelHandled && app.requestSingleInstanceLock();
 if (!primary) app.quit();
-else log('Primary instance acquired');
+// The first profile log is emitted only after application ownership is acquired.
 
 let window: BrowserWindow | null = null;
 let runtime: DesktopRuntime | null = null;
 let controllerServer: Server | undefined;
+let controllerRestore: Promise<void> | undefined;
 let stopControllerKeys: (() => void) & { restore?: () => Promise<void>; flush?: () => Promise<unknown> } = () => {};
 let stopUpdater: () => void = () => undefined;
 let quitting = false;
@@ -157,9 +185,13 @@ function cleanupRuntime(): Promise<void> {
     djiHostWarningWatcher?.stop(); djiHostWarningWatcher=undefined;
     tray?.destroy(); tray = undefined;
     stopControllerKeys();
+    for(const request of peerRequests.values())request.abort();
+    await Promise.all([...pendingMainWork]);
+    await installationChange;
+    await bootPromise;
+    await controllerRestore;
     await stopControllerKeys.flush?.();
     await autonomous.dispose();
-    for(const request of peerRequests.values())request.abort();
     await nodeAgent.stop();
     await peers.close();
     if (controllerServer) await new Promise<void>((resolve,reject) => {
@@ -181,7 +213,7 @@ function cleanupRuntime(): Promise<void> {
 async function fail(error: unknown): Promise<void> {
   if (failing || quitting || !primary) return;
   failing = true;
-  await logger.error('Desktop lifecycle failure', error).catch(() => undefined);
+  if (profileAccessAllowed()) await logger.error('Desktop lifecycle failure', error).catch(() => undefined);
   try {
     dialog.showErrorBox('StreamDashboard n’a pas pu démarrer',
       `Le démarrage ou le chargement a échoué. Fermez puis relancez StreamDashboard.\nDiagnostics : ${logger.file}`);
@@ -195,11 +227,18 @@ function boot(): Promise<void> {
   return bootPromise ??= (async () => {
     booting = true;
     try {
+      if (process.platform === 'win32') {
+        applicationOwnershipPromise ??= acquireDesktopApplicationOwnership(
+          app.getPath('appData'), app.getPath('userData'), app.getVersion());
+        applicationOwnership = await applicationOwnershipPromise;
+      }
+      startup.signal.throwIfAborted();
       log('Electron ready; creating visible startup window');
       nodeAgent.start();
       const preview = process.argv.includes('--ui-preview=desktop-v2') && await stat(path.join(app.getAppPath(),'apps/web/preview/index.html')).then(()=>true,()=>false);
       const legacy = process.argv.includes('--ui-legacy=desktop-v1');
       installation = await installations.recover(async current => { configureLoginStartup(app, Boolean(current.startAtLogin)); });
+      startup.signal.throwIfAborted();
       if(!runtime)activeDevice=structuredClone(installation.devices.find(d=>d.id===installation.localDeviceId)!);
       // The original runtime directory and origin never change with roles.
       // This preserves RC11.7 accounts, caches, data and browser sessions.
@@ -212,10 +251,12 @@ function boot(): Promise<void> {
       ensureTray();
       if (!runtime && startupAgent) {
         stopControllerKeys = installControllerKeys(() => window, app.getPath('userData'), uiOrigin,peers.fetch,installation.devices.find(d=>d.id===installation.localDeviceId)!.roles.includes('controller'),autonomous);
-        void stopControllerKeys.restore?.();
+        controllerRestore = Promise.resolve(stopControllerKeys.restore?.());
+        void controllerRestore.catch(fail);
         if (client) controllerServer = await startControllerAssets(path.join(app.getAppPath(), 'apps', 'mobile'));
-        runtimePromise = startDesktopRuntime(logger, startup.signal, client, obsEnabled, deviceDescriptor);
+        runtimePromise = startDesktopRuntime(logger, startup.signal, client, obsEnabled, deviceDescriptor, applicationOwnership);
         runtime = await runtimePromise;
+        if (quitting) return;
         enableDjiBackgroundPublisher();
         enableDjiHostWarningWatcher();
         log('Agent ready without a dashboard window');
@@ -244,18 +285,20 @@ function boot(): Promise<void> {
         '<!doctype html><meta charset="utf-8"><meta http-equiv="Content-Security-Policy" content="default-src \'none\'; style-src \'unsafe-inline\'"><title>StreamDashboard — Démarrage…</title><body style="background:#080a10;color:#fff;font:20px system-ui;padding:48px"><h1>Le StreamCockpit</h1><p>Démarrage en cours…</p><p>Vous pouvez fermer cette fenêtre pour annuler.</p></body>'));
       if (quitting) return;
       stopControllerKeys = installControllerKeys(() => window, app.getPath('userData'), uiOrigin,peers.fetch,installation.devices.find(d=>d.id===installation.localDeviceId)!.roles.includes('controller'),autonomous);
-      void stopControllerKeys.restore?.();
+      controllerRestore = Promise.resolve(stopControllerKeys.restore?.());
+      void controllerRestore.catch(fail);
       if (client) {
         controllerServer = await startControllerAssets(path.join(app.getAppPath(), 'apps', 'mobile'));
-        runtimePromise = startDesktopRuntime(logger, startup.signal, true, obsEnabled, deviceDescriptor);
+        runtimePromise = startDesktopRuntime(logger, startup.signal, true, obsEnabled, deviceDescriptor, applicationOwnership);
         runtime = await runtimePromise;
+        if (quitting) return;
         enableDjiBackgroundPublisher();
         enableDjiHostWarningWatcher();
         if (!quitting) await loadWindow(targetUrl + '?role=client');
         return;
       }
       log('Startup window visible; starting local runtime');
-      runtimePromise = startDesktopRuntime(logger, startup.signal, false, obsEnabled, deviceDescriptor);
+      runtimePromise = startDesktopRuntime(logger, startup.signal, false, obsEnabled, deviceDescriptor, applicationOwnership);
       runtime = await runtimePromise;
       if (quitting) return;
       enableDjiHostWarningWatcher();
@@ -306,26 +349,26 @@ function applyInstallation(operation: () => Promise<InstallationPlan>) {
   installationChange = pending.catch(() => undefined);
   return pending;
 }
-ipcMain.handle('node-agent:status',event=>{
+registerMainHandler('node-agent:status',event=>{
   requireInstallationSender(event);nodeAgent.start();return nodeAgent.snapshot();
 });
-ipcMain.handle('installation:get', async event => { requireInstallationSender(event); return installations.read(); });
-ipcMain.handle('twitch:local-credential', async event => {
+registerMainHandler('installation:get', async event => { requireInstallationSender(event); return installations.read(); });
+registerMainHandler('twitch:local-credential', async event => {
   requireInstallationSender(event);
   const current = await runtimePromise;
   requireInstallationSender(event);
   if (controllerRole || quitting || !current?.dashboard.issueLocalTwitchCredential) throw new Error('LOCAL_TWITCH_AUTHORITY_UNAVAILABLE');
   return current.dashboard.issueLocalTwitchCredential();
 });
-ipcMain.handle('autonomous:request',async(event,operation:'state'|'command',body?:unknown)=>{requireInstallationSender(event);return autonomous.request(operation,body);});
+registerMainHandler('autonomous:request',async(event,operation:'state'|'command',body?:unknown)=>{requireInstallationSender(event);return autonomous.request(operation,body);});
 const agentIdentityStore=new ElectronSecretStore(app.getPath('userData'));
-ipcMain.handle('peer:identity',async event=>{
+registerMainHandler('peer:identity',async event=>{
   requireInstallationSender(event);const saved=await agentIdentityStore.getAgentCertificate();
   if(!saved)return {fingerprint:'',expires:''};
   const certificate=new X509Certificate(saved.certificate);
   return {fingerprint:certificate.fingerprint256.replaceAll(':','').toLowerCase(),expires:new Date(certificate.validTo).toISOString()};
 });
-ipcMain.handle('peer:renew',async(event,expected:string)=>{
+registerMainHandler('peer:renew',async(event,expected:string)=>{
   requireInstallationSender(event);
   const operation=installationChange.then(async()=>{
     if(!runtime)throw new Error('Attendez la fin du démarrage de l’agent.');
@@ -356,14 +399,14 @@ function showDjiNativeWarning(code:unknown) {
   warning.show();
   return true;
 }
-ipcMain.handle('dji:warning',(event,code:unknown)=>{
+registerMainHandler('dji:warning',(event,code:unknown)=>{
   requireInstallationSender(event);
   return showDjiNativeWarning(code);
 });
-ipcMain.handle('peer:fingerprint',async(event,origin:string)=>{requireInstallationSender(event);return peers.fingerprint(origin);});
-ipcMain.handle('peer:trust',async(event,origin:string,fingerprint:string,expected:string)=>{requireInstallationSender(event);await peers.trust(origin,fingerprint,expected);});
-ipcMain.handle('peer:cancel',async(event,id:string)=>{requireInstallationSender(event);peerRequests.get(id)?.abort();});
-ipcMain.handle('peer:request',async(event,value:{id:string;url:string;method:string;credential:string;body?:string|Uint8Array;contentType?:string;timeoutMs:number})=>{
+registerMainHandler('peer:fingerprint',async(event,origin:string)=>{requireInstallationSender(event);return peers.fingerprint(origin);});
+registerMainHandler('peer:trust',async(event,origin:string,fingerprint:string,expected:string)=>{requireInstallationSender(event);await peers.trust(origin,fingerprint,expected);});
+registerMainHandler('peer:cancel',async(event,id:string)=>{requireInstallationSender(event);peerRequests.get(id)?.abort();});
+registerMainHandler('peer:request',async(event,value:{id:string;url:string;method:string;credential:string;body?:string|Uint8Array;contentType?:string;timeoutMs:number})=>{
   requireInstallationSender(event);
   if(!value||!/^[-\w]{8,100}$/.test(value.id)||peerRequests.has(value.id)||peerRequests.size>=32||typeof value.url!=='string'||value.url.length>4096||typeof value.credential!=='string'||value.credential.length>256||!['GET','POST','PUT','DELETE'].includes(value.method)||!Number.isFinite(value.timeoutMs)||value.timeoutMs<1000||value.timeoutMs>120000)throw new Error('Requête d’agent invalide ou service occupé.');
   if(value.body!==undefined&&!(typeof value.body==='string'?value.body.length<=16*1024*1024:value.body instanceof Uint8Array&&value.body.byteLength<=100*1024*1024))throw new Error('Corps de requête invalide.');
@@ -376,24 +419,24 @@ ipcMain.handle('peer:request',async(event,value:{id:string;url:string;method:str
   }catch{return {ok:false,error:{code:'PEER_TRANSPORT_FAILED',message:'Connexion sécurisée non confirmée. Vérifiez l’empreinte de l’agent et son réseau ; aucune commande ne sera répétée.'}};}
   finally {peerRequests.delete(value.id);}
 });
-ipcMain.handle('installation:change', async (event, changes: InstallationChanges, revision: number) => {
+registerMainHandler('installation:change', async (event, changes: InstallationChanges, revision: number) => {
   requireInstallationSender(event);
   if (!changes || typeof changes !== 'object' || Array.isArray(changes)) throw new Error('Modification invalide.');
   return applyInstallation(() => installations.change(changes, revision, beforeInstallationCommit));
 });
-ipcMain.handle('installation:restore', async (event, revision: number) => {
+registerMainHandler('installation:restore', async (event, revision: number) => {
   requireInstallationSender(event);
   return applyInstallation(() => installations.restore(revision, beforeInstallationCommit));
 });
 ipcMain.handle('app:get-version', () => app.getVersion());
-ipcMain.handle('app:device-profile', async () => {
+registerMainHandler('app:device-profile', async () => {
   let profile: {name?:string;role?:string} | undefined;
   try { profile = JSON.parse(await readFile(roleFile, 'utf8')); }
   catch (error) { if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error; }
   const local = installation?.devices.find(d => d.id === installation.localDeviceId);
   return {name:local?.name || profile?.name,role:local?.roles.includes('obs-executor')?'stream':'control',configured:installation?.configured ?? Boolean(profile)};
 });
-ipcMain.handle('app:set-device-role', async (event, role: unknown, name: unknown) => {
+registerMainHandler('app:set-device-role', async (event, role: unknown, name: unknown) => {
   const origin = `http://127.0.0.1:${controllerRole ? 48134 : 48133}`;
   if (!window || window.isDestroyed() || event.sender !== window.webContents || event.senderFrame !== window.webContents.mainFrame || !isSameOrigin(event.senderFrame?.url || '', origin) || !['stream','control'].includes(String(role)) || typeof name !== 'string' || !name.trim() || name.length > 80) throw new Error('Choix de rôle refusé.');
   if (roleChangePending || quitting) throw new Error('Un changement de rôle ou un arrêt est déjà en cours.');
@@ -409,15 +452,15 @@ ipcMain.handle('app:set-device-role', async (event, role: unknown, name: unknown
     return {restart:plan.restart};
   } finally { roleChangePending = false; }
 });
-ipcMain.handle('app:open-twitch-activation', async (_event, url: unknown) => {
+registerMainHandler('app:open-twitch-activation', async (_event, url: unknown) => {
   if (typeof url !== 'string' || !isAllowedTwitchUrl(url)) return false;
   await shell.openExternal(url); return true;
 });
-ipcMain.handle('app:open-external-auth', async (_event, url: unknown) => {
+registerMainHandler('app:open-external-auth', async (_event, url: unknown) => {
   if (typeof url !== 'string' || !isAllowedExternalAuthUrl(url)) return false;
   await shell.openExternal(url); return true;
 });
-ipcMain.handle('viewer:open-twitch-session', (event, value: unknown) => {
+registerMainHandler('viewer:open-twitch-session', (event, value: unknown) => {
   const owner = window;
   const origin = `http://127.0.0.1:${controllerRole ? 48134 : 48133}`;
   if (!owner || owner.isDestroyed() || event.sender !== owner.webContents
@@ -429,17 +472,17 @@ ipcMain.handle('viewer:open-twitch-session', (event, value: unknown) => {
   if (typeof channel !== 'string' || !/^[a-zA-Z0-9_]{1,25}$/.test(channel)) throw new Error('Chaîne Twitch invalide.');
   return openTwitchViewerSession(owner, channel);
 });
-ipcMain.handle('app:open-logs', async () => { if (runtime) await shell.openPath(path.dirname(runtime.logger.file)); });
-ipcMain.handle('app:ensure-obs-running', async () => runtime?.ensureObsRunning() ?? { launched: false, detail: 'StreamDashboard Desktop n’est pas prêt.' });
+registerMainHandler('app:open-logs', async () => { if (runtime) await shell.openPath(path.dirname(runtime.logger.file)); });
+registerMainHandler('app:ensure-obs-running', async () => runtime?.ensureObsRunning() ?? { launched: false, detail: 'StreamDashboard Desktop n’est pas prêt.' });
 const SOUND_EXTENSIONS = new Set(['.wav', '.mp3', '.ogg', '.aac', '.m4a', '.flac']);
-ipcMain.handle('soundboard:select-file', async () => {
+registerMainHandler('soundboard:select-file', async () => {
   const options: OpenDialogOptions = { title: 'Ajouter un son', properties: ['openFile'], filters: [{ name: 'Audio OBS', extensions: [...SOUND_EXTENSIONS].map(value => value.slice(1)) }] };
   const result = window && !window.isDestroyed()
     ? await dialog.showOpenDialog(window, options)
     : await dialog.showOpenDialog(options);
   return result.canceled ? null : result.filePaths[0] ?? null;
 });
-ipcMain.handle('soundboard:import-file', async (_event, source: unknown) => {
+registerMainHandler('soundboard:import-file', async (_event, source: unknown) => {
   if (typeof source !== 'string' || !path.isAbsolute(source) || !SOUND_EXTENSIONS.has(path.extname(source).toLowerCase())) throw new Error('Format audio refusé.');
   const info = await stat(source); if (!info.isFile() || info.size > 100 * 1024 * 1024) throw new Error('Le fichier audio est invalide ou dépasse 100 Mo.');
   // The client has its own local runtime and library; an import must not end up
@@ -461,11 +504,15 @@ app.on('before-quit', event => {
   log('Shutdown requested');
   startup.abort(new Error('Desktop startup cancelled'));
   void cleanupRuntime().then(async () => {
-    await logger.info('Shutdown complete');
-    await logger.flush();
+    if (profileAccessAllowed()) {
+      await logger.info('Shutdown complete');
+      await logger.flush();
+    }
+    // Retain application ownership until OS process exit: pending renderer or
+    // final logging work must never open a maintenance window after runtime.stop.
     app.exit(failing ? 1 : 0);
   }).catch(async error => {
-    await logger.error('Shutdown failed', error).catch(() => undefined);
+    if (profileAccessAllowed()) await logger.error('Shutdown failed', error).catch(() => undefined);
     app.exit(1);
   });
 });

@@ -4,6 +4,7 @@ import type { InstallationDevice } from '../../mobile/shared/installation.js';
 import { app } from 'electron';
 import { mkdir, readFile } from 'node:fs/promises';
 import { runtimeUpgradeDirectory, startWithRuntimeUpgradeOwnership } from './streamcockpit-runtime-ownership.js';
+import { startUnderApplicationOwnership, type DesktopApplicationOwnership } from './streamcockpit-application-ownership.js';
 import path from 'node:path';
 import { startDashboardServer, type DashboardServerHandle } from '../../server/src/index.js';
 import { ElectronSecretStore } from './secrets.js';
@@ -12,12 +13,14 @@ import { launchObsIfRequested } from './obs-launcher.js';
 
 export interface DesktopRuntime { dashboard: DashboardServerHandle; logger: DesktopLogger; ensureObsRunning(): ReturnType<typeof launchObsIfRequested>; stop(): Promise<void> }
 
-export async function startDesktopRuntime(logger = new DesktopLogger(path.join(app.getPath('userData'), 'logs')), signal?: AbortSignal, controller = false, obsEnabled = !controller, deviceDescriptor?: () => Promise<InstallationDevice>): Promise<DesktopRuntime> {
+export async function startDesktopRuntime(logger = new DesktopLogger(path.join(app.getPath('userData'), 'logs')), signal?: AbortSignal, controller = false, obsEnabled = !controller, deviceDescriptor?: () => Promise<InstallationDevice>, applicationOwnership?: DesktopApplicationOwnership): Promise<DesktopRuntime> {
   signal?.throwIfAborted();
   if (process.platform !== 'win32') return acquireDesktopRuntime(logger, signal, controller, obsEnabled, deviceDescriptor);
   // All Desktop roles, including --agent, share the root-profile coordinator.
   // Acquire BEFORE reading configuration, opening providers or launching OBS.
   const coordination = runtimeUpgradeDirectory(app.getPath('appData'), app.getPath('userData'));
+  if (applicationOwnership) return startUnderApplicationOwnership(applicationOwnership, coordination, app.getVersion(),
+    () => acquireDesktopRuntime(logger, signal, controller, obsEnabled, deviceDescriptor));
   await mkdir(coordination, { recursive: true, mode: 0o700 });
   signal?.throwIfAborted();
   return startWithRuntimeUpgradeOwnership(coordination, app.getVersion(),
