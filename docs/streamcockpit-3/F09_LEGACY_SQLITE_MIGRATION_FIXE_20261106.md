@@ -1,0 +1,21 @@
+# F09 — Migration explicite des journaux Moments JSON → SQLite (06/11/2026)
+
+## Constat et périmètre
+- Machine de travail : **FIXE Windows 11 uniquement**, via Remote Desktop Commander ; branche canonique `streamcockpit/3.0-full-experience`, remote GitHub canonique. Baseline initiale HEAD `9613244` ; HEAD a progressé de manière indépendante pendant la passe : intégrer sur le dernier HEAD effectivement constaté.
+- Préflight : `PLAN.md`, `feature-matrix.json`, `CONTINUITY.md`, `MIGRATION_TO_FIXE_20261101.md` et `FINAL_DELIVERY_AUDIT_20261103.md` consultés ; aucun verrou Git/rebase/merge ; F05/mixeur et `CONTINUITY.md` déjà détenus par des tiers, **aucun de leurs octets n'a été modifié ni indexé**. L'audit classique modifie ses propres fichiers.
+- Blocage G2 traité : `MomentsSqliteStorage.guardLegacy()` refuse volontairement tout démarrage avec l'ancien journal `streamcockpit-moments.json`, sans chemin de migration vérifié. La perte de cet historique serait inacceptable ; le simple renommage ou la suppression du JSON ne constitue pas une migration.
+
+## Lot fonctionnel
+- Nouvel adaptateur `migrateLegacyMomentsToSqlite(sqliteFile,legacyFile)` **uniquement sur appel explicite de maintenance**, sans branchement au démarrage, à une route réseau ou à l'updater. Aucun profil réel n'a été lu, migré ou remplacé.
+- Sous **verrou exclusif commun au writer legacy** : validation complète du JSON canonique, de la signature SHA-256 de son enveloppe via le `MomentsPipeline`, des événements et sessions, de l'identité du fichier et de la taille ; refus des chemins UNC/device/ADS/racinés, hardlinks, entrées corrompues, archive/base déjà existante et verrou occupé.
+- Création exclusive d'une base SQLite absente, `journal_mode=DELETE`, `synchronous=EXTRA`, transaction puis réouverture indépendante et `integrity_check` avant promotion. L'ancien fichier reste intact jusqu'au succès de ces contrôles, puis est **archivé byte-for-byte** dans le même répertoire sous `.pre-sqlite.json`. La base peut ensuite être lue/complétée par le pipeline officiel, sans changer les identifiants ni les reçus.
+- Si la cible SQLite a été créée mais le déroulement est incertain, **aucun rollback ni retry automatique** et le verrou reste en place : reprise supervisée obligatoire. La garde `MOMENTS_LEGACY_MIGRATION_REQUIRED` empêche la lecture faussement vide quand l'ancien JSON est encore présent.
+
+## Preuves
+- Tests initiaux sur Windows : 6 PASS / 0 FAIL / 0 skipped, puis 49 PASS / 0 FAIL / 6 skipped sur quatre suites ciblées ; cinq scénarios de panne supplémentaires ont été couverts progressivement. Dernière campagne finale après test du redémarrage enfant et contrôle de la matrice : **53 PASS / 0 FAIL / 6 skipped (cinq suites)**, dont **9 tests du migrateur, tous exécutés sur Windows**. Les six skipped appartiennent aux suites existantes et ne sont pas promus.
+- Vérification Windows : archive exacte et hash SHA-256, nouveau SQLite relu et enrichi, redémarrage dans un vrai processus enfant, refus de JSON corrompu/clés dupliquées, collisions, source absente, verrou occupé, fichier à deux hardlinks, cible vide après interruption et chemins non locaux. Fournisseur OBS/Twitch non sollicité. Aucun navigateur requis : cet adaptateur ne possède pas d'interface UI.
+- `npm run build:types`, `npm run check:browser-types`, `npm run security:check` (**6 778 fichiers** avant documentation), `git diff --check` : PASS après correction d'un type de fixture. La revue finale doit vérifier le diff **staged** du lot, sans prendre les changements F05 concurrents.
+
+## Limites et prochains jalons
+Il s'agit d'une migration **logicielle réellement exécutée sur des dossiers temporaires Windows**, pas d'une migration des données installées. La qualification contrôlée d'un vrai profil legacy, du mécanisme de maintenance/rollback, d'un arrêt sûr des producteurs, de la durabilité en cas de coupure électrique et de la réception matérielle manque encore. `node:sqlite` reste expérimental dans Node 22. Ne pas automatiser cette migration au démarrage avant ces preuves.
+**F09 partial ; G2 in_progress ; G3/G4/G5 open.** Après intégration propre et tests, priorité au raccordement supervisé de l'opération en maintenance + qualification des reçus F05, puis F10 installation transactionnelle et retour arrière, G3 matériel et G4 signatures.
