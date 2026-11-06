@@ -212,3 +212,38 @@ it.skipIf(process.env.SC3_SETTINGS_BROWSER_TEST!=='1')('real Edge 320 px refuses
   expect(network).toEqual([]);expect(errors).toEqual([]);
  }finally{await browser.close()}
 },30000);
+
+it('stale or offline selected FIXE has one explicit refresh action without OAuth reconnection',()=>{
+ const stale=new Date(Date.now()-120_000).toISOString();
+ for(const html of [
+  render({server:'https://fixe.example:48136',online:true,observedAt:stale}),
+  render({server:'https://fixe.example:48136',online:false})
+ ]){
+  expect(html).toContain('data-host-integrations-hint');
+  expect(html.match(/data-task="refresh-live"/g)).toHaveLength(1);
+  expect(html).toContain('Actualiser l’état de FIXE');
+  expect(html).toContain('data-task="discord" disabled');
+  expect(html).toContain('data-task="wizebot-catalog" disabled');
+ }
+ for(const html of [render(),render({server:'',online:false})])
+  expect(html).not.toContain('data-task="refresh-live"');
+});
+it.skipIf(process.env.SC3_SETTINGS_BROWSER_TEST!=='1')('real Edge 320px provides a refresh affordance but no accidental OAuth or network request',async()=>{
+ const browser=await chromium.launch({channel:'msedge',headless:true});
+ try{
+  const page=await browser.newPage({viewport:{width:320,height:760},hasTouch:true});
+  const network:string[]=[],errors:string[]=[];
+  page.on('pageerror',error=>errors.push(error.message));
+  await page.route('**/*',route=>{network.push(route.request().url());return route.abort()});
+  await page.setContent('<meta name="viewport" content="width=device-width,initial-scale=1"><main>'+
+   render({server:'https://fixe.example:48136',online:true,observedAt:new Date(Date.now()-120_000).toISOString()})+'</main>');
+  await page.addStyleTag({content:readFileSync('apps/mobile/control/control.css','utf8')});
+  const refreshButton=page.locator('[data-task="refresh-live"]');
+  expect(await refreshButton.count()).toBe(1);
+  expect(await refreshButton.isEnabled()).toBe(true);
+  expect(await page.locator('[data-task="discord"]').isDisabled()).toBe(true);
+  expect(await page.locator('[data-task="wizebot-catalog"]').isDisabled()).toBe(true);
+  expect(await page.evaluate(()=>document.documentElement.scrollWidth)).toBeLessThanOrEqual(320);
+  expect(network).toEqual([]);expect(errors).toEqual([]);
+ }finally{await browser.close()}
+},30000);
