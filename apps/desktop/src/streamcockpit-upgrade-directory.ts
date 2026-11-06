@@ -50,7 +50,7 @@ function safeEntry(name:string){
       /^(con|prn|aux|nul|com[0-9]|lpt[0-9])(?:\.|$)/i.test(part)))throw failure('ENTRY_INVALID');
 }
 function preserveDurableJournals(before:UpgradeReadbackFile[],after:UpgradeReadbackFile[]){
-  const names=['streamcockpit-automod-action-intents.sqlite','streamcockpit-prediction-intents.sqlite','streamcockpit-moments.sqlite'];
+  const names=['streamcockpit-automod-action-intents.sqlite','streamcockpit-prediction-intents.sqlite','streamcockpit-moments.sqlite','streamcockpit-mixer-receipts.sqlite'];
   const journalEntries=(files:UpgradeReadbackFile[])=>{
     for(const file of files){
       const name=file.path.split('/').at(-1)!.toLowerCase();

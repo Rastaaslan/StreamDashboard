@@ -688,6 +688,10 @@
         {
           "path": "apps/mobile/control/streamcockpit-mixer-page.js",
           "kind": "2026-11-03 F05: operator-triggered routing read over authenticated FIXE GET; Edge 320px uses textContent, clears stale results on disconnect. 59 targeted tests PASS, 1 browser test skipped; real OBS/Android not yet qualified."
+        },
+        {
+          "path": "docs/streamcockpit-3/F05_DURABLE_AUDIO_RECEIPTS_20261106.md",
+          "kind": "2026-11-06 FIXE: production gain/mute router now persists actor/host-scoped SQLite intentions and complete readback receipts, offers paged read-only history and fresh-consent rollback after restart, preserving UUID and current-value checks. F10 retains the audio journal. 13 suites 161 PASS/0 FAIL/0 skipped, 35 new tests incl. independent Windows child exits and Edge 320px lost-ACK/reload/rollback using committed UI. TS/browser types/security 6826/diff PASS; OBS simulated, no hardware or deployed profile. Foreign mixer UI unchanged; history browser view and PC-game/VOD routing remain incomplete."
         }
       ],
       "verifiedTests": [
@@ -702,13 +706,16 @@
         "tests/streamcockpit3-mixer-control-browser.test.ts",
         "tests/streamcockpit3-mixer-routing-http.test.ts",
         "tests/streamcockpit3-mixer-routing-obs.test.ts",
-        "tests/streamcockpit3-mixer-routing-browser.test.ts"
+        "tests/streamcockpit3-mixer-routing-browser.test.ts",
+        "tests/streamcockpit3-audio-receipts.test.ts",
+        "tests/streamcockpit3-audio-receipts-http.test.ts",
+        "tests/streamcockpit3-audio-receipts-browser.test.ts"
       ],
       "hardwareEvidence": [],
       "blockers": [
         "Physical FIXE/laptop/Android gain/mute and guarded rollback not verified; source control requires an actual OBS UUID and otherwise refuses the write.",
         "OBS track 1-6 flags and monitoring mode can now be read on demand from FIXE, and peak meters observed while live; the PC game hardware path, exact Twitch VOD output track and real stream/VOD separation remain unqualified.",
-        "Persisted intents prevent replay across restart; full historical success/rollback receipts remain volatile, so a host restart yields an honest uncertain status.",
+        "2026-11-06: newly recorded gain/mute receipts and guarded manual rollback now survive software restart through the production SQLite router. Legacy bare reservations remain uncertain; complete history is API-only (current UI recovers a pending receipt). Full history navigation, production migration and hardware restart/power-loss remain unqualified.",
         "2026-11-05 F05 dirty patch still re-enables routing read button after offline when pre-disconnect GET resolves late; independent real Edge 320px repro confirmed, despite 2/2 existing browser tests PASS. See docs/streamcockpit-3/F05_LATE_ROUTING_PATCH_REVIEW_20261105.md; owner must fix and qualify before G2."
       ],
       "ownerJob": "streamcockpit/3.0-f05-integration",

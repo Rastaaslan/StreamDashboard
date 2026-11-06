@@ -8,10 +8,11 @@
  * remains blocked for operator-controlled recovery; it NEVER silently retries
  * a provider action or re-opens writes after an incomplete maintenance pass.
  */
-type JournalDomain='automod'|'prediction'|'moments';
+type JournalDomain='automod'|'prediction'|'moments'|'mixer';
 type Phase='active'|'draining'|'quiesced'|'blocked';
 const policies:Record<JournalDomain,{mutation:readonly string[];readonly:readonly string[]}> = {
   automod:{mutation:['reserve'],readonly:['isBlocked']},
+  mixer:{mutation:['reserve','complete'],readonly:['read','history']},
   prediction:{
     mutation:['reserve','releaseBeforePost','recordConfirmed','releaseConfirmedTerminal',
       'markLockAttempted','markEndAttempted'],

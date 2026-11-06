@@ -2,6 +2,7 @@ import type { DeckAction } from '../../../packages/contracts/src/control.js';
 import { actionCapability } from '../../mobile/shared/action-definition.js';
 import type { DevicePermission } from '../../mobile/shared/device-permissions.js';
 const GET_EXACT = new Set([
+  '/v1/streamcockpit-mixer/control/history',
   '/v1/streamcockpit-context',
   '/v1/twitch/advanced/capabilities','/v1/twitch/advanced/moderation/held','/v1/twitch/advanced/prediction','/v1/twitch/advanced/prediction/reconcile','/v1/twitch/advanced/prediction/end/inspect','/v1/streamcockpit-health','/v1/streamcockpit-mixer','/v1/streamcockpit-mixer/routing','/v1/state','/v1/profile','/v1/connections','/v1/control-hub','/v1/events','/v1/soundboard',
   '/v1/automations','/v1/automations/capabilities','/v1/streamlabs/events','/v1/supports','/v1/twitch/categories',

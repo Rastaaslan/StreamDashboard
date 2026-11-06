@@ -11,10 +11,11 @@ import {RemoteAuth} from '../../apps/server/src/remote-auth.js';
 import {ObsMixerObservation} from '../../apps/server/src/streamcockpit-mixer-observation.js';
 import {createMixerRouter} from '../../apps/server/src/streamcockpit-mixer-router.js';
 import {createMixerControlRouter} from '../../apps/server/src/streamcockpit-mixer-control-router.js';
+import {AudioReceiptSqlite} from '../../apps/server/src/streamcockpit-audio-receipts-sqlite.js';
 import {isRemoteApiAllowed,requiredDevicePermissions} from '../../apps/server/src/remote-api-policy.js';
 
 /** Loopback-only fake OBS protocol; the actual ObsClient, authority bus and HTTP router run unchanged. */
-export async function withMixerFixture(run:(fixture:any)=>Promise<void>){
+export async function withMixerFixture(run:(fixture:any)=>Promise<void>,durable=false){
  const directory=await mkdtemp(join(tmpdir(),'streamcockpit-mixer-qa-'));
  let gain=.75,mute=false,uuid='b7ddf425-b16d-4d53-b213-b607dc853c9f',mode='ok',host:string|undefined='FIXE',writes=0,scene='Live',streaming=false;
  const rpc:Array<{type:string;args:any}>=[],intents:Record<string,string>={};let listReads=0;
@@ -63,7 +64,8 @@ export async function withMixerFixture(run:(fixture:any)=>Promise<void>){
  const domain={mode:'idle' as const,timer:{running:false,duration:300,remaining:300,deadline:null},checklist:[]};
  const bus=new DashboardCommandService(domain,obs,async()=>({})as never);
  const actor=(req:express.Request)=>{const token=req.headers.authorization?.match(/^Device (\S+)$/)?.[1];const id=token?auth.authenticate(token):null;return id&&auth.permits(id,['observe','obs','audio'])?id:''};
- const makeRouter=()=>createMixerControlRouter({actor,host:()=>host&&obs.state.connected?host+':'+obs.connectionGeneration:undefined,
+ let journal=durable?new AudioReceiptSqlite(join(directory,'streamcockpit-mixer-receipts.sqlite')):undefined;
+ const makeRouter=()=>createMixerControlRouter({actor,authority:()=>host,journal,host:()=>host&&obs.state.connected?host+':'+obs.connectionGeneration:undefined,
   read:id=>obs.readMixerSource(id),write:(before,change)=>obs.writeMixerSource(before,change),serialize:operation=>bus.observedObs(operation),
   reservation:id=>intents[id],reserve:async(id,fingerprint)=>{
    if(intents[id])throw Error('ALREADY_RESERVED');if(mode==='disk-failure')throw Error('PRIVATE_DISK_PATH');
@@ -90,11 +92,11 @@ export async function withMixerFixture(run:(fixture:any)=>Promise<void>){
    const response=await fetch(origin+'/api/v1/streamcockpit-mixer/control/'+path,{method,headers:{'Content-Type':'application/json',authorization:'Device '+token},...(body===undefined?{}:{body:JSON.stringify(body)})});
    const text=await response.text();let payload;try{payload=JSON.parse(text)}catch{payload={error:text}}return {status:response.status,body:payload};
   };
-  await run({origin,call,auth,paired,obs,bus,rpc,domain,intents,directory,app,cache,obsUrl:'ws://127.0.0.1:'+(obsServer.address()as AddressInfo).port,
+  await run({origin,call,auth,paired,obs,bus,rpc,domain,intents,directory,app,cache,journal:()=>journal,obsUrl:'ws://127.0.0.1:'+(obsServer.address()as AddressInfo).port,
    state:()=>({gain,mute,uuid,writes,scene}),setScene:(value:string)=>{scene=value;for(const socket of obsServer.clients)if(socket.readyState===WebSocket.OPEN)socket.send(encode({op:5,d:{eventType:'CurrentProgramSceneChanged',eventIntent:4,eventData:{sceneName:scene}}}))},setMode:(value:string)=>{mode=value},setHost:(value:string|undefined)=>{host=value},
    setStreaming:(value:boolean)=>{streaming=value;for(const socket of obsServer.clients)if(socket.readyState===WebSocket.OPEN)socket.send(encode({op:5,d:{eventType:'StreamStateChanged',eventIntent:64,eventData:{outputActive:streaming}}}))},
    changeSource:()=>{uuid='ea7cd229-38a9-46dc-aa94-e746eb37622d'},changeGain:(value:number)=>{gain=value},
-   restartRouter:async()=>{const stored=JSON.parse(await readFile(join(directory,'intents.json'),'utf8'));Object.assign(intents,stored);controls=makeRouter()},
+   restartRouter:async()=>{const stored=JSON.parse(await readFile(join(directory,'intents.json'),'utf8'));Object.assign(intents,stored);if(durable)journal=new AudioReceiptSqlite(join(directory,'streamcockpit-mixer-receipts.sqlite'));controls=makeRouter()},
   });
  }finally{
   await bus.stop();await obs.close();server.closeAllConnections();await new Promise<void>(resolve=>server.close(()=>resolve()));

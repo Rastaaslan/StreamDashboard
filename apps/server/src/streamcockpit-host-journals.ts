@@ -3,6 +3,7 @@ import { HostDurableWriterQuiescence } from './streamcockpit-durable-writer-quie
 import { AutoModActionIntentSqlite } from './streamcockpit-automod-action-intent-sqlite.js';
 import { PredictionIntentSqlite } from './streamcockpit-prediction-intent-sqlite.js';
 import type { MomentsStorage } from './streamcockpit-moments.js';
+import {AudioReceiptSqlite} from './streamcockpit-audio-receipts-sqlite.js';
 
 /**
  * F10: the ACTUAL Windows FIXE server writes F02, F08 and F09 through one
@@ -18,6 +19,10 @@ export class HostWindowsDurableJournals {
   readonly prediction: PredictionIntentSqlite;
   readonly automod: AutoModActionIntentSqlite;
   private momentsOnce?: Promise<MomentsStorage>;
+  private audioOnce?: AudioReceiptSqlite;
+  audioReceipts(): AudioReceiptSqlite {
+    return this.audioOnce ??= this.gate.protect('mixer',new AudioReceiptSqlite(path.join(this.dataDir,'streamcockpit-mixer-receipts.sqlite')));
+  }
 
   constructor(private readonly dataDir: string) {
     if (process.platform !== 'win32') throw new Error('SC3_HOST_JOURNALS_WINDOWS_REQUIRED');

@@ -2168,6 +2168,11 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
   }));
 
   app.use('/api/v1/streamcockpit-mixer/control', createMixerControlRouter({
+    journal: hostJournals?.audioReceipts(),
+    authority: async () => {
+      const device = await options.deviceDescriptor?.().catch(() => undefined);
+      return mixerHostEligible(device) ? device!.id : undefined;
+    },
     actor: async request => {
       await assertRole('obs'); await assertRole('audio');
       if (isLocalRequest(request)) return 'FIXE:local-audio';
