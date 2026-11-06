@@ -1213,6 +1213,10 @@
         {
           "path": "docs/streamcockpit-3/F10_AUTOMOD_FENCE_QA_ROLLBACK_GUARD_20261106.md",
           "kind": "2026-11-06 FIXE F10/F02: QA migration and restore now reject stale, lost or new one-way AutoMod SQLite attempt journals by byte/hash equality with the live isolated active checkpoint, before copy and again before promotion. RED 10 PASS/2 FAIL; GREEN 90 PASS/0 FAIL/0 skipped across 7 suites including REAL Windows SQLite, TypeScript/browser-types/security 6786 files PASS; no physical devices, exclusive production write lock, installer or power-loss proof. F02/F10 partial, G2 in_progress, G3-G5 open."
+        },
+        {
+          "path": "docs/streamcockpit-3/F10_THREE_SQLITE_JOURNALS_QA_GUARD_20261106.md",
+          "kind": "2026-11-06 FIXE F10: QA restore/migrate now rechecks exact live bytes for host F02 AutoMod, F08 prediction and F09 moments SQLite against an immutable backup, rejects stale/new/deleted journals and main-file-only backups with SQLite transaction sidecars. RED 14 PASS/4 FAIL, corrected 113 PASS/0 FAIL/0 skipped across 8 suites with real temporary Windows SQLite F08/F09 adapters. TypeScript/browser/security and diff PASS; no exclusive live writers, signed production installer, power loss or physical device reception. F10 partial, G2 in_progress, G3-G5 open."
         }
       ],
       "verifiedTests": [

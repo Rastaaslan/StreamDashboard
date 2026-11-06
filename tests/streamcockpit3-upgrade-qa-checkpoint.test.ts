@@ -1,6 +1,8 @@
 import {afterEach,describe,expect,it} from 'vitest';
 import {checkpointQaProfile,restoreQaProfile,migrateQaProfileCopy} from '../apps/desktop/src/streamcockpit-upgrade-qa-checkpoint.js';
 import {AutoModActionIntentSqlite} from '../apps/server/src/streamcockpit-automod-action-intent-sqlite.js';
+import {PredictionIntentSqlite} from '../apps/server/src/streamcockpit-prediction-intent-sqlite.js';
+import {MomentsSqliteStorage} from '../apps/server/src/streamcockpit-moments-sqlite.js';
 import {mkdtemp,mkdir,readFile,readdir,rm,stat,writeFile} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import {dirname,join} from 'node:path';
@@ -188,5 +190,92 @@ describe('F10 QA upgrade must preserve the F02 one-way AutoMod replay fence',()=
     await checkpointQaProfile(removed.root);await rm(file);
     await expect(restoreQaProfile(removed.root)).rejects.toThrow('QA_CHECKPOINT_AUTOMOD_FENCE_CHANGED');
     await expect(migrateQaProfileCopy(removed.root,2,steps)).rejects.toThrow('QA_CHECKPOINT_AUTOMOD_FENCE_CHANGED');
+  });
+});
+
+describe('F10 QA preserves F08 prediction and F09 moments durable host journals',()=>{
+  const prediction='streamcockpit-prediction-intents.sqlite';
+  const moments='streamcockpit-moments.sqlite';
+  const steps=[{from:1,to:2,apply:(copy:any)=>({...copy,schemaVersion:2,extraQaFlag:true})}];
+  it('backs up and migrates REAL Windows F08 and F09 SQLite receipts, restoring the same bytes',async()=>{
+    const f=await fixture(),predFile=join(f.active,prediction),momentFile=join(f.active,moments);
+    expect(new PredictionIntentSqlite(predFile).reserve('42')).toBe(true);
+    expect(await new MomentsSqliteStorage(momentFile).compareAndSwap(null,'journal-v1')).toBe(true);
+    const expected=await Promise.all([readFile(predFile),readFile(momentFile)]);
+    await checkpointQaProfile(f.root);
+    await migrateQaProfileCopy(f.root,2,steps);
+    await restoreQaProfile(f.root);
+    for(const folder of ['backup/files','migrated','restored']){
+      const location=join(f.root,...folder.split('/'));
+      expect(await readFile(join(location,prediction))).toEqual(expected[0]);
+      expect(await readFile(join(location,moments))).toEqual(expected[1]);
+      expect(new PredictionIntentSqlite(join(location,prediction)).isBlocked('42')).toBe(true);
+      expect(await new MomentsSqliteStorage(join(location,moments)).read()).toBe('journal-v1');
+    }
+  });
+  it('rejects rollback after a NEW F08 prediction attempt, retaining the live permanent fence',async()=>{
+    const f=await fixture(),file=join(f.active,prediction),fence=new PredictionIntentSqlite(file);
+    expect(fence.reserve('42')).toBe(true);
+    await checkpointQaProfile(f.root);
+    expect(fence.reserve('43')).toBe(true);
+    await expect(restoreQaProfile(f.root)).rejects.toThrow('QA_CHECKPOINT_PREDICTION_FENCE_CHANGED');
+    await expect(migrateQaProfileCopy(f.root,2,steps)).rejects.toThrow('QA_CHECKPOINT_PREDICTION_FENCE_CHANGED');
+    expect(fence.isBlocked('43')).toBe(true);
+    for(const folder of ['restored','migrated'])await expect(stat(join(f.root,folder))).rejects.toMatchObject({code:'ENOENT'});
+  });
+  it('rejects rollback after a NEW F09 moment write, retaining the live receipt',async()=>{
+    const f=await fixture(),file=join(f.active,moments),store=new MomentsSqliteStorage(file);
+    expect(await store.compareAndSwap(null,'journal-v1')).toBe(true);
+    await checkpointQaProfile(f.root);
+    expect(await store.compareAndSwap('journal-v1','journal-v2')).toBe(true);
+    await expect(restoreQaProfile(f.root)).rejects.toThrow('QA_CHECKPOINT_MOMENTS_JOURNAL_CHANGED');
+    await expect(migrateQaProfileCopy(f.root,2,steps)).rejects.toThrow('QA_CHECKPOINT_MOMENTS_JOURNAL_CHANGED');
+    expect(await store.read()).toBe('journal-v2');
+    for(const folder of ['restored','migrated'])await expect(stat(join(f.root,folder))).rejects.toMatchObject({code:'ENOENT'});
+  });
+  it('refuses an F08 journal deleted after backup or an F09 journal created after backup',async()=>{
+    const removed=await fixture(),f08=join(removed.active,prediction);
+    expect(new PredictionIntentSqlite(f08).reserve('42')).toBe(true);
+    await checkpointQaProfile(removed.root);await rm(f08);
+    await expect(restoreQaProfile(removed.root)).rejects.toThrow('QA_CHECKPOINT_PREDICTION_FENCE_CHANGED');
+    const created=await fixture(),f09=join(created.active,moments);
+    await checkpointQaProfile(created.root);
+    expect(await new MomentsSqliteStorage(f09).compareAndSwap(null,'late-event')).toBe(true);
+    await expect(migrateQaProfileCopy(created.root,2,steps)).rejects.toThrow('QA_CHECKPOINT_MOMENTS_JOURNAL_CHANGED');
+  });
+  it('rejects an F08 reservation committed during the migration, before promotion',async()=>{
+    const f=await fixture(),file=join(f.active,prediction),fence=new PredictionIntentSqlite(file);
+    expect(fence.reserve('42')).toBe(true);
+    await checkpointQaProfile(f.root);
+    let reached=false;
+    await expect(migrateQaProfileCopy(f.root,2,[{from:1,to:2,apply:(copy:any)=>{
+      reached=true;
+      expect(fence.reserve('43')).toBe(true);
+      return {...copy,schemaVersion:2};
+    }}])).rejects.toThrow('QA_CHECKPOINT_PREDICTION_FENCE_CHANGED');
+    expect(reached).toBe(true);
+    expect(fence.isBlocked('43')).toBe(true);
+    await expect(stat(join(f.root,'migrated'))).rejects.toMatchObject({code:'ENOENT'});
+    expect((await readdir(f.root)).some(name=>name.startsWith('migrated-pending-'))).toBe(false);
+  });
+  it('refuses a partial SQLite sidecar captured INSIDE the backup manifest',async()=>{
+    const f=await fixture(),file=join(f.active,moments);
+    expect(await new MomentsSqliteStorage(file).compareAndSwap(null,'first-event')).toBe(true);
+    await writeFile(file+'-wal',Buffer.from('synthetic-uncommitted-WAL'));
+    await checkpointQaProfile(f.root);
+    await rm(file+'-wal');
+    await expect(restoreQaProfile(f.root)).rejects.toThrow('QA_CHECKPOINT_DURABLE_SIDECAR_PRESENT');
+    await expect(migrateQaProfileCopy(f.root,2,steps)).rejects.toThrow('QA_CHECKPOINT_DURABLE_SIDECAR_PRESENT');
+    expect(await new MomentsSqliteStorage(file).read()).toBe('first-event');
+  });
+  it('refuses an incomplete SQLite sidecar rather than treating the main DB as a complete checkpoint',async()=>{
+    const f=await fixture(),f08=join(f.active,prediction);
+    expect(new PredictionIntentSqlite(f08).reserve('42')).toBe(true);
+    await checkpointQaProfile(f.root);
+    await writeFile(f08+'-journal',Buffer.from('incomplete transaction fixture'));
+    await expect(restoreQaProfile(f.root)).rejects.toThrow('QA_CHECKPOINT_DURABLE_SIDECAR_PRESENT');
+    await expect(migrateQaProfileCopy(f.root,2,steps)).rejects.toThrow('QA_CHECKPOINT_DURABLE_SIDECAR_PRESENT');
+    await rm(f08+'-journal');
+    expect(new PredictionIntentSqlite(f08).isBlocked('42')).toBe(true);
   });
 });
