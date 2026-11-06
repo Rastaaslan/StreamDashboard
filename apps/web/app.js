@@ -1,6 +1,7 @@
 import { openDialog, closeDialog, dialogCreation, dialogCompletion, draftRevision, ownsKeyboard } from './dialog-drafts.js';
 import { normalizeCategoryQuery, rankCategories, rememberCategory } from '../mobile/twitch-category.js';
 import { expandRecurringItems, recurrenceSummary } from '../mobile/shared/recurrence.js';
+import { classicDashboardReadiness } from './classic-readiness.js';
 
 const pages = [
   ['overview', 'Accueil', '⌂'],
@@ -174,8 +175,8 @@ function nav() {
 function overview() {
   const next = state.nextLive;
   const done = state.checklist.filter(item => item.done).length;
-  const ready = Boolean(state.runtime && state.obs.connected && state.twitch.connected);
-  return `<div class="hero minimal-hero"><div><span class="kicker">${ready ? 'TOUT EST PRÊT' : 'À VÉRIFIER'}</span><h2>${state.obs.streaming ? 'Le direct est en cours.' : 'Prêt pour le prochain live.'}</h2><p>${next ? `${esc(next.title)} · ${eventRange(next)}` : 'Aucun live planifié.'}</p></div><button class="primary big" data-action="go" data-value="prepare">Préparer <b>→</b></button></div><div class="status-strip overview-status"><span>OBS <b>${state.obs.connected ? 'Prêt' : 'Hors ligne'}</b></span><span>Live <b>${state.obs.streaming ? 'En direct' : 'Arrêté'}</b></span><span>Prépa <b>${done}/${state.checklist.length}</b></span><span>Timer <b>${duration(timerRemaining())}</b></span></div><div class="section-head minimal-section-head"><div><span class="label">ACCÈS RAPIDE</span></div></div><div class="quick minimal-quick"><button data-action="go" data-value="live"><i>●</i><b>Live</b><small>Diffusion et timer</small></button><button data-action="go" data-value="deck"><i>⌘</i><b>Scènes & audio</b><small>Contrôle OBS</small></button><button data-action="go" data-value="planning"><i>▣</i><b>Planning</b><small>Prochains lives</small></button></div>`;
+  const {ready, live} = classicDashboardReadiness(state);
+  return `<div class="hero minimal-hero"><div><span class="kicker">${live ? 'EN DIRECT' : ready ? 'TOUT EST PRÊT' : 'À VÉRIFIER'}</span><h2>${live ? 'Le direct est en cours.' : ready ? 'Prêt pour le prochain live.' : 'Préparation à vérifier avant le live.'}</h2><p>${next ? `${esc(next.title)} · ${eventRange(next)}` : 'Aucun live planifié.'}</p></div><button class="primary big" data-action="go" data-value="prepare">Préparer <b>→</b></button></div><div class="status-strip overview-status"><span>OBS <b>${state.obs.connected ? 'Prêt' : 'Hors ligne'}</b></span><span>Live <b>${state.obs.streaming ? 'En direct' : 'Arrêté'}</b></span><span>Prépa <b>${done}/${state.checklist.length}</b></span><span>Timer <b>${duration(timerRemaining())}</b></span></div><div class="section-head minimal-section-head"><div><span class="label">ACCÈS RAPIDE</span></div></div><div class="quick minimal-quick"><button data-action="go" data-value="live"><i>●</i><b>Live</b><small>Diffusion et timer</small></button><button data-action="go" data-value="deck"><i>⌘</i><b>Scènes & audio</b><small>Contrôle OBS</small></button><button data-action="go" data-value="planning"><i>▣</i><b>Planning</b><small>Prochains lives</small></button></div>`;
 }
 
 function preflightBlock() {
@@ -344,8 +345,8 @@ function render() {
 }
 
 function updateHeader() {
-  const healthy = Boolean(state.runtime && state.obs.connected && state.twitch.connected);
-  $('#pc-pill').textContent = healthy ? '✓ TOUT EST PRÊT' : `PC ${state.runtime ? 'CONNECTÉ' : 'HORS LIGNE'}`;
+  const {ready:healthy, live} = classicDashboardReadiness(state);
+  $('#pc-pill').textContent = live ? '● DIRECT EN COURS' : healthy ? '✓ TOUT EST PRÊT' : `PC ${state.runtime ? 'CONNECTÉ' : 'HORS LIGNE'}`;
   $('#pc-pill').className = `status-pill ${healthy ? 'ready-summary' : ''}`;
   $('#obs-pill').hidden = healthy;
   $('#twitch-pill').hidden = healthy;
