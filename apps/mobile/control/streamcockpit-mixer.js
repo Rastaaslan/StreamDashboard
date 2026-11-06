@@ -44,5 +44,7 @@ export function mountMixerTable(root, { read, onData = () => {} }) {
     }
   };
   void refresh();
-  return { refresh, destroy() { disposed = true; generation++; section.remove(); } };
+  // Do not let a pre-disconnect GET repaint the UI after the network is lost.
+  const invalidate = () => { if (disposed) return; generation++; table.replaceChildren(); status.textContent = 'Connexion interrompue · actualisation nécessaire'; };
+  return { refresh, invalidate, destroy() { disposed = true; generation++; section.remove(); } };
 }

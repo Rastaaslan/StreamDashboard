@@ -1,12 +1,13 @@
 import {it,expect} from 'vitest';
 import {chromium} from '@playwright/test';
 import {build} from 'esbuild';
-import {execFileSync} from 'node:child_process';
+import {readFile} from 'node:fs/promises';
 import {withMixerFixture} from './helpers/streamcockpit-mixer-fixture.js';
 
-it.skipIf(process.env.SC3_FINAL_BROWSER_TEST!=='1')('F05 committed UI in Edge 320px recovers lost HTTP ACK after durable router restart and offers a NEW guarded rollback',async()=>withMixerFixture(async f=>{
- // Deliberately use committed UI, not another owner's uncommitted mixer edits.
- const source=execFileSync('git',['show','HEAD:apps/mobile/control/streamcockpit-mixer-control.js'],{encoding:'utf8'});
+it.skipIf(process.env.SC3_FINAL_BROWSER_TEST!=='1')('F05 integrated UI in Edge 320px recovers lost HTTP ACK after durable router restart and offers a NEW guarded rollback',async()=>withMixerFixture(async f=>{
+ // The explicit F03/F05 ownership transfer now permits testing the integrated
+ // source directly, rather than accidentally exercising the previous Git HEAD.
+ const source=await readFile(new URL('../apps/mobile/control/streamcockpit-mixer-control.js',import.meta.url),'utf8');
  const bundle=await build({stdin:{contents:source+'\nwindow.mountAudio=mountMixerControl;',resolveDir:process.cwd()},bundle:true,write:false,format:'iife',platform:'browser'});
  const browser=await chromium.launch({channel:'msedge',headless:true});
  try{
@@ -29,7 +30,7 @@ it.skipIf(process.env.SC3_FINAL_BROWSER_TEST!=='1')('F05 committed UI in Edge 32
   const section=page.getByRole('region',{name:'Commander le mixeur OBS'});
   await page.locator('[name=gain]').fill('0.5');await section.locator('button[type=submit]').click();
   await expect.poll(()=>section.locator('[data-consent]').isVisible()).toBe(true);
-  await section.locator('input[type=checkbox]').check();await section.locator('[data-confirm]').click();
+  await section.getByLabel('Confirmer le réglage audio',{exact:true}).check();await section.locator('[data-confirm]').click();
   await expect.poll(()=>section.getByRole('status').textContent()).toContain('incertain');
   expect(f.state().writes).toBe(1);await f.restartRouter();
   await page.reload();await mount(false);
@@ -39,7 +40,7 @@ it.skipIf(process.env.SC3_FINAL_BROWSER_TEST!=='1')('F05 committed UI in Edge 32
   await section.locator('[data-rollback]').click();
   await expect.poll(()=>section.locator('[data-consent]').isVisible()).toBe(true);
   expect(f.state().writes).toBe(1);
-  await section.locator('input[type=checkbox]').check();await section.locator('[data-confirm]').click();
+  await section.getByLabel('Confirmer le réglage audio',{exact:true}).check();await section.locator('[data-confirm]').click();
   await expect.poll(()=>f.state().gain).toBe(.75);expect(f.state().writes).toBe(2);
   await page.evaluate(()=>(window as any).panel.destroy());
  }finally{await browser.close()}

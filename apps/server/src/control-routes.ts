@@ -9,6 +9,7 @@ export function registerControlRoutes(options: {
   timerSource(): string | undefined; state(): unknown; settings: express.RequestHandler; planningCreate: express.RequestHandler; planningUpdate: express.RequestHandler; planningDelete: express.RequestHandler; recurrence: express.RequestHandler;
   observe(): Promise<void>;
   verifyContext?(request: express.Request, action: string): Promise<void>;
+  sequenceContext?(request:express.Request,action:string):(completed?:import('../../../packages/contracts/src/control.js').DeckAction)=>Promise<void>;
   isLocal(req: express.Request): boolean; port(): number;
 }) {
   const {app,control,obs}=options;
@@ -20,11 +21,18 @@ export function registerControlRoutes(options: {
       const action=selected && ['live.start','live.stop'].includes(selected.type)?selected.type:req.body.action;
       // A retained native binding may predate a remote change of this action's type.
       // Resolve against the current server configuration before allowing a shortcut.
-      if (req.body.trigger === 'keyboard' && action === 'live.stop') {
-        res.status(409).json({ok:false,error:{code:'CONFIRM_REQUIRED',message:'Confirmez l’arrêt depuis le bouton du tableau de bord.',retryable:false}});
+      if (req.body.trigger === 'keyboard' && (action === 'live.stop' || selected?.type === 'macro.sequence')) {
+        res.status(409).json({ok:false,error:{code:'CONFIRM_REQUIRED',message:selected?.type==='macro.sequence'?'Confirmez la séquence depuis le Deck.':'Confirmez l’arrêt depuis le bouton du tableau de bord.',retryable:false}});
         return;
       }
-      res.json(publicControlReceipt(await control.execute({...req.body,action}, async action=>{res.locals.checkDevicePermission?.(action);await res.locals.checkDeviceRole?.(action);if(req.body.expectedContextToken!==undefined){if(!options.verifyContext)throw new Error('Contexte maître indisponible.');await options.verifyContext(req,action);}})));
+      const sequence=selected?.type==='macro.sequence'&&req.body.expectedContextToken!==undefined?options.sequenceContext?.(req,action):undefined;
+      res.json(publicControlReceipt(await control.execute({...req.body,action}, async (action,completed)=>{
+        res.locals.checkDevicePermission?.(action);await res.locals.checkDeviceRole?.(action);
+        if(req.body.expectedContextToken!==undefined){
+          if(sequence)await sequence(completed);
+          else{if(!options.verifyContext)throw new Error('Contexte maître indisponible.');await options.verifyContext(req,action)}
+        }
+      })));
     } catch(e){next(e);}
   });
   app.get('/api/v2/wizebot/catalog',(_req,res)=>res.json(options.wizebotCommands.snapshot()));

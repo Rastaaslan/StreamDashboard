@@ -1,26 +1,24 @@
 import {createHash,randomUUID} from 'node:crypto';
 import {Router,type Request} from 'express';
-import type {ObsAudioChange,ObsAudioSource} from '../../../integrations/obs/src/client.js';
+import {validObsAudioTracks,validObsAudioMonitor,type ObsAudioChange,type ObsAudioSource} from '../../../integrations/obs/src/client.js';
 import {isObsRequestRejection} from '../../../integrations/obs/src/output-result.js';
-import {audioReceiptId,type AudioReceipt as Receipt,type AudioReceiptJournal,type AudioReceiptRecord} from './streamcockpit-audio-receipts.js';
+import {audioReceiptId,validateAudioChange,sameAudioSource,audioChangeObserved,reverseAudioChange,type AudioReceipt as Receipt,type AudioReceiptJournal,type AudioReceiptRecord} from './streamcockpit-audio-receipts.js';
 
 class MixerFault extends Error { constructor(readonly code:string,readonly status=409){super(code)} }
 const exact=(value:unknown,keys:string[])=>value!==null&&typeof value==='object'&&!Array.isArray(value)&&Object.keys(value).sort().join(',')===[...keys].sort().join(',');
-const same=(a:ObsAudioSource,b:ObsAudioSource)=>a.sourceId===b.sourceId&&a.inputUuid===b.inputUuid&&a.generation===b.generation&&a.gain===b.gain&&a.mute===b.mute;
+const same=sameAudioSource;
 const owner=(actor:string)=>'mixer:'+createHash('sha256').update(actor).digest('hex')+':';
 function change(value:unknown):ObsAudioChange {
- const c=value as Record<string,unknown>;
- if(!c||typeof c.sourceId!=='string'||!c.sourceId.trim()||c.sourceId.length>200)throw new MixerFault('INVALID',400);
- if(exact(c,['sourceId','gain'])&&typeof c.gain==='number'&&Number.isFinite(c.gain)&&c.gain>=0&&c.gain<=20)return {sourceId:c.sourceId,gain:c.gain};
- if(exact(c,['sourceId','mute'])&&typeof c.mute==='boolean')return {sourceId:c.sourceId,mute:c.mute};
- throw new MixerFault('INVALID',400);
+ try{validateAudioChange(value as ObsAudioChange);return structuredClone(value as ObsAudioChange)}
+ catch{throw new MixerFault('INVALID',400)}
 }
 type Context={actor:string;host:string;authority:string};
 type Plan=Context&{before:ObsAudioSource;change:ObsAudioChange;expiresAt:number};
-/** A narrow gain/mute command path. Routing/meters/device presence stay separate evidence. */
+/** One consent/readback path for gain, mute and observed OBS source routing.
+ * Track flags do not prove the Twitch VOD output mapping or physical audibility. */
 export function createMixerControlRouter(options:{
  actor(request:Request):Promise<string>|string;host():Promise<string|undefined>|string|undefined;
- read(sourceId:string):Promise<ObsAudioSource>;write(before:ObsAudioSource,change:ObsAudioChange):Promise<void>;
+ read(sourceId:string,routing?:boolean):Promise<ObsAudioSource>;write(before:ObsAudioSource,change:ObsAudioChange):Promise<void>;
  serialize<T>(operation:(assertCurrent:()=>void)=>Promise<T>):Promise<T>;
  reserve(id:string,fingerprint:string):Promise<void>;reservation(id:string):string|undefined;now?:()=>number;
  /** Stable authenticated FIXE identity, distinct from the transient OBS connection. */
@@ -53,9 +51,10 @@ export function createMixerControlRouter(options:{
   if(!host||!authority||expected&&(actor!==expected.actor||host!==expected.host||authority!==expected.authority))throw new MixerFault('AUTHORITY_CHANGED');
   return {actor,host,authority};
  };
- const read=async(sourceId:string)=>{
-  const s=await options.read(sourceId),at=now();
+ const read=async(sourceId:string,routing=false)=>{
+  const s=await options.read(sourceId,routing),at=now();
   if(!s||s.sourceId!==sourceId||typeof s.inputUuid!=='string'||!s.inputUuid||!Number.isSafeInteger(s.generation)||s.generation<0||!Number.isFinite(s.gain)||s.gain<0||s.gain>20||typeof s.mute!=='boolean'||!Number.isFinite(s.observedAt)||s.observedAt>at||at-s.observedAt>5000)throw new MixerFault('NOT_OBSERVED');
+  if(routing&&(!validObsAudioTracks(s.tracks)||!validObsAudioMonitor(s.monitorType)))throw new MixerFault('NOT_OBSERVED');
   return structuredClone(s);
  };
  const purge=()=>{for(const[id,p]of plans)if(p.expiresAt<=now())plans.delete(id);for(const[id,r]of receipts)if(r.expiresAt<=now())receipts.delete(id)};
@@ -100,18 +99,18 @@ export function createMixerControlRouter(options:{
    const context=await check(req);purge();
    if(op==='preview'){
     let requested:ObsAudioChange,before:ObsAudioSource;
-    if(exact(req.body,['change'])){requested=change(req.body.change);before=await read(requested.sourceId)}
+    if(exact(req.body,['change'])){requested=change(req.body.change);before=await read(requested.sourceId,'tracks'in requested||'monitorType'in requested)}
     else if(exact(req.body,['rollbackReceiptId'])&&typeof req.body.rollbackReceiptId==='string'){
      const cached=receipts.get(req.body.rollbackReceiptId),saved=cached?undefined:archived(req.body.rollbackReceiptId,context);
      const prior=cached?.value??saved?.receipt;
      if(cached&&(cached.context.actor!==context.actor||cached.context.host!==context.host||cached.context.authority!==context.authority))throw new MixerFault('ROLLBACK_UNAVAILABLE');
      if(!prior?.rollbackAvailable||!prior.before||!prior.after)throw new MixerFault('ROLLBACK_UNAVAILABLE');
-     before=await read(prior.change.sourceId);
+     before=await read(prior.change.sourceId,'tracks'in prior.change||'monitorType'in prior.change);
      // Cross-runtime history is not continuity of OBS generation. A NEW preview
      // requires the same UUID and current gain/mute, then binds the new generation.
      const observed=saved&&saved.context.runtime!==runtime?{...prior.after,generation:before.generation}:prior.after;
      if(!same(before,observed))throw new MixerFault('REVISION_CONFLICT');
-     requested='gain'in prior.change?{sourceId:before.sourceId,gain:prior.before.gain}:{sourceId:before.sourceId,mute:prior.before.mute};
+     requested=reverseAudioChange(prior.before,prior.change);
     }else throw new MixerFault('INVALID',400);
     await check(req,context);
     if(plans.size>=100)throw new MixerFault('BUSY',503);
@@ -141,19 +140,19 @@ export function createMixerControlRouter(options:{
     try{
      await check(req,context);assertCurrent();
      if(plan.expiresAt<=now())throw new MixerFault('CONSENT_EXPIRED');
-     let current=await read(plan.change.sourceId);assertCurrent();
+     const routing='tracks'in plan.change||'monitorType'in plan.change;
+     let current=await read(plan.change.sourceId,routing);assertCurrent();
      if(!same(current,plan.before))throw new MixerFault('REVISION_CONFLICT');
      await options.reserve(id,owner(context.actor)+createHash('sha256').update(JSON.stringify(plan)).digest('hex'));
      if(options.journal&&!options.journal.reserve(id,{...context,runtime},plan.change))throw new MixerFault('CONSENT_EXPIRED');
      await check(req,context);assertCurrent();
-     current=await read(plan.change.sourceId);assertCurrent();
+     current=await read(plan.change.sourceId,routing);assertCurrent();
      if(!same(current,plan.before))throw new MixerFault('REVISION_CONFLICT');
      await check(req,context);assertCurrent();
-     const unchanged='gain'in plan.change?current.gain===plan.change.gain:current.mute===plan.change.mute;
+     const unchanged=audioChangeObserved(current,current,plan.change);
      if(!unchanged){sent=true;await options.write(current,plan.change);assertCurrent()}
-     const after=await read(plan.change.sourceId);assertCurrent();await check(req,context);assertCurrent();
-     if(after.inputUuid!==current.inputUuid||after.generation!==current.generation||
-       ('gain'in plan.change?(Math.abs(after.gain-plan.change.gain)>0.000001||after.mute!==current.mute):(after.mute!==plan.change.mute||after.gain!==current.gain)))throw new MixerFault('READBACK_MISMATCH');
+     const after=await read(plan.change.sourceId,routing);assertCurrent();await check(req,context);assertCurrent();
+     if(!audioChangeObserved(current,after,plan.change))throw new MixerFault('READBACK_MISMATCH');
      return {schemaVersion:1 as const,kind:'streamcockpit-mixer-receipt' as const,confirmationId:id,status:unchanged?'unchanged' as const:'confirmed' as const,change:plan.change,before:current,after,rollbackAvailable:!unchanged};
     }catch(error){
      if(!sent)throw error;

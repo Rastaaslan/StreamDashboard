@@ -4,6 +4,7 @@ import {join} from 'node:path';
 import {startDashboardServer,type DashboardServerHandle} from '../apps/server/src/index.js';
 import {MemorySecretStore} from '../apps/server/src/storage.js';
 import {MomentsSqliteStorage} from '../apps/server/src/streamcockpit-moments-sqlite.js';
+import {MomentsPipeline} from '../apps/server/src/streamcockpit-moments.js';
 import {withMixerFixture} from './helpers/streamcockpit-mixer-fixture.js';
 it('F09 complete runtime: socket receipt reaches durable timeline, readers agree, restart never duplicates or sends OBS commands',async()=>withMixerFixture(async f=>{
  await f.obs.close();
@@ -12,7 +13,7 @@ it('F09 complete runtime: socket receipt reaches durable timeline, readers agree
  const saved=Object.fromEntries(names.map(name=>[name,process.env[name]]));
  process.env.OBS_URL=f.obsUrl;process.env.DATA_FILE=join(dataDir,'dashboard.json');process.env.DISCORD_BOT_TOKEN='';process.env.STREAMLABS_SOCKET_TOKEN='';
  const secrets=new MemorySecretStore();await secrets.setStreamlabsToken('private-fixture-token');
- let receive:((value:unknown)=>void)|undefined,server:DashboardServerHandle|undefined;
+ let receive:((value:unknown)=>void)|undefined,server:DashboardServerHandle|undefined,shutdownUncertain=false;
  const start=async()=>{
   server=await startDashboardServer({port:0,dataDir,host:'127.0.0.1',obsEnabled:true,timerAuthority:true,twitchClientId:'',googleClientId:'',googleClientSecret:'',secretStore:secrets,
    streamlabsTransport:{connect:async(_token,_tip,_disconnect,event)=>{receive=event;return async()=>{receive=undefined}}},
@@ -45,16 +46,31 @@ it('F09 complete runtime: socket receipt reaches durable timeline, readers agree
   expect(await get('/api/v1/streamcockpit-moments/'+sessionId)).toEqual(before);
   expect((await get('/api/v1/streamcockpit-moments')).body.sessions).toHaveLength(1);
   if(process.platform==='win32'){
+   shutdownUncertain=true;
    const cas=vi.spyOn(MomentsSqliteStorage.prototype,'compareAndSwap').mockRejectedValueOnce(Error('MOMENTS_WRITE_UNCERTAIN'));
+   const records=vi.spyOn(MomentsPipeline.prototype,'recordStreamlabsObservation');
    const lost={...packet,message:[{_id:'unacknowledged-event'}]};
    receive!(lost);
    await vi.waitFor(async()=>expect((await get('/api/v1/streamlabs/events')).body.provider.status).toBe('DEGRADED'));
    receive!(lost); // An uncertain old event is never automatically repeated.
-   receive!({...packet,message:[{_id:'fresh-after-recovery'}]});
-   await vi.waitFor(async()=>expect((await get('/api/v1/streamcockpit-moments/'+sessionId)).body.markers).toHaveLength(2));
-   expect(cas).toHaveBeenCalledTimes(2); // One failed attempt and one NEW provider event.
-   cas.mockRestore();
+   receive!({...packet,message:[{_id:'new-after-uncertain'}]});
+   await vi.waitFor(()=>expect(records).toHaveBeenCalledTimes(2));
+   const outcomes=await Promise.allSettled(records.mock.results.map(result=>result.value));
+   expect(outcomes.map(result=>result.status)).toEqual(['rejected','rejected']);
+   // F10 intentionally keeps this writer blocked after a lost COMMIT. A new
+   // provider event is not permission to reopen storage or retry the old event.
+   expect((await get('/api/v1/streamcockpit-moments/'+sessionId)).body.markers).toHaveLength(1);
+   expect(cas).toHaveBeenCalledTimes(1);
+   expect((await get('/api/v1/streamlabs/events')).body.provider.status).toBe('DEGRADED');
+   records.mockRestore();cas.mockRestore();
   }
   expect(f.state().writes).toBe(0);expect(f.rpc.filter((rpc:any)=>/^StartStream$|^StopStream$|^SaveReplayBuffer$/.test(rpc.type))).toEqual([]);
- }finally{await server?.stop();vi.restoreAllMocks();for(const name of names){if(saved[name]===undefined)delete process.env[name];else process.env[name]=saved[name]}}
+ }finally{
+  try{
+   // An injected uncertain write cannot produce a clean F10 shutdown receipt.
+   // Still require the real server to finish closing its listeners.
+   if(server&&shutdownUncertain){await expect(server.stop()).rejects.toThrow('RUNTIME_PRODUCER_SHUTDOWN_UNCERTAIN');expect(server.server.listening).toBe(false)}
+   else await server?.stop();
+  }finally{vi.restoreAllMocks();for(const name of names){if(saved[name]===undefined)delete process.env[name];else process.env[name]=saved[name]}}
+ }
 }),30_000);

@@ -1,4 +1,4 @@
-import type {ObsAudioChange,ObsAudioSource} from '../../../integrations/obs/src/client.js';
+import {validObsAudioTracks,validObsAudioMonitor,type ObsAudioChange,type ObsAudioSource} from '../../../integrations/obs/src/client.js';
 
 export interface AudioReceipt {
   schemaVersion:1;kind:'streamcockpit-mixer-receipt';confirmationId:string;
@@ -28,15 +28,38 @@ export function validateAudioReceiptContext(v:AudioReceiptContext):void{
     !text(v.host,300)||!audioReceiptId(v.runtime))throw issue();
 }
 export function validateAudioChange(v:ObsAudioChange):void{
-  if(!keys(v,['sourceId','gain','mute'])||!text(v.sourceId,200)||
-    (Object.hasOwn(v,'gain')===Object.hasOwn(v,'mute'))||
-    ('gain'in v?typeof v.gain!=='number'||!Number.isFinite(v.gain)||v.gain<0||v.gain>20:typeof v.mute!=='boolean'))throw issue();
+  if(!keys(v,['sourceId','gain','mute','tracks','monitorType'])||!text(v.sourceId,200)||
+    ['gain','mute','tracks','monitorType'].filter(k=>Object.hasOwn(v,k)).length!==1)throw issue();
+  if('gain'in v?(typeof v.gain!=='number'||!Number.isFinite(v.gain)||v.gain<0||v.gain>20):
+    'mute'in v?typeof v.mute!=='boolean':'tracks'in v?!validObsAudioTracks(v.tracks):!validObsAudioMonitor(v.monitorType))throw issue();
 }
 function source(v:ObsAudioSource|undefined,change:ObsAudioChange):v is ObsAudioSource{
-  return Boolean(v&&keys(v,['sourceId','inputUuid','generation','gain','mute','observedAt'])&&
+  return Boolean(v&&keys(v,['sourceId','inputUuid','generation','gain','mute','observedAt','tracks','monitorType'])&&
+    (v.tracks===undefined||validObsAudioTracks(v.tracks))&&(v.monitorType===undefined||validObsAudioMonitor(v.monitorType))&&
+    (!('tracks'in change||'monitorType'in change)||(validObsAudioTracks(v.tracks)&&validObsAudioMonitor(v.monitorType)))&&
     v.sourceId===change.sourceId&&text(v.inputUuid,200)&&Number.isSafeInteger(v.generation)&&v.generation>=0&&
     typeof v.gain==='number'&&Number.isFinite(v.gain)&&v.gain>=0&&v.gain<=20&&typeof v.mute==='boolean'&&
     Number.isSafeInteger(v.observedAt)&&v.observedAt>=0);
+}
+/** Same source and all unchanged audio properties; tracks are canonicalized by number. */
+export function sameAudioSource(a:ObsAudioSource,b:ObsAudioSource):boolean{
+ return a.sourceId===b.sourceId&&a.inputUuid===b.inputUuid&&a.generation===b.generation&&a.gain===b.gain&&a.mute===b.mute&&
+  a.monitorType===b.monitorType&&sameTracks(a.tracks,b.tracks);
+}
+const sameTracks=(a:ObsAudioSource['tracks'],b:ObsAudioSource['tracks'])=>a===undefined||b===undefined?a===b:
+ validObsAudioTracks(a)&&validObsAudioTracks(b)&&(['1','2','3','4','5','6']as const).every(k=>a[k]===b[k]);
+export function reverseAudioChange(before:ObsAudioSource,change:ObsAudioChange):ObsAudioChange{
+ if('gain'in change)return {sourceId:before.sourceId,gain:before.gain};
+ if('mute'in change)return {sourceId:before.sourceId,mute:before.mute};
+ if('tracks'in change){if(!validObsAudioTracks(before.tracks))throw issue();return {sourceId:before.sourceId,tracks:structuredClone(before.tracks)}}
+ if(!validObsAudioMonitor(before.monitorType))throw issue();return {sourceId:before.sourceId,monitorType:before.monitorType};
+}
+export function audioChangeObserved(before:ObsAudioSource,after:ObsAudioSource,change:ObsAudioChange):boolean{
+ return after.sourceId===before.sourceId&&after.inputUuid===before.inputUuid&&after.generation===before.generation&&
+  ('gain'in change?Math.abs(after.gain-change.gain)<=0.000001:after.gain===before.gain)&&
+  after.mute===('mute'in change?change.mute:before.mute)&&
+  after.monitorType===('monitorType'in change?change.monitorType:before.monitorType)&&
+  sameTracks(after.tracks,'tracks'in change?change.tracks:before.tracks);
 }
 export function validateAudioReceipt(v:AudioReceipt):void{
   if(!keys(v,['schemaVersion','kind','confirmationId','status','change','before','after','rollbackAvailable'])||
@@ -46,8 +69,7 @@ export function validateAudioReceipt(v:AudioReceipt):void{
   if(v.status==='confirmed'||v.status==='unchanged'){
     if(!source(v.before,v.change)||!source(v.after,v.change)||v.before.inputUuid!==v.after.inputUuid||
       v.before.generation!==v.after.generation||
-      ('gain'in v.change?Math.abs(v.after.gain-v.change.gain!)>0.000001||v.after.mute!==v.before.mute:
-        v.after.mute!==v.change.mute||v.after.gain!==v.before.gain)||
+      !audioChangeObserved(v.before,v.after,v.change)||
       v.rollbackAvailable!==(v.status==='confirmed'))throw issue();
   }else if(v.rollbackAvailable||v.before!==undefined||v.after!==undefined)throw issue();
 }

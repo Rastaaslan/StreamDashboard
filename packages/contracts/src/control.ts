@@ -3,7 +3,7 @@ export type Outcome = 'running' | 'succeeded' | 'partial' | 'failed' | 'uncertai
 export interface PlatformResult { status: Outcome; message: string; observedAt: string; live?: boolean }
 export interface LiveMetadata { title: string; description: string; twitchGameId: string; youtubeCategoryId: string; tags: string[] }
 export interface OutputTarget { kind: 'unconfigured' | 'main' | 'output' | 'aitum-suite'; name: string }
-export interface DeckAction { id: string; label: string; type: 'mic.toggle' | 'scene.set' | 'mode.set' | 'timer.add' | 'sound.play' | 'sound.stop' | 'alert.play' | 'chat.send' | 'wizebot.command' | 'replay.save' | 'replay.start' | 'replay.stop' | 'live.start' | 'live.stop'; value: string; color: string; shortcut: string; wizebot?: { channel: string; id: string } }
+export interface DeckAction { id: string; label: string; type: 'mic.toggle' | 'scene.set' | 'mode.set' | 'timer.add' | 'sound.play' | 'sound.stop' | 'alert.play' | 'chat.send' | 'wizebot.command' | 'replay.save' | 'replay.start' | 'replay.stop' | 'live.start' | 'live.stop' | 'macro.sequence'; value: string; color: string; shortcut: string; wizebot?: { channel: string; id: string } }
 export interface ControlConfiguration {
   version: 1; revision: number; actions: DeckAction[];
   outputs: Record<Platform, OutputTarget>;
@@ -13,7 +13,7 @@ export interface ControlConfiguration {
 }
 export interface ControlRequest { id: string; issuedAt: string; action: string; platform?: Platform; expectedRevision?: number; metadata?: LiveMetadata; soundId?: string; expectedAction?: DeckAction; expectedContextToken?: string; confirmed?: boolean; youtubeBaseline?: import('../../../integrations/youtube/src/client.js').YouTubeMetadata }
 export interface ActionResult { message: string; replayPath?: string; messageId?: string }
-export interface ControlReceipt { id: string; action: string; fingerprint: string; status: Outcome; message: string; createdAt: string; finishedAt?: string; result?: ActionResult; platforms?: Partial<Record<Platform, PlatformResult>> }
+export interface ControlReceipt { id: string; action: string; fingerprint: string; status: Outcome; message: string; createdAt: string; finishedAt?: string; result?: ActionResult; macroSteps?: Array<{id:string;type:DeckAction['type'];status:'pending'|'running'|'succeeded'|'uncertain'}>; platforms?: Partial<Record<Platform, PlatformResult>> }
 // Documented global commands. Custom commands can be added without an API key.
 export const wizebotPresets = (): DeckAction[] => [
   ['uptime', 'Durée du live'], ['game', 'Jeu en cours'], ['infogame', 'Infos du jeu'], ['commands', 'Liste des commandes'],

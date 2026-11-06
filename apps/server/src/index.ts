@@ -2190,7 +2190,7 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
       const device = await options.deviceDescriptor?.().catch(() => undefined);
       return mixerHostEligible(device) ? device!.id + ':' + obs.connectionGeneration : undefined;
     },
-    read: sourceId => obs.readMixerSource(sourceId),
+    read: (sourceId,routing) => obs.readMixerSource(sourceId,routing),
     write: (before, change) => obs.writeMixerSource(before, change),
     serialize: operation => commands.observedObs(operation),
     reservation: id => local.commandReceipts?.[id],
@@ -3097,7 +3097,7 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
     if (req.path.startsWith('/api/v2/') && req.body.expectedRevision !== planningFingerprint(id)) throw Object.assign(new Error('Événement modifié sur un autre appareil. Rechargez avant d’enregistrer.'), { name: 'REVISION_CONFLICT' });
   };
   const controlHostState = () => ({ hostname: hostname(), timerObservedAt: Date.now(), chat: { connected: twitch.state.connected, canSend: twitch.controlCapabilities().chatWrite, channel: twitch.publicIdentity().userName || '' }, replayAutoStartError, monitor: { twitchLogin: twitch.publicIdentity().userName || '' }, micHealth:obs.micHealth(local.settings.primaryMicInput || ''), djiBatteryRelay:djiBatteryRelay.snapshot(), state: toRemoteDashboardState(snapshot()), settings: publicSettings(), settingsRevision: settingsFingerprint(), planning: structuredClone(local.planning), occurrences: expandEditableRecurringItems(local.planning, { from: Date.now() - DAY_MS, to: Date.now() + 90 * DAY_MS }), planningRevisions: Object.fromEntries(local.planning.map(item => [item.id, planningFingerprint(item.id)])), platforms: structuredClone(platformLive), outputStatus: structuredClone(outputStatus), local: true });
-  registerControlRoutes({ app, control, obs, wizebotCommands, timerSource: () => local.settings.timerBrowserSource, settings: settingsUpdate, planningCreate, planningUpdate, planningDelete, recurrence: recurrenceException, isLocal: isLocalRequest, port: () => runtimePort, observe: observePlatforms, state: controlHostState, verifyContext: (req, action) => masterContext.assert(req, req.body.expectedContextToken, action) });
+  registerControlRoutes({ app, control, obs, wizebotCommands, timerSource: () => local.settings.timerBrowserSource, settings: settingsUpdate, planningCreate, planningUpdate, planningDelete, recurrence: recurrenceException, isLocal: isLocalRequest, port: () => runtimePort, observe: observePlatforms, state: controlHostState, verifyContext: (req, action) => masterContext.assert(req, req.body.expectedContextToken, action), sequenceContext:(req,action)=>masterContext.sequence(req,req.body.expectedContextToken,action) });
   // Device-owned clients call their loopback runtime, never a paired PC. The
   // narrow adapter reuses provider credentials and all existing remote guards.
   app.post('/api/v2/device/providers', async (req, res) => {

@@ -319,6 +319,10 @@
         {
           "path": "apps/mobile/control/streamcockpit-master-context.js",
           "kind": "SC3-FINAL-DELIVERY-001: master OBS notification provenance, authenticated paired-controller role, existing deterministic selector, fixed scene/game/state banks, 12-second actor/context proof and existing durable action journal; 129 targeted tests PASS including real DashboardServer and Edge 320px. No physical Android/laptop qualification."
+        },
+        {
+          "path": "docs/streamcockpit-3/SC3_CLOTURE_UNIQUE_20261106.md",
+          "kind": "2026-11-06 FIXE explicit operator ownership transfer: inherited manual 2-5 existing OBS-step macros integrated in the actual editor, ControlService queue, actor/context authorization and durable step receipts. Own acknowledged scene transitions advance only the private sequence context; stale global proofs never reauthorize another action. New operator confirmation, no keyboard/public Twitch/live/nested sequence bypass. Full Vitest 2898 PASS/0 FAIL/129 skipped; Node built 352 PASS/0 FAIL/6 skipped; integrated F03/F05 revalidation 31 PASS/0 FAIL/0 skipped with 10 real Edge scenarios. Runtime build, TS/browser types/shipped JS/security 6856 files/diff PASS. Temporary files and simulated providers, not physical G3-G5 reception or distribution."
         }
       ],
       "verifiedTests": [
@@ -327,13 +331,15 @@
         "tests/streamcockpit3-context-integration-browser.test.ts",
         "tests/streamcockpit3-master-context-http.test.ts",
         "tests/streamcockpit3-master-context-browser.test.ts",
-        "tests/streamcockpit3-master-context-runtime.test.ts"
+        "tests/streamcockpit3-master-context-runtime.test.ts",
+        "tests/streamcockpit3-macro-sequence.test.ts",
+        "tests/streamcockpit3-macro-sequence-browser.test.ts"
       ],
       "hardwareEvidence": [],
       "blockers": [
         "Physical FIXE/laptop/Android scene/game/routing, role changes and suspend/resume reception remain unqualified.",
         "Production Twitch category/OAuth observation remains unqualified; game means the observed channel category, never inferred game-process activity.",
-        "Built-in context banks reuse existing single actions; real audio/chat/replay context flows and arbitrary multi-step macros are not fully received."
+        "2026-11-06: manually confirmed sequences of 2-5 existing OBS-only scene/mode/mic/timer/media buttons and ordered editor are software-integrated. Public-provider actions, live start/stop, nested sequences, delays and native keyboard triggers are deliberately not admitted by this manual sequence. Physical contextual audio/chat/replay and trio reception remain unqualified."
       ],
       "ownerJob": "SC3-FINAL-DELIVERY-001",
       "integrationNote": "Wave3 fail-closed read-only context preview; missing authenticated scene/game/role observations 2026-11-03 SC3-FINAL-DELIVERY-001: production Deck now reads master context instead of using only the neutral preview. The existing deterministic core selects built-in banks by observed OBS scene/state and fresh Twitch category. Paired actor role/grants come from host authentication; physical device type is never inferred. Short-lived actor/context proofs are rechecked by ControlService and again inside the sole DashboardCommandService queue for native actions. Durable ordinary receipts and expected action definitions retained; no automatic command or offline replay. 129 targeted tests PASS including real HTTP/OBS MessagePack, complete DashboardServer and Edge 320px with offline/expiry/XSS/queue changes. Physical and provider OAuth reception remain open."
@@ -692,6 +698,10 @@
         {
           "path": "docs/streamcockpit-3/F05_DURABLE_AUDIO_RECEIPTS_20261106.md",
           "kind": "2026-11-06 FIXE: production gain/mute router now persists actor/host-scoped SQLite intentions and complete readback receipts, offers paged read-only history and fresh-consent rollback after restart, preserving UUID and current-value checks. F10 retains the audio journal. 13 suites 161 PASS/0 FAIL/0 skipped, 35 new tests incl. independent Windows child exits and Edge 320px lost-ACK/reload/rollback using committed UI. TS/browser types/security 6826/diff PASS; OBS simulated, no hardware or deployed profile. Foreign mixer UI unchanged; history browser view and PC-game/VOD routing remain incomplete."
+        },
+        {
+          "path": "docs/streamcockpit-3/SC3_CLOTURE_UNIQUE_20261106.md",
+          "kind": "2026-11-06 FIXE explicit ownership transfer: inherited mixer UI completed with paged durable receipt history and fresh-consent rollback; the existing gain/mute consent+SQLite+OBS bus now handles six source-track flags and monitoring with fresh UUID/state readback. Stale routing replies after offline/new inspection cannot re-enable controls. Full Vitest 2898 PASS/0 FAIL/129 skipped; built Node 352 PASS/0 FAIL/6 skipped; current integrated UI 31 PASS/0 FAIL/0 skipped including 10 real Edge scenarios. Build/types/browser types/shipped JS/security 6856 files/diff PASS. Only temporary Windows data and loopback OBS simulator; actual game-PC system audio, VOD output mapping, physical audibility and power-loss/migration reception unqualified."
         }
       ],
       "verifiedTests": [
@@ -709,14 +719,15 @@
         "tests/streamcockpit3-mixer-routing-browser.test.ts",
         "tests/streamcockpit3-audio-receipts.test.ts",
         "tests/streamcockpit3-audio-receipts-http.test.ts",
-        "tests/streamcockpit3-audio-receipts-browser.test.ts"
+        "tests/streamcockpit3-audio-receipts-browser.test.ts",
+        "tests/streamcockpit3-mixer-routing-write.test.ts",
+        "tests/streamcockpit3-mixer-history-routing-browser.test.ts"
       ],
       "hardwareEvidence": [],
       "blockers": [
         "Physical FIXE/laptop/Android gain/mute and guarded rollback not verified; source control requires an actual OBS UUID and otherwise refuses the write.",
-        "OBS track 1-6 flags and monitoring mode can now be read on demand from FIXE, and peak meters observed while live; the PC game hardware path, exact Twitch VOD output track and real stream/VOD separation remain unqualified.",
-        "2026-11-06: newly recorded gain/mute receipts and guarded manual rollback now survive software restart through the production SQLite router. Legacy bare reservations remain uncertain; complete history is API-only (current UI recovers a pending receipt). Full history navigation, production migration and hardware restart/power-loss remain unqualified.",
-        "2026-11-05 F05 dirty patch still re-enables routing read button after offline when pre-disconnect GET resolves late; independent real Edge 320px repro confirmed, despite 2/2 existing browser tests PASS. See docs/streamcockpit-3/F05_LATE_ROUTING_PATCH_REVIEW_20261105.md; owner must fix and qualify before G2."
+        "2026-11-06: OBS source-track flags 1-6 and monitoring are now read and explicitly controlled through the same preview/confirm/readback/receipt path as gain/mute. Actual PC-game capture path, Windows system audio devices, exact Twitch VOD output-track mapping and physical stream/VOD separation remain unqualified; no VOD track number is inferred.",
+        "2026-11-06: gain/mute/routing receipts, paged history navigation and guarded manual rollback after router restart are source-integrated and exercised in actual Edge with temporary SQLite and simulated OBS. Legacy bare reservations stay uncertain. Production-profile migration, physical restart/power-loss, physical UUID/VOD/monitoring reception remain unqualified."
       ],
       "ownerJob": "streamcockpit/3.0-f05-integration",
       "integrationNote": "F05 OBS gain/mute read-only observations from existing FIXE OBS client events, authenticated observe GET/HEAD and mobile Plus. Host role windows/obs-executor required, fresh revision, permission rechecked after await. No live OBS mutation, confirmed audio level, VOD routing, peripheral health or hardware test. 2026-11-03 SC3-FINAL-DELIVERY-001: gain/mute preview/confirm UI and paired observe/obs/audio routes now share the sole OBS command bus. Existing commandReceipts storage reserves intent before effect; input UUID/generation and values are rechecked, writes read back, no retry, guarded manual rollback only from unchanged post-state. Client remembers unresolved ID across page restart and reads status without resending. A real permission-revocation race was reproduced then fixed with final authorization after the last read. 80 targeted tests PASS on actual Edge 320px, real HTTP/OBS WS, fake OBS provider; types/browser PASS. No physical routing or production qualification inferred."

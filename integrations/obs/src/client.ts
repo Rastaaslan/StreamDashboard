@@ -58,11 +58,16 @@ export async function collectActiveSceneSources(sceneName: string, sceneItems: (
   await collect(await sceneItems(sceneName)); return names;
 }
 
+export type ObsAudioTracks = Record<'1'|'2'|'3'|'4'|'5'|'6',boolean>;
+export type ObsAudioMonitor = 'OBS_MONITORING_TYPE_NONE'|'OBS_MONITORING_TYPE_MONITOR_ONLY'|'OBS_MONITORING_TYPE_MONITOR_AND_OUTPUT';
+export const validObsAudioTracks=(value:unknown):value is ObsAudioTracks=>Boolean(value&&typeof value==='object'&&!Array.isArray(value)&&Object.keys(value).sort().join(',')==='1,2,3,4,5,6'&&Object.values(value).every(v=>typeof v==='boolean'));
+export const validObsAudioMonitor=(value:unknown):value is ObsAudioMonitor=>typeof value==='string'&&['OBS_MONITORING_TYPE_NONE','OBS_MONITORING_TYPE_MONITOR_ONLY','OBS_MONITORING_TYPE_MONITOR_AND_OUTPUT'].includes(value);
 export interface ObsAudioSource {
   sourceId: string; inputUuid: string; generation: number;
   gain: number; mute: boolean; observedAt: number;
+  tracks?: ObsAudioTracks; monitorType?: ObsAudioMonitor;
 }
-export type ObsAudioChange = { sourceId: string; gain: number } | { sourceId: string; mute: boolean };
+export type ObsAudioChange = { sourceId: string; gain: number } | { sourceId: string; mute: boolean } | {sourceId:string;tracks:ObsAudioTracks} | {sourceId:string;monitorType:ObsAudioMonitor};
 
 export class ObsClient {
   // Per-runtime secret prevents clients from guessing local replay filenames
@@ -674,7 +679,7 @@ export class ObsClient {
     this.requireConnected();
   }
   /** Actual host observation, addressed by OBS UUID. A name is never a durable identity. */
-  async readMixerSource(sourceId: string): Promise<ObsAudioSource> {
+  async readMixerSource(sourceId: string, routing = false): Promise<ObsAudioSource> {
     this.requireConnected();
     if (typeof sourceId !== 'string' || !sourceId.trim() || sourceId.length > 200) throw new Error('Invalid audio source');
     const generation = this.generation;
@@ -684,11 +689,17 @@ export class ObsClient {
     // obs-websocket-js 5.0 typings predate the UUID selector in current OBS.
     const selector = { inputUuid };
     const [volume, mute] = await Promise.all([this.call('GetInputVolume', selector as never), this.call('GetInputMute', selector as never)]);
+    let route:Pick<ObsAudioSource,'tracks'|'monitorType'>={};
+    if(routing){
+      const [tracks,monitor]=await Promise.all([this.call('GetInputAudioTracks',selector as never),this.call('GetInputAudioMonitorType',selector as never)]);
+      if(!validObsAudioTracks(tracks.inputAudioTracks)||!validObsAudioMonitor(monitor.monitorType))throw new Error('OBS audio routing unavailable');
+      route={tracks:structuredClone(tracks.inputAudioTracks),monitorType:monitor.monitorType};
+    }
     const current = (await this.call('GetInputList')).inputs.filter(input => input.inputName === sourceId);
     this.requireConnected();
     if (generation !== this.generation || current.length !== 1 || current[0]!.inputUuid !== inputUuid ||
       !Number.isFinite(volume.inputVolumeMul) || volume.inputVolumeMul < 0 || volume.inputVolumeMul > 20 || typeof mute.inputMuted !== 'boolean') throw new Error('OBS audio source changed');
-    return { sourceId, inputUuid, generation, gain: volume.inputVolumeMul, mute: mute.inputMuted, observedAt: Date.now() };
+    return { sourceId, inputUuid, generation, gain: volume.inputVolumeMul, mute: mute.inputMuted, ...route, observedAt: Date.now() };
   }
   /** Explicit, read-only OBS audio track and monitor inspection. It does not
    * identify Twitch's VOD output track, a physical PC-game device or audibility.
@@ -737,9 +748,15 @@ export class ObsClient {
     if ('gain' in change) {
       if (!Number.isFinite(change.gain) || change.gain < 0 || change.gain > 20) throw new Error('Invalid audio gain');
       await this.call('SetInputVolume', { ...selector, inputVolumeMul: change.gain } as never);
-    } else {
+    } else if ('mute' in change) {
       if (typeof change.mute !== 'boolean') throw new Error('Invalid audio mute');
       await this.call('SetInputMute', { ...selector, inputMuted: change.mute } as never);
+    } else if ('tracks' in change) {
+      if(!validObsAudioTracks(change.tracks)||!validObsAudioTracks(expected.tracks))throw new Error('Invalid audio tracks');
+      await this.call('SetInputAudioTracks',{...selector,inputAudioTracks:change.tracks} as never);
+    } else {
+      if(!validObsAudioMonitor(change.monitorType)||!validObsAudioMonitor(expected.monitorType))throw new Error('Invalid audio monitor');
+      await this.call('SetInputAudioMonitorType',{...selector,monitorType:change.monitorType} as never);
     }
   }
 

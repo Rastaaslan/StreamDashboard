@@ -1,5 +1,6 @@
 import {ACTION_TYPES,ACTION_LIMITS} from '../../mobile/shared/action-registry.js';
 import { actionDefinition } from '../../mobile/shared/action-definition.js';
+import {validateMacroSequences,runManualMacroSequence} from './streamcockpit-macro-sequence.js';
 import { copyFile, constants, stat } from 'node:fs/promises';
 import { createHash } from 'node:crypto';
 import { AtomicJsonStore } from './storage.js';
@@ -53,6 +54,7 @@ export function validateConfiguration(value: ControlConfiguration): ControlConfi
     if (!out || !['unconfigured','main','output','aitum-suite'].includes(out.kind) || typeof out.name !== 'string' || out.name.length > 200 || (['output','aitum-suite'].includes(out.kind) && !out.name.trim())) fail('Sortie OBS invalide.');
   }
   if (!value.youtube || typeof value.youtube.clientId !== 'string' || value.youtube.clientId.length > 250 || !/^[A-Za-z0-9_-]{0,120}$/.test(value.youtube.broadcastId) || !/^[A-Za-z0-9_-]{0,120}$/.test(value.youtube.channelId)) fail('Cible YouTube invalide.');
+  validateMacroSequences(value.actions);
   const metadata = value.metadata.title ? validateMetadata(value.metadata) : defaultControlData().configuration.metadata;
   if (value.replayAutoStart !== undefined && typeof value.replayAutoStart !== 'boolean') fail('Réglage de replay invalide.');
   return { version: 1, revision: value.revision, actions: value.actions.map(({id,label,type,value,color,shortcut,wizebot}) => ({id,label,type,value,color,shortcut,...(wizebot?{wizebot:{channel:wizebot.channel,id:wizebot.id}}:{})})), outputs: structuredClone(value.outputs), youtube: structuredClone(value.youtube), metadata, replayAutoStart: value.replayAutoStart !== false };
@@ -85,7 +87,7 @@ export class ControlService {
       // A brand-new store already contains the defaults and starts at revision 0.
       if (existed) data.configuration.revision++;
     }
-    for (const receipt of data.receipts) if (receipt.status === 'running') { receipt.status = 'uncertain'; receipt.message = 'Hôte redémarré : vérifier le résultat avant de réessayer.'; }
+    for (const receipt of data.receipts) if (receipt.status === 'running') { receipt.status = 'uncertain'; receipt.message = 'Hôte redémarré : vérifier le résultat avant de réessayer.'; for(const step of receipt.macroSteps??[])if(step.status==='running')step.status='uncertain'; }
     await store.write(data);
     return new ControlService(store, data, adapter, notify, wait);
   }
@@ -117,7 +119,7 @@ export class ControlService {
       const data = { ...this.data, configuration: next }; await this.store.write(data); this.data = data; this.notify(); return this.snapshot();
     });
   }
-  execute(request: ControlRequest, authorize?: (action:string)=>void|Promise<void>): Promise<ControlReceipt> {
+  execute(request: ControlRequest, authorize?: (action:string,completedStep?:DeckAction)=>void|Promise<void>): Promise<ControlReceipt> {
     if (this.stopped) return Promise.reject(new Error('Hôte en cours d’arrêt.'));
     if (!request || !/^[A-Za-z0-9_-]{8,100}$/.test(request.id) || typeof request.action !== 'string' || request.action.length > 100 || (request.platform !== undefined && !platforms.includes(request.platform))) return Promise.reject(new Error('Commande invalide.'));
     if (request.soundId !== undefined && (request.action !== 'sound.play' || !/^[A-Za-z0-9._:-]{1,100}$/.test(request.soundId))) return Promise.reject(new Error('Son invalide.'));
@@ -247,7 +249,16 @@ export class ControlService {
             : this.data.configuration.actions.find(a => a.id === request.action);
           if (!action) fail('Action inconnue.');
           if (action.type === 'live.start' || action.type === 'live.stop') fail('Utilisez la commande commune de diffusion.');
-          const result = authorize && request.expectedContextToken ? await this.adapter.action(action, request.id, async () => { await authorize(request.action); verifyButton(); }) : await this.adapter.action(action, request.id); receipt.status = 'succeeded'; receipt.message = result?.message || 'Exécution confirmée par le PC de stream'; if (result) receipt.result = result;
+          if(action.type==='macro.sequence'){
+            if(request.confirmed!==true)fail('Confirmez les étapes de la séquence depuis le Deck.','CONFIRM_REQUIRED');
+            if(request.expectedRevision!==this.data.configuration.revision)fail('La configuration des étapes a changé : actualisez le Deck.','REVISION_CONFLICT');
+            await runManualMacroSequence({macro:action,actions:this.data.configuration.actions,id:request.id,receipt,
+              persist:()=>this.save(),recheck:async()=>{if(this.stopped)throw new Error('Hôte en cours d’arrêt.');await authorize?.(request.action);verifyButton();},
+              execute:(step,id,recheck)=>this.adapter.action(step,id,recheck),afterStep:async step=>{await authorize?.(request.action,step)}});
+            receipt.status='succeeded';receipt.message='Séquence OBS confirmée : '+receipt.macroSteps!.length+' étapes.';
+          }else{
+            const result = authorize && request.expectedContextToken ? await this.adapter.action(action, request.id, async () => { await authorize(request.action); verifyButton(); }) : await this.adapter.action(action, request.id); receipt.status = 'succeeded'; receipt.message = result?.message || 'Exécution confirmée par le PC de stream'; if (result) receipt.result = result;
+          }
         }
       } catch (error) { receipt.status = error instanceof Error && error.name === 'ACTION_UNCERTAIN' ? 'uncertain' : 'failed'; receipt.message = error instanceof Error ? error.message : 'Échec de la commande'; }
       receipt.finishedAt = new Date().toISOString(); await this.save(); return structuredClone(receipt);

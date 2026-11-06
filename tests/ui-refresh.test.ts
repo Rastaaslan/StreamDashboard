@@ -17,7 +17,11 @@ describe('rafraîchissement temps réel de l’UI', () => {
 
   it('applique les snapshots WebSocket et maintient le timer local à la seconde', () => {
     expect(app).toMatch(/message\.type\s*===\s*['"]state\.updated['"]/);
-    expect(app).toContain('applyStateUpdate(message.data)');
+    expect(app).toContain('confirmSnapshot(message.data)');
+    expect(app).toContain('const confirmSnapshot = (next, force = false) =>');
+    expect(app).toContain('socketTrusted = true;');
+    expect(app).toContain('applyStateUpdate(next, force);');
+    expect(app).toContain('if (activeSocket !== ws) return;');
     expect(app).toMatch(/setInterval\(updateTimer,\s*1000\)/);
   });
 

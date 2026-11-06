@@ -34,6 +34,7 @@ export async function withContextFixture(run:(f:any)=>Promise<void>){
   registerControlRoutes({app:f.app,control,obs:f.obs,wizebotCommands:{}as Options['wizebotCommands'],timerSource:()=>undefined,state:()=>({}),observe:async()=>{},
    settings:unused,planningCreate:unused,planningUpdate:unused,planningDelete:unused,recurrence:unused,isLocal:()=>false,port:()=>0,
    verifyContext:(req,action)=>context.assert(req,req.body.expectedContextToken,action),
+   sequenceContext:(req,action)=>context.sequence(req,req.body.expectedContextToken,action),
   });
   f.app.use((error:Error,_req:express.Request,res:express.Response,_next:express.NextFunction)=>{res.status(400).json({error:{message:error.message}})});
   const read=async(token=f.paired.credential)=>{const r=await fetch(f.origin+'/api/v1/streamcockpit-context',{headers:{authorization:'Device '+token}});return {status:r.status,body:await r.json()}};

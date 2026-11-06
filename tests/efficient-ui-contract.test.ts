@@ -12,7 +12,12 @@ describe('efficient UI contract', () => {
       expect(desktop).toContain(action);
     }
     expect(desktop).toContain("'toggle-primary-mic': window.togglePrimaryMic");
-    expect(desktop).toContain("const preflightReady = state.preflight?.status === 'ready'");
+    expect(desktop).toContain('const fullyReady = classicDashboardReadiness(state).ready');
+    // The existing readiness helper is stronger than the removed raw check:
+    // checklist, current transport/OBS state and preflight must all agree.
+    const readiness=readFileSync(new URL('../apps/web/classic-readiness.js',import.meta.url),'utf8');
+    expect(readiness).toContain("const preflight = state?.preflight?.status === 'ready'");
+    expect(readiness).toContain('ready: connections && knownObsState && checklist && preflight && !live');
   });
 
   it('provides safe desktop navigation shortcuts without firing while typing', () => {

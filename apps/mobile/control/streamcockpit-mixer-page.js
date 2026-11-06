@@ -11,7 +11,7 @@ export function mountMixerPage(root, { online, request, controls = undefined }) 
     : 'Fixe indisponible : aucun niveau ni routage confirmé.';
   root.append(caption);
   if (!online) return { unavailable() {}, destroy() { caption.remove(); } };
-  let control, available = true, inspection = 0, inspecting = false;
+  let control, available = true, linkInterrupted = false, inspection = 0, inspecting = false;
   const section = doc.createElement('section');
   section.setAttribute('aria-label', 'Pistes et monitoring OBS — observation manuelle');
   section.setAttribute('style', 'width:100%;max-width:100%;min-width:0;overflow-wrap:anywhere');
@@ -33,6 +33,8 @@ export function mountMixerPage(root, { online, request, controls = undefined }) 
   const table = mountMixerTable(root, {
     read: () => request('/api/v1/streamcockpit-mixer'),
     onData: data => {
+      if (linkInterrupted) throw new Error('STALE_MIXER_READ');
+      control?.verifiedOnline(data);
       control?.sources(data.sources);
       if (!available) return;
       const previous = select.value;
@@ -44,14 +46,24 @@ export function mountMixerPage(root, { online, request, controls = undefined }) 
         option.value = source.id; option.textContent = source.name; select.append(option);
       }
       if ([...select.options || []].some(option => option.value === previous)) select.value = previous;
-      inspection++; observation.textContent = 'Pistes non relues depuis cette actualisation.';
+      inspection++; inspecting = false; observation.textContent = 'Pistes non relues depuis cette actualisation.';
       button.disabled = inspecting || !select.options?.length;
     },
   });
   root.append(section);
   if (controls) control = mountMixerControl(root, { request, ...controls });
+  const onOffline = () => {
+    if (!available) return;
+    linkInterrupted = true; inspection++; inspecting = false;
+    table.invalidate(); control?.unavailable(); button.disabled = true;
+    observation.textContent = 'Connexion interrompue : pistes périmées, nouvelle lecture requise.';
+  };
+  const onOnline = () => { if (available) { linkInterrupted = false; void table.refresh(); } };
+  const detachNetwork = () => { globalThis.removeEventListener?.('offline', onOffline); globalThis.removeEventListener?.('online', onOnline); };
+  globalThis.addEventListener?.('offline', onOffline);
+  globalThis.addEventListener?.('online', onOnline);
   button.addEventListener?.('click', async () => {
-    if (!available || inspecting || !select.value) return;
+    if (!available || linkInterrupted || inspecting || !select.value) return;
     const sourceId = select.value, stamp = ++inspection;
     inspecting = true; button.disabled = true;
     observation.textContent = 'Lecture directe des pistes OBS…';
@@ -79,22 +91,24 @@ export function mountMixerPage(root, { online, request, controls = undefined }) 
       if (available && stamp === inspection) observation.textContent =
         'Pistes OBS indisponibles : connexion, source ou droits à revérifier. Aucun changement appliqué.';
     } finally {
-      inspecting = false;
-      if (available) button.disabled = !select.options?.length;
+      if (stamp === inspection) {
+        inspecting = false;
+        button.disabled = !available || linkInterrupted || !select.options?.length;
+      }
     }
   });
   return {
     isAvailable(authority) { return available && controls?.authorityKey === authority; },
     refresh() {
       if (!available) return;
-      inspection++; observation.textContent = 'Pistes non relues depuis cette actualisation.';
+      inspection++; inspecting = false; observation.textContent = 'Pistes non relues depuis cette actualisation.';
       return table.refresh();
     },
     unavailable() {
       available = false; inspection++;
-      table.destroy(); control?.unavailable(); section.remove();
+      detachNetwork(); table.destroy(); control?.unavailable(); section.remove();
       caption.textContent = 'Fixe déconnecté : données du mixeur périmées, actualisation nécessaire.';
     },
-    destroy() { available = false; inspection++; table.destroy(); control?.destroy(); section.remove(); caption.remove(); },
+    destroy() { available = false; inspection++; detachNetwork(); table.destroy(); control?.destroy(); section.remove(); caption.remove(); },
   };
 }

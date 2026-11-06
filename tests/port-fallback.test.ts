@@ -2,11 +2,12 @@ import { afterEach, expect, it, vi } from 'vitest';
 import { Server } from 'node:net';
 import { mkdtemp, mkdir, rm, writeFile } from 'node:fs/promises';
 import path from 'node:path';
+import {tmpdir} from 'node:os';
 import { startDashboardServer, type DashboardServerHandle } from '../apps/server/src/index.js';
 import { startDesktopRuntime, type DesktopRuntime } from '../apps/desktop/src/lifecycle.js';
 
 const desktop = vi.hoisted(() => ({ userData: '',certificateUnavailable:false }));
-vi.mock('electron', () => ({ app: { getPath: () => desktop.userData, getAppPath: () => process.cwd(), getVersion: () => '1.1.0' } }));
+vi.mock('electron', () => ({ app: { getPath: (name:string) => name==='appData'?path.dirname(desktop.userData):desktop.userData, getAppPath: () => process.cwd(), getVersion: () => '1.1.0' } }));
 vi.mock('../apps/desktop/src/secrets.js', async () => {
   const { MemorySecretStore } = await import('../apps/server/src/storage.js');
   const {readFile}=await import('node:fs/promises');
@@ -23,6 +24,14 @@ let dashboard: DashboardServerHandle | undefined;
 let runtime: DesktopRuntime | undefined;
 const logger = { info: vi.fn(), warn: vi.fn(), error: vi.fn() };
 const realListen = Server.prototype.listen;
+// These tests isolate port/TLS failure contracts, not ownership. The real
+// SQLite lifetime (including failed startup) has independent child-process
+// tests in streamcockpit3-runtime-ownership*. Preserve every binding assertion.
+vi.mock('../apps/desktop/src/streamcockpit-runtime-ownership.js',async original=>({
+ ...await original<typeof import('../apps/desktop/src/streamcockpit-runtime-ownership.js')>(),
+ startWithRuntimeUpgradeOwnership:async(_directory:string,_version:string,start:()=>Promise<unknown>)=>start(),
+}));
+const startIsolatedDesktop=()=>startDesktopRuntime(undefined,undefined,false,false);
 /** Route success-path desktop startup tests onto ephemeral loopback ports, without
  * touching the installed StreamDashboard bound to the production fixed endpoint.
  * Error-path tests above continue asserting the production 48133 port exactly. */
@@ -46,10 +55,11 @@ afterEach(async () => {
   await dashboard?.stop();
   runtime = undefined; dashboard = undefined;desktop.certificateUnavailable=false;
   vi.restoreAllMocks(); vi.clearAllMocks();
-  if (directory) await rm(directory, { recursive: true, force: true });
+  if (directory) await rm(path.dirname(directory), { recursive: true, force: true });
 });
 async function options(port = 48132) {
-  directory = await mkdtemp(path.resolve('.port-fallback-'));
+  const root=await mkdtemp(path.join(tmpdir(),'sc3-port-contract-'));
+  directory=path.join(root,'profile');await mkdir(directory);
   return { port, host: '0.0.0.0', remoteEnabled: true, dataDir: directory, logger };
 }
 
@@ -63,7 +73,7 @@ it.each(['EACCES', 'EADDRINUSE'])('fails explicitly on %s without selecting anot
 it.each(['EACCES', 'EADDRINUSE'])('Desktop fails explicitly on %s at the fixed endpoint', async code => {
   await options(); desktop.userData = directory;
   const { error, spy } = failListen(code);
-  await expect(startDesktopRuntime()).rejects.toBe(error);
+  await expect(startIsolatedDesktop()).rejects.toBe(error);
   expect(spy.mock.calls.map(args => args.slice(0, 2))).toEqual([[48133, '127.0.0.1']]);
 });
 
@@ -86,14 +96,14 @@ it('preserves pairing and credentials across Desktop restarts on isolated test p
   await options(); desktop.userData = directory;
   await mkdir(path.join(directory, 'config'));
   await writeFile(path.join(directory, 'config', 'dashboard.json'), JSON.stringify({ settings: { remoteEnabled: true } }));
-  runtime = await startDesktopRuntime();
+  runtime = await startIsolatedDesktop();
   const pairing = await fetch(`${runtime.dashboard.url}/api/v1/remote/pairing`, { method: 'POST' }).then(r => r.json());
   for (const url of pairing.urls) {expect(new URL(url).protocol).toBe('https:');expect(new URL(url).port).toBe(String(runtime.dashboard.remotePort));}
-  await runtime.stop(); runtime = await startDesktopRuntime();
+  await runtime.stop(); runtime = await startIsolatedDesktop();
   const response = await fetch(`${runtime.dashboard.url}/api/v1/remote/pair`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(pairing) });
   expect(response.status).toBe(201);
   const device = await response.json();
-  await runtime.stop(); runtime = await startDesktopRuntime();
+  await runtime.stop(); runtime = await startIsolatedDesktop();
   const ticket = await fetch(`${runtime.dashboard.url}/api/v1/remote/ws-ticket`, { method: 'POST', headers: { authorization: `Device ${device.credential}` } });
   expect(ticket.status).toBe(201);
   expect(await ticket.json()).toHaveProperty('ticket');
@@ -104,7 +114,7 @@ it('reports corrupt Desktop configuration without silently replacing it or leaki
   await options(); desktop.userData = directory;
   await mkdir(path.join(directory, 'config'));
   await writeFile(path.join(directory, 'config', 'dashboard.json'), '{"token":"PRIVATE", invalid');
-  await expect(startDesktopRuntime()).rejects.toThrow('Configuration utilisateur Desktop illisible');
+  await expect(startIsolatedDesktop()).rejects.toThrow('Configuration utilisateur Desktop illisible');
   const { readFile } = await import('node:fs/promises');
   expect(await readFile(path.join(directory, 'config', 'dashboard.json'), 'utf8')).toContain('PRIVATE');
 });
@@ -114,7 +124,7 @@ it('preserves local services and diagnoses remote sharing when certificate stora
   await options();desktop.userData=directory;desktop.certificateUnavailable=true;
   await mkdir(path.join(directory,'config'));
   await writeFile(path.join(directory,'config','dashboard.json'),JSON.stringify({settings:{remoteEnabled:true}}));
-  runtime=await startDesktopRuntime();
+  runtime=await startIsolatedDesktop();
   const info=await fetch(runtime.dashboard.url+'/api/v1/remote/info').then(r=>r.json());
   expect(info).toMatchObject({enabled:false,configured:true,error:'Certificat inaccessible'});
   expect((await fetch(runtime.dashboard.url+'/api/v2/autonomy')).status).toBe(200);

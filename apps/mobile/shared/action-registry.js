@@ -5,6 +5,7 @@ export const ACTIONS=Object.freeze({
   'scene.set':{label:'Choisir une scène',icon:'▣',capability:'obs'},
   'mode.set':{label:'Scène associée à un mode',icon:'▣',capability:'obs'},
   'timer.add':{label:'Ajouter des secondes',icon:'+',capability:'obs'},
+  'macro.sequence':{label:'Séquence manuelle de boutons OBS',icon:'↻',capability:'obs'},
   'sound.play':{label:'Jouer un son du catalogue',icon:'♫',capability:'audio'},
   'sound.stop':{label:'Arrêter le son en cours',icon:'■',capability:'audio'},
   'alert.play':{label:'Relancer une source média OBS',icon:'✦',capability:'obs'},

@@ -48,3 +48,43 @@ it.skipIf(process.env.MIXER_BROWSER_TEST !== '1')('F05 Plus mixer scrolls at 320
     expect(external).toEqual([]);
   } finally {await browser.close();}
 },30000);
+
+it.skipIf(process.env.MIXER_BROWSER_TEST !== '1')('F05 Edge restores mixer controls only after a verified host refresh', async () => {
+  const bundle = await build({
+    stdin: {contents: "import {mountMixerPage} from './apps/mobile/control/streamcockpit-mixer-page.js';window.mountMixerPage=mountMixerPage;", resolveDir: process.cwd()},
+    bundle: true, write: false, format: 'iife', platform: 'browser',
+  });
+  const browser = await chromium.launch({channel:'msedge', headless:true});
+  try {
+    const page = await browser.newPage({viewport:{width:320,height:720},hasTouch:true});
+    await page.setContent('<meta name="viewport" content="width=device-width, initial-scale=1"><main id="root"></main>');
+    await page.addScriptTag({content:bundle.outputFiles[0].text});
+    await page.evaluate(() => {
+      const w = window as any;
+      w.calls = []; w.failRead = false;
+      w.panel = w.mountMixerPage(document.getElementById('root'), {
+        online: true, controls:{authorityKey:'qa-fixed-host',storage:{getItem:()=>null,setItem:()=>{},removeItem:()=>{}}},
+        request: async (path:string, _body:any, method='GET') => {
+          w.calls.push({path,method});
+          if (path !== '/api/v1/streamcockpit-mixer' || method !== 'GET' || w.failRead) throw Error('UNAVAILABLE');
+          const unknown = {state:'unknown',reason:'not-observed'};
+          return {schemaVersion:1,readOnly:true,owner:'FIXE',revision:'obs:1:2',errors:[],outputs:[],
+            sources:[{id:'mic',name:'Micro QA',gain:{state:'known',value:1},mute:{state:'known',value:false},
+              level:unknown,stream:unknown,monitor:unknown,vod:unknown,device:unknown}]};
+        },
+      });
+    });
+    const gain = page.getByLabel('Gain OBS',{exact:true});
+    await expect.poll(() => gain.isDisabled()).toBe(false);
+    await page.evaluate(() => window.dispatchEvent(new Event('offline')));
+    await expect.poll(() => gain.isDisabled()).toBe(true);
+    await page.evaluate(() => {const w=window as any;w.failRead=true;window.dispatchEvent(new Event('online'));});
+    await expect.poll(() => page.evaluate(() => (window as any).calls.length)).toBeGreaterThan(1);
+    await expect.poll(() => page.locator('section[aria-label="Mixeur audio — lecture seule"] [role=status]').textContent()).toContain('indisponible');
+    expect(await gain.isDisabled()).toBe(true);
+    await page.evaluate(() => {const w=window as any;w.failRead=false;return w.panel.refresh();});
+    await expect.poll(() => gain.isDisabled()).toBe(false);
+    expect(await page.evaluate(() => (window as any).calls.every((call:any) => call.method === 'GET'))).toBe(true);
+    await page.evaluate(() => (window as any).panel.destroy());
+  } finally { await browser.close(); }
+}, 30_000);
