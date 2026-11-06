@@ -102,7 +102,12 @@ describe('F02 read-only paired observed AutoMod, never Twitch queue completeness
     f.onRead(()=>{});f.setHost('FIXE');
     f.auth.setPermissions(f.paired.deviceId,['chat']);
     expect((await f.call('GET',f.paired.credential,'viewer/12')).status).toBe(403);
-    f.queue.connection('DISCONNECTED','42');f.queue.connection('CONNECTED','42');
-    expect(f.queue.viewerHistory('42','12',true).entries).toHaveLength(0);
+    f.queue.connection('DISCONNECTED','42');
+    expect(f.queue.viewerHistory('42','12',true)).toMatchObject({status:'unavailable',entries:[]});
+    f.queue.connection('CONNECTED','42');
+    // The selected viewer's witnessed outcome remains available for 15 minutes
+    // across a same-account reconnect, while the old held ACTION is erased.
+    expect(f.queue.viewerHistory('42','12',true).entries).toMatchObject([{status:'approved'}]);
+    expect(f.queue.snapshot('42',true).messages).toHaveLength(0);
   }));
 });

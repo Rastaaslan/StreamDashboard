@@ -68,12 +68,20 @@ export class ObservedAutoModQueue {
 
   connection(status: 'CONNECTING' | 'CONNECTED' | 'DEGRADED' | 'DISCONNECTED', broadcasterId: string) {
     if (status !== 'CONNECTED' || !numericId(broadcasterId)) {
+      // Never retain actionable held messages across an interrupted EventSub
+      // session. Observed-only viewer outcomes may survive a brief reconnect,
+      // but stay unavailable until the SAME broadcaster reconnects and expire
+      // after the existing 15-minute retention window. A different account
+      // always loses these private local observations.
       this.connected = false;
       this.observed.clear();
-      this.viewerEvents.clear();
       this.completed.clear();
-      this.broadcasterId = '';
+      if (numericId(broadcasterId) && this.broadcasterId !== broadcasterId) {
+        this.viewerEvents.clear();
+        this.broadcasterId = broadcasterId;
+      }
       this.observedAt = null;
+      this.prune(this.now());
       return;
     }
     if (this.broadcasterId !== broadcasterId) {
@@ -124,13 +132,14 @@ export class ObservedAutoModQueue {
   viewerHistory(broadcasterId:string,userId:string,allowed:boolean){
     const available=allowed&&this.connected&&broadcasterId===this.broadcasterId&&numericId(userId);
     if(available)this.prune(this.now());
+    const entries=available?[...this.viewerEvents.values()].filter(v=>v.userId===userId)
+      .sort((a,b)=>b.observedAt-a.observedAt).slice(0,20)
+      .map(v=>({status:v.status,observedAt:v.observedAt})):[];
     return {
       schemaVersion:1 as const,kind:'streamcockpit-automod-viewer-observed' as const,
       status:available?'partial-observation' as const:'unavailable' as const,
-      observedAt:available?this.observedAt:null,
-      entries:available?[...this.viewerEvents.values()].filter(v=>v.userId===userId)
-        .sort((a,b)=>b.observedAt-a.observedAt).slice(0,20)
-        .map(v=>({status:v.status,observedAt:v.observedAt})):[],
+      observedAt:available?(entries[0]?.observedAt??this.observedAt):null,
+      entries,
     };
   }
   snapshot(broadcasterId:string,allowed:boolean) {

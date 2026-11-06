@@ -254,6 +254,10 @@
         {
           "path": "docs/streamcockpit-3/F02_AUTOMOD_DURABLE_ATTEMPTS_20261106.md",
           "kind": "2026-11-06 FIXE: durable non-releasable SQLite intent keyed by broadcaster and AutoMod message committed BEFORE provider POST; reject duplicate after router restart or lost provider ACK, refuse unknown/corrupt database without mutation; 10 targeted suites 46 PASS/0 FAIL/0 skipped including four Edge 320px scenarios; types, browser types, security 6785 files and diff PASS. Simulated Twitch/local Windows SQLite only; no electrical, production data-backup/rollback, hardware or real OAuth evidence. F02 partial, G2 in_progress."
+        },
+        {
+          "path": "docs/streamcockpit-3/F02_VIEWER_HISTORY_RECOVERY_20261106.md",
+          "kind": "2026-11-06 FIXE F02: manual viewer-ID GET on paired Desktop/Android without held message, plus 15-minute observed-only AutoMod outcome preserved through same-broadcaster EventSub reconnect (old held actions discarded). Real Edge 320px late-result and account-switch fences; 11 suites 48 PASS/0 FAIL/0 skipped including 8 Edge synthetic cases; TypeScript/browser types/security 6814 files/diff PASS. Memory-only, no Twitch-wide historical view, no production OAuth, native Android or G3-G5 proof; F02 partial/G2 in_progress."
         }
       ],
       "verifiedTests": [
@@ -269,7 +273,9 @@
         "tests/streamcockpit3-automod-observation-browser.test.ts",
         "tests/streamcockpit3-automod-action-http.test.ts",
         "tests/streamcockpit3-automod-action-durable.test.ts",
-        "tests/streamcockpit3-automod-action-browser.test.ts"
+        "tests/streamcockpit3-automod-action-browser.test.ts",
+        "tests/streamcockpit3-automod-viewer-reconnect.test.ts",
+        "tests/streamcockpit3-automod-viewer-manual-browser.test.ts"
       ],
       "hardwareEvidence": [],
       "blockers": [

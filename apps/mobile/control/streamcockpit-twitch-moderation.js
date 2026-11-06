@@ -24,6 +24,15 @@ export function mountTwitchModeration(root,{request}={}){
   const heldRefresh=doc.createElement('button');heldRefresh.type='button';heldRefresh.textContent='Lire les retenues observées';
   const heldStatus=doc.createElement('p');heldStatus.setAttribute('aria-live','polite');
   const heldList=doc.createElement('ul');heldList.setAttribute('aria-label','Retenues AutoMod observées');
+  // A viewer can be inspected without waiting for another currently held
+  // message. This reads FIXE's witnessed observations only, never Twitch's
+  // full moderation history and never dispatches a provider mutation.
+  const viewerLookupLabel=doc.createElement('label');viewerLookupLabel.textContent='Identifiant Twitch du viewer';
+  const viewerInput=doc.createElement('input');viewerInput.type='text';viewerInput.inputMode='numeric';
+  viewerInput.maxLength=30;viewerInput.autocomplete='off';viewerInput.setAttribute('aria-label','Identifiant Twitch du viewer');
+  viewerLookupLabel.append(viewerInput);
+  const viewerLookup=doc.createElement('button');viewerLookup.type='button';
+  viewerLookup.textContent='Consulter l’activité AutoMod observée';
   const viewerStatus=doc.createElement('p');viewerStatus.setAttribute('aria-live','polite');
   const viewerList=doc.createElement('ul');viewerList.setAttribute('aria-label','Activité AutoMod observée du viewer');
   const actionPanel=doc.createElement('div');actionPanel.hidden=true;
@@ -36,7 +45,7 @@ export function mountTwitchModeration(root,{request}={}){
   const actionStatus=doc.createElement('p');actionStatus.setAttribute('aria-live','polite');
   const actionReconcile=doc.createElement('button');actionReconcile.type='button';
   actionReconcile.textContent='J’ai vérifié la décision dans Twitch';actionReconcile.hidden=true;
-  section.append(title,note,form,review,status,reconcile,heldTitle,heldRefresh,heldStatus,heldList,viewerStatus,viewerList,actionPanel,actionStatus,actionReconcile);root.append(section);
+  section.append(title,note,form,review,status,reconcile,heldTitle,heldRefresh,heldStatus,heldList,viewerLookupLabel,viewerLookup,viewerStatus,viewerList,actionPanel,actionStatus,actionReconcile);root.append(section);
   let disposed=false,online=false,declaredOnline=false,sourceKey='',accountKey='',revision=0,flight=false,sending=false,uncertain=false,pending;
   let heldFlight=false,heldRevision=0,viewerRevision=0,viewerFlight=false;
   let actionRevision=0,actionFlight=false,actionSending=false,actionUncertain=false,actionPending;
@@ -47,13 +56,14 @@ export function mountTwitchModeration(root,{request}={}){
     select.disabled=preview.disabled=!enabled;agree.disabled=!enabled||!pending;
     confirm.disabled=!enabled||!pending||!agree.checked||Date.now()>=pending.expiresAt;reconcile.hidden=!uncertain;
     heldRefresh.disabled=!connected()||heldFlight||actionSending||typeof request!=='function';
+    viewerLookup.disabled=!connected()||viewerFlight||typeof request!=='function'||!/^[0-9]{1,30}$/.test(viewerInput.value);
     actionAgree.disabled=!connected()||actionFlight||actionUncertain||!actionPending;
     actionConfirm.disabled=actionAgree.disabled||!actionAgree.checked||Date.now()>=actionPending.expiresAt;
     actionReconcile.hidden=!actionUncertain;actionReconcile.disabled=!connected()||actionSending;
   };
   const invalidate=message=>{
     revision++;heldRevision++;viewerRevision++;actionRevision++;viewerFlight=false;
-    heldList.replaceChildren();viewerList.replaceChildren();viewerStatus.textContent='';
+    heldList.replaceChildren();viewerList.replaceChildren();viewerStatus.textContent='';viewerInput.value='';
     heldStatus.textContent='Observations effacées : relecture manuelle nécessaire.';
     if(sending)uncertain=true;if(actionSending)actionUncertain=true;
     flight=false;actionFlight=false;cancel();actionPending=undefined;actionAgree.checked=false;actionPanel.hidden=true;
@@ -98,6 +108,13 @@ export function mountTwitchModeration(root,{request}={}){
   });
   // Voluntary read-only refresh; unlike the settings button it never makes
   // a Twitch write. Data only covers messages witnessed by FIXE EventSub.
+  viewerInput.addEventListener('input',()=>{
+    // The operator's selection changed while a GET may still be pending.
+    // Never display a result for the previous user under the new ID.
+    viewerRevision++;viewerFlight=false;viewerList.replaceChildren();viewerStatus.textContent='';
+    draw();
+  });
+  viewerLookup.addEventListener('click',()=>{void showViewerHistory(viewerInput.value)});
   const showViewerHistory=async userId=>{
     if(!connected()||viewerFlight||typeof request!=='function'||!/^[0-9]{1,30}$/.test(userId))return;
     const target=sourceKey,key=++viewerRevision;viewerFlight=true;
@@ -121,7 +138,7 @@ export function mountTwitchModeration(root,{request}={}){
         :'Activité AutoMod partielle : '+data.entries.length+' décision(s) vues sur FIXE (15 dernières minutes maximum). Ce n’est pas l’historique complet du viewer.';
     }catch{
       if(key===viewerRevision&&connected()){viewerList.replaceChildren();viewerStatus.textContent='Historique local indisponible. Aucun accès au compte ou à la file Twitch prétendu.';}
-    }finally{if(key===viewerRevision)viewerFlight=false;}
+    }finally{if(key===viewerRevision){viewerFlight=false;draw();}}
   };
   // An observed hold can be acted on ONLY after a read-only scope/identity
   // preflight and a second explicit confirmation. A 204 is not an EventSub receipt.
