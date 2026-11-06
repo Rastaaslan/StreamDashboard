@@ -1107,6 +1107,10 @@
         {
           "path": "tests/electron.smoke.spec.ts",
           "kind": "Native Windows package a13df025: real SQLite header, one manual marker and exact HTTP journal/status recovery after closing and restarting --agent without a window. Fake OBS observation only, zero Start/StopStream or SaveReplayBuffer; not physical reception."
+        },
+        {
+          "path": "docs/streamcockpit-3/F09_F10_SIGNED_LEGACY_MIGRATION_20261106.md",
+          "kind": "2026-11-06 FIXE F09/F10: explicit publisher-signed canonical legacy JSON-to-SQLite conversion now runs inside the existing directory preparation/install/rollback and external maintenance path, preserving F02/F05/F08 journals and exact F09 payload including uncertain clips. Read-only recovery after completed conversion and actual Windows child exit; partial conversion remains pending without replay. 20 suites 312 PASS/0 FAIL/0 skipped incl. 17 new tests; TS/browser types/security 6832 files/diff PASS. Real temporary Windows files/SQLite; in-memory test signing keys and simulated positive native/live/writer proofs. No installed profile, native Squirrel/Android delivery or G3-G5 qualification."
         }
       ],
       "verifiedTests": [
@@ -1129,12 +1133,13 @@
         "tests/streamcockpit3-moments-page-browser.test.ts",
         "tests/streamcockpit3-simple-moments-http.test.ts",
         "tests/streamcockpit3-moments-streamlabs.test.ts",
-        "tests/streamcockpit3-moments-streamlabs-runtime.test.ts"
+        "tests/streamcockpit3-moments-streamlabs-runtime.test.ts",
+        "tests/streamcockpit3-upgrade-moments-migration.test.ts"
       ],
       "hardwareEvidence": [],
       "blockers": [
         "F09 planned live manual marker binding exists only after a witnessed FIXE OBS start and a separate explicit choice, in runtime memory; already-running live at initial connection, reconnect, unknown OBS state, conflicting/excessive planning remain intentionally unbound; no real OBS/Android/laptop qualification; OBS ReplayBufferSaved automatic marker now exists in development and the existing Streamlabs socket is now connected to the same journal; provider/account reception and full-session coverage remain unqualified; ClipForge is deferred to V4 and is not an F09 delivery dependency",
-        "Node 22 node:sqlite experimental; power-loss hardware durability unqualified; 2026-11-06 legacy JSON migration verified only in isolated temporary Windows tests, not on an installed profile or as an automated/updater-backed migration",
+        "2026-11-06: canonical legacy F09 JSON-to-SQLite conversion and read-only interrupted-migration recovery are integrated into the publisher-signed directory maintenance planner, verified on temporary Windows files and child processes. Node 22 node:sqlite remains experimental; installed-profile migration, power-loss durability, native Squirrel/Android delivery and hardware reception remain unqualified.",
         "FIXE 2026-11-02 replay epoch forwarding: 31/31 targeted OBS/F09/roadmap, 2015 PASS / 60 skipped / 0 FAIL full Vitest (246 files) with Git OpenSSL PATH, Node 349 PASS / 6 skipped / 0 FAIL; first full run had 2 TLS suites failing solely because openssl was absent from process PATH, 12/12 TLS targeted PASS with PATH fixed. Skips nonqualified; ClipForge Windows is deferred to V4; F09 hardware remains unqualified",
         "Android native report sharing is exercised with a simulated bridge and real Edge UI, not an actual paired Android device; report interval is NOT a live duration",
         "2026-11-02 FIXE OBS ReplayBufferSaved producer: OBS streaming and host/session remain checked across awaits; raw path NEVER stored/exposed; local absolute nonempty regular-file lstat checked before marker emission, with no retry if missing/stopped/reconnected or if the same OBS connection stopped and restarted; real OBS file validity, handle pinning and power-loss durability NOT proven"
@@ -1292,6 +1297,10 @@
         {
           "path": "docs/streamcockpit-3/F10_NATIVE_WINDOWS_ATTESTATION_20261106.md",
           "kind": "2026-11-06 FIXE F10: actual read-only Windows Authenticode adapter now defaults into external maintenance; full native image attester binds OS signer, EXE hash and PE version to authenticated inventories for install/rollback. Real unsigned temporary EXE rejection before journal admission; positive OS trust simulated in end-to-end temporary copy/SQLite tests. 19 combined F05/F10 suites 241 PASS/0 FAIL/0 skipped, 20 new native cases; TS/browser types/security 6829 files/diff PASS. No installed runtime, production signature, standalone installer, Squirrel/Android or G3-G5 acceptance."
+        },
+        {
+          "path": "docs/streamcockpit-3/F09_F10_SIGNED_LEGACY_MIGRATION_20261106.md",
+          "kind": "2026-11-06 FIXE F09/F10: explicit publisher-signed canonical legacy JSON-to-SQLite conversion now runs inside the existing directory preparation/install/rollback and external maintenance path, preserving F02/F05/F08 journals and exact F09 payload including uncertain clips. Read-only recovery after completed conversion and actual Windows child exit; partial conversion remains pending without replay. 20 suites 312 PASS/0 FAIL/0 skipped incl. 17 new tests; TS/browser types/security 6832 files/diff PASS. Real temporary Windows files/SQLite; in-memory test signing keys and simulated positive native/live/writer proofs. No installed profile, native Squirrel/Android delivery or G3-G5 qualification."
         }
       ],
       "verifiedTests": [
@@ -1317,12 +1326,13 @@
         "tests/streamcockpit3-runtime-ownership-lifecycle.test.ts",
         "tests/streamcockpit3-application-ownership.test.ts",
         "tests/streamcockpit3-upgrade-signed-preparation.test.ts",
-        "tests/streamcockpit3-windows-authenticode.test.ts"
+        "tests/streamcockpit3-windows-authenticode.test.ts",
+        "tests/streamcockpit3-upgrade-moments-migration.test.ts"
       ],
       "hardwareEvidence": [],
       "blockers": [
         "Production Windows/Android native signatures and independently provisioned release trust remain unqualified.",
-        "2026-11-06: durable update journal, application-wide exclusion, authenticated directory preparation, external coordination and real read-only Windows Authenticode/full-image attestation are source-integrated. Actual native verifier rejects unsigned temporary files; positive production signature remains unqualified. Distributed standalone installer, native Squirrel/Android transaction, independent live/writer OS adapters, schema migration/recovery, legacy process coverage and hardware acceptance are still incomplete; installed updater remains blocked.",
+        "2026-11-06: durable update journal, application-wide exclusion, authenticated directory preparation, canonical F09 legacy conversion/recovery, external coordination and native Windows Authenticode/full-image readback are source-integrated. Production native trust is not qualified. Distributed standalone installer, native Squirrel/Android transaction, independent live/writer OS adapters, other schema migrations, legacy process coverage and hardware acceptance remain incomplete; installed updater stays blocked.",
         "2026-11-06: embedded same-commit EXE/ASAR+APK verifier exists and passes on old debug QA artifacts, but production-signed artifacts from exact current HEAD, physical recovery, and operator gates remain unavailable; release:check still fails closed"
       ],
       "ownerJob": "streamcockpit/3.0-lot-p",

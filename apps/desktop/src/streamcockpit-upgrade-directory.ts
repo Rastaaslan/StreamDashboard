@@ -7,8 +7,11 @@ import {createUpgradeReadbackReconciler,verifyUpgradeReadbackFiles,
 import type {RestartSafety} from './restart-safety.js';
 import {validateUpgradeManifest,type UpgradeAdapters,type UpgradeJournal,type UpgradeManifest} from '../../../packages/core/src/streamcockpit-upgrade.js';
 
+import {momentsUpgradeMigration,validateMomentsUpgradeInventories,verifyMomentsUpgrade,
+  type MomentsUpgradeMigration} from './streamcockpit-upgrade-moments-migration.js';
+
 type ApplyOperation='install'|'rollback';
-type Preparation=Pick<UpgradeAdapters,'stage'|'verify'|'backup'|'migrate'>;
+type Preparation=Pick<UpgradeAdapters,'stage'|'verify'|'backup'|'migrate'> & Partial<Pick<UpgradeAdapters,'reconcile'>>;
 export interface DirectoryUpgradeOptions {
   manifest:UpgradeManifest;
   journalDirectory:string;
@@ -16,6 +19,8 @@ export interface DirectoryUpgradeOptions {
   preparedPackage:string;preparedProfile:string;
   backupPackage:string;backupProfile:string;
   target:UpgradeReadbackExpectation;rollback:UpgradeReadbackExpectation;
+  /** Explicit canonical F09 format migration; all other profile bytes stay intact. */
+  profileMigration?:MomentsUpgradeMigration;
   /** Caller must hold the real runtime/service exclusion, including other processes.
    * A stopped HTTP listener or the upgrade-journal mutex alone is NOT sufficient. */
   runtimeStopped:()=>Promise<boolean>;
@@ -49,7 +54,8 @@ function safeEntry(name:string){
     name.split('/').some(part=>!part||part==='.'||part==='..'||/[. ]$/.test(part)||
       /^(con|prn|aux|nul|com[0-9]|lpt[0-9])(?:\.|$)/i.test(part)))throw failure('ENTRY_INVALID');
 }
-function preserveDurableJournals(before:UpgradeReadbackFile[],after:UpgradeReadbackFile[]){
+function preserveDurableJournals(before:UpgradeReadbackFile[],after:UpgradeReadbackFile[],migration?:MomentsUpgradeMigration){
+  const converted=migration?validateMomentsUpgradeInventories(before,after,migration).sqlite:undefined;
   const names=['streamcockpit-automod-action-intents.sqlite','streamcockpit-prediction-intents.sqlite','streamcockpit-moments.sqlite','streamcockpit-mixer-receipts.sqlite'];
   const journalEntries=(files:UpgradeReadbackFile[])=>{
     for(const file of files){
@@ -57,7 +63,7 @@ function preserveDurableJournals(before:UpgradeReadbackFile[],after:UpgradeReadb
       if(names.some(base=>['-wal','-shm','-journal'].some(suffix=>name===base+suffix)))
         throw failure('DURABLE_JOURNAL_TRANSFORM_UNQUALIFIED');
     }
-    return files.filter(file=>names.includes(file.path.split('/').at(-1)!.toLowerCase()))
+    return files.filter(file=>file.path!==converted&&names.includes(file.path.split('/').at(-1)!.toLowerCase()))
       .map(({path,bytes,sha256})=>({path,bytes,sha256})).sort((a,b)=>a.path.localeCompare(b.path));
   };
   // This directory adapter cannot infer whether a journal-format migration or
@@ -116,7 +122,8 @@ export function createWindowsDirectoryUpgradePlanner(input:DirectoryUpgradeOptio
     for(const file of entries)safeEntry(file.path);
   const readback=createUpgradeReadbackReconciler({manifest,target,rollback,
     packageRoot:roots.packageRoot,profileRoot:roots.profileRoot,attestInstalled,now});
-  preserveDurableJournals(rollback.profileFiles,target.profileFiles);
+  const profileMigration=input.profileMigration===undefined?undefined:momentsUpgradeMigration(structuredClone(input.profileMigration));
+  preserveDurableJournals(rollback.profileFiles,target.profileFiles,profileMigration);
   const requireStopped=async()=>{
     if(await runtimeStopped()!==true)throw failure('RUNTIME_NOT_STOPPED');
   };
@@ -149,8 +156,12 @@ export function createWindowsDirectoryUpgradePlanner(input:DirectoryUpgradeOptio
     await exact(roots.packageRoot,current.packageFiles);await exact(roots.profileRoot,current.profileFiles);
     // Original immutable backups must still exist for either direction.
     await exact(roots.backupPackage,rollback.packageFiles);await exact(roots.backupProfile,rollback.profileFiles);
+    if(profileMigration)await verifyMomentsUpgrade(roots.backupProfile,
+      operation==='install'?roots.preparedProfile:roots.profileRoot,rollback.profileFiles,target.profileFiles,profileMigration);
     for(const p of plans){await absent(p.candidate);await absent(p.previous)}
     for(let i=0;i<plans.length;i++)await copyVerifiedUpgradeTree(sources[i]!,plans[i]!.candidate,entries[i]!);
+    if(profileMigration&&operation==='install')await verifyMomentsUpgrade(roots.backupProfile,plans[1]!.candidate,
+      rollback.profileFiles,target.profileFiles,profileMigration);
     await requireStopped();
     await exact(roots.packageRoot,current.packageFiles);await exact(roots.profileRoot,current.profileFiles);
     for(let i=0;i<plans.length;i++){
@@ -175,7 +186,18 @@ export function createWindowsDirectoryUpgradePlanner(input:DirectoryUpgradeOptio
     install:(journal,key)=>apply('install',journal,key),rollback:(journal,key)=>apply('rollback',journal,key),
     reconcile:async(operation,key)=>{
       // Lost acknowledgement: observe only. A partial tree is never replayable.
-      try{await requireStopped();return await readback(operation,key)}catch{return undefined}
+      try{
+        await requireStopped();
+        if(key!==manifest.id+':'+operation)return undefined;
+        if(operation==='stage'||operation==='backup'||operation==='migrate'){
+          const receipt=await preparation.reconcile?.(operation,key);
+          const expected=operation==='stage'?roots.preparedPackage:operation==='backup'?roots.backupPackage:roots.preparedProfile;
+          return receipt?.reference===expected?receipt:undefined;
+        }
+        if(profileMigration&&operation==='install')await verifyMomentsUpgrade(roots.backupProfile,roots.profileRoot,
+          rollback.profileFiles,target.profileFiles,profileMigration);
+        return await readback(operation,key);
+      }catch{return undefined}
     },
   },dashboard);
 }

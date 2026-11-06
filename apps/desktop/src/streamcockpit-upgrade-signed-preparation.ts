@@ -4,11 +4,15 @@ import {copyVerifiedUpgradeTree,createWindowsDirectoryUpgradePlanner,type Direct
 import {verifyUpgradeReadbackFiles,type UpgradeReadbackExpectation,type UpgradeReadbackFile} from './streamcockpit-upgrade-readback.js';
 import {validateUpgradeManifest,type UpgradeManifest} from '../../../packages/core/src/streamcockpit-upgrade.js';
 import type {RestartSafety} from './restart-safety.js';
+import {momentsUpgradeMigration,validateMomentsUpgradeInventories,prepareMomentsUpgrade,verifyMomentsUpgrade,
+  type MomentsUpgradeMigration} from './streamcockpit-upgrade-moments-migration.js';
 
 /** Publisher-signed APPLICATION inventory. No private profile data in a release. */
 export interface SignedDirectoryImage {
   identity:UpgradeReadbackExpectation['identity'];
   packageFiles:UpgradeReadbackFile[];
+  /** Signed code-defined migration, never private profile contents or arbitrary code. */
+  profileMigration?:MomentsUpgradeMigration;
 }
 export interface DirectoryReleaseTrust {
   keyId:string;
@@ -44,14 +48,16 @@ function files(entries:UpgradeReadbackFile[]):UpgradeReadbackFile[]{
   }).sort((a,b)=>a.path<b.path?-1:a.path>b.path?1:0);
 }
 function imageValue(image:SignedDirectoryImage):SignedDirectoryImage{
-  if(!exactKeys(image,['identity','packageFiles'])||
+  const hasMigration=Boolean(image&&Object.hasOwn(image,'profileMigration'));
+  if(!exactKeys(image,['identity','packageFiles',...(hasMigration?['profileMigration']:[])])||
     !exactKeys(image.identity,['version','revision','applicationId','signer']))fail('IDENTITY_INVALID');
   const i=image.identity;
   if(typeof i.version!=='string'||!/^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/.test(i.version)||
     typeof i.revision!=='string'||!/^[a-f0-9]{40}$/.test(i.revision)||
     typeof i.applicationId!=='string'||!/^[A-Za-z][A-Za-z0-9._-]{0,199}$/.test(i.applicationId)||
     typeof i.signer!=='string'||!/^[A-F0-9]{40}$/.test(i.signer))fail('IDENTITY_INVALID');
-  return {identity:{version:i.version,revision:i.revision,applicationId:i.applicationId,signer:i.signer},packageFiles:files(image.packageFiles)};
+  return {identity:{version:i.version,revision:i.revision,applicationId:i.applicationId,signer:i.signer},packageFiles:files(image.packageFiles),
+    ...(hasMigration?{profileMigration:momentsUpgradeMigration(image.profileMigration)}:{})};
 }
 /** Manifest.sha256 binds the full canonical image inventory, not just an EXE. */
 export function directoryReleaseImageHash(image:SignedDirectoryImage):string{
@@ -99,7 +105,8 @@ const same=(a:unknown,b:unknown)=>JSON.stringify(a)===JSON.stringify(b);
 
 /** Concrete stage -> authenticated verify -> immutable app/data backup ->
  * byte-preserving schema preparation -> existing install/readback/rollback.
- * Supports SAME-SCHEMA directory updates only. No network, key generation,
+ * Supports same-profile-schema updates, optionally converting canonical F09
+ * JSON to SQLite under a signed explicit migration. No network, key generation,
  * installer launch, automatic runtime stop, Squirrel or Android activation.
  * Publisher authentication does NOT replace native Authenticode/installed
  * identity attestation, operator consent or a Windows/APK same-commit receipt.
@@ -110,14 +117,18 @@ export function createSignedWindowsDirectoryUpgradePlanner(input:SignedDirectory
   const target=structuredClone(input.target),rollback=structuredClone(input.rollback);
   const trust=structuredClone(input.trust),authenticate=authenticator(manifest,image,trust);
   authenticate(); // Refuse forged release metadata before even registering intent.
-  if(!same(imageValue({identity:target.identity,packageFiles:target.packageFiles}),image))fail('TARGET_NOT_SIGNED');
-  if(manifest.schema.from!==manifest.schema.to||!same(files(target.profileFiles),files(rollback.profileFiles)))
-    fail('PROFILE_MIGRATION_NOT_SUPPORTED');
+  const profileMigration=input.profileMigration===undefined?undefined:momentsUpgradeMigration(structuredClone(input.profileMigration));
+  if(!same(profileMigration,image.profileMigration))fail('MIGRATION_NOT_SIGNED');
+  if(!same(imageValue({identity:target.identity,packageFiles:target.packageFiles,
+    ...(profileMigration?{profileMigration}:{})}),image))fail('TARGET_NOT_SIGNED');
+  if(manifest.schema.from!==manifest.schema.to)fail('PROFILE_MIGRATION_NOT_SUPPORTED');
+  if(profileMigration)validateMomentsUpgradeInventories(rollback.profileFiles,target.profileFiles,profileMigration);
+  else if(!same(files(target.profileFiles),files(rollback.profileFiles)))fail('PROFILE_MIGRATION_NOT_SUPPORTED');
   const source=input.sourcePackage;
   if(typeof source!=='string'||!isAbsolute(source)||!/^[A-Za-z]:[\\/]/.test(source)||source.slice(2).includes(':')||source.includes('\0'))
     fail('SOURCE_PATH_INVALID');
   const sourcePackage=resolve(source);
-  const options={...input,manifest,target,rollback};
+  const options={...input,manifest,target,rollback,profileMigration};
   const roots=[options.packageRoot,options.profileRoot,options.journalDirectory,options.preparedPackage,
     options.preparedProfile,options.backupPackage,options.backupProfile];
   const recovery=(['install','rollback']as const).flatMap(operation=>[options.packageRoot,options.profileRoot].flatMap(active=>
@@ -152,8 +163,29 @@ export function createSignedWindowsDirectoryUpgradePlanner(input:SignedDirectory
       contract(value,key,'migrate');if(backup!==options.backupPackage)fail('BACKUP_SUBSTITUTED');await stopped();
       await exact(options.backupPackage,rollback.packageFiles);
       await copyVerifiedUpgradeTree(options.backupProfile,options.preparedProfile,rollback.profileFiles);
+      if(profileMigration)await prepareMomentsUpgrade(options.backupProfile,options.preparedProfile,
+        rollback.profileFiles,target.profileFiles,profileMigration);
       await exact(options.preparedProfile,target.profileFiles);await stopped();
       return {reference:options.preparedProfile};
+    },
+    reconcile:async(operation,key)=>{
+      // Only complete independently pinned results are recoverable. No copy,
+      // conversion, deletion or source modification occurs during readback.
+      try{
+        contract(manifest,key,operation);await stopped();
+        if(operation==='stage'){
+          await exact(options.preparedPackage,image.packageFiles);
+          return {reference:options.preparedPackage};
+        }
+        if(operation!=='backup'&&operation!=='migrate')return undefined;
+        await exact(options.backupPackage,rollback.packageFiles);await exact(options.backupProfile,rollback.profileFiles);
+        await exact(options.packageRoot,rollback.packageFiles);await exact(options.profileRoot,rollback.profileFiles);
+        if(operation==='backup')return {reference:options.backupPackage};
+        await exact(options.preparedProfile,target.profileFiles);
+        if(profileMigration)await verifyMomentsUpgrade(options.backupProfile,options.preparedProfile,
+          rollback.profileFiles,target.profileFiles,profileMigration);
+        await stopped();return {reference:options.preparedProfile};
+      }catch{return undefined}
     },
   },dashboard);
 }
