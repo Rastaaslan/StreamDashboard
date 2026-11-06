@@ -1157,7 +1157,7 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
       ws.send(stateEvent(socketDevices.has(ws)));
     }
   };
-  eventCore.subscribe(event => {
+  const unsubscribeAutomationEvents = eventCore.subscribe(event => {
     const message = JSON.stringify({ type: 'event.received', data: event });
     for (const ws of sockets.clients) if (ws.readyState === ws.OPEN) ws.send(message);
     if (event.source !== 'automation') void automation.consume(event).then(results => { for (const result of results) eventCore.publish({ type: result.status === 'succeeded' ? 'automation.triggered' : 'automation.failed', source: 'automation', correlationId: result.correlationId, payload: result }); }).catch(logError);
@@ -3759,6 +3759,12 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
     discovery?.close();
     unsubscribeObs();
     unsubscribeObsReplaySaved();
+    unsubscribeAutomationEvents();
+    // Close admission synchronously; await accepted actions and final writes.
+    // Capture rejections now, but complete cleanup before reporting uncertainty.
+    const producerDrains = Promise.allSettled([
+      automation.stop(), replayMomentProducer.stop(), streamlabsMomentProducer.stop(),
+    ]);
     clearTimeout(googleOAuthTimeout);
     clearInterval(validator);
     backgroundStopped = true;
@@ -3776,6 +3782,7 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
     for (const ws of sockets.clients) ws.terminate();
     sockets.close();
     await Promise.all([stopHttp(),tlsServer?.listening?stopTls!():Promise.resolve()]);
+    const producerResults = await producerDrains;
     await wizebotCommands.stop();
     await control.stop();
     await commands.stop();
@@ -3788,12 +3795,13 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
     twitch.close();
     twitchEventSub.stop();
     await streamlabs.disconnect();
-    await streamlabsMomentProducer.stop();
     await streamlabsHistory.stop();
     await streamlabsFeed.stop();
     await obs.close();
     await providerStartupWork;
     await save();
+    if (producerResults.some(result => result.status === 'rejected'))
+      throw new Error('RUNTIME_PRODUCER_SHUTDOWN_UNCERTAIN');
   })();
   try {
     if(tlsServer){

@@ -1,3 +1,4 @@
+import { RuntimeProducerDrain } from './runtime-producer-drain.js';
 import type { MomentInput } from '../../../packages/core/src/streamcockpit-moments.js';
 import { momentIdentifier } from '../../../packages/core/src/streamcockpit-moments.js';
 
@@ -20,6 +21,7 @@ interface ObsSnapshot {
 
 export class ObsReplayMomentProducer {
   private readonly attempted = new Set<string>();
+  private readonly drain = new RuntimeProducerDrain('OBS_REPLAY_MOMENT_WRITE_UNCERTAIN');
   private activeEpoch: number | undefined;
   constructor(private readonly options: {
     snapshot(): ObsSnapshot;
@@ -32,7 +34,14 @@ export class ObsReplayMomentProducer {
    * uncertain SQLite commit, and NEVER call SaveReplayBuffer or another OBS
    * action. Both the live identity and host ownership are rechecked after awaits.
    * This is not an atomic transaction with OBS during the final journal commit. */
-  async observe(event: ObsSavedReplayEvent): Promise<'ignored' | 'recorded'> {
+  observe(event: ObsSavedReplayEvent): Promise<'ignored' | 'recorded'> {
+    if (this.drain.stopped) return Promise.resolve('ignored');
+    return this.drain.run(() => this.process(event));
+  }
+
+  stop(): Promise<void> { return this.drain.stop(); }
+
+  private async process(event: ObsSavedReplayEvent): Promise<'ignored' | 'recorded'> {
     if (!event || !Number.isSafeInteger(event.observedAt) || event.observedAt < 0 ||
         !Number.isSafeInteger(event.connectionGeneration) || event.connectionGeneration < 0 ||
         !Number.isSafeInteger(event.streamEpoch) || event.streamEpoch < 0)
@@ -43,7 +52,7 @@ export class ObsReplayMomentProducer {
     if (!/^obs_replay_[a-f0-9]{64}$/.test(event.sourceEventId)) return 'ignored';
     const valid = () => {
       const state = this.options.snapshot();
-      return state.connected && state.streamingKnown && state.streaming &&
+      return !this.drain.stopped && state.connected && state.streamingKnown && state.streaming &&
         state.connectionGeneration === event.connectionGeneration && state.streamEpoch === event.streamEpoch;
     };
     if (!valid()) return 'ignored';
@@ -70,13 +79,13 @@ export class ObsReplayMomentProducer {
     // Host authority can be revoked while the second session read is pending.
     // Revalidate it after that await, directly before the journal write.
     if (!await this.options.hostEligible() || !valid()) return 'ignored';
-    await this.options.record({
+    await this.drain.persist(() => this.options.record({
       sessionId: second,
       source: 'obs', status: 'observed', instant: event.observedAt,
       sourceEventId: event.sourceEventId,
       correlationId: event.sourceEventId,
       title: 'Replay OBS sauvegardé',
-    });
+    }));
     return 'recorded';
   }
 }

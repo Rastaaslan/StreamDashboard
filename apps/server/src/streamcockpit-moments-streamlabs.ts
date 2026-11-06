@@ -1,4 +1,5 @@
 import { createHash } from 'node:crypto';
+import { RuntimeProducerDrain } from './runtime-producer-drain.js';
 import type { StreamlabsEvent } from '../../../integrations/streamlabs/src/events.js';
 
 interface Snapshot {
@@ -14,9 +15,8 @@ const titles:Record<string,string>={donation:'Don Streamlabs reçu',follow:'Foll
  * Undated events mean receipt on FIXE, never a claimed provider occurrence. */
 export class StreamlabsMomentProducer {
  private attempted=new Set<string>();
- private pending=new Set<Promise<void>>();
+ private readonly drain=new RuntimeProducerDrain('STREAMLABS_MOMENT_WRITE_UNCERTAIN');
  private witness?:{generation:number;epoch:number;at:number};
- private stopped=false;
  constructor(private readonly options:{
   snapshot():Snapshot; host():Promise<string|undefined>; activeSessionId():Promise<string|undefined>;
   record(input:StreamlabsObservation):Promise<unknown>; now?:()=>number;
@@ -29,17 +29,16 @@ export class StreamlabsMomentProducer {
    this.witness={generation:s.connectionGeneration,epoch:s.streamEpoch,at:this.now()};
  }
  observe(events:StreamlabsEvent[]):Promise<void>{
-  if(this.stopped)return Promise.resolve();
-  const snapshot={...this.options.snapshot()},instant=this.now(),witness=this.witness&&{...this.witness};
-  const work=this.process(events,snapshot,instant,witness);
-  this.pending.add(work);
-  void work.finally(()=>this.pending.delete(work)).catch(()=>undefined);
-  return work;
+  if(this.drain.stopped)return Promise.resolve();
+  return this.drain.run(()=>{
+   const snapshot={...this.options.snapshot()},instant=this.now(),witness=this.witness&&{...this.witness};
+   return this.process(events,snapshot,instant,witness);
+  });
  }
  private async process(events:StreamlabsEvent[],snapshot:Snapshot,instant:number,witness:typeof this.witness){
   const valid=()=>{
    const s=this.options.snapshot();
-   return !this.stopped&&s.connected&&s.streamingKnown&&s.streaming&&s.providerConnected&&
+   return !this.drain.stopped&&s.connected&&s.streamingKnown&&s.streaming&&s.providerConnected&&
     s.connectionGeneration===snapshot.connectionGeneration&&s.streamEpoch===snapshot.streamEpoch&&
     s.providerGeneration===snapshot.providerGeneration;
   };
@@ -63,10 +62,10 @@ export class StreamlabsMomentProducer {
    if(await this.options.host()!==host||!valid())return;
    if(await this.options.activeSessionId()!==sessionId||!valid())return;
    if(await this.options.host()!==host||!valid())return;
-   await this.options.record({sessionId,instant:received,sourceEventId:id,correlationId:id,title:titles[event.type]});
+   await this.drain.persist(()=>this.options.record({sessionId,instant:received,sourceEventId:id,correlationId:id,title:titles[event.type]}));
   }
  }
  /** Drain accepted writes; cancellation before the commit never repeats them.
   * As with OBS observations, an already-started disk commit cannot be undone. */
- async stop(){this.stopped=true;await Promise.allSettled([...this.pending])}
+ stop():Promise<void>{return this.drain.stop()}
 }

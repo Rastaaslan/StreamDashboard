@@ -1243,6 +1243,10 @@
         {
           "path": "docs/streamcockpit-3/F10_DURABLE_UPGRADE_JOURNAL_20261106.md",
           "kind": "2026-11-06 FIXE F10: real SQLite committed upgrade journal plus separate OS-backed cross-process mutex wired into createDurableDesktopUpgradePlanner; abrupt child-process exit across all five effect stages preserves pending intent without replay, confirmed read-only recovery, detached temporary data migration/rollback, provider-error redaction. 15 suites 172 PASS/0 FAIL/0 skipped including 28 new tests; global TypeScript, browser types, security 6799 files and diff PASS. Explicit caller-owned directory, not activated in startUpdater; service-writer quiescence, production installers, signed exact-HEAD release and hardware G3-G5 remain unqualified."
+        },
+        {
+          "path": "docs/streamcockpit-3/F10_RUNTIME_PRODUCER_DRAIN_20261106.md",
+          "kind": "2026-11-06 FIXE F10: actual DashboardServer stop closes automation/OBS replay/Streamlabs producer admission, awaits accepted action and persistence completion before closing executors, finishes cleanup and refuses clean shutdown on uncertain persistence. 15 targeted suites 141 PASS/0 FAIL/0 skipped including 14 new tests and two actual temporary HTTP servers with OBS disabled/providers simulated. Global TypeScript, browser types, security 6802 files and diff PASS. No installed runtime restart, production service-wide exclusion, installer activation or hardware qualification; G2 in_progress, G3-G5 open."
         }
       ],
       "verifiedTests": [
@@ -1258,12 +1262,14 @@
         "tests/streamcockpit3-artifact-verifier.test.ts",
         "tests/streamcockpit3-embedded-provenance.test.ts",
         "tests/migration-backup.test.ts",
-        "tests/streamcockpit3-upgrade-journal.test.ts"
+        "tests/streamcockpit3-upgrade-journal.test.ts",
+        "tests/streamcockpit3-producer-drain.test.ts",
+        "tests/streamcockpit3-producer-drain-server.test.ts"
       ],
       "hardwareEvidence": [],
       "blockers": [
         "Real Windows/Android trusted signing and staged bytes verification unavailable",
-        "2026-11-06: the existing Desktop planner now has real SQLite intent persistence and cooperative cross-process upgrade exclusion, tested with Windows child-process crashes. Production service-writer quiescence, real installer adapters, version/data reconciliation and hardware migration/rollback remain unintegrated; startUpdater still cannot install.",
+        "2026-11-06: the existing Desktop planner has SQLite intent persistence and cooperative cross-process upgrade exclusion; normal DashboardServer shutdown now drains accepted automation, replay and Streamlabs producer writes. Comprehensive service-wide/multi-process quiescence, real installer adapters, version/data reconciliation and hardware migration/rollback remain unqualified; startUpdater still cannot install.",
         "2026-11-06: embedded same-commit EXE/ASAR+APK verifier exists and passes on old debug QA artifacts, but production-signed artifacts from exact current HEAD, physical recovery, and operator gates remain unavailable; release:check still fails closed"
       ],
       "ownerJob": "streamcockpit/3.0-lot-p",

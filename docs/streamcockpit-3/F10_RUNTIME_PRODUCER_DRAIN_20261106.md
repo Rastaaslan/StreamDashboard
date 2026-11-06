@@ -1,0 +1,21 @@
+# F10 — Fin des écritures des producteurs avant arrêt du serveur
+
+06/11/2026 — FIXE uniquement, Remote Desktop Commander. Base `067b656`, branche `streamcockpit/3.0-full-experience`, origin attendu. Reprise du lot `RDC-FIXE-producer-drain-20261106` après interruption, sans chantier supplémentaire.
+
+## Écart fermé dans le serveur réel
+Le parcours normal `DashboardServerHandle.stop()` ne suivait ni les observations de replays OBS en vol ni la persistance finale des macros. Streamlabs attendait ses promesses mais masquait une tentative d'écriture rejetée. Trois tests RED ont reproduit ces absences avant intégration : **0 PASS / 3 FAIL / 0 skipped** (`.git/sc3-producer-drain-red.log`).
+
+`RuntimeProducerDrain` ferme l'admission synchroniquement et suit toute opération acceptée jusqu'à sa persistance finale. `ObsReplayMomentProducer` et `AutomationRuntime` disposent désormais d'un vrai `stop()` asynchrone ; Streamlabs utilise le même mécanisme. Une observation encore en prévalidation est abandonnée sans écriture, une écriture déjà engagée est attendue sans retry. Les étapes de macro non commencées et les nouveaux événements ne déclenchent plus d'action pendant l'arrêt. Les erreurs de validation antérieures à la persistance ne sont pas classées comme échecs disque.
+
+Le raccordement est effectué **dans `apps/server/src/index.ts`**, pas seulement dans un scénario QA : désabonnement des nouveaux événements, fermeture de l'admission des trois producteurs, attente de leurs résultats avant de fermer les exécutants de commandes, puis nettoyage et sauvegarde finale. Une persistance incertaine ne court-circuite pas ce nettoyage mais fait rejeter l'arrêt avec le code fixe `RUNTIME_PRODUCER_SHUTDOWN_UNCERTAIN`, sans exposer l'erreur fournisseur. Aucun arrêt/reprise automatique ni point d'entrée d'installation n'est ajouté.
+
+## Régressions exécutées
+- **15 suites / 141 PASS / 0 FAIL / 0 skipped**, dont **14 nouveaux tests** : arrêt pendant prévalidation/écriture, déduplication après erreur, macro multi-étapes et événement en attente, édition acceptée, arrêt réentrant, persistance incertaine et intégration au serveur. Log `.git/sc3-producer-drain-final-tests.log`.
+- Deux tests démarrent un **vrai DashboardServer temporaire sur port loopback aléatoire**, OBS désactivé, sans secrets utilisateur ; seules les attentes des producteurs sont artificiellement retardées. Ils prouvent l'attente de tous les producteurs, le nettoyage et la sauvegarde malgré un rejet. Les requêtes externes y sont interdites. Ils ne constituent pas une réception des fournisseurs ou des appareils physiques.
+- Les suites existantes de journal SQLite, panne de processus, lifecycle Desktop, garde de redémarrage, updater et de périmètre V4 passent dans la même campagne. Les essais SQLite utilisent des dossiers temporaires synthétiques ; aucune application installée n'est arrêtée.
+- `npm run build:types`, `npm run check:browser-types`, `npm run security:check` (**6 802 fichiers**) et `git diff --check` : **PASS**, codes 0. HEAD est resté `067b656` pendant la campagne. Logs `.git/sc3-producer-drain-{build-types,check-browser-types,security-check,diff}.log`. Pas de changement UI : aucun test navigateur physique revendiqué. Pas de suite générale, build de distribution, EXE/APK, déploiement ou installation.
+
+## Concurrence et limites
+PLAN, matrice, CONTINUITY, MIGRATION et audit final relus avant écriture ; git/status/remote/ownership et processus contrôlés. F05/mixeur et CONTINUITY ont conservé leurs empreintes exactes de départ. Les handoffs Settings concurrents sont préservés ; cette passe ne change ni Settings ni leurs parcours OAuth. Tests séquentiels à un worker et priorité basse, version actuellement utilisée inchangée ; aucune commande OBS/Twitch et aucun accès à un autre appareil.
+
+Le drainage de ces producteurs est maintenant source-intégré. Cela **ne qualifie pas** une suspension globale multi-processus, l'installation Squirrel/Android, une coupure électrique ni le rollback d'un profil utilisateur. Prochaine priorité F10 : relier le journal durable aux adaptateurs réels d'installation/relecture de version et de données après arrêt coordonné, puis recevoir la paire signée de même commit. F05 reste à intégrer par son propriétaire. F10 `partial`, G2 `in_progress`, G3–G5 `open`.
