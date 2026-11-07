@@ -1,0 +1,60 @@
+{
+  "scope": "SC3 F10 existing single closure: native Squirrel connection",
+  "checkedAt": "2026-11-07T11:57:25.764884+00:00",
+  "baseCommit": "bb7c6d6766ae7fa11b5e4e0c5babf1d62a42f328",
+  "tests": {
+    "command": "vitest run selected F10 upgrade/maintenance/native/writer suites --maxWorkers=1",
+    "files": 22,
+    "pass": 350,
+    "fail": 0,
+    "skipped": 0,
+    "newSquirrelCases": 24,
+    "nativeSquirrelCases": 2
+  },
+  "checks": {
+    "check:browser-types": 0,
+    "build:types": 0,
+    "build": 0,
+    "check:shipped-js": 0,
+    "security:check": 0
+  },
+  "sourceFilesSha256": {
+    "apps/desktop/src/streamcockpit-external-maintenance.ts": "980f8f513299610d3460e0b8010250b32bf2ce5f038fe706338213b5f6b04d80",
+    "apps/desktop/src/streamcockpit-maintenance-cli.ts": "c3035884a3470a325cca578f1d69ffd8d532e3b9fa6968368b8dc454f4541566",
+    "apps/desktop/src/streamcockpit-maintenance-launcher.ts": "726a95c6b821c89e0be36b7acf29c991cc26c40ed31bb5d02c86466daeda878d",
+    "apps/desktop/src/streamcockpit-native-maintenance.ts": "05bf333e1e4e92312da38c0559498497244b6d86ba62bba44c31dd648918bb00",
+    "apps/desktop/src/streamcockpit-upgrade-signed-preparation.ts": "9e836f74cef1f44ad16ba62c2febd2e75124164b4b29c727840c41cb7f1cfb87",
+    "apps/desktop/src/streamcockpit-squirrel-contract.ts": "04fa989f0267aca279b24ef2ceba11db96e87237038fd8de0522a4e0eaba6c01",
+    "apps/desktop/src/streamcockpit-squirrel-native.ts": "d36de60627dc660681953f07a6c7dc232a5a7214e1c45598061c67d8561cb975",
+    "apps/desktop/src/streamcockpit-upgrade-squirrel.ts": "b11458e658ba3c45a2ca90f97c775b9b7d967ddba3733683bb7612d26f0e5980",
+    "apps/mobile/control-sw.js": "33bfb5502120911bad1b8446e1c47754ad49106b9614962ed86f3352ffd3eb20"
+  },
+  "maintenanceBundleSha256": "861fb61bfdf2ed804d493ed82a9afa06c348337799ed1817dcf6aeab598a2a2a",
+  "maintenanceBundleRefusesInvalidEnvelope": true,
+  "nativeProof": {
+    "actualLibrary": "electron-winstaller/vendor/Squirrel.exe",
+    "librarySha256": "76359cd4b0349a83337b941332ad042c90351c2bb0a4628307740324c97984cc",
+    "fullPackageApply": true,
+    "completeInstallationAndProfileRollback": true,
+    "realTemporaryHKCURegistration": true,
+    "activeReleaseRegistryMismatchRejected": true,
+    "positiveCertificateTrust": "SIMULATED_TEST_ONLY",
+    "actualUnsignedRejection": true,
+    "application": "Harmless console surrogate; real app/providers not started"
+  },
+  "logSha256": {
+    ".git/sc3-squirrel-qualified-tests.log": "3ec1380745deaa33a7db6b255e3ff8df8e19ac759e2614761ca12abcdb72f3e8",
+    ".git/sc3-squirrel-qualified-tests.json": "b591535d5adc939f5fc18ebf9daed75fce6c2848b049edc5ddaca797a484cd96"
+  },
+  "productionSignaturesQualified": false,
+  "physicalReception": false,
+  "installed": false,
+  "published": false,
+  "gatesPromoted": false,
+  "gates": {
+    "G2": "in_progress",
+    "G3": "open",
+    "G4": "open",
+    "G5": "open"
+  }
+}

@@ -1,7 +1,8 @@
 import {isAbsolute,resolve,join} from 'node:path';
 import {inspectWindowsAuthenticode,windowsApplicationEntry,windowsVersionMatches} from './streamcockpit-windows-authenticode.js';
 import {runtimeUpgradeDirectory} from './streamcockpit-runtime-ownership.js';
-import {createSignedWindowsDirectoryUpgradePlanner,type SignedDirectoryUpgradeOptions} from './streamcockpit-upgrade-signed-preparation.js';
+import type {SignedDirectoryUpgradeOptions} from './streamcockpit-upgrade-signed-preparation.js';
+import {createSignedWindowsUpgradePlanner} from './streamcockpit-upgrade-squirrel.js';
 import {verifyUpgradeReadbackFiles} from './streamcockpit-upgrade-readback.js';
 import type {RestartSafety} from './restart-safety.js';
 import type {UpgradePhase} from '../../../packages/core/src/streamcockpit-upgrade.js';
@@ -123,7 +124,7 @@ export async function runExternalWindowsMaintenance(
   // The planner reads only this prevalidated snapshot; retaining runtimeStopped
   // rechecks closes admission before each file swap, not just at preflight.
   o.runtimeStopped=noWriters;
-  const planner=createSignedWindowsDirectoryUpgradePlanner(o,{
+  const planner=createSignedWindowsUpgradePlanner(o,{
     assessRestartSafety:async()=>{
       await noWriters();
       const safety=await deps.assessRestartSafety();

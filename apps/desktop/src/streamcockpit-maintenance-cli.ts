@@ -2,7 +2,8 @@ import {lstat,readFile,realpath,open} from 'node:fs/promises';
 import {createHash} from 'node:crypto';
 import {SqliteUpgradeJournal} from './streamcockpit-upgrade-journal.js';
 import {isAbsolute,join,resolve,sep} from 'node:path';
-import {createSignedWindowsDirectoryUpgradePlanner,type DirectoryReleaseTrust,type SignedDirectoryUpgradeOptions} from './streamcockpit-upgrade-signed-preparation.js';
+import type {DirectoryReleaseTrust,SignedDirectoryUpgradeOptions} from './streamcockpit-upgrade-signed-preparation.js';
+import {createSignedWindowsUpgradePlanner,maintenanceInstallationRoot} from './streamcockpit-upgrade-squirrel.js';
 import {inspectWindowsAuthenticode,windowsApplicationEntry,windowsVersionMatches} from './streamcockpit-windows-authenticode.js';
 import {verifyUpgradeReadbackFiles,snapshotUpgradeReadbackFiles,type UpgradeReadbackFile} from './streamcockpit-upgrade-readback.js';
 import {runtimeUpgradeDirectory} from './streamcockpit-runtime-ownership.js';
@@ -47,7 +48,8 @@ export function nativeMaintenanceRequest(value:unknown,policy:DirectoryReleaseTr
   !local(r.applicationData)||!local(r.rootUserData)||!r.options)denied('REQUEST_INVALID');
  const o=r.options,keys=['manifest','image','target','rollback','journalDirectory','packageRoot','profileRoot','preparedPackage',
   'preparedProfile','backupPackage','backupProfile','sourcePackage'];
- if(!exact(o,[...keys,...(Object.hasOwn(o,'profileMigration')?['profileMigration']:[])]))denied('REQUEST_INVALID');
+ if(!exact(o,[...keys,...(Object.hasOwn(o,'profileMigration')?['profileMigration']:[]),
+  ...(Object.hasOwn(o,'squirrel')?['squirrel']:[])]))denied('REQUEST_INVALID');
  for(const key of ['journalDirectory','packageRoot','profileRoot','preparedPackage','preparedProfile','backupPackage','backupProfile','sourcePackage'] as const)
   if(!local(o[key]))denied('REQUEST_INVALID');
  if(!samePath(o.profileRoot,r.rootUserData)||!samePath(o.journalDirectory,runtimeUpgradeDirectory(r.applicationData,r.rootUserData)))denied('ROOT_MISMATCH');
@@ -55,7 +57,7 @@ export function nativeMaintenanceRequest(value:unknown,policy:DirectoryReleaseTr
   runtimeStopped:async()=>false,attestInstalled:async()=>undefined};
  // Construction verifies the publisher signature and all existing directory and
  // migration contracts. It does not register an intent or create a backup.
- createSignedWindowsDirectoryUpgradePlanner(options,{assessRestartSafety:async()=>({safe:false})});
+ createSignedWindowsUpgradePlanner(options,{assessRestartSafety:async()=>({safe:false})});
  return {...r,options};
 }
 export async function readPreparedMaintenanceRequest(file:string,policy:DirectoryReleaseTrust):Promise<ExternalMaintenanceRequest> {
@@ -72,7 +74,8 @@ export async function readPreparedMaintenanceRequest(file:string,policy:Director
  * image even when the download directory no longer exists. */
 export async function verifyMaintenanceCarrier(request:ExternalMaintenanceRequest) {
  const o=request.options,folder=request.action==='rollback'?o.preparedPackage:o.sourcePackage;
- if(beneath(folder,o.packageRoot)||beneath(folder,o.profileRoot)||beneath(o.packageRoot,folder))denied('CARRIER_INSIDE_INSTALLATION');
+ const installationRoot=maintenanceInstallationRoot(o);
+ if(beneath(folder,installationRoot)||beneath(folder,o.profileRoot)||beneath(installationRoot,folder))denied('CARRIER_INSIDE_INSTALLATION');
  const binary=windowsApplicationEntry(o.image.packageFiles),entry='resources/streamcockpit-maintenance.cjs';
  if(o.image.packageFiles.filter(f=>f.path===entry).length!==1)denied('CARRIER_MISSING');
  if(!await verifyUpgradeReadbackFiles(folder,o.image.packageFiles))denied('CARRIER_CHANGED');
@@ -97,7 +100,7 @@ async function bindStoppedProfile(request:ExternalMaintenanceRequest,observe:()=
  const file=join(o.journalDirectory,'profile-'+o.manifest.id+'.json');
  const store=new SqliteUpgradeJournal(o.journalDirectory);
  const files=await store.exclusive(async()=>{
-  if(!await inspectWindowsMaintenanceWriters(o.packageRoot,o.profileRoot)||!await observe())denied('PROFILE_WRITERS_NOT_STOPPED');
+  if(!await inspectWindowsMaintenanceWriters(maintenanceInstallationRoot(o),o.profileRoot)||!await observe())denied('PROFILE_WRITERS_NOT_STOPPED');
   try{
    const stat=await lstat(file);
    if(!stat.isFile()||stat.isSymbolicLink()||stat.nlink!==1||stat.size>1024*1024||!samePath(await realpath(file),file))denied('PROFILE_SNAPSHOT_INVALID');
@@ -112,7 +115,7 @@ async function bindStoppedProfile(request:ExternalMaintenanceRequest,observe:()=
   if(request.action==='rollback'||journal&&(journal.pending||journal.backup||journal.migration||journal.installed||journal.rolledBack))denied('PROFILE_SNAPSHOT_MISSING_AFTER_EFFECT');
   const captured=await snapshotUpgradeReadbackFiles(o.profileRoot);
   if(!captured.length||!await verifyUpgradeReadbackFiles(o.profileRoot,captured)||
-   !await inspectWindowsMaintenanceWriters(o.packageRoot,o.profileRoot)||!await observe())denied('PROFILE_CHANGED_DURING_CAPTURE');
+   !await inspectWindowsMaintenanceWriters(maintenanceInstallationRoot(o),o.profileRoot)||!await observe())denied('PROFILE_CHANGED_DURING_CAPTURE');
   const payload={binding,files:captured},encoded=JSON.stringify({...payload,sha256:hash(JSON.stringify(payload))});
   if(Buffer.byteLength(encoded)>1024*1024)denied('PROFILE_SNAPSHOT_TOO_LARGE');
   const handle=await open(file,'wx',0o600);
@@ -135,7 +138,7 @@ export async function runMaintenanceEnvelope(value:unknown,
   !exact(envelope.consent,['action','releaseId']))denied('ENVELOPE_INVALID');
  const request=nativeMaintenanceRequest(envelope.request,envelope.trust),o=request.options;
  if(envelope.consent.action!==request.action||envelope.consent.releaseId!==o.manifest.id)denied('CONSENT_REQUIRED');
- if(beneath(process.execPath,o.packageRoot)||beneath(process.execPath,o.profileRoot))denied('EXECUTOR_INSIDE_INSTALLATION');
+ if(beneath(process.execPath,maintenanceInstallationRoot(o))||beneath(process.execPath,o.profileRoot))denied('EXECUTOR_INSIDE_INSTALLATION');
  await verifyMaintenanceCarrier(request);
  const observer=await createIndependentMaintenanceObserver(validateMaintenanceObserverConfiguration(envelope.observer));
  try{
@@ -148,7 +151,7 @@ export async function runMaintenanceEnvelope(value:unknown,
   }
   if(envelope.captureStoppedProfile)await bindStoppedProfile(request,()=>observer.observe());
   return await runNativeWindowsMaintenance(request,{
-   observeOffline:()=>observer.observe(),noOtherWriters:()=>inspectWindowsMaintenanceWriters(o.packageRoot,o.profileRoot),
+   observeOffline:()=>observer.observe(),noOtherWriters:()=>inspectWindowsMaintenanceWriters(maintenanceInstallationRoot(o),o.profileRoot),
    authorize:async(action,id)=>action===envelope.consent.action&&id===envelope.consent.releaseId,
    assessRestartSafety:async()=>({safe:Boolean(await observer.observe())}),
   });

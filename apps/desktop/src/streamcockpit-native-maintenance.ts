@@ -1,4 +1,4 @@
-import {join} from 'node:path';
+import {dirname,join} from 'node:path';
 import {inspectWindowsAuthenticode,windowsApplicationEntry,windowsVersionMatches} from './streamcockpit-windows-authenticode.js';
 import {runExternalWindowsMaintenance,type ExternalMaintenanceRequest,type ExternalMaintenanceDependencies} from './streamcockpit-external-maintenance.js';
 import {verifyUpgradeReadbackFiles,type UpgradeReadbackExpectation,type UpgradeReadbackIdentity} from './streamcockpit-upgrade-readback.js';
@@ -34,14 +34,15 @@ export function createNativeWindowsImageAttester(packageRoot:string,images:Upgra
  };
 }
 
-/** Concrete native signature/readback wiring; deliberately no installer launch,
- * credential lookup, automatic runtime stop or unsafe live-state fallback.
- * Independent live/writer observations and explicit consent remain mandatory.
+/** Concrete native signature/readback for directory and signed Squirrel maintenance.
+ * Independent live/writer observations and native operator consent govern activation.
  * Caller callbacks CANNOT replace these two native trust checks in this entry.
  */
 export function runNativeWindowsMaintenance(request:ExternalMaintenanceRequest,
  deps:Omit<ExternalMaintenanceDependencies,'verifyNativeSigner'>){
- const options={...request.options,attestInstalled:createNativeWindowsImageAttester(request.options.packageRoot,
-  [request.options.target,request.options.rollback])};
+ const o=request.options,s=o.image.squirrel;
+ const target=createNativeWindowsImageAttester(s?join(dirname(o.packageRoot),'app-'+s.version):o.packageRoot,[o.target]);
+ const rollback=createNativeWindowsImageAttester(o.packageRoot,[o.rollback]);
+ const options={...o,attestInstalled:async()=>await target()??await rollback()};
  return runExternalWindowsMaintenance({...request,options},{...deps,verifyNativeSigner:inspectWindowsAuthenticode});
 }

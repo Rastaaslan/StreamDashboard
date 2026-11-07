@@ -1,5 +1,5 @@
 import {spawn,type ChildProcessWithoutNullStreams} from 'node:child_process';
-import {resolve} from 'node:path';
+import {dirname,join,resolve} from 'node:path';
 import {windowsDistribution} from './streamcockpit-windows-distribution.js';
 import {readPreparedMaintenanceRequest,verifyMaintenanceCarrier,type MaintenanceEnvelope,type PreparedMaintenanceRequest} from './streamcockpit-maintenance-cli.js';
 import type {DirectoryReleaseTrust} from './streamcockpit-upgrade-signed-preparation.js';
@@ -10,10 +10,13 @@ const same=(a:string,b:string)=>resolve(a).toLowerCase()===resolve(b).toLowerCas
 const fail=(code:string)=>new Error('SC3_MAINTENANCE_LAUNCH_'+code);
 /** Native UI preparation only: no shutdown, process launch or profile write. */
 export async function prepareNativeMaintenanceLaunch(file:string,trust:DirectoryReleaseTrust,current:InstalledMaintenanceContext){
- if(await windowsDistribution(current.packageRoot)!=='directory')throw fail('SQUIRREL_REQUIRES_NATIVE_DISTRIBUTION');
  const request=await readPreparedMaintenanceRequest(file,trust),o=request.options;
+ const distribution=await windowsDistribution(current.packageRoot);
+ if((distribution==='squirrel')!==Boolean(o.image.squirrel))throw fail('DISTRIBUTION_MISMATCH');
+ const installedPackage=o.image.squirrel&&request.action==='rollback'?
+  join(dirname(o.packageRoot),'app-'+o.image.squirrel.version):o.packageRoot;
  if(!same(request.applicationData,current.applicationData)||!same(request.rootUserData,current.rootUserData)||
-  !same(o.packageRoot,current.packageRoot)||
+  !same(installedPackage,current.packageRoot)||
   (request.action==='rollback'?o.manifest.version:o.manifest.fromVersion)!==current.version)throw fail('INSTALLED_TARGET_MISMATCH');
  const carrier=await verifyMaintenanceCarrier(request);
  const {runtimeStopped:_runtimeStopped,attestInstalled:_attestInstalled,trust:policy,now:_now,...options}=o;

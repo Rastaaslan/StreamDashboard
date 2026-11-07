@@ -1384,6 +1384,10 @@
         {
           "path": "android/app/src/main/java/com/rastaaslan/streamdashboard/remote/NativeUpdateManager.java",
           "kind": "Same closure: native Android PackageInstaller and paired Windows directory maintenance, read-only availability/safety, explicit consent and independent readback; production/device acceptance unqualified."
+        },
+        {
+          "path": "docs/streamcockpit-3/F10_SQUIRREL_NATIVE_20261107.md",
+          "kind": "2026-11-07 FIXE F10 native Squirrel source integration and isolated real Squirrel API QA; positive OS certificate trust simulated, real unsigned rejection tested. Consolidated results in evidence/F10-SQUIRREL-20261107/software-validation.json. No actual installation, release publication or gate promotion."
         }
       ],
       "verifiedTests": [
@@ -1420,17 +1424,19 @@
         "tests/streamcockpit3-maintenance-client-gate.test.ts",
         "tests/streamcockpit3-peer-maintenance-observer.test.ts",
         "tests/streamcockpit3-native-android-update.test.ts",
-        "tests/streamcockpit3-release-availability.test.ts"
+        "tests/streamcockpit3-release-availability.test.ts",
+        "tests/streamcockpit3-squirrel-upgrade.test.ts",
+        "tests/streamcockpit3-squirrel-native.test.ts"
       ],
       "hardwareEvidence": [],
       "blockers": [
         "Production Windows Authenticode, Android stable signing and independently provisioned public release trust remain unqualified. QA signing is not production signing.",
         "2026-11-07: the actual FIXE process was observed under a portable QA app directory. The existing directory planner now covers OBS-owner and paired-controller roles; Android source now connects preparation/signature identity/version/consent/PackageInstaller/result readback and supported forward recovery. Real installed-data recovery, Android OS installer result, provider and trio acceptance remain unqualified.",
-        "Native Squirrel installed-distribution transaction is not implemented by the directory maintenance adapter. A detected Squirrel installation is explicitly refused, never silently converted to portable. The existing Squirrel maker is preserved.",
+        "2026-11-07: native per-user Squirrel source is connected to signed local FULL-package preparation, the existing durable journal, complete backup, native API apply/readback and explicit full-root/data/registration/shortcut recovery. Production signer/trust and reception of real target installations remain unqualified; see F10_SQUIRREL_NATIVE_20261107.md.",
         "Current frozen-source Windows/APK provenance, checksums, native signature observations and QA compatibility must be read from out/sc3-reception-unique/<sourceCommit12>/reception-manifest.json. No RC/release or G3/G4/G5 promotion is authorized."
       ],
       "ownerJob": "streamcockpit/3.0-lot-p",
-      "integrationNote": "F10 lot P preflight read-only integrated 2026-11-01; 71/71 targeted PASS, types/security PASS; transaction Squirrel, real signatures and hardware rollback absent. No quitAndInstall enabled. Common Git commit/source SHA-256 provenance is generated for Windows resources and Android assets. ASAR checker rejects dirty or mismatched source and cross-artifact provenance. 2026-11-03 isolated QA checkpoint: 65/65 targeted F10 PASS (including 6 new real filesystem backup/restore tests), no production data or app installation touched; cryptographic release signing, Squirrel transaction and real hardware migration/rollback remain unqualified. This is packaging preparation, not a signed APK/EXE or qualified rollback. 2026-11-07 SC3-CLOTURE-UNIQUE-FINISH-001: Windows distribution was identified as portable QA; controls share the existing planner through independent paired TLS observation. Availability no longer invokes a Squirrel download before consent. Android native update source is connected; 57 Java PASS and complete isolated software regression, no physical install. Squirrel native transaction remains absent and is declared explicitly."
+      "integrationNote": "F10 lot P preflight read-only integrated 2026-11-01; 71/71 targeted PASS, types/security PASS; transaction Squirrel, real signatures and hardware rollback absent. No quitAndInstall enabled. Common Git commit/source SHA-256 provenance is generated for Windows resources and Android assets. ASAR checker rejects dirty or mismatched source and cross-artifact provenance. 2026-11-03 isolated QA checkpoint: 65/65 targeted F10 PASS (including 6 new real filesystem backup/restore tests), no production data or app installation touched; cryptographic release signing, Squirrel transaction and real hardware migration/rollback remain unqualified. This is packaging preparation, not a signed APK/EXE or qualified rollback. 2026-11-07 SC3-CLOTURE-UNIQUE-FINISH-001: Windows distribution was identified as portable QA; controls share the existing planner through independent paired TLS observation. Availability no longer invokes a Squirrel download before consent. Android native update source is connected; 57 Java PASS and complete isolated software regression, no physical install. Squirrel native transaction remains absent and is declared explicitly. 2026-11-07: the later native Squirrel adapter closes the source-code gap recorded above, using the same explicit native menu/helper/coordinator and full local package contract. Earlier package manifests stay historical. Production/hardware qualification remains open."
     }
   ],
   "gates": [

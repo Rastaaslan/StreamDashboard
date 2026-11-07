@@ -1,4 +1,5 @@
 import {createHash,createPublicKey,verify} from 'node:crypto';
+import {squirrelRelease,bindSquirrelVersions,type SquirrelRelease,type SquirrelUpgradePaths} from './streamcockpit-squirrel-contract.js';
 import {basename,dirname,isAbsolute,join,resolve,sep} from 'node:path';
 import {copyVerifiedUpgradeTree,createWindowsDirectoryUpgradePlanner,type DirectoryUpgradeOptions} from './streamcockpit-upgrade-directory.js';
 import {verifyUpgradeReadbackFiles,type UpgradeReadbackExpectation,type UpgradeReadbackFile} from './streamcockpit-upgrade-readback.js';
@@ -13,6 +14,7 @@ export interface SignedDirectoryImage {
   packageFiles:UpgradeReadbackFile[];
   /** Signed code-defined migration, never private profile contents or arbitrary code. */
   profileMigration?:MomentsUpgradeMigration;
+  squirrel?:SquirrelRelease;
 }
 export interface DirectoryReleaseTrust {
   keyId:string;
@@ -26,6 +28,7 @@ export interface SignedDirectoryUpgradeOptions extends DirectoryUpgradeOptions {
   sourcePackage:string;
   image:SignedDirectoryImage;
   trust:DirectoryReleaseTrust;
+  squirrel?:SquirrelUpgradePaths;
 }
 const fail=(code:string):never=>{throw Error('SC3_SIGNED_PREPARATION_'+code)};
 const sha=(bytes:string)=>createHash('sha256').update(bytes).digest('hex');
@@ -49,7 +52,8 @@ function files(entries:UpgradeReadbackFile[]):UpgradeReadbackFile[]{
 }
 function imageValue(image:SignedDirectoryImage):SignedDirectoryImage{
   const hasMigration=Boolean(image&&Object.hasOwn(image,'profileMigration'));
-  if(!exactKeys(image,['identity','packageFiles',...(hasMigration?['profileMigration']:[])])||
+  const hasSquirrel=Boolean(image&&Object.hasOwn(image,'squirrel'));
+  if(!exactKeys(image,['identity','packageFiles',...(hasMigration?['profileMigration']:[]),...(hasSquirrel?['squirrel']:[])])||
     !exactKeys(image.identity,['version','revision','applicationId','signer']))fail('IDENTITY_INVALID');
   const i=image.identity;
   if(typeof i.version!=='string'||!/^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/.test(i.version)||
@@ -57,7 +61,8 @@ function imageValue(image:SignedDirectoryImage):SignedDirectoryImage{
     typeof i.applicationId!=='string'||!/^[A-Za-z][A-Za-z0-9._-]{0,199}$/.test(i.applicationId)||
     typeof i.signer!=='string'||!/^[A-F0-9]{40}$/.test(i.signer))fail('IDENTITY_INVALID');
   return {identity:{version:i.version,revision:i.revision,applicationId:i.applicationId,signer:i.signer},packageFiles:files(image.packageFiles),
-    ...(hasMigration?{profileMigration:momentsUpgradeMigration(image.profileMigration)}:{})};
+    ...(hasMigration?{profileMigration:momentsUpgradeMigration(image.profileMigration)}:{}),
+    ...(hasSquirrel?{squirrel:squirrelRelease(image.squirrel)}:{})};
 }
 /** Manifest.sha256 binds the full canonical image inventory, not just an EXE. */
 export function directoryReleaseImageHash(image:SignedDirectoryImage):string{
@@ -70,6 +75,7 @@ export function directoryReleaseSigningPayload(manifest:UpgradeManifest,image:Si
     !exactKeys(manifest.signature,['keyId','value'])||!exactKeys(manifest.schema,['from','to'])||
     !['desktop','agent'].includes(manifest.target))fail('MANIFEST_INVALID');
   const canonical=imageValue(image);
+  if(canonical.squirrel)bindSquirrelVersions(canonical.squirrel,manifest);
   if(canonical.identity.version!==manifest.version||manifest.sha256!==directoryReleaseImageHash(canonical))fail('IMAGE_BINDING_MISMATCH');
   return Buffer.from('StreamCockpit-directory-release-v1\0'+JSON.stringify({
     id:manifest.id,version:manifest.version,fromVersion:manifest.fromVersion,target:manifest.target,
@@ -111,8 +117,7 @@ const same=(a:unknown,b:unknown)=>JSON.stringify(a)===JSON.stringify(b);
  * Publisher authentication does NOT replace native Authenticode/installed
  * identity attestation, operator consent or a Windows/APK same-commit receipt.
  */
-export function createSignedWindowsDirectoryUpgradePlanner(input:SignedDirectoryUpgradeOptions,
-  dashboard:{assessRestartSafety():Promise<RestartSafety>}){
+export function createAuthenticatedWindowsUpgradePreparation(input:SignedDirectoryUpgradeOptions){
   const manifest=structuredClone(input.manifest),image=imageValue(structuredClone(input.image));
   const target=structuredClone(input.target),rollback=structuredClone(input.rollback);
   const trust=structuredClone(input.trust),authenticate=authenticator(manifest,image,trust);
@@ -120,7 +125,7 @@ export function createSignedWindowsDirectoryUpgradePlanner(input:SignedDirectory
   const profileMigration=input.profileMigration===undefined?undefined:momentsUpgradeMigration(structuredClone(input.profileMigration));
   if(!same(profileMigration,image.profileMigration))fail('MIGRATION_NOT_SIGNED');
   if(!same(imageValue({identity:target.identity,packageFiles:target.packageFiles,
-    ...(profileMigration?{profileMigration}:{})}),image))fail('TARGET_NOT_SIGNED');
+    ...(profileMigration?{profileMigration}:{}),...(image.squirrel?{squirrel:image.squirrel}:{})}),image))fail('TARGET_NOT_SIGNED');
   if(manifest.schema.from!==manifest.schema.to)fail('PROFILE_MIGRATION_NOT_SUPPORTED');
   if(profileMigration)validateMomentsUpgradeInventories(rollback.profileFiles,target.profileFiles,profileMigration);
   else if(!same(files(target.profileFiles),files(rollback.profileFiles)))fail('PROFILE_MIGRATION_NOT_SUPPORTED');
@@ -142,16 +147,16 @@ export function createSignedWindowsDirectoryUpgradePlanner(input:SignedDirectory
     if(!same(value,manifest)||(operation&&key!==manifest.id+':'+operation))fail('CONTRACT_CHANGED');
     authenticate();
   };
-  return createWindowsDirectoryUpgradePlanner(options,{
-    stage:async(value,artifact,key)=>{
+  return {options,preparation:{
+    stage:async(value:UpgradeManifest,artifact:string,key:string)=>{
       contract(value,key,'stage');if(artifact!==sourcePackage)fail('SOURCE_SUBSTITUTED');await stopped();
       await copyVerifiedUpgradeTree(sourcePackage,options.preparedPackage,image.packageFiles);
       authenticate();await stopped();return {reference:options.preparedPackage};
     },
-    verify:async(value,staged)=>{
+    verify:async(value:UpgradeManifest,staged:string)=>{
       contract(value);return staged===options.preparedPackage&&await verifyUpgradeReadbackFiles(staged,image.packageFiles);
     },
-    backup:async(value,key)=>{
+    backup:async(value:UpgradeManifest,key:string)=>{
       contract(value,key,'backup');await stopped();await exact(options.preparedPackage,image.packageFiles);
       await exact(options.packageRoot,rollback.packageFiles);await exact(options.profileRoot,rollback.profileFiles);
       await copyVerifiedUpgradeTree(options.packageRoot,options.backupPackage,rollback.packageFiles);
@@ -159,7 +164,7 @@ export function createSignedWindowsDirectoryUpgradePlanner(input:SignedDirectory
       await exact(options.packageRoot,rollback.packageFiles);await exact(options.profileRoot,rollback.profileFiles);
       await stopped();return {reference:options.backupPackage};
     },
-    migrate:async(value,backup,key)=>{
+    migrate:async(value:UpgradeManifest,backup:string,key:string)=>{
       contract(value,key,'migrate');if(backup!==options.backupPackage)fail('BACKUP_SUBSTITUTED');await stopped();
       await exact(options.backupPackage,rollback.packageFiles);
       await copyVerifiedUpgradeTree(options.backupProfile,options.preparedProfile,rollback.profileFiles);
@@ -168,7 +173,7 @@ export function createSignedWindowsDirectoryUpgradePlanner(input:SignedDirectory
       await exact(options.preparedProfile,target.profileFiles);await stopped();
       return {reference:options.preparedProfile};
     },
-    reconcile:async(operation,key)=>{
+    reconcile:async(operation:import('../../../packages/core/src/streamcockpit-upgrade.js').UpgradeOperation,key:string)=>{
       // Only complete independently pinned results are recoverable. No copy,
       // conversion, deletion or source modification occurs during readback.
       try{
@@ -187,5 +192,12 @@ export function createSignedWindowsDirectoryUpgradePlanner(input:SignedDirectory
         await stopped();return {reference:options.preparedProfile};
       }catch{return undefined}
     },
-  },dashboard);
+  }};
+}
+
+export function createSignedWindowsDirectoryUpgradePlanner(input:SignedDirectoryUpgradeOptions,
+  dashboard:{assessRestartSafety():Promise<RestartSafety>}){
+  if(input.image?.squirrel||input.squirrel)fail('NATIVE_SQUIRREL_REQUIRED');
+  const {options,preparation}=createAuthenticatedWindowsUpgradePreparation(input);
+  return createWindowsDirectoryUpgradePlanner(options,preparation,dashboard);
 }

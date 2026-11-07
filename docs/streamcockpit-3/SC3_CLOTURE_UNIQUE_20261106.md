@@ -177,3 +177,11 @@ Le smoke Electron standard utilise les ports réservés aux instances en usage :
 - [ ] Reprise interrompue : conserver l’incertitude, aucun renvoi automatique.
 - [ ] Retour Windows sur la sauvegarde qualifiée sans écraser un journal plus récent ; récupération Android par correction supérieure compatible, jamais par effacement/downgrade.
 - [ ] Réception effective FIXE/laptop/Android puis décision séparée de Dam pour G3/G4/G5.
+
+## Suite de la même clôture — raccordement Squirrel du 07/11/2026
+
+Le reste de code Windows/Squirrel signalé par la paire bb7c6d6 est raccordé au menu natif, au helper externe et au même planificateur durable. Le paquet FULL local et l'updater sont liés à l'inventaire signé ; la bibliothèque native est chargée depuis le staging externe. Sauvegarde unique de l'installation entière, conservation du profil/reçus, contrôle de la version effectivement sélectionnée, inscription HKCU, raccourcis et retour arrière explicite sont intégrés. Les effets interrompus ne sont pas rejoués.
+
+Qualification sur FIXE : **350 PASS / 0 FAIL / 0 ignoré**, dont 24 nouveaux scénarios Squirrel et deux essais de la vraie bibliothèque native. Types, types navigateur, build, sécurité, JavaScript livré et refus d'une enveloppe invalide par le bundle : PASS. Le certificat positif est simulé en QA ; le refus OS réel d'un exécutable non signé est testé. Les 350 ne s'ajoutent pas aux anciennes campagnes. Détails et empreintes : `F10_SQUIRREL_NATIVE_20261107.md` et `evidence/F10-SQUIRREL-20261107/software-validation.json`.
+
+Aucune installation, publication ou nouvelle paire n'est produite par cette correction. Les anciens artefacts restent attachés à leur ancien commit. La réception réelle et les signatures de production restent ouvertes ; aucune promotion G2/G3/G4/G5 n'est annoncée. CONTINUITY et les rapports AUDIT tiers sont préservés.
